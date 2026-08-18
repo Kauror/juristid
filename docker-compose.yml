@@ -11,7 +11,9 @@ services:
       POSTGRES_USER: juristid
       POSTGRES_PASSWORD: juristid
     volumes:
-      - postgres-data:/var/lib/postgresql/data
+      # PostgreSQL 18 images store data in a major-version subdirectory, so the
+      # mount belongs at /var/lib/postgresql, not /var/lib/postgresql/data.
+      - postgres-data:/var/lib/postgresql
     ports:
       - "${POSTGRES_HOST_PORT:-5432}:5432"
     healthcheck:
