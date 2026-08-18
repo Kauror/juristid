@@ -6,7 +6,7 @@ import pytest
 from django.db import DatabaseError, connection, transaction
 
 from app.audit.enums import ChangeEventType, SecurityEventType
-from app.audit.models import ChangeEvent, SecurityAuditEvent
+from app.audit.models import SecurityAuditEvent
 from app.audit.services import record_change_event, record_security_event
 from app.core.errors import ImmutableRecordError
 from tests import factories
@@ -29,7 +29,9 @@ def test_change_event_records_the_object_it_describes(specialist):
 
 def test_change_events_cannot_be_edited_through_the_orm(specialist):
     matter = factories.MatterFactory(owner=specialist)
-    event = ChangeEvent.objects.filter(matter=matter).first()
+    event = record_change_event(
+        event_type=ChangeEventType.MATTER_CREATED, matter=matter, actor=specialist
+    )
     event.summary = "midagi muud"
     with pytest.raises(ImmutableRecordError):
         event.save()

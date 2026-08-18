@@ -59,12 +59,15 @@ def test_entra_object_id_is_immutable_once_assigned():
         user.save()
 
 
-def test_entra_object_id_may_be_assigned_to_a_user_that_had_none(specialist):
-    assert specialist.entra_object_id is None
-    specialist.entra_object_id = uuid.uuid4()
-    specialist.save()
-    specialist.refresh_from_db()
-    assert specialist.entra_object_id is not None
+def test_entra_object_id_may_be_assigned_to_a_user_that_had_none():
+    """The first Entra sign-in writes the object id onto an existing account."""
+    user = User.objects.create_user(upn="uus@example.invalid", display_name="Uus")
+    assert user.entra_object_id is None
+
+    user.entra_object_id = uuid.uuid4()
+    user.save()
+    user.refresh_from_db()
+    assert user.entra_object_id is not None
 
 
 def test_synthetic_users_cannot_carry_a_real_identity():

@@ -39,6 +39,7 @@ ignore = [
 "tests/*" = ["S101"]          # assert is the point of a test
 "config/settings.py" = ["S105"]
 "config/typecheck_settings.py" = ["F403"]
+"config/test_settings.py" = ["F403", "F405"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "config"]
@@ -57,7 +58,7 @@ check_untyped_defs = true
 django_settings_module = "config.typecheck_settings"
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings"
+DJANGO_SETTINGS_MODULE = "config.test_settings"
 python_files = ["test_*.py"]
 testpaths = ["tests"]
 addopts = "--strict-markers -ra"

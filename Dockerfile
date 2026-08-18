@@ -41,7 +41,9 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /src /app
 
-RUN chown -R juristid:juristid /app
+# A named volume inherits the ownership of the image path it shadows, so the
+# evidence directory must exist and belong to the application user.
+RUN mkdir -p /app/evidence && chown -R juristid:juristid /app
 
 USER juristid
 
