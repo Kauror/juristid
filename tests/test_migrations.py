@@ -8,6 +8,7 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
 
+@pytest.mark.django_db
 def test_no_model_change_is_missing_a_migration():
     call_command("makemigrations", "--check", "--dry-run", verbosity=0)
 

@@ -155,6 +155,11 @@ STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 
+# Hashed, compressed static assets require `collectstatic` to have produced a
+# manifest. The container image does that at build time; test runs and ad-hoc
+# processes have not, so they use the plain backend.
+STATIC_MANIFEST = env_bool("DJANGO_STATIC_MANIFEST", default=not DEBUG)
+
 MEDIA_ROOT = BASE_DIR / "media"
 MEDIA_URL = "media/"
 
@@ -170,7 +175,13 @@ STORAGES = {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
         "OPTIONS": {"location": str(EVIDENCE_ROOT)},
     },
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+    "staticfiles": {
+        "BACKEND": (
+            "whitenoise.storage.CompressedManifestStaticFilesStorage"
+            if STATIC_MANIFEST
+            else "django.contrib.staticfiles.storage.StaticFilesStorage"
+        )
+    },
 }
 
 # Transport-level upload guardrails. Business rules for evidence capture live

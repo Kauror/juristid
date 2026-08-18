@@ -18,8 +18,10 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
 RUN uv sync --frozen --no-dev
 
-# Static assets are baked into the image; the manifest storage requires it.
-RUN DJANGO_DEBUG=1 /opt/venv/bin/python manage.py collectstatic --noinput
+# Static assets are baked into the image. DJANGO_STATIC_MANIFEST is forced on
+# so the hashed manifest exists for the runtime process, which runs with
+# DJANGO_DEBUG off and therefore expects it.
+RUN DJANGO_DEBUG=1 DJANGO_STATIC_MANIFEST=1     /opt/venv/bin/python manage.py collectstatic --noinput
 
 # ---------------------------------------------------------------------------
 # Runtime stage

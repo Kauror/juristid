@@ -18,6 +18,7 @@ os.environ.setdefault("DEV_LOGIN_ENABLED", "0")
 os.environ.setdefault("REAL_DATA_ALLOWED", "0")
 os.environ.setdefault("POSTGRES_SSLMODE", "disable")
 os.environ.setdefault("APPLICATION_ENVIRONMENT", "test")
+os.environ.setdefault("DJANGO_STATIC_MANIFEST", "0")
 
 # Evidence written by tests goes to a throwaway directory, never the checkout.
 os.environ.setdefault("EVIDENCE_ROOT", tempfile.mkdtemp(prefix="juristid-evidence-"))
