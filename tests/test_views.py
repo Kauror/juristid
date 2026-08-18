@@ -36,8 +36,10 @@ def test_development_sign_in_only_offers_synthetic_users(client, settings, speci
     response = client.get(reverse("accounts:dev_login"))
     assert response.status_code == 200
     body = response.content.decode()
+    # Assert on identifiers: display names can collide with the page's own copy.
+    assert str(specialist.pk) in body
+    assert str(real_user.pk) not in body
     assert specialist.display_name in body
-    assert real_user.display_name not in body
 
 
 def test_signing_in_as_a_synthetic_user_works(client, settings, specialist):
