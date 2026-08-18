@@ -85,11 +85,14 @@ def create_matter(
 
 @transaction.atomic
 def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None) -> Matter:
-    """Change a Matter's visibility and re-derive every child record.
+    """Change a Matter's visibility, audited.
 
-    Children may be more restrictive than the Matter, so tightening the Matter
-    tightens everything, while relaxing it leaves individually restricted
-    children restricted.
+    Child records need no update: their effective visibility is derived from
+    this value every time it is read, so tightening the Matter tightens every
+    child immediately and relaxing it leaves individually restricted children
+    restricted. Nothing here can go stale, and a write that bypasses this
+    function changes what children are visible just as correctly — it only
+    misses the audit record (docs/adr/0005).
     """
     if visibility not in Visibility.values:
         raise DomainError(f"Unknown visibility {visibility!r}.")
@@ -100,7 +103,6 @@ def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None)
 
     matter.visibility = visibility
     matter.save(update_fields=["visibility", "updated_at"])
-    propagate_visibility_to_children(matter)
 
     record_change_event(
         event_type=ChangeEventType.MATTER_VISIBILITY_CHANGED,
@@ -110,15 +112,3 @@ def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None)
         payload={"from": previous, "to": visibility},
     )
     return matter
-
-
-def propagate_visibility_to_children(matter: Matter) -> None:
-    """Re-derive ``effective_visibility`` on every child of this Matter.
-
-    Saving each child rather than issuing a bulk UPDATE keeps the derivation in
-    one place. Child volumes per Matter are small; if that ever stops being
-    true, the derivation moves into SQL, not into a second rule.
-    """
-    for document in matter.documents.all():
-        document.matter = matter
-        document.save(update_fields=["effective_visibility", "updated_at"])

@@ -34,6 +34,36 @@ seam so Stage 2 can add real storage without a destructive redesign.
   about the binary, not the binary itself.
 - A correction is always a new version. There is no in-place replace path.
 
+**Write path (`add_evidence_version`)**
+
+The order of operations is deliberate:
+
+1. Take a row lock on the logical `Document` (`select_for_update`). Version
+   numbers are allocated under that lock, so concurrent captures queue instead
+   of racing to the same number.
+2. Derive the storage key from the allocated number **and** a freshly generated
+   UUIDv7 for the version. Two writers cannot produce the same key even if a
+   retry re-uses a number; a unique constraint on `storage_key` is the
+   database-level backstop, and the backend is asked whether the key already
+   exists before anything is written.
+3. Write the bytes.
+4. Create the `DocumentVersion` row, move the current-version pointer and record
+   the ChangeEvent, all in the same transaction. **If any of that fails, the
+   stored object is deleted again** before the exception propagates.
+
+Bytes are written *before* the row that describes them, not after. The
+alternative — create the row, write the bytes on commit — trades an orphaned
+object for a `DocumentVersion` claiming evidence that does not exist. An
+orphaned object is harmless, detectable and removable; a row pointing at missing
+bytes is an evidence-integrity hole.
+
+One residual case remains: a caller that wraps the call in a larger transaction
+and rolls it back *after* the call returned, or a process that dies between the
+storage write and the commit. Django offers no rollback hook, so
+`manage.py prune_orphaned_evidence` lists — and with `--delete` removes —
+stored objects that no `DocumentVersion` references. The design fails in the
+safe direction by construction.
+
 **Storage seam**
 
 - Django's `STORAGES` setting with a named `evidence` alias. Development uses

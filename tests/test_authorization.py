@@ -174,6 +174,90 @@ def test_relaxing_a_matter_leaves_individually_restricted_children_restricted(
     assert explicit not in visible
 
 
+# -- no write path can produce a stale, leaking visibility -------------------
+
+
+def test_a_bulk_update_on_the_matter_hides_its_children_immediately(
+    normal_matter, specialist, other_specialist
+):
+    """The service is not the only safe way to restrict a Matter.
+
+    Effective visibility is derived, so a write that bypasses
+    set_matter_visibility entirely still hides the children at once.
+    """
+    create_document(matter=normal_matter, title="Tõend", created_by=specialist)
+    assert Document.objects.visible_to(other_specialist).count() == 1
+
+    Matter.objects.filter(pk=normal_matter.pk).update(visibility=Visibility.RESTRICTED)
+
+    assert Document.objects.visible_to(other_specialist).count() == 0
+    assert Document.objects.visible_to(specialist).count() == 1
+
+
+def test_a_raw_save_on_the_matter_hides_its_children_immediately(
+    normal_matter, specialist, other_specialist
+):
+    create_document(matter=normal_matter, title="Tõend", created_by=specialist)
+
+    normal_matter.visibility = Visibility.RESTRICTED
+    normal_matter.save(update_fields=["visibility", "updated_at"])
+
+    assert Document.objects.visible_to(other_specialist).count() == 0
+
+
+def test_a_bulk_update_on_the_child_cannot_relax_it(
+    restricted_matter, specialist, other_specialist
+):
+    """A child override can only add restriction, never remove the parent's."""
+    document = create_document(matter=restricted_matter, title="Tõend", created_by=specialist)
+
+    Document.objects.filter(pk=document.pk).update(visibility_override=Visibility.NORMAL)
+
+    assert Document.objects.visible_to(other_specialist).count() == 0
+    document.refresh_from_db()
+    assert document.effective_visibility == Visibility.RESTRICTED
+
+
+def test_a_child_created_without_the_service_still_inherits(
+    restricted_matter, specialist, other_specialist
+):
+    document = Document.objects.create(
+        matter=restricted_matter, title="Otse loodud", created_by=specialist
+    )
+    assert document.effective_visibility == Visibility.RESTRICTED
+    assert Document.objects.visible_to(other_specialist).count() == 0
+
+
+def test_nothing_stores_a_child_effective_visibility_column():
+    """A stored copy is what could go stale, so there must not be one."""
+    stored = {field.name for field in Document._meta.fields}
+    assert "effective_visibility" not in stored
+    assert "visibility_override" in stored
+
+
+def test_the_sql_annotation_agrees_with_the_python_property(
+    restricted_matter, normal_matter, specialist
+):
+    inherited = create_document(matter=restricted_matter, title="A", created_by=specialist)
+    overridden = create_document(
+        matter=normal_matter,
+        title="B",
+        created_by=specialist,
+        visibility_override=Visibility.RESTRICTED,
+    )
+    plain = create_document(matter=normal_matter, title="C", created_by=specialist)
+
+    annotated = {
+        row.id: row.derived_visibility for row in Document.objects.with_effective_visibility()
+    }
+    for document in (inherited, overridden, plain):
+        assert annotated[document.id] == document.effective_visibility
+
+    assert annotated[inherited.id] == Visibility.RESTRICTED
+    assert annotated[overridden.id] == Visibility.RESTRICTED
+    assert annotated[plain.id] == Visibility.NORMAL
+
+
 def test_unknown_visibility_is_rejected(normal_matter):
     with pytest.raises(DomainError):
         set_matter_visibility(matter=normal_matter, visibility="SECRET")

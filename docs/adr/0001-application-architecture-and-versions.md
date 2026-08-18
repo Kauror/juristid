@@ -22,9 +22,19 @@ coding agents — can maintain for years.
 - `psycopg` 3 as the database driver.
 - `gunicorn` as the WSGI server, `whitenoise` for static assets in the container.
 
-Python 3.14 is not adopted yet: Django 5.2 LTS support for it is not something
-this project should depend on before it is confirmed in the Django release
-notes. The upgrade is a one-line change to `requires-python` plus a CI run.
+Django 5.2 supports Python 3.14 — support was added during the 5.2 series and is
+present in the pinned 5.2.x release. Python 3.13 is therefore a **deliberately
+conservative choice, not a compatibility limit**: it is the runtime with the
+longest track record across the wider dependency set (psycopg, the lint and test
+toolchain, the base container images) at the time Stage 0 was built, and this
+product optimises for boring over new.
+
+Move to 3.14 when there is a reason to — a needed language or standard-library
+feature, or the point at which 3.13 approaches end of security support. It is a
+one-line change to `requires-python` plus a CI run. One such reason already sits
+in the codebase: `uuid.uuid7` is in the 3.14 standard library, and
+`app.core.ids.uuid7` already delegates to it when the runtime provides it, so
+the local implementation disappears on upgrade.
 
 **Upgrade policy**
 

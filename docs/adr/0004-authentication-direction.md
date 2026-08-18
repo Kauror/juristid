@@ -15,8 +15,14 @@ table does not have to be rewritten when Entra arrives.
 
 `accounts.User` (`AbstractBaseUser` + `PermissionsMixin`) with:
 
-- `entra_object_id` — nullable, unique, **immutable once assigned** (enforced in
-  `save()`), reserved for the Entra `oid` claim;
+- `entra_object_id` — nullable, unique, reserved for the Entra `oid` claim, and
+  **immutable once assigned, enforced by a database trigger**
+  (`accounts/migrations/0002`). The model's `save()` refuses the change too, but
+  that guard is absent from `QuerySet.update()`, `bulk_update()`, a data
+  migration or a shell session. Identity is the one fact that must not drift, so
+  the rule lives where nothing can route around it. The initial NULL to UUID
+  assignment stays permitted: that is exactly what the first Entra sign-in does
+  to an account that already exists;
 - `upn` as `USERNAME_FIELD`, normalised to lowercase;
 - `display_name`, `email`, `role`, `is_active`, `is_staff`;
 - `is_synthetic` — a development-only account, with a database constraint that

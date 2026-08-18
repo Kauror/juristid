@@ -91,9 +91,12 @@ class TagAssignmentAdmin(admin.ModelAdmin):
 
 @admin.register(Document)
 class DocumentAdmin(admin.ModelAdmin):
+    # effective_visibility is derived, not stored, so it is displayed but never
+    # filtered on directly; filter on the two facts it is derived from.
     list_display = ("title", "matter", "role", "effective_visibility", "legal_hold")
-    list_filter = ("role", "effective_visibility", "legal_hold", "retention_class")
-    readonly_fields = ("effective_visibility", "created_at", "updated_at")
+    list_filter = ("role", "visibility_override", "legal_hold", "retention_class")
+    readonly_fields = ("created_at", "updated_at")
+    list_select_related = ("matter",)
 
 
 @admin.register(DocumentVersion)

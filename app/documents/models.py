@@ -13,7 +13,11 @@ from django.conf import settings
 from django.db import models
 
 from app.core.authorization import apply as apply_scope
-from app.core.authorization import child_visibility_q, scope_for_user
+from app.core.authorization import (
+    child_visibility_q,
+    effective_visibility_expression,
+    scope_for_user,
+)
 from app.core.models import BaseModel, VisibilityInheritingModel
 from app.documents.enums import (
     DocumentRole,
@@ -26,6 +30,10 @@ from app.documents.enums import (
 class DocumentQuerySet(models.QuerySet):
     def visible_to(self, user: object | None) -> DocumentQuerySet:
         return apply_scope(self, child_visibility_q(scope_for_user(user)))
+
+    def with_effective_visibility(self) -> DocumentQuerySet:
+        """Annotate the derived visibility so lists do not query per row."""
+        return self.annotate(derived_visibility=effective_visibility_expression())
 
 
 class Document(VisibilityInheritingModel):
@@ -89,7 +97,7 @@ class Document(VisibilityInheritingModel):
 
     objects = DocumentQuerySet.as_manager()
 
-    class Meta(VisibilityInheritingModel.Meta):
+    class Meta:
         verbose_name = "dokument"
         verbose_name_plural = "dokumendid"
         ordering = ["-created_at"]
@@ -173,6 +181,11 @@ class DocumentVersion(BaseModel):
             models.CheckConstraint(
                 condition=models.Q(size_bytes__gte=0),
                 name="documents_size_not_negative",
+            ),
+            # Two versions may never address the same stored object.
+            models.UniqueConstraint(
+                fields=["storage_key"],
+                name="documents_unique_storage_key",
             ),
         ]
 

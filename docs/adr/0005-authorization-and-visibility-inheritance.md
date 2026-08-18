@@ -42,37 +42,57 @@ optional revocation. Maximum duration 24 hours, only the department head (or a
 system owner) may grant one, and grant/revoke both write a
 `SecurityAuditEvent`. It is emergency access, not a second permanent role.
 
-**Inheritance, by derivation rather than validation**
+**Inheritance by derivation, with nothing stored**
 
-A child record (`app.core.models.VisibilityInheritingModel`) carries:
+A child record (`app.core.models.VisibilityInheritingModel`) carries exactly one
+visibility field: `visibility_override`, which may only add restriction.
 
-- `visibility_override` — the only user-settable field, and only ever *more*
-  restrictive;
-- `effective_visibility` — derived on every save as
-  `max(parent.visibility, override)`, not editable.
+The **effective** visibility — the more restrictive of the Matter's visibility
+and the child's own override — is **never stored**. It is computed:
 
-Because it is derived, a child cannot end up weaker than its Matter even if
-someone sets the override to `NORMAL`. A check constraint additionally forbids
-the row-level combination `override = RESTRICTED, effective = NORMAL`.
+- in SQL, by `app.core.authorization.child_visibility_q` on every read, and by
+  `effective_visibility_expression()` when a list needs to display it;
+- in Python, by the `effective_visibility` property, for a single object.
 
-Changing a Matter's visibility runs `set_matter_visibility()`, which re-derives
-every child. Tightening a Matter tightens everything; relaxing it leaves
-individually restricted children restricted.
+*This supersedes an earlier Stage-0 design that stored the derived value in an
+`effective_visibility` column maintained on save.* That column was a latent
+authorization bug. It stayed correct only while every write went through
+`set_matter_visibility()`, and anything that bypassed that service — a bulk
+`update()`, a data migration, a shell session, a future importer, a Stage-1
+service someone forgets to wire up — left a stale value behind. A stale copy of
+this particular fact reads as *less* restrictive than the truth, which is a
+confidentiality leak rather than a display glitch. Deriving it removes the
+failure mode instead of guarding against it.
 
-**Why a derived column rather than a cross-table trigger.** A trigger comparing
-against the parent row would also be correct, but the derivation removes the
-failure mode entirely rather than catching it, and it keeps the rule in one
-readable place. Audit append-only behaviour and evidence immutability *do* use
-triggers, because there the database is the only place that can guarantee them.
+Consequently `set_matter_visibility()` no longer propagates anything; it exists
+to record the ChangeEvent. A write that bypasses it changes what children are
+visible just as correctly and immediately, and only misses the audit entry.
+
+**Why not a cross-table trigger keeping the column in step?** That would also be
+correct, and it is what a denormalised design would require. It is simply more
+machinery than deriving the value, and it leaves a redundant column a future
+migration could still get wrong. Audit append-only behaviour and evidence
+immutability *do* use triggers, because there the database is the only place
+that can guarantee them — there is nothing to derive.
+
+**Cost.** Child reads join the Matter. At the specification's scale (12,000+
+Matters, a few hundred thousand child rows) that is an indexed join on a foreign
+key, and list queries annotate the value in the same query rather than querying
+per row. If measurement ever shows this is the real bottleneck, the answer is
+the materialised search projection that ADR 0006 already plans, not a
+hand-maintained column on a transactional table.
 
 ## Consequences
 
-- Child queries never need to join the Matter to decide the common case: a
-  `NORMAL` child implies a `NORMAL` Matter.
-- Every new child model must subclass `VisibilityInheritingModel` and implement
-  `parent_visibility()`. That is the review checklist item for Stage 1.
-- Bulk `UPDATE`/`bulk_create` on child tables bypasses the derivation; services
-  must not use them for visibility-bearing writes.
+- No write path can produce a visibility leak, because no write path maintains
+  the value. `bulk_update`, `bulk_create`, raw SQL and data migrations are safe
+  by construction, and tests prove it.
+- Every new child model must subclass `VisibilityInheritingModel`, implement
+  `parent_visibility()` and be read through its `visible_to()` queryset. That is
+  the review checklist item for Stage 1.
+- Reading one child's effective visibility touches its Matter. Lists use
+  `with_effective_visibility()` or `select_related("matter")` rather than the
+  property per row.
 
 ## Reversibility
 

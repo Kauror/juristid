@@ -56,6 +56,13 @@ stands, and maps to a disposition. Each raw label gets a row in
 `workflow.LegacyStatusMapping` with the raw text preserved and exactly one
 interpretation — a stage **or** a disposition, never both.
 
+**Mappings are era-scoped.** A label is unique per `(raw_label, source_era)`,
+not globally, because the same text does not necessarily mean the same thing in
+2019 and in 2025. An empty `source_era` is the generic fallback, and
+`resolve_legacy_status(raw_label, source_era)` prefers an exact era match, so
+recording a 2025 meaning never silently re-reads rows already imported under a
+2014 contract.
+
 The current workbook contains **11** authoritative `HETKESEIS` labels, including
 `ootan ELi õiguse ülevõtmist`. The full list is transcribed from the live
 workbook during the Stage-0 vocabulary workshop. It is not reconstructed from

@@ -49,12 +49,19 @@ class AppendOnlyModel(models.Model):
 
 
 class VisibilityInheritingModel(BaseModel):
-    """A child record whose visibility is derived from its parent Matter.
+    """A child record whose visibility follows its parent Matter.
 
-    ``visibility_override`` is the only field a user sets, and it may only make
-    the record *more* restrictive. ``effective_visibility`` is derived on save
-    and is what the authorization boundary reads, so a child can never end up
-    less restrictive than its parent (master specification 5.2).
+    ``visibility_override`` is the only stored visibility field, and it can only
+    make a record *more* restrictive. The effective visibility is **never
+    stored**: it is computed from the parent and the override, at query time by
+    ``app.core.authorization`` and in Python by the property below.
+
+    That is deliberate. A denormalised column would have to be kept in step with
+    every change to the parent Matter, and any write that bypassed the service
+    that maintained it — a bulk ``update()``, a data migration, a shell session,
+    a future importer — would leave a stale value that reads as *less*
+    restrictive than the truth. Deriving it removes the failure mode instead of
+    guarding against it (master specification 5.2, 16.2).
     """
 
     visibility_override = models.CharField(
@@ -62,42 +69,27 @@ class VisibilityInheritingModel(BaseModel):
         choices=Visibility.choices,
         blank=True,
         default="",
+        db_index=True,
         verbose_name="nähtavuse kitsendus",
         help_text="Tühi tähendab, et nähtavus päritakse teemalt.",
-    )
-    effective_visibility = models.CharField(
-        max_length=16,
-        choices=Visibility.choices,
-        default=Visibility.NORMAL,
-        editable=False,
-        db_index=True,
-        verbose_name="tegelik nähtavus",
     )
 
     class Meta:
         abstract = True
-        constraints = [
-            models.CheckConstraint(
-                condition=~models.Q(
-                    visibility_override=Visibility.RESTRICTED,
-                    effective_visibility=Visibility.NORMAL,
-                ),
-                name="%(app_label)s_%(class)s_effective_not_weaker_than_override",
-            ),
-        ]
-
-    def save(self, *args: Any, **kwargs: Any) -> None:
-        self.recompute_effective_visibility()
-        update_fields = kwargs.get("update_fields")
-        if update_fields is not None:
-            kwargs["update_fields"] = sorted({*update_fields, "effective_visibility"})
-        super().save(*args, **kwargs)
 
     def parent_visibility(self) -> str:
         raise NotImplementedError
 
-    def recompute_effective_visibility(self) -> str:
-        parent = self.parent_visibility()
+    @property
+    def effective_visibility(self) -> str:
+        """The visibility that actually applies to this record.
+
+        Reads the parent Matter, so in list contexts prefer the queryset
+        annotation, which computes the same value in SQL.
+        """
         own = self.visibility_override or Visibility.NORMAL.value
-        self.effective_visibility = most_restrictive(parent, own)
-        return self.effective_visibility
+        return most_restrictive(self.parent_visibility(), own)
+
+    @property
+    def is_restricted(self) -> bool:
+        return self.effective_visibility == Visibility.RESTRICTED

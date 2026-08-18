@@ -45,8 +45,9 @@ Recorded so they can be challenged rather than inherited silently:
    (ADR 0001).
 2. UUIDv7 primary keys generated in Python; `display_reference` derived rather
    than stored (ADR 0002).
-3. Visibility inheritance implemented as a derived `effective_visibility` column
-   rather than a cross-table trigger (ADR 0005).
+3. Child visibility is derived at query time and never stored, so no write path
+   can leave a stale value that reads as less restrictive than the truth
+   (ADR 0005).
 4. Tailwind and HTMX deferred to Stage 1; Stage 0 ships plain CSS custom
    properties (ADR 0009).
 5. `DocumentDerivative` and `SearchDocument` deferred to Stage 2, because both

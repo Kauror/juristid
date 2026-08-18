@@ -6,7 +6,7 @@ import uuid
 from datetime import timedelta
 
 import pytest
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.db.migrations.loader import MigrationLoader
 from django.utils import timezone
 
@@ -68,6 +68,60 @@ def test_entra_object_id_may_be_assigned_to_a_user_that_had_none():
     user.save()
     user.refresh_from_db()
     assert user.entra_object_id is not None
+
+
+def test_an_assigned_entra_object_id_cannot_be_changed_by_a_bulk_update():
+    """The model guard is not enough: `update()` never calls `save()`.
+
+    Identity is the one fact that must not drift, so the rule lives in the
+    database where a shell session, a data migration or a future importer
+    cannot route around it (master specification 16.2).
+    """
+    assigned = uuid.uuid4()
+    user = User.objects.create_user(
+        upn="kindel@example.invalid", display_name="Kindel", entra_object_id=assigned
+    )
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        User.objects.filter(pk=user.pk).update(entra_object_id=uuid.uuid4())
+
+    user.refresh_from_db()
+    assert user.entra_object_id == assigned
+
+
+def test_an_assigned_entra_object_id_cannot_be_cleared_by_a_bulk_update():
+    assigned = uuid.uuid4()
+    user = User.objects.create_user(
+        upn="puhastus@example.invalid", display_name="Puhastus", entra_object_id=assigned
+    )
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        User.objects.filter(pk=user.pk).update(entra_object_id=None)
+
+    user.refresh_from_db()
+    assert user.entra_object_id == assigned
+
+
+def test_the_first_assignment_is_still_allowed_through_a_bulk_update():
+    """This is what the first Entra sign-in does to an existing account."""
+    user = User.objects.create_user(upn="esimene@example.invalid", display_name="Esimene")
+    assigned = uuid.uuid4()
+
+    User.objects.filter(pk=user.pk).update(entra_object_id=assigned)
+
+    user.refresh_from_db()
+    assert user.entra_object_id == assigned
+
+
+def test_other_fields_remain_updatable_on_a_user_with_an_identity():
+    user = User.objects.create_user(
+        upn="muudetav@example.invalid",
+        display_name="Muudetav",
+        entra_object_id=uuid.uuid4(),
+    )
+    User.objects.filter(pk=user.pk).update(display_name="Uus nimi")
+    user.refresh_from_db()
+    assert user.display_name == "Uus nimi"
 
 
 def test_synthetic_users_cannot_carry_a_real_identity():

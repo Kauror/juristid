@@ -3,22 +3,40 @@
 from __future__ import annotations
 
 import hashlib
+import threading
+from io import StringIO
 
 import pytest
+from django.core.files.base import ContentFile
+from django.core.management import call_command
 from django.db import DatabaseError, connection, transaction
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole, MalwareScanState
-from app.documents.models import DocumentVersion
-from app.documents.services import add_evidence_version, create_document, set_legal_hold
+from app.documents.models import Document, DocumentVersion
+from app.documents.services import (
+    add_evidence_version,
+    create_document,
+    evidence_prefix,
+    evidence_storage,
+    set_legal_hold,
+)
 from tests import factories
 
 pytestmark = pytest.mark.django_db
 
 CONTENT = b"Sunteetiline toend."
 PLAIN_TEXT = "text/plain"
+
+
+def _stored_files(storage, prefix: str) -> list[str]:
+    try:
+        _directories, files = storage.listdir(prefix)
+    except (FileNotFoundError, NotADirectoryError):
+        return []
+    return sorted(files)
 
 
 def _document(matter=None, **kwargs):
@@ -180,3 +198,141 @@ def test_legal_hold_requires_a_reason(specialist):
     document.refresh_from_db()
     assert document.legal_hold is True
     assert document.legal_hold_set_by == specialist
+
+
+# -- concurrency and rollback safety ----------------------------------------
+
+
+def test_storage_key_is_unique_per_version(specialist):
+    document = _document(created_by=specialist)
+    first = add_evidence_version(
+        document=document, content=b"a", original_filename="a.txt", mime_type=PLAIN_TEXT
+    )
+    second = add_evidence_version(
+        document=document, content=b"a", original_filename="a.txt", mime_type=PLAIN_TEXT
+    )
+    # Identical bytes, different stored objects: the same SHA-256 does not make
+    # two captures the same business occurrence.
+    assert first.sha256 == second.sha256
+    assert first.storage_key != second.storage_key
+
+
+def test_two_versions_cannot_share_a_storage_key(specialist):
+    document = _document(created_by=specialist)
+    existing = add_evidence_version(
+        document=document, content=b"a", original_filename="a.txt", mime_type=PLAIN_TEXT
+    )
+    with pytest.raises(DatabaseError), transaction.atomic():
+        DocumentVersion.objects.create(
+            document=document,
+            version_number=99,
+            storage_key=existing.storage_key,
+            original_filename="a.txt",
+            mime_type=PLAIN_TEXT,
+            size_bytes=1,
+            sha256="0" * 64,
+            acquired_at=existing.acquired_at,
+        )
+
+
+def test_a_stored_object_is_removed_when_the_record_cannot_be_written(specialist, monkeypatch):
+    """Bytes are written before the row; a failure must not leave them behind."""
+    document = _document(created_by=specialist)
+    storage = evidence_storage()
+
+    def explode(*args, **kwargs):
+        raise RuntimeError("database went away")
+
+    monkeypatch.setattr(DocumentVersion.objects, "create", explode)
+
+    with pytest.raises(RuntimeError):
+        add_evidence_version(
+            document=document,
+            content=CONTENT,
+            original_filename="kaob.txt",
+            mime_type=PLAIN_TEXT,
+        )
+
+    assert document.versions.count() == 0
+    assert _stored_files(storage, evidence_prefix(document)) == []
+
+
+def test_a_stored_object_is_removed_when_the_pointer_update_fails(specialist, monkeypatch):
+    document = _document(created_by=specialist)
+    storage = evidence_storage()
+
+    original_save = Document.save
+
+    def explode(self, *args, **kwargs):
+        raise RuntimeError("pointer update failed")
+
+    monkeypatch.setattr(Document, "save", explode)
+    with pytest.raises(RuntimeError):
+        add_evidence_version(
+            document=document,
+            content=CONTENT,
+            original_filename="kaob.txt",
+            mime_type=PLAIN_TEXT,
+        )
+    monkeypatch.setattr(Document, "save", original_save)
+
+    assert _stored_files(storage, evidence_prefix(document)) == []
+
+
+def test_prune_removes_an_orphaned_object_and_keeps_referenced_ones(specialist):
+    """The residual case: an outer transaction that rolls back after the call."""
+    document = _document(created_by=specialist)
+    kept = add_evidence_version(
+        document=document, content=CONTENT, original_filename="a.txt", mime_type=PLAIN_TEXT
+    )
+
+    storage = evidence_storage()
+    orphan_key = f"{evidence_prefix(document)}/9999-orphan"
+    storage.save(orphan_key, ContentFile(b"orphaned bytes"))
+
+    output = StringIO()
+    call_command("prune_orphaned_evidence", stdout=output)
+    assert "9999-orphan" in output.getvalue()
+    assert storage.exists(orphan_key)
+
+    call_command("prune_orphaned_evidence", "--delete", stdout=StringIO())
+    assert not storage.exists(orphan_key)
+    assert storage.exists(kept.storage_key)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_writers_get_distinct_version_numbers():
+    """Two simultaneous captures must not race to the same version number."""
+    matter = factories.MatterFactory()
+    document = create_document(matter=matter, title="Võistlev dokument")
+
+    ready = threading.Barrier(2, timeout=20)
+    failures: list[BaseException] = []
+
+    def capture(payload: bytes) -> None:
+        try:
+            ready.wait()
+            add_evidence_version(
+                document=document,
+                content=payload,
+                original_filename="samaaegne.txt",
+                mime_type=PLAIN_TEXT,
+            )
+        except BaseException as exc:
+            failures.append(exc)
+        finally:
+            connection.close()
+
+    threads = [
+        threading.Thread(target=capture, args=(f"sisu-{index}".encode(),)) for index in range(2)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+
+    assert failures == []
+    versions = list(document.versions.order_by("version_number"))
+    assert [version.version_number for version in versions] == [1, 2]
+    assert len({version.storage_key for version in versions}) == 2
+    assert len({version.id for version in versions}) == 2
