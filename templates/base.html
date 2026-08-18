@@ -1,0 +1,45 @@
+{% load static %}<!doctype html>
+<html lang="et" data-theme="dark">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}{{ application_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
+    <link rel="stylesheet" href="{% static 'css/base.css' %}">
+  </head>
+  <body>
+    <a class="skip-link" href="#sisu">Liigu sisu juurde</a>
+    <div class="app-shell">
+      <header class="app-header">
+        <p class="app-header__title">{{ application_name }}</p>
+        <div class="app-header__meta">
+          <span>{{ application_stage }}</span>
+          <span aria-hidden="true">·</span>
+          <span>{{ application_environment }}</span>
+          {% if not real_data_allowed %}
+            <span class="badge badge--warning">Sünteetilised andmed</span>
+          {% endif %}
+          {% if user.is_authenticated %}
+            <span aria-hidden="true">·</span>
+            <span>{{ user.display_name }}</span>
+            <form method="post" action="{% url 'accounts:sign_out' %}">
+              {% csrf_token %}
+              <button type="submit" class="button button--secondary">Välju</button>
+            </form>
+          {% endif %}
+        </div>
+      </header>
+
+      <main class="app-main" id="sisu">
+        {% block content %}{% endblock %}
+      </main>
+
+      <footer class="app-footer">
+        <p>
+          Eesti Kaubandus-Tööstuskoda · {{ application_stage }} ·
+          versioon {{ application_revision }}
+        </p>
+      </footer>
+    </div>
+  </body>
+</html>

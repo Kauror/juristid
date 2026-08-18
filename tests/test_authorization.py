@@ -1,0 +1,184 @@
+"""The centralized authorization boundary.
+
+These are the non-retrofittable rules: inherited visibility, a child that can
+only be more restrictive, and technical administration that is not business
+access (master specification 5.2, 16.2).
+"""
+
+from __future__ import annotations
+
+from datetime import timedelta
+
+import pytest
+from django.contrib.auth.models import AnonymousUser
+from django.utils import timezone
+
+from app.accounts.services import grant_break_glass
+from app.core.authorization import scope_for_user
+from app.core.enums import Visibility
+from app.core.errors import DomainError
+from app.documents.models import Document
+from app.documents.services import create_document
+from app.matters.models import Matter
+from app.matters.services import set_matter_visibility
+from tests import factories
+
+pytestmark = pytest.mark.django_db
+
+
+# -- Matter visibility ------------------------------------------------------
+
+
+def test_normal_matter_is_visible_to_any_active_user(normal_matter, other_specialist):
+    assert normal_matter in Matter.objects.visible_to(other_specialist)
+
+
+def test_restricted_matter_is_hidden_from_an_uninvolved_specialist(
+    restricted_matter, other_specialist
+):
+    assert restricted_matter not in Matter.objects.visible_to(other_specialist)
+
+
+def test_restricted_matter_is_visible_to_its_owner(restricted_matter, specialist):
+    assert restricted_matter in Matter.objects.visible_to(specialist)
+
+
+def test_restricted_matter_is_visible_to_a_collaborator(restricted_matter, other_specialist):
+    restricted_matter.collaborators.add(other_specialist)
+    assert restricted_matter in Matter.objects.visible_to(other_specialist)
+
+
+def test_restricted_matter_is_visible_to_the_department_head(restricted_matter, department_head):
+    assert restricted_matter in Matter.objects.visible_to(department_head)
+
+
+def test_technical_administration_is_not_business_access(restricted_matter, administrator):
+    """An administrator role alone never reads restricted content."""
+    assert restricted_matter not in Matter.objects.visible_to(administrator)
+
+
+def test_superuser_alone_is_not_business_access(restricted_matter, superuser):
+    assert restricted_matter not in Matter.objects.visible_to(superuser)
+
+
+def test_anonymous_and_inactive_users_see_nothing(normal_matter, specialist):
+    assert Matter.objects.visible_to(AnonymousUser()).count() == 0
+    assert Matter.objects.visible_to(None).count() == 0
+
+    specialist.is_active = False
+    specialist.save(update_fields=["is_active", "updated_at"])
+    assert Matter.objects.visible_to(specialist).count() == 0
+
+
+def test_break_glass_opens_restricted_content_only_while_it_is_valid(
+    restricted_matter, other_specialist, department_head
+):
+    assert restricted_matter not in Matter.objects.visible_to(other_specialist)
+
+    grant = grant_break_glass(
+        user=other_specialist,
+        granted_by=department_head,
+        reason="Tugijuhtum",
+        duration=timedelta(hours=1),
+    )
+    assert scope_for_user(other_specialist).break_glass_grant_id == grant.id
+    assert restricted_matter in Matter.objects.visible_to(other_specialist)
+
+    grant.expires_at = timezone.now() - timedelta(minutes=1)
+    grant.starts_at = timezone.now() - timedelta(hours=2)
+    grant.save(update_fields=["expires_at", "starts_at", "updated_at"])
+    assert restricted_matter not in Matter.objects.visible_to(other_specialist)
+
+
+def test_visible_matters_are_not_duplicated_by_the_collaborator_join(
+    restricted_matter, specialist, other_specialist
+):
+    restricted_matter.collaborators.add(specialist, other_specialist)
+    assert Matter.objects.visible_to(specialist).count() == 1
+
+
+# -- Child visibility -------------------------------------------------------
+
+
+def test_child_inherits_matter_visibility(restricted_matter, specialist):
+    document = create_document(matter=restricted_matter, title="Tõend", created_by=specialist)
+    assert document.effective_visibility == Visibility.RESTRICTED
+
+
+def test_child_may_be_more_restrictive_than_its_matter(normal_matter, specialist):
+    document = create_document(
+        matter=normal_matter,
+        title="Tundlik tõend",
+        created_by=specialist,
+        visibility_override=Visibility.RESTRICTED,
+    )
+    assert document.effective_visibility == Visibility.RESTRICTED
+
+
+def test_child_can_never_become_less_restrictive_than_its_matter(restricted_matter, specialist):
+    document = create_document(
+        matter=restricted_matter,
+        title="Tõend",
+        created_by=specialist,
+        visibility_override=Visibility.NORMAL,
+    )
+    assert document.effective_visibility == Visibility.RESTRICTED
+
+    document.visibility_override = Visibility.NORMAL
+    document.save()
+    document.refresh_from_db()
+    assert document.effective_visibility == Visibility.RESTRICTED
+
+
+def test_document_under_restricted_matter_is_hidden_from_uninvolved_users(
+    restricted_matter, specialist, other_specialist
+):
+    create_document(matter=restricted_matter, title="Tõend", created_by=specialist)
+    assert Document.objects.visible_to(other_specialist).count() == 0
+    assert Document.objects.visible_to(specialist).count() == 1
+
+
+def test_restricting_a_matter_propagates_to_its_children(
+    normal_matter, specialist, other_specialist
+):
+    document = create_document(matter=normal_matter, title="Tõend", created_by=specialist)
+    assert Document.objects.visible_to(other_specialist).count() == 1
+
+    set_matter_visibility(matter=normal_matter, visibility=Visibility.RESTRICTED, actor=specialist)
+
+    document.refresh_from_db()
+    assert document.effective_visibility == Visibility.RESTRICTED
+    assert Document.objects.visible_to(other_specialist).count() == 0
+
+
+def test_relaxing_a_matter_leaves_individually_restricted_children_restricted(
+    restricted_matter, specialist, other_specialist
+):
+    inherited = create_document(matter=restricted_matter, title="Tavaline", created_by=specialist)
+    explicit = create_document(
+        matter=restricted_matter,
+        title="Eriti tundlik",
+        created_by=specialist,
+        visibility_override=Visibility.RESTRICTED,
+    )
+
+    set_matter_visibility(matter=restricted_matter, visibility=Visibility.NORMAL, actor=specialist)
+
+    inherited.refresh_from_db()
+    explicit.refresh_from_db()
+    assert inherited.effective_visibility == Visibility.NORMAL
+    assert explicit.effective_visibility == Visibility.RESTRICTED
+
+    visible = set(Document.objects.visible_to(other_specialist))
+    assert inherited in visible
+    assert explicit not in visible
+
+
+def test_unknown_visibility_is_rejected(normal_matter):
+    with pytest.raises(DomainError):
+        set_matter_visibility(matter=normal_matter, visibility="SECRET")
+
+
+def test_archive_matters_are_scoped_the_same_way_as_full_matters(other_specialist):
+    archive = factories.ArchiveMatterFactory(visibility=Visibility.RESTRICTED, owner=None)
+    assert archive not in Matter.objects.visible_to(other_specialist)

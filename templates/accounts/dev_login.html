@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Arenduse sisselogimine — {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>Arenduse sisselogimine</h1>
+
+  <div class="notice notice--danger">
+    <p>
+      See sisselogimisviis eksisteerib ainult isoleeritud arenduskeskkonnas ja lubab sisse
+      ainult sünteetilisi kasutajaid. Päris keskkonnas autenditakse Microsoft Entra ID kaudu.
+    </p>
+  </div>
+
+  {% if error %}
+    <div class="notice notice--danger" role="alert"><p>{{ error }}</p></div>
+  {% endif %}
+
+  {% if users %}
+    <form method="post" class="panel">
+      {% csrf_token %}
+      <fieldset>
+        <legend>Vali sünteetiline kasutaja</legend>
+        {% for candidate in users %}
+          <p>
+            <label>
+              <input type="radio" name="user_id" value="{{ candidate.pk }}"
+                     {% if forloop.first %}checked{% endif %}>
+              {{ candidate.display_name }} — {{ candidate.get_role_display }}
+            </label>
+          </p>
+        {% endfor %}
+      </fieldset>
+      <button type="submit" class="button">Logi sisse</button>
+    </form>
+  {% else %}
+    <div class="panel">
+      <p>
+        Sünteetilisi kasutajaid ei ole. Loo need käsuga
+        <code>python manage.py seed_dev_data</code>.
+      </p>
+    </div>
+  {% endif %}
+{% endblock %}
