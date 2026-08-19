@@ -44,14 +44,14 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.get_by_role("heading", name="Uus teema")).to_be_visible()
 
     page.locator("#id_title").fill(MATTER_TITLE)
-    page.get_by_text("Täpsusta teema andmeid").click()
+    page.locator("summary", has_text="Täpsusta teema andmeid").click()
     page.locator("#id_owner").select_option(label=SANDRA.display_name)
     page.locator("#id_stage").select_option(label="Kooskõlastusringil")
     page.locator("#id_track").select_option(label="Riigisisene")
     page.locator("#id_source_organisation").select_option(label="Näidisministeerium")
     page.locator("#id_response_deadline").fill(_future(21))
 
-    page.get_by_text("Määra kohe Järgmiseks").click()
+    page.locator("summary", has_text="Määra kohe Järgmiseks").click()
     page.locator("#id_next-text").fill("Koosta ja saada koja arvamus")
     page.locator("#id_next-kind").select_option("DO")
     page.locator("#id_next-date_semantics").select_option("DEADLINE")
@@ -96,7 +96,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # Both halves landed, and the surface agrees with itself.
     expect(page.locator(".nextaction__text")).to_have_text("Ootan ministeeriumi uut sõnastust")
     expect(page.locator(".nextaction .chip--wait")).to_be_visible()
-    expect(page.get_by_text("Ministeerium lubas saata")).to_be_visible()
+    expect(page.locator(".timeline").get_by_text("Ministeerium lubas saata")).to_be_visible()
     expect(page.locator(".nextaction").get_by_text("Vaatan üle").first).to_be_visible()
     # The superseded DO must no longer be presented as the current action.
     expect(page.locator(".nextaction").get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
@@ -118,13 +118,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.locator("#id_rationale_summary").fill("Liikmete hinnangul kasvab halduskoormus.")
     page.get_by_role("button", name="Salvesta seisukoht").click()
 
-    page.get_by_text("Uus arvamus").click()
+    page.locator("summary", has_text="Uus arvamus").click()
     page.locator("#id_title").fill("Koja arvamus pakendiseaduse eelnõule")
     page.locator("#id_kind").select_option("FORMAL_OPINION")
     page.locator("#id_recipients").select_option(label="Näidisministeerium")
     page.get_by_role("button", name="Loo arvamus").click()
 
-    expect(page.get_by_text("Koja arvamus pakendiseaduse eelnõule").first).to_be_visible()
+    expect(page.locator(".submission__title")).to_have_text("Koja arvamus pakendiseaduse eelnõule")
     expect(page.locator(".badge--draft")).to_be_visible()
 
     # Sending without evidence is not offered: the control is the upload.
@@ -149,11 +149,15 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     screenshots(page, "06-seisukoht-ja-kaasamine")
 
     # A second submission under the same Matter is ordinary, not a workaround.
-    page.get_by_text("Uus arvamus").click()
+    page.locator("summary", has_text="Uus arvamus").click()
     page.locator("#id_title").fill("Täiendav arvamus komisjonile")
     page.locator("#id_kind").select_option("SUPPLEMENTARY_OPINION")
     page.get_by_role("button", name="Loo arvamus").click()
-    expect(page.get_by_text("Täiendav arvamus komisjonile")).to_be_visible()
+    expect(
+        page.locator(".submission__title", has_text="Täiendav arvamus komisjonile")
+    ).to_be_visible()
+    # Two submissions under one Matter is the ordinary case, not a workaround.
+    expect(page.locator(".submission")).to_have_count(2)
 
     # -- Documents ------------------------------------------------------
     page.get_by_role("link", name="Dokumendid").click()
