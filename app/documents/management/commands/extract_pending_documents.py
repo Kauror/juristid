@@ -47,6 +47,16 @@ class Command(BaseCommand):
             report = extract_document_version(claimed)
             states[report.state] = states.get(report.state, 0) + 1
             processed += 1
+            # Named here rather than left in the summary count. "3 files, 1
+            # failed" sends an operator to the database to find out which one
+            # and why; the answer costs one line and no document content.
+            if report.error_code:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"  {claimed.original_filename[:60]}: "
+                        f"{report.error_code} — {report.note[:120]}"
+                    )
+                )
 
         summary = ", ".join(f"{state}: {count}" for state, count in sorted(states.items()))
         self.stdout.write(self.style.SUCCESS(f"Töödeldud {processed} faili. {summary}"))

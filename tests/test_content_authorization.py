@@ -101,7 +101,9 @@ def test_an_anonymous_visitor_sees_nothing(corpus_with_restricted_child) -> None
     assert result_count(query=HIDDEN_WORD, user=AnonymousUser()) == 0
 
 
-def test_a_break_glass_grant_opens_it(corpus_with_restricted_child, other_specialist) -> None:
+def test_a_break_glass_grant_opens_it(
+    corpus_with_restricted_child, other_specialist, department_head
+) -> None:
     from datetime import timedelta
 
     from django.utils import timezone
@@ -110,6 +112,7 @@ def test_a_break_glass_grant_opens_it(corpus_with_restricted_child, other_specia
 
     BreakGlassGrant.objects.create(
         user=other_specialist,
+        granted_by=department_head,
         reason="Sünteetiline juurdluskontroll",
         starts_at=timezone.now() - timedelta(minutes=1),
         expires_at=timezone.now() + timedelta(hours=1),

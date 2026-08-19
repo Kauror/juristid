@@ -57,6 +57,7 @@ def run_worker() -> str:
     # expectation would fail somewhere else with a message about a missing
     # heading.
     assert "Töödeldud 0 faili" not in result.stdout, report
+    assert "FAILED" not in result.stdout, report
     return report
 
 
