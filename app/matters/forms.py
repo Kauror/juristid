@@ -22,6 +22,18 @@ from app.workflow.enums import ActionKind, DateSemantics, Disposition, Track
 from app.workflow.models import StageVocabulary
 
 
+class UserChoiceField(forms.ModelChoiceField):
+    """Show a colleague's name, not "Name (upn@example)".
+
+    ``User.__str__`` includes the UPN because that is what makes a user
+    unambiguous in the admin and in logs. In a dropdown of half a dozen
+    colleagues it is noise.
+    """
+
+    def label_from_instance(self, obj: Any) -> str:
+        return obj.display_name or obj.upn
+
+
 def set_choices(form: forms.Form, name: str, queryset: QuerySet) -> None:
     """Point a choice field at its queryset.
 
@@ -65,7 +77,7 @@ class MatterCreateForm(forms.Form):
             }
         ),
     )
-    owner = forms.ModelChoiceField(
+    owner = UserChoiceField(
         label="Vastutaja",
         queryset=User.objects.none(),
         required=False,
@@ -148,7 +160,7 @@ class NextActionForm(forms.Form):
         widget=SELECT_WIDGET,
     )
     target_date = forms.DateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
-    responsible = forms.ModelChoiceField(
+    responsible = UserChoiceField(
         label="Vastutaja", queryset=User.objects.none(), required=False, widget=SELECT_WIDGET
     )
 
@@ -279,7 +291,7 @@ class MatterFieldForm(forms.Form):
     an owner should not mean re-submitting every other value on the record.
     """
 
-    owner = forms.ModelChoiceField(queryset=User.objects.none(), required=False)
+    owner = UserChoiceField(queryset=User.objects.none(), required=False)
     stage = forms.ModelChoiceField(queryset=StageVocabulary.objects.none(), required=False)
     track = forms.ChoiceField(choices=[("", "—"), *Track.choices], required=False)
     source_organisation = forms.ModelChoiceField(

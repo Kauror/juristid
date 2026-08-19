@@ -90,7 +90,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.locator("#id_next_target_date").fill(_future(7))
     screenshots(page, "04-komposer")
 
-    page.get_by_role("button", name="Salvesta").click()
+    page.get_by_role("button", name="Salvesta sissekanne").click()
 
     # Both halves landed, and the surface agrees with itself.
     expect(page.get_by_text("Ootan ministeeriumi uut sõnastust")).to_be_visible()
@@ -223,7 +223,7 @@ def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(pa
     page.locator("#id_next_text").fill("Tähtajaline tegevus ilma kuupäevata")
     page.locator("#id_next_kind").select_option("DO")
     page.locator("#id_next_date_semantics").select_option("DEADLINE")
-    page.get_by_role("button", name="Salvesta").click()
+    page.get_by_role("button", name="Salvesta sissekanne").click()
 
     expect(page.get_by_text("Tähtajaline tegevus vajab kuupäeva.")).to_be_visible()
     # Neither half was applied.

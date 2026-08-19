@@ -122,7 +122,7 @@ def test_attention_flags_a_passed_deadline_with_nothing_sent(specialist):
 
     items = selectors.my_attention_items(specialist)
     assert any(
-        item.key == "deadline_without_submission" and item.matter_id == matter.id for item in items
+        item.key == "deadline_without_submission" and item.matter.id == matter.id for item in items
     )
 
 
