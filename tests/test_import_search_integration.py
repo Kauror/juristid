@@ -96,7 +96,7 @@ def test_an_imported_matter_is_found_by_its_title(imported, specialist) -> None:
 def test_an_archive_record_is_searchable_like_any_other(imported, specialist) -> None:
     """Archive is a record mode, not a reason to be invisible."""
     assert imported["archive"].record_mode == RecordMode.ARCHIVE
-    assert ARCHIVE_TITLE in _titles(search_matters(query="seaduse eelnõu", user=specialist))
+    assert ARCHIVE_TITLE in _titles(search_matters(query="arhiivne", user=specialist))
 
 
 def test_an_imported_matter_is_found_through_its_resolved_organisation(
@@ -158,10 +158,10 @@ def test_a_hidden_imported_matter_does_not_change_the_visible_count(
     matter.owner = specialist
     matter.save(update_fields=["owner", "updated_at"])
 
-    assert result_count(query="seaduse eelnõu", user=other_specialist) == 2
+    assert result_count(query="Sünteetiline", user=other_specialist) == 2
     set_matter_visibility(matter=matter, visibility=Visibility.RESTRICTED)
-    assert result_count(query="seaduse eelnõu", user=other_specialist) == 1
-    assert result_count(query="seaduse eelnõu", user=specialist) == 2
+    assert result_count(query="Sünteetiline", user=other_specialist) == 1
+    assert result_count(query="Sünteetiline", user=specialist) == 2
 
 
 def test_importing_a_matter_gives_it_no_second_route_past_authorization(
@@ -171,10 +171,10 @@ def test_importing_a_matter_gives_it_no_second_route_past_authorization(
     for matter in Matter.objects.all():
         set_matter_visibility(matter=matter, visibility=Visibility.RESTRICTED)
 
-    assert search_matters(query="seaduse eelnõu", user=other_specialist) == []
+    assert search_matters(query="Sünteetiline", user=other_specialist) == []
     assert search_matters(query="2017_42", user=other_specialist) == []
     assert search_matters(query="Näidisministeerium", user=other_specialist) == []
-    assert result_count(query="seaduse", user=other_specialist) == 0
+    assert result_count(query="Sünteetiline", user=other_specialist) == 0
 
 
 # -- performance -----------------------------------------------------------
@@ -185,14 +185,14 @@ def test_a_search_is_a_bounded_number_of_queries(
 ) -> None:
     """The tiers are one statement, so result count must not grow with them."""
     with django_assert_max_num_queries(4):
-        search_matters(query="seaduse eelnõu", user=specialist)
+        search_matters(query="Sünteetiline", user=specialist)
 
 
 def test_counting_results_is_a_bounded_number_of_queries(
     imported, specialist, django_assert_max_num_queries
 ) -> None:
     with django_assert_max_num_queries(3):
-        result_count(query="seaduse eelnõu", user=specialist)
+        result_count(query="Sünteetiline", user=specialist)
 
 
 def test_planning_an_import_does_not_query_once_per_row(

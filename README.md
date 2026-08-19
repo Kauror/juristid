@@ -96,6 +96,61 @@ uv run python manage.py runserver
 `seed_dev_data` refuses to run unless `DJANGO_DEBUG=1` and
 `REAL_DATA_ALLOWED=0`.
 
+## The legacy register
+
+The department's register lives in one workbook with a sheet per year. Every
+year has a reviewed contract under `docs/data-contracts/`, and no sheet is
+parsed without one.
+
+**Real source material never enters this repository.** Keep the workbook in
+`private-data/` and reports in `import-output/`; both are ignored, `*.xlsx` is
+ignored outright, and `tests/test_repository_data_safety.py` fails if one is
+ever tracked. The row-level CSV reports reproduce source content and stay
+local; only `summary.json` and `summary.md` are safe to share.
+
+Look at a snapshot without touching anything. **Needs no database**, which is
+the point — otherwise people open the real file in Excel instead:
+
+```bash
+uv run python manage.py inspect_legacy_register private-data/register.xlsx --report-dir import-output/inspection
+```
+
+See exactly what an import would do, reading the database and writing nothing:
+
+```bash
+uv run python manage.py import_legacy_register private-data/register.xlsx --dry-run --report-dir import-output/dry-run
+```
+
+Perform it. There is no default mode, and `--apply` refuses to run unless
+`REAL_DATA_ALLOWED=1` — the first real import waits for the Secure Pilot Gate:
+
+```bash
+uv run python manage.py import_legacy_register private-data/register.xlsx --apply --report-dir import-output/apply
+```
+
+Validate the contracts and regenerate their overview:
+
+```bash
+uv run python manage.py check_era_contracts
+```
+
+## Search
+
+Search reads a rebuildable projection. Ordinary writes keep it current by
+themselves; a rebuild is needed after bulk changes such as renaming an
+organisation or editing its aliases.
+
+```bash
+uv run python manage.py rebuild_search_index
+```
+
+```bash
+uv run python manage.py refresh_matter_search 2026_184
+```
+
+The projection is derived data and safe to delete: nothing in the domain reads
+from it.
+
 ## Tests and checks
 
 Everything below is exactly what CI runs. The test suite needs a PostgreSQL 18

@@ -56,15 +56,26 @@ def refresh_on_policy_areas_changed(
         _refresh(getattr(instance, "pk", None))
 
 
+@receiver(m2m_changed, sender=Matter.tags.through, dispatch_uid="search_refresh_tags")
+def refresh_on_tags_changed(sender: type, instance: Any, action: str, **kwargs: Any) -> None:
+    if action in {"post_add", "post_remove", "post_clear"}:
+        _refresh(getattr(instance, "pk", None))
+
+
 @receiver(post_save, sender=TagAssignment, dispatch_uid="search_refresh_tag_added")
 @receiver(post_delete, sender=TagAssignment, dispatch_uid="search_refresh_tag_removed")
 def refresh_on_tag_assignment(
     sender: type[TagAssignment], instance: TagAssignment, **kwargs: Any
 ) -> None:
-    """Tags go through an explicit through model.
+    """Tags need both handlers, and CI proved it.
 
-    ``m2m_changed`` does fire for ``.add()``, but a ``TagAssignment`` created
-    directly — which the services do, because an assignment carries who
-    confirmed it and when — would not reach it.
+    ``Matter.tags`` has an explicit through model, because an assignment records
+    who confirmed it and when. That means two different write paths reach it and
+    each misses the other's signal: ``matter.tags.add(...)`` goes through
+    ``bulk_create`` and never fires ``post_save``, while a ``TagAssignment``
+    created directly by a service never fires ``m2m_changed``.
+
+    Refreshing twice when both happen is cheap. Missing one makes a tagged
+    matter unfindable by its tag, silently.
     """
     _refresh(instance.matter_id)

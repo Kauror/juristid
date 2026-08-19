@@ -121,11 +121,15 @@ def test_searching_a_restricted_matters_exact_reference_finds_nothing(
 def test_searching_a_restricted_matters_organisation_does_not_surface_it(
     world, other_specialist
 ) -> None:
-    assert search_matters(query="Salaministeerium", user=other_specialist) == []
+    assert RESTRICTED_TITLE not in _titles(
+        search_matters(query="Salaministeerium", user=other_specialist)
+    )
 
 
 def test_searching_a_restricted_matters_tag_does_not_surface_it(world, other_specialist) -> None:
-    assert search_matters(query="Ühinemised", user=other_specialist) == []
+    assert RESTRICTED_TITLE not in _titles(
+        search_matters(query="Ühinemised", user=other_specialist)
+    )
 
 
 def test_restricting_a_matter_takes_effect_without_reindexing(

@@ -222,7 +222,7 @@ if env_bool("DJANGO_BEHIND_TLS_PROXY", default=False):
 # --------------------------------------------------------------------------
 
 APPLICATION_NAME = "Koda Õigusloome"
-APPLICATION_STAGE = env("APPLICATION_STAGE", "Stage 1")
+APPLICATION_STAGE = env("APPLICATION_STAGE", "Stage 2A")
 APPLICATION_ENVIRONMENT = env("APPLICATION_ENVIRONMENT", "local")
 APPLICATION_REVISION = env("APPLICATION_REVISION", "unknown")
 
