@@ -168,12 +168,14 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # -- Timeline order --------------------------------------------------
     page.goto(matter_url)
-    kinds = page.locator(".event__kind").all_inner_texts()
-    assert any("Kohtumine" in kind for kind in kinds)
-    assert any("saadetud" in kind.lower() for kind in kinds)
+    # innerText reports the rendered text, and these labels are uppercased by
+    # CSS, so the comparison is case-insensitive.
+    kinds = [kind.lower() for kind in page.locator(".event__kind").all_inner_texts()]
+    assert any("kohtumine" in kind for kind in kinds), kinds
+    assert any("saadetud" in kind for kind in kinds), kinds
     # Newest first: the send happened after the meeting was written up.
-    assert next(i for i, k in enumerate(kinds) if "saadetud" in k.lower()) < next(
-        i for i, k in enumerate(kinds) if "Kohtumine" in k
+    assert next(i for i, k in enumerate(kinds) if "saadetud" in k) < next(
+        i for i, k in enumerate(kinds) if "kohtumine" in k
     )
 
     # -- Teemad ----------------------------------------------------------
