@@ -130,7 +130,7 @@ def test_every_bind_mount_stays_inside_the_juristid_subtree(compose: dict[str, A
             for foreign in FOREIGN_APPDATA:
                 assert not resolved.startswith(foreign), f"{name} reaches into {foreign}"
     # Guards the guard: a parser bug that produced no paths would pass silently.
-    assert seen == 2, "expected exactly the postgres and evidence bind mounts"
+    assert seen == 3, "expected the postgres, evidence and cloudflared bind mounts"
 
 
 def test_postgres_persists_at_the_path_the_18_image_actually_uses(
@@ -151,7 +151,7 @@ def test_the_container_names_do_not_collide_with_anything_on_the_host(
     compose: dict[str, Any],
 ) -> None:
     names = {service["container_name"] for service in compose["services"].values()}
-    assert names == {"juristid-test-web", "juristid-test-db"}
+    assert names == {"juristid-test-web", "juristid-test-db", "juristid-test-tunnel"}
 
 
 def test_containers_restart_unless_stopped(compose: dict[str, Any]) -> None:
@@ -214,3 +214,38 @@ def test_the_database_host_is_the_compose_service_not_a_shared_one(
     somebody's production database."""
     assert env_example["POSTGRES_HOST"] == "db"
     assert "db" in compose["services"]
+
+
+# -- the public tunnel -----------------------------------------------------
+#
+# The application behind it has no authentication of its own, so the tunnel is
+# safe only while a Cloudflare Access policy sits in front of the hostname.
+# These assert the properties of the *connector*; the Access policy itself
+# lives in Cloudflare and is verified by the deployment, not here.
+
+
+def test_the_tunnel_is_opt_in(compose: dict[str, Any]) -> None:
+    """The LAN deployment must work without publishing anything."""
+    assert compose["services"]["tunnel"]["profiles"] == ["tunnel"]
+    for name in ("web", "db"):
+        assert "profiles" not in compose["services"][name]
+
+
+def test_the_tunnel_publishes_no_host_port(compose: dict[str, Any]) -> None:
+    """Publishing the site must not widen the host's port surface."""
+    assert "ports" not in compose["services"]["tunnel"]
+
+
+def test_the_tunnel_carries_no_credential(compose: dict[str, Any]) -> None:
+    """A locally-managed tunnel keeps its credential on the host.
+
+    A token in the compose file would be committed, and a tunnel token is a
+    bearer credential: whoever reads it can run the tunnel.
+    """
+    rendered = str(compose["services"]["tunnel"])
+    assert "--token" not in rendered
+    assert "eyJ" not in rendered, "that looks like a base64 tunnel token"
+
+
+def test_the_tunnel_joins_only_this_project(compose: dict[str, Any]) -> None:
+    assert compose["services"]["tunnel"]["networks"] == ["internal"]

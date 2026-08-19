@@ -1,14 +1,16 @@
 # Juristid — synthetic rehearsal on the Unraid host
 
-A LAN-only instance for real browser use: usability testing, workflow
-rehearsal, and the class of defect CI structurally cannot reach. It runs on
-invented data and nothing else.
+An instance for real browser use: usability testing, workflow rehearsal, and
+the class of defect CI structurally cannot reach. It runs on invented data and
+nothing else, reachable on the LAN and — behind Cloudflare Access — at a public
+hostname.
 
 | | |
 | --- | --- |
-| URL | <http://192.168.1.133:3020> |
+| LAN URL | <http://192.168.1.133:3020> |
+| Public URL | <https://juristid.orgusaar.ee> — **behind Cloudflare Access** |
 | Compose project | `juristid-test` |
-| Containers | `juristid-test-web`, `juristid-test-db` |
+| Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-tunnel` |
 | Network | `juristid-test-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-test/` |
 | Checkout | `/mnt/user/appdata/juristid-test/repo` |
@@ -23,24 +25,57 @@ force. Do not copy the register here. Do not run the importer against a real
 workbook here, not even a dry run. That belongs on an approved Koda-controlled
 workstation.
 
-**It has no authentication.** `DEV_LOGIN_ENABLED=1` lets anyone who reaches the
-site sign in as any seeded user by picking them from a list, and `DJANGO_DEBUG=1`
-means Django returns a traceback on any unhandled error. Both are required for
-the other — the application refuses to start with development sign-in unless
-DEBUG is on (check `juristid.E002`) — and both are acceptable *only* because the
-data is invented and the site is reachable only from the LAN.
+**It has no authentication of its own.** `DEV_LOGIN_ENABLED=1` lets anyone who
+reaches the application sign in as any seeded user by picking them from a list,
+and `DJANGO_DEBUG=1` means Django returns a traceback on any unhandled error.
+Both are required for the other — the application refuses to start with
+development sign-in unless DEBUG is on (check `juristid.E002`).
 
-That combination is exactly why this must not be published to the internet
-without an authenticating proxy in front of it. Putting a passwordless,
-traceback-serving Django instance on a public hostname is a different decision
-from putting it on the LAN, and it needs to be made deliberately.
+So the front door is Cloudflare Access, not Django.
+
+## Public access
+
+`juristid.orgusaar.ee` is served through a Cloudflare Tunnel with an **Access
+policy in front of it**. An unauthenticated request never reaches the
+application: Cloudflare answers with its own login page and the origin is not
+contacted. Allowed identities are listed in the Access policy
+*Juristid rehearsal — allowed testers*; everything else is denied by default.
+
+**The Access policy is the only thing protecting this deployment.** Remove it,
+or add a hostname that bypasses it, and the result is a passwordless,
+traceback-serving Django instance open to the internet on a host that also runs
+Immich, Plex and the Koda dashboard. Treat the policy as part of the deployment,
+not as an optional extra.
+
+The tunnel is *locally managed*: its credential was generated on the Unraid host
+by `cloudflared tunnel login` and has never left it. There is no token in this
+repository, in the compose file, or in any environment template — which is
+deliberate, because a tunnel token is a bearer credential and anyone who can
+read one can run the tunnel.
+
+The connector is opt-in, so the LAN deployment works without it:
+
+```bash
+docker compose -p juristid-test -f compose.yml --profile tunnel up -d
+```
+
+It joins only this project's network and reaches the application by service
+name, so publishing the site adds nothing to the host's port surface. No router
+port forwarding is involved and none should be added.
+
+To stop publishing the site without touching anything else:
+
+```bash
+docker compose -p juristid-test -f compose.yml stop tunnel
+```
 
 ## Isolation
 
 Nothing here touches anything else on the host. Its own Compose project, its own
-bridge network, its own PostgreSQL, its own appdata subtree, one published port.
-It joins no existing network, and the database publishes no host port at all —
-it is reachable only from `juristid-test-internal`.
+bridge network, its own PostgreSQL, its own appdata subtree, one published port,
+its own tunnel. It joins no existing network and shares nothing with the three
+tunnels already running on this host; the database publishes no host port at all
+and is reachable only from `juristid-test-internal`.
 
 Always name both the project and the file, so a stray command cannot reach
 another stack:

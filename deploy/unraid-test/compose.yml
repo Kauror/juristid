@@ -90,6 +90,40 @@ services:
     networks:
       - internal
 
+  # Public access for juristid.orgusaar.ee, behind Cloudflare Access.
+  #
+  # Opt-in, because the LAN deployment must work without it:
+  #   docker compose -p juristid-test -f compose.yml --profile tunnel up -d
+  #
+  # The tunnel is *locally managed*. Its credential was generated on this host
+  # by `cloudflared tunnel login` and lives in the ignored appdata directory —
+  # no token is stored in this file, in Git, or anywhere a copy could be made
+  # by reading the repository.
+  #
+  # It joins only this project's network and reaches the application by service
+  # name, so publishing the site adds nothing to the host's port surface.
+  #
+  # This connector is safe *only* while a Cloudflare Access policy sits in front
+  # of the hostname. The application behind it has no authentication of its own:
+  # DEV_LOGIN_ENABLED lets any visitor become any seeded user, and DEBUG serves
+  # tracebacks. Remove the Access policy and this becomes an open door.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: juristid-test-tunnel
+    restart: unless-stopped
+    profiles: [tunnel]
+    command:
+      - tunnel
+      - --config
+      - /home/nonroot/.cloudflared/config.yml
+      - run
+    volumes:
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/cloudflared:/home/nonroot/.cloudflared
+    depends_on:
+      - web
+    networks:
+      - internal
+
 networks:
   internal:
     name: juristid-test-internal
