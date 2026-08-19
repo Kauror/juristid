@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}Ülevaade · {{ application_name }}{% endblock %}
+
+{% comment %}
+Ülevaade is the department's morning read, not a management dashboard.
+
+Every number is a count of rows that exist and links to the list behind it, so
+nothing here is a figure you have to take on trust. There is deliberately no
+ranking, no productivity measure and no response rate: a count of open files
+says nothing about effort, and presenting it as if it did is what the
+specification forbids (18.8).
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Ülevaade</h1>
+    <span class="pagehead__context">{{ today|date:"l, j. F Y" }}</span>
+  </div>
+
+  <section class="cardrow" aria-label="Koondnäitajad">
+    {% for card in dashboard.cards %}
+      <a class="statcard {% if card.count and card.key == 'overdue' %}statcard--alert{% endif %}"
+         href="{{ card.url }}">
+        <span class="statcard__value">{{ card.count }}</span>
+        <span class="statcard__label">{{ card.label }}</span>
+        {% if card.note %}<span class="statcard__note">{{ card.note }}</span>{% endif %}
+      </a>
+    {% endfor %}
+  </section>
+
+  <div class="dashgrid">
+    <div class="dashgrid__main">
+      <section aria-labelledby="tahelepanu-heading">
+        <h2 class="sectionlabel {% if dashboard.attention %}sectionlabel--overdue{% endif %}"
+            id="tahelepanu-heading">
+          Tähelepanu
+          <span class="sectionlabel__count">{{ dashboard.attention_count }}</span>
+        </h2>
+        {% if dashboard.attention %}
+          <div class="tablewrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Viide</th>
+                  <th scope="col">Teema</th>
+                  <th scope="col">Vastutaja</th>
+                  <th scope="col">Põhjus</th>
+                  <th scope="col">Kuupäev</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in dashboard.attention %}
+                  <tr>
+                    <td><span class="reference">{{ row.matter.display_reference|default:"—" }}</span></td>
+                    <td class="table__title"><a href="{{ row.url }}">{{ row.matter.title }}</a></td>
+                    <td>{{ row.owner_name }}</td>
+                    <td>{{ row.reason }}</td>
+                    <td class="table__date">
+                      {% if row.when %}
+                        {# The label travels with the date: four different kinds
+                           of date share this column and must not read alike. #}
+                        <span class="muted">{{ row.date_label }}</span><br>
+                        {{ row.when|date:"d.m.Y" }}
+                      {% else %}—{% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="empty">Midagi ei vaja praegu tähelepanu.</p>
+        {% endif %}
+      </section>
+
+      <section aria-labelledby="lahenevad-heading">
+        <h2 class="sectionlabel" id="lahenevad-heading">
+          Lähenevad tähtajad
+          <span class="sectionlabel__count">{{ dashboard.upcoming|length }}</span>
+        </h2>
+        {% if dashboard.upcoming %}
+          <div class="tablewrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Kuupäev</th>
+                  <th scope="col">Tähendus</th>
+                  <th scope="col">Viide</th>
+                  <th scope="col">Teema</th>
+                  <th scope="col">Vastutaja</th>
+                  <th scope="col">Hetkeseis</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in dashboard.upcoming %}
+                  <tr>
+                    <td class="table__date">{{ row.when|date:"d.m.Y" }}</td>
+                    <td><span class="muted">{{ row.meaning }}</span></td>
+                    <td><span class="reference">{{ row.matter.display_reference|default:"—" }}</span></td>
+                    <td class="table__title"><a href="{{ row.url }}">{{ row.matter.title }}</a></td>
+                    <td>{{ row.owner_name }}</td>
+                    <td>{{ row.stage_label }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="empty">Järgmise kahe nädala jooksul tähtaegu ei ole.</p>
+        {% endif %}
+      </section>
+
+      <section aria-labelledby="saabunud-heading">
+        <h2 class="sectionlabel" id="saabunud-heading">Hiljuti saabunud</h2>
+        {% if dashboard.incoming %}
+          <div class="tablewrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Saabus</th>
+                  <th scope="col">Viide</th>
+                  <th scope="col">Teema</th>
+                  <th scope="col">Saatja</th>
+                  <th scope="col">Vastutaja</th>
+                  <th scope="col">Arvamuse tähtaeg</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for matter in dashboard.incoming %}
+                  <tr>
+                    <td class="table__date">
+                      {% if matter.received_date %}{{ matter.received_date|date:"d.m.Y" }}
+                      {% else %}<span class="table__missing">—</span>{% endif %}
+                    </td>
+                    <td><span class="reference">{{ matter.display_reference|default:"—" }}</span></td>
+                    <td class="table__title">
+                      <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
+                    </td>
+                    <td>{{ matter.source_organisation.name|default:"—" }}</td>
+                    <td>{{ matter.owner.display_name|default:"Vastutajata" }}</td>
+                    <td class="table__date">
+                      {% if matter.response_deadline %}{{ matter.response_deadline|date:"d.m.Y" }}
+                      {% else %}—{% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="empty">
+            Saabunud materjale ei ole veel.
+            <a href="{% url 'matters:inbox' %}">Lisa saabunud materjal</a>.
+          </p>
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="dashgrid__rail" aria-label="Jaotused">
+      <div class="railcard">
+        <span class="railcard__label">Meeskonna aktiivsed teemad</span>
+        {# Inventory: how many open files sit with whom. Never a workload or a
+           performance measure — one file can be a monitoring note and the next
+           a year of consultation. #}
+        <p class="field__help">Avatud teemade arv vastutaja kohta.</p>
+        {% for row in dashboard.owners %}
+          <a class="countrow" href="{{ row.url }}">
+            <span class="countrow__label">{{ row.label }}</span>
+            <span class="countrow__value">{{ row.count }}</span>
+          </a>
+        {% empty %}
+          <p class="empty">Avatud teemasid ei ole.</p>
+        {% endfor %}
+      </div>
+
+      <div class="railcard">
+        <span class="railcard__label">Hetkeseis</span>
+        <p class="field__help">Aktiivsed teemad menetlusetapi järgi.</p>
+        {% for row in dashboard.stages %}
+          <a class="countrow" href="{{ row.url }}">
+            <span class="countrow__label">{{ row.label }}</span>
+            <span class="countrow__value">{{ row.count }}</span>
+          </a>
+        {% empty %}
+          <p class="empty">Ühelgi aktiivsel teemal ei ole hetkeseisu määratud.</p>
+        {% endfor %}
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
