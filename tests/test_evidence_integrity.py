@@ -13,7 +13,7 @@ halves are tested independently.
 from __future__ import annotations
 
 import pytest
-from django.db import DatabaseError, transaction
+from django.db import DatabaseError, connection, transaction
 from django.urls import reverse
 from django.utils import timezone
 
@@ -206,20 +206,33 @@ def test_more_restricted_evidence_than_the_submission_is_fine(normal_matter, spe
     assert submission.final_version == version
 
 
-def test_sending_revalidates_the_rule(normal_matter, specialist):
-    """The document could be re-pointed between drafting and sending."""
+def test_sending_revalidates_the_rule_independently_of_the_trigger(normal_matter, specialist):
+    """The service check must stand on its own, not lean on the trigger.
+
+    Reaching this state through the ORM is impossible — the trigger refuses it,
+    which is what the neighbouring test proves. So the trigger is disabled for
+    the duration of this transaction, the invalid state is created, and the
+    service is asked to send. Belt and braces, each verified without the other.
+    """
     submission = create_submission(matter=normal_matter, title="Arvamus", actor=specialist)
     _document, version = _evidence(normal_matter, specialist)
     select_final_evidence(submission=submission, version=version, actor=specialist)
 
-    # Restrict the submission after its evidence was chosen.
+    with connection.cursor() as cursor:
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        cursor.execute(
+            "ALTER TABLE submissions_submission "
+            "DISABLE TRIGGER submissions_final_evidence_integrity"
+        )
     Submission.objects.filter(pk=submission.pk).update(visibility_override=Visibility.RESTRICTED)
     submission.refresh_from_db()
 
     with pytest.raises(DomainError):
         mark_submission_sent(submission=submission, actor=specialist)
+
     submission.refresh_from_db()
     assert submission.status == SubmissionStatus.DRAFT
+    assert submission.sent_at is None
 
 
 def test_the_database_refuses_relaxing_relied_upon_evidence(normal_matter, specialist):
