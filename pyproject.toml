@@ -1,0 +1,68 @@
+[project]
+name = "juristid"
+version = "0.1.0"
+description = "Koda Õigusloome — legislative matter and advocacy management system"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "django>=5.2,<6.0",
+    "psycopg[binary]>=3.2",
+    "gunicorn>=23.0",
+    "whitenoise>=6.9",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-django>=4.9",
+    "pytest-cov>=6.0",
+    "factory-boy>=3.3",
+    "ruff>=0.12",
+    "mypy>=1.14",
+    "django-stubs[compatible-mypy]>=5.2",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["*/migrations/*.py"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "DJ", "S", "RUF"]
+ignore = [
+    "RUF001", # ambiguous unicode in strings: Estonian text is expected
+    "RUF002",
+    "RUF003",
+    "RUF012", # mutable class attrs on Django models are idiomatic
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]          # assert is the point of a test
+"config/settings.py" = ["S105"]
+"config/typecheck_settings.py" = ["F403"]
+"config/test_settings.py" = ["F403", "F405"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "config"]
+
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+files = ["app", "config"]
+exclude = "migrations"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+
+[tool.django-stubs]
+django_settings_module = "config.typecheck_settings"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.test_settings"
+python_files = ["test_*.py"]
+testpaths = ["tests"]
+addopts = "--strict-markers -ra"
+
+[tool.coverage.run]
+source = ["app", "config"]
+omit = ["*/migrations/*", "*/tests/*"]

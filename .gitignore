@@ -18,3 +18,5 @@ build/
 *.sqlite3
 media/
 staticfiles/
+evidence/
+.uv/

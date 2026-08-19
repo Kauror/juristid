@@ -1,0 +1,214 @@
+/*
+ * Koda Õigusloome — design tokens
+ *
+ * STATUS: PROVISIONAL. The official Koda CVI package (logo variants, brand
+ * colours, licensed web fonts, dark-mode interpretation) has not been supplied
+ * yet. Every colour below is a temporary semantic placeholder chosen for
+ * contrast and legibility, NOT a Koda brand value. Do not treat these hues as
+ * the final identity and do not build a brand system on top of them.
+ *
+ * Architecture (master specification 17.3–17.4):
+ *   1. Primitives are raw values and are never used by components.
+ *   2. Semantic tokens name a role and are the only thing components consume.
+ *   3. Dark is the default theme; the light block proves a future light theme
+ *      needs no component rewrite, only different semantic values.
+ */
+
+:root {
+  /* ---- primitives: neutrals ---------------------------------------- */
+  --primitive-neutral-0: #ffffff;
+  --primitive-neutral-50: #f4f6f8;
+  --primitive-neutral-100: #e5e9ee;
+  --primitive-neutral-200: #c8d0d9;
+  --primitive-neutral-300: #a2adba;
+  --primitive-neutral-400: #7c8896;
+  --primitive-neutral-500: #5d6874;
+  --primitive-neutral-600: #454e59;
+  --primitive-neutral-700: #333b45;
+  --primitive-neutral-800: #262d35;
+  --primitive-neutral-850: #1e242b;
+  --primitive-neutral-900: #171c22;
+  --primitive-neutral-950: #10141a;
+
+  /* ---- primitives: brand placeholders ------------------------------ */
+  --primitive-brand-400: #6fa8dc;
+  --primitive-brand-500: #4a8ac9;
+  --primitive-brand-600: #2f6da8;
+  --primitive-brand-700: #235283;
+  --primitive-accent-400: #d8b45a;
+  --primitive-accent-600: #a8862f;
+
+  /* ---- primitives: status ------------------------------------------ */
+  --primitive-info-400: #6fb4e0;
+  --primitive-success-400: #6ec08a;
+  --primitive-warning-400: #e0b15c;
+  --primitive-danger-400: #e08076;
+  --primitive-info-700: #1d4f6d;
+  --primitive-success-700: #1f5c36;
+  --primitive-warning-700: #6b4c14;
+  --primitive-danger-700: #6e2b24;
+
+  /* ---- spacing (4px base) ------------------------------------------ */
+  --spacing-0: 0;
+  --spacing-1: 0.25rem;
+  --spacing-2: 0.5rem;
+  --spacing-3: 0.75rem;
+  --spacing-4: 1rem;
+  --spacing-5: 1.5rem;
+  --spacing-6: 2rem;
+  --spacing-7: 3rem;
+  --spacing-8: 4rem;
+
+  /* ---- radius ------------------------------------------------------- */
+  --radius-none: 0;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+  --radius-pill: 999px;
+
+  /* ---- typography ---------------------------------------------------
+   * The CVI font is not yet licensed for web use. Until it is, the stack
+   * below uses system faces that render Estonian diacritics correctly.
+   */
+  --typography-font-sans: "Inter", "Segoe UI", system-ui, -apple-system, "Helvetica Neue",
+    Arial, sans-serif;
+  --typography-font-mono: "JetBrains Mono", "Cascadia Mono", Consolas, "Courier New", monospace;
+
+  --typography-size-xs: 0.75rem;
+  --typography-size-sm: 0.8125rem;
+  --typography-size-base: 0.9375rem;
+  --typography-size-md: 1rem;
+  --typography-size-lg: 1.25rem;
+  --typography-size-xl: 1.5rem;
+  --typography-size-2xl: 2rem;
+
+  --typography-weight-regular: 400;
+  --typography-weight-medium: 500;
+  --typography-weight-semibold: 600;
+
+  --typography-line-tight: 1.25;
+  --typography-line-normal: 1.5;
+  --typography-line-relaxed: 1.65;
+
+  /* Dense tables read one step smaller than narrative content. */
+  --typography-size-table: var(--typography-size-sm);
+  --typography-size-body: var(--typography-size-base);
+
+  /* ---- motion ------------------------------------------------------- */
+  --motion-duration-fast: 120ms;
+  --motion-duration-base: 180ms;
+  --motion-easing-standard: cubic-bezier(0.2, 0, 0.2, 1);
+}
+
+/* ====================================================================
+ * Semantic tokens — dark theme (the MVP theme)
+ * ==================================================================== */
+
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --surface-canvas: var(--primitive-neutral-950);
+  --surface-primary: var(--primitive-neutral-900);
+  --surface-raised: var(--primitive-neutral-850);
+  --surface-overlay: var(--primitive-neutral-800);
+  --surface-selected: #1c3348;
+  --surface-hover: var(--primitive-neutral-800);
+  /* White documents and charts sit inside this, never directly on canvas. */
+  --surface-document: var(--primitive-neutral-100);
+
+  --text-primary: var(--primitive-neutral-50);
+  --text-secondary: var(--primitive-neutral-300);
+  --text-muted: var(--primitive-neutral-400);
+  --text-inverse: var(--primitive-neutral-950);
+  --text-link: var(--primitive-brand-400);
+  --text-on-document: var(--primitive-neutral-900);
+
+  --border-subtle: var(--primitive-neutral-800);
+  --border-default: var(--primitive-neutral-700);
+  --border-strong: var(--primitive-neutral-500);
+
+  --focus-ring: var(--primitive-accent-400);
+  --focus-ring-offset: var(--surface-canvas);
+  --focus-ring-width: 2px;
+  --focus-ring-offset-width: 2px;
+
+  --brand-primary: var(--primitive-brand-500);
+  --brand-secondary: var(--primitive-brand-700);
+  --brand-accent: var(--primitive-accent-400);
+
+  --status-info-text: var(--primitive-info-400);
+  --status-info-surface: var(--primitive-info-700);
+  --status-success-text: var(--primitive-success-400);
+  --status-success-surface: var(--primitive-success-700);
+  --status-warning-text: var(--primitive-warning-400);
+  --status-warning-surface: var(--primitive-warning-700);
+  --status-danger-text: var(--primitive-danger-400);
+  --status-danger-surface: var(--primitive-danger-700);
+  --status-neutral-text: var(--primitive-neutral-300);
+  --status-neutral-surface: var(--primitive-neutral-700);
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 40%);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 45%);
+  --shadow-overlay: 0 12px 32px rgb(0 0 0 / 55%);
+}
+
+/* ====================================================================
+ * Semantic tokens — light theme
+ *
+ * Not part of the MVP. It exists so the token architecture is proven to
+ * support a future accessible light theme by re-pointing semantic values,
+ * without any component change (master specification 17.1, 17.3).
+ * ==================================================================== */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --surface-canvas: var(--primitive-neutral-50);
+  --surface-primary: var(--primitive-neutral-0);
+  --surface-raised: var(--primitive-neutral-0);
+  --surface-overlay: var(--primitive-neutral-0);
+  --surface-selected: #dce9f5;
+  --surface-hover: var(--primitive-neutral-100);
+  --surface-document: var(--primitive-neutral-0);
+
+  --text-primary: var(--primitive-neutral-900);
+  --text-secondary: var(--primitive-neutral-600);
+  --text-muted: var(--primitive-neutral-500);
+  --text-inverse: var(--primitive-neutral-0);
+  --text-link: var(--primitive-brand-700);
+  --text-on-document: var(--primitive-neutral-900);
+
+  --border-subtle: var(--primitive-neutral-100);
+  --border-default: var(--primitive-neutral-200);
+  --border-strong: var(--primitive-neutral-400);
+
+  --focus-ring: var(--primitive-brand-700);
+  --focus-ring-offset: var(--surface-canvas);
+
+  --brand-primary: var(--primitive-brand-600);
+  --brand-secondary: var(--primitive-brand-700);
+  --brand-accent: var(--primitive-accent-600);
+
+  --status-info-text: #14506f;
+  --status-info-surface: #dceaf3;
+  --status-success-text: #1c5735;
+  --status-success-surface: #daeee1;
+  --status-warning-text: #6b4c14;
+  --status-warning-surface: #f6ecd6;
+  --status-danger-text: #7a2b23;
+  --status-danger-surface: #f7dedb;
+  --status-neutral-text: var(--primitive-neutral-600);
+  --status-neutral-surface: var(--primitive-neutral-100);
+
+  --shadow-sm: 0 1px 2px rgb(16 20 26 / 10%);
+  --shadow-md: 0 4px 12px rgb(16 20 26 / 12%);
+  --shadow-overlay: 0 12px 32px rgb(16 20 26 / 18%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-duration-fast: 0ms;
+    --motion-duration-base: 0ms;
+  }
+}

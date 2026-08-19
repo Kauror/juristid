@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Disainisüsteemi alus — {{ application_name }}{% endblock %}
+
+{% block content %}
+  <h1>Disainisüsteemi alus</h1>
+
+  <div class="notice">
+    <p>
+      <strong>Esialgsed väärtused.</strong> Koja ametlikku CVI paketti (logo, brändivärvid,
+      litsentsitud veebifondid, tumeda režiimi tõlgendus) ei ole veel edastatud. Allolevad
+      värvid on ajutised semantilised kohatäited, mitte Koja brändiväärtused.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>Pinnad</h2>
+    <ul class="token-grid">
+      {% for token in surface_tokens %}
+        <li class="token-swatch">
+          <div class="token-swatch__preview" style="background: var({{ token }})"></div>
+          <div class="token-swatch__label">{{ token }}</div>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <h2>Tekst</h2>
+    <ul class="token-grid">
+      {% for token in text_tokens %}
+        <li class="token-swatch">
+          <div class="token-swatch__preview" style="background: var(--surface-primary)">
+            <span style="color: var({{ token }}); padding: var(--spacing-2); display: block">
+              Õigusloome näidistekst
+            </span>
+          </div>
+          <div class="token-swatch__label">{{ token }}</div>
+        </li>
+      {% endfor %}
+    </ul>
+
+    <h2>Olekud</h2>
+    <p>
+      Olek ei tohi kunagi olla edastatud ainult värviga — silt kannab tähendust.
+    </p>
+    <p>
+      <span class="badge">Tavaline</span>
+      <span class="badge badge--success">Esitatud</span>
+      <span class="badge badge--warning">Tähtaeg läheneb</span>
+      <span class="badge badge--danger">Tähtaeg ületatud</span>
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>Tabelitihedus</h2>
+    <table class="data-table">
+      <caption class="visually-hidden">Näidistabel tiheduse ja loetavuse kontrolliks</caption>
+      <thead>
+        <tr>
+          <th scope="col">Viide</th>
+          <th scope="col">Pealkiri</th>
+          <th scope="col">Hetkeseis</th>
+          <th scope="col" class="numeric">Tähtaeg</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>2026_1</td>
+          <td>Näidisteema pika eestikeelse pealkirjaga, mis peab reavahetusega mahtuma</td>
+          <td>Arvamus koostamisel</td>
+          <td class="numeric">14.09.2026</td>
+        </tr>
+        <tr>
+          <td>2026_2</td>
+          <td>Käibemaksuseaduse muutmise seaduse eelnõu väljatöötamiskavatsus</td>
+          <td>Jälgimisel</td>
+          <td class="numeric">30.09.2026</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Valge taustaga sisu</h2>
+    <p>Dokumendieelvaated paigutatakse konteinerisse, et vältida kontrollimatut heledust.</p>
+    <div class="document-frame">
+      <p>Dokumendi eelvaate ala.</p>
+    </div>
+  </div>
+{% endblock %}

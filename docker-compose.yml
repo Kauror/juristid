@@ -1,0 +1,57 @@
+# Local development only. Synthetic data, local storage, development sign-in.
+# Real Koda or member data must never run against this file.
+
+name: juristid
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: juristid
+      POSTGRES_USER: juristid
+      POSTGRES_PASSWORD: juristid
+    volumes:
+      # PostgreSQL 18 images store data in a major-version subdirectory, so the
+      # mount belongs at /var/lib/postgresql, not /var/lib/postgresql/data.
+      - postgres-data:/var/lib/postgresql
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U juristid -d juristid"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    build:
+      context: .
+    command: ["sh", "/app/scripts/start-dev.sh"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DJANGO_DEBUG: "1"
+      DJANGO_SECRET_KEY: ""
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,[::1],web"
+      DJANGO_SECURE_SSL_REDIRECT: "0"
+      DEV_LOGIN_ENABLED: "1"
+      REAL_DATA_ALLOWED: "0"
+      APPLICATION_ENVIRONMENT: "local"
+      POSTGRES_HOST: db
+      POSTGRES_DB: juristid
+      POSTGRES_USER: juristid
+      POSTGRES_PASSWORD: juristid
+      POSTGRES_SSLMODE: disable
+      EVIDENCE_ROOT: /app/evidence
+      SEED_DEV_DATA: "1"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${WEB_HOST_PORT:-8000}:8000"
+    volumes:
+      - evidence-data:/app/evidence
+
+volumes:
+  postgres-data:
+  evidence-data:

@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  quality:
+    name: Format, lint, types and system checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: Formatting
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Static types
+        run: uv run mypy
+
+      - name: Django system checks
+        env:
+          DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+          DJANGO_DEBUG: "0"
+          DJANGO_ALLOWED_HOSTS: localhost
+        run: uv run python manage.py check
+
+      - name: Django deployment checks
+        env:
+          DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+          DJANGO_DEBUG: "0"
+          DJANGO_ALLOWED_HOSTS: localhost
+          DJANGO_SECURE_SSL_REDIRECT: "1"
+        run: uv run python manage.py check --deploy
+
+  tests:
+    name: PostgreSQL 18 test suite
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: juristid
+          POSTGRES_USER: juristid
+          POSTGRES_PASSWORD: juristid
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U juristid -d juristid"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+      DJANGO_DEBUG: "0"
+      DJANGO_SECURE_SSL_REDIRECT: "0"
+      DEV_LOGIN_ENABLED: "0"
+      REAL_DATA_ALLOWED: "0"
+      POSTGRES_DB: juristid
+      POSTGRES_USER: juristid
+      POSTGRES_PASSWORD: juristid
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: Migrations are complete
+        run: uv run python manage.py makemigrations --check --dry-run
+
+      - name: A fresh database migrates from zero
+        run: uv run python manage.py migrate --noinput
+
+      - name: Estonian search capabilities are available
+        run: uv run python manage.py check_search_capabilities
+
+      - name: Test suite
+        run: uv run pytest --cov --cov-report=term-missing
+
+  dependency-scan:
+    name: Dependency vulnerability baseline
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Export the locked runtime dependency set
+        run: >-
+          uv export --frozen --no-dev --no-emit-project --no-hashes
+          --format requirements-txt -o requirements.txt
+
+      - name: Audit
+        run: uvx pip-audit --strict --no-deps --requirement requirements.txt
+
+  container:
+    name: Container and compose smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the production image
+        run: docker build -t juristid:ci .
+
+      - name: Start the local stack
+        run: docker compose up -d --wait --build
+
+      - name: The application answers its health probe
+        run: |
+          curl --fail --silent --show-error http://localhost:8000/healthz | tee /dev/stderr | grep -q '"status": "ok"'
+
+      - name: The landing page renders
+        run: curl --fail --silent --show-error http://localhost:8000/ > /dev/null
+
+      - name: Synthetic data was seeded
+        run: docker compose exec -T web python manage.py shell -c "from app.matters.models import Matter; assert Matter.objects.exists(), 'seed produced no Matters'"
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
