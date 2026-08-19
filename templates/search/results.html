@@ -33,8 +33,10 @@ here so the UI does not change when it does.
       <p class="sectionlabel">
         Teemad <span class="sectionlabel__count">{{ result_count }}</span>
         {% if is_truncated %}
-          {# Saying which rows are on screen is the difference between a long
-             result set and a broken one. #}
+          {% comment %}
+            Saying which rows are on screen is the difference between a long
+            result set and a broken one.
+          {% endcomment %}
           <span class="sectionlabel__note">kuvatud {{ shown_count }}</span>
         {% endif %}
       </p>

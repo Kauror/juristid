@@ -218,10 +218,11 @@ def test_the_database_host_is_the_compose_service_not_a_shared_one(
 
 # -- the public tunnel -----------------------------------------------------
 #
-# The application behind it has no authentication of its own, so the tunnel is
-# safe only while a Cloudflare Access policy sits in front of the hostname.
-# These assert the properties of the *connector*; the Access policy itself
-# lives in Cloudflare and is verified by the deployment, not here.
+# The application behind it has no authentication of its own beyond the shared
+# sign-in PIN, so the tunnel is safe only while that PIN is set and the data
+# behind it stays invented. These assert the properties of the *connector*; the
+# PIN lives in the host's environment file and is verified by the deployment,
+# not here.
 
 
 def test_the_tunnel_is_opt_in(compose: dict[str, Any]) -> None:

@@ -36,16 +36,19 @@ from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.uploads import UploadRejected
 from app.matters import selectors
+from app.matters.dashboard import build_dashboard
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import RecordMode
 from app.matters.forms import (
     CloseMatterForm,
     ComposerForm,
+    IncomingIntakeForm,
     MatterCreateForm,
     MatterFieldForm,
     NextActionForm,
     PositionForm,
 )
+from app.matters.intake import register_incoming, validate_uploads
 from app.matters.models import Matter
 from app.matters.services import (
     assign_matter,
@@ -99,6 +102,25 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
 
 
 @login_required
+def overview(request: HttpRequest) -> HttpResponse:
+    """Ülevaade — the department portfolio, scoped to what this reader may see.
+
+    Deliberately not Minu töö. That page answers "what do I have to do today";
+    this one answers "what is the state of the files", which is the question a
+    morning department review starts from.
+    """
+    return render(
+        request,
+        "matters/overview_dashboard.html",
+        {
+            "dashboard": build_dashboard(request.user),
+            "today": timezone.localdate(),
+            "nav_active": "ulevaade",
+        },
+    )
+
+
+@login_required
 def my_work(request: HttpRequest) -> HttpResponse:
     today = timezone.localdate()
     do_groups = selectors.my_do_groups(request.user, today)
@@ -149,8 +171,65 @@ def inbox(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "matters/inbox.html",
-        {"unassigned": unassigned, "recent": recent, "nav_active": "saabunud"},
+        {
+            "unassigned": unassigned,
+            "recent": recent,
+            "intake_form": IncomingIntakeForm(),
+            "nav_active": "saabunud",
+        },
     )
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def intake(request: HttpRequest) -> HttpResponse:
+    """File material that has just arrived, files first.
+
+    The second legitimate way into a Matter. `Uus teema` stays title-first and
+    needs nothing but a title; this path starts from the PDF a ministry sent,
+    which is how most incoming work actually begins.
+
+    Every upload is validated *before* anything is written, so a rejected file
+    cannot leave a half-made Matter behind looking like real work.
+    """
+    form = IncomingIntakeForm(request.POST or None)
+
+    if request.method == "POST":
+        files = request.FILES.getlist("uploads")
+        if form.is_valid():
+            try:
+                uploads = validate_uploads(files)
+                data = form.cleaned_data
+                result = register_incoming(
+                    uploads=uploads,
+                    title=data.get("title", ""),
+                    actor=request.user,
+                    owner=data.get("owner"),
+                    source_organisation=data.get("source_organisation"),
+                    received_date=data.get("received_date") or timezone.localdate(),
+                    response_deadline=data.get("response_deadline"),
+                    stage=data.get("stage"),
+                    track=data.get("track") or "",
+                    visibility=data.get("visibility") or Visibility.NORMAL,
+                )
+            except (DomainError, UploadRejected) as error:
+                messages.error(request, str(error))
+            else:
+                messages.success(
+                    request,
+                    f"Teema {result.matter.display_reference} loodud · "
+                    f"{result.documents} faili lisatud.",
+                )
+                return redirect("matters:matter_detail", pk=result.matter.pk)
+
+        return render(
+            request,
+            "matters/intake.html",
+            {"form": form, "nav_active": "saabunud"},
+            status=400,
+        )
+
+    return render(request, "matters/intake.html", {"form": form, "nav_active": "saabunud"})
 
 
 # ---------------------------------------------------------------------------
@@ -387,6 +466,27 @@ def matter_create(request: HttpRequest) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
+#: What arrived from outside, as opposed to what Koda produced. Shown on the
+#: overview so an incoming Matter reveals its source material immediately rather
+#: than hiding it one tab away.
+INCOMING_ROLES = (DocumentRole.INCOMING_AUTHORITY, DocumentRole.ORIGINAL_EMAIL)
+
+
+def _incoming_documents(request: HttpRequest, matter: Matter) -> list[Document]:
+    """Source material for this Matter, authorized like everything else.
+
+    Scoped through ``Document.objects.visible_to`` rather than the Matter's own
+    relation, so a document restricted more tightly than its Matter stays
+    invisible to someone who may read the Matter itself.
+    """
+    return list(
+        Document.objects.visible_to(request.user)
+        .filter(matter=matter, role__in=INCOMING_ROLES)
+        .select_related("current_version")
+        .order_by("created_at")[:20]
+    )
+
+
 def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     items, has_more = matter_timeline(matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE)
     return {
@@ -395,6 +495,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "timeline_items": items,
         "timeline_has_more": has_more,
         "composer_form": ComposerForm(),
+        "incoming_documents": _incoming_documents(request, matter),
         "today": timezone.localdate(),
     }
 

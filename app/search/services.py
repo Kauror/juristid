@@ -36,10 +36,28 @@ from app.matters.models import Matter
 from app.search.models import SearchDocument, SearchSourceKind
 
 
-class Similarity(Func):
-    """``pg_trgm`` similarity, for typo tolerance on short strings only."""
+class WordSimilarity(Func):
+    """``pg_trgm`` word similarity: the query against the *best-matching run of
+    words* inside the target, rather than against the whole string.
 
-    function = "similarity"
+    The deployment found why this matters. ``similarity()`` divides shared
+    trigrams by the trigrams of the entire string, so it decays as titles get
+    longer — and real Estonian legal titles are long. Searching
+    ``pakendiseeaduse`` against
+    "Rehearsal: sünteetiline pakendiseaduse muutmise eelnõu" scored **0.259**,
+    under the 0.3 threshold, while the intended word was sitting in plain sight.
+    ``word_similarity()`` scores the same pair **0.824**.
+
+    The earlier unit test passed only because its synthetic title was short
+    enough to hide the effect, which is why the regression test for this uses a
+    realistically long one.
+
+    Argument order is not symmetric: ``word_similarity(query, target)`` asks
+    "how well does the query match some part of the target", which is the
+    question being asked. Reversed, it asks the opposite and scores badly.
+    """
+
+    function = "word_similarity"
     output_field = FloatField()
 
 
@@ -85,9 +103,15 @@ TIER_MATCH_KIND: dict[int, str] = {
 
 MAX_RESULTS = 50
 
-#: Below this, trigram similarity is noise. 0.3 is pg_trgm's own default and
-#: catches ordinary typos without returning every matter that shares a prefix.
-TRIGRAM_THRESHOLD = 0.3
+#: Below this, trigram matching is noise.
+#:
+#: Higher than pg_trgm's 0.3 default, deliberately. `word_similarity` scores far
+#: more generously than `similarity` — it ignores the length of everything it
+#: did *not* match — so keeping the old threshold would turn the last-resort
+#: fuzzy tier into a source of near-random results. 0.6 still catches an
+#: ordinary one-letter typo (the case above scores 0.824) while rejecting words
+#: that merely share a stem.
+TRIGRAM_THRESHOLD = 0.6
 
 
 @dataclass(frozen=True)
@@ -202,8 +226,8 @@ def search_documents(*, query: str, user: Any) -> QuerySet[SearchDocument]:
 
     scoped = visible_documents(user).annotate(
         title_similarity=Greatest(
-            Similarity(F("title"), Value(term)),
-            Similarity(F("identifiers"), Value(term)),
+            WordSimilarity(Value(term), F("title")),
+            WordSimilarity(Value(term), F("identifiers")),
             output_field=FloatField(),
         )
     )

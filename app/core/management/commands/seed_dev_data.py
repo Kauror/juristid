@@ -37,6 +37,7 @@ from app.matters.enums import DataQualityTier, MatterOrigin, RecordMode, TagAssi
 from app.matters.models import Matter, TagAssignment
 from app.matters.services import add_entry, create_matter
 from app.organisations.models import AliasType, Organisation, OrganisationAlias, OrganisationType
+from app.organisations.services import seed_reference_organisations
 from app.submissions.enums import SubmissionKind
 from app.submissions.services import (
     attach_final_evidence,
@@ -69,11 +70,26 @@ EXAMPLE_TAGS = [
     ("kestlikkusaruandlus", "Kestlikkusaruandlus", ["CSRD", "ESG aruandlus"]),
 ]
 
+# Synthetic identities. The *display names* are the real team's, because a
+# rehearsal where everyone signs in as "Testjurist Üks" tells you nothing about
+# whether the work surfaces make sense. The identities underneath are
+# `.invalid` and always will be: no real address, no real credential, and
+# nothing that could authenticate anywhere.
+#
+# The upn is the stable key. Re-running this command *updates* the display name
+# and role of an existing row rather than creating a second one, so every Matter
+# already owned by that user keeps its owner and simply starts showing the new
+# name. Creating new users instead would orphan the rehearsal history that this
+# environment exists to accumulate.
 SYNTHETIC_USERS = [
-    ("jurist1@example.invalid", "Testjurist Üks", UserRole.SPECIALIST, False),
-    ("jurist2@example.invalid", "Testjurist Kaks", UserRole.SPECIALIST, False),
-    ("juht@example.invalid", "Testosakonnajuht", UserRole.DEPARTMENT_HEAD, False),
-    ("admin@example.invalid", "Testadministraator", UserRole.ADMINISTRATOR, True),
+    ("jurist1@example.invalid", "Ireen Tarto", UserRole.SPECIALIST, False, True),
+    ("jurist2@example.invalid", "Sandra Melani Mellikov", UserRole.SPECIALIST, False, True),
+    ("juht@example.invalid", "Marko Udras", UserRole.DEPARTMENT_HEAD, False, True),
+    ("admin@example.invalid", "Testadministraator", UserRole.ADMINISTRATOR, True, True),
+    # Inactive on purpose: a name for the historical import to map onto later.
+    # She must not appear in owner pickers or the sign-in list while inactive,
+    # which `is_active=False` already guarantees everywhere those are built.
+    ("ann.raun@example.invalid", "Ann Raun", UserRole.SPECIALIST, False, False),
 ]
 
 SYNTHETIC_ORGANISATIONS = [
@@ -119,9 +135,16 @@ class Command(BaseCommand):
             organisations=organisations,
         )
 
+        # `users` and `organisations` are the working sets the Matters were
+        # built from - active identities and the synthetic counterparties - so
+        # reporting their lengths would undercount what the command actually
+        # left behind. Say both, because "4 users" after seeding five is the
+        # kind of summary that sends somebody looking for a bug.
         self.stdout.write(
             self.style.SUCCESS(
-                f"Synthetic data ready: {len(users)} users, {len(organisations)} organisations, "
+                f"Synthetic data ready: {User.objects.count()} identities "
+                f"({len(users)} active), {Organisation.objects.count()} organisations "
+                f"({len(organisations)} synthetic, the rest public reference data), "
                 f"{created} Matters."
             )
         )
@@ -160,17 +183,48 @@ class Command(BaseCommand):
     # -- actors ------------------------------------------------------------
 
     def _seed_users(self) -> list[User]:
+        """Create the synthetic identities, or bring existing ones up to date.
+
+        Update rather than get_or_create. The deployed rehearsal already has
+        Matters owned by these rows, so renaming the row is the only way to
+        change what a lawyer sees without detaching them from their work.
+        """
         users = []
-        for upn, name, role, is_staff in SYNTHETIC_USERS:
+        for upn, name, role, is_staff, is_active in SYNTHETIC_USERS:
             existing = User.objects.filter(upn=upn).first()
             if existing is None:
                 existing = create_synthetic_user(
                     upn=upn, display_name=name, role=role, is_staff=is_staff
                 )
-            users.append(existing)
+                if not is_active:
+                    existing.is_active = False
+                    existing.save(update_fields=["is_active"])
+            else:
+                changed = []
+                for attribute, value in (
+                    ("display_name", name),
+                    ("role", role),
+                    ("is_staff", is_staff),
+                    ("is_active", is_active),
+                ):
+                    if getattr(existing, attribute) != value:
+                        setattr(existing, attribute, value)
+                        changed.append(attribute)
+                if changed:
+                    existing.save(update_fields=changed)
+                    self.stdout.write(f"  updated {upn}: {', '.join(changed)}")
+            if is_active:
+                users.append(existing)
         return users
 
     def _seed_organisations(self) -> list[Organisation]:
+        # The real ministries come from public reference data, not from here.
+        # A rehearsal where the sender list contains only `Näidisministeerium`
+        # cannot tell you whether choosing a sender is quick enough.
+        reference = seed_reference_organisations()
+        if reference.created:
+            self.stdout.write(f"  + {len(reference.created)} reference organisations")
+
         organisations = []
         for name, org_type, aliases in SYNTHETIC_ORGANISATIONS:
             organisation, _ = Organisation.objects.get_or_create(
@@ -202,7 +256,7 @@ class Command(BaseCommand):
             return Matter.objects.count()
 
         ministry, authority, company = organisations
-        lawyer_one, lawyer_two, head, _admin = users
+        lawyer_one, lawyer_two, head, _admin = users[:4]
         created = 0
 
         for index in range(count):

@@ -21,9 +21,11 @@
     <form method="post" class="card" style="padding:var(--spacing-4)">
       {% csrf_token %}
       {% if pin_required %}
-        {# A shared PIN, not authentication. It exists because this instance is
-           reachable from outside the LAN and the sign-in below has no password
-           by design. #}
+        {% comment %}
+          A shared PIN, not authentication. It exists because this instance is
+          reachable from outside the LAN and the sign-in below has no password
+          by design.
+        {% endcomment %}
         <label class="field">
           <span class="field__label">PIN</span>
           <input class="field__input" type="password" name="pin" inputmode="numeric"

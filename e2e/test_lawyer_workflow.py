@@ -33,7 +33,14 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     """Scenario A, B, C and D in one pass, in the order the work happens."""
     sign_in(page, base_url, SANDRA)
 
-    # -- Minu töö is the landing surface ---------------------------------
+    # -- Ülevaade is the landing surface ---------------------------------
+    expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
+    expect(page.get_by_role("heading", name="Tähelepanu")).to_be_visible()
+    expect(page.get_by_role("heading", name="Lähenevad tähtajad")).to_be_visible()
+    screenshots(page, "00-ulevaade")
+
+    # -- Minu töö is the personal queue ----------------------------------
+    page.locator(".topnav__link", has_text="Minu töö").click()
     expect(page.get_by_role("heading", name="Minu töö")).to_be_visible()
     expect(page.get_by_role("heading", name="Ootan ja kontrollin")).to_be_visible()
     expect(page.get_by_role("heading", name="Minu aktiivsed teemad")).to_be_visible()
@@ -281,8 +288,12 @@ class TestRestrictedMatterIsUnreachable:
     def test_an_unrelated_specialist_does_not(self, page, base_url):
         sign_in(page, base_url, MARTIN)
 
-        # Not in Minu töö, and not in its counts.
+        # Not on Ülevaade — not in its attention list, and not in its counts.
+        # Signing in lands here now, which makes this the stronger check: a
+        # restricted Matter must not reach a total either.
+        expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
         expect(page.get_by_text("Konfidentsiaalne järgmine samm")).to_have_count(0)
+        expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
 
         # Not in the register.
         page.locator(".topnav__link", has_text="Teemad").click()

@@ -12,8 +12,26 @@ intake and an IntakeItem model arrive only when there is a real feed to consume
 <div class="page">
   <div class="pagehead">
     <h1 class="pagehead__title">Saabunud</h1>
-    <span class="pagehead__context">Alusta uut teemat või võta määramata teema enda peale.</span>
+    <span class="pagehead__context">
+      Registreeri saabunud materjal, alusta uut teemat või võta määramata teema enda peale.
+    </span>
+    <span class="pagehead__actions">
+      {% comment %}
+        The primary action on this page. Filing what has arrived is the most
+        common way work starts, so it is a button rather than something hidden
+        behind a disclosure on another tab.
+      {% endcomment %}
+      <a class="button button--primary" href="{% url 'matters:intake' %}">
+        + Lisa saabunud materjal
+      </a>
+      <a class="button button--quiet" href="{% url 'matters:matter_create' %}">+ Uus teema</a>
+    </span>
   </div>
+
+  <p class="cardnote">
+    Saabunud materjal loob teema koos failidega. Uus teema alustab pealkirjast, kui
+    faili veel ei ole.
+  </p>
 
   <section aria-labelledby="maaramata-heading">
     <h2 class="sectionlabel" id="maaramata-heading">

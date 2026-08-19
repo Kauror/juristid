@@ -79,3 +79,20 @@ def test_design_token_page_requires_authentication(client, settings, specialist)
     # editing this test.
     for token in response.context["surface_tokens"]:
         assert token in body
+
+
+def test_favicon_no_longer_404s(client):
+    """Browsers request this whether or not the page links an icon.
+
+    Without it every visit logged `Not Found: /favicon.ico`, which is noise that
+    makes a real 404 harder to notice.
+    """
+    response = client.get("/favicon.ico")
+    assert response.status_code in {301, 302}
+    assert "koda-logo-negative" in response["Location"]
+
+
+def test_the_page_links_an_icon_so_browsers_need_not_probe(client, specialist):
+    client.force_login(specialist)
+    body = client.get(reverse("matters:overview")).content.decode()
+    assert 'rel="icon"' in body

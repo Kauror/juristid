@@ -1,0 +1,52 @@
+{% comment %}
+The quick-create panel. Replaces the picker in place and hands it back once the
+institution exists, so nothing else on the surrounding form is disturbed.
+{% endcomment %}
+<div class="orgpicker orgpicker--creating" id="orgpicker-{{ target }}">
+  <p class="sectionlabel">Uus organisatsioon</p>
+
+  {% if form.non_field_errors %}
+    <div class="formerror" role="alert">{{ form.non_field_errors|first }}</div>
+  {% endif %}
+
+  <div class="formgrid">
+    <label class="field">
+      <span class="field__label">Nimi</span>
+      {{ form.name }}
+      {% if form.name.errors %}<span class="field__error">{{ form.name.errors|first }}</span>{% endif %}
+    </label>
+    <label class="field">
+      <span class="field__label">Tüüp</span>
+      {{ form.organisation_type }}
+    </label>
+    <label class="field">
+      <span class="field__label">Registrikood</span>
+      {{ form.registry_code }}
+      <span class="field__help">Vabatahtlik.</span>
+    </label>
+  </div>
+
+  <div class="form__actions">
+    {% comment %}
+      A plain button, not a nested <form>: this partial lives inside the form
+      that needed the organisation, and nesting forms is invalid HTML that
+      silently submits the wrong one.
+    {% endcomment %}
+    <button class="button button--primary"
+            type="button"
+            hx-post="{% url 'organisations:quick_create' %}"
+            hx-include="closest .orgpicker"
+            hx-vals='{"target": "{{ target }}", "label": "{{ label }}", "multiple": "{% if multiple %}1{% else %}0{% endif %}"}'
+            hx-target="#orgpicker-{{ target }}"
+            hx-swap="outerHTML">
+      Salvesta organisatsioon
+    </button>
+    <button class="button button--quiet"
+            type="button"
+            hx-get="{% url 'organisations:quick_create' %}?target={{ target }}&label={{ label|urlencode }}&multiple={% if multiple %}1{% else %}0{% endif %}&cancel=1"
+            hx-target="#orgpicker-{{ target }}"
+            hx-swap="outerHTML">
+      Loobu
+    </button>
+  </div>
+</div>
