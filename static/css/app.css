@@ -544,6 +544,10 @@
   border-left: 2px solid var(--status-danger);
 }
 
+.workrow__datecell {
+  min-width: 0;
+}
+
 .workrow__date {
   font-size: var(--typography-size-base);
   font-weight: var(--typography-weight-semibold);
@@ -587,7 +591,11 @@
   color: var(--text-body);
 }
 
-.workgroup--later .workrow__date {
+.workgroup--later .workrow__datecell {
+  min-width: 0;
+}
+
+.workrow__date {
   font-weight: var(--typography-weight-medium);
   color: var(--text-secondary);
 }
@@ -1639,6 +1647,102 @@
 .result__why {
   font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
+}
+
+/* ====================================================================
+ * Design-token reference page
+ *
+ * A developer surface, not a product screen: it exists so the token layer can
+ * be inspected without opening the stylesheet.
+ * ==================================================================== */
+
+.token-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-5);
+}
+
+.token-swatch {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-raised);
+}
+
+.token-swatch__preview {
+  height: 56px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.token-swatch__label {
+  display: block;
+  padding: var(--spacing-2);
+  font-family: var(--typography-font-mono);
+  font-size: var(--typography-size-label);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.panel {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-4);
+}
+
+.notice {
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--status-info);
+  border-radius: var(--radius-card);
+  background: var(--surface-panel);
+  padding: var(--spacing-3);
+  margin-bottom: var(--spacing-4);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--typography-size-meta);
+}
+
+.data-table th,
+.data-table td {
+  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--spacing-2);
+  text-align: left;
+}
+
+.numeric {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* White documents and charts are contained, never laid on the dark canvas. */
+.document-frame {
+  background: var(--surface-document);
+  color: var(--text-on-document);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-3);
+}
+
+.badge--success {
+  color: var(--status-success);
+  background: var(--status-success-soft);
+  border-color: var(--status-success-border);
+}
+
+.badge--warning {
+  color: var(--status-warning);
+  background: var(--status-warning-soft);
+  border-color: var(--status-warning-border);
+}
+
+.badge--danger {
+  color: var(--status-danger);
+  background: var(--status-danger-soft);
+  border-color: var(--status-danger-border);
 }
 
 /* ====================================================================
