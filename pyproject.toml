@@ -32,6 +32,10 @@ dev = [
     # Playwright suite is the authoritative check that the workflow actually
     # works for a person (docs/adr/0010).
     "pytest-playwright>=0.6",
+    # Parses the deployment Compose file in tests/test_deployment_unraid.py.
+    # A dev dependency rather than an optional import: a validation that skips
+    # itself when a library is missing is a validation that never runs.
+    "pyyaml>=6.0",
 ]
 
 [tool.ruff]

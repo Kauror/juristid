@@ -144,6 +144,19 @@ DEV_LOGIN_ENABLED = env_bool("DEV_LOGIN_ENABLED", default=False)
 # --------------------------------------------------------------------------
 
 LANGUAGE_CODE = "et"
+
+# The product has exactly one language (AGENTS.md, specification 3.10), so there
+# is nothing to negotiate. Saying so explicitly matters: LocaleMiddleware
+# otherwise honours the browser's Accept-Language header, and Django ships
+# translations for dozens of languages. A lawyer with an English-language
+# browser was served an Estonian interface with English dates and English form
+# errors — "Wednesday, 19. August 2026" instead of "kolmapäev, 19. august 2026".
+#
+# CI could not catch this. The browser suite drives Chromium with no language
+# preference, so it always fell back to LANGUAGE_CODE and always looked right.
+# It took opening the deployed site in an ordinary browser to see it.
+LANGUAGES = [("et", "Eesti")]
+
 TIME_ZONE = "Europe/Tallinn"
 USE_I18N = True
 USE_TZ = True
