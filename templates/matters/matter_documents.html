@@ -74,8 +74,13 @@ evidence until a specific version has been captured
           <p class="empty">Tõendeid ei ole veel lisatud.</p>
         {% endif %}
 
-        <details class="disclosure">
-          <summary class="disclosure__summary">+ Lisa tõend</summary>
+        {# Open by default and labelled "dokument", not "tõend". A lawyer
+           attaching a ministry's PDF should not have to know the system's
+           internal word for immutable evidence to find the upload field. The
+           semantics underneath are unchanged: every file is still captured as
+           an immutable version with its own checksum. #}
+        <details class="disclosure" open>
+          <summary class="disclosure__summary">+ Lisa dokument</summary>
           <form class="form" method="post" enctype="multipart/form-data"
                 action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
             {% csrf_token %}
@@ -100,7 +105,7 @@ evidence until a specific version has been captured
               </label>
             </div>
             <div class="form__actions">
-              <button class="button button--primary" type="submit">Salvesta tõend</button>
+              <button class="button button--primary" type="submit">Salvesta dokument</button>
             </div>
           </form>
         </details>

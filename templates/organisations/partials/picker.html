@@ -1,0 +1,47 @@
+{% comment %}
+An institution picker with an inline "add" beside it.
+
+Rendered both by the enclosing form and by the quick-create endpoint, so the
+same markup comes back after a create and the field simply updates in place —
+no page reload, nothing typed elsewhere in the form is lost.
+{% endcomment %}
+<div class="orgpicker" id="orgpicker-{{ target }}">
+  <label class="field">
+    <span class="field__label">{{ label }}</span>
+    {% if multiple %}
+      <select class="field__input" name="{{ target }}" multiple size="4">
+        {% for organisation in organisations %}
+          <option value="{{ organisation.pk }}"
+                  {% if selected and organisation.pk == selected.pk %}selected{% endif %}>
+            {{ organisation.name }}
+          </option>
+        {% endfor %}
+      </select>
+    {% else %}
+      <select class="field__input" name="{{ target }}">
+        <option value="">—</option>
+        {% for organisation in organisations %}
+          <option value="{{ organisation.pk }}"
+                  {% if selected and organisation.pk == selected.pk %}selected{% endif %}>
+            {{ organisation.name }}
+          </option>
+        {% endfor %}
+      </select>
+    {% endif %}
+    {% if reused %}
+      <span class="field__help">
+        {{ selected.name }} oli juba olemas — kasutati olemasolevat kirjet.
+      </span>
+    {% elif selected %}
+      <span class="field__help">{{ selected.name }} on lisatud ja valitud.</span>
+    {% endif %}
+  </label>
+
+  <button class="button button--quiet orgpicker__add"
+          type="button"
+          hx-get="{% url 'organisations:quick_create' %}?target={{ target }}&label={{ label|urlencode }}&multiple={% if multiple %}1{% else %}0{% endif %}"
+          hx-target="#orgpicker-{{ target }}"
+          hx-swap="outerHTML">
+    + Lisa organisatsioon
+  </button>
+</div>

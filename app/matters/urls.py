@@ -3,8 +3,10 @@ from django.urls import path
 from app.matters import views
 
 urlpatterns = [
+    path("ulevaade/", views.overview, name="overview"),
     path("minu-too/", views.my_work, name="my_work"),
     path("saabunud/", views.inbox, name="inbox"),
+    path("saabunud/lisa/", views.intake, name="intake"),
     path("teemad/", views.matter_list, name="matter_list"),
     path("teemad/uus/", views.matter_create, name="matter_create"),
     path("teemad/<uuid:pk>/", views.matter_detail, name="matter_detail"),

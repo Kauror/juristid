@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Lisa saabunud materjal · {{ application_name }}{% endblock %}
+
+{% comment %}
+The file-first way into a Matter.
+
+Files are the only required input. Everything else can wait, because the moment
+a ministry's PDF lands the useful thing is to get it captured — not to answer
+questions about menetlusliik. There is deliberately no default Hetkeseis: a file
+arriving says something was received, not where the external process stands.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <header class="pagehead">
+    <h1 class="pagehead__title">Lisa saabunud materjal</h1>
+    <span class="pagehead__context">
+      Failid salvestatakse muutumatute tõenditena ja neist luuakse uus teema.
+    </span>
+  </header>
+
+  {% if form.errors %}
+    <div class="formerror" role="alert">
+      <p>Kontrolli vormi: midagi jäi puudu või ei sobinud.</p>
+    </div>
+  {% endif %}
+
+  <form class="form card" method="post" enctype="multipart/form-data"
+        action="{% url 'matters:intake' %}" style="padding:var(--spacing-4)">
+    {% csrf_token %}
+
+    <label class="field">
+      <span class="field__label">Failid</span>
+      <input class="field__input" type="file" name="uploads" multiple required>
+      <span class="field__help">
+        Vali kõik ühe saadetise failid korraga — kaaskiri, eelnõu, seletuskiri, lisad.
+        Iga fail salvestatakse eraldi tõendina koos algse nime ja kontrollsummaga.
+      </span>
+    </label>
+
+    <label class="field">
+      <span class="field__label">Pealkiri</span>
+      {{ form.title }}
+      <span class="field__help">{{ form.title.help_text|default:"Jäta tühjaks, et kasutada esimese faili nime." }}</span>
+    </label>
+
+    {% include "organisations/partials/picker.html" with target="source_organisation" label="Saatja" multiple=0 organisations=form.fields.source_organisation.queryset selected=None %}
+
+    <div class="formgrid">
+      <label class="field">
+        <span class="field__label">Saabus</span>
+        {{ form.received_date }}
+        <span class="field__help">Vaikimisi tänane päev.</span>
+      </label>
+      <label class="field">
+        <span class="field__label">Arvamuse tähtaeg</span>
+        {{ form.response_deadline }}
+      </label>
+      <label class="field">
+        <span class="field__label">Vastutaja</span>
+        {{ form.owner }}
+      </label>
+      <label class="field">
+        <span class="field__label">Hetkeseis</span>
+        {{ form.stage }}
+        <span class="field__help">{{ form.stage.help_text }}</span>
+      </label>
+      <label class="field">
+        <span class="field__label">Menetlusliik</span>
+        {{ form.track }}
+      </label>
+      <label class="field">
+        <span class="field__label">Nähtavus</span>
+        {{ form.visibility }}
+      </label>
+    </div>
+
+    <div class="form__actions">
+      <button class="button button--primary" type="submit">Salvesta ja ava teema</button>
+      <a class="button button--quiet" href="{% url 'matters:inbox' %}">Loobu</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

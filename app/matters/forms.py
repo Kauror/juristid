@@ -364,3 +364,73 @@ class TagAssignmentForm(forms.Form):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         set_choices(self, "tag", Tag.objects.filter(is_active=True).order_by("name_et"))
+
+
+class IncomingIntakeForm(forms.Form):
+    """Filing material that has just arrived.
+
+    The file-first counterpart to `Uus teema`. Only the files are required:
+    everything else can be filled in once the material is safely captured, and
+    demanding a stage or an owner at the moment a ministry's PDF lands is how
+    people go back to saving attachments on a desktop.
+
+    Deliberately absent: any default Hetkeseis. A file arriving means something
+    was received, not that the external process has reached a particular stage.
+    """
+
+    title = forms.CharField(
+        label="Pealkiri",
+        max_length=1000,
+        required=False,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--prominent",
+                "placeholder": "Jäta tühjaks, et kasutada esimese faili nime",
+            }
+        ),
+    )
+    source_organisation = forms.ModelChoiceField(
+        label="Saatja",
+        queryset=Organisation.objects.none(),
+        required=False,
+        widget=SELECT_WIDGET,
+    )
+    received_date = forms.DateField(label="Saabus", required=False, widget=DATE_WIDGET)
+    response_deadline = forms.DateField(
+        label="Arvamuse tähtaeg", required=False, widget=DATE_WIDGET
+    )
+    owner = UserChoiceField(
+        label="Vastutaja",
+        queryset=User.objects.none(),
+        required=False,
+        widget=SELECT_WIDGET,
+    )
+    stage = forms.ModelChoiceField(
+        label="Hetkeseis",
+        queryset=StageVocabulary.objects.none(),
+        required=False,
+        widget=SELECT_WIDGET,
+        help_text="Vabatahtlik. Faili saabumine ei ütle, kus väline menetlus on.",
+    )
+    track = forms.ChoiceField(
+        label="Menetlusliik",
+        choices=[("", "—"), *Track.choices],
+        required=False,
+        widget=SELECT_WIDGET,
+    )
+    visibility = forms.ChoiceField(
+        label="Nähtavus",
+        choices=Visibility.choices,
+        initial=Visibility.NORMAL,
+        widget=SELECT_WIDGET,
+    )
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        set_choices(self, "owner", User.objects.filter(is_active=True).order_by("display_name"))
+        set_choices(self, "source_organisation", Organisation.objects.order_by("name"))
+        set_choices(
+            self,
+            "stage",
+            StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
+        )
