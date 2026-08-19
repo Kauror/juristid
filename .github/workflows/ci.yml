@@ -19,6 +19,7 @@ jobs:
   quality:
     name: Format, lint, types and system checks
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -55,6 +56,7 @@ jobs:
   tests:
     name: PostgreSQL 18 test suite
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     services:
       postgres:
@@ -108,6 +110,7 @@ jobs:
   dependency-scan:
     name: Dependency vulnerability baseline
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -126,6 +129,7 @@ jobs:
   browser:
     name: Browser workflow (Playwright on PostgreSQL 18)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -174,6 +178,9 @@ jobs:
       - run: uv sync --frozen
 
       - name: Install the browser
+        timeout-minutes: 8
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: uv run playwright install --with-deps chromium
 
       - name: Migrate and seed the deterministic world
@@ -215,6 +222,7 @@ jobs:
   container:
     name: Container and compose smoke test
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
