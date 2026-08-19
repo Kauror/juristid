@@ -217,7 +217,26 @@ def extract_document_version(version: DocumentVersion, *, force: bool = False) -
             started=started,
         )
 
-    return _publish(version, parser=parser, result=result, started=started)
+    try:
+        return _publish(version, parser=parser, result=result, started=started)
+    except Exception as error:
+        # Publishing failed after the parse succeeded — a full disk, a
+        # read-only mount, a database that went away. The transaction rolled
+        # back, so nothing is half-written, but the row would otherwise sit in
+        # PROCESSING until the stale timeout and then fail exactly the same way,
+        # for ever, invisibly.
+        #
+        # Recorded as a failure so it surfaces, and left needing --force to
+        # retry: a publish failure is an environment problem, and a queue that
+        # silently retries one is a queue that hides it (Stage-2B brief 10).
+        logger.exception("Publishing extraction for version %s failed", version.pk)
+        return _record_failure(
+            version,
+            code="publish_failed",
+            detail=f"Tulemuse salvestamine ebaõnnestus ({type(error).__name__}).",
+            parser=parser,
+            started=started,
+        )
 
 
 def _read_evidence(version: DocumentVersion) -> bytes:

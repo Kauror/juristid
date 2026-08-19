@@ -287,20 +287,27 @@ def test_the_extractor_joins_only_this_projects_network(compose: dict[str, Any])
     assert compose["services"]["extractor"]["networks"] == ["internal"]
 
 
-def test_the_extractor_reads_evidence_and_cannot_write_it(compose: dict[str, Any]) -> None:
-    """The load-bearing containment property.
+def test_the_extractor_can_write_evidence_because_attachments_are_evidence(
+    compose: dict[str, Any],
+) -> None:
+    """Asserted the way round the deployment proved it has to be.
 
-    This process opens untrusted files with half a dozen parsers. It only ever
-    *reads* the original bytes, so mounting evidence read-only means a parser
-    that goes wrong — or a file that makes it go wrong — cannot alter the one
-    thing in this system that must not change.
+    This mount was read-only first, on the appealing argument that a worker only
+    ever reads originals — so the container that opens untrusted files with half
+    a dozen parsers should not be able to alter them. It is true of every format
+    except one: an email's attachments are themselves new evidence, and this is
+    the process that captures them. Every `.eml` failed on a read-only
+    filesystem.
+
+    The test asserts the corrected state rather than being deleted, so that
+    somebody re-deriving the original argument finds the counterexample attached
+    to it.
     """
     mounts = compose["services"]["extractor"]["volumes"]
     evidence = [mount for mount in mounts if "/app/evidence" in mount]
-    derivatives = [mount for mount in mounts if "/app/derivatives" in mount]
 
-    assert evidence and all(mount.endswith(":ro") for mount in evidence)
-    assert derivatives and not any(mount.endswith(":ro") for mount in derivatives)
+    assert evidence
+    assert not any(mount.endswith(":ro") for mount in evidence)
 
 
 def test_evidence_and_derivatives_are_different_directories(compose: dict[str, Any]) -> None:

@@ -167,10 +167,11 @@ image as the web process. It claims pending `DocumentVersion` rows, parses them,
 writes derivatives and reindexes — none of which a web request waits for,
 because OCR on a scanned annex takes minutes.
 
-It publishes no port, joins only this project's network, and mounts evidence
-**read-only**. That last one is the point: this is the process that opens
-untrusted files with half a dozen parsers, and it never needs to write the
-original bytes.
+It publishes no port and joins only this project's network. It *can* write
+evidence, which is deliberate and was a correction: an email's attachments are
+themselves new evidence and this is the process that captures them, so a
+read-only mount failed every `.eml`. Existing evidence stays immutable because a
+PostgreSQL trigger says so, not because of a mount option.
 
 Watch it:
 

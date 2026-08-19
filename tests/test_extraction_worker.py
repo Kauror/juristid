@@ -531,3 +531,47 @@ def test_a_thumbnail_failure_does_not_cost_the_extraction(
     assert not DocumentDerivative.objects.filter(
         version=pdf_version, kind=DerivativeKind.THUMBNAIL
     ).exists()
+
+
+def test_a_failure_while_publishing_still_ends_in_a_terminal_state(
+    pdf_version, extract, monkeypatch
+) -> None:
+    """The deployment found this one, and it is the nastier kind.
+
+    The parse succeeded; writing it did not — a read-only mount, in the case
+    that surfaced it. The transaction rolls back, so nothing is half-written,
+    but without this the row sits in PROCESSING until the stale timeout, is
+    reclaimed, and fails identically for ever while looking like work in
+    progress.
+    """
+    from app.documents.extraction import orchestrator
+
+    def explode(*args, **kwargs):
+        raise OSError(30, "Read-only file system")
+
+    monkeypatch.setattr(orchestrator, "_write_derivative", explode)
+    report = extract(pdf_version)
+
+    pdf_version.refresh_from_db()
+    assert report.state == ExtractionState.FAILED
+    assert report.error_code == "publish_failed"
+    assert pdf_version.extraction_state == ExtractionState.FAILED
+    assert pdf_version.extraction_claimed_at is None
+
+
+def test_an_email_attachment_is_written_by_the_worker_not_the_web_request(
+    normal_matter, capture_evidence, extract
+) -> None:
+    """Which is why the worker needs to be able to write evidence at all.
+
+    Stated as a test because the containment argument for a read-only evidence
+    mount is appealing, was made, and broke every `.eml` on the deployment.
+    """
+    version = capture_evidence(
+        normal_matter, corpus.consultation_eml(), "kiri.eml", "message/rfc822"
+    )
+    before = DocumentVersion.objects.count()
+
+    extract(version)
+
+    assert DocumentVersion.objects.count() > before

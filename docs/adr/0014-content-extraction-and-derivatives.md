@@ -102,6 +102,30 @@ language data are present, because Tesseract asked for a language it does not
 have falls back to English and returns confident nonsense — which reaches the
 search index looking exactly like success.
 
+### The worker container writes evidence, and that was a correction
+
+The extractor was first given evidence read-only. The argument was containment:
+this is the process that opens untrusted files with half a dozen parsers, and it
+only ever reads the originals, so it should not be able to alter them.
+
+It is true of every format except one. **An email's attachments are themselves
+new evidence**, and the worker is the process that captures them, so on a
+read-only mount every `.eml` failed. The mount is read-write and the reasoning
+is recorded here rather than quietly reversed, because the argument was
+plausible enough to be made again.
+
+What actually protects existing evidence is unchanged and was never the mount: a
+PostgreSQL trigger rejects any UPDATE to the byte-identity columns, and there is
+no code path that overwrites a stored object.
+
+The same deployment found a second thing. An exception raised while *publishing*
+a successful parse — a full disk, that read-only mount, a database that went
+away — left the row in PROCESSING, to be reclaimed after the stale timeout and
+fail identically for ever. `extract_document_version` now catches it and records
+`publish_failed`, which needs `--force` to retry: a publish failure is an
+environment problem, and a queue that silently retries one is a queue that hides
+it.
+
 ### The queue is PostgreSQL
 
 `SELECT … FOR UPDATE SKIP LOCKED` claims a version; the claim is a row state with
