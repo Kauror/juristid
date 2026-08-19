@@ -34,3 +34,6 @@ import-output/
 *.xlsx
 *.xlsm
 *.xls
+
+# Written into the image at build time; never a source file.
+BUILD_STAMP

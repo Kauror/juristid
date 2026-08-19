@@ -175,7 +175,12 @@ git -C /mnt/user/appdata/juristid-test/repo rev-parse --short HEAD
 ```
 
 Put that value in `APPLICATION_REVISION` in the env file, rebuild, migrate as a
-separate step, and only then restart the web container:
+separate step, and only then restart the web container.
+
+The **build time** beside it in the footer needs no such step: the image writes
+it at build, so it describes the image actually running rather than what
+somebody last typed. `APPLICATION_REVISION` is still the one field here that
+can lie, which is why the check below reads it back off the live page.
 
 ```bash
 docker compose -p juristid-test -f compose.yml build web
@@ -249,7 +254,10 @@ docker compose -p juristid-test -f compose.yml up -d web
 ```
 
 Update `APPLICATION_REVISION` to match, or `/healthz` will report the wrong
-commit.
+commit. The footer's build time follows the image on its own, so a rolled-back
+container shows the older build's time without being told — which is also how a
+forgotten `APPLICATION_REVISION` gives itself away: a revision that moved with a
+build time that did not.
 
 **Schema is the exception.** Django migrations are not automatically
 reversible, and rolling the code back does not roll the schema back. Rolling

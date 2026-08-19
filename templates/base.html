@@ -90,7 +90,8 @@
       <footer class="app__footer">
         <p>
           Eesti Kaubandus-Tööstuskoda · {{ application_stage }} · {{ application_environment }} ·
-          versioon {{ application_revision }}
+          versioon {{ application_revision }}{% if application_built_at %} ·
+          ehitatud {{ application_built_at|date:"d.m.Y H:i" }}{% endif %}
         </p>
       </footer>
     </div>

@@ -278,6 +278,28 @@ APPLICATION_STAGE = env("APPLICATION_STAGE", "Stage 2A")
 APPLICATION_ENVIRONMENT = env("APPLICATION_ENVIRONMENT", "local")
 APPLICATION_REVISION = env("APPLICATION_REVISION", "unknown")
 
+
+def _build_stamp() -> str:
+    """When the running build was made, as an ISO-8601 UTC string.
+
+    The Dockerfile writes BUILD_STAMP into the image, so the answer travels
+    with the code it describes and nobody has to remember to update it. The
+    environment variable wins where it is set, for a deployment that builds
+    some other way; outside a container neither exists and the footer simply
+    does not claim a build time, which is more honest than inventing one from
+    process start.
+    """
+    explicit = env("APPLICATION_BUILT_AT", "").strip()
+    if explicit:
+        return explicit
+    try:
+        return (BASE_DIR / "BUILD_STAMP").read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+APPLICATION_BUILT_AT = _build_stamp()
+
 # Real Koda, member or otherwise confidential data may only exist in an
 # environment that has passed the Secure Pilot Gate (master specification 16.3).
 REAL_DATA_ALLOWED = env_bool("REAL_DATA_ALLOWED", default=False)

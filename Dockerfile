@@ -41,6 +41,15 @@ WORKDIR /app
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /src /app
 
+# When this image was built. Recorded here rather than passed in as an
+# environment variable, because a stamp somebody has to remember to set is a
+# stamp that eventually describes a different build than the one running.
+#
+# The layer sits directly after the source copy, so any application change
+# invalidates it and produces a fresh time. A rebuild that changes nothing
+# keeps the old stamp, which is correct: it is the same image.
+RUN date -u +"%Y-%m-%dT%H:%M:%SZ" > /app/BUILD_STAMP
+
 # A named volume inherits the ownership of the image path it shadows, so the
 # evidence directory must exist and belong to the application user.
 RUN mkdir -p /app/evidence && chown -R juristid:juristid /app
