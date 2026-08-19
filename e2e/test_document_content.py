@@ -208,7 +208,15 @@ def test_an_email_shows_its_sender_and_its_attachments(
     # The signature logo was an inline resource and is deliberately not here.
     expect(page.locator("body")).not_to_contain_text("allkiri-logo.png")
 
-    message_link = page.get_by_role("link", name="Vaata sisu").first
-    page.goto(f"{base_url}{message_link.get_attribute('href')}")
+    # The message specifically, not `.first`: the documents table is newest
+    # first, so the attachments extracted from this message sort above it.
+    message_row = page.locator("tr", has_text="kooskolastus.eml").first
+    page.goto(
+        f"{base_url}{message_row.get_by_role('link', name='Vaata sisu').get_attribute('href')}"
+    )
+
+    expect(page.get_by_role("heading", name="Tuletatud eelvaade")).to_be_visible()
     expect(page.get_by_text("Kadri Näidis")).to_be_visible()
+    # And the message names what came inside it, both ways round.
+    expect(page.get_by_role("heading", name="Selle kirja manused")).to_be_visible()
     screenshots(page, "24-kirja-eelvaade")
