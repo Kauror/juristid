@@ -177,11 +177,21 @@ jobs:
 
       - run: uv sync --frozen
 
+      # `--with-deps` shells out to apt, which is the part that hangs on this
+      # runner — twice now, once for a full hour before the job had a timeout.
+      # The runner image already carries the libraries Chromium needs, so the
+      # browser binary is all that has to be fetched, and it is cached between
+      # runs.
+      - name: Cache the browser binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('uv.lock') }}
+          restore-keys: playwright-chromium-
+
       - name: Install the browser
-        timeout-minutes: 8
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: uv run playwright install --with-deps chromium
+        timeout-minutes: 6
+        run: uv run playwright install chromium
 
       - name: Migrate and seed the deterministic world
         run: |
