@@ -216,7 +216,13 @@ def test_an_email_shows_its_sender_and_its_attachments(
     )
 
     expect(page.get_by_role("heading", name="Tuletatud eelvaade")).to_be_visible()
-    expect(page.get_by_text("Kadri Näidis")).to_be_visible()
+    # In the parsed-header list specifically. The name also appears in the
+    # extracted body text and in the sender-address field, and "somewhere on
+    # this page" would pass even if the metadata derivative were missing.
+    fields = page.locator(".card--derived .detailgrid").first
+    expect(fields).to_contain_text("Saatja")
+    expect(fields).to_contain_text("Kadri Näidis")
+    expect(fields).to_contain_text("kadri@naidisministeerium.invalid")
     # And the message names what came inside it, both ways round.
     expect(page.get_by_role("heading", name="Selle kirja manused")).to_be_visible()
     screenshots(page, "24-kirja-eelvaade")
