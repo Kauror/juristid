@@ -125,13 +125,7 @@ jobs:
       # silently skipped OCR suite looks identical to a passing one, and the
       # runtime it was meant to prove is the one that ships (Stage-2B brief 89).
       - name: The OCR runtime CI claims to have is actually present
-        env:
-          DJANGO_DEBUG: "1"
-        run: >-
-          uv run python -c "from app.documents.extraction.ocr import
-          ocr_engine_version, missing_languages;
-          print(ocr_engine_version());
-          assert missing_languages() == (), missing_languages()"
+        run: uv run python manage.py check_ocr_runtime --required
 
       - name: Test suite
         run: uv run pytest --cov --cov-report=term-missing
