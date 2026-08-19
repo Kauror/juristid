@@ -74,4 +74,8 @@ def test_design_token_page_requires_authentication(client, settings, specialist)
     client.force_login(specialist)
     response = client.get(reverse("core:design_tokens"))
     assert response.status_code == 200
-    assert "--surface-canvas" in response.content.decode()
+    body = response.content.decode()
+    # Assert against what the view exposes, so renaming a token does not mean
+    # editing this test.
+    for token in response.context["surface_tokens"]:
+        assert token in body

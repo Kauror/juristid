@@ -50,15 +50,14 @@ together or not at all.
         📎 Manus
       </button>
 
-      <label class="disclosure-chip" data-toggle-chip>
+      <span class="disclosure-chip disclosure-chip--toggle" data-toggle-chip>
         <input type="checkbox"
-               class="visually-hidden"
                name="update_next_action"
                id="id_update_next_action"
                data-toggles="jargmiseks-valjad"
                {% if composer_form.update_next_action.value %}checked{% endif %}>
-        ✓ Muudan Järgmiseks
-      </label>
+        <label for="id_update_next_action">✓ Muudan Järgmiseks</label>
+      </span>
     </div>
 
     <div class="composer__optional" id="komposer-lisavaljad" hidden>

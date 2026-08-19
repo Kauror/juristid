@@ -1212,6 +1212,34 @@
   border-color: var(--text-secondary);
 }
 
+/* The toggle chip is a real checkbox wearing the chip: full footprint, so it is
+   clickable and focusable, with the tick state carried by the chip itself. */
+.disclosure-chip--toggle {
+  position: relative;
+  padding: 0;
+}
+
+.disclosure-chip--toggle input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.disclosure-chip--toggle label {
+  display: block;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.disclosure-chip--toggle input:focus-visible ~ label {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
 .disclosure-chip.is-active {
   color: var(--accent-link);
   background: var(--status-info-soft);

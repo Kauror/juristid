@@ -62,7 +62,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # The Matter opens immediately and carries a human reference.
     expect(page.get_by_role("heading", name=MATTER_TITLE)).to_be_visible()
-    reference = page.locator(".reference--large").inner_text().strip()
+    reference = page.locator(".matterhead__crumbs .reference").inner_text().strip()
     assert re.fullmatch(r"\d{4}_\d+", reference), reference
 
     expect(page.locator(".nextaction__text")).to_have_text("Koosta ja saada koja arvamus")
