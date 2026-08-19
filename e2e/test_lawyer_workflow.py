@@ -65,16 +65,17 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     reference = page.locator(".reference--large").inner_text().strip()
     assert re.fullmatch(r"\d{4}_\d+", reference), reference
 
-    expect(page.get_by_text("Koosta ja saada koja arvamus")).to_be_visible()
-    expect(page.locator(".chip--do")).to_be_visible()
-    expect(page.get_by_text("Tähtaeg", exact=False).first).to_be_visible()
+    expect(page.locator(".nextaction__text")).to_have_text("Koosta ja saada koja arvamus")
+    expect(page.locator(".nextaction .chip--do")).to_be_visible()
+    expect(page.locator(".nextaction").get_by_text("Tähtaeg", exact=False).first).to_be_visible()
     screenshots(page, "03-teema-ulevaade")
 
     matter_url = page.url
 
     # It reaches Minu töö straight away.
     page.get_by_role("link", name="Minu töö").click()
-    expect(page.get_by_text("Koosta ja saada koja arvamus")).to_be_visible()
+    teen = page.locator("section", has=page.get_by_role("heading", name="Teen"))
+    expect(teen.get_by_text("Koosta ja saada koja arvamus")).to_be_visible()
     expect(page.get_by_text(MATTER_TITLE).first).to_be_visible()
 
     # -- Scenario B: one composer save, two changes ----------------------
@@ -93,10 +94,10 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.get_by_role("button", name="Salvesta sissekanne").click()
 
     # Both halves landed, and the surface agrees with itself.
-    expect(page.get_by_text("Ootan ministeeriumi uut sõnastust")).to_be_visible()
-    expect(page.locator(".chip--wait").first).to_be_visible()
+    expect(page.locator(".nextaction__text")).to_have_text("Ootan ministeeriumi uut sõnastust")
+    expect(page.locator(".nextaction .chip--wait")).to_be_visible()
     expect(page.get_by_text("Ministeerium lubas saata")).to_be_visible()
-    expect(page.get_by_text("Vaatan üle").first).to_be_visible()
+    expect(page.locator(".nextaction").get_by_text("Vaatan üle").first).to_be_visible()
     # The superseded DO must no longer be presented as the current action.
     expect(page.locator(".nextaction").get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
     # Exactly one meeting entry: no ghost duplicate from the same save.
@@ -123,7 +124,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.locator("#id_recipients").select_option(label="Näidisministeerium")
     page.get_by_role("button", name="Loo arvamus").click()
 
-    expect(page.get_by_text("Koja arvamus pakendiseaduse eelnõule")).to_be_visible()
+    expect(page.get_by_text("Koja arvamus pakendiseaduse eelnõule").first).to_be_visible()
     expect(page.locator(".badge--draft")).to_be_visible()
 
     # Sending without evidence is not offered: the control is the upload.
@@ -139,12 +140,12 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
         ]
     )
     page.get_by_role("button", name="Lisa lõplik tõend").click()
-    expect(page.get_by_text("koja-arvamus.pdf")).to_be_visible()
+    expect(page.get_by_text("koja-arvamus.pdf").first).to_be_visible()
 
     page.get_by_role("button", name="Märgi saadetuks").click()
     expect(page.locator(".badge--sent")).to_be_visible()
-    expect(page.get_by_text("Saadetud")).to_be_visible()
-    expect(page.get_by_text("koja-arvamus.pdf")).to_be_visible()
+    expect(page.locator(".submission__meta").get_by_text("Saadetud")).to_be_visible()
+    expect(page.get_by_text("koja-arvamus.pdf").first).to_be_visible()
     screenshots(page, "06-seisukoht-ja-kaasamine")
 
     # A second submission under the same Matter is ordinary, not a workaround.
@@ -157,7 +158,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # -- Documents ------------------------------------------------------
     page.get_by_role("link", name="Dokumendid").click()
     expect(page.get_by_role("heading", name="Tõendid")).to_be_visible()
-    expect(page.get_by_text("koja-arvamus.pdf")).to_be_visible()
+    expect(page.get_by_text("koja-arvamus.pdf").first).to_be_visible()
     expect(page.get_by_role("heading", name="Töödokumendid")).to_be_visible()
     screenshots(page, "07-dokumendid")
 
