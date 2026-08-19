@@ -38,6 +38,17 @@ jobs:
       - name: Static types
         run: uv run mypy
 
+      # The era contracts are data the parser trusts, and the Markdown overview
+      # is generated from them. Editing a contract without regenerating the
+      # overview must fail here rather than leave a reviewer reading the wrong
+      # description of the parser's rules. Needs no database.
+      - name: Workbook era contracts are valid and their overview is current
+        env:
+          DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+          DJANGO_DEBUG: "0"
+          DJANGO_ALLOWED_HOSTS: localhost
+        run: uv run python manage.py check_era_contracts --check
+
       - name: Django system checks
         env:
           DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else

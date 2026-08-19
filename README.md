@@ -11,15 +11,28 @@ Kaubandus-Tööstuskoda.
 
 ## Current stage
 
-**Stage 0 — decisions, skeleton and CI.** There is no product UI yet: no Minu
-töö, Saabunud, Teemad, composer, submissions, consultation, search UI or
-statistics. What exists is the application skeleton, the foundational schema,
-the authorization boundary, the design-token foundation, the architecture
-decisions and the pipeline that keeps them honest.
+**Stage 0 — complete, merged.** Application skeleton, foundational schema, the
+central authorization boundary, the design-token foundation, the architecture
+decisions and the CI pipeline that keeps them honest.
 
-See [`prompts/stage-0-coding-agent.md`](prompts/stage-0-coding-agent.md) for the
-authorized scope and [`docs/open-decisions.md`](docs/open-decisions.md) for what
-must be decided before Stage 1.
+**Stage 1 — complete, merged.** The core lawyer workflow, and there is a real
+production UI: Minu töö, Saabunud, Teemad, the Matter page with its three tabs,
+the unified Sissekanne composer, `Järgmiseks` next actions, Submissions with
+immutable final evidence, and global search — all in the Koda CVI dark-mode
+interface.
+
+**Stage 2A — in review.** The legacy register import (per-era workbook
+contracts, offline inspection, dry run and apply, immutable provenance) and the
+rebuildable `SearchDocument` projection behind Estonian full-text search.
+
+**Deliberately unbuilt.** Stage 2B: document text extraction, OCR, MSG/EML,
+attachment previews and search over Entry and Submission content. Stage 2C:
+Kaasamine and structured member responses. Also unbuilt, and later still: EIS and
+Riigikogu integration, statistics dashboards, advocacy outcomes and attribution.
+Each stage is authorized by its own written brief; nothing is built ahead of one.
+
+[`docs/open-decisions.md`](docs/open-decisions.md) lists what still belongs to
+named people rather than to the code.
 
 ## Authoritative specification
 
@@ -95,6 +108,88 @@ uv run python manage.py runserver
 
 `seed_dev_data` refuses to run unless `DJANGO_DEBUG=1` and
 `REAL_DATA_ALLOWED=0`.
+
+## The legacy register
+
+The department's register lives in one workbook with a sheet per year. Every
+year has a reviewed contract under `docs/data-contracts/`, and no sheet is
+parsed without one.
+
+### Where the real workbook may be
+
+**Not on your laptop.** `private-data/`, `import-input/` and `import-output/`
+are gitignored *path conventions* and nothing more. They keep real material out
+of Git; they do not make it acceptable for that material to be on the machine in
+the first place.
+
+[Secure Pilot Gate](docs/secure-pilot-gate.md) item 10 — *no production or member
+data copy on developer or home machines* — is already **in force**, before the
+rest of the gate. So:
+
+- **inspecting the real workbook** may happen only on an approved,
+  Koda-controlled workstation or environment, under whatever handling rules
+  apply to the file there;
+- **applying an import to a database** additionally requires the full Secure
+  Pilot Gate, and `--apply` refuses to run unless `REAL_DATA_ALLOWED=1`;
+- **CI and ordinary development are synthetic only**, always. The test fixtures
+  generate their own workbooks; no real one is ever downloaded, committed or
+  uploaded.
+
+Within an approved environment, the ignored directories are the right places to
+put things, and `tests/test_repository_data_safety.py` fails if a workbook or an
+import report is ever tracked. The row-level CSV reports reproduce source content
+and stay local; only `summary.json` and `summary.md` carry counts alone and are
+safe to share.
+
+If you have a copy of the real register on an unapproved machine — including one
+made to try these commands — delete it. The original is authoritative and lives
+where the department keeps it.
+
+### The commands
+
+Look at a snapshot without touching anything. **Needs no database**, which is
+the point: requiring one pushes people back to opening the real file in Excel,
+which is how a register gets edited by accident.
+
+```bash
+uv run python manage.py inspect_legacy_register private-data/register.xlsx --report-dir import-output/inspection
+```
+
+See exactly what an import would do, reading the database and writing nothing:
+
+```bash
+uv run python manage.py import_legacy_register private-data/register.xlsx --dry-run --report-dir import-output/dry-run
+```
+
+Perform it. There is no default mode — neither `--dry-run` nor `--apply` is
+assumed, because the safe assumption is the one people stop reading:
+
+```bash
+uv run python manage.py import_legacy_register private-data/register.xlsx --apply --report-dir import-output/apply
+```
+
+Validate the contracts and regenerate their overview:
+
+```bash
+uv run python manage.py check_era_contracts
+```
+
+## Search
+
+Search reads a rebuildable projection. Ordinary writes keep it current by
+themselves; a rebuild is needed after bulk changes such as renaming an
+organisation or editing its aliases.
+
+```bash
+uv run python manage.py rebuild_search_index
+```
+
+```bash
+uv run python manage.py refresh_matter_search 2026_184
+```
+
+The projection is derived data and safe to delete: nothing in the domain reads
+from it.
 
 ## Tests and checks
 

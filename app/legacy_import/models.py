@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
 from app.core.errors import ImmutableRecordError
-from app.core.models import BaseModel
+from app.core.models import AppendOnlyModel, BaseModel
+from app.legacy_import.enums import OneNoteContentStatus, ProposedRecordMode, RowOutcome
 
 
 class ReconciliationStatus(models.TextChoices):
@@ -90,9 +92,15 @@ class MatterSourceReference(BaseModel):
     never by editing what the source said.
     """
 
+    #: Write-once columns. Guarded in :meth:`save` *and* by a database trigger,
+    #: because ``QuerySet.update()``, ``bulk_update()``, a data migration and a
+    #: psql session all bypass ``save()`` entirely. A model-layer check on
+    #: immutable provenance is a convention; the trigger is the guarantee
+    #: (Stage-2A brief 13).
     RAW_FIELDS = (
         "source_system",
         "source_file_name",
+        "source_snapshot_sha256",
         "source_sheet",
         "source_row_number",
         "source_row_raw",
@@ -119,6 +127,16 @@ class MatterSourceReference(BaseModel):
 
     source_system = models.CharField(max_length=100, verbose_name="lähtesüsteem")
     source_file_name = models.CharField(max_length=400, blank=True)
+    source_snapshot_sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        db_index=True,
+        verbose_name="hetktõmmise SHA-256",
+        help_text=(
+            "Baiditäpne allika identiteet. Kordusimport sama tõmmise pealt tunneb "
+            "rea selle järgi ära; uus tõmmis on uus tõendus, mitte vana muutmine."
+        ),
+    )
     source_sheet = models.CharField(max_length=200, blank=True)
     source_row_number = models.PositiveIntegerField(null=True, blank=True)
     source_row_raw = models.JSONField(
@@ -136,6 +154,32 @@ class MatterSourceReference(BaseModel):
     )
     onenote_page_id = models.CharField(max_length=200, blank=True)
     onenote_url = models.TextField(blank=True)
+
+    # -- interpretation, not source ---------------------------------------
+    # These say how the row was read. They are not raw, so they may be
+    # corrected, and correcting them never touches what the source said.
+    source_era = models.CharField(max_length=32, blank=True, verbose_name="allika periood")
+    source_contract_version = models.CharField(
+        max_length=50,
+        blank=True,
+        verbose_name="ajastulepingu versioon",
+        help_text="Millise aasta lepingu reeglite järgi see rida loeti.",
+    )
+    source_parser_version = models.CharField(
+        max_length=50, blank=True, verbose_name="parseri versioon"
+    )
+
+    # -- mutable operational metadata -------------------------------------
+    onenote_content_status = models.CharField(
+        max_length=32,
+        choices=OneNoteContentStatus.choices,
+        default=OneNoteContentStatus.NOT_APPLICABLE,
+        verbose_name="OneNote'i sisu seis",
+        help_text=(
+            "Kas lingi taga olev leht on imporditud. Link ise on muutumatu tõendus; "
+            "see väli on tööseis ja seda tohib muuta."
+        ),
+    )
 
     match_method = models.CharField(
         max_length=40,
@@ -168,6 +212,20 @@ class MatterSourceReference(BaseModel):
             models.Index(fields=["onenote_page_id"], name="legacy_source_onenote"),
         ]
         constraints = [
+            # Idempotency, enforced rather than hoped for. One snapshot's row is
+            # recorded once; a *different* snapshot of the same row is a new
+            # observation and is allowed, because the second workbook is new
+            # evidence rather than a correction of the first.
+            models.UniqueConstraint(
+                fields=[
+                    "source_system",
+                    "source_snapshot_sha256",
+                    "source_sheet",
+                    "source_row_number",
+                ],
+                condition=~models.Q(source_snapshot_sha256=""),
+                name="legacy_import_one_reference_per_source_row",
+            ),
             models.CheckConstraint(
                 condition=models.Q(match_confidence__isnull=True)
                 | models.Q(match_confidence__gte=0, match_confidence__lte=1),
@@ -189,3 +247,78 @@ class MatterSourceReference(BaseModel):
                         f"attempted to change {', '.join(changed)}."
                     )
         super().save(*args, **kwargs)
+
+
+class ImportRowLedger(AppendOnlyModel):
+    """What one import run did with one source row.
+
+    The completeness ledger the specification requires (19.9), kept deliberately
+    narrow. It is *not* a second provenance system: the raw source values live
+    on ``MatterSourceReference`` and nothing here duplicates them. This records
+    only the decision — outcome, anomalies, and which Matter it landed on — so
+    that "every row was accounted for" is a query rather than an assertion.
+
+    Append-only, and enforced by a trigger. A ledger that can be edited after
+    the fact answers a different, less useful question than the one it was
+    written to answer.
+    """
+
+    import_batch = models.ForeignKey(
+        ImportBatch,
+        on_delete=models.CASCADE,
+        related_name="row_ledger",
+        verbose_name="impordipartii",
+    )
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="import_ledger_entries",
+        verbose_name="teema",
+    )
+
+    source_sheet = models.CharField(max_length=200, verbose_name="leht")
+    source_row_number = models.PositiveIntegerField(verbose_name="rida")
+    source_reference = models.CharField(max_length=64, blank=True, verbose_name="viide allikas")
+
+    outcome = models.CharField(
+        max_length=32,
+        choices=RowOutcome.choices,
+        db_index=True,
+        verbose_name="tulem",
+    )
+    anomalies = ArrayField(
+        models.CharField(max_length=64),
+        default=list,
+        blank=True,
+        verbose_name="kõrvalekalded",
+    )
+    proposed_record_mode = models.CharField(
+        max_length=32,
+        choices=ProposedRecordMode.choices,
+        blank=True,
+        default="",
+        verbose_name="pakutud kirje liik",
+    )
+    proposed_record_mode_reason = models.TextField(
+        blank=True, verbose_name="pakutud kirje liigi põhjus"
+    )
+    note = models.TextField(blank=True, verbose_name="märkus")
+
+    class Meta:
+        verbose_name = "impordirea kanne"
+        verbose_name_plural = "impordiridade kanded"
+        ordering = ["import_batch", "source_sheet", "source_row_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["import_batch", "source_sheet", "source_row_number"],
+                name="legacy_import_one_ledger_row_per_source_row",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["import_batch", "outcome"], name="legacy_ledger_batch_outcome"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.source_sheet}:{self.source_row_number} {self.outcome}"

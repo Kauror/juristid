@@ -288,12 +288,14 @@ class TestRestrictedMatterIsUnreachable:
         page.locator(".topnav__link", has_text="Teemad").click()
         expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_have_count(0)
 
-        # Not in search, and no snippet leaks.
+        # Not in search, and no snippet leaks. `not_to_contain_text` retries
+        # until the navigation settles; reading `page.content()` outright races
+        # the redirect and reports a Playwright error instead of a verdict.
         page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill("konfidentsiaalne")
         page.keyboard.press("Enter")
         expect(page.get_by_text("Vasteid ei leitud", exact=False)).to_be_visible()
-        assert RESTRICTED_TITLE not in page.content()
-        assert "pakendiaktsiisi" not in page.content()
+        expect(page.locator("body")).not_to_contain_text(RESTRICTED_TITLE)
+        expect(page.locator("body")).not_to_contain_text("pakendiaktsiisi")
 
     def test_a_technical_administrator_does_not_either(self, page, base_url):
         """Administering the system is not permission to read the content."""
@@ -303,7 +305,8 @@ class TestRestrictedMatterIsUnreachable:
 
         page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill("konfidentsiaalne")
         page.keyboard.press("Enter")
-        assert RESTRICTED_TITLE not in page.content()
+        expect(page.get_by_role("heading", name="Otsing")).to_be_visible()
+        expect(page.locator("body")).not_to_contain_text(RESTRICTED_TITLE)
 
     def test_the_direct_url_is_not_reachable(self, page, base_url):
         """Guessing the address must behave exactly like the record not existing."""

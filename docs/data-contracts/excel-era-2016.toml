@@ -1,0 +1,132 @@
+# Ajastuleping — Tööd eelnõudega, leht 2016
+#
+# Seda faili loeb parser otse. Ükski leht ei tohi importida ilma vastava
+# lepinguta, ja tundmatu pealkiri on ülevaatuse leid, mitte äraarvamise koht.
+
+year = 2016
+sheet = "2016"
+era = "2011-2017"
+header_row = 1
+contract_version = "1.0"
+status = "reviewed"
+reviewed_by = "Stage 2A parser owner — iga veerg kontrollitud 2026-08 hetktõmmise vastu; osakonna sisuline kinnitus on veel andmata"
+notes = """
+Registri põhikuju. Kaheksa veergu. Vastaspool on KELLELT ehk saatja. Liikmete tagasiside veerge ei ole, Hetkeseisu ei ole, Järgmiseks ei ole. Nende puudumine on ajastu omadus, mitte puuduv andmestik: nendel aastatel ei olnud registris etapi ega järgmise tegevuse mõistet, seega imporditud rida ei saa neid välju kanda ja neid ei tuletata.
+"""
+
+[[column]]
+letter = "A"
+header = "NR"
+canonical_field = "matter_reference"
+parser = "human_reference"
+authority = "authoritative"
+meaning = """
+Registri inimloetav viide kujul AAAA_N. Aastaosa peab kattuma lehe aastaga.
+"""
+null_semantics = """
+Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida.
+"""
+
+[[column]]
+letter = "B"
+header = "TEEMA"
+canonical_field = "title"
+parser = "text"
+authority = "authoritative"
+meaning = """
+Teema pealkiri täpselt allika sõnastuses.
+"""
+null_semantics = """
+Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse.
+"""
+
+[[column]]
+letter = "C"
+header = "ÕIGUSAKT"
+canonical_field = "legal_instrument"
+parser = "raw"
+authority = "deferred"
+meaning = """
+Õigusakti liik allika enda tähistuses.
+"""
+null_semantics = """
+Tühi tähendab, et liiki ei märgitud.
+"""
+notes = """
+Kanoonilist välja ei ole. See ei ole menetlusliik (Track) ega menetlusetapp (Hetkeseis), vaid instrumendi liik, ja tähistus muutus aastate jooksul ühetähelistest koodidest (S, M, D) sõnadeks (seadus, määrus, direktiiv, VTK, muu). Nende ühendamine on juristide sisuline otsus, mitte parseri oma, seega väärtus säilib toorena.
+"""
+
+[[column]]
+letter = "D"
+header = "SISSE"
+canonical_field = "received_date"
+parser = "date"
+authority = "authoritative"
+meaning = """
+Kuupäev, mil materjal Kotta saabus.
+"""
+null_semantics = """
+Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas.
+"""
+
+[[column]]
+letter = "E"
+header = "ARVAMUSE TÄHTAEG"
+canonical_field = "response_deadline"
+parser = "date"
+authority = "authoritative"
+meaning = """
+Kuupäev, milleks Koda pidi arvamuse esitama.
+"""
+null_semantics = """
+Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud.
+"""
+
+[[column]]
+letter = "F"
+header = "VÄLJA"
+canonical_field = "opinion_sent_date"
+parser = "date"
+authority = "deferred"
+meaning = """
+Kuupäev, mil Koda arvamuse välja saatis.
+"""
+null_semantics = """
+Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas.
+"""
+notes = """
+Kanoonilist välja ei ole ja see on teadlik. Väljasaadetud arvamuse kanooniline kirje on Submission, mille olek SENT nõuab nii saatmisaega kui muutumatut lõplikku tõendit. Ainult kuupäeva põhjal Submissioni loomine tekitaks tõendita saadetud arvamuse ja rikuks Stage 1 invariandi. Väärtus säilib toorena, kuni tõendite import Stage 2B-s selle katab.
+"""
+
+[[column]]
+letter = "G"
+header = "KELLELT"
+canonical_field = "source_organisation"
+parser = "text"
+authority = "optional"
+direction = "source"
+meaning = """
+Saatja või algataja: kellelt materjal Kotta tuli.
+"""
+null_semantics = """
+Tühi tähendab teadmata asutust, mitte asutuse puudumist.
+"""
+notes = """
+KELLELT ja KELLELE ei ole sama fakt ja neid ei ühendata kunagi selle põhjal, et pealkiri näeb sarnane välja. Vaste leitakse ainult täpse või normaliseeritud täpse võrdluse teel; sarnasuse alusel asutust ei looda.
+"""
+
+[[column]]
+letter = "H"
+header = "VASTUTAJA"
+canonical_field = "owner_name"
+parser = "text"
+authority = "optional"
+meaning = """
+Vastutav jurist, allikas eesnimena.
+"""
+null_semantics = """
+Tühi tähendab, et vastutajat ei ole kirjas.
+"""
+notes = """
+Allikas on eesnimi ja mõnel real on neid mitu. Kasutaja leitakse ainult täpse üheselt mõistetava vaste või ülevaadatud vastefaili järgi. Nime järgi kasutaja loomine või e-posti aadressi arvamine on keelatud: see omistaks töö valele inimesele.
+"""
