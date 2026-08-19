@@ -201,6 +201,10 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # Active filters render as removable chips built from the same query string.
     expect(page.locator(".filterchip").first).to_be_visible()
 
+    # Removing a chip clears exactly that filter and leaves the rest.
+    page.locator(".filterchip", has_text="Ulatus").click()
+    assert "ulatus=minu" not in page.url
+
     # FULL and ARCHIVE coexist in the same register.
     page.get_by_role("link", name=re.compile("^Kõik")).click()
     expect(page.locator(".badge--archive").first).to_be_visible()

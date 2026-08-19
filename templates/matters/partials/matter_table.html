@@ -34,6 +34,15 @@ and a Matter with no next step says so in words rather than showing a blank.
             <a href="{% url 'matters:matter_detail' pk=matter.pk %}" title="{{ matter.title }}">
               {{ matter.title }}
             </a>
+            {% if matter.record_mode == "ARCHIVE" %}
+              <span class="badge badge--archive">Arhiiv</span>
+            {% endif %}
+            {% if matter.is_restricted %}
+              <span class="badge badge--restricted">Piiratud</span>
+            {% endif %}
+            {% if not matter.is_open %}
+              <span class="badge badge--closed">Suletud</span>
+            {% endif %}
           </td>
 
           <td class="table__stage">

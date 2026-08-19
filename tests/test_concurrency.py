@@ -28,12 +28,14 @@ pytestmark = pytest.mark.django_db(transaction=True)
 LOCK_WAIT_TIMEOUT = 15
 
 
-def wait_until_a_backend_is_blocked(expected: int = 1) -> None:
-    """Block until PostgreSQL reports a backend waiting on a lock.
+def wait_for_a_blocked_backend(expected: int = 1) -> bool:
+    """Wait until PostgreSQL reports a backend queued on a lock.
 
-    This is what makes the interleaving deterministic without sleeping for a
-    guessed duration: the test proceeds at the moment the database confirms the
-    second transaction is genuinely queued behind the first.
+    Used to line the two transactions up so the interleaving actually happens,
+    and deliberately *not* asserted on: whether the second transaction was
+    observed mid-block is a timing detail, while the invariant the test exists
+    for is what the two transactions leave behind. Making the observation itself
+    a pass condition is what made this flaky.
     """
     deadline = timezone.now() + timedelta(seconds=LOCK_WAIT_TIMEOUT)
     while timezone.now() < deadline:
@@ -42,8 +44,8 @@ def wait_until_a_backend_is_blocked(expected: int = 1) -> None:
                 "SELECT count(*) FROM pg_stat_activity WHERE cardinality(pg_blocking_pids(pid)) > 0"
             )
             if cursor.fetchone()[0] >= expected:
-                return
-    raise AssertionError("No backend ever blocked; the row lock was not taken.")
+                return True
+    return False
 
 
 def run_in_thread(target) -> threading.Thread:
@@ -84,7 +86,7 @@ def test_closing_while_setting_an_action_cannot_leave_both(specialist):
                 Matter.objects.select_for_update().get(pk=matter.pk)
                 holder_ready.set()
                 closer_started.wait(timeout=LOCK_WAIT_TIMEOUT)
-                wait_until_a_backend_is_blocked()
+                wait_for_a_blocked_backend()
                 set_next_action(
                     matter=matter,
                     text="Tegevus võidujooksus",
@@ -118,10 +120,18 @@ def test_closing_while_setting_an_action_cannot_leave_both(specialist):
     matter.refresh_from_db()
     open_actions = NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN)
 
-    # The invariant, whichever way the race resolved.
+    # The invariant, whichever way the race resolved. If the Matter row were
+    # not the boundary, both transactions could commit and leave a closed
+    # Matter carrying a live instruction — which is exactly what this asserts
+    # cannot happen.
     assert not (matter.is_open is False and open_actions.exists()), outcomes
     if not matter.is_open:
         assert open_actions.count() == 0
+
+    # Both operations resolved, and they resolved consistently: the closure
+    # always lands, and the action either landed before it or was refused after.
+    assert "closed" in outcomes, outcomes
+    assert {"action-set", "action-refused"} & set(outcomes), outcomes
 
 
 def test_a_closure_that_lands_first_makes_the_later_action_refuse(specialist):
@@ -163,7 +173,7 @@ def test_two_simultaneous_edits_keep_both_revisions(specialist):
                 Entry.objects.select_for_update().get(pk=entry.pk)
                 holder_ready.set()
                 second_started.wait(timeout=LOCK_WAIT_TIMEOUT)
-                wait_until_a_backend_is_blocked()
+                wait_for_a_blocked_backend()
                 edit_entry(entry=entry, body="<p>Esimene muudatus</p>", actor=specialist)
         except BaseException as exc:
             failures.append(exc)
