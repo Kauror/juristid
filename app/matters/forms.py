@@ -129,9 +129,16 @@ class MatterCreateForm(forms.Form):
         label="Nähtavus",
         choices=Visibility.choices,
         initial=Visibility.NORMAL,
+        # Not required, so a Matter really can be created from a title alone
+        # (specification 3.8). On screen the select is always present and
+        # preselected; this is about the form not refusing a bare POST.
+        required=False,
         widget=SELECT_WIDGET,
         help_text="Piiratud teemat näevad ainult vastutaja, kaastöötajad ja osakonnajuht.",
     )
+
+    def clean_visibility(self) -> str:
+        return self.cleaned_data.get("visibility") or Visibility.NORMAL
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)

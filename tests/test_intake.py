@@ -195,11 +195,15 @@ def test_incoming_evidence_downloads_only_for_the_authorized(
     client, specialist, other_specialist
 ) -> None:
     client.force_login(specialist)
+    # An owner, deliberately. A RESTRICTED Matter with nobody on it is invisible
+    # even to whoever filed it, because restricted access follows participation
+    # rather than authorship — correct, and worth not tripping over here.
     _post(
         client,
         [_file("salajane.pdf", PDF)],
         title="Piiratud saadetis",
         visibility=Visibility.RESTRICTED,
+        owner=specialist.pk,
     )
     version = DocumentVersion.objects.get()
 

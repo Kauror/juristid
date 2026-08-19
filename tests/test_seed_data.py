@@ -25,7 +25,10 @@ def test_seed_creates_usable_synthetic_data(settings):
 
     call_command("seed_dev_data", matters=4, verbosity=0)
 
-    assert User.objects.filter(is_synthetic=True).count() == 4
+    # Four people who can sign in, plus Ann Raun, seeded inactive for later
+    # historical-import mapping.
+    assert User.objects.filter(is_synthetic=True).count() == 5
+    assert User.objects.filter(is_synthetic=True, is_active=True).count() == 4
     assert User.objects.filter(is_synthetic=False).count() == 0
     assert Matter.objects.filter(record_mode=RecordMode.FULL).count() == 4
     assert Matter.objects.filter(record_mode=RecordMode.ARCHIVE).count() == 2
@@ -54,7 +57,7 @@ def test_seed_is_idempotent(settings):
     settings.DEBUG = True
     call_command("seed_dev_data", matters=2, verbosity=0)
     call_command("seed_dev_data", matters=2, verbosity=0)
-    assert User.objects.filter(is_synthetic=True).count() == 4
+    assert User.objects.filter(is_synthetic=True).count() == 5
     assert Matter.objects.filter(record_mode=RecordMode.FULL).count() == 2
 
 

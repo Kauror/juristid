@@ -233,7 +233,7 @@ def test_a_submission_accepts_an_organisation_created_moments_ago(db, specialist
     submission = create_submission(
         matter=matter, title="Koja arvamus", actor=specialist, recipients=[recipient]
     )
-    assert recipient in [r.organisation for r in submission.recipient_links.all()]
+    assert recipient in [r.organisation for r in submission.recipient_rows.all()]
 
 
 def test_search_finds_a_matter_through_a_newly_created_organisation(db, specialist) -> None:
