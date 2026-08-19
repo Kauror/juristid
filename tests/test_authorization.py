@@ -296,8 +296,13 @@ def _drop_constraint(table: str, name: str) -> None:
     PostgreSQL DDL is transactional, so the test rollback restores it. This lets
     us prove the authorization layer fails closed on a value the constraint
     would normally have prevented — belt and braces, tested independently.
+
+    `SET CONSTRAINTS ALL IMMEDIATE` first: Django declares foreign keys as
+    deferrable, and PostgreSQL refuses to ALTER a table whose transaction still
+    has trigger events queued from the rows the fixtures just inserted.
     """
     with connection.cursor() as cursor:
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
         cursor.execute(f"ALTER TABLE {table} DROP CONSTRAINT {name}")
 
 
