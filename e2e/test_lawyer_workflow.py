@@ -81,11 +81,21 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # -- Scenario B: one composer save, two changes ----------------------
     page.goto(matter_url)
+
+    # The composer starts as one field. Everything optional is out of the way
+    # until it is asked for — that is the adoption argument, not decoration.
+    expect(page.locator("#jargmiseks-valjad")).to_be_hidden()
+    expect(page.locator("#komposer-lisavaljad")).to_be_hidden()
+    expect(page.locator("#komposer-manus")).to_be_hidden()
+
     page.locator(".composer__body").fill(
         "Kohtumine ministeeriumiga. Ministeerium lubas saata järgmise nädala jooksul uue sõnastuse."
     )
     page.locator("#id_kind").select_option("MEETING")
     page.locator("#id_update_next_action").check()
+    # Revealing one optional block must not reveal the others.
+    expect(page.locator("#jargmiseks-valjad")).to_be_visible()
+    expect(page.locator("#komposer-manus")).to_be_hidden()
     page.locator("#id_next_text").fill("Ootan ministeeriumi uut sõnastust")
     page.locator("#next_kind_WAIT").check(force=True)
     page.locator("#id_next_date_semantics").select_option("REVIEW_ON")
