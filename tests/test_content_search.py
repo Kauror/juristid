@@ -16,6 +16,8 @@ import pytest
 from app.search.indexing import rebuild_all
 from app.search.models import SearchDocument, SearchSourceKind
 from app.search.services import (
+    HIGHLIGHT_START,
+    HIGHLIGHT_STOP,
     MATCH_REFERENCE,
     TIER_DOCUMENT_TITLE,
     TIER_FULLTEXT,
@@ -185,9 +187,16 @@ def test_a_snippet_is_text_and_carries_no_markup(indexed_matter, specialist) -> 
     """
     for result in search(query="eelnõu", user=specialist):
         for run in result.snippet:
-            assert "<" not in run.text
-            assert "⦑" not in run.text
-            assert "⦒" not in run.text
+            # No markup. Checked as tags rather than as a bare `<`, because an
+            # email header legitimately contains `<oigus@koda.invalid>` and a
+            # test that forbids the character would forbid the data.
+            assert "<p" not in run.text
+            assert "<script" not in run.text
+            assert "<mark" not in run.text
+            # And PostgreSQL's own markers were consumed by the splitter rather
+            # than reaching the page.
+            assert HIGHLIGHT_START not in run.text
+            assert HIGHLIGHT_STOP not in run.text
 
 
 def test_a_snippet_is_bounded(indexed_matter, specialist) -> None:

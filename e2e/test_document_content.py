@@ -50,10 +50,7 @@ def run_worker() -> str:
         timeout=300,
         check=False,
     )
-    report = f"stdout:
-{result.stdout}
-stderr:
-{result.stderr}"
+    report = "\n".join(["stdout:", result.stdout, "stderr:", result.stderr])
     assert result.returncode == 0, report
     # A worker that ran and found nothing is the failure this whole helper
     # exists to catch, and it is invisible unless asserted: every downstream

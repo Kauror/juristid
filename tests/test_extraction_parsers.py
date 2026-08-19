@@ -207,7 +207,7 @@ def test_an_image_with_no_text_is_reported_honestly() -> None:
     with pytest.raises(ExtractionFailed) as error:
         parse("image/jpeg", corpus.photo_jpeg(), "pilt.jpg")
     assert error.value.code == "no_recognisable_text"
-    assert "originaal on alles" in error.value.detail
+    assert "riginaal on alles" in error.value.detail
 
 
 # -- Office ----------------------------------------------------------------

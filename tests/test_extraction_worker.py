@@ -63,7 +63,11 @@ def test_extraction_writes_fragments_and_marks_the_version_done(pdf_version, ext
     assert pdf_version.extraction_state == ExtractionState.DONE
     assert pdf_version.extraction_claimed_at is None
 
-    derivative = DocumentDerivative.objects.get(version=pdf_version, status=DerivativeStatus.ACTIVE)
+    derivative = DocumentDerivative.objects.get(
+        version=pdf_version,
+        kind=DerivativeKind.EXTRACTED_TEXT,
+        status=DerivativeStatus.ACTIVE,
+    )
     assert derivative.generator == "pdf"
     assert derivative.generator_version
     assert derivative.fragment_count == 6
@@ -141,7 +145,11 @@ def test_a_failed_reprocess_keeps_the_working_derivative(pdf_version, extract, m
     finding a document has no way to tell which of the two happened.
     """
     extract(pdf_version)
-    good = DocumentDerivative.objects.get(version=pdf_version, status=DerivativeStatus.ACTIVE)
+    good = DocumentDerivative.objects.get(
+        version=pdf_version,
+        kind=DerivativeKind.EXTRACTED_TEXT,
+        status=DerivativeStatus.ACTIVE,
+    )
 
     from app.documents.extraction import pdf as pdf_module
 
@@ -362,7 +370,11 @@ def test_a_rebuild_reproduces_the_same_derived_corpus(pdf_version, extract) -> N
     to cover the database and the evidence (Stage-2B brief 68, 81).
     """
     extract(pdf_version)
-    original = DocumentDerivative.objects.get(version=pdf_version, status=DerivativeStatus.ACTIVE)
+    original = DocumentDerivative.objects.get(
+        version=pdf_version,
+        kind=DerivativeKind.EXTRACTED_TEXT,
+        status=DerivativeStatus.ACTIVE,
+    )
     fingerprint = (
         original.content_sha256,
         original.fragment_count,
@@ -373,7 +385,11 @@ def test_a_rebuild_reproduces_the_same_derived_corpus(pdf_version, extract) -> N
     discard_derivatives(pdf_version)
     extract(pdf_version)
 
-    rebuilt = DocumentDerivative.objects.get(version=pdf_version, status=DerivativeStatus.ACTIVE)
+    rebuilt = DocumentDerivative.objects.get(
+        version=pdf_version,
+        kind=DerivativeKind.EXTRACTED_TEXT,
+        status=DerivativeStatus.ACTIVE,
+    )
     assert (
         rebuilt.content_sha256,
         rebuilt.fragment_count,

@@ -25,6 +25,8 @@ pytestmark = pytest.mark.django_db
 
 PDF = "application/pdf"
 HIDDEN_WORD = "salajanemarksona"
+#: A word both documents contain, so a hidden one really could move a count.
+SHARED_WORD = "kooskolastuskiri"
 
 
 @pytest.fixture
@@ -35,10 +37,18 @@ def corpus_with_restricted_child(specialist, other_specialist, capture_evidence,
     number that moves when it is hidden is a leak.
     """
     matter = factories.MatterFactory(owner=specialist, title="Avalik teema")
-    capture_evidence(matter, corpus.government_pdf(), "avalik.pdf", PDF, title="Avalik lisa")
+    capture_evidence(
+        matter,
+        corpus.text_pdf([f"{SHARED_WORD} {corpus.MINISTRY} {corpus.ONLY_ON_PDF_PAGE_4}"]),
+        "avalik.pdf",
+        PDF,
+        title="Avalik lisa",
+    )
     hidden = capture_evidence(
         matter,
-        corpus.text_pdf([f"Konfidentsiaalne: {HIDDEN_WORD} on kokku lepitud."]),
+        corpus.text_pdf(
+            [f"Konfidentsiaalne {SHARED_WORD}: {HIDDEN_WORD} on kokku lepitud. {corpus.MINISTRY}"]
+        ),
         "salajane.pdf",
         PDF,
         title="Salajane lisa",
@@ -102,7 +112,7 @@ def test_a_break_glass_grant_opens_it(corpus_with_restricted_child, other_specia
         user=other_specialist,
         reason="Sünteetiline juurdluskontroll",
         starts_at=timezone.now() - timedelta(minutes=1),
-        ends_at=timezone.now() + timedelta(hours=1),
+        expires_at=timezone.now() + timedelta(hours=1),
     )
     assert result_count(query=HIDDEN_WORD, user=other_specialist) == 1
 
@@ -113,13 +123,18 @@ def test_a_break_glass_grant_opens_it(corpus_with_restricted_child, other_specia
 def test_a_hidden_document_does_not_move_the_count(
     corpus_with_restricted_child, specialist, other_specialist
 ) -> None:
-    """Never "4 results, 1 hidden". The number must simply be 3."""
-    query = "Näidisministeerium"
+    """Never "4 results, 1 hidden". The number must simply be 3.
+
+    The term is one both documents contain, so the restricted one genuinely
+    *would* be in the outsider's count if authorization were applied after
+    counting rather than before it.
+    """
+    query = SHARED_WORD
 
     owner_total = result_count(query=query, user=specialist)
     outsider_total = result_count(query=query, user=other_specialist)
 
-    assert owner_total > outsider_total
+    assert owner_total > outsider_total > 0
     assert outsider_total == len(search(query=query, user=other_specialist))
 
 

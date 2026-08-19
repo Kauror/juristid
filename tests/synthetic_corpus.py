@@ -111,16 +111,38 @@ def _escape(line: str) -> str:
     return line.replace("\\", r"\\").replace("(", r"\(").replace(")", r"\)")
 
 
+#: Filler that makes a synthetic page as long as a real one.
+#:
+#: Not decoration. The OCR trigger is a page whose native text layer is thinner
+#: than ``EXTRACTION_OCR_MIN_NATIVE_CHARACTERS``, and the first version of this
+#: corpus had pages of about sixty characters — so every page of a perfectly
+#: healthy text PDF looked scanned, and the test asserting healthy documents are
+#: never sent to OCR failed against the fixture rather than against the code. A
+#: fixture that is unrealistic in the exact dimension under test is worse than
+#: no fixture at all.
+_BODY = (
+    "Eelnõuga täpsustatakse pakendiaruandluse tähtaegu ja korrastatakse "
+    "aruandluskohustuse ulatust. Muudatus puudutab ettevõtjaid, kes lasevad "
+    "turule pakendatud kaupa, ning täpsustab taaskasutusorganisatsioonide "
+    "andmete esitamise korda. Rakendussätted näevad ette üleminekuperioodi."
+)
+
+
 def government_pdf() -> bytes:
-    """Six pages of a fictional consultation letter. Page 4 is the marked one."""
+    """Six pages of a fictional consultation letter. Page 4 is the marked one.
+
+    Each page carries enough text to be recognisably typed rather than
+    photographed, because that distinction is what the PDF parser decides per
+    page.
+    """
     return text_pdf(
         [
-            f"{MINISTRY}\nKooskõlastuskiri\n\n{DRAFT_TITLE}",
-            "1. Eelnõu eesmärk\n\nEelnõu korrastab pakendiaruandluse tähtaegu.",
-            "2. Mõju ettevõtjatele\n\nAruandluskoormus väheneb väikeettevõtjatel.",
-            f"3. Erisused\n\nErisus kohaldub {ONLY_ON_PDF_PAGE_4} ringlusele.",
-            "4. Rakendamine\n\nSäte jõustub üldises korras.",
-            "5. Kooskõlastamine\n\nPalume seisukohta kolme nädala jooksul.",
+            f"{MINISTRY}\nKooskõlastuskiri\n\n{DRAFT_TITLE}\n\n{_BODY}",
+            f"1. Eelnõu eesmärk\n\nEelnõu korrastab pakendiaruandluse tähtaegu.\n{_BODY}",
+            f"2. Mõju ettevõtjatele\n\nAruandluskoormus väheneb.\n{_BODY}",
+            f"3. Erisused\n\nErisus kohaldub {ONLY_ON_PDF_PAGE_4} ringlusele.\n{_BODY}",
+            f"4. Rakendamine\n\nSäte jõustub üldises korras.\n{_BODY}",
+            f"5. Kooskõlastamine\n\nPalume seisukohta kolme nädala jooksul.\n{_BODY}",
         ]
     )
 
@@ -146,13 +168,7 @@ def mixed_pdf() -> bytes:
     is exercised by the PDF parser's per-page decision, which is tested against
     a text PDF whose later pages are deliberately empty.
     """
-    return text_pdf(
-        [
-            f"{MINISTRY}\nKaaskiri\n\n{DRAFT_TITLE}",
-            "",
-            "",
-        ]
-    )
+    return text_pdf([f"{MINISTRY}\nKaaskiri\n\n{DRAFT_TITLE}\n\n{_BODY}", "", ""])
 
 
 def corrupt_pdf() -> bytes:
