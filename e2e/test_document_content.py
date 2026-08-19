@@ -50,8 +50,17 @@ def run_worker() -> str:
         timeout=300,
         check=False,
     )
-    assert result.returncode == 0, result.stderr
-    return result.stdout
+    report = f"stdout:
+{result.stdout}
+stderr:
+{result.stderr}"
+    assert result.returncode == 0, report
+    # A worker that ran and found nothing is the failure this whole helper
+    # exists to catch, and it is invisible unless asserted: every downstream
+    # expectation would fail somewhere else with a message about a missing
+    # heading.
+    assert "Töödeldud 0 faili" not in result.stdout, report
+    return report
 
 
 @pytest.fixture
