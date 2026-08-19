@@ -111,7 +111,13 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     expect(page.get_by_text("Tekst olemas")).to_be_visible()
 
     # -- a safe preview, clearly marked as derived ------------------------
-    page.get_by_role("link", name="Vaata sisu").first.click()
+    # Followed by href rather than clicked. The table header is sticky, so a
+    # browser scrolling the first row to the top of the viewport puts it under
+    # the header — which is a real thing the CSS now accounts for, and not what
+    # this test is about.
+    preview_link = page.get_by_role("link", name="Vaata sisu").first
+    expect(preview_link).to_be_visible()
+    page.goto(f"{base_url}{preview_link.get_attribute('href')}")
     expect(page.get_by_role("heading", name="Originaal")).to_be_visible()
     expect(page.get_by_role("heading", name="Tuletatud eelvaade")).to_be_visible()
     expect(page.get_by_text("See ei ole originaal", exact=False)).to_be_visible()
@@ -149,6 +155,10 @@ def test_a_restricted_document_is_invisible_to_an_unrelated_lawyer(
     page.set_input_files("input[name='uploads']", str(synthetic_pdf))
     page.fill("input[name='title']", "Piiratud katsedokument")
     page.select_option("select[name='visibility']", "RESTRICTED")
+    # An owner, because a RESTRICTED Matter with nobody on it is invisible to
+    # everybody including whoever filed it — restricted access follows
+    # participation, not authorship. Stage 2A.5 found this the same way.
+    page.select_option("select[name='owner']", label=SANDRA.display_name)
     page.get_by_role("button", name="Salvesta ja ava teema").click()
     expect(page.get_by_role("heading", name="Piiratud katsedokument")).to_be_visible()
 
@@ -193,11 +203,12 @@ def test_an_email_shows_its_sender_and_its_attachments(
     page.goto(f"{page.url.rstrip('/')}/dokumendid/")
     page.reload()
     # The message and both of its attachments, each its own document.
-    expect(page.get_by_text("lisa-1.pdf")).to_be_visible()
-    expect(page.get_by_text("markmed.txt")).to_be_visible()
+    expect(page.get_by_text("lisa-1.pdf").first).to_be_visible()
+    expect(page.get_by_text("markmed.txt").first).to_be_visible()
     # The signature logo was an inline resource and is deliberately not here.
     expect(page.locator("body")).not_to_contain_text("allkiri-logo.png")
 
-    page.get_by_role("link", name="Vaata sisu").first.click()
+    message_link = page.get_by_role("link", name="Vaata sisu").first
+    page.goto(f"{base_url}{message_link.get_attribute('href')}")
     expect(page.get_by_text("Kadri Näidis")).to_be_visible()
     screenshots(page, "24-kirja-eelvaade")

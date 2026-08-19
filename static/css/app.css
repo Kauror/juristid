@@ -2370,3 +2370,18 @@
   color: var(--text-muted);
   font-size: var(--typography-size-label);
 }
+
+/* Anything a link can jump to has to clear the sticky chrome.
+ *
+ * The top bar is sticky at 0 and table headers are sticky at 48px, so a browser
+ * scrolling an element to the top of the viewport puts it *underneath* both.
+ * Stage 2B made this reachable: a search result for an entry links to
+ * `#sissekanne-<id>`, and without this the entry it lands on is behind the
+ * header. Playwright found the same thing trying to click a link in a table's
+ * first row. */
+.table tbody tr,
+.entrycard,
+.submission,
+.fragment {
+  scroll-margin-top: 96px;
+}
