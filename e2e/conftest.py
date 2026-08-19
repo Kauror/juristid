@@ -68,7 +68,7 @@ def screenshots():
         # The sticky header paints across the middle of a full-page capture and
         # hides the content behind it. Pinning it for the shot gives a complete,
         # reviewable image; the page itself is untouched.
-        page.add_style_tag(content=".topbar { position: static !important; }")
+        page.add_style_tag(content=(".topbar, .table thead th { position: static !important; }"))
         page.screenshot(path=str(directory / f"{name}.png"), full_page=True)
 
     return take

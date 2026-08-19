@@ -9,6 +9,13 @@
   box-sizing: border-box;
 }
 
+/* The UA rule for [hidden] is `display: none`, which any component class that
+   sets `display` silently overrides. Progressive disclosure depends on this
+   holding, so it is stated with intent. */
+[hidden] {
+  display: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
