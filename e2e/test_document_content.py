@@ -13,6 +13,7 @@ layers, and fifty brittle visual assertions would cost more than they catch
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 import sys
@@ -42,9 +43,17 @@ def run_worker() -> str:
     quietly skip the part where a *different* process has to see the row the web
     request committed.
     """
+    # The settings module has to be forced. pytest sets
+    # DJANGO_SETTINGS_MODULE=config.test_settings for its own process, the child
+    # inherits it, and those settings mint a *fresh temporary evidence
+    # directory per process* — so the worker looked in an empty folder and
+    # reported every file missing. The browser suite runs against the real
+    # server's settings, and so must anything it shells out to.
+    environment = {**os.environ, "DJANGO_SETTINGS_MODULE": "config.settings"}
     result = subprocess.run(
         [sys.executable, "manage.py", "extract_pending_documents", "--limit", "20"],
         cwd=REPOSITORY_ROOT,
+        env=environment,
         capture_output=True,
         text=True,
         timeout=300,
