@@ -76,6 +76,7 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
       EVIDENCE_ROOT: /app/evidence
+      DERIVATIVE_ROOT: /app/derivatives
       # Migrations and seeding are controlled one-off steps, never container
       # start-up work (master specification 24.2). A container that migrates on
       # boot will happily migrate on a restart nobody intended.
@@ -87,6 +88,47 @@ services:
       - "${JURISTID_HOST_PORT:-3020}:8000"
     volumes:
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/evidence:/app/evidence
+      # A separate directory, not a subdirectory of evidence. One of these must
+      # survive and be backed up; the other may be deleted and rebuilt from it.
+      # Mixing them puts an operator one `rm -rf` away from destroying the half
+      # that cannot be regenerated (docs/adr/0014).
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/derivatives:/app/derivatives
+    networks:
+      - internal
+
+  # Text extraction and OCR, in its own container.
+  #
+  # Separate from the web process because OCR on a scanned annex takes minutes
+  # and a lawyer filing incoming mail must not wait for it. Same image, so there
+  # is one thing to build and one version to reason about.
+  #
+  # It reaches the database and nothing else. No host port, no other network,
+  # and evidence is mounted **read-only**: this process only ever reads the
+  # original bytes, so the container that opens untrusted files with half a
+  # dozen parsers is not able to alter them even by accident.
+  extractor:
+    image: juristid-test-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-test-extractor
+    restart: unless-stopped
+    command:
+      - python
+      - manage.py
+      - run_extraction_worker
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-test/config/juristid.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      EVIDENCE_ROOT: /app/evidence
+      DERIVATIVE_ROOT: /app/derivatives
+      SEED_DEV_DATA: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/evidence:/app/evidence:ro
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/derivatives:/app/derivatives
     networks:
       - internal
 

@@ -10,9 +10,11 @@ public hostname.
 | LAN URL | <http://192.168.1.133:3020> |
 | Public URL | <https://juristid.orgusaar.ee> — **the PIN is the only gate** |
 | Compose project | `juristid-test` |
-| Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-tunnel` |
+| Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-extractor`, `juristid-test-tunnel` |
 | Network | `juristid-test-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-test/` |
+| Evidence | `…/evidence` — **back this up** |
+| Derivatives | `…/derivatives` — rebuildable, needs no backup |
 | Checkout | `/mnt/user/appdata/juristid-test/repo` |
 | Secrets | `/mnt/user/appdata/juristid-test/config/juristid.env`, mode 600, never in Git |
 
@@ -155,8 +157,59 @@ docker compose -p juristid-test -f compose.yml run --rm web python manage.py reb
 Finally:
 
 ```bash
-docker compose -p juristid-test -f compose.yml up -d web
+docker compose -p juristid-test -f compose.yml up -d web extractor
 ```
+
+## The extraction worker
+
+`juristid-test-extractor` runs `manage.py run_extraction_worker` from the same
+image as the web process. It claims pending `DocumentVersion` rows, parses them,
+writes derivatives and reindexes — none of which a web request waits for,
+because OCR on a scanned annex takes minutes.
+
+It publishes no port, joins only this project's network, and mounts evidence
+**read-only**. That last one is the point: this is the process that opens
+untrusted files with half a dozen parsers, and it never needs to write the
+original bytes.
+
+Watch it:
+
+```bash
+docker compose -p juristid-test -f compose.yml logs -f extractor
+```
+
+Catch up by hand, bounded, if the worker was down:
+
+```bash
+docker compose -p juristid-test -f compose.yml exec web python manage.py extract_pending_documents --limit 50
+```
+
+Prove the OCR runtime after any image change. Tesseract asked for a language it
+does not have falls back to English and returns confident nonsense, so this is
+checked rather than assumed:
+
+```bash
+docker compose -p juristid-test -f compose.yml exec web python manage.py check_ocr_runtime --required
+```
+
+Rebuild derived content for one file, one document or one matter — never for
+everything by accident, which is why there is no bare form of the command:
+
+```bash
+docker compose -p juristid-test -f compose.yml exec web python manage.py rebuild_document_derivatives --matter 2026_42
+```
+
+## Backup, and what may be skipped
+
+Back up **PostgreSQL and `evidence/`**. Those are the two things that cannot be
+recreated.
+
+`derivatives/` may be omitted. Everything in it — extracted text, thumbnails,
+the search index — is regenerated from the evidence by
+`rebuild_document_derivatives --all` followed by `rebuild_search_index`, and a
+test asserts the regenerated corpus is identical to the original down to the
+content hashes. That test is the whole reason it is safe to skip
+(docs/adr/0014).
 
 ## Updating
 
