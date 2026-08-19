@@ -61,3 +61,33 @@ owner: Communications/CVI, required for Stage 1.
 ## Reversibility
 
 High.
+
+## Update — Stage 1: the CVI package arrived
+
+The placeholder palette is gone. `static/css/tokens.css` now carries the
+Chamber's own values: brand blue `#009FDA` and a graphite-derived dark neutral
+ramp, both taken from the supplied CVI usage in `Kauror/koda` and
+`Kauror/dashkoda` rather than sampled from the public website. The ramp is the
+one already validated for colour-blind legibility there.
+
+The three-layer architecture this ADR set up did its job: swapping a placeholder
+palette for the real one changed **only** the primitive and semantic values. No
+component was touched, and the light-theme block still proves a future light
+theme needs different values rather than different components.
+
+**Typeface.** The CVI face is FF DIN Pro and its web licence has not been
+delivered. Barlow is the approved visual fallback and ships first in the stack
+after it, so adding FF DIN Pro later is an `@font-face` addition, not a
+redesign.
+
+**Barlow is self-hosted** (`static/fonts/`, latin and latin-ext, 10 files,
+~200 KB) rather than loaded from a font CDN. This application will hold
+confidential member material, and a third-party request on every page view
+discloses who is using it and when. That is a departure from the design
+package, which links Google Fonts; it is visually identical and reversible in
+two lines if the Chamber would rather match the handoff exactly.
+
+**Status is never colour alone.** The three action modes differ by shape as well
+as tint — TEEN filled, OOTAN solid outline, JÄLGIN dashed — and every date
+carries a written label saying whether it is a deadline, a review date or an
+expectation.

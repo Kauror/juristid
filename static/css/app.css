@@ -1108,6 +1108,11 @@
   flex-wrap: wrap;
 }
 
+.card > .nextaction__label {
+  display: block;
+  margin-bottom: var(--spacing-3);
+}
+
 .nextaction__label {
   font-size: var(--typography-size-label);
   font-weight: var(--typography-weight-bold);
