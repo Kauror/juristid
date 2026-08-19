@@ -47,6 +47,70 @@ def allocate_matter_reference(year: int | None = None) -> tuple[int, int]:
 
 
 @transaction.atomic
+def reserve_matter_reference(year: int, number: int) -> int:
+    """Make sure the sequence for ``year`` will never hand out ``number`` again.
+
+    Called for every valid reference the register holds — including the ones it
+    has merely *reserved*. The current year's sheet is pre-numbered ahead of
+    use: the supplied snapshot runs to ``2026_300`` while only 192 rows carry a
+    matter. Those unused numbers are still spoken for on paper, so a sequence
+    that only knew about imported rows would hand ``2026_193`` to the next
+    natively created Matter and collide with a file a lawyer already has open.
+
+    Idempotent, and takes the same row lock as allocation, so an import running
+    beside ordinary work cannot interleave badly.
+    """
+    MatterReferenceSequence.objects.get_or_create(year=year)
+    sequence = MatterReferenceSequence.objects.select_for_update().get(pk=year)
+    if number > sequence.last_number:
+        sequence.last_number = number
+        sequence.save(update_fields=["last_number", "updated_at"])
+    return sequence.last_number
+
+
+@transaction.atomic
+def create_imported_matter(
+    *,
+    title: str,
+    reference_year: int | None,
+    reference_number: int | None,
+    actor: Any = None,
+    record_mode: str = RecordMode.ARCHIVE,
+    **extra: Any,
+) -> Matter:
+    """Create a Matter from a legacy register row, keeping its own reference.
+
+    Distinct from :func:`create_matter` in exactly one respect that matters: it
+    never allocates a new number. An imported row arrives with the reference the
+    department has used for years, and issuing it a second, different one would
+    break the only identifier anyone carries in their head.
+
+    The sequence is still pushed forward, so native creation after an import
+    cannot collide with it.
+    """
+    if not title.strip():
+        raise DomainError("Teema vajab pealkirja.")
+
+    matter = create_matter(
+        title=title,
+        actor=actor,
+        assign_reference=False,
+        record_mode=record_mode,
+        origin=MatterOrigin.LEGACY_IMPORT,
+        reporting_year=reference_year,
+        **extra,
+    )
+
+    if reference_year is not None and reference_number is not None:
+        matter.reference_year = reference_year
+        matter.reference_number = reference_number
+        matter.save(update_fields=["reference_year", "reference_number", "updated_at"])
+        reserve_matter_reference(reference_year, reference_number)
+
+    return matter
+
+
+@transaction.atomic
 def create_matter(
     *,
     title: str,
