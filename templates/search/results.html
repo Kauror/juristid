@@ -30,7 +30,14 @@ here so the UI does not change when it does.
 
   {% if rows %}
     <div class="card" style="padding:var(--spacing-15)">
-      <p class="sectionlabel">Teemad <span class="sectionlabel__count">{{ result_count }}</span></p>
+      <p class="sectionlabel">
+        Teemad <span class="sectionlabel__count">{{ result_count }}</span>
+        {% if is_truncated %}
+          {# Saying which rows are on screen is the difference between a long
+             result set and a broken one. #}
+          <span class="sectionlabel__note">kuvatud {{ shown_count }}</span>
+        {% endif %}
+      </p>
       <div class="searchresults">
         {% for row in rows %}
           <a class="result" href="{% url 'matters:matter_detail' pk=row.result.matter.pk %}">

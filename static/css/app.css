@@ -263,6 +263,15 @@
   letter-spacing: 0;
 }
 
+/* "kuvatud 50" beside a larger total. Quieter than the count itself, because
+   it qualifies the number rather than competing with it. */
+.sectionlabel__note {
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-muted);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
 .sectionlabel--today {
   color: var(--status-warning);
 }
