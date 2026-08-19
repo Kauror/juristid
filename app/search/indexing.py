@@ -28,8 +28,10 @@ from django.db.models import QuerySet
 from django.utils import timezone
 
 from app.core.text import normalize_for_matching
-from app.matters.models import Matter
+from app.documents.models import DocumentVersion
+from app.matters.models import Entry, Matter
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
+from app.submissions.models import Submission
 
 #: Rows per statement batch during a full rebuild. This bounds **memory**, not
 #: loss: a full rebuild is one transaction, so a failure in the last batch rolls
@@ -69,6 +71,9 @@ class RebuildResult:
     matters: int
     seconds: float
     index_version: str
+    entries: int = 0
+    submissions: int = 0
+    fragments: int = 0
 
 
 def indexable_matters() -> QuerySet[Matter]:
@@ -141,11 +146,13 @@ def _document_values(matter: Matter, now: object) -> dict[str, object]:
         "title": _title_text_for(matter),
         "identifiers": _identifiers_for(matter),
         "alias_text": _alias_text_for(matter),
-        # Stage 2A indexes Matter-level content only. Entry and Submission text
-        # is deferred to Stage 2B, because indexing it safely needs the child's
-        # *current* restriction in the query and not a copy of it here
-        # (docs/adr/0013).
-        "body_text": "",
+        # The Matter's own authored summaries. Entry, Submission and document
+        # text live in their own rows, so a result can say which of them
+        # matched — folding them in here would make every hit read "the matter
+        # matched" and lose the locator entirely (docs/adr/0014).
+        "body_text": " ".join(
+            part for part in (matter.position_summary, matter.rationale_summary) if part
+        ),
         "source_locator": "",
         "index_version": INDEX_VERSION,
         "indexed_at": now,
@@ -170,7 +177,13 @@ def refresh_matters(matters: QuerySet[Matter]) -> int:
     SearchDocument.objects.bulk_create(
         [SearchDocument(**_document_values(matter, now)) for matter in rows]
     )
-    _recompute_vectors(SearchDocument.objects.filter(matter_id__in=matter_ids))
+    # Scoped to the rows just written. Without the kind filter this would also
+    # recompute every entry, submission and document fragment belonging to these
+    # matters — correct output, and at fragment scale an enormous amount of
+    # pointless work on every Matter save.
+    _recompute_vectors(
+        SearchDocument.objects.filter(matter_id__in=matter_ids, source_kind=SearchSourceKind.MATTER)
+    )
     return len(rows)
 
 
@@ -201,6 +214,50 @@ def _recompute_vectors(documents: QuerySet[SearchDocument]) -> None:
 
 def refresh_matter(matter: Matter) -> int:
     return refresh_matters(indexable_matters().filter(pk=matter.pk))
+
+
+@transaction.atomic
+def refresh_entry(entry: Entry) -> int:
+    from app.search.child_indexing import indexable_entries, refresh_entries
+
+    count = refresh_entries(indexable_entries().filter(pk=entry.pk))
+    _recompute_vectors(
+        SearchDocument.objects.filter(source_kind=SearchSourceKind.ENTRY, source_object_id=entry.pk)
+    )
+    return count
+
+
+@transaction.atomic
+def refresh_submission(submission: Submission) -> int:
+    from app.search.child_indexing import indexable_submissions, refresh_submissions
+
+    count = refresh_submissions(indexable_submissions().filter(pk=submission.pk))
+    _recompute_vectors(
+        SearchDocument.objects.filter(
+            source_kind=SearchSourceKind.SUBMISSION, source_object_id=submission.pk
+        )
+    )
+    return count
+
+
+@transaction.atomic
+def refresh_document_version(version: DocumentVersion) -> int:
+    """Reproject one version's extracted content.
+
+    Called from inside the extraction publish transaction, so a committed
+    derivative and a findable document are the same event. A derivative that
+    committed without its search rows would be content that exists and cannot be
+    found — the silent half of every search complaint.
+    """
+    from app.search.child_indexing import refresh_version_fragments
+
+    count = refresh_version_fragments(version)
+    _recompute_vectors(
+        SearchDocument.objects.filter(
+            source_kind=SearchSourceKind.DOCUMENT_FRAGMENT, document_version=version
+        )
+    )
+    return count
 
 
 def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildResult:
@@ -248,11 +305,54 @@ def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildR
             chunk = identifiers[offset : offset + batch_size]
             total += refresh_matters(indexable_matters().filter(pk__in=chunk))
 
+        entries, submissions, fragments = _rebuild_children(batch_size=batch_size)
         documents = SearchDocument.objects.count()
 
     return RebuildResult(
         documents=documents,
         matters=total,
+        entries=entries,
+        submissions=submissions,
+        fragments=fragments,
         seconds=(timezone.now() - started).total_seconds(),
         index_version=INDEX_VERSION,
     )
+
+
+def _rebuild_children(*, batch_size: int) -> tuple[int, int, int]:
+    """Entries, submissions and document fragments, inside the caller's
+    transaction.
+
+    Deliberately not a separate atomic block. The whole rebuild is one
+    transaction so readers keep the previous *complete* index throughout, and a
+    child pass that committed on its own would give them a corpus whose matters
+    are new and whose documents are half old — worse than either alone, because
+    nothing about it looks wrong (docs/adr/0013).
+    """
+    from app.search.child_indexing import (
+        indexable_entries,
+        indexable_fragments,
+        indexable_submissions,
+        project_fragments,
+        refresh_entries,
+        refresh_submissions,
+    )
+
+    entries = _in_batches(indexable_entries(), refresh_entries, batch_size)
+    submissions = _in_batches(indexable_submissions(), refresh_submissions, batch_size)
+    fragments = _in_batches(indexable_fragments(), project_fragments, batch_size)
+
+    # One statement for every child row, rather than one per batch. The vectors
+    # are computed in the database either way; doing it once means PostgreSQL
+    # plans it once.
+    _recompute_vectors(SearchDocument.objects.exclude(source_kind=SearchSourceKind.MATTER))
+    return entries, submissions, fragments
+
+
+def _in_batches(queryset: QuerySet, refresh: object, batch_size: int) -> int:
+    identifiers = list(queryset.order_by("pk").values_list("pk", flat=True))
+    total = 0
+    for offset in range(0, len(identifiers), batch_size):
+        chunk = identifiers[offset : offset + batch_size]
+        total += refresh(queryset.filter(pk__in=chunk))  # type: ignore[operator]
+    return total

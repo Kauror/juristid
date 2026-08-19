@@ -222,11 +222,23 @@ MEDIA_URL = "media/"
 EVIDENCE_STORAGE_ALIAS = "evidence"
 EVIDENCE_ROOT = Path(env("EVIDENCE_ROOT", str(BASE_DIR / "evidence")))
 
+# Derivatives are a different storage class, not a subdirectory of evidence.
+# Previews and thumbnails may be deleted and rebuilt; evidence may not. Mixing
+# them puts the operator one `rm -rf` away from destroying the half that cannot
+# be regenerated, and makes "is the backup complete" impossible to answer by
+# looking (docs/adr/0014, Stage-2B brief 9).
+DERIVATIVE_STORAGE_ALIAS = "derivatives"
+DERIVATIVE_ROOT = Path(env("DERIVATIVE_ROOT", str(BASE_DIR / "derivatives")))
+
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     EVIDENCE_STORAGE_ALIAS: {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
         "OPTIONS": {"location": str(EVIDENCE_ROOT)},
+    },
+    DERIVATIVE_STORAGE_ALIAS: {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {"location": str(DERIVATIVE_ROOT)},
     },
     "staticfiles": {
         "BACKEND": (
@@ -248,6 +260,40 @@ MAX_EVIDENCE_UPLOAD_BYTES = env_int("MAX_EVIDENCE_UPLOAD_BYTES", 100 * 1024 * 10
 # so a live upload is indistinguishable from an orphan until it commits. The
 # default is deliberately far longer than any transaction could last.
 EVIDENCE_ORPHAN_GRACE_HOURS = env_int("EVIDENCE_ORPHAN_GRACE_HOURS", 24)
+
+# --------------------------------------------------------------------------
+# Content extraction
+# --------------------------------------------------------------------------
+# Every limit below exists because a parser handed a pathological file will
+# otherwise consume the worker rather than report the problem. They are
+# configurable because the right number is a property of the corpus, and they
+# are enforced as *refusals* rather than silent truncation: a legal document
+# extracted halfway and marked complete is worse than one marked failed, since
+# only one of those gets looked at again (Stage-2B brief 72).
+EXTRACTION_MAX_PDF_PAGES = env_int("EXTRACTION_MAX_PDF_PAGES", 500)
+EXTRACTION_MAX_CHARACTERS = env_int("EXTRACTION_MAX_CHARACTERS", 8_000_000)
+EXTRACTION_MAX_ARCHIVE_MEMBERS = env_int("EXTRACTION_MAX_ARCHIVE_MEMBERS", 2_000)
+EXTRACTION_MAX_UNCOMPRESSED_BYTES = env_int("EXTRACTION_MAX_UNCOMPRESSED_BYTES", 400 * 1024 * 1024)
+EXTRACTION_MAX_COMPRESSION_RATIO = env_int("EXTRACTION_MAX_COMPRESSION_RATIO", 200)
+EXTRACTION_MAX_IMAGE_PIXELS = env_int("EXTRACTION_MAX_IMAGE_PIXELS", 80_000_000)
+EXTRACTION_MAX_EMAIL_ATTACHMENTS = env_int("EXTRACTION_MAX_EMAIL_ATTACHMENTS", 50)
+EXTRACTION_MAX_EMAIL_DEPTH = env_int("EXTRACTION_MAX_EMAIL_DEPTH", 3)
+EXTRACTION_MAX_XLSX_FRAGMENTS_PER_SHEET = env_int("EXTRACTION_MAX_XLSX_FRAGMENTS_PER_SHEET", 500)
+
+# A page whose native text layer is thinner than this is treated as scanned.
+# Not zero: real government PDFs carry a header, a page number and a stamp on an
+# otherwise photographed page, and calling that "has text" leaves the body
+# unsearchable while looking successful.
+EXTRACTION_OCR_MIN_NATIVE_CHARACTERS = env_int("EXTRACTION_OCR_MIN_NATIVE_CHARACTERS", 120)
+EXTRACTION_OCR_LANGUAGES = env("EXTRACTION_OCR_LANGUAGES", "est+eng")
+EXTRACTION_OCR_DPI = env_int("EXTRACTION_OCR_DPI", 200)
+EXTRACTION_OCR_ENABLED = env_bool("EXTRACTION_OCR_ENABLED", default=True)
+
+# How long a PROCESSING claim may stand before another worker may take it. Long
+# enough that a slow OCR job is never stolen mid-run; short enough that a killed
+# worker's queue drains the same day.
+EXTRACTION_STALE_CLAIM_MINUTES = env_int("EXTRACTION_STALE_CLAIM_MINUTES", 30)
+EXTRACTION_WORKER_IDLE_SECONDS = env_int("EXTRACTION_WORKER_IDLE_SECONDS", 10)
 
 # --------------------------------------------------------------------------
 # Security

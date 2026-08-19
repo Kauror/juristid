@@ -2,10 +2,15 @@
 {% block title %}Otsing · {{ application_name }}{% endblock %}
 
 {% comment %}
-Results say why they matched. A lawyer who searched for a ministry name and got
-a title hit needs to see which, or the ranking looks arbitrary
-(master specification 14.3). Stage 2 enriches the reason; the shape is already
-here so the UI does not change when it does.
+Results say why they matched and what matched. Stage 2A could only ever answer
+"a matter"; Stage 2B answers with an entry, a sent opinion or page 14 of an
+annex, so each row leads with a source badge and, where the source has one, the
+locator inside it.
+
+The excerpt is rendered as a sequence of runs rather than as markup. PostgreSQL
+marked the matched words with two characters, the service split on them, and the
+template writes the <mark> itself — so nothing that came out of a document
+reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
 {% endcomment %}
 
 {% block content %}
@@ -16,22 +21,22 @@ here so the UI does not change when it does.
       <span class="pagehead__context">{{ result_count }} vastet päringule „{{ query }}“</span>
     {% else %}
       <span class="pagehead__context">
-        Sisesta viide (näiteks 2026_12), pealkirja osa, asutuse nimi või silt.
+        Sisesta viide (näiteks 2026_12), pealkirja osa, asutuse nimi, silt või
+        sõna dokumendi seest.
       </span>
     {% endif %}
   </div>
 
   {% if query and not rows %}
     <p class="empty">
-      Vasteid ei leitud. Proovi lühemat sõna või teistsugust kirjapilti —
-      dokumentide sisust otsimine valmib 2. etapis.
+      Vasteid ei leitud. Proovi lühemat sõna või teistsugust kirjapilti.
     </p>
   {% endif %}
 
   {% if rows %}
     <div class="card" style="padding:var(--spacing-15)">
       <p class="sectionlabel">
-        Teemad <span class="sectionlabel__count">{{ result_count }}</span>
+        Vasted <span class="sectionlabel__count">{{ result_count }}</span>
         {% if is_truncated %}
           {% comment %}
             Saying which rows are on screen is the difference between a long
@@ -42,28 +47,46 @@ here so the UI does not change when it does.
       </p>
       <div class="searchresults">
         {% for row in rows %}
-          <a class="result" href="{% url 'matters:matter_detail' pk=row.result.matter.pk %}">
+          <a class="result" href="{{ row.target }}">
             <span class="result__head">
+              <span class="badge badge--source">{{ row.result.source_label }}</span>
               {% if row.result.matter.display_reference %}
                 <span class="reference">{{ row.result.matter.display_reference }}</span>
               {% endif %}
               <span class="result__title">{{ row.result.matter.title }}</span>
-              {% if row.result.matter.stage %}
-                <span class="badge">{{ row.result.matter.stage.label_et }}</span>
-              {% endif %}
-              {% if row.result.matter.record_mode == "ARCHIVE" %}
-                <span class="badge badge--archive">Arhiiv</span>
-              {% endif %}
-              {% if not row.result.matter.is_open %}
-                <span class="badge badge--closed">Suletud</span>
+              {% if row.result.is_matter %}
+                {% if row.result.matter.stage %}
+                  <span class="badge">{{ row.result.matter.stage.label_et }}</span>
+                {% endif %}
+                {% if row.result.matter.record_mode == "ARCHIVE" %}
+                  <span class="badge badge--archive">Arhiiv</span>
+                {% endif %}
+                {% if not row.result.matter.is_open %}
+                  <span class="badge badge--closed">Suletud</span>
+                {% endif %}
               {% endif %}
             </span>
+
+            {% if row.result.document_title or row.result.source_locator %}
+              <span class="result__source">
+                {% if row.result.document_title %}{{ row.result.document_title }}{% endif %}
+                {% if row.result.document_title and row.result.source_locator %} · {% endif %}
+                {% if row.result.source_locator %}{{ row.result.source_locator }}{% endif %}
+              </span>
+            {% endif %}
+
+            {% if row.result.snippet %}
+              <span class="result__snippet">„{% for run in row.result.snippet %}{% if run.highlight %}<mark>{{ run.text }}</mark>{% else %}{{ run.text }}{% endif %}{% endfor %}“</span>
+            {% endif %}
+
             <span class="result__why">
               vaste: {{ row.result.match_label|lower }}
-              {% if row.result.matter.is_open %}· avatud{% else %}· suletud{% endif %}
-              {% if row.result.matter.owner %}· vastutaja {{ row.result.matter.owner.display_name }}{% endif %}
-              {% if row.action %}
-                · {{ row.action.get_kind_display|lower }}: {{ row.action.text|truncatechars:60 }}
+              {% if row.result.is_matter %}
+                {% if row.result.matter.is_open %}· avatud{% else %}· suletud{% endif %}
+                {% if row.result.matter.owner %}· vastutaja {{ row.result.matter.owner.display_name }}{% endif %}
+                {% if row.action %}
+                  · {{ row.action.get_kind_display|lower }}: {{ row.action.text|truncatechars:60 }}
+                {% endif %}
               {% endif %}
             </span>
           </a>

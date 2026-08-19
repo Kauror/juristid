@@ -33,6 +33,22 @@ ENV PYTHONUNBUFFERED=1 \
     PATH="/opt/venv/bin:$PATH" \
     DJANGO_SETTINGS_MODULE=config.settings
 
+# Tesseract and its Estonian and English language data. A system package rather
+# than a wheel, installed here and in CI from the same list — an OCR engine that
+# exists on one developer's machine and not in production is how "extraction
+# works" becomes an environment-dependent claim (Stage-2B brief 88, 89).
+#
+# est+eng because the corpus is Estonian and its annexes are routinely English.
+# Tesseract asked for a language it does not have falls back silently and returns
+# confident nonsense, which is why the application probes for these at runtime
+# instead of assuming them.
+RUN apt-get update \
+    && apt-get install --no-install-recommends --yes \
+        tesseract-ocr \
+        tesseract-ocr-est \
+        tesseract-ocr-eng \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system --gid 10001 juristid \
     && useradd --system --uid 10001 --gid juristid --create-home juristid
 
@@ -50,9 +66,11 @@ COPY --from=builder /src /app
 # keeps the old stamp, which is correct: it is the same image.
 RUN date -u +"%Y-%m-%dT%H:%M:%SZ" > /app/BUILD_STAMP
 
-# A named volume inherits the ownership of the image path it shadows, so the
-# evidence directory must exist and belong to the application user.
-RUN mkdir -p /app/evidence && chown -R juristid:juristid /app
+# Evidence and derivatives are separate directories because they are separate
+# storage classes: one must survive and be backed up, the other may be deleted
+# and rebuilt. Both must exist and belong to the application user, because a
+# named volume inherits the ownership of the image path it shadows.
+RUN mkdir -p /app/evidence /app/derivatives && chown -R juristid:juristid /app
 
 USER juristid
 

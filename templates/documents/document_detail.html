@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}{{ document.title }} · {{ matter.display_reference }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Original and derivative are the load-bearing distinction on this page, and the
+  layout carries it rather than a footnote. The original is a solid card with a
+  checksum and a download; everything below it sits under a heading that says
+  the words "tuletatud eelvaade" and names the parser that produced it.
+
+  Nothing on this page renders the source format. The preview is text the view
+  already reduced to plain strings, escaped like any other template variable
+  (app/documents/preview.py).
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <nav class="crumbs" aria-label="Asukoht">
+    <a href="{% url 'matters:matter_documents' pk=matter.pk %}">{{ matter.display_reference }} · Dokumendid</a>
+  </nav>
+
+  <header class="pagehead">
+    <h1>{{ document.title }}</h1>
+    <p class="pagehead__meta">
+      {{ document.get_role_display }}
+      {% if document.is_restricted %}<span class="badge badge--restricted">Piiratud</span>{% endif %}
+    </p>
+  </header>
+
+  {% if version %}
+    <section class="card card--evidence" aria-labelledby="originaal-heading">
+      <h2 class="sectionlabel" id="originaal-heading">Originaal</h2>
+      <p class="cardnote">
+        Muutumatu tõend. Baidid ei muutu kunagi — parandus on uus versioon.
+      </p>
+      <dl class="detailgrid">
+        <div><dt>Failinimi</dt><dd>{{ version.original_filename }}</dd></div>
+        <div><dt>Tüüp</dt><dd>{{ version.mime_type }}</dd></div>
+        <div><dt>Suurus</dt><dd>{{ version.size_bytes|filesizeformat }}</dd></div>
+        <div><dt>Saadi</dt><dd>{{ version.acquired_at|date:"d.m.Y H:i" }}</dd></div>
+        <div><dt>Versioon</dt><dd>{{ version.version_number }}{% if versions|length > 1 %} / {{ versions|length }}{% endif %}</dd></div>
+        <div><dt>Töötlemine</dt>
+          <dd><span class="statechip statechip--{{ preview.state_tone }}">{{ preview.state_label }}</span></dd>
+        </div>
+      </dl>
+
+      <p class="form__actions">
+        <a class="button button--primary" href="{% url 'documents:download' pk=version.pk %}">
+          Laadi alla originaal
+        </a>
+      </p>
+
+      <details class="disclosure">
+        <summary>Tehnilised andmed</summary>
+        <dl class="detailgrid">
+          <div><dt>SHA-256</dt><dd class="mono">{{ version.sha256 }}</dd></div>
+          <div><dt>Pahavarakontroll</dt><dd>{{ version.get_malware_scan_state_display }}</dd></div>
+          {% if document.provenance_note %}
+            <div><dt>Päritolu</dt><dd>{{ document.provenance_note }}</dd></div>
+          {% endif %}
+        </dl>
+      </details>
+    </section>
+
+    {% if parent_email %}
+      <section class="card" aria-labelledby="parent-heading">
+        <h2 class="sectionlabel" id="parent-heading">Saabus e-kirjaga</h2>
+        <p class="cardnote">
+          See fail oli manus number {{ parent_email.ordinal }} kirjas
+          <a href="{% url 'documents:document_detail' pk=parent_email.parent_version.document_id %}">{{ parent_email.parent_version.original_filename }}</a>.
+          Kirjas kandis see nime <span class="mono">{{ parent_email.declared_filename }}</span>.
+        </p>
+      </section>
+    {% endif %}
+
+    {% if attachments %}
+      <section class="card" aria-labelledby="manused-heading">
+        <h2 class="sectionlabel" id="manused-heading">
+          Selle kirja manused
+          <span class="sectionlabel__count">{{ attachments|length }}</span>
+        </h2>
+        <ul class="filelist">
+          {% for link in attachments %}
+            <li class="filelist__item">
+              <a href="{% url 'documents:document_detail' pk=link.attachment_version.document_id %}">
+                {{ link.declared_filename }}
+              </a>
+              <span class="filelist__meta">{{ link.attachment_version.size_bytes|filesizeformat }}</span>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endif %}
+
+    <section class="card card--derived" aria-labelledby="eelvaade-heading">
+      <h2 class="sectionlabel" id="eelvaade-heading">Tuletatud eelvaade</h2>
+      <p class="cardnote">
+        See ei ole originaal. Tekst on masinaga eraldatud ja selle võib igal ajal
+        uuesti luua. Kahtluse korral vaata originaali.
+      </p>
+
+      {% if preview.note %}
+        <p class="formnote">{{ preview.note }}</p>
+      {% endif %}
+
+      {% if preview.email_fields %}
+        <dl class="detailgrid">
+          {% for field in preview.email_fields %}
+            <div><dt>{{ field.label }}</dt><dd>{{ field.value }}</dd></div>
+          {% endfor %}
+        </dl>
+      {% endif %}
+
+      {% if preview.is_image %}
+        <p class="cardnote">
+          Pildifail. Ava originaal allalaadimise kaudu — Juristid ei kuva üleslaaditud
+          faile lehel sees.
+        </p>
+      {% endif %}
+
+      {% if preview.fragments %}
+        <ol class="fragments">
+          {% for fragment in preview.fragments %}
+            <li class="fragment">
+              <p class="fragment__locator">
+                {{ fragment.locator_label|default:"—" }}
+                {% if fragment.from_ocr %}
+                  <span class="badge badge--ocr" title="Tekst on loetud pildilt tähetuvastusega">OCR</span>
+                {% endif %}
+              </p>
+              <p class="fragment__text">{{ fragment.text }}</p>
+            </li>
+          {% endfor %}
+        </ol>
+        {% if preview.truncated %}
+          <p class="cardnote">
+            Eelvaade on lühendatud. Kokku {{ preview.total_fragments }} osa; kogu sisu on
+            otsingus ja originaalis.
+          </p>
+        {% endif %}
+      {% elif not preview.email_fields and not preview.is_image %}
+        <p class="empty">Sellest failist ei ole teksti eraldatud.</p>
+      {% endif %}
+
+      {% if preview.generator %}
+        <p class="cardnote">
+          Eraldas {{ preview.generator }} {{ preview.generator_version }}{% if preview.built_at %},
+          {{ preview.built_at|date:"d.m.Y H:i" }}{% endif %}.
+        </p>
+      {% endif %}
+    </section>
+
+    {% if versions|length > 1 %}
+      <section class="card" aria-labelledby="versioonid-heading">
+        <h2 class="sectionlabel" id="versioonid-heading">Versioonid</h2>
+        <div class="tablewrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th scope="col">Versioon</th>
+                <th scope="col">Fail</th>
+                <th scope="col">Suurus</th>
+                <th scope="col">Saadi</th>
+                <th scope="col">Töötlemine</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in versions %}
+                <tr>
+                  <td>{{ row.version_number }}{% if row.pk == version.pk %} <span class="badge">kehtiv</span>{% endif %}</td>
+                  <td><a href="{% url 'documents:download' pk=row.pk %}">{{ row.original_filename }}</a></td>
+                  <td>{{ row.size_bytes|filesizeformat }}</td>
+                  <td class="table__date">{{ row.acquired_at|date:"d.m.Y" }}</td>
+                  <td>{{ row.get_extraction_state_display }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    {% endif %}
+  {% else %}
+    <section class="card">
+      <p class="empty">Sellel dokumendil ei ole veel tõendit.</p>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

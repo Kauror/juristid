@@ -17,6 +17,30 @@ dependencies = [
     # provenance here, not incidental formatting, and pandas discards them
     # (docs/adr/0012).
     "openpyxl>=3.1.5",
+    # -- Stage 2B content extraction ---------------------------------------
+    # Every parser below reads a format without executing anything inside it.
+    # None of them opens a network connection, and none is a wrapper around a
+    # desktop Office installation (docs/adr/0014).
+    #
+    # PDF text and structure. Pure Python, so a malformed file raises where we
+    # can catch it rather than in a C library that takes the worker with it.
+    "pypdf>=5.1",
+    # Rasterising PDF pages for OCR. A self-contained PDFium wheel: no poppler,
+    # no system package, nothing to forget on one machine and discover in
+    # production.
+    "pypdfium2>=4.30",
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
+    # Outlook MSG. The format is an OLE compound file with no public parser in
+    # the standard library, and automating Outlook is not an option on a Linux
+    # container.
+    "extract-msg>=0.54",
+    # Images for OCR input and safe thumbnails. Decompression-bomb protection
+    # is configured explicitly in app/documents/extraction/limits.py.
+    "pillow>=11.0",
+    # Tesseract binding. The engine itself is a system package, installed in
+    # the Dockerfile and in CI so the runtime that ships is the runtime tested.
+    "pytesseract>=0.3.13",
 ]
 
 [dependency-groups]

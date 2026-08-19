@@ -31,8 +31,19 @@ from typing import Any
 from django.db.models.signals import m2m_changed, post_delete, post_save
 from django.dispatch import receiver
 
-from app.matters.models import Matter, TagAssignment
-from app.search.indexing import indexable_matters, indexing_is_suspended, refresh_matters
+from app.documents.enums import DerivativeStatus
+from app.documents.models import Document, DocumentVersion
+from app.matters.models import Entry, Matter, TagAssignment
+from app.search.indexing import (
+    indexable_matters,
+    indexing_is_suspended,
+    refresh_document_version,
+    refresh_entry,
+    refresh_matters,
+    refresh_submission,
+)
+from app.search.models import SearchDocument, SearchSourceKind
+from app.submissions.models import Submission, SubmissionRecipient
 
 
 def _refresh(matter_id: Any) -> None:
@@ -79,3 +90,75 @@ def refresh_on_tag_assignment(
     matter unfindable by its tag, silently.
     """
     _refresh(instance.matter_id)
+
+
+# -- Stage 2B: child content ------------------------------------------------
+#
+# Entries and submissions are ordinary form-driven writes, so ordinary signals
+# keep them current. Document fragments are not: they appear only when a worker
+# publishes a derivative, and the orchestrator refreshes them inside the same
+# transaction. A signal here would fire on every fragment row of every parse and
+# reindex the same version hundreds of times.
+
+
+@receiver(post_save, sender=Entry, dispatch_uid="search_refresh_entry")
+def refresh_on_entry_save(sender: type[Entry], instance: Entry, **kwargs: Any) -> None:
+    if indexing_is_suspended():
+        return
+    refresh_entry(instance)
+
+
+@receiver(post_delete, sender=Entry, dispatch_uid="search_remove_entry")
+def remove_on_entry_delete(sender: type[Entry], instance: Entry, **kwargs: Any) -> None:
+    SearchDocument.objects.filter(
+        source_kind=SearchSourceKind.ENTRY, source_object_id=instance.pk
+    ).delete()
+
+
+@receiver(post_save, sender=Submission, dispatch_uid="search_refresh_submission")
+def refresh_on_submission_save(
+    sender: type[Submission], instance: Submission, **kwargs: Any
+) -> None:
+    if indexing_is_suspended():
+        return
+    refresh_submission(instance)
+
+
+@receiver(post_save, sender=SubmissionRecipient, dispatch_uid="search_refresh_recipient_added")
+@receiver(post_delete, sender=SubmissionRecipient, dispatch_uid="search_refresh_recipient_removed")
+def refresh_on_recipient_change(
+    sender: type[SubmissionRecipient], instance: SubmissionRecipient, **kwargs: Any
+) -> None:
+    """Recipients are indexed text, so changing them changes the index.
+
+    Both directions, for the same reason tags needed both: adding a recipient
+    and removing one are different write paths, and a submission that stays
+    findable under a ministry it is no longer addressed to is wrong in the
+    direction people notice least.
+    """
+    if indexing_is_suspended():
+        return
+    submission = Submission.objects.filter(pk=instance.submission_id).first()
+    if submission is not None:
+        refresh_submission(submission)
+
+
+@receiver(post_save, sender=Document, dispatch_uid="search_refresh_document_title")
+def refresh_on_document_change(sender: type[Document], instance: Document, **kwargs: Any) -> None:
+    """A renamed or reclassified document changes what its fragments say.
+
+    The fragment rows carry the document's title as their own, so that a result
+    can name the file it came from. Renaming the document without this leaves
+    every page of it indexed under the old name.
+    """
+    if indexing_is_suspended():
+        return
+    # Only versions that actually have extracted content. Every evidence upload
+    # saves its Document once to move the current-version pointer, and without
+    # this guard that would issue a delete-and-reinsert for a version whose
+    # parse has not happened yet.
+    versions = DocumentVersion.objects.filter(
+        document=instance, derivatives__status=DerivativeStatus.ACTIVE
+    ).distinct()
+    for version in versions:
+        refresh_document_version(version)
