@@ -204,8 +204,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # Removing a chip clears exactly that filter and leaves the rest.
     page.locator(".filterchip", has_text="Ulatus").click()
     assert "ulatus=minu" not in page.url
+    assert "hetkeseis=consultation" in page.url
 
-    # FULL and ARCHIVE coexist in the same register.
+    page.locator(".filterchip", has_text="Hetkeseis").click()
+    assert "hetkeseis=consultation" not in page.url
+
+    # FULL and ARCHIVE coexist in the same register. An archive row carries no
+    # stage, so it only appears once the stage filter is gone.
     page.get_by_role("link", name=re.compile("^Kõik")).click()
     expect(page.locator(".badge--archive").first).to_be_visible()
 
