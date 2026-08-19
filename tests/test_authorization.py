@@ -11,11 +11,12 @@ from datetime import timedelta
 
 import pytest
 from django.contrib.auth.models import AnonymousUser
+from django.db import IntegrityError, connection, transaction
 from django.utils import timezone
 
 from app.accounts.services import grant_break_glass
-from app.core.authorization import scope_for_user
-from app.core.enums import Visibility
+from app.core.authorization import UNRESTRICTED_OVERRIDE_VALUES, scope_for_user
+from app.core.enums import Visibility, most_restrictive
 from app.core.errors import DomainError
 from app.documents.models import Document
 from app.documents.services import create_document
@@ -266,3 +267,76 @@ def test_unknown_visibility_is_rejected(normal_matter):
 def test_archive_matters_are_scoped_the_same_way_as_full_matters(other_specialist):
     archive = factories.ArchiveMatterFactory(visibility=Visibility.RESTRICTED, owner=None)
     assert archive not in Matter.objects.visible_to(other_specialist)
+
+
+# -- visibility values fail closed ------------------------------------------
+
+
+def test_the_database_refuses_an_unknown_matter_visibility(normal_matter):
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Matter.objects.filter(pk=normal_matter.pk).update(visibility="PUBLIC")
+
+
+def test_the_database_refuses_an_unknown_child_override(normal_matter, specialist):
+    document = create_document(matter=normal_matter, title="Tõend", created_by=specialist)
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Document.objects.filter(pk=document.pk).update(visibility_override="PUBLIC")
+
+
+def test_an_empty_override_remains_valid(normal_matter, specialist):
+    document = create_document(matter=normal_matter, title="Tõend", created_by=specialist)
+    Document.objects.filter(pk=document.pk).update(visibility_override="")
+    Document.objects.filter(pk=document.pk).update(visibility_override=Visibility.NORMAL)
+    Document.objects.filter(pk=document.pk).update(visibility_override=Visibility.RESTRICTED)
+
+
+def _drop_constraint(table: str, name: str) -> None:
+    """Remove a CHECK constraint for the duration of the test transaction.
+
+    PostgreSQL DDL is transactional, so the test rollback restores it. This lets
+    us prove the authorization layer fails closed on a value the constraint
+    would normally have prevented — belt and braces, tested independently.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(f"ALTER TABLE {table} DROP CONSTRAINT {name}")
+
+
+def test_an_unknown_matter_visibility_is_never_read_as_normal(
+    normal_matter, specialist, other_specialist
+):
+    create_document(matter=normal_matter, title="Tõend", created_by=specialist)
+    assert Matter.objects.visible_to(other_specialist).count() == 1
+
+    _drop_constraint("matters_matter", "matters_visibility_vocabulary")
+    Matter.objects.filter(pk=normal_matter.pk).update(visibility="PUBLIC")
+
+    # Neither the Matter nor its children may appear for an uninvolved user.
+    assert Matter.objects.visible_to(other_specialist).count() == 0
+    assert Document.objects.visible_to(other_specialist).count() == 0
+    # The owner still reaches it through participation, so nothing is orphaned.
+    assert Matter.objects.visible_to(specialist).count() == 1
+
+
+def test_an_unknown_child_override_is_never_read_as_normal(
+    normal_matter, specialist, other_specialist
+):
+    document = create_document(matter=normal_matter, title="Tõend", created_by=specialist)
+    assert Document.objects.visible_to(other_specialist).count() == 1
+
+    _drop_constraint("documents_document", "documents_visibility_override_vocabulary")
+    Document.objects.filter(pk=document.pk).update(visibility_override="PUBLIC")
+
+    assert Document.objects.visible_to(other_specialist).count() == 0
+    document.refresh_from_db()
+    assert document.effective_visibility == Visibility.RESTRICTED
+
+
+def test_an_unknown_value_resolves_to_restricted_rather_than_being_echoed():
+    assert most_restrictive("PUBLIC", Visibility.NORMAL) == Visibility.RESTRICTED
+    assert most_restrictive(Visibility.NORMAL, Visibility.NORMAL) == Visibility.NORMAL
+    assert most_restrictive(Visibility.NORMAL, Visibility.RESTRICTED) == Visibility.RESTRICTED
+
+
+def test_the_normal_child_condition_whitelists_rather_than_blacklists():
+    """A blacklist would let any future unrecognised value through."""
+    assert UNRESTRICTED_OVERRIDE_VALUES == ("", Visibility.NORMAL.value)

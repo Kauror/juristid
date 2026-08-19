@@ -23,16 +23,33 @@ VISIBILITY_RESTRICTIVENESS: dict[str, int] = {
 
 
 def restrictiveness(value: str) -> int:
-    try:
+    """How restrictive a visibility value is. Unknown values are the most.
+
+    Refusing to rank an unrecognised value would turn a data problem into an
+    exception on a read path; ranking it as permissive would turn it into a
+    leak. Treating it as maximally restrictive fails closed, which is the only
+    acceptable direction for this particular fact.
+    """
+    if value in VISIBILITY_RESTRICTIVENESS:
         return VISIBILITY_RESTRICTIVENESS[value]
-    except KeyError as exc:  # pragma: no cover - guards a programming error
-        raise ValueError(f"Unknown visibility {value!r}") from exc
+    return max(VISIBILITY_RESTRICTIVENESS.values())
+
+
+def is_known_visibility(value: str) -> bool:
+    return value in VISIBILITY_RESTRICTIVENESS
 
 
 def most_restrictive(*values: str) -> str:
-    """Return the most restrictive of the given visibility values."""
+    """Return the most restrictive of the given visibility values.
+
+    Always returns a value from the known vocabulary: an unrecognised input
+    resolves to RESTRICTED rather than being echoed back, so callers can rely on
+    the result without re-validating it.
+    """
     if not values:
         raise ValueError("At least one visibility value is required.")
+    if any(not is_known_visibility(value) for value in values):
+        return Visibility.RESTRICTED.value
     return max(values, key=restrictiveness)
 
 

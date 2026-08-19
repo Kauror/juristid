@@ -190,6 +190,12 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = env_int("DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE", 10 *
 FILE_UPLOAD_MAX_MEMORY_SIZE = env_int("DJANGO_FILE_UPLOAD_MAX_MEMORY_SIZE", 10 * 1024 * 1024)
 MAX_EVIDENCE_UPLOAD_BYTES = env_int("MAX_EVIDENCE_UPLOAD_BYTES", 100 * 1024 * 1024)
 
+# How old an unreferenced stored object must be before `prune_orphaned_evidence`
+# will delete it. Evidence bytes are written before the row that describes them,
+# so a live upload is indistinguishable from an orphan until it commits. The
+# default is deliberately far longer than any transaction could last.
+EVIDENCE_ORPHAN_GRACE_HOURS = env_int("EVIDENCE_ORPHAN_GRACE_HOURS", 24)
+
 # --------------------------------------------------------------------------
 # Security
 # --------------------------------------------------------------------------

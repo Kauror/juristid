@@ -255,6 +255,14 @@ class Matter(BaseModel):
                 ),
                 name="matters_closure_fields_consistent",
             ),
+            # Visibility drives authorization, so the database refuses a value
+            # the authorization code does not know how to interpret. Without
+            # this, a typo in a migration or an integration could introduce a
+            # value that reads as neither NORMAL nor RESTRICTED.
+            models.CheckConstraint(
+                condition=models.Q(visibility__in=[Visibility.NORMAL, Visibility.RESTRICTED]),
+                name="matters_visibility_vocabulary",
+            ),
         ]
         indexes = [
             models.Index(fields=["owner", "is_open"], name="matters_owner_open"),

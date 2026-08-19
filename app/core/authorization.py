@@ -122,6 +122,12 @@ def restricted_participation_q(
     )
 
 
+# The only override values that mean "no extra restriction". Anything else —
+# including a value some future migration or integration invents — is treated as
+# restricted. Authorization whitelists; it never blacklists.
+UNRESTRICTED_OVERRIDE_VALUES: tuple[str, ...] = ("", Visibility.NORMAL.value)
+
+
 def child_is_normal_q(
     *,
     parent_prefix: str = "matter__",
@@ -130,10 +136,17 @@ def child_is_normal_q(
     """Child rows whose derived effective visibility is NORMAL.
 
     Effective visibility is the more restrictive of the Matter's visibility and
-    the child's own override, so a child is NORMAL only when both are.
+    the child's own override, so a child is NORMAL only when **both** are
+    explicitly normal.
+
+    Both halves are inclusive whitelists rather than "not RESTRICTED" exclusions.
+    An unrecognised value in either column then fails closed — it is simply not
+    in the allowed set, so the row does not appear — instead of being read as
+    permissive. A CHECK constraint keeps such values out of the tables in the
+    first place; this is the second lock on the same door.
     """
-    return Q(**{f"{parent_prefix}visibility": Visibility.NORMAL}) & ~Q(
-        **{override_field: Visibility.RESTRICTED}
+    return Q(**{f"{parent_prefix}visibility": Visibility.NORMAL}) & Q(
+        **{f"{override_field}__in": UNRESTRICTED_OVERRIDE_VALUES}
     )
 
 

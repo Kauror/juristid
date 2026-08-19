@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import threading
+from datetime import timedelta
 from io import StringIO
 
 import pytest
 from django.core.files.base import ContentFile
 from django.core.management import call_command
 from django.db import DatabaseError, connection, transaction
+from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
@@ -279,7 +282,14 @@ def test_a_stored_object_is_removed_when_the_pointer_update_fails(specialist, mo
     assert _stored_files(storage, evidence_prefix(document)) == []
 
 
-def test_prune_removes_an_orphaned_object_and_keeps_referenced_ones(specialist):
+def _age_object(storage, key: str, age: timedelta) -> None:
+    """Backdate a stored object so the prune command sees it as old."""
+    path = storage.path(key)
+    stamp = (timezone.now() - age).timestamp()
+    os.utime(path, (stamp, stamp))
+
+
+def test_prune_deletes_an_old_orphan_and_keeps_referenced_objects(specialist):
     """The residual case: an outer transaction that rolls back after the call."""
     document = _document(created_by=specialist)
     kept = add_evidence_version(
@@ -289,15 +299,72 @@ def test_prune_removes_an_orphaned_object_and_keeps_referenced_ones(specialist):
     storage = evidence_storage()
     orphan_key = f"{evidence_prefix(document)}/9999-orphan"
     storage.save(orphan_key, ContentFile(b"orphaned bytes"))
+    _age_object(storage, orphan_key, timedelta(days=3))
+    # An old referenced object must survive too: age alone is not a reason.
+    _age_object(storage, kept.storage_key, timedelta(days=30))
 
     output = StringIO()
     call_command("prune_orphaned_evidence", stdout=output)
     assert "9999-orphan" in output.getvalue()
-    assert storage.exists(orphan_key)
+    assert "eligible" in output.getvalue()
+    assert storage.exists(orphan_key), "reporting alone must not delete"
 
     call_command("prune_orphaned_evidence", "--delete", stdout=StringIO())
     assert not storage.exists(orphan_key)
     assert storage.exists(kept.storage_key)
+
+
+def test_prune_never_deletes_a_recently_written_object(specialist):
+    """A live upload mid-transaction is indistinguishable from an orphan.
+
+    Its row does not exist yet, so it looks unreferenced. Deleting it would
+    destroy evidence a committing transaction is about to point at.
+    """
+    document = _document(created_by=specialist)
+    storage = evidence_storage()
+    in_flight_key = f"{evidence_prefix(document)}/0001-in-flight"
+    storage.save(in_flight_key, ContentFile(b"still committing"))
+
+    output = StringIO()
+    call_command("prune_orphaned_evidence", "--delete", stdout=output)
+
+    assert storage.exists(in_flight_key)
+    assert "within-grace" in output.getvalue()
+
+
+def test_prune_respects_an_explicit_grace_period(specialist):
+    document = _document(created_by=specialist)
+    storage = evidence_storage()
+    key = f"{evidence_prefix(document)}/0001-two-hours-old"
+    storage.save(key, ContentFile(b"orphan"))
+    _age_object(storage, key, timedelta(hours=2))
+
+    call_command("prune_orphaned_evidence", "--delete", "--grace-hours", "6", stdout=StringIO())
+    assert storage.exists(key), "younger than the requested grace period"
+
+    call_command("prune_orphaned_evidence", "--delete", "--grace-hours", "1", stdout=StringIO())
+    assert not storage.exists(key)
+
+
+def test_prune_leaves_an_object_alone_when_age_cannot_be_established(specialist, monkeypatch):
+    """Unproven age is not a licence to delete."""
+    document = _document(created_by=specialist)
+    storage = evidence_storage()
+    key = f"{evidence_prefix(document)}/0001-timeless"
+    storage.save(key, ContentFile(b"orphan"))
+    _age_object(storage, key, timedelta(days=30))
+
+    def unsupported(self, name):
+        raise NotImplementedError("this backend does not expose timestamps")
+
+    monkeypatch.setattr(type(storage), "get_created_time", unsupported, raising=False)
+    monkeypatch.setattr(type(storage), "get_modified_time", unsupported, raising=False)
+
+    output = StringIO()
+    call_command("prune_orphaned_evidence", "--delete", stdout=output)
+
+    assert storage.exists(key)
+    assert "age-unknown" in output.getvalue()
 
 
 @pytest.mark.django_db(transaction=True)

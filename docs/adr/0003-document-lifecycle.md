@@ -64,6 +64,16 @@ storage write and the commit. Django offers no rollback hook, so
 stored objects that no `DocumentVersion` references. The design fails in the
 safe direction by construction.
 
+**Pruning is deliberately conservative.** Being unreferenced is not proof of
+being an orphan: because the bytes are written before the row, an upload that is
+mid-transaction *right now* is indistinguishable from an orphan. The command
+therefore deletes an object only when the object's own storage timestamp proves
+it is older than a grace period, `EVIDENCE_ORPHAN_GRACE_HOURS` (default 24, far
+longer than any transaction could last). If the storage backend cannot establish
+an object's age, the object is reported and left alone. Reclaiming a stray blob
+is worth far less than never destroying evidence a committing transaction is
+about to point at.
+
 **Storage seam**
 
 - Django's `STORAGES` setting with a named `evidence` alias. Development uses

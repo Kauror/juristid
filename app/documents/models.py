@@ -18,6 +18,7 @@ from app.core.authorization import (
     effective_visibility_expression,
     scope_for_user,
 )
+from app.core.enums import Visibility
 from app.core.models import BaseModel, VisibilityInheritingModel
 from app.documents.enums import (
     DocumentRole,
@@ -101,6 +102,16 @@ class Document(VisibilityInheritingModel):
         verbose_name = "dokument"
         verbose_name_plural = "dokumendid"
         ordering = ["-created_at"]
+        constraints = [
+            # The override participates in every authorization decision, so the
+            # database refuses a value the authorization code cannot interpret.
+            models.CheckConstraint(
+                condition=models.Q(
+                    visibility_override__in=["", Visibility.NORMAL, Visibility.RESTRICTED]
+                ),
+                name="documents_visibility_override_vocabulary",
+            ),
+        ]
         indexes = [
             models.Index(fields=["matter", "role"], name="documents_matter_role"),
         ]

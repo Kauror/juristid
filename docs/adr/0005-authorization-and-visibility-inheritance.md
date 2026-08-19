@@ -87,6 +87,14 @@ hand-maintained column on a transactional table.
 - No write path can produce a visibility leak, because no write path maintains
   the value. `bulk_update`, `bulk_create`, raw SQL and data migrations are safe
   by construction, and tests prove it.
+- **Visibility fails closed on unrecognised values.** The query builders use
+  inclusive whitelists (`visibility = NORMAL`, `override IN ('', 'NORMAL')`)
+  rather than `!= RESTRICTED` exclusions, so a value nobody anticipated is
+  simply not in the allowed set and the row does not appear. `most_restrictive`
+  resolves an unknown value to RESTRICTED instead of echoing it back. CHECK
+  constraints on `Matter.visibility` and child `visibility_override` keep such
+  values out of the tables in the first place; the whitelists are the second
+  lock on the same door, and each is tested independently of the other.
 - Every new child model must subclass `VisibilityInheritingModel`, implement
   `parent_visibility()` and be read through its `visible_to()` queryset. That is
   the review checklist item for Stage 1.
