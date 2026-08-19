@@ -79,7 +79,7 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     page.goto(f"{base_url}/saabunud/lisa/")
     page.set_input_files("input[name='uploads']", str(synthetic_pdf))
     page.fill("input[name='title']", MATTER_TITLE)
-    page.click("button[type='submit']")
+    page.get_by_role("button", name="Salvesta ja ava teema").click()
 
     expect(page.get_by_role("heading", name=MATTER_TITLE)).to_be_visible()
     screenshots(page, "20-saabunud-lisatud")
@@ -133,7 +133,7 @@ def test_a_restricted_document_is_invisible_to_an_unrelated_lawyer(
     page.set_input_files("input[name='uploads']", str(synthetic_pdf))
     page.fill("input[name='title']", "Piiratud katsedokument")
     page.select_option("select[name='visibility']", "RESTRICTED")
-    page.click("button[type='submit']")
+    page.get_by_role("button", name="Salvesta ja ava teema").click()
     expect(page.get_by_role("heading", name="Piiratud katsedokument")).to_be_visible()
 
     run_worker()
@@ -169,7 +169,7 @@ def test_an_email_shows_its_sender_and_its_attachments(
     page.goto(f"{base_url}/saabunud/lisa/")
     page.set_input_files("input[name='uploads']", str(path))
     page.fill("input[name='title']", "Saabunud kiri ministeeriumist")
-    page.click("button[type='submit']")
+    page.get_by_role("button", name="Salvesta ja ava teema").click()
     expect(page.get_by_role("heading", name="Saabunud kiri ministeeriumist")).to_be_visible()
 
     run_worker()
