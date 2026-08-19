@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ application_name }}{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
+
+    {# Linked explicitly so browsers do not fall back to probing /favicon.ico. #}
+    <link rel="icon" type="image/png" href="{% static 'brand/koda-logo-negative.png' %}">
     <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
@@ -25,6 +28,9 @@
 
         {% if user.is_authenticated %}
           <nav class="topnav" aria-label="Peamine">
+            <a class="topnav__link {% if nav_active == 'ulevaade' %}is-active{% endif %}"
+               {% if nav_active == 'ulevaade' %}aria-current="page"{% endif %}
+               href="{% url 'matters:overview' %}">Ülevaade</a>
             <a class="topnav__link {% if nav_active == 'minu_too' %}is-active{% endif %}"
                {% if nav_active == 'minu_too' %}aria-current="page"{% endif %}
                href="{% url 'matters:my_work' %}">Minu töö</a>

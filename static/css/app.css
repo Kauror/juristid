@@ -189,6 +189,16 @@
   flex-wrap: wrap;
 }
 
+/* Page-level actions sit at the right of the heading row. `margin-left: auto`
+   rather than `justify-content`, so the title and its context keep their
+   baseline alignment. */
+.pagehead__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-left: auto;
+}
+
 .pagehead__title {
   margin: 0;
   font-size: var(--typography-size-page-title);
@@ -2040,4 +2050,161 @@
   .table thead th {
     position: static;
   }
+}
+
+/* ---------------------------------------------------------------------------
+   Ülevaade
+   Built from the existing tokens only. No new colour, no new type scale: the
+   dashboard is another dense reading surface, not a separate visual language.
+   --------------------------------------------------------------------------- */
+
+.cardrow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-5);
+}
+
+.statcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding: var(--spacing-4);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.statcard:hover {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+}
+
+.statcard__value {
+  font-size: var(--typography-size-page-title);
+  font-weight: var(--typography-weight-bold);
+  line-height: var(--typography-line-tight);
+  font-variant-numeric: tabular-nums;
+}
+
+.statcard__label {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.statcard__note {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* Only a real overdue count turns red. A count of things merely due for review
+   must never borrow this treatment, or the colour stops meaning anything. */
+.statcard--alert .statcard__value {
+  color: var(--status-danger);
+}
+
+.dashgrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: var(--spacing-5);
+  align-items: start;
+}
+
+.dashgrid__main {
+  min-width: 0;
+}
+
+.dashgrid__rail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+
+.countrow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.countrow:last-child {
+  border-bottom: none;
+}
+
+.countrow:hover .countrow__label {
+  color: var(--accent-hover);
+}
+
+.countrow__label {
+  font-size: var(--typography-size-base);
+}
+
+.countrow__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 1100px) {
+  .dashgrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The organisation quick-create sits inside another form, so it is a block
+   rather than a nested <form>: nesting forms is invalid HTML and submits the
+   wrong one. */
+.orgpicker {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+.orgpicker .field {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.orgpicker--creating {
+  display: block;
+  padding: var(--spacing-3);
+  background: var(--surface-raised);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-card);
+}
+
+.orgpicker__add {
+  white-space: nowrap;
+}
+
+.incoming {
+  margin-bottom: var(--spacing-4);
+}
+
+.filelist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.filelist__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.filelist__item:last-child {
+  border-bottom: none;
 }

@@ -16,6 +16,7 @@ from app.organisations.models import Organisation, OrganisationType
 from app.search.indexing import indexable_matters, rebuild_all, refresh_matter, refresh_matters
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.search.services import (
+    MATCH_FUZZY,
     MATCH_REFERENCE,
     MATCH_TAXONOMY,
     MATCH_TITLE,
@@ -453,3 +454,71 @@ def test_an_interrupted_rebuild_leaves_no_orphans_behind(corpus, monkeypatch) ->
     monkeypatch.undo()
 
     assert set(SearchDocument.objects.values_list("pk", flat=True)) == before
+
+
+# -- typo tolerance on titles of realistic length ---------------------------
+#
+# The deployment found this. `similarity()` divides shared trigrams by the
+# trigrams of the *whole* string, so it decays as titles get longer — and real
+# Estonian legal titles are long. The earlier test passed only because its
+# synthetic title was short enough to hide the effect.
+
+
+LONG_TITLE = (
+    "Pakendiseaduse, jäätmeseaduse ja tootjavastutusorganisatsiooni seaduse "
+    "muutmise seaduse eelnõu väljatöötamiskavatsus ning sellega seonduvalt "
+    "teiste seaduste muutmine"
+)
+
+
+@pytest.fixture
+def long_titled(db, specialist):
+    matter = create_matter(title=LONG_TITLE, owner=specialist, reference_year=2026)
+    create_matter(
+        title="Käibemaksuseaduse muutmise seaduse eelnõu", owner=specialist, reference_year=2026
+    )
+    rebuild_all()
+    return matter
+
+
+def test_a_one_letter_typo_is_caught_inside_a_realistically_long_title(
+    long_titled, specialist
+) -> None:
+    """`pakendiseeaduse` against a 170-character title.
+
+    Whole-string similarity scores this 0.259 — under the old 0.3 threshold —
+    while word similarity scores it 0.824, because it compares the query against
+    the best-matching run of words rather than against everything.
+    """
+    found = [
+        result.matter.pk for result in search_matters(query="pakendiseeaduse", user=specialist)
+    ]
+    assert long_titled.pk in found
+
+
+def test_another_typo_in_the_middle_of_the_same_title(long_titled, specialist) -> None:
+    found = [result.matter.pk for result in search_matters(query="jäätmeseeaduse", user=specialist)]
+    assert long_titled.pk in found
+
+
+def test_typo_tolerance_does_not_become_a_source_of_noise(long_titled, specialist) -> None:
+    """The fuzzy tier is a last resort, not a wildcard.
+
+    A word that shares only a stem with the corpus must not drag every matter
+    back: that turns the bottom tier into random results and teaches people to
+    distrust the whole ranking.
+    """
+    results = search_matters(query="kalapüügikvoot", user=specialist)
+    assert results == []
+
+
+def test_the_fuzzy_tier_still_ranks_last(long_titled, specialist) -> None:
+    """An exact title match must never lose to a typo match."""
+    results = search_matters(query="Käibemaksuseaduse muutmise seaduse eelnõu", user=specialist)
+    assert results[0].matter.title == "Käibemaksuseaduse muutmise seaduse eelnõu"
+    assert results[0].match_kind != MATCH_FUZZY
+
+
+def test_an_exact_reference_is_still_exact_or_nothing(long_titled, specialist) -> None:
+    """The fuzzy change must not loosen reference lookup."""
+    assert search_matters(query="2026_99999", user=specialist) == []
