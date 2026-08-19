@@ -144,7 +144,13 @@ def dev_login(request: HttpRequest) -> HttpResponse:
             )
         # A correct PIN clears the counter, so an ordinary typo does not leave
         # somebody locked out for the rest of the window.
-        cache.delete(_attempt_key(request))
+        #
+        # Guarded on the PIN being configured at all. Without the guard this
+        # touches the cache on every successful sign-in, including the many
+        # environments that have no PIN and therefore no cache table — which is
+        # a 500 on the one path that must always work.
+        if settings.DEV_LOGIN_PIN:
+            cache.delete(_attempt_key(request))
         login(request, user, backend=MODEL_BACKEND)
         record_security_event(
             event_type=SecurityEventType.AUTHENTICATION_SUCCEEDED,

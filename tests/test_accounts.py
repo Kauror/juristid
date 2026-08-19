@@ -314,3 +314,28 @@ def test_a_failed_pin_is_recorded_as_a_security_event(client, pin_login):
     assert event is not None
     assert event.succeeded is False
     assert event.detail.get("reason") == "bad_pin"
+
+
+def test_signing_in_without_a_pin_never_touches_the_cache(client, db, settings, monkeypatch):
+    """The regression CI caught.
+
+    The success path cleared the lockout counter unconditionally, so an
+    environment with no PIN — every developer machine, CI, the container smoke
+    test — reached for a cache table that only the PIN deployment creates. Sign-in
+    returned 500 on the one path that has to work everywhere.
+    """
+    from django.core import cache as cache_module
+
+    settings.DEV_LOGIN_ENABLED = True
+    settings.DEV_LOGIN_PIN = ""
+    user = factories.UserFactory(is_synthetic=True)
+
+    def explode(*args, **kwargs):
+        raise AssertionError("the cache must not be used when no PIN is configured")
+
+    monkeypatch.setattr(cache_module.cache, "get", explode)
+    monkeypatch.setattr(cache_module.cache, "delete", explode)
+    monkeypatch.setattr(cache_module.cache, "add", explode)
+    monkeypatch.setattr(cache_module.cache, "incr", explode)
+
+    assert _post(client, user).status_code == 302
