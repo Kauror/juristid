@@ -1,5 +1,5 @@
-"""Stage-0 surfaces only: a health probe, a placeholder landing page and the
-design-token reference. No product screens exist yet.
+"""Cross-cutting surfaces: the health probe, the entry redirect and the design
+token reference. Product screens live in their own domain modules.
 """
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db import DatabaseError, connection
 from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 
 
 def healthz(request: HttpRequest) -> JsonResponse:
@@ -35,6 +35,13 @@ def healthz(request: HttpRequest) -> JsonResponse:
 
 
 def home(request: HttpRequest) -> HttpResponse:
+    """The root is a doorway, not a page.
+
+    A signed-in lawyer wants the work list, not a welcome screen; anyone else
+    needs to sign in first.
+    """
+    if request.user.is_authenticated:
+        return redirect("matters:my_work")
     return render(request, "core/home.html")
 
 

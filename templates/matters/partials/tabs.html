@@ -1,0 +1,16 @@
+{% comment %}
+Three first-class areas, kept apart deliberately. Evidence, position and
+chronology are different kinds of work and collapsing them would hide the one a
+lawyer is not currently looking at (master specification 8.1).
+{% endcomment %}
+<nav class="tabs" aria-label="Teema vaated">
+  <a class="tabs__tab {% if tab == 'ulevaade' %}is-active{% endif %}"
+     {% if tab == 'ulevaade' %}aria-current="page"{% endif %}
+     href="{% url 'matters:matter_detail' pk=matter.pk %}">Ülevaade</a>
+  <a class="tabs__tab {% if tab == 'seisukoht' %}is-active{% endif %}"
+     {% if tab == 'seisukoht' %}aria-current="page"{% endif %}
+     href="{% url 'matters:matter_position' pk=matter.pk %}">Seisukoht ja kaasamine</a>
+  <a class="tabs__tab {% if tab == 'dokumendid' %}is-active{% endif %}"
+     {% if tab == 'dokumendid' %}aria-current="page"{% endif %}
+     href="{% url 'matters:matter_documents' pk=matter.pk %}">Dokumendid</a>
+</nav>

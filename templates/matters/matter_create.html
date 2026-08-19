@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Uus teema · {{ application_name }}{% endblock %}
+
+{% comment %}
+Only the title is required. Everything else sits behind a disclosure, because
+demanding metadata at capture time is exactly what keeps a spreadsheet open on
+the second monitor (master specification 3.8).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <header class="page__head">
+    <h1 class="page__title">Uus teema</h1>
+    <p class="page__lead">Pealkiri on ainus kohustuslik väli. Ülejäänu saab lisada hiljem.</p>
+  </header>
+
+  <form class="form" method="post" action="{% url 'matters:matter_create' %}">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+      <div class="formerror" role="alert">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <div class="field">
+      <label class="field__label field__label--large" for="{{ form.title.id_for_label }}">
+        {{ form.title.label }}
+      </label>
+      {{ form.title }}
+      {% if form.title.errors %}<p class="field__error">{{ form.title.errors|first }}</p>{% endif %}
+    </div>
+
+    <details class="disclosure" {% if form.errors %}open{% endif %}>
+      <summary class="disclosure__summary">Täpsusta teema andmeid</summary>
+
+      <div class="formgrid">
+        {% for field in form %}
+          {% if field.name != "title" %}
+            <div class="field">
+              <label class="field__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.help_text %}<p class="field__help">{{ field.help_text }}</p>{% endif %}
+              {% if field.errors %}<p class="field__error">{{ field.errors|first }}</p>{% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </details>
+
+    <details class="disclosure" {% if action_form.errors %}open{% endif %}>
+      <summary class="disclosure__summary">Määra kohe Järgmiseks</summary>
+      <p class="field__help">
+        Kui tead juba, mis järgmiseks juhtuma peab, salvestub see koos teemaga.
+      </p>
+
+      <div class="formgrid">
+        {% for field in action_form %}
+          <div class="field">
+            <label class="field__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {% if field.errors %}<p class="field__error">{{ field.errors|first }}</p>{% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    </details>
+
+    <div class="form__actions">
+      <button class="button button--primary" type="submit">Loo teema</button>
+      <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Loobu</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

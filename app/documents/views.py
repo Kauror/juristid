@@ -1,0 +1,145 @@
+"""Document creation, evidence upload and authorized download.
+
+The download route is the authorization boundary. Storage URLs are never handed
+to the browser: a signed blob link would outlive the permission that produced it
+and would bypass the audit record entirely (master specification 15.6, 5.2).
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from django import forms
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.http import FileResponse, HttpRequest, HttpResponse
+from django.shortcuts import get_object_or_404, redirect
+from django.utils.http import urlsafe_base64_encode
+from django.views.decorators.http import require_http_methods
+
+from app.audit.enums import SecurityEventType
+from app.audit.services import record_security_event
+from app.core.errors import DomainError
+from app.documents.enums import DocumentRole
+from app.documents.models import Document, DocumentVersion
+from app.documents.services import add_evidence_version, create_document, evidence_storage
+from app.documents.uploads import UploadRejected, read_upload
+from app.matters.views import get_visible_matter
+
+
+class DocumentUploadForm(forms.Form):
+    title = forms.CharField(label="Pealkiri", max_length=400, required=False)
+    role = forms.ChoiceField(
+        label="Roll", choices=DocumentRole.choices, initial=DocumentRole.INCOMING_AUTHORITY
+    )
+    upload = forms.FileField(label="Fail")
+
+
+@login_required
+@require_http_methods(["POST"])
+def upload_evidence(request: HttpRequest, matter_id: Any) -> HttpResponse:
+    """Create a logical document and capture its first immutable version."""
+    matter = get_visible_matter(request, matter_id)
+    form = DocumentUploadForm(request.POST, request.FILES)
+
+    if not form.is_valid():
+        messages.error(request, "Vali fail ja roll.")
+        return redirect("matters:matter_documents", pk=matter.pk)
+
+    try:
+        upload = read_upload(form.cleaned_data["upload"])
+        document = create_document(
+            matter=matter,
+            title=form.cleaned_data["title"].strip() or upload.filename,
+            role=form.cleaned_data["role"],
+            created_by=request.user,
+        )
+        add_evidence_version(
+            document=document,
+            content=upload.content,
+            original_filename=upload.filename,
+            mime_type=upload.mime_type,
+            uploaded_by=request.user,
+        )
+        messages.success(request, "Tõend on salvestatud.")
+    except (DomainError, UploadRejected) as error:
+        messages.error(request, str(error))
+
+    return redirect("matters:matter_documents", pk=matter.pk)
+
+
+@login_required
+@require_http_methods(["POST"])
+def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
+    """Add a further version to an existing document. Bytes never change."""
+    document = get_object_or_404(Document.objects.visible_to(request.user), pk=pk)
+    form = DocumentUploadForm(request.POST, request.FILES)
+    form.fields["title"].required = False
+    form.fields["role"].required = False
+
+    if not form.is_valid() and "upload" in form.errors:
+        messages.error(request, "Vali fail.")
+        return redirect("matters:matter_documents", pk=document.matter_id)
+
+    try:
+        upload = read_upload(request.FILES.get("upload"))
+        add_evidence_version(
+            document=document,
+            content=upload.content,
+            original_filename=upload.filename,
+            mime_type=upload.mime_type,
+            uploaded_by=request.user,
+        )
+        messages.success(request, "Uus versioon on salvestatud.")
+    except (DomainError, UploadRejected) as error:
+        messages.error(request, str(error))
+
+    return redirect("matters:matter_documents", pk=document.matter_id)
+
+
+@login_required
+def download(request: HttpRequest, pk: Any) -> FileResponse:
+    """Stream one evidence version to a user entitled to read it.
+
+    The queryset is filtered through the document's visibility, so a restricted
+    document 404s for anyone outside its Matter rather than 403ing — the same
+    reason the Matter route does.
+    """
+    version = get_object_or_404(
+        DocumentVersion.objects.filter(
+            document__in=Document.objects.visible_to(request.user)
+        ).select_related("document"),
+        pk=pk,
+    )
+
+    record_security_event(
+        event_type=SecurityEventType.DOCUMENT_DOWNLOADED,
+        actor=request.user,
+        subject=version,
+        ip_address=request.META.get("REMOTE_ADDR"),
+        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        detail={
+            "document": str(version.document_id),
+            "matter": str(version.document.matter_id),
+            "sha256": version.sha256,
+        },
+    )
+
+    storage = evidence_storage()
+    handle = storage.open(version.storage_key, "rb")
+
+    response = FileResponse(
+        handle,
+        content_type=version.mime_type,
+        # Always an attachment. Untrusted HTML or SVG rendered inline would run
+        # in the application's own origin.
+        as_attachment=True,
+        filename=version.original_filename,
+    )
+    response["X-Content-Type-Options"] = "nosniff"
+    response["Content-Disposition"] = (
+        f"attachment; filename*=UTF-8''{urlsafe_base64_encode(version.original_filename.encode())}"
+        if not version.original_filename.isascii()
+        else f'attachment; filename="{version.original_filename}"'
+    )
+    return response

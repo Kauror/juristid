@@ -1,0 +1,151 @@
+{% comment %}
+The Ülevaade column: `Järgmiseks`, the composer, the timeline.
+
+This whole block is what the composer swaps. Re-rendering the surface from one
+set of queries means the prominent action and the chronology cannot disagree
+about the save that just happened.
+{% endcomment %}
+<div class="overview" id="ulevaade">
+
+  <section class="nextaction {% if current_action.is_overdue %}nextaction--overdue{% endif %}"
+           aria-labelledby="jargmiseks-heading">
+    <div class="nextaction__head">
+      <h2 class="nextaction__heading" id="jargmiseks-heading">Järgmiseks</h2>
+      {% if current_action %}
+        <span class="chip chip--{{ current_action.kind|lower }}">{{ current_action.get_kind_display }}</span>
+      {% endif %}
+    </div>
+
+    {% if current_action %}
+      <p class="nextaction__text">{{ current_action.text }}</p>
+
+      <dl class="nextaction__meta">
+        {% if current_action.target_date %}
+          <div>
+            <dt>{{ current_action.date_label }}</dt>
+            <dd>
+              <time datetime="{{ current_action.target_date|date:'Y-m-d' }}">
+                {{ current_action.target_date|date:"d.m.Y" }}
+              </time>
+              {% if current_action.is_overdue %}
+                <span class="flag flag--overdue">Tähtaeg möödas</span>
+              {% elif current_action.is_due_for_review %}
+                <span class="flag flag--review">Aeg üle vaadata</span>
+              {% endif %}
+            </dd>
+          </div>
+        {% endif %}
+        <div>
+          <dt>Vastutaja</dt>
+          <dd>{% if current_action.responsible %}{{ current_action.responsible.display_name }}{% else %}—{% endif %}</dd>
+        </div>
+      </dl>
+
+      {% if matter.is_open %}
+        <form hx-post="{% url 'matters:complete_action' pk=matter.pk action_id=current_action.pk %}"
+              hx-target="#ulevaade" hx-swap="outerHTML">
+          {% csrf_token %}
+          <button class="button button--secondary" type="submit">Märgi tehtuks</button>
+        </form>
+      {% endif %}
+    {% else %}
+      <p class="empty empty--inline">
+        Järgmiseks ei ole määratud.
+        {% if matter.is_open %}Kirjuta see allolevas kastis.{% endif %}
+      </p>
+    {% endif %}
+  </section>
+
+  {% if matter.is_open %}
+    <section class="composer" aria-labelledby="komposer-heading">
+      <h2 class="visually-hidden" id="komposer-heading">Lisa sissekanne</h2>
+
+      {% if composer_error %}
+        <p class="formerror" role="alert">{{ composer_error }}</p>
+      {% endif %}
+      {% if composer_form.non_field_errors %}
+        <p class="formerror" role="alert">{{ composer_form.non_field_errors|first }}</p>
+      {% endif %}
+
+      <form data-composer
+            hx-post="{% url 'matters:compose' pk=matter.pk %}"
+            hx-target="#ulevaade"
+            hx-swap="outerHTML">
+        {% csrf_token %}
+
+        <label class="visually-hidden" for="{{ composer_form.body.id_for_label }}">Sissekanne</label>
+        {{ composer_form.body }}
+        {% if composer_form.body.errors %}
+          <p class="field__error">{{ composer_form.body.errors|first }}</p>
+        {% endif %}
+
+        <div class="composer__row">
+          <label class="field field--inline">
+            <span class="field__label">Liik</span>
+            {{ composer_form.kind }}
+          </label>
+          <label class="field field--inline">
+            <span class="field__label">Toimus</span>
+            {{ composer_form.occurred_at }}
+          </label>
+          <label class="field field--inline">
+            <span class="field__label">Asutus</span>
+            {{ composer_form.organisation }}
+          </label>
+        </div>
+
+        <div class="composer__toggle">
+          <label class="checkbox">
+            <input type="checkbox"
+                   name="update_next_action"
+                   id="id_update_next_action"
+                   data-toggles="jargmiseks-valjad"
+                   {% if composer_form.update_next_action.value %}checked{% endif %}>
+            <span>Muuda ka Järgmiseks</span>
+          </label>
+        </div>
+
+        <div class="composer__next" id="jargmiseks-valjad" hidden>
+          <div class="composer__row">
+            <label class="field field--grow">
+              <span class="field__label">Järgmiseks</span>
+              {{ composer_form.next_text }}
+              {% if composer_form.next_text.errors %}
+                <p class="field__error">{{ composer_form.next_text.errors|first }}</p>
+              {% endif %}
+            </label>
+          </div>
+          <div class="composer__row">
+            <label class="field field--inline">
+              <span class="field__label">Liik</span>
+              {{ composer_form.next_kind }}
+            </label>
+            <label class="field field--inline">
+              <span class="field__label">Kuupäeva tähendus</span>
+              {{ composer_form.next_date_semantics }}
+            </label>
+            <label class="field field--inline">
+              <span class="field__label">Kuupäev</span>
+              {{ composer_form.next_target_date }}
+              {% if composer_form.next_target_date.errors %}
+                <p class="field__error">{{ composer_form.next_target_date.errors|first }}</p>
+              {% endif %}
+            </label>
+          </div>
+        </div>
+
+        <div class="composer__actions">
+          <button class="button button--primary" type="submit">Salvesta</button>
+          <span class="composer__hint">Ctrl + Enter salvestab</span>
+        </div>
+      </form>
+    </section>
+  {% endif %}
+
+  <section class="timeline" aria-labelledby="ajalugu-heading">
+    <h2 class="timeline__heading" id="ajalugu-heading">Ajalugu</h2>
+    <div class="timeline__items" id="ajalugu-loend">
+      {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter %}
+    </div>
+  </section>
+</div>

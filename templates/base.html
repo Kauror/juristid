@@ -6,37 +6,78 @@
     <title>{% block title %}{{ application_name }}{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    <script src="{% static 'vendor/htmx.min.js' %}" defer></script>
+    <script src="{% static 'js/app.js' %}" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#sisu">Liigu sisu juurde</a>
-    <div class="app-shell">
-      <header class="app-header">
-        <p class="app-header__title">{{ application_name }}</p>
-        <div class="app-header__meta">
-          <span>{{ application_stage }}</span>
-          <span aria-hidden="true">·</span>
-          <span>{{ application_environment }}</span>
+
+    <div class="app">
+      <header class="topbar">
+        <a class="topbar__brand" href="{% url 'core:home' %}">
+          <span class="topbar__mark" aria-hidden="true">KÕ</span>
+          <span class="topbar__name">{{ application_name }}</span>
+        </a>
+
+        {% if user.is_authenticated %}
+          <nav class="topnav" aria-label="Peamine">
+            <a class="topnav__link {% if nav_active == 'minu_too' %}is-active{% endif %}"
+               {% if nav_active == 'minu_too' %}aria-current="page"{% endif %}
+               href="{% url 'matters:my_work' %}">Minu töö</a>
+            <a class="topnav__link {% if nav_active == 'saabunud' %}is-active{% endif %}"
+               {% if nav_active == 'saabunud' %}aria-current="page"{% endif %}
+               href="{% url 'matters:inbox' %}">Saabunud</a>
+            <a class="topnav__link {% if nav_active == 'teemad' %}is-active{% endif %}"
+               {% if nav_active == 'teemad' %}aria-current="page"{% endif %}
+               href="{% url 'matters:matter_list' %}">Teemad</a>
+          </nav>
+
+          <form class="globalsearch" role="search" method="get" action="{% url 'search:search' %}">
+            <label class="visually-hidden" for="global-search">Otsi teemasid</label>
+            <input class="globalsearch__input"
+                   id="global-search"
+                   type="search"
+                   name="q"
+                   value="{{ query|default:'' }}"
+                   placeholder="Otsi viidet või pealkirja…"
+                   autocomplete="off">
+            <kbd class="globalsearch__hint" aria-hidden="true">Ctrl K</kbd>
+            <button class="visually-hidden" type="submit">Otsi</button>
+          </form>
+        {% endif %}
+
+        <div class="topbar__meta">
           {% if not real_data_allowed %}
-            <span class="badge badge--warning">Sünteetilised andmed</span>
+            <span class="badge badge--warning" title="Selles keskkonnas on lubatud ainult sünteetilised andmed">
+              Sünteetilised andmed
+            </span>
           {% endif %}
           {% if user.is_authenticated %}
-            <span aria-hidden="true">·</span>
-            <span>{{ user.display_name }}</span>
+            <span class="topbar__user">{{ user.display_name }}</span>
             <form method="post" action="{% url 'accounts:sign_out' %}">
               {% csrf_token %}
-              <button type="submit" class="button button--secondary">Välju</button>
+              <button type="submit" class="button button--quiet">Välju</button>
             </form>
           {% endif %}
         </div>
       </header>
 
-      <main class="app-main" id="sisu">
+      {% if messages %}
+        <div class="messages" role="status">
+          {% for message in messages %}
+            <p class="message message--{{ message.tags|default:'info' }}">{{ message }}</p>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <main class="app__main" id="sisu">
         {% block content %}{% endblock %}
       </main>
 
-      <footer class="app-footer">
+      <footer class="app__footer">
         <p>
-          Eesti Kaubandus-Tööstuskoda · {{ application_stage }} ·
+          Eesti Kaubandus-Tööstuskoda · {{ application_stage }} · {{ application_environment }} ·
           versioon {{ application_revision }}
         </p>
       </footer>

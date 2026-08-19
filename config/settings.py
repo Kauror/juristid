@@ -56,6 +56,7 @@ LOCAL_APPS = [
     "app.workflow",
     "app.matters",
     "app.documents",
+    "app.submissions",
     "app.audit",
     "app.search",
     "app.legacy_import",

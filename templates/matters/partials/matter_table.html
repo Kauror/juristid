@@ -1,0 +1,85 @@
+{% comment %}
+The dense register table. Shared by Teemad, Minu töö and Saabunud so a row means
+the same thing everywhere.
+
+Long Estonian legal titles wrap rather than truncate; the reference column is
+fixed-width so the eye can scan it.
+{% endcomment %}
+<div class="tablewrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th scope="col" class="table__reference">Viide</th>
+        <th scope="col">Pealkiri</th>
+        <th scope="col">Hetkeseis</th>
+        <th scope="col">Vastutaja</th>
+        <th scope="col">Järgmiseks</th>
+        <th scope="col">Kuupäev</th>
+        <th scope="col">Viimane tegevus</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for matter in matters %}
+        {% with action=matter.open_actions|first %}
+        <tr>
+          <td class="table__reference">
+            {% if matter.display_reference %}
+              <span class="reference">{{ matter.display_reference }}</span>
+            {% else %}
+              <span class="muted" title="Arhiivikirjel ei pruugi viidet olla">—</span>
+            {% endif %}
+          </td>
+
+          <td class="table__title">
+            <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
+            <span class="rowflags">
+              {% if matter.record_mode == "ARCHIVE" %}
+                <span class="badge badge--archive">Arhiiv</span>
+              {% endif %}
+              {% if matter.is_restricted %}
+                <span class="badge badge--restricted">Piiratud</span>
+              {% endif %}
+              {% if not matter.is_open %}
+                <span class="badge badge--closed">Suletud</span>
+              {% endif %}
+            </span>
+          </td>
+
+          <td>{% if matter.stage %}{{ matter.stage.label_et }}{% else %}<span class="muted">—</span>{% endif %}</td>
+
+          <td>
+            {% if matter.owner %}{{ matter.owner.display_name }}
+            {% else %}<span class="muted">Määramata</span>{% endif %}
+          </td>
+
+          <td class="table__action">
+            {% if action %}
+              <span class="chip chip--{{ action.kind|lower }} chip--small">{{ action.get_kind_display }}</span>
+              <span class="table__actiontext">{{ action.text }}</span>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+
+          <td class="table__date">
+            {% if action and action.target_date %}
+              <span class="action__datelabel">{{ action.date_label }}</span>
+              <time datetime="{{ action.target_date|date:'Y-m-d' }}">{{ action.target_date|date:"d.m.Y" }}</time>
+              {% if action.is_overdue %}<span class="flag flag--overdue">Möödas</span>{% endif %}
+            {% elif matter.response_deadline %}
+              <span class="action__datelabel">Arvamuse tähtaeg</span>
+              <time datetime="{{ matter.response_deadline|date:'Y-m-d' }}">{{ matter.response_deadline|date:"d.m.Y" }}</time>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+
+          <td class="table__date">
+            <time datetime="{{ matter.updated_at|date:'c' }}">{{ matter.updated_at|date:"d.m.Y" }}</time>
+          </td>
+        </tr>
+        {% endwith %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

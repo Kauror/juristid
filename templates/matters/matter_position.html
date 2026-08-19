@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Seisukoht · {{ matter.display_reference }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+Stage 1 fills the position and the submissions. Kaasamine (member consultation)
+is Stage-2 work and is left visibly absent rather than mocked up: a placeholder
+that looks like a feature is worse than an honest gap, because it invites people
+to record evidence somewhere that cannot keep it.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--matter">
+  {% include "matters/partials/header.html" %}
+  {% include "matters/partials/tabs.html" %}
+
+  <div class="positionlayout">
+    <section class="panel" aria-labelledby="seisukoht-heading">
+      <div class="panel__head">
+        <h2 class="panel__title" id="seisukoht-heading">Koja seisukoht</h2>
+      </div>
+
+      <form class="form" method="post" action="{% url 'matters:update_position' pk=matter.pk %}">
+        {% csrf_token %}
+        <div class="field">
+          <label class="field__label" for="{{ position_form.position_summary.id_for_label }}">
+            Seisukoht
+          </label>
+          {{ position_form.position_summary }}
+        </div>
+        <div class="field">
+          <label class="field__label" for="{{ position_form.rationale_summary.id_for_label }}">
+            Põhjendus
+          </label>
+          {{ position_form.rationale_summary }}
+          <p class="field__help">Millistel tõenditel ja kaalutlustel seisukoht põhineb.</p>
+        </div>
+        <button class="button button--primary" type="submit">Salvesta seisukoht</button>
+      </form>
+    </section>
+
+    <section class="panel" aria-labelledby="kaasamine-heading">
+      <div class="panel__head">
+        <h2 class="panel__title" id="kaasamine-heading">Kaasamine</h2>
+      </div>
+      <p class="notyet">
+        Liikmete kaasamise kirjed valmivad 2. etapis. Seni hoia kaasamise tõendid
+        <a href="{% url 'matters:matter_documents' pk=matter.pk %}">Dokumentide</a> all
+        ja kirjelda käiku sissekannetes.
+      </p>
+      <p class="field__help">
+        Kaasamise arvnäitajaid ei ole siin meelega: kontaktide ja vastuste arvud on
+        eraldi vaatlused ning neist ei tohi tuletada vastamismäära.
+      </p>
+    </section>
+  </div>
+
+  <section class="panel panel--wide" aria-labelledby="arvamused-heading">
+    <div class="panel__head">
+      <h2 class="panel__title" id="arvamused-heading">Väljasaadetud arvamused</h2>
+      <span class="panel__count">{{ submissions|length }}</span>
+    </div>
+    <p class="panel__note">
+      Ühe teema kohta võib olla mitu arvamust. Saadetud arvamus vajab täpset lõplikku tõendit.
+    </p>
+
+    {% if submissions %}
+      <ul class="submissionlist">
+        {% for submission in submissions %}
+          <li class="submission">
+            <div class="submission__head">
+              <span class="badge badge--{{ submission.status|lower }}">{{ submission.get_status_display }}</span>
+              <h3 class="submission__title">{{ submission.title }}</h3>
+              <span class="submission__kind">{{ submission.get_kind_display }}</span>
+            </div>
+
+            <dl class="submission__meta">
+              {% if submission.sent_at %}
+                <div>
+                  <dt>Saadetud</dt>
+                  <dd><time datetime="{{ submission.sent_at|date:'c' }}">{{ submission.sent_at|date:"d.m.Y H:i" }}</time></dd>
+                </div>
+              {% endif %}
+              {% if submission.recipients.all %}
+                <div>
+                  <dt>Adressaadid</dt>
+                  <dd>{% for organisation in submission.recipients.all %}{{ organisation.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</dd>
+                </div>
+              {% endif %}
+              {% if submission.joint_submitters.all %}
+                <div>
+                  <dt>Kaasesitajad</dt>
+                  <dd>{% for organisation in submission.joint_submitters.all %}{{ organisation.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</dd>
+                </div>
+              {% endif %}
+              {% if submission.channel %}
+                <div><dt>Kanal</dt><dd>{{ submission.channel }}</dd></div>
+              {% endif %}
+              <div>
+                <dt>Lõplik tõend</dt>
+                <dd>
+                  {% if submission.final_version %}
+                    <a href="{% url 'documents:download' pk=submission.final_version.pk %}">
+                      {{ submission.final_version.original_filename }}
+                    </a>
+                    <span class="muted">v{{ submission.final_version.version_number }}</span>
+                  {% else %}
+                    <span class="muted">Puudub</span>
+                  {% endif %}
+                </dd>
+              </div>
+            </dl>
+
+            {% if submission.status == "DRAFT" %}
+              <div class="submission__actions">
+                {% if not submission.final_version %}
+                  <form class="inlineform" method="post" enctype="multipart/form-data"
+                        action="{% url 'submissions:attach_evidence' pk=submission.pk %}">
+                    {% csrf_token %}
+                    <label class="field field--inline">
+                      <span class="field__label">Lõplik fail</span>
+                      <input class="field__input" type="file" name="upload" required
+                             aria-label="Lõplik saadetud fail">
+                    </label>
+                    <button class="button button--secondary" type="submit">Lisa lõplik tõend</button>
+                  </form>
+                {% else %}
+                  <form class="inlineform" method="post"
+                        action="{% url 'submissions:mark_sent' pk=submission.pk %}">
+                    {% csrf_token %}
+                    <label class="field field--inline">
+                      <span class="field__label">Kanal</span>
+                      <input class="field__input" type="text" name="channel"
+                             value="{{ submission.channel }}" placeholder="EIS, e-post…">
+                    </label>
+                    <button class="button button--primary" type="submit">Märgi saadetuks</button>
+                  </form>
+                {% endif %}
+              </div>
+            {% elif submission.status == "SENT" %}
+              <form class="inlineform" method="post"
+                    action="{% url 'submissions:withdraw' pk=submission.pk %}">
+                {% csrf_token %}
+                <button class="button button--quiet" type="submit">Võta tagasi</button>
+              </form>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">Ühtegi arvamust ei ole veel loodud.</p>
+    {% endif %}
+
+    <details class="disclosure" {% if submission_form.errors %}open{% endif %}>
+      <summary class="disclosure__summary">Uus arvamus</summary>
+      <form class="form" method="post" action="{% url 'submissions:create' matter_id=matter.pk %}">
+        {% csrf_token %}
+        <div class="formgrid">
+          {% for field in submission_form %}
+            <div class="field">
+              <label class="field__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.help_text %}<p class="field__help">{{ field.help_text }}</p>{% endif %}
+              {% if field.errors %}<p class="field__error">{{ field.errors|first }}</p>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+        <button class="button button--primary" type="submit">Loo arvamus</button>
+      </form>
+    </details>
+  </section>
+</div>
+{% endblock %}

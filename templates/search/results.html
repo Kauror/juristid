@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Otsing · {{ application_name }}{% endblock %}
+
+{% comment %}
+Results say why they matched. A lawyer who searched for a ministry name and got
+a title hit needs to see which, or the ranking looks arbitrary
+(master specification 14.3).
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <header class="page__head">
+    <h1 class="page__title">Otsing</h1>
+    {% if query %}
+      <p class="page__lead">{{ result_count }} vastet päringule „{{ query }}“</p>
+    {% else %}
+      <p class="page__lead">Sisesta viide (näiteks 2026_12), pealkirja osa, asutuse nimi või silt.</p>
+    {% endif %}
+  </header>
+
+  {% if query and not rows %}
+    <p class="empty">
+      Vasteid ei leitud. Proovi lühemat sõna või teistsugust kirjapilti —
+      dokumentide sisust otsimine valmib 2. etapis.
+    </p>
+  {% endif %}
+
+  {% if rows %}
+    <ul class="resultlist">
+      {% for row in rows %}
+        <li class="result">
+          <div class="result__head">
+            <span class="result__why">{{ row.result.match_label }}</span>
+            {% if row.result.matter.record_mode == "ARCHIVE" %}
+              <span class="badge badge--archive">Arhiiv</span>
+            {% endif %}
+            {% if not row.result.matter.is_open %}<span class="badge badge--closed">Suletud</span>{% endif %}
+          </div>
+          <a class="result__title" href="{% url 'matters:matter_detail' pk=row.result.matter.pk %}">
+            {% if row.result.matter.display_reference %}
+              <span class="reference">{{ row.result.matter.display_reference }}</span>
+            {% endif %}
+            {{ row.result.matter.title }}
+          </a>
+          <p class="result__meta">
+            {% if row.result.matter.stage %}{{ row.result.matter.stage.label_et }} · {% endif %}
+            {% if row.result.matter.owner %}{{ row.result.matter.owner.display_name }}{% else %}Vastutajata{% endif %}
+            {% if row.action %}
+              · <span class="chip chip--{{ row.action.kind|lower }} chip--small">{{ row.action.get_kind_display }}</span>
+              {{ row.action.text|truncatechars:80 }}
+            {% endif %}
+          </p>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+{% endblock %}

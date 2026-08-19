@@ -123,6 +123,95 @@ jobs:
       - name: Audit
         run: uvx pip-audit --strict --no-deps --requirement requirements.txt
 
+  browser:
+    name: Browser workflow (Playwright on PostgreSQL 18)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: juristid
+          POSTGRES_USER: juristid
+          POSTGRES_PASSWORD: juristid
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U juristid -d juristid"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # The browser suite runs against a real server on real PostgreSQL. It is
+      # the authoritative check that the workflow works for a person, because
+      # the development machine cannot open a browser.
+      DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+      DJANGO_DEBUG: "1"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,[::1]"
+      DJANGO_SECURE_SSL_REDIRECT: "0"
+      DJANGO_STATIC_MANIFEST: "0"
+      DEV_LOGIN_ENABLED: "1"
+      REAL_DATA_ALLOWED: "0"
+      APPLICATION_ENVIRONMENT: ci
+      POSTGRES_DB: juristid
+      POSTGRES_USER: juristid
+      POSTGRES_PASSWORD: juristid
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      EVIDENCE_ROOT: /tmp/juristid-evidence
+      E2E_BASE_URL: http://127.0.0.1:8000
+      E2E_SCREENSHOT_DIR: artifacts/screenshots
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: Install the browser
+        run: uv run playwright install --with-deps chromium
+
+      - name: Migrate and seed the deterministic world
+        run: |
+          uv run python manage.py migrate --noinput
+          uv run python manage.py seed_e2e_data
+
+      - name: Start the application
+        run: |
+          mkdir -p artifacts
+          nohup uv run python manage.py runserver 127.0.0.1:8000 --noreload             > artifacts/server.log 2>&1 &
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:8000/healthz > /dev/null; then
+              echo "server is up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not start"; exit 1
+
+      - name: Browser workflow
+        run: >-
+          uv run pytest e2e
+          --browser chromium
+          --tracing retain-on-failure
+          --output artifacts/playwright
+
+      - name: Upload screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-artifacts
+          path: |
+            artifacts/screenshots
+            artifacts/playwright
+            artifacts/server.log
+          if-no-files-found: warn
+          retention-days: 14
+
   container:
     name: Container and compose smoke test
     runs-on: ubuntu-latest

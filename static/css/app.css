@@ -1,0 +1,1330 @@
+/*
+ * Stage-1 components.
+ *
+ * STATUS: PROVISIONAL COLOUR. Every value here resolves through a semantic
+ * token from tokens.css, and every colour token is still a placeholder pending
+ * the official Koda CVI package. Swapping the palette must not require touching
+ * this file — that is the whole point of the token layer (docs/adr/0009).
+ *
+ * House rules, enforced by review:
+ *   - no hex values, ever;
+ *   - no colour-only status: every state also carries a word or an icon;
+ *   - focus is visible on everything interactive;
+ *   - dense, but with enough vertical rhythm to scan long Estonian titles.
+ */
+
+/* ====================================================================
+ * Shell
+ * ==================================================================== */
+
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-5);
+  padding: var(--spacing-3) var(--spacing-5);
+  background: var(--surface-primary);
+  border-bottom: 1px solid var(--border-default);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.topbar__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: var(--typography-weight-semibold);
+  white-space: nowrap;
+}
+
+.topbar__mark {
+  display: inline-grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-sm);
+  background: var(--brand-primary);
+  color: var(--text-inverse);
+  font-size: var(--typography-size-xs);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.02em;
+}
+
+.topnav {
+  display: flex;
+  gap: var(--spacing-1);
+}
+
+.topnav__link {
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-weight: var(--typography-weight-medium);
+  white-space: nowrap;
+  /* The active tab is marked by weight and a rule, not by colour alone. */
+  border-bottom: 2px solid transparent;
+}
+
+.topnav__link:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.topnav__link.is-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--brand-primary);
+  background: var(--surface-selected);
+}
+
+.globalsearch {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 32rem;
+}
+
+.globalsearch__input {
+  width: 100%;
+  padding: var(--spacing-2) var(--spacing-6) var(--spacing-2) var(--spacing-3);
+  background: var(--surface-canvas);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: var(--typography-size-sm);
+  font-family: inherit;
+}
+
+.globalsearch__hint {
+  position: absolute;
+  right: var(--spacing-2);
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: var(--typography-size-xs);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--spacing-1);
+  pointer-events: none;
+}
+
+.topbar__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-left: auto;
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+}
+
+.topbar__user {
+  white-space: nowrap;
+}
+
+.app__main {
+  flex: 1 1 auto;
+  padding: var(--spacing-5);
+}
+
+.app__footer {
+  padding: var(--spacing-4) var(--spacing-5);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: var(--typography-size-xs);
+}
+
+.app__footer p {
+  margin: 0;
+  max-width: none;
+}
+
+/* ====================================================================
+ * Page scaffolding
+ * ==================================================================== */
+
+.page {
+  max-width: 1440px;
+  margin: 0 auto;
+}
+
+.page--narrow {
+  max-width: 46rem;
+}
+
+.page__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--spacing-5);
+}
+
+.page__title {
+  margin: 0;
+  font-size: var(--typography-size-xl);
+}
+
+.page__lead {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--typography-size-sm);
+}
+
+.page__head .button {
+  margin-left: auto;
+}
+
+.messages {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 var(--spacing-5);
+}
+
+.message {
+  margin: var(--spacing-3) 0 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border-left: 3px solid var(--border-strong);
+  background: var(--surface-raised);
+  border-radius: var(--radius-sm);
+  max-width: none;
+  font-size: var(--typography-size-sm);
+}
+
+.message--success {
+  border-left-color: var(--status-success-text);
+}
+
+.message--error {
+  border-left-color: var(--status-danger-text);
+}
+
+.message--warning {
+  border-left-color: var(--status-warning-text);
+}
+
+/* ====================================================================
+ * Panels
+ * ==================================================================== */
+
+.panel {
+  background: var(--surface-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-5);
+}
+
+.panel--wide {
+  grid-column: 1 / -1;
+}
+
+.panel__head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-3);
+}
+
+.panel__title {
+  margin: 0;
+  font-size: var(--typography-size-md);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.panel__count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--spacing-2);
+  font-size: var(--typography-size-sm);
+}
+
+.panel__count--link {
+  text-decoration: none;
+}
+
+.panel__count--link:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.panel__note {
+  margin: 0 0 var(--spacing-3);
+  color: var(--text-muted);
+  font-size: var(--typography-size-xs);
+  max-width: 70ch;
+}
+
+.worklayout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--spacing-4);
+}
+
+.positionlayout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  gap: var(--spacing-4);
+}
+
+/* ====================================================================
+ * Action lists
+ * ==================================================================== */
+
+.group__title {
+  margin: var(--spacing-4) 0 var(--spacing-2);
+  font-size: var(--typography-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.group__title--overdue {
+  color: var(--status-danger-text);
+}
+
+.group__count {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.actionlist,
+.attentionlist,
+.documentlist,
+.submissionlist,
+.resultlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.action {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: var(--spacing-3);
+  align-items: start;
+  padding: var(--spacing-3) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.action:first-child {
+  border-top: none;
+}
+
+/* Overdue is marked by a rule plus the words "Tähtaeg möödas", never by
+   colour on its own. */
+.action--overdue {
+  border-left: 3px solid var(--status-danger-text);
+  padding-left: var(--spacing-3);
+  margin-left: calc(var(--spacing-3) * -1);
+}
+
+.action__matter {
+  display: block;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: var(--typography-weight-medium);
+  overflow-wrap: break-word;
+}
+
+.action__matter:hover {
+  text-decoration: underline;
+}
+
+.action__text {
+  margin: var(--spacing-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--typography-size-sm);
+  max-width: 60ch;
+}
+
+.action__date {
+  text-align: right;
+  font-size: var(--typography-size-sm);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.action__datelabel {
+  display: block;
+  font-size: var(--typography-size-xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.attention {
+  padding: var(--spacing-3) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.attention:first-child {
+  border-top: none;
+}
+
+.attention__label {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--status-warning-text);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.attention__matter {
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: var(--typography-weight-medium);
+}
+
+.attention__matter:hover {
+  text-decoration: underline;
+}
+
+.attention__detail {
+  margin: var(--spacing-1) 0 0;
+  color: var(--text-muted);
+  font-size: var(--typography-size-xs);
+}
+
+/* ====================================================================
+ * Chips, badges, flags, tags
+ * ==================================================================== */
+
+.chip {
+  display: inline-block;
+  padding: 0.125rem var(--spacing-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--typography-size-xs);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+}
+
+.chip--small {
+  font-size: var(--typography-size-xs);
+}
+
+/* DO / WAIT / MONITOR each carry their own word, so the tint is reinforcement
+   rather than the signal itself. */
+.chip--do {
+  border-color: var(--status-info-text);
+  color: var(--status-info-text);
+}
+
+.chip--wait {
+  border-color: var(--status-warning-text);
+  color: var(--status-warning-text);
+}
+
+.chip--monitor {
+  border-color: var(--status-neutral-text);
+  color: var(--text-secondary);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.0625rem var(--spacing-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--typography-size-xs);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  white-space: nowrap;
+}
+
+.badge--warning {
+  border-color: var(--status-warning-text);
+  color: var(--status-warning-text);
+}
+
+.badge--restricted {
+  border-color: var(--status-danger-text);
+  color: var(--status-danger-text);
+}
+
+.badge--archive {
+  border-color: var(--border-strong);
+}
+
+.badge--open,
+.badge--draft {
+  border-color: var(--status-info-text);
+  color: var(--status-info-text);
+}
+
+.badge--closed,
+.badge--withdrawn,
+.badge--superseded {
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+}
+
+.badge--sent {
+  border-color: var(--status-success-text);
+  color: var(--status-success-text);
+}
+
+.badge--working {
+  border-color: var(--status-warning-text);
+  color: var(--status-warning-text);
+}
+
+.flag {
+  display: inline-block;
+  font-size: var(--typography-size-xs);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.flag--overdue {
+  color: var(--status-danger-text);
+}
+
+.flag--review {
+  color: var(--status-warning-text);
+}
+
+.tag {
+  display: inline-block;
+  margin-right: var(--spacing-1);
+  padding: 0 var(--spacing-2);
+  border-radius: var(--radius-pill);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  font-size: var(--typography-size-xs);
+  color: var(--text-secondary);
+}
+
+.reference {
+  font-family: var(--typography-font-mono);
+  font-size: var(--typography-size-xs);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.reference--large {
+  font-size: var(--typography-size-sm);
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.rowflags {
+  display: inline-flex;
+  gap: var(--spacing-1);
+  flex-wrap: wrap;
+  margin-left: var(--spacing-2);
+}
+
+/* ====================================================================
+ * Tables
+ * ==================================================================== */
+
+.tablewrap {
+  /* Wide registers scroll inside their own box; the page never scrolls
+     sideways. */
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--typography-size-table);
+}
+
+.table th {
+  text-align: left;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-muted);
+  font-size: var(--typography-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: var(--spacing-2) var(--spacing-3);
+  border-bottom: 1px solid var(--border-default);
+  position: sticky;
+  top: 0;
+  background: var(--surface-primary);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: var(--spacing-3);
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: top;
+}
+
+/* No zebra striping: spacing and a hover state carry the row, which stays
+   legible on a dark canvas (master specification 17.4). */
+.table tbody tr:hover {
+  background: var(--surface-hover);
+}
+
+.table__reference {
+  width: 6.5rem;
+}
+
+.table__title {
+  min-width: 22rem;
+}
+
+.table__title a {
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: var(--typography-weight-medium);
+}
+
+.table__title a:hover {
+  text-decoration: underline;
+}
+
+.table__action {
+  max-width: 22rem;
+}
+
+.table__actiontext {
+  display: inline-block;
+  margin-left: var(--spacing-1);
+  color: var(--text-secondary);
+}
+
+.table__date,
+.table__number {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.table__number {
+  text-align: right;
+}
+
+/* ====================================================================
+ * Filters, forms, fields
+ * ==================================================================== */
+
+.filters {
+  background: var(--surface-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-3) var(--spacing-4);
+  margin-bottom: var(--spacing-4);
+}
+
+.filters__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  align-items: flex-end;
+}
+
+.filters__row + .filters__row {
+  margin-top: var(--spacing-3);
+}
+
+.filters__actions {
+  display: flex;
+  gap: var(--spacing-2);
+  margin-left: auto;
+}
+
+.field {
+  display: block;
+  margin-bottom: var(--spacing-3);
+}
+
+.field--inline {
+  margin-bottom: 0;
+  min-width: 10rem;
+}
+
+.field--grow {
+  flex: 1 1 20rem;
+}
+
+.field__label {
+  display: block;
+  font-size: var(--typography-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-1);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.field__label--large {
+  font-size: var(--typography-size-sm);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+}
+
+.field__input {
+  width: 100%;
+  padding: var(--spacing-2) var(--spacing-3);
+  background: var(--surface-canvas);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--typography-size-sm);
+}
+
+.field__input--prominent {
+  font-size: var(--typography-size-lg);
+  padding: var(--spacing-3);
+}
+
+.field__input--compact {
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--typography-size-sm);
+}
+
+.field__help {
+  margin: var(--spacing-1) 0 0;
+  font-size: var(--typography-size-xs);
+  color: var(--text-muted);
+  max-width: 60ch;
+}
+
+.field__error {
+  margin: var(--spacing-1) 0 0;
+  font-size: var(--typography-size-xs);
+  color: var(--status-danger-text);
+  font-weight: var(--typography-weight-medium);
+}
+
+.formerror {
+  margin: 0 0 var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-left: 3px solid var(--status-danger-text);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-size: var(--typography-size-sm);
+  border-radius: var(--radius-sm);
+}
+
+.formgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--spacing-3) var(--spacing-4);
+}
+
+.form__actions {
+  display: flex;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-4);
+}
+
+.inlineform {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-top: var(--spacing-2);
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.disclosure {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-3);
+  margin: var(--spacing-4) 0;
+  background: var(--surface-primary);
+}
+
+.disclosure--danger {
+  border-color: var(--border-default);
+}
+
+.disclosure__summary {
+  cursor: pointer;
+  font-weight: var(--typography-weight-medium);
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+}
+
+.disclosure[open] .disclosure__summary {
+  margin-bottom: var(--spacing-3);
+  color: var(--text-primary);
+}
+
+/* ====================================================================
+ * Buttons
+ * ==================================================================== */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--typography-size-sm);
+  font-weight: var(--typography-weight-medium);
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.button:hover {
+  background: var(--surface-hover);
+}
+
+.button--primary {
+  background: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: var(--text-inverse);
+}
+
+.button--primary:hover {
+  background: var(--brand-secondary);
+  border-color: var(--brand-secondary);
+}
+
+.button--secondary {
+  background: var(--surface-overlay);
+}
+
+.button--quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+
+.button--quiet:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.button--danger {
+  border-color: var(--status-danger-text);
+  color: var(--status-danger-text);
+  background: transparent;
+}
+
+.button--tiny {
+  padding: 0 var(--spacing-2);
+  font-size: var(--typography-size-xs);
+}
+
+.button.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* ====================================================================
+ * Matter page
+ * ==================================================================== */
+
+.page--matter {
+  max-width: 1440px;
+}
+
+.matterhead {
+  background: var(--surface-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-3);
+}
+
+.matterhead__title {
+  /* Long legal titles wrap; the header never grows a scrollbar or clips. */
+  margin: var(--spacing-1) 0 var(--spacing-2);
+  font-size: var(--typography-size-lg);
+  overflow-wrap: break-word;
+}
+
+.factgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: var(--spacing-3);
+  margin: var(--spacing-3) 0 0;
+}
+
+.fact {
+  min-width: 0;
+}
+
+.fact__label {
+  font-size: var(--typography-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: var(--typography-weight-semibold);
+  margin-bottom: var(--spacing-1);
+}
+
+.fact__value {
+  margin: 0;
+  font-size: var(--typography-size-sm);
+}
+
+.fact__value form {
+  display: flex;
+  gap: var(--spacing-1);
+  align-items: center;
+}
+
+.tabs {
+  display: flex;
+  gap: var(--spacing-1);
+  border-bottom: 1px solid var(--border-default);
+  margin-bottom: var(--spacing-4);
+}
+
+.tabs__tab {
+  padding: var(--spacing-2) var(--spacing-4);
+  color: var(--text-secondary);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  font-size: var(--typography-size-sm);
+  font-weight: var(--typography-weight-medium);
+}
+
+.tabs__tab:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.tabs__tab.is-active {
+  color: var(--text-primary);
+  border-bottom-color: var(--brand-primary);
+}
+
+/* ---- Järgmiseks ------------------------------------------------------ */
+
+.nextaction {
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--brand-primary);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-4);
+}
+
+.nextaction--overdue {
+  border-left-color: var(--status-danger-text);
+}
+
+.nextaction__head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-2);
+}
+
+.nextaction__heading {
+  margin: 0;
+  font-size: var(--typography-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.nextaction__text {
+  margin: 0 0 var(--spacing-3);
+  font-size: var(--typography-size-md);
+  color: var(--text-primary);
+  max-width: 70ch;
+}
+
+.nextaction__meta {
+  display: flex;
+  gap: var(--spacing-5);
+  margin: 0 0 var(--spacing-3);
+  font-size: var(--typography-size-sm);
+}
+
+.nextaction__meta dt {
+  font-size: var(--typography-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.nextaction__meta dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- Composer -------------------------------------------------------- */
+
+.composer {
+  background: var(--surface-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-4);
+  margin-bottom: var(--spacing-5);
+}
+
+.composer__body {
+  width: 100%;
+  min-height: 6rem;
+  padding: var(--spacing-3);
+  background: var(--surface-canvas);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--typography-size-body);
+  line-height: var(--typography-line-normal);
+  resize: vertical;
+}
+
+.composer__row {
+  display: flex;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  margin-top: var(--spacing-3);
+}
+
+.composer__toggle {
+  margin-top: var(--spacing-3);
+  padding-top: var(--spacing-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.composer__next {
+  margin-top: var(--spacing-2);
+  padding: var(--spacing-3);
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+}
+
+.composer__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-4);
+}
+
+.composer__hint {
+  font-size: var(--typography-size-xs);
+  color: var(--text-muted);
+}
+
+/* ---- Timeline -------------------------------------------------------- */
+
+.timeline__heading {
+  font-size: var(--typography-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-3);
+}
+
+.event {
+  display: grid;
+  grid-template-columns: 1.25rem 1fr;
+  gap: var(--spacing-3);
+  padding-bottom: var(--spacing-4);
+}
+
+.event__gutter {
+  display: flex;
+  justify-content: center;
+  padding-top: 0.4rem;
+  /* The connecting rule is drawn on the gutter so it survives varying heights. */
+  background: linear-gradient(var(--border-subtle), var(--border-subtle)) center / 1px 100%
+    no-repeat;
+}
+
+.event__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--border-strong);
+  outline: 3px solid var(--surface-canvas);
+}
+
+.event__dot--entry {
+  background: var(--brand-primary);
+}
+
+.event__body {
+  min-width: 0;
+}
+
+.event__meta {
+  display: flex;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-xs);
+  color: var(--text-muted);
+}
+
+.event__kind {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.event__kind--system {
+  color: var(--text-muted);
+}
+
+.event__summary {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--typography-size-sm);
+  max-width: 70ch;
+}
+
+.event__edited {
+  font-style: italic;
+}
+
+.event--system .event__body {
+  color: var(--text-secondary);
+}
+
+.timeline__more {
+  margin-top: var(--spacing-2);
+}
+
+/* Authored bodies. The allowlist in app/core/richtext.py is what may appear. */
+.richtext {
+  font-size: var(--typography-size-body);
+  color: var(--text-primary);
+  max-width: 70ch;
+}
+
+.richtext p {
+  margin: 0 0 var(--spacing-2);
+}
+
+.richtext ul,
+.richtext ol {
+  margin: 0 0 var(--spacing-2);
+  padding-left: var(--spacing-5);
+}
+
+.richtext table {
+  border-collapse: collapse;
+  margin: var(--spacing-2) 0;
+  font-size: var(--typography-size-sm);
+}
+
+.richtext th,
+.richtext td {
+  border: 1px solid var(--border-subtle);
+  padding: var(--spacing-1) var(--spacing-2);
+  text-align: left;
+}
+
+/* ====================================================================
+ * Submissions, documents, results
+ * ==================================================================== */
+
+.submission {
+  padding: var(--spacing-3) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.submission:first-child {
+  border-top: none;
+}
+
+.submission__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+.submission__title {
+  margin: 0;
+  font-size: var(--typography-size-md);
+}
+
+.submission__kind {
+  color: var(--text-muted);
+  font-size: var(--typography-size-xs);
+}
+
+.submission__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+  gap: var(--spacing-2) var(--spacing-4);
+  margin: var(--spacing-2) 0 0;
+  font-size: var(--typography-size-sm);
+}
+
+.submission__meta dt {
+  font-size: var(--typography-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.submission__meta dd {
+  margin: 0;
+}
+
+.submission__actions {
+  margin-top: var(--spacing-3);
+}
+
+.documentrow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) 0;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--typography-size-sm);
+}
+
+.result {
+  padding: var(--spacing-3) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.result:first-child {
+  border-top: none;
+}
+
+.result__head {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: center;
+  margin-bottom: var(--spacing-1);
+}
+
+.result__why {
+  font-size: var(--typography-size-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.result__title {
+  display: block;
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: var(--typography-weight-medium);
+}
+
+.result__title:hover {
+  text-decoration: underline;
+}
+
+.result__meta {
+  margin: var(--spacing-1) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--typography-size-sm);
+}
+
+/* ====================================================================
+ * Empty and pending states
+ * ==================================================================== */
+
+.empty {
+  margin: var(--spacing-3) 0;
+  padding: var(--spacing-4);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: var(--typography-size-sm);
+  max-width: none;
+}
+
+.empty--inline {
+  padding: 0;
+  border: none;
+  margin: 0;
+}
+
+/* An honest gap, not a mocked-up feature. */
+.notyet {
+  padding: var(--spacing-3);
+  border-left: 3px solid var(--border-strong);
+  background: var(--surface-raised);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--typography-size-sm);
+  max-width: none;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-4);
+}
+
+.pagination__status {
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* HTMX in-flight feedback: the surface dims so a save never looks ignored. */
+.htmx-request,
+.htmx-request .composer__body {
+  opacity: 0.6;
+  transition: opacity var(--motion-duration-fast) var(--motion-easing-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
+
+/* Narrower screens: the three Minu töö panels stack, the register scrolls. */
+@media (max-width: 60rem) {
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .globalsearch {
+    order: 10;
+    max-width: none;
+    flex-basis: 100%;
+  }
+
+  .app__main {
+    padding: var(--spacing-4) var(--spacing-3);
+  }
+}

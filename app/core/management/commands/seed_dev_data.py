@@ -32,22 +32,25 @@ from app.legacy_import.models import (
     MatterSourceReference,
     ReconciliationStatus,
 )
+from app.matters.entry_enums import EntryKind
 from app.matters.enums import DataQualityTier, MatterOrigin, RecordMode, TagAssignmentSource
 from app.matters.models import Matter, TagAssignment
-from app.matters.services import create_matter
+from app.matters.services import add_entry, create_matter
 from app.organisations.models import AliasType, Organisation, OrganisationAlias, OrganisationType
+from app.submissions.enums import SubmissionKind
+from app.submissions.services import (
+    attach_final_evidence,
+    create_submission,
+    mark_submission_sent,
+)
 from app.taxonomy.models import PolicyArea, Tag, TagAlias
-from app.workflow.enums import Track
+from app.workflow.enums import ActionKind, DateSemantics, Track
 from app.workflow.models import StageVocabulary
+from app.workflow.services import set_next_action
 
-PROVISIONAL_STAGES = [
-    ("saabunud", "Saabunud", 10),
-    ("analuusis", "Analüüsis", 20),
-    ("arvamus-koostamisel", "Arvamus koostamisel", 30),
-    ("arvamus-esitatud", "Arvamus esitatud", 40),
-    ("ootan-eli-oiguse-ulevotmist", "Ootan ELi õiguse ülevõtmist", 50),
-    ("jalgimisel", "Jälgimisel", 60),
-]
+# The stage vocabulary is seeded by workflow/0004 from the live workbook and is
+# not re-invented here. Development data uses the same rows production will.
+SEEDED_STAGE_KEYS = ["consultation", "government", "parliament", "in_force", "eu_procedure"]
 
 PROVISIONAL_POLICY_AREAS = [
     ("maksundus", "Maksundus"),
@@ -126,19 +129,14 @@ class Command(BaseCommand):
     # -- reference data ----------------------------------------------------
 
     def _seed_stages(self) -> list[StageVocabulary]:
-        stages = []
-        for key, label, order in PROVISIONAL_STAGES:
-            stage, _ = StageVocabulary.objects.get_or_create(
-                key=key,
-                defaults={
-                    "label_et": label,
-                    "sort_order": order,
-                    "is_provisional": True,
-                    "help_text": "Esialgne väärtus. Kinnitatakse etapisõnastiku töötoas.",
-                    "applicable_tracks": [],
-                },
+        """Read the migration-seeded vocabulary; never create a parallel one."""
+        stages = list(
+            StageVocabulary.objects.filter(key__in=SEEDED_STAGE_KEYS).order_by("sort_order")
+        )
+        if not stages:  # pragma: no cover - only if migrations have not run
+            raise CommandError(
+                "Stage vocabulary is missing. Run migrations before seeding development data."
             )
-            stages.append(stage)
         return stages
 
     def _seed_policy_areas(self) -> list[PolicyArea]:
@@ -244,10 +242,88 @@ class Command(BaseCommand):
                 mime_type="text/plain",
                 uploaded_by=owner,
             )
+
+            self._seed_matter_work(matter=matter, owner=owner, index=index, ministry=ministry)
             created += 1
 
         self._seed_archive_matters(company=company)
         return created
+
+    def _seed_matter_work(
+        self, *, matter: Matter, owner: User, index: int, ministry: Organisation
+    ) -> None:
+        """Give each Matter a plausible day of work.
+
+        The mix is deliberate: DO, WAIT and MONITOR with all three date
+        meanings, plus one Matter left without a next action so the attention
+        panel has something real to report.
+        """
+        add_entry(
+            matter=matter,
+            body=(
+                "<p>Saabus ministeeriumi kiri. Esialgne hinnang: mõju liikmetele on "
+                "märkimisväärne, halduskoormus kasvab.</p>"
+            ),
+            author=owner,
+            kind=EntryKind.NOTE,
+            occurred_at=timezone.now() - timedelta(days=6),
+        )
+
+        if index % 3 == 0:
+            add_entry(
+                matter=matter,
+                body=(
+                    "<p>Kohtumine ministeeriumiga. Ministeerium lubas saata järgmise "
+                    "nädala jooksul uue sõnastuse.</p>"
+                ),
+                author=owner,
+                kind=EntryKind.MEETING,
+                organisation=ministry,
+                occurred_at=timezone.now() - timedelta(days=2),
+            )
+
+        plan = [
+            (ActionKind.DO, DateSemantics.DEADLINE, "Koosta ja saada koja arvamus", 5),
+            (ActionKind.WAIT, DateSemantics.REVIEW_ON, "Ootan ministeeriumi uut sõnastust", 9),
+            (ActionKind.DO, DateSemantics.DEADLINE, "Vasta Riigikogu komisjonile", -3),
+            (ActionKind.MONITOR, DateSemantics.REVIEW_ON, "Jälgi rakendusaktide koostamist", 21),
+            (
+                ActionKind.WAIT,
+                DateSemantics.EXPECTED_AROUND,
+                "Eelnõu jõuab eeldatavasti valitsusse",
+                40,
+            ),
+        ]
+        # One Matter deliberately has no next action, so Tähelepanu is not empty.
+        if index % 6 != 5:
+            kind, semantics, text, offset = plan[index % len(plan)]
+            set_next_action(
+                matter=matter,
+                text=text,
+                kind=kind,
+                date_semantics=semantics,
+                target_date=date.today() + timedelta(days=offset),
+                actor=owner,
+            )
+
+        if index % 4 == 0:
+            submission = create_submission(
+                matter=matter,
+                title=f"Koja arvamus eelnõule {matter.display_reference}",
+                kind=SubmissionKind.FORMAL_OPINION,
+                actor=owner,
+                recipients=[ministry],
+                channel="EIS",
+            )
+            attach_final_evidence(
+                submission=submission,
+                content=b"%PDF-1.4 synthetic final opinion",
+                original_filename=f"koja-arvamus-{index + 1}.pdf",
+                mime_type="application/pdf",
+                actor=owner,
+            )
+            submission.refresh_from_db()
+            mark_submission_sent(submission=submission, actor=owner)
 
     def _seed_archive_matters(self, *, company: Organisation) -> None:
         """Archive rows: verbatim provenance, no invented modern fields."""

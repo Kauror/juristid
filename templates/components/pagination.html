@@ -1,0 +1,30 @@
+{% comment %}
+Server-side pagination. The register has to stay usable at years of scale, so no
+screen ever renders the whole set (master specification 13.3).
+{% endcomment %}
+{% if page.paginator.num_pages > 1 %}
+  <nav class="pagination" aria-label="Lehed">
+    {% if page.has_previous %}
+      <a class="button button--quiet"
+         href="?{% if query_string %}{{ query_string }}&amp;{% endif %}leht={{ page.previous_page_number }}">
+        Eelmine
+      </a>
+    {% else %}
+      <span class="button button--quiet is-disabled" aria-disabled="true">Eelmine</span>
+    {% endif %}
+
+    <span class="pagination__status">
+      Leht {{ page.number }} / {{ page.paginator.num_pages }}
+      <span class="muted">({{ page.paginator.count }} kirjet)</span>
+    </span>
+
+    {% if page.has_next %}
+      <a class="button button--quiet"
+         href="?{% if query_string %}{{ query_string }}&amp;{% endif %}leht={{ page.next_page_number }}">
+        Järgmine
+      </a>
+    {% else %}
+      <span class="button button--quiet is-disabled" aria-disabled="true">Järgmine</span>
+    {% endif %}
+  </nav>
+{% endif %}

@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Teemad · {{ application_name }}{% endblock %}
+
+{% comment %}
+The register. Filter state lives in the URL so a view can be shared, bookmarked
+and reached with Back — which is what a saved-view framework would otherwise be
+invented to do (master specification 7.4).
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <header class="page__head">
+    <h1 class="page__title">Teemad</h1>
+    <p class="page__lead">{{ total }} teemat</p>
+    <a class="button button--primary" href="{% url 'matters:matter_create' %}">Uus teema</a>
+  </header>
+
+  <form class="filters" method="get" action="{% url 'matters:matter_list' %}">
+    <div class="filters__row">
+      <label class="field field--inline">
+        <span class="field__label">Olek</span>
+        <select class="field__input" name="olek">
+          <option value="avatud" {% if filters.olek == "avatud" %}selected{% endif %}>Avatud</option>
+          <option value="suletud" {% if filters.olek == "suletud" %}selected{% endif %}>Suletud</option>
+          <option value="koik" {% if filters.olek == "koik" %}selected{% endif %}>Kõik</option>
+        </select>
+      </label>
+
+      <label class="field field--inline">
+        <span class="field__label">Ulatus</span>
+        <select class="field__input" name="ulatus">
+          <option value="koik" {% if filters.ulatus == "koik" %}selected{% endif %}>Kõik nähtavad</option>
+          <option value="minu" {% if filters.ulatus == "minu" %}selected{% endif %}>Minu omad</option>
+        </select>
+      </label>
+
+      <label class="field field--inline">
+        <span class="field__label">Vastutaja</span>
+        <select class="field__input" name="vastutaja">
+          <option value="">Kõik</option>
+          {% for owner in owners %}
+            <option value="{{ owner.pk }}" {% if filters.vastutaja == owner.pk|stringformat:"s" %}selected{% endif %}>
+              {{ owner.display_name }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="field field--inline">
+        <span class="field__label">Hetkeseis</span>
+        <select class="field__input" name="hetkeseis">
+          <option value="">Kõik</option>
+          {% for stage in stages %}
+            <option value="{{ stage.key }}" {% if filters.hetkeseis == stage.key %}selected{% endif %}>
+              {{ stage.label_et }}
+            </option>
+          {% endfor %}
+        </select>
+      </label>
+    </div>
+
+    <div class="filters__row">
+      <label class="field field--inline">
+        <span class="field__label">Menetlusliik</span>
+        <select class="field__input" name="menetlusliik">
+          <option value="">Kõik</option>
+          {% for value, label in tracks %}
+            <option value="{{ value }}" {% if filters.menetlusliik == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="field field--inline">
+        <span class="field__label">Valdkond</span>
+        <select class="field__input" name="valdkond">
+          <option value="">Kõik</option>
+          {% for area in policy_areas %}
+            <option value="{{ area.key }}" {% if filters.valdkond == area.key %}selected{% endif %}>{{ area.name_et }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="field field--inline">
+        <span class="field__label">Kirje liik</span>
+        <select class="field__input" name="liik">
+          <option value="">Kõik</option>
+          {% for value, label in record_modes %}
+            <option value="{{ value }}" {% if filters.liik == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+
+      <label class="field field--inline">
+        <span class="field__label">Järjestus</span>
+        <select class="field__input" name="jarjestus">
+          <option value="reference" {% if filters.jarjestus == "reference" %}selected{% endif %}>Viide</option>
+          <option value="updated" {% if filters.jarjestus == "updated" %}selected{% endif %}>Viimane tegevus</option>
+          <option value="deadline" {% if filters.jarjestus == "deadline" %}selected{% endif %}>Tähtaeg</option>
+          <option value="title" {% if filters.jarjestus == "title" %}selected{% endif %}>Pealkiri</option>
+        </select>
+      </label>
+
+      <div class="filters__actions">
+        <button class="button button--primary" type="submit">Filtreeri</button>
+        <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Lähtesta</a>
+      </div>
+    </div>
+  </form>
+
+  {% if page.object_list %}
+    {% include "matters/partials/matter_table.html" with matters=page.object_list %}
+    {% include "components/pagination.html" with page=page query_string=query_string %}
+  {% else %}
+    <p class="empty">Selle filtriga teemasid ei leitud.</p>
+  {% endif %}
+</div>
+{% endblock %}

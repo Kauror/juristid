@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}Minu töö · {{ application_name }}{% endblock %}
+
+{% comment %}
+Minu töö answers one question: what must I do, wait for or check now.
+
+The three lists are separated because their dates mean different things. A DO
+with a deadline can be late; a WAIT whose review date arrived is simply ready to
+look at. Mixing them into one due-date list is what makes a work queue stop
+being believed.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <header class="page__head">
+    <h1 class="page__title">Minu töö</h1>
+    <p class="page__lead">{{ today|date:"l, j. F Y" }}</p>
+    <a class="button button--primary" href="{% url 'matters:matter_create' %}">Uus teema</a>
+  </header>
+
+  <div class="worklayout">
+    <section class="panel" aria-labelledby="teen-heading">
+      <div class="panel__head">
+        <h2 class="panel__title" id="teen-heading">Teen</h2>
+        <span class="panel__count">{{ do_total }}</span>
+      </div>
+
+      {% if do_total %}
+        {% for group in do_groups %}
+          {% if group.actions %}
+            <h3 class="group__title group__title--{{ group.key }}">
+              {{ group.label }} <span class="group__count">{{ group.count }}</span>
+            </h3>
+            <ul class="actionlist">
+              {% for action in group.actions %}
+                {% include "matters/partials/action_row.html" with action=action today=today %}
+              {% endfor %}
+            </ul>
+          {% endif %}
+        {% endfor %}
+      {% else %}
+        <p class="empty">Ühtegi tähtajalist tegevust ei ole sulle määratud.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel" aria-labelledby="ootan-heading">
+      <div class="panel__head">
+        <h2 class="panel__title" id="ootan-heading">Ootan / kontrollin</h2>
+        <span class="panel__count">{{ waiting|length }}</span>
+      </div>
+      <p class="panel__note">
+        Need ei ole hilinenud tööd. Kuupäev tähendab ülevaatamist või oodatavat aega.
+      </p>
+
+      {% if waiting %}
+        <ul class="actionlist">
+          {% for action in waiting %}
+            {% include "matters/partials/action_row.html" with action=action today=today %}
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">Midagi ei ole ootel ega jälgimisel.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel" aria-labelledby="tahelepanu-heading">
+      <div class="panel__head">
+        <h2 class="panel__title" id="tahelepanu-heading">Tähelepanu</h2>
+        <span class="panel__count">{{ attention|length }}</span>
+      </div>
+
+      {% if attention %}
+        <ul class="attentionlist">
+          {% for item in attention %}
+            <li class="attention">
+              <p class="attention__label">{{ item.label }}</p>
+              <a class="attention__matter" href="{% url 'matters:matter_detail' pk=item.matter.pk %}">
+                {% if item.matter.display_reference %}
+                  <span class="reference">{{ item.matter.display_reference }}</span>
+                {% endif %}
+                {{ item.matter.title }}
+              </a>
+              {% if item.detail %}<p class="attention__detail">{{ item.detail }}</p>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="empty">Andmelünki ei leitud.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  <section class="panel panel--wide" aria-labelledby="aktiivsed-heading">
+    <div class="panel__head">
+      <h2 class="panel__title" id="aktiivsed-heading">Minu aktiivsed teemad</h2>
+      {% comment %}
+        Inventory, never "workload". A count of open files says nothing about
+        effort (master specification 7.2, 18.8).
+      {% endcomment %}
+      <a class="panel__count panel__count--link"
+         href="{% url 'matters:matter_list' %}?ulatus=minu&amp;olek=avatud">{{ active_count }}</a>
+    </div>
+
+    {% if active_matters %}
+      {% include "matters/partials/matter_table.html" with matters=active_matters today=today %}
+    {% else %}
+      <p class="empty">
+        Sul ei ole avatud teemasid.
+        <a href="{% url 'matters:matter_create' %}">Loo esimene teema</a>.
+      </p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
