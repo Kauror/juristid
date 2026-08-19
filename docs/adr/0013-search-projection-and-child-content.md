@@ -119,8 +119,27 @@ The projection is genuinely disposable: `rebuild_search_index` empties the table
 and rebuilds from canonical records, and tests assert that rebuilding from empty
 and from stale produce the same result.
 
-Because nothing in the domain reads from `SearchDocument`, a half-finished
-rebuild degrades search and breaks nothing else.
+**A full rebuild is atomic, and the reasoning that made it so is worth keeping.**
+The first version committed each batch as it went, on the argument that nothing
+in the domain reads from `SearchDocument`, so a half-finished rebuild only
+degrades search. That argument is wrong. Being derived data makes an index cheap
+to *recreate*; it does not make a half-built one safe to *serve*. A stale index
+gives slightly old answers, which is recoverable. A partially rebuilt index
+gives confident, silent, incomplete ones — and "vasteid ei leitud" is
+byte-identical whether the matter does not exist or the rebuild died before
+reaching it. A lawyer concluding Koda never worked on something, from a corpus
+that lost half itself an hour ago, is exactly the failure this system exists to
+prevent.
+
+So the empty-and-refill runs in one transaction. Readers keep the previous
+complete index for the duration, via PostgreSQL's MVCC, and the new one becomes
+visible only on commit. Batching survives inside the transaction to bound memory.
+
+At the current scale — 2,455 matters, a few seconds — this needs nothing more.
+If the corpus grew to where a single transaction were genuinely too long, the
+answer is a generation column or a shadow table swapped in at the end, **not** a
+return to committing partial state: that trades a visible pause for an invisible
+gap, which is the worse of the two.
 
 ## Alternatives considered
 

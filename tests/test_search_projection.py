@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.matters.models import Matter
 from app.matters.services import create_matter
 from app.organisations.models import Organisation, OrganisationType
 from app.search.indexing import indexable_matters, rebuild_all, refresh_matter, refresh_matters
@@ -350,3 +351,105 @@ def test_a_reference_query_never_falls_back_to_a_similar_reference(corpus, speci
 
 def test_an_unknown_reference_returns_nothing_rather_than_a_near_miss(corpus, specialist) -> None:
     assert search_matters(query="2026_99999", user=specialist) == []
+
+
+# -- a full rebuild is all or nothing --------------------------------------
+#
+# Being derived data makes the index cheap to recreate. It does not make a
+# half-built one safe to serve: a partial index answers confidently and silently
+# with a fraction of the corpus, and an empty results page looks the same
+# whether the matter does not exist or the rebuild died before reaching it.
+
+
+def test_an_interrupted_rebuild_leaves_the_previous_index_complete(
+    corpus, specialist, monkeypatch
+) -> None:
+    from app.search import indexing
+
+    original_title = corpus["waste"].title
+    complete = SearchDocument.objects.count()
+    assert search_matters(query="Jäätmeseaduse", user=specialist)
+
+    # Change canonical data so a rebuild would genuinely produce different
+    # output. `update()` bypasses the post_save signal, so the index stays as it
+    # was and the difference is only visible once a rebuild runs.
+    Matter.objects.filter(pk=corpus["waste"].pk).update(
+        title="Pakendiseaduse muutmise seaduse eelnõu"
+    )
+
+    # Fail partway: with one matter per batch, the second batch raises after the
+    # first has already been written.
+    calls = {"count": 0}
+    recompute = indexing._recompute_vectors
+
+    def failing(documents):
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise RuntimeError("simulated interruption partway through the rebuild")
+        return recompute(documents)
+
+    monkeypatch.setattr(indexing, "_recompute_vectors", failing)
+    with pytest.raises(RuntimeError):
+        rebuild_all(batch_size=1)
+    monkeypatch.undo()
+
+    # The previous index is intact: same size, and still answering.
+    assert SearchDocument.objects.count() == complete
+    assert search_matters(query="Jäätmeseaduse", user=specialist)[0].matter == corpus["waste"]
+    assert SearchDocument.objects.get(matter=corpus["waste"]).title == original_title
+    # And the half-written new state is nowhere: the interrupted run got as far
+    # as one batch, and that batch is gone with the rest.
+    assert search_matters(query="Pakendiseaduse", user=specialist) == []
+
+
+def test_a_rebuild_after_an_interrupted_one_produces_the_new_complete_index(
+    corpus, specialist, monkeypatch
+) -> None:
+    from app.search import indexing
+
+    complete = SearchDocument.objects.count()
+    Matter.objects.filter(pk=corpus["waste"].pk).update(
+        title="Pakendiseaduse muutmise seaduse eelnõu"
+    )
+
+    calls = {"count": 0}
+    recompute = indexing._recompute_vectors
+
+    def failing(documents):
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise RuntimeError("simulated interruption partway through the rebuild")
+        return recompute(documents)
+
+    monkeypatch.setattr(indexing, "_recompute_vectors", failing)
+    with pytest.raises(RuntimeError):
+        rebuild_all(batch_size=1)
+    monkeypatch.undo()
+
+    result = rebuild_all()
+    assert result.documents == complete
+    assert search_matters(query="Pakendiseaduse", user=specialist)[0].matter == corpus["waste"]
+    assert search_matters(query="Jäätmeseaduse", user=specialist) == []
+
+
+def test_an_interrupted_rebuild_leaves_no_orphans_behind(corpus, monkeypatch) -> None:
+    """Whatever the interrupted run wrote is rolled back with everything else."""
+    from app.search import indexing
+
+    before = set(SearchDocument.objects.values_list("pk", flat=True))
+
+    calls = {"count": 0}
+    recompute = indexing._recompute_vectors
+
+    def failing(documents):
+        calls["count"] += 1
+        if calls["count"] == 2:
+            raise RuntimeError("simulated interruption partway through the rebuild")
+        return recompute(documents)
+
+    monkeypatch.setattr(indexing, "_recompute_vectors", failing)
+    with pytest.raises(RuntimeError):
+        rebuild_all(batch_size=1)
+    monkeypatch.undo()
+
+    assert set(SearchDocument.objects.values_list("pk", flat=True)) == before

@@ -3,9 +3,12 @@
 Two operations, both idempotent and both safe to run again at any time:
 :func:`refresh_matters` for a known set, and :func:`rebuild_all` for everything.
 Neither reads the existing index to decide what to write — a projection that
-depends on its own previous state cannot be trusted to recover from a partial
-run, and recovering from a partial run is the main reason this table exists in a
-rebuildable form.
+depends on its own previous state cannot be trusted to converge.
+
+A full rebuild is **atomic**. "Derived data" makes an index cheap to *recreate*;
+it does not make a half-built one safe to *serve*, because a partial index is
+indistinguishable from a complete one to everybody reading it. See
+:func:`rebuild_all`.
 
 The vectors are computed in the database rather than in Python. That keeps the
 lexeme rules wherever PostgreSQL's Estonian configuration says they are, so a
@@ -28,9 +31,9 @@ from app.core.text import normalize_for_matching
 from app.matters.models import Matter
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 
-#: Rows per transaction during a full rebuild. Large enough that 2,500 Matters
-#: take a handful of statements, small enough that one failure does not roll
-#: back an hour of work.
+#: Rows per statement batch during a full rebuild. This bounds **memory**, not
+#: loss: a full rebuild is one transaction, so a failure in the last batch rolls
+#: back the first one too, by design (see :func:`rebuild_all`).
 BATCH_SIZE = 500
 
 #: Set while a bulk operation is running. The signal handlers check it and do
@@ -201,26 +204,54 @@ def refresh_matter(matter: Matter) -> int:
 
 
 def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildResult:
-    """Rebuild the whole projection from canonical records.
+    """Rebuild the whole projection from canonical records. All or nothing.
+
+    **The empty-and-refill runs inside one transaction**, and that is the whole
+    point of this function rather than an incidental detail.
+
+    An earlier version committed each batch as it went, on the reasoning that a
+    projection is derived data so a partial rebuild is merely stale. That
+    reasoning is wrong, and wrong in the worst direction. A stale index returns
+    slightly old answers; a *partially rebuilt* index returns confident, silent,
+    incomplete ones. Nothing is marked, nothing errors, and the page that says
+    "vasteid ei leitud" looks exactly the same whether the matter does not exist
+    or whether the rebuild died before reaching it. A lawyer concluding Koda
+    never worked on something, from a search that quietly lost half its corpus,
+    is the failure this system exists to prevent.
+
+    So readers keep seeing the previous complete index for the whole run —
+    PostgreSQL's MVCC gives other connections the last committed state — and the
+    new one becomes visible only when the entire rebuild has succeeded. If
+    anything raises partway, the old index is still there, still complete, still
+    searchable.
+
+    Batching survives inside the transaction because it bounds memory, not
+    because it bounds loss. At the current scale (2,455 matters) the whole thing
+    is a few seconds and a handful of statements. If the corpus ever grew to
+    where one transaction is genuinely too long, the answer is a generation
+    column or a shadow table swapped in at the end — *not* a return to committing
+    partial state, which trades a visible pause for an invisible gap.
 
     With ``clear`` the table is emptied first, so documents for Matters that no
-    longer exist cannot survive a rebuild. That is the operation the "safe to
-    delete and rebuild" claim rests on, and it is tested by rebuilding from an
-    empty table and from a stale one and getting the same result.
+    longer exist, and any orphans left by an earlier interrupted attempt, cannot
+    survive a rebuild.
     """
     started = timezone.now()
-    if clear:
-        SearchDocument.objects.all().delete()
 
-    queryset = indexable_matters().order_by("pk")
-    identifiers = list(queryset.values_list("pk", flat=True))
-    total = 0
-    for offset in range(0, len(identifiers), batch_size):
-        chunk = identifiers[offset : offset + batch_size]
-        total += refresh_matters(indexable_matters().filter(pk__in=chunk))
+    with transaction.atomic():
+        if clear:
+            SearchDocument.objects.all().delete()
+
+        identifiers = list(indexable_matters().order_by("pk").values_list("pk", flat=True))
+        total = 0
+        for offset in range(0, len(identifiers), batch_size):
+            chunk = identifiers[offset : offset + batch_size]
+            total += refresh_matters(indexable_matters().filter(pk__in=chunk))
+
+        documents = SearchDocument.objects.count()
 
     return RebuildResult(
-        documents=SearchDocument.objects.count(),
+        documents=documents,
         matters=total,
         seconds=(timezone.now() - started).total_seconds(),
         index_version=INDEX_VERSION,
