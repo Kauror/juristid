@@ -28,7 +28,10 @@ class Command(BaseCommand):
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument("--matter", help="Matter reference, e.g. 2026_42.")
         parser.add_argument("--document", help="Document UUID.")
-        parser.add_argument("--version", help="DocumentVersion UUID.")
+        # Not `--version`: every Django management command already has one, and
+        # argparse raises at parse time rather than at definition time, so the
+        # collision only appeared when somebody ran the command. It did.
+        parser.add_argument("--version-id", dest="version_id", help="DocumentVersion UUID.")
         parser.add_argument(
             "--all",
             action="store_true",
@@ -52,8 +55,8 @@ class Command(BaseCommand):
         versions = DocumentVersion.objects.select_related("document", "document__matter")
         selectors = 0
 
-        if options["version"]:
-            versions = versions.filter(pk=options["version"])
+        if options["version_id"]:
+            versions = versions.filter(pk=options["version_id"])
             selectors += 1
         if options["document"]:
             versions = versions.filter(document_id=options["document"])
@@ -72,7 +75,9 @@ class Command(BaseCommand):
             selectors += 1
 
         if selectors == 0:
-            raise CommandError("Choose what to rebuild: --version, --document, --matter or --all.")
+            raise CommandError(
+                "Choose what to rebuild: --version-id, --document, --matter or --all."
+            )
 
         total = versions.count()
         if options["dry_run"]:
