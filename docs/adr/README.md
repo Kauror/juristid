@@ -14,15 +14,19 @@ consequences and reversibility.
 | [0003](0003-document-lifecycle.md) | Document lifecycle: immutable evidence and mutable working documents | Accepted |
 | [0004](0004-authentication-direction.md) | Authentication: synthetic local sign-in now, Entra ID for real data | Accepted |
 | [0005](0005-authorization-and-visibility-inheritance.md) | Authorization and visibility inheritance | Accepted |
-| [0006](0006-search-architecture.md) | Search architecture: PostgreSQL first, through a rebuildable projection | Accepted, implementation in Stage 2 |
+| [0006](0006-search-architecture.md) | Search architecture: PostgreSQL first, through a rebuildable projection | Accepted, implemented in Stage 2A |
 | [0007](0007-reporting-continuity-and-export-contract.md) | Reporting continuity and the export contract boundary | Accepted, exporter in Stage 4 |
 | [0008](0008-production-deployment-candidate.md) | Production deployment candidate | Proposed, deliberately reversible |
 | [0009](0009-design-token-foundation.md) | Design-token foundation | Accepted |
+| [0010](0010-stage-1-interaction-and-browser-testing.md) | Stage-1 interaction model and browser testing | Accepted |
+| [0011](0011-next-action-and-submission-modelling.md) | NextAction and Submission modelling | Accepted |
+| [0012](0012-legacy-register-import.md) | Legacy register import architecture | Accepted |
+| [0013](0013-search-projection-and-child-content.md) | The search projection, and why child content waits | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
-## Accepted
+## Stage coverage
 
 - 0001–0009 — Stage 0 foundation
-- 0010 — Stage-1 interaction model and browser testing
-- 0011 — NextAction and Submission modelling
+- 0010–0011 — Stage 1 vertical slice
+- 0012–0013 — Stage 2A import and search foundation
