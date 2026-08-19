@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Saabunud · {{ application_name }}{% endblock %}
+
+{% comment %}
+Saabunud is a triage entry point, not a queue engine. Stage 1 gives it a strong
+"Uus teema" action and the unassigned open Matters anyone can pick up. Machine
+intake and an IntakeItem model arrive only when there is a real feed to consume
+(master specification 7.3).
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Saabunud</h1>
+    <span class="pagehead__context">Alusta uut teemat või võta määramata teema enda peale.</span>
+  </div>
+
+  <section aria-labelledby="maaramata-heading">
+    <h2 class="sectionlabel" id="maaramata-heading">
+      Vastutajata teemad
+      <span class="sectionlabel__count">{{ unassigned|length }}</span>
+    </h2>
+    {% if unassigned %}
+      {% include "matters/partials/matter_table.html" with matters=unassigned %}
+    {% else %}
+      <p class="empty">Kõigil avatud teemadel on vastutaja.</p>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="hiljutised-heading">
+    <h2 class="sectionlabel" id="hiljutised-heading">Hiljuti loodud</h2>
+    {% if recent %}
+      {% include "matters/partials/matter_table.html" with matters=recent %}
+    {% else %}
+      <p class="empty">
+        Teemasid ei ole veel loodud.
+        <a href="{% url 'matters:matter_create' %}">Loo esimene teema</a>.
+      </p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

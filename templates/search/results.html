@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Otsing · {{ application_name }}{% endblock %}
+
+{% comment %}
+Results say why they matched. A lawyer who searched for a ministry name and got
+a title hit needs to see which, or the ranking looks arbitrary
+(master specification 14.3). Stage 2 enriches the reason; the shape is already
+here so the UI does not change when it does.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Otsing</h1>
+    {% if query %}
+      <span class="pagehead__context">{{ result_count }} vastet päringule „{{ query }}“</span>
+    {% else %}
+      <span class="pagehead__context">
+        Sisesta viide (näiteks 2026_12), pealkirja osa, asutuse nimi või silt.
+      </span>
+    {% endif %}
+  </div>
+
+  {% if query and not rows %}
+    <p class="empty">
+      Vasteid ei leitud. Proovi lühemat sõna või teistsugust kirjapilti —
+      dokumentide sisust otsimine valmib 2. etapis.
+    </p>
+  {% endif %}
+
+  {% if rows %}
+    <div class="card" style="padding:var(--spacing-15)">
+      <p class="sectionlabel">Teemad <span class="sectionlabel__count">{{ result_count }}</span></p>
+      <div class="searchresults">
+        {% for row in rows %}
+          <a class="result" href="{% url 'matters:matter_detail' pk=row.result.matter.pk %}">
+            <span class="result__head">
+              {% if row.result.matter.display_reference %}
+                <span class="reference">{{ row.result.matter.display_reference }}</span>
+              {% endif %}
+              <span class="result__title">{{ row.result.matter.title }}</span>
+              {% if row.result.matter.stage %}
+                <span class="badge">{{ row.result.matter.stage.label_et }}</span>
+              {% endif %}
+              {% if row.result.matter.record_mode == "ARCHIVE" %}
+                <span class="badge badge--archive">Arhiiv</span>
+              {% endif %}
+              {% if not row.result.matter.is_open %}
+                <span class="badge badge--closed">Suletud</span>
+              {% endif %}
+            </span>
+            <span class="result__why">
+              vaste: {{ row.result.match_label|lower }}
+              {% if row.result.matter.is_open %}· avatud{% else %}· suletud{% endif %}
+              {% if row.result.matter.owner %}· vastutaja {{ row.result.matter.owner.display_name }}{% endif %}
+              {% if row.action %}
+                · {{ row.action.get_kind_display|lower }}: {{ row.action.text|truncatechars:60 }}
+              {% endif %}
+            </span>
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

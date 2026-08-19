@@ -14,9 +14,10 @@ from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
 from app.core.authorization import apply as apply_scope
-from app.core.authorization import matter_visibility_q, scope_for_user
+from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
 from app.core.enums import Visibility
-from app.core.models import BaseModel
+from app.core.models import AppendOnlyModel, BaseModel, VisibilityInheritingModel
+from app.matters.entry_enums import EntryKind
 from app.matters.enums import DataQualityTier, MatterOrigin, RecordMode, TagAssignmentSource
 from app.workflow.enums import Disposition, Track
 
@@ -341,3 +342,133 @@ class TagAssignment(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.matter_id} · {self.tag_id}"
+
+
+class EntryQuerySet(models.QuerySet):
+    def visible_to(self, user: object | None) -> EntryQuerySet:
+        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+
+    def chronological(self) -> EntryQuerySet:
+        """Newest first, with a deterministic tie break.
+
+        Two entries can share an `occurred_at` — a lawyer writing up three
+        meetings from the same morning — so the ordering falls back to creation
+        time and then to the time-sortable primary key. Without that, pagination
+        can silently repeat or drop a row.
+        """
+        return self.order_by("-occurred_at", "-created_at", "-id")
+
+
+class Entry(VisibilityInheritingModel):
+    """`Sissekanne` — the authored professional chronology.
+
+    This is what replaces the OneNote page: a fast, dated, attributable note
+    about what actually happened. It is narrative work, never the canonical
+    record of a formal written opinion (master specification 11.2).
+    """
+
+    matter = models.ForeignKey(
+        Matter, on_delete=models.CASCADE, related_name="entries", verbose_name="teema"
+    )
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="authored_entries",
+        verbose_name="autor",
+    )
+    kind = models.CharField(
+        max_length=32,
+        choices=EntryKind.choices,
+        default=EntryKind.NOTE,
+        db_index=True,
+        verbose_name="liik",
+    )
+    # When the work happened, which is not when it was typed up. Friday's
+    # meeting written up on Monday belongs on Friday in the timeline.
+    occurred_at = models.DateTimeField(db_index=True, verbose_name="toimus")
+    body = models.TextField(
+        verbose_name="sisu",
+        help_text="Sanitiseeritud HTML; kirjutamine käib ainult teenusekihi kaudu.",
+    )
+    organisation = models.ForeignKey(
+        "organisations.Organisation",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="entries",
+        verbose_name="asutus",
+    )
+
+    edited_at = models.DateTimeField(null=True, blank=True, verbose_name="muudetud")
+    edit_count = models.PositiveIntegerField(default=0, verbose_name="muudatuste arv")
+
+    objects = EntryQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "sissekanne"
+        verbose_name_plural = "sissekanded"
+        ordering = ["-occurred_at", "-created_at", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(body=""),
+                name="matters_entry_body_required",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    visibility_override__in=["", Visibility.NORMAL, Visibility.RESTRICTED]
+                ),
+                name="matters_entry_visibility_vocabulary",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["matter", "-occurred_at"], name="matters_entry_timeline"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()} {self.occurred_at:%d.%m.%Y}"
+
+    def parent_visibility(self) -> str:
+        return self.matter.visibility
+
+    @property
+    def was_edited(self) -> bool:
+        return self.edit_count > 0
+
+
+class EntryRevision(AppendOnlyModel):
+    """The superseded text of an edited Entry.
+
+    An entry is editable — a lawyer fixing a typo should not have to add a
+    correction note — but the earlier wording is kept so an edit can never
+    silently rewrite what the record said at the time. This is edit history for
+    one authored record, not a second timeline (master specification 16.5).
+    """
+
+    entry = models.ForeignKey(
+        Entry, on_delete=models.CASCADE, related_name="revisions", verbose_name="sissekanne"
+    )
+    revision_number = models.PositiveIntegerField(verbose_name="versioon")
+    body = models.TextField(verbose_name="varasem sisu")
+    edited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="entry_revisions",
+    )
+
+    class Meta:
+        verbose_name = "sissekande varasem versioon"
+        verbose_name_plural = "sissekande varasemad versioonid"
+        ordering = ["entry", "revision_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["entry", "revision_number"],
+                name="matters_unique_entry_revision",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.entry_id} v{self.revision_number}"

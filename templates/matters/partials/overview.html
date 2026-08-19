@@ -1,0 +1,100 @@
+{% comment %}
+The Ülevaade column: Järgmiseks, the composer, the timeline — plus the facts
+rail.
+
+This whole block is what the composer swaps. Re-rendering the surface from one
+set of queries means the prominent action and the chronology cannot disagree
+about the save that just happened.
+{% endcomment %}
+<div class="matterlayout" id="ulevaade">
+  <div class="mattermain">
+    {% include "matters/partials/matter_banner.html" %}
+
+    <section class="nextaction
+                    {% if current_action.is_overdue %}nextaction--overdue{% endif %}
+                    {% if not current_action %}nextaction--empty{% endif %}"
+             aria-labelledby="jargmiseks-heading">
+      <div class="nextaction__head">
+        <h2 class="nextaction__label" id="jargmiseks-heading">Järgmiseks</h2>
+        {% if current_action %}
+          <span class="mode mode--{{ current_action.kind|lower }}">
+            {{ current_action.get_kind_display }}
+          </span>
+          {% if current_action.target_date %}
+            <span class="dateline
+                         {% if current_action.is_overdue %}dateline--overdue
+                         {% elif current_action.date_semantics == 'DEADLINE' %}dateline--deadline{% endif %}
+                         {% if current_action.is_approximate %}dateline--approximate{% endif %}">
+              {{ current_action.date_label|upper }} · {{ current_action.display_date }}
+            </span>
+            {% if current_action.is_overdue %}
+              <span class="flag flag--overdue">Tähtaeg möödas</span>
+            {% elif current_action.is_due_for_review %}
+              <span class="flag flag--review">Ülevaatus möödas</span>
+            {% endif %}
+          {% endif %}
+          {% if current_action.responsible %}
+            <span class="nextaction__responsible">{{ current_action.responsible.display_name }}</span>
+          {% endif %}
+        {% endif %}
+      </div>
+
+      {% if current_action %}
+        <p class="nextaction__text">{{ current_action.text }}</p>
+
+        {% if matter.is_open %}
+          <div class="nextaction__actions">
+            <form hx-post="{% url 'matters:complete_action' pk=matter.pk action_id=current_action.pk %}"
+                  hx-target="#ulevaade" hx-swap="outerHTML">
+              {% csrf_token %}
+              <button class="button" type="submit">✓ Märgi tehtuks</button>
+            </form>
+
+            {% if current_action.kind != 'DO' %}
+              {% comment %}
+                Reviewing is not completing: the Matter is still waiting on the
+                same thing, so the action keeps its identity and only its review
+                date moves.
+              {% endcomment %}
+              <form class="inlineform"
+                    hx-post="{% url 'matters:review_action' pk=matter.pk action_id=current_action.pk %}"
+                    hx-target="#ulevaade" hx-swap="outerHTML">
+                {% csrf_token %}
+                <label class="visually-hidden" for="jargmine-ulevaatus">Järgmine ülevaatus</label>
+                <input class="field__input field__input--compact" type="date"
+                       id="jargmine-ulevaatus" name="next_review_date">
+                <button class="button button--quiet" type="submit">Vaatasin üle</button>
+              </form>
+            {% endif %}
+          </div>
+          {% if current_action.kind != 'DO' %}
+            <p class="nextaction__note">
+              {{ current_action.get_kind_display }}-tegevuse kuupäev on ülevaatamise, mitte tähtaja
+              kuupäev — möödumine ei muuda sammu hiljaks.
+            </p>
+          {% endif %}
+        {% endif %}
+      {% else %}
+        <p class="nextaction__text muted">
+          Järgmine samm on määramata.
+          {% if matter.is_open %}Kirjuta see allolevas kastis.{% endif %}
+        </p>
+      {% endif %}
+    </section>
+
+    {% if matter.is_open %}
+      {% include "matters/partials/composer.html" %}
+    {% endif %}
+
+    <section class="timeline" aria-labelledby="ajalugu-heading">
+      <div class="timeline__head">
+        <h2 class="timeline__label" id="ajalugu-heading">Ajajoon</h2>
+      </div>
+      <div id="ajalugu-loend">
+        {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter %}
+      </div>
+    </section>
+  </div>
+
+  {% include "matters/partials/rail.html" %}
+</div>

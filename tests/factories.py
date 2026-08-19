@@ -15,11 +15,15 @@ from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.legacy_import.models import ImportBatch, MatchMethod, MatterSourceReference
+from app.matters.entry_enums import EntryKind
 from app.matters.enums import MatterOrigin, RecordMode
-from app.matters.models import Matter
+from app.matters.models import Entry, Matter
 from app.organisations.models import Organisation, OrganisationType
+from app.submissions.enums import SubmissionKind, SubmissionStatus
+from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea, Tag
-from app.workflow.models import StageVocabulary
+from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
+from app.workflow.models import NextAction, StageVocabulary
 
 
 class UserFactory(factory.django.DjangoModelFactory):
@@ -134,3 +138,37 @@ class MatterSourceReferenceFactory(factory.django.DjangoModelFactory):
     source_sheet = "2019"
     source_row_number = 12
     match_method = MatchMethod.REFERENCE_TOKEN
+
+
+class EntryFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Entry
+
+    matter = factory.SubFactory(MatterFactory)
+    author = factory.SubFactory(UserFactory)
+    kind = EntryKind.NOTE
+    occurred_at = factory.LazyFunction(timezone.now)
+    body = "<p>Sünteetiline sissekanne.</p>"
+
+
+class NextActionFactory(factory.django.DjangoModelFactory):
+    """A raw open action. Prefer the service for anything testing behaviour."""
+
+    class Meta:
+        model = NextAction
+
+    matter = factory.SubFactory(MatterFactory)
+    text = factory.Sequence(lambda n: f"Naidistegevus {n}")
+    kind = ActionKind.DO
+    date_semantics = DateSemantics.DEADLINE
+    status = ActionStatus.OPEN
+
+
+class SubmissionFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = Submission
+
+    matter = factory.SubFactory(MatterFactory)
+    title = factory.Sequence(lambda n: f"Naidisarvamus {n}")
+    kind = SubmissionKind.FORMAL_OPINION
+    status = SubmissionStatus.DRAFT

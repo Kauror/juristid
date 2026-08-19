@@ -1,51 +1,33 @@
 {% extends "base.html" %}
 
-{% block title %}{{ application_name }} — {{ application_stage }}{% endblock %}
+{% block title %}{{ application_name }}{% endblock %}
+
+{% comment %}
+The signed-out doorway. A signed-in user never sees this page — the root
+redirects them straight to Minu töö.
+{% endcomment %}
 
 {% block content %}
-  <h1>{{ application_name }}</h1>
+<div class="page page--narrow">
+  <header class="pagehead">
+    <h1 class="pagehead__title">{{ application_name }}</h1>
+  </header>
 
-  <div class="notice">
-    <p>
-      See paigaldus on <strong>{{ application_stage }}</strong>: skeleton, andmemudeli vundament,
-      CI ja arhitektuuriotsused. Tooteekraane (Minu töö, Saabunud, Teemad, otsing, statistika)
-      veel ei ole — need on Stage 1 ja hilisemate etappide töö.
-    </p>
-    <p>
-      Päris Koja, liikmete või muid konfidentsiaalseid andmeid ei tohi siia sisestada enne
-      turvalise piloodi värava (Secure Pilot Gate) läbimist.
+  <p>
+    Eesti Kaubandus-Tööstuskoja õigusloome ja huvikaitse töölaud: teemad, järgmised
+    tegevused, sissekanded, väljasaadetud arvamused ja tõendid ühes kohas.
+  </p>
+
+  <div class="notyet">
+    <p style="margin:0">
+      Päris Koja, liikmete või muid konfidentsiaalseid andmeid ei tohi siia sisestada
+      enne turvalise piloodi värava (Secure Pilot Gate) läbimist. See paigaldus on
+      <strong>{{ application_stage }}</strong> keskkonnas <strong>{{ application_environment }}</strong>.
     </p>
   </div>
 
-  <div class="panel">
-    <h2>Mis on olemas</h2>
-    <ul>
-      <li>Django modulaarne monoliit PostgreSQLi peal, Dockeriga käivitatav.</li>
-      <li>Kohandatud kasutajamudel koos Entra objekti ID väljaga esimesest migratsioonist.</li>
-      <li>Teema (<code>Matter</code>) mudel nii jooksvale tööle kui registriarhiivile.</li>
-      <li>Tõendite muutumatu versioonimudel ja lisatavate muudatuste auditijälg.</li>
-      <li>Üks keskne autoriseerimise kitsaskoht koos päritava nähtavusega.</li>
-      <li>
-        <a href="{% url 'core:design_tokens' %}">Disainisüsteemi alus</a> —
-        esialgsed semantilised märgendid kuni Koja CVI paketi saabumiseni.
-      </li>
-    </ul>
-  </div>
-
-  {% if not user.is_authenticated %}
-    <div class="panel">
-      <h2>Sisenemine</h2>
-      {% if dev_login_enabled %}
-        <p>
-          Arenduskeskkonnas saab siseneda sünteetilise kasutajana.
-        </p>
-        <p><a class="button" href="{% url 'accounts:dev_login' %}">Arenduse sisselogimine</a></p>
-      {% else %}
-        <p>
-          Selles keskkonnas ei ole sisselogimist seadistatud. Päris kasutajate autentimine
-          toimub Microsoft Entra ID kaudu alates turvalise piloodi keskkonnast.
-        </p>
-      {% endif %}
-    </div>
-  {% endif %}
+  <p>
+    <a class="button button--primary" href="{% url 'accounts:dev_login' %}">Logi sisse</a>
+  </p>
+</div>
 {% endblock %}

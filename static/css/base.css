@@ -1,9 +1,6 @@
 /*
- * Baseline element styling. Components arrive in Stage 1; this file exists so
- * the Stage-0 skeleton demonstrates the token architecture, the focus model
- * and the accessibility baseline rather than an unstyled page.
- *
- * Rule: nothing here hard-codes a colour. Every value comes from tokens.css.
+ * Element baseline. Components live in app.css; nothing here hard-codes a
+ * colour, and nothing here styles a component.
  */
 
 *,
@@ -12,35 +9,44 @@
   box-sizing: border-box;
 }
 
+/* The UA rule for [hidden] is `display: none`, which any component class that
+   sets `display` silently overrides. Progressive disclosure depends on this
+   holding, so it is stated with intent. */
+[hidden] {
+  display: none !important;
+}
+
 html {
   -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
-  background: var(--surface-canvas);
+  background: var(--surface-base);
   color: var(--text-primary);
   font-family: var(--typography-font-sans);
-  font-size: var(--typography-size-body);
+  font-size: var(--typography-size-base);
   line-height: var(--typography-line-normal);
+  -webkit-font-smoothing: antialiased;
 }
 
 h1,
 h2,
-h3 {
+h3,
+h4 {
   line-height: var(--typography-line-tight);
   font-weight: var(--typography-weight-semibold);
-  margin: 0 0 var(--spacing-3);
-  /* Long Estonian legal titles must wrap, never be clipped. */
+  margin: 0 0 var(--spacing-2);
+  /* Long Estonian legal titles wrap; they are never clipped. */
   overflow-wrap: break-word;
 }
 
 h1 {
-  font-size: var(--typography-size-2xl);
+  font-size: var(--typography-size-page-title);
 }
 
 h2 {
-  font-size: var(--typography-size-xl);
+  font-size: var(--typography-size-matter-title);
 }
 
 h3 {
@@ -48,20 +54,59 @@ h3 {
 }
 
 p {
-  margin: 0 0 var(--spacing-4);
-  max-width: 72ch;
+  margin: 0 0 var(--spacing-3);
+  max-width: 76ch;
 }
 
 a {
-  color: var(--text-link);
+  color: var(--accent-link);
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
 }
 
+a:hover {
+  color: var(--accent-hover);
+}
+
+ul,
+ol {
+  margin: 0 0 var(--spacing-3);
+  padding-left: var(--spacing-5);
+}
+
 code,
-pre {
+pre,
+kbd {
   font-family: var(--typography-font-mono);
-  font-size: var(--typography-size-sm);
+  font-size: var(--typography-size-meta);
+}
+
+table {
+  border-collapse: collapse;
+}
+
+img {
+  max-width: 100%;
+}
+
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+}
+
+select.field__input {
+  /* Native arrow on a dark control renders inconsistently across platforms. */
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 14px) calc(50% + 1px),
+    calc(100% - 9px) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  padding-right: var(--spacing-7);
 }
 
 /* Focus is never removed and never obscured (WCAG 2.2 AA). */
@@ -75,206 +120,18 @@ pre {
   left: var(--spacing-2);
   top: calc(var(--spacing-2) * -10);
   padding: var(--spacing-2) var(--spacing-3);
-  background: var(--surface-overlay);
+  background: var(--surface-elevated);
   color: var(--text-primary);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  transition: top var(--motion-duration-fast) var(--motion-easing-standard);
-  z-index: 10;
+  z-index: 50;
 }
 
 .skip-link:focus {
   top: var(--spacing-2);
 }
 
-.app-shell {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-}
-
-.app-header {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-3);
-  align-items: baseline;
-  justify-content: space-between;
-  padding: var(--spacing-3) var(--spacing-5);
-  background: var(--surface-primary);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.app-header__title {
-  font-size: var(--typography-size-md);
-  font-weight: var(--typography-weight-semibold);
-  margin: 0;
-}
-
-.app-header__meta {
-  color: var(--text-secondary);
-  font-size: var(--typography-size-sm);
-  display: flex;
-  gap: var(--spacing-3);
-  align-items: center;
-}
-
-.app-main {
-  flex: 1;
-  padding: var(--spacing-6) var(--spacing-5);
-  max-width: 76rem;
-  width: 100%;
-}
-
-.app-footer {
-  padding: var(--spacing-4) var(--spacing-5);
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font-size: var(--typography-size-sm);
-}
-
-.panel {
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-5);
-  margin-bottom: var(--spacing-5);
-}
-
-.notice {
-  border-left: 3px solid var(--status-warning-text);
-  background: var(--surface-primary);
-  padding: var(--spacing-3) var(--spacing-4);
-  border-radius: var(--radius-md);
-  margin-bottom: var(--spacing-5);
-}
-
-.notice--danger {
-  border-left-color: var(--status-danger-text);
-}
-
-.button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  /* Target size: comfortably above the 24px WCAG 2.2 minimum. */
-  min-height: 2.5rem;
-  padding: var(--spacing-2) var(--spacing-4);
-  border: 1px solid var(--brand-primary);
-  border-radius: var(--radius-md);
-  background: var(--brand-primary);
-  color: var(--text-inverse);
-  font: inherit;
-  font-weight: var(--typography-weight-medium);
-  cursor: pointer;
-}
-
-.button--secondary {
-  background: transparent;
+::selection {
+  background: var(--accent-border);
   color: var(--text-primary);
-  border-color: var(--border-default);
-}
-
-.button:hover {
-  background: var(--brand-secondary);
-  border-color: var(--brand-secondary);
-  color: var(--text-primary);
-}
-
-.token-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-  gap: var(--spacing-3);
-  padding: 0;
-  margin: 0 0 var(--spacing-5);
-  list-style: none;
-}
-
-.token-swatch {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.token-swatch__preview {
-  height: 3rem;
-}
-
-.token-swatch__label {
-  padding: var(--spacing-2) var(--spacing-3);
-  font-family: var(--typography-font-mono);
-  font-size: var(--typography-size-xs);
-  color: var(--text-secondary);
-  background: var(--surface-primary);
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--typography-size-table);
-}
-
-/* Readable without zebra fills: spacing, separators, hover and selection. */
-.data-table th,
-.data-table td {
-  text-align: left;
-  padding: var(--spacing-2) var(--spacing-3);
-  border-bottom: 1px solid var(--border-subtle);
-  vertical-align: top;
-}
-
-.data-table th {
-  color: var(--text-secondary);
-  font-weight: var(--typography-weight-medium);
-  position: sticky;
-  top: 0;
-  background: var(--surface-primary);
-}
-
-.data-table tbody tr:hover {
-  background: var(--surface-hover);
-}
-
-.data-table td.numeric,
-.data-table th.numeric {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-/* Status is never conveyed by colour alone: the label carries the meaning. */
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-1);
-  padding: var(--spacing-1) var(--spacing-2);
-  border-radius: var(--radius-pill);
-  font-size: var(--typography-size-xs);
-  background: var(--status-neutral-surface);
-  color: var(--text-primary);
-}
-
-.badge--warning {
-  background: var(--status-warning-surface);
-}
-
-.badge--danger {
-  background: var(--status-danger-surface);
-}
-
-.badge--success {
-  background: var(--status-success-surface);
-}
-
-.document-frame {
-  background: var(--surface-document);
-  color: var(--text-on-document);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-4);
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
 }

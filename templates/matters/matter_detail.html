@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}{{ matter.display_reference }} {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
+
+{% block content %}
+<div class="page">
+  {% include "matters/partials/header.html" %}
+  {% include "matters/partials/overview.html" %}
+</div>
+{% endblock %}

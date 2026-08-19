@@ -39,6 +39,18 @@ def is_known_visibility(value: str) -> bool:
     return value in VISIBILITY_RESTRICTIVENESS
 
 
+def validate_visibility_override(value: str) -> str:
+    """Check a child record's override before it reaches the database.
+
+    The CHECK constraints are the backstop, but a service that lets a bad value
+    through turns a caller's mistake into an IntegrityError deep inside a
+    transaction instead of a clear domain error at the boundary.
+    """
+    if value == "" or is_known_visibility(value):
+        return value
+    raise ValueError(f"Unknown visibility override {value!r}")
+
+
 def most_restrictive(*values: str) -> str:
     """Return the most restrictive of the given visibility values.
 

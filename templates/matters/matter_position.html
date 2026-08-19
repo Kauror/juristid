@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Seisukoht · {{ matter.display_reference }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+Stage 1 fills the position and the submissions. Kaasamine is Stage-2 work and is
+left visibly absent with an explanation rather than mocked up: a placeholder that
+looks like a feature invites people to record evidence somewhere that cannot
+keep it.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  {% include "matters/partials/header.html" %}
+
+  <div class="matterlayout">
+    <div class="mattermain">
+      {% include "matters/partials/matter_banner.html" %}
+
+      <section class="card" style="padding:var(--spacing-4)" aria-labelledby="seisukoht-heading">
+        <h2 class="nextaction__label" id="seisukoht-heading">Koja seisukoht</h2>
+        <form class="form" method="post" action="{% url 'matters:update_position' pk=matter.pk %}">
+          {% csrf_token %}
+          <label class="field">
+            <span class="field__label">Seisukoht</span>
+            {{ position_form.position_summary }}
+          </label>
+          <label class="field">
+            <span class="field__label">Põhjendus</span>
+            {{ position_form.rationale_summary }}
+            <span class="field__help">Millistel tõenditel ja kaalutlustel seisukoht põhineb.</span>
+          </label>
+          <div class="form__actions">
+            <button class="button button--primary" type="submit">Salvesta seisukoht</button>
+          </div>
+        </form>
+      </section>
+
+      <section aria-labelledby="arvamused-heading">
+        <h2 class="sectionlabel" id="arvamused-heading">
+          Väljasaadetud arvamused
+          <span class="sectionlabel__count">{{ submissions|length }}</span>
+        </h2>
+        <p class="cardnote">
+          Ühe teema kohta võib olla mitu arvamust. Saadetud arvamus vajab täpset lõplikku tõendit.
+        </p>
+
+        {% for submission in submissions %}
+          {% include "submissions/partials/submission_card.html" with submission=submission %}
+        {% empty %}
+          <p class="empty">Ühtegi arvamust ei ole veel loodud.</p>
+        {% endfor %}
+
+        <details class="disclosure" {% if submission_form.errors %}open{% endif %}>
+          <summary class="disclosure__summary">+ Uus arvamus</summary>
+          <form class="form" method="post" action="{% url 'submissions:create' matter_id=matter.pk %}">
+            {% csrf_token %}
+            <div class="formgrid">
+              {% for field in submission_form %}
+                <label class="field">
+                  <span class="field__label">{{ field.label }}</span>
+                  {{ field }}
+                  {% if field.help_text %}<span class="field__help">{{ field.help_text }}</span>{% endif %}
+                  {% if field.errors %}<span class="field__error">{{ field.errors|first }}</span>{% endif %}
+                </label>
+              {% endfor %}
+            </div>
+            <div class="form__actions">
+              <button class="button button--primary" type="submit">Loo arvamus</button>
+            </div>
+          </form>
+        </details>
+      </section>
+    </div>
+
+    <aside class="rail" aria-label="Kaasamine">
+      <div class="railcard">
+        <span class="railcard__label">Kaasamine</span>
+        <div class="notyet">
+          <p>Liikmete kaasamise kirjed valmivad 2. etapis.</p>
+          <p>
+            Seni hoia kaasamise tõendid
+            <a href="{% url 'matters:matter_documents' pk=matter.pk %}">dokumentide all</a>
+            ja kirjelda käiku sissekannetes.
+          </p>
+        </div>
+        <p class="field__help">
+          Kaasamise arvnäitajaid ei ole siin meelega: kontaktide ja vastuste arvud on eraldi
+          vaatlused ning neist ei tohi tuletada vastamismäära.
+        </p>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% comment %}
+Special-state banners. A restricted, closed or archive Matter should say so
+before anything else on the page, in words rather than only a tinted badge.
+{% endcomment %}
+{% if matter.is_restricted %}
+  <p class="banner banner--restricted">
+    <strong>Piiratud nähtavus.</strong>
+    Seda teemat näevad ainult vastutaja, kaastöötajad ja osakonnajuht. Sissekanded,
+    arvamused ja tõendid pärivad sama piirangu.
+  </p>
+{% endif %}
+{% if not matter.is_open %}
+  <p class="banner banner--closed">
+    <strong>Teema on suletud.</strong>
+    {{ matter.get_disposition_display }}{% if matter.disposition_reason %} — {{ matter.disposition_reason }}{% endif %}
+    {% if matter.closed_at %}<span class="muted">({{ matter.closed_at|date:"d.m.Y" }})</span>{% endif %}
+    <span class="topbar__spacer"></span>
+    <form method="post" action="{% url 'matters:reopen' pk=matter.pk %}">
+      {% csrf_token %}
+      <button class="button button--quiet" type="submit">Ava uuesti…</button>
+    </form>
+  </p>
+{% endif %}
+{% if matter.record_mode == "ARCHIVE" %}
+  <p class="banner banner--archive">
+    <strong>Arhiivikirje.</strong>
+    Imporditud registrist{% if matter.source_era %} ({{ matter.source_era }}){% endif %}.
+    Kaasaegsed väljad võivad puududa — neid ei ole tagantjärele juurde mõeldud.
+  </p>
+{% endif %}

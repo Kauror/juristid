@@ -44,17 +44,16 @@ def test_the_same_label_can_mean_different_things_in_different_eras():
 
 
 def test_an_exact_era_takes_precedence_over_the_generic_mapping():
+    # A label the migration does not seed, so this exercises resolution rather
+    # than colliding with the reviewed vocabulary.
+    label = "ootab täpsustamist"
     stage = factories.StageFactory()
-    generic = LegacyStatusMapping.objects.create(
-        raw_label="ootan ELi õiguse ülevõtmist", disposition=Disposition.OTHER
-    )
-    specific = LegacyStatusMapping.objects.create(
-        raw_label="ootan ELi õiguse ülevõtmist", source_era="2026", stage=stage
-    )
+    generic = LegacyStatusMapping.objects.create(raw_label=label, disposition=Disposition.OTHER)
+    specific = LegacyStatusMapping.objects.create(raw_label=label, source_era="2026", stage=stage)
 
-    assert resolve_legacy_status("ootan ELi õiguse ülevõtmist", "2026") == specific
-    assert resolve_legacy_status("ootan ELi õiguse ülevõtmist", "2019") == generic
-    assert resolve_legacy_status("ootan ELi õiguse ülevõtmist") == generic
+    assert resolve_legacy_status(label, "2026") == specific
+    assert resolve_legacy_status(label, "2019") == generic
+    assert resolve_legacy_status(label) == generic
     assert generic.is_generic is True
     assert specific.is_generic is False
 

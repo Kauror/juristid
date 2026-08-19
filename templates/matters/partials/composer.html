@@ -1,0 +1,138 @@
+{% comment %}
+The unified composer.
+
+Collapsed it is one field: "Kirjuta sissekanne…". Everything else appears only
+when it is wanted — the entry type, an organisation, and the Järgmiseks block
+behind a toggle. That is the adoption argument: a routine update has to be
+faster than editing a spreadsheet row and then writing the same thing into a
+OneNote page.
+
+The whole save is one POST and one transaction. Entry and Järgmiseks land
+together or not at all.
+{% endcomment %}
+<section class="composer" aria-labelledby="komposer-heading">
+  <h2 class="visually-hidden" id="komposer-heading">Lisa sissekanne</h2>
+
+  {% if composer_error %}
+    <p class="formerror" role="alert">{{ composer_error }}</p>
+  {% endif %}
+  {% if composer_form.non_field_errors %}
+    <p class="formerror" role="alert">{{ composer_form.non_field_errors|first }}</p>
+  {% endif %}
+
+  <form data-composer
+        hx-post="{% url 'matters:compose' pk=matter.pk %}"
+        hx-target="#ulevaade"
+        hx-swap="outerHTML"
+        hx-encoding="multipart/form-data">
+    {% csrf_token %}
+
+    <div class="composer__top">
+      <span class="avatar avatar--composer" aria-hidden="true">{{ user.initials }}</span>
+      <label class="visually-hidden" for="{{ composer_form.body.id_for_label }}">Sissekanne</label>
+      {{ composer_form.body }}
+    </div>
+
+    {% if composer_form.body.errors %}
+      <p class="field__error" style="padding:0 var(--spacing-4)">{{ composer_form.body.errors|first }}</p>
+    {% endif %}
+
+    <div class="composer__meta">
+      <label class="field field--inline">
+        <span class="visually-hidden">Sissekande liik</span>
+        {{ composer_form.kind }}
+      </label>
+
+      <button type="button" class="disclosure-chip" data-reveals="komposer-lisavaljad">
+        + Organisatsioon
+      </button>
+      <button type="button" class="disclosure-chip" data-reveals="komposer-manus">
+        📎 Manus
+      </button>
+
+      <span class="disclosure-chip disclosure-chip--toggle" data-toggle-chip>
+        <input type="checkbox"
+               name="update_next_action"
+               id="id_update_next_action"
+               data-toggles="jargmiseks-valjad"
+               {% if composer_form.update_next_action.value %}checked{% endif %}>
+        <label for="id_update_next_action">✓ Muudan Järgmiseks</label>
+      </span>
+    </div>
+
+    <div class="composer__optional" id="komposer-lisavaljad" hidden>
+      <label class="field">
+        <span class="field__label">Organisatsioon</span>
+        {{ composer_form.organisation }}
+      </label>
+      <label class="field">
+        <span class="field__label">Toimus</span>
+        {{ composer_form.occurred_at }}
+      </label>
+    </div>
+
+    <div class="composer__optional" id="komposer-manus" hidden>
+      <label class="field">
+        <span class="field__label">Manus</span>
+        {{ composer_form.attachment }}
+        <span class="field__help">
+          Manus salvestatakse muutumatu tõendina selle teema dokumentide alla.
+        </span>
+      </label>
+    </div>
+
+    <div class="composer__next" id="jargmiseks-valjad" hidden>
+      <span class="nextaction__label">Uus järgmine samm</span>
+
+      <div class="modeselect" role="group" aria-label="Tegevuse liik">
+        {% for value, label in composer_form.next_kind.field.choices %}
+          <span class="modeselect__option">
+            <input type="radio" name="next_kind" id="next_kind_{{ value }}" value="{{ value }}"
+                   {% if composer_form.next_kind.value == value or not composer_form.next_kind.value and value == 'DO' %}checked{% endif %}>
+            <label class="modeselect__label" for="next_kind_{{ value }}">{{ label }}</label>
+          </span>
+        {% endfor %}
+      </div>
+
+      <label class="field">
+        <span class="visually-hidden">Järgmiseks</span>
+        {{ composer_form.next_text }}
+      </label>
+      {% if composer_form.next_text.errors %}
+        <p class="field__error">{{ composer_form.next_text.errors|first }}</p>
+      {% endif %}
+
+      <div class="composer__optional" style="padding:0">
+        <label class="field field--inline">
+          <span class="field__label field__label--plain">Kuupäeva tähendus:</span>
+          {{ composer_form.next_date_semantics }}
+        </label>
+        <label class="field field--inline">
+          <span class="field__label field__label--plain">Kuupäev:</span>
+          {{ composer_form.next_target_date }}
+        </label>
+        <label class="field field--inline">
+          <span class="field__label field__label--plain">Täpsus:</span>
+          {{ composer_form.next_date_precision }}
+        </label>
+      </div>
+      {% if composer_form.next_target_date.errors %}
+        <p class="field__error">{{ composer_form.next_target_date.errors|first }}</p>
+      {% endif %}
+
+      <p class="nextaction__note">
+        OOTAN-i ja JÄLGIN-i kuupäev on ülevaatamise, mitte tähtaja kuupäev — möödumine
+        ei muuda sammu hiljaks. Ligikaudse aja jaoks vali täpsuseks kuu või kvartal.
+      </p>
+    </div>
+
+    <div class="composer__foot">
+      <span class="composer__hint">
+        <kbd class="key">Ctrl</kbd> + <kbd class="key">Enter</kbd> salvestab
+      </span>
+      <span class="composer__actions">
+        <button class="button button--primary" type="submit">Salvesta sissekanne</button>
+      </span>
+    </div>
+  </form>
+</section>

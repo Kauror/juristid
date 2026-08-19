@@ -1,0 +1,91 @@
+{% comment %}
+The dense register row, shared by Teemad, Minu töö and Saabunud so a row means
+the same thing everywhere.
+
+Two things the design insists on: the date column says what kind of date it is,
+and a Matter with no next step says so in words rather than showing a blank.
+{% endcomment %}
+<div class="tablewrap">
+  <table class="table">
+    <thead>
+      <tr>
+        <th scope="col" class="table__ref">Viide</th>
+        <th scope="col">Pealkiri</th>
+        <th scope="col" class="table__stage">Hetkeseis</th>
+        <th scope="col">Vastutaja</th>
+        <th scope="col">Järgmiseks</th>
+        <th scope="col">Kuupäev</th>
+        <th scope="col" class="table__lastactivity">Viimane tegevus</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for matter in matters %}
+        {% with action=matter.open_actions|first %}
+        <tr>
+          <td class="table__ref">
+            {% if matter.display_reference %}
+              <span class="reference">{{ matter.display_reference }}</span>
+            {% else %}
+              <span class="muted" title="Arhiivikirjel ei pruugi viidet olla">—</span>
+            {% endif %}
+          </td>
+
+          <td class="table__title">
+            <a href="{% url 'matters:matter_detail' pk=matter.pk %}" title="{{ matter.title }}">
+              {{ matter.title }}
+            </a>
+            {% if matter.record_mode == "ARCHIVE" %}
+              <span class="badge badge--archive">Arhiiv</span>
+            {% endif %}
+            {% if matter.is_restricted %}
+              <span class="badge badge--restricted">Piiratud</span>
+            {% endif %}
+            {% if not matter.is_open %}
+              <span class="badge badge--closed">Suletud</span>
+            {% endif %}
+          </td>
+
+          <td class="table__stage">
+            {% if matter.stage %}{{ matter.stage.label_et }}{% else %}<span class="muted">—</span>{% endif %}
+          </td>
+
+          <td>
+            {% if matter.owner %}{{ matter.owner.display_name }}
+            {% else %}<span class="table__missing">Vastutajata</span>{% endif %}
+          </td>
+
+          <td class="table__action">
+            {% if action %}
+              <span class="mode mode--{{ action.kind|lower }}">{{ action.get_kind_display }}</span>
+              <span class="table__actiontext" title="{{ action.text }}">{{ action.text }}</span>
+            {% else %}
+              <span class="table__missing">Järgmine samm puudub</span>
+            {% endif %}
+          </td>
+
+          <td class="table__date">
+            {% if action and action.target_date %}
+              <span class="datemeaning">{{ action.date_label }}</span><br>
+              <span class="dateline
+                           {% if action.is_overdue %}dateline--overdue
+                           {% elif action.date_semantics == 'DEADLINE' %}dateline--deadline{% endif %}
+                           {% if action.is_approximate %}dateline--approximate{% endif %}">
+                {{ action.display_date }}
+              </span>
+            {% elif matter.response_deadline %}
+              <span class="datemeaning">Arvamuse tähtaeg</span><br>
+              <span class="dateline dateline--deadline">{{ matter.response_deadline|date:"d.m.Y" }}</span>
+            {% else %}
+              <span class="muted">—</span>
+            {% endif %}
+          </td>
+
+          <td class="table__date table__lastactivity">
+            <span class="muted">{{ matter.updated_at|date:"d.m.Y" }}</span>
+          </td>
+        </tr>
+        {% endwith %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

@@ -20,3 +20,9 @@ consequences and reversibility.
 | [0009](0009-design-token-foundation.md) | Design-token foundation | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
+
+## Accepted
+
+- 0001–0009 — Stage 0 foundation
+- 0010 — Stage-1 interaction model and browser testing
+- 0011 — NextAction and Submission modelling

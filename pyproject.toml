@@ -8,6 +8,10 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "gunicorn>=23.0",
     "whitenoise>=6.9",
+    # HTML sanitiser for authored entry bodies. The composer accepts pasted
+    # Word/Outlook content, so stored markup must be filtered against an
+    # allowlist; hand-rolling that is not a defensible option (app/core/richtext.py).
+    "nh3>=0.2.18",
 ]
 
 [dependency-groups]
@@ -19,6 +23,10 @@ dev = [
     "ruff>=0.12",
     "mypy>=1.14",
     "django-stubs[compatible-mypy]>=5.2",
+    # Browser tests. The development machine cannot run a browser, so the
+    # Playwright suite is the authoritative check that the workflow actually
+    # works for a person (docs/adr/0010).
+    "pytest-playwright>=0.6",
 ]
 
 [tool.ruff]
@@ -37,6 +45,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]          # assert is the point of a test
+"e2e/*" = ["S101"]
 "config/settings.py" = ["S105"]
 "config/typecheck_settings.py" = ["F403"]
 "config/test_settings.py" = ["F403", "F405"]
@@ -62,6 +71,9 @@ DJANGO_SETTINGS_MODULE = "config.test_settings"
 python_files = ["test_*.py"]
 testpaths = ["tests"]
 addopts = "--strict-markers -ra"
+markers = [
+    "e2e: browser test; requires a running server and E2E_BASE_URL",
+]
 
 [tool.coverage.run]
 source = ["app", "config"]

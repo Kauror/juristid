@@ -1,9 +1,9 @@
 """Named use cases for Matters.
 
-Stage 0 implements only what the foundational schema needs to be provably
-correct: reference allocation, creation, and visibility changes that propagate
-to children. Assignment, stage change, next action, submissions and closure are
-Stage-1 work and belong here too when they arrive.
+Every business state change lives here. Views, forms and templates call these
+functions; they never write model fields themselves. That is what makes the
+audit trail complete, the invariants testable, and the same operation reusable
+later from an importer or a scheduled job (master specification 12.4).
 """
 
 from __future__ import annotations
@@ -15,10 +15,20 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
-from app.core.enums import Visibility
+from app.core.enums import Visibility, validate_visibility_override
 from app.core.errors import DomainError
+from app.core.richtext import excerpt, is_empty, sanitize_entry_html
+from app.documents.enums import DocumentRole
+from app.documents.services import add_evidence_version, create_document
+from app.documents.uploads import read_upload
+from app.matters.entry_enums import EntryKind
 from app.matters.enums import MatterOrigin, RecordMode
-from app.matters.models import Matter, MatterReferenceSequence
+from app.matters.models import Entry, EntryRevision, Matter, MatterReferenceSequence
+from app.workflow.enums import Disposition, Track
+from app.workflow.services import end_open_action_for_closure, set_next_action
+
+#: Distinguishes "leave this field alone" from "set this field to None".
+_UNSET: Any = object()
 
 
 @transaction.atomic
@@ -51,11 +61,18 @@ def create_matter(
 ) -> Matter:
     """Create a Matter. Only the title is required (specification 3.8)."""
     if not title.strip():
-        raise DomainError("A Matter requires a title.")
+        raise DomainError("Teema vajab pealkirja.")
+    if visibility not in Visibility.values:
+        raise DomainError(f"Tundmatu nähtavus {visibility!r}.")
+    track = extra.get("track", "")
+    if track and track not in Track.values:
+        raise DomainError(f"Tundmatu menetlusliik {track!r}.")
 
     year_number: tuple[int, int] | None = None
     if assign_reference:
         year_number = allocate_matter_reference(reference_year)
+
+    policy_areas = extra.pop("policy_areas", None)
 
     matter = Matter.objects.create(
         title=title.strip(),
@@ -68,6 +85,9 @@ def create_matter(
         reporting_year=extra.pop("reporting_year", year_number[0] if year_number else None),
         **extra,
     )
+    if policy_areas:
+        matter.policy_areas.set(policy_areas)
+
     record_change_event(
         event_type=ChangeEventType.MATTER_CREATED,
         matter=matter,
@@ -95,7 +115,7 @@ def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None)
     misses the audit record (docs/adr/0005).
     """
     if visibility not in Visibility.values:
-        raise DomainError(f"Unknown visibility {visibility!r}.")
+        raise DomainError(f"Tundmatu nähtavus {visibility!r}.")
 
     previous = matter.visibility
     if previous == visibility:
@@ -112,3 +132,448 @@ def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None)
         payload={"from": previous, "to": visibility},
     )
     return matter
+
+
+# ---------------------------------------------------------------------------
+# Ownership, stage and the operational fields
+# ---------------------------------------------------------------------------
+
+
+@transaction.atomic
+def assign_matter(*, matter: Matter, owner: Any, actor: Any = None) -> Matter:
+    """Give the Matter an owner, or hand it to someone else."""
+    previous = matter.owner
+    if previous == owner:
+        return matter
+
+    matter.owner = owner
+    matter.save(update_fields=["owner", "updated_at"])
+
+    record_change_event(
+        event_type=ChangeEventType.MATTER_ASSIGNED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=getattr(owner, "display_name", "") or "",
+        payload={
+            "from_name": getattr(previous, "display_name", None),
+            "to_name": getattr(owner, "display_name", None),
+        },
+    )
+    return matter
+
+
+@transaction.atomic
+def change_stage(*, matter: Matter, stage: Any, actor: Any = None) -> Matter:
+    """Record where the external process now stands.
+
+    A stage change says nothing about whether Koda is finished. `jõustunud`
+    means the act entered into force, not that the file is closed; closure is a
+    separate, deliberate decision (master specification 3.4).
+    """
+    previous = matter.stage
+    if previous == stage:
+        return matter
+
+    matter.stage = stage
+    matter.save(update_fields=["stage", "updated_at"])
+
+    record_change_event(
+        event_type=ChangeEventType.MATTER_STAGE_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=getattr(stage, "label_et", "") or "",
+        payload={
+            "from_label": getattr(previous, "label_et", None),
+            "to_label": getattr(stage, "label_et", None),
+        },
+    )
+    return matter
+
+
+@transaction.atomic
+def change_track(*, matter: Matter, track: str, actor: Any = None) -> Matter:
+    if track and track not in Track.values:
+        raise DomainError(f"Tundmatu menetlusliik {track!r}.")
+    previous = matter.track
+    if previous == track:
+        return matter
+
+    matter.track = track
+    matter.save(update_fields=["track", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.MATTER_TRACK_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        payload={"from": previous, "to": track},
+    )
+    return matter
+
+
+@transaction.atomic
+def set_organisations(
+    *,
+    matter: Matter,
+    source_organisation: Any = _UNSET,
+    addressee_organisation: Any = _UNSET,
+    actor: Any = None,
+) -> Matter:
+    """Set who the Matter came from and who it is addressed to.
+
+    These are two different facts and are never unified. The register's own
+    history is the argument: the counterparty column changed meaning from
+    `KELLELT` to `KELLELE` in 2020, so merging them on name similarity would
+    silently invert the direction of a decade of records
+    (master specification 2.1, 19.3).
+    """
+    changed: dict[str, Any] = {}
+    fields: list[str] = []
+
+    if source_organisation is not _UNSET and source_organisation != matter.source_organisation:
+        changed["source_from"] = getattr(matter.source_organisation, "name", None)
+        changed["source_to"] = getattr(source_organisation, "name", None)
+        matter.source_organisation = source_organisation
+        fields.append("source_organisation")
+
+    if (
+        addressee_organisation is not _UNSET
+        and addressee_organisation != matter.addressee_organisation
+    ):
+        changed["addressee_from"] = getattr(matter.addressee_organisation, "name", None)
+        changed["addressee_to"] = getattr(addressee_organisation, "name", None)
+        matter.addressee_organisation = addressee_organisation
+        fields.append("addressee_organisation")
+
+    if not fields:
+        return matter
+
+    matter.save(update_fields=[*fields, "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.MATTER_ORGANISATION_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        payload=changed,
+    )
+    return matter
+
+
+@transaction.atomic
+def set_matter_dates(
+    *,
+    matter: Matter,
+    received_date: Any = _UNSET,
+    response_deadline: Any = _UNSET,
+    actor: Any = None,
+) -> Matter:
+    changed: dict[str, Any] = {}
+    fields: list[str] = []
+
+    if received_date is not _UNSET and received_date != matter.received_date:
+        changed["received_from"] = (
+            matter.received_date.isoformat() if matter.received_date else None
+        )
+        changed["received_to"] = received_date.isoformat() if received_date else None
+        matter.received_date = received_date
+        fields.append("received_date")
+
+    if response_deadline is not _UNSET and response_deadline != matter.response_deadline:
+        changed["deadline_from"] = (
+            matter.response_deadline.isoformat() if matter.response_deadline else None
+        )
+        changed["deadline_to"] = response_deadline.isoformat() if response_deadline else None
+        matter.response_deadline = response_deadline
+        fields.append("response_deadline")
+
+    if not fields:
+        return matter
+
+    matter.save(update_fields=[*fields, "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.MATTER_DATE_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        payload=changed,
+    )
+    return matter
+
+
+@transaction.atomic
+def set_position(
+    *,
+    matter: Matter,
+    position_summary: str | None = None,
+    rationale_summary: str | None = None,
+    actor: Any = None,
+) -> Matter:
+    """Record Koda's substantive position and the reasoning behind it."""
+    fields: list[str] = []
+    if position_summary is not None and position_summary != matter.position_summary:
+        matter.position_summary = position_summary
+        fields.append("position_summary")
+    if rationale_summary is not None and rationale_summary != matter.rationale_summary:
+        matter.rationale_summary = rationale_summary
+        fields.append("rationale_summary")
+
+    if not fields:
+        return matter
+
+    matter.save(update_fields=[*fields, "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.MATTER_POSITION_UPDATED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        payload={"fields": fields},
+    )
+    return matter
+
+
+@transaction.atomic
+def close_matter(
+    *, matter: Matter, disposition: str, actor: Any = None, reason: str = ""
+) -> Matter:
+    """Stop active work on the Matter, for a stated reason.
+
+    Closure answers "why is Koda no longer working on this", which is a
+    different question from where the external process stands. An act can enter
+    into force with the file still open, and a file can close while the
+    procedure continues elsewhere.
+    """
+    if disposition not in Disposition.values:
+        raise DomainError(f"Tundmatu lõpetamise põhjus {disposition!r}.")
+
+    # The same lock set_next_action takes, in the same order. Whichever
+    # transaction reaches the Matter row first wins: a closure that lands first
+    # makes the other call refuse, and a next action that lands first is
+    # cancelled by the closure. Neither ordering can leave a closed Matter
+    # carrying an open instruction (docs/adr/0011).
+    locked = Matter.objects.select_for_update().get(pk=matter.pk)
+    if not locked.is_open:
+        raise DomainError("Teema on juba suletud.")
+
+    matter = locked
+    matter.is_open = False
+    matter.disposition = disposition
+    matter.disposition_reason = reason
+    matter.closed_at = timezone.now()
+    matter.closed_by = actor
+    matter.save(
+        update_fields=[
+            "is_open",
+            "disposition",
+            "disposition_reason",
+            "closed_at",
+            "closed_by",
+            "updated_at",
+        ]
+    )
+
+    # A closed Matter must not keep sitting in somebody's work list.
+    end_open_action_for_closure(matter=matter, actor=actor)
+
+    record_change_event(
+        event_type=ChangeEventType.MATTER_CLOSED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=reason[:200],
+        payload={"disposition": disposition},
+    )
+    return matter
+
+
+@transaction.atomic
+def reopen_matter(*, matter: Matter, actor: Any = None, reason: str = "") -> Matter:
+    if matter.is_open:
+        raise DomainError("Teema on juba avatud.")
+
+    matter.is_open = True
+    matter.disposition = ""
+    matter.disposition_reason = ""
+    matter.closed_at = None
+    matter.closed_by = None
+    matter.save(
+        update_fields=[
+            "is_open",
+            "disposition",
+            "disposition_reason",
+            "closed_at",
+            "closed_by",
+            "updated_at",
+        ]
+    )
+
+    record_change_event(
+        event_type=ChangeEventType.MATTER_REOPENED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=reason[:200],
+    )
+    return matter
+
+
+# ---------------------------------------------------------------------------
+# Entries and the unified composer
+# ---------------------------------------------------------------------------
+
+
+@transaction.atomic
+def add_entry(
+    *,
+    matter: Matter,
+    body: str,
+    author: Any = None,
+    kind: str = EntryKind.NOTE,
+    occurred_at: Any = None,
+    organisation: Any = None,
+    visibility_override: str = "",
+) -> Entry:
+    """Record one piece of professional chronology.
+
+    The body is sanitised here rather than in the view, so there is no caller
+    that can store authored markup which has not been through the allowlist.
+    """
+    if kind not in EntryKind.values:
+        raise DomainError(f"Tundmatu sissekande liik {kind!r}.")
+    try:
+        validate_visibility_override(visibility_override)
+    except ValueError as error:
+        raise DomainError(str(error)) from error
+
+    clean_body = sanitize_entry_html(body)
+    if is_empty(clean_body):
+        raise DomainError("Sissekanne vajab sisu.")
+
+    entry = Entry.objects.create(
+        matter=matter,
+        author=author,
+        kind=kind,
+        occurred_at=occurred_at or timezone.now(),
+        body=clean_body,
+        organisation=organisation,
+        visibility_override=visibility_override,
+    )
+
+    record_change_event(
+        event_type=ChangeEventType.ENTRY_ADDED,
+        matter=matter,
+        actor=author,
+        obj=entry,
+        summary=excerpt(clean_body, 200),
+        payload={"kind": kind},
+    )
+    return entry
+
+
+@transaction.atomic
+def edit_entry(*, entry: Entry, body: str, actor: Any = None) -> Entry:
+    """Change an entry's text, keeping what it said before.
+
+    Correcting a typo should not require a correction note, but the earlier
+    wording is preserved so an edit cannot silently rewrite the record.
+    """
+    clean_body = sanitize_entry_html(body)
+    if is_empty(clean_body):
+        raise DomainError("Sissekanne vajab sisu.")
+
+    # Lock the row and re-read it before deciding anything. Two people editing
+    # the same entry at once would otherwise both compute the same revision
+    # number from a stale copy: one revision would collide, and one version of
+    # the wording would be lost. The second writer waits, then edits whatever is
+    # current by then.
+    locked = Entry.objects.select_for_update().get(pk=entry.pk)
+    if clean_body == locked.body:
+        return locked
+
+    EntryRevision.objects.create(
+        entry=locked,
+        revision_number=locked.edit_count + 1,
+        body=locked.body,
+        edited_by=actor,
+    )
+
+    locked.body = clean_body
+    locked.edit_count += 1
+    locked.edited_at = timezone.now()
+    locked.save(update_fields=["body", "edit_count", "edited_at", "updated_at"])
+
+    record_change_event(
+        event_type=ChangeEventType.ENTRY_EDITED,
+        matter=locked.matter,
+        actor=actor,
+        obj=locked,
+        payload={"revision": locked.edit_count},
+    )
+
+    # Keep the caller's instance consistent with what was written.
+    entry.body = locked.body
+    entry.edit_count = locked.edit_count
+    entry.edited_at = locked.edited_at
+    return locked
+
+
+@transaction.atomic
+def compose_update(
+    *,
+    matter: Matter,
+    author: Any,
+    body: str = "",
+    kind: str = EntryKind.NOTE,
+    occurred_at: Any = None,
+    organisation: Any = None,
+    next_action: dict[str, Any] | None = None,
+    attachment: Any = None,
+) -> tuple[Entry | None, Any]:
+    """The unified composer: one save, one transaction.
+
+    This is the adoption feature. A routine update today means editing an Excel
+    row and then writing the same thing into a OneNote page; here it is one box,
+    one optional change to `Järgmiseks`, and one save.
+
+    Atomicity is the substance of it, not a technicality. If the entry saved and
+    the action did not, the lawyer would believe both landed while the work
+    queue quietly disagreed with the record.
+    """
+    if not body.strip() and not next_action and attachment is None:
+        raise DomainError("Täida sissekanne või järgmiseks.")
+
+    entry = None
+    if body.strip():
+        entry = add_entry(
+            matter=matter,
+            body=body,
+            author=author,
+            kind=kind,
+            occurred_at=occurred_at,
+            organisation=organisation,
+        )
+
+    if attachment is not None:
+        # An attachment is evidence like any other: same immutability, same
+        # checksum, same provenance. It is captured inside this transaction, so
+        # a failed save leaves neither the note nor the file behind.
+        upload = read_upload(attachment)
+        document = create_document(
+            matter=matter,
+            title=upload.filename,
+            role=DocumentRole.OTHER,
+            created_by=author,
+        )
+        add_evidence_version(
+            document=document,
+            content=upload.content,
+            original_filename=upload.filename,
+            mime_type=upload.mime_type,
+            uploaded_by=author,
+        )
+
+    action = None
+    if next_action:
+        action = set_next_action(matter=matter, actor=author, **next_action)
+
+    return entry, action

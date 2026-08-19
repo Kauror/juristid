@@ -40,3 +40,26 @@ def restricted_matter(db, specialist):
     from app.core.enums import Visibility
 
     return factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
+
+
+@pytest.fixture
+def organisation(db):
+    return factories.OrganisationFactory()
+
+
+@pytest.fixture
+def stage(db):
+    return factories.StageFactory()
+
+
+@pytest.fixture
+def signed_in(client, specialist):
+    """A client signed in as an ordinary specialist."""
+    client.force_login(specialist)
+    return client
+
+
+@pytest.fixture
+def pdf_bytes():
+    """The smallest thing that passes the upload signature check."""
+    return b"%PDF-1.4 synthetic evidence"
