@@ -41,7 +41,14 @@ class Migration(migrations.Migration):
                 'ordering': ['organisation__name'],
             },
         ),
-        migrations.AlterField(
+        # Adding `through=` is not an alteration: Django refuses to convert an
+        # implicit many-to-many into an explicit one in place, so the old table
+        # is dropped and the relationship re-declared against the new model.
+        migrations.RemoveField(
+            model_name='submission',
+            name='joint_submitters',
+        ),
+        migrations.AddField(
             model_name='submission',
             name='joint_submitters',
             field=models.ManyToManyField(blank=True, help_text='Teised organisatsioonid, kelle nimel pöördumine ühiselt esitati.', related_name='joint_submissions', through='submissions.SubmissionJointSubmitter', to='organisations.organisation', verbose_name='kaasesitajad'),
@@ -63,7 +70,11 @@ class Migration(migrations.Migration):
                 'ordering': ['role', 'organisation__name'],
             },
         ),
-        migrations.AlterField(
+        migrations.RemoveField(
+            model_name='submission',
+            name='recipients',
+        ),
+        migrations.AddField(
             model_name='submission',
             name='recipients',
             field=models.ManyToManyField(blank=True, related_name='received_submissions', through='submissions.SubmissionRecipient', to='organisations.organisation', verbose_name='saajad'),
