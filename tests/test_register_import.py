@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 from django.core.management import call_command
-from django.db import IntegrityError, InternalError, transaction
+from django.db import IntegrityError, transaction
 
 from app.core.errors import ImmutableRecordError
 from app.legacy_import.apply import apply_plan
@@ -437,7 +437,7 @@ def test_the_ledger_is_append_only_in_the_database(corpus: Path, kadri, ministry
     _apply(corpus)
     entry = ImportRowLedger.objects.first()
     assert entry is not None
-    with pytest.raises(InternalError), transaction.atomic():
+    with pytest.raises(IntegrityError), transaction.atomic():
         ImportRowLedger.objects.filter(pk=entry.pk).update(note="rewritten")
 
 
@@ -468,7 +468,7 @@ def test_raw_source_values_cannot_be_changed_by_a_queryset_update(
     _apply(corpus)
     reference = MatterSourceReference.objects.first()
     assert reference is not None
-    with pytest.raises(InternalError), transaction.atomic():
+    with pytest.raises(IntegrityError), transaction.atomic():
         MatterSourceReference.objects.filter(pk=reference.pk).update(source_title="parandatud")
 
 
@@ -476,7 +476,7 @@ def test_the_onenote_url_is_immutable_in_the_database(corpus: Path, kadri, minis
     _apply(corpus)
     reference = MatterSourceReference.objects.exclude(onenote_url="").first()
     assert reference is not None
-    with pytest.raises(InternalError), transaction.atomic():
+    with pytest.raises(IntegrityError), transaction.atomic():
         MatterSourceReference.objects.filter(pk=reference.pk).update(
             onenote_url="https://example.invalid/repaired"
         )
@@ -486,7 +486,7 @@ def test_the_raw_row_json_is_immutable_in_the_database(corpus: Path, kadri, mini
     _apply(corpus)
     reference = MatterSourceReference.objects.first()
     assert reference is not None
-    with pytest.raises(InternalError), transaction.atomic():
+    with pytest.raises(IntegrityError), transaction.atomic():
         MatterSourceReference.objects.filter(pk=reference.pk).update(source_row_raw={})
 
 

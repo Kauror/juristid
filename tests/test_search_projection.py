@@ -97,15 +97,28 @@ def test_rebuilding_twice_produces_the_same_index(corpus) -> None:
     assert SearchDocument.objects.count() == first.documents
 
 
-def test_a_rebuild_removes_documents_for_matters_that_no_longer_exist(corpus) -> None:
-    """The claim "safe to delete and rebuild" rests on this."""
-    orphan = SearchDocument.objects.first()
-    assert orphan is not None
-    stale_count = SearchDocument.objects.count()
+def test_a_rebuild_clears_documents_left_behind_by_an_earlier_run(corpus) -> None:
+    """The claim "safe to delete and rebuild" rests on this.
 
-    corpus["waste"].delete()
+    A Matter cannot be deleted — its audit trail protects it — so the realistic
+    stale state is a duplicate or orphaned document left by an interrupted run,
+    which is what this builds.
+    """
+    from django.utils import timezone
+
+    expected = SearchDocument.objects.count()
+    SearchDocument.objects.create(
+        matter=corpus["waste"],
+        source_kind=SearchSourceKind.ENTRY,
+        source_object_id=None,
+        title="Aegunud dokument varasemast käivitusest",
+        indexed_at=timezone.now(),
+    )
+    assert SearchDocument.objects.count() == expected + 1
+
     rebuild_all()
-    assert SearchDocument.objects.count() == stale_count - 1
+    assert SearchDocument.objects.count() == expected
+    assert not SearchDocument.objects.filter(title__startswith="Aegunud").exists()
 
 
 def test_refreshing_one_matter_is_idempotent(corpus) -> None:
@@ -258,3 +271,82 @@ def test_the_projection_stores_no_visibility_of_its_own(corpus) -> None:
     assert "visibility" not in columns
     assert "effective_visibility" not in columns
     assert "visibility_override" not in columns
+
+
+# -- the projection maintains itself ---------------------------------------
+#
+# CI caught this the hard way: with indexing left to an operator, a seeded
+# Matter searched for by title returned nothing at all, quietly, behind a
+# plausible empty-results page. A search that silently misses records is worse
+# than no search, because people stop checking it.
+
+
+def test_a_newly_created_matter_is_findable_without_any_reindex(db, specialist) -> None:
+    matter = create_matter(
+        title="Sünteetiline pakendiseaduse muutmise eelnõu",
+        owner=specialist,
+        reference_year=2026,
+    )
+    assert search_matters(query="pakendiseaduse", user=specialist)[0].matter == matter
+
+
+def test_renaming_a_matter_updates_what_finds_it(db, specialist) -> None:
+    matter = create_matter(title="Sünteetiline esialgne pealkiri", owner=specialist)
+    matter.title = "Sünteetiline muudetud pealkiri"
+    matter.save(update_fields=["title", "updated_at"])
+
+    assert search_matters(query="muudetud", user=specialist)[0].matter == matter
+    assert search_matters(query="esialgne", user=specialist) == []
+
+
+def test_adding_a_tag_makes_the_matter_findable_by_it(db, specialist) -> None:
+    matter = create_matter(title="Sünteetiline sildistatav teema", owner=specialist)
+    tag = factories.TagFactory(name_et="Riigihanked")
+    matter.tags.add(tag, through_defaults={})
+
+    assert search_matters(query="Riigihanked", user=specialist)[0].matter == matter
+
+
+def test_adding_a_policy_area_makes_the_matter_findable_by_it(db, specialist) -> None:
+    matter = create_matter(title="Sünteetiline valdkondlik teema", owner=specialist)
+    matter.policy_areas.add(factories.PolicyAreaFactory(name_et="Keskkonnaõigus"))
+
+    assert search_matters(query="Keskkonnaõigus", user=specialist)[0].matter == matter
+
+
+def test_exactly_one_document_survives_repeated_saves(db, specialist) -> None:
+    matter = create_matter(title="Sünteetiline korduvalt salvestatud teema", owner=specialist)
+    for _ in range(3):
+        matter.save()
+    assert SearchDocument.objects.filter(matter=matter).count() == 1
+
+
+def test_a_bulk_writer_can_suspend_indexing_and_refresh_once(db, specialist) -> None:
+    """The escape hatch the importer uses, so 2,455 rows are not 2,455 refreshes."""
+    from app.search.indexing import suspend_indexing
+
+    with suspend_indexing():
+        matter = create_matter(title="Sünteetiline hulgi loodud teema", owner=specialist)
+        assert not SearchDocument.objects.filter(matter=matter).exists()
+
+    refresh_matter(matter)
+    assert search_matters(query="hulgi", user=specialist)[0].matter == matter
+
+
+# -- reference queries are exact ------------------------------------------
+
+
+def test_a_reference_query_never_falls_back_to_a_similar_reference(corpus, specialist) -> None:
+    """`2026_1` and `2026_2` are different files.
+
+    Trigram similarity rates them as nearly identical, so a fuzzy fallback here
+    would hand a lawyer the wrong matter for the most precise query they can
+    type.
+    """
+    target = corpus["vat"]
+    results = search_matters(query=target.display_reference, user=specialist)
+    assert [result.matter for result in results] == [target]
+
+
+def test_an_unknown_reference_returns_nothing_rather_than_a_near_miss(corpus, specialist) -> None:
+    assert search_matters(query="2026_99999", user=specialist) == []

@@ -25,7 +25,7 @@ from app.core.models import BaseModel
 
 #: Bumped when the indexed text or the vector configuration changes, so a
 #: partially rebuilt index is visible rather than merely stale.
-INDEX_VERSION = "2A.1"
+INDEX_VERSION = "2A.2"
 
 
 class SearchSourceKind(models.TextChoices):
@@ -86,6 +86,11 @@ class SearchDocument(BaseModel):
 
     search_estonian = SearchVectorField(null=True, editable=False)
     search_simple = SearchVectorField(null=True, editable=False)
+    # Title and alternate titles only. The combined vector above also carries
+    # identifiers and aliases, so a phrase query against it matches an
+    # organisation name and calls it a title hit. Ranking tiers are only
+    # meaningful if each one tests what it claims to test.
+    search_title = SearchVectorField(null=True, editable=False)
 
     index_version = models.CharField(max_length=16, default=INDEX_VERSION, editable=False)
     indexed_at = models.DateTimeField(db_index=True, verbose_name="indekseeritud")
@@ -104,6 +109,7 @@ class SearchDocument(BaseModel):
         indexes = [
             GinIndex(fields=["search_estonian"], name="search_estonian_gin"),
             GinIndex(fields=["search_simple"], name="search_simple_gin"),
+            GinIndex(fields=["search_title"], name="search_title_gin"),
             # Trigram indexes are for short strings only. The body text column
             # is deliberately absent: trigram-indexing extracted document text
             # is how a PostgreSQL search installation becomes unmaintainable

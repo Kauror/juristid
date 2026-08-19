@@ -15,6 +15,8 @@ faithfully reproducing what the application thought last year.
 
 from __future__ import annotations
 
+import contextlib
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from django.contrib.postgres.search import SearchVector
@@ -30,6 +32,32 @@ from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 #: take a handful of statements, small enough that one failure does not roll
 #: back an hour of work.
 BATCH_SIZE = 500
+
+#: Set while a bulk operation is running. The signal handlers check it and do
+#: nothing, so an import of 2,455 rows does not perform 2,455 separate index
+#: refreshes; the caller refreshes once at the end instead.
+_suspended = False
+
+
+def indexing_is_suspended() -> bool:
+    return _suspended
+
+
+@contextlib.contextmanager
+def suspend_indexing() -> Iterator[None]:
+    """Stop per-row reindexing for a bulk operation.
+
+    The caller takes on the obligation to refresh what it touched. Used by the
+    importer, which knows exactly which Matters it wrote and can do it in one
+    pass.
+    """
+    global _suspended
+    previous = _suspended
+    _suspended = True
+    try:
+        yield
+    finally:
+        _suspended = previous
 
 
 @dataclass(frozen=True)
@@ -164,6 +192,7 @@ def _recompute_vectors(documents: QuerySet[SearchDocument]) -> None:
             + SearchVector("alias_text", weight="C", config="simple")
             + SearchVector("body_text", weight="D", config="simple")
         ),
+        search_title=SearchVector("title", weight="A", config="estonian"),
     )
 
 

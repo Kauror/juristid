@@ -22,7 +22,7 @@ from app.legacy_import.enums import BLOCKING_ANOMALIES, Anomaly, RowOutcome
 from app.legacy_import.extraction import ExtractedRow, extract_sheet, summarize
 from app.legacy_import.next_actions import NextActionCandidate, extract_candidate
 from app.legacy_import.parser import PARSER_VERSION, RegisterWorkbook, WorkbookInventory
-from app.legacy_import.reporting import WrittenReports, write_reports
+from app.legacy_import.reporting import WrittenReports, inspection_markdown, write_reports
 from app.workflow.vocabulary import CONTROLLED_LABELS
 
 ROW_HEADER = [
@@ -370,9 +370,11 @@ def write_inspection_reports(inspection: Inspection, directory: Path) -> Written
         for row, candidate in inspection.candidates
     ]
 
+    summary = build_summary(inspection)
     return write_reports(
         directory,
-        summary=build_summary(inspection),
+        summary=summary,
+        markdown=inspection_markdown(summary),
         rows=rows,
         row_header=ROW_HEADER,
         anomalies=anomalies,

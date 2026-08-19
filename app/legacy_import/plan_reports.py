@@ -276,9 +276,10 @@ def write_plan_reports(plan: ImportPlan, directory: Path, *, mode: str) -> Writt
         if row_plan.candidate is not None
     ]
 
-    written = write_reports(
+    return write_reports(
         directory,
         summary=summary,
+        markdown=_markdown(summary),
         rows=rows,
         row_header=ROW_HEADER,
         anomalies=anomalies,
@@ -288,5 +289,3 @@ def write_plan_reports(plan: ImportPlan, directory: Path, *, mode: str) -> Writt
         candidates=candidates,
         candidate_header=CANDIDATE_HEADER,
     )
-    (directory / "summary.md").write_text(_markdown(summary), encoding="utf-8")
-    return written

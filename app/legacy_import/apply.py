@@ -37,6 +37,7 @@ from app.legacy_import.planner import ImportPlan, RowPlan
 from app.matters.enums import DataQualityTier, RecordMode
 from app.matters.models import Matter
 from app.matters.services import create_imported_matter, reserve_matter_reference
+from app.search.indexing import indexable_matters, refresh_matters, suspend_indexing
 
 #: Bumped when the apply step's behaviour changes. Stored on every batch.
 IMPORTER_VERSION = "2A.1.0"
@@ -156,6 +157,11 @@ def _source_reference_for(
 @transaction.atomic
 def apply_plan(plan: ImportPlan, *, actor: Any = None, notes: str = "") -> ApplyResult:
     """Write a plan. One transaction, or nothing at all."""
+    with suspend_indexing():
+        return _apply(plan, actor=actor, notes=notes)
+
+
+def _apply(plan: ImportPlan, *, actor: Any, notes: str) -> ApplyResult:
     started = timezone.now()
     batch = ImportBatch.objects.create(
         source_system=SOURCE_SYSTEM,
@@ -179,6 +185,7 @@ def apply_plan(plan: ImportPlan, *, actor: Any = None, notes: str = "") -> Apply
     skipped = 0
     ledger: list[ImportRowLedger] = []
     references: list[MatterSourceReference] = []
+    touched: list[Any] = []
 
     for row_plan in plan.rows:
         outcome = row_plan.outcome
@@ -191,6 +198,7 @@ def apply_plan(plan: ImportPlan, *, actor: Any = None, notes: str = "") -> Apply
         matter = row_plan.matter
         if outcome == RowOutcome.WOULD_CREATE.value:
             matter = _create(row_plan, actor)
+            touched.append(matter.pk)
             references.append(
                 _source_reference_for(
                     row_plan, matter, batch, plan.inventory.sha256, plan.inventory.file_name
@@ -223,6 +231,11 @@ def apply_plan(plan: ImportPlan, *, actor: Any = None, notes: str = "") -> Apply
 
     MatterSourceReference.objects.bulk_create(references)
     ImportRowLedger.objects.bulk_create(ledger)
+
+    # One pass rather than 2,455 separate refreshes. Search is a derived layer,
+    # so it is rebuilt after the import rather than maintained during it.
+    if touched:
+        refresh_matters(indexable_matters().filter(pk__in=touched))
 
     # Every reference the register has spoken for, imported or merely reserved,
     # so native creation after this run cannot collide with it.

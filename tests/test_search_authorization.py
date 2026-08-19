@@ -151,10 +151,18 @@ def test_relaxing_a_matter_takes_effect_without_reindexing(world, other_speciali
     assert RESTRICTED_TITLE in _titles(search_matters(query="ühinemise", user=other_specialist))
 
 
-def test_a_stale_index_cannot_resurrect_a_deleted_matter(world, specialist) -> None:
-    world["visible"].delete()
-    # The document is gone with it; nothing can return a row without its Matter.
-    assert OPEN_TITLE not in _titles(search_matters(query="ühinemise", user=specialist))
+def test_a_document_whose_matter_is_gone_cannot_return_a_result(world, specialist) -> None:
+    """Results come through the Matter join, so a matterless row is unreachable.
+
+    A Matter cannot actually be deleted — its audit trail protects it — and the
+    projection cascades from it anyway. This asserts the shape the guarantee
+    rests on rather than simulating an impossible state.
+    """
+    from app.search.models import SearchDocument
+
+    field = SearchDocument._meta.get_field("matter")
+    assert not field.null, "a document without a Matter must not be representable"
+    assert field.remote_field.on_delete.__name__ == "CASCADE"
 
 
 # -- the view --------------------------------------------------------------

@@ -26,6 +26,7 @@ from typing import Any
 
 from django.contrib.postgres.search import SearchQuery, SearchRank
 from django.db.models import Case, F, FloatField, Func, Q, QuerySet, Value, When
+from django.db.models.expressions import Combinable
 from django.db.models.functions import Greatest
 
 from app.core.authorization import apply as apply_scope
@@ -120,17 +121,21 @@ def visible_documents(user: Any) -> QuerySet[SearchDocument]:
     return apply_scope(documents, matter_visibility_q(scope, prefix="matter__"))
 
 
-def _reference_condition(term: str) -> Q:
-    """Match ``2026_184``, ``2026-184`` and ``2026 184`` against the same file."""
+def _reference_condition(term: str) -> Q | None:
+    """``2026_184``, ``2026-184`` and ``2026 184`` all mean the same file.
+
+    Returns ``None`` when the term is not a reference at all, which is what
+    tells the caller to fall through to the text tiers.
+    """
     candidate = " ".join(term.split())
     parsed = Matter.parse_reference(candidate.replace("-", "_").replace(" ", "_"))
     if parsed is None:
-        return Q(pk__in=[])
+        return None
     year, number = parsed
     return Q(matter__reference_year=year, matter__reference_number=number)
 
 
-def _build(term: str) -> tuple[Q, Case, Case]:
+def _build(term: str) -> tuple[Q, Combinable, Combinable]:
     """One query with every tier expressed as SQL.
 
     Deliberately a single statement. Running the tiers as separate queries and
@@ -144,17 +149,32 @@ def _build(term: str) -> tuple[Q, Case, Case]:
     phrase = SearchQuery(term, config="estonian", search_type="phrase")
 
     reference = _reference_condition(term)
+    if reference is not None:
+        # A well-formed reference is answered exactly or not at all. Fuzziness
+        # here is actively harmful: `2026_1` and `2026_2` are two different
+        # files, trigram similarity rates them as nearly identical, and a lawyer
+        # asking for one would be handed the other. It also breaks the
+        # navigation shortcut, which fires only when a query resolves to
+        # exactly one result.
+        return (
+            reference,
+            Value(float(TIER_REFERENCE), output_field=FloatField()),
+            Value(1.0, output_field=FloatField()),
+        )
+
     title_exact = Q(matter__title__iexact=term) | Q(title__iexact=term)
-    title_phrase = Q(search_estonian=phrase)
+    # Against the title-only vector. The combined vector also carries
+    # identifiers and aliases, so a phrase query against it would report an
+    # organisation-name hit as a title match.
+    title_phrase = Q(search_title=phrase)
     alias = Q(alias_text__icontains=term) | Q(alias_text__icontains=normalized)
     fulltext = Q(search_estonian=estonian)
     simple_match = Q(search_simple=simple)
     fuzzy = Q(title_similarity__gte=TRIGRAM_THRESHOLD)
 
-    matched = reference | title_exact | title_phrase | alias | fulltext | simple_match | fuzzy
+    matched = title_exact | title_phrase | alias | fulltext | simple_match | fuzzy
 
     tier = Case(
-        When(reference, then=Value(TIER_REFERENCE)),
         When(title_exact, then=Value(TIER_TITLE_EXACT)),
         When(title_phrase, then=Value(TIER_TITLE_PHRASE)),
         When(alias, then=Value(TIER_ALIAS)),

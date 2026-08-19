@@ -74,7 +74,7 @@ def _write_csv(path: Path, header: list[str], rows: list[list[Any]]) -> Path:
     return path
 
 
-def _markdown(summary: dict[str, Any]) -> str:
+def inspection_markdown(summary: dict[str, Any]) -> str:
     source = summary["source"]
     lines = [
         "# Registri impordi ülevaade",
@@ -157,6 +157,7 @@ def write_reports(
     directory: Path,
     *,
     summary: dict[str, Any],
+    markdown: str,
     rows: list[list[Any]],
     row_header: list[str],
     anomalies: list[list[Any]],
@@ -170,7 +171,7 @@ def write_reports(
 
     aggregate = (
         _write_json(directory / "summary.json", summary),
-        _write_text(directory / "summary.md", _markdown(summary)),
+        _write_text(directory / "summary.md", markdown),
     )
     row_level = (
         _write_csv(directory / "rows.csv", row_header, rows),
