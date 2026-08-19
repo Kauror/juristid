@@ -2,13 +2,13 @@
 
 An instance for real browser use: usability testing, workflow rehearsal, and
 the class of defect CI structurally cannot reach. It runs on invented data and
-nothing else, reachable on the LAN and — behind Cloudflare Access — at a public
-hostname.
+nothing else, reachable on the LAN and — behind a shared sign-in PIN — at a
+public hostname.
 
 | | |
 | --- | --- |
 | LAN URL | <http://192.168.1.133:3020> |
-| Public URL | <https://juristid.orgusaar.ee> — **behind Cloudflare Access** |
+| Public URL | <https://juristid.orgusaar.ee> — **the PIN is the only gate** |
 | Compose project | `juristid-test` |
 | Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-tunnel` |
 | Network | `juristid-test-internal` (its own bridge) |

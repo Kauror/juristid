@@ -74,11 +74,13 @@ evidence until a specific version has been captured
           <p class="empty">Tõendeid ei ole veel lisatud.</p>
         {% endif %}
 
-        {# Open by default and labelled "dokument", not "tõend". A lawyer
-           attaching a ministry's PDF should not have to know the system's
-           internal word for immutable evidence to find the upload field. The
-           semantics underneath are unchanged: every file is still captured as
-           an immutable version with its own checksum. #}
+        {% comment %}
+          Open by default and labelled "dokument", not "tõend". A lawyer
+          attaching a ministry's PDF should not have to know the system's
+          internal word for immutable evidence to find the upload field. The
+          semantics underneath are unchanged: every file is still captured as
+          an immutable version with its own checksum.
+        {% endcomment %}
         <details class="disclosure" open>
           <summary class="disclosure__summary">+ Lisa dokument</summary>
           <form class="form" method="post" enctype="multipart/form-data"

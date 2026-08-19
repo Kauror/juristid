@@ -58,8 +58,10 @@ specification forbids (18.8).
                     <td>{{ row.reason }}</td>
                     <td class="table__date">
                       {% if row.when %}
-                        {# The label travels with the date: four different kinds
-                           of date share this column and must not read alike. #}
+                        {% comment %}
+                          The label travels with the date: four different kinds
+                          of date share this column and must not read alike.
+                        {% endcomment %}
                         <span class="muted">{{ row.date_label }}</span><br>
                         {{ row.when|date:"d.m.Y" }}
                       {% else %}—{% endif %}
@@ -160,9 +162,11 @@ specification forbids (18.8).
     <aside class="dashgrid__rail" aria-label="Jaotused">
       <div class="railcard">
         <span class="railcard__label">Meeskonna aktiivsed teemad</span>
-        {# Inventory: how many open files sit with whom. Never a workload or a
-           performance measure — one file can be a monitoring note and the next
-           a year of consultation. #}
+        {% comment %}
+          Inventory: how many open files sit with whom. Never a workload or a
+          performance measure — one file can be a monitoring note and the next
+          a year of consultation.
+        {% endcomment %}
         <p class="field__help">Avatud teemade arv vastutaja kohta.</p>
         {% for row in dashboard.owners %}
           <a class="countrow" href="{{ row.url }}">

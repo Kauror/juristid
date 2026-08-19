@@ -16,9 +16,11 @@ intake and an IntakeItem model arrive only when there is a real feed to consume
       Registreeri saabunud materjal, alusta uut teemat või võta määramata teema enda peale.
     </span>
     <span class="pagehead__actions">
-      {# The primary action on this page. Filing what has arrived is the most
-         common way work starts, so it is a button rather than something hidden
-         behind a disclosure on another tab. #}
+      {% comment %}
+        The primary action on this page. Filing what has arrived is the most
+        common way work starts, so it is a button rather than something hidden
+        behind a disclosure on another tab.
+      {% endcomment %}
       <a class="button button--primary" href="{% url 'matters:intake' %}">
         + Lisa saabunud materjal
       </a>

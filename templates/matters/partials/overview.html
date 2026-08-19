@@ -11,10 +11,12 @@ about the save that just happened.
     {% include "matters/partials/matter_banner.html" %}
 
     {% if incoming_documents %}
-      {# Source material, visible from the file's own front page. A Matter that
-         began as a ministry's PDF should show that PDF without the reader
-         hunting through tabs for it. Links go through the authorized download
-         route; storage URLs are never handed to the browser. #}
+      {% comment %}
+        Source material, visible from the file's own front page. A Matter that
+        began as a ministry's PDF should show that PDF without the reader
+        hunting through tabs for it. Links go through the authorized download
+        route; storage URLs are never handed to the browser.
+      {% endcomment %}
       <section class="incoming" aria-labelledby="saabunud-materjalid-heading">
         <h2 class="sectionlabel" id="saabunud-materjalid-heading">
           Saabunud materjalid

@@ -135,9 +135,16 @@ class Command(BaseCommand):
             organisations=organisations,
         )
 
+        # `users` and `organisations` are the working sets the Matters were
+        # built from - active identities and the synthetic counterparties - so
+        # reporting their lengths would undercount what the command actually
+        # left behind. Say both, because "4 users" after seeding five is the
+        # kind of summary that sends somebody looking for a bug.
         self.stdout.write(
             self.style.SUCCESS(
-                f"Synthetic data ready: {len(users)} users, {len(organisations)} organisations, "
+                f"Synthetic data ready: {User.objects.count()} identities "
+                f"({len(users)} active), {Organisation.objects.count()} organisations "
+                f"({len(organisations)} synthetic, the rest public reference data), "
                 f"{created} Matters."
             )
         )

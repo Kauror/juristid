@@ -27,9 +27,11 @@ institution exists, so nothing else on the surrounding form is disturbed.
   </div>
 
   <div class="form__actions">
-    {# A plain button, not a nested <form>: this partial lives inside the form
-       that needed the organisation, and nesting forms is invalid HTML that
-       silently submits the wrong one. #}
+    {% comment %}
+      A plain button, not a nested <form>: this partial lives inside the form
+      that needed the organisation, and nesting forms is invalid HTML that
+      silently submits the wrong one.
+    {% endcomment %}
     <button class="button button--primary"
             type="button"
             hx-post="{% url 'organisations:quick_create' %}"
