@@ -1,0 +1,50 @@
+# Reviewed import mappings — TEMPLATE
+#
+#   python manage.py import_legacy_register PATH --dry-run \
+#       --mapping-file private-data/mapping.toml
+#
+# The importer refuses to guess who a register name refers to. This file is how
+# a person answers the questions it refuses to answer for itself. It is input:
+# nothing here is ever written by the importer.
+#
+# Every value below is synthetic. The real file lives in ignored local storage
+# (private-data/) and is never committed — it maps colleagues' names and the
+# institutions Koda deals with, which is exactly the material that does not
+# belong in a repository.
+#
+# Keys are compared after normalisation (casefold, diacritics stripped,
+# whitespace collapsed), so the file does not have to reproduce the source's
+# exact casing. An entry whose target does not exist is an error, not a
+# silent skip: a mapping file with a typo must fail loudly, or it looks like the
+# mapping simply had no effect.
+
+# Register first name -> the user's upn.
+# Only needed where the name is not already an exact, unique display_name.
+[owners]
+"Kadri" = "kadri.naidis@example.invalid"
+"K. Näidis" = "kadri.naidis@example.invalid"
+
+# Source institution text -> an Organisation's registry code or exact name.
+# Prefer recording a durable OrganisationAlias instead where the variant is one
+# the department will keep meeting; this file is for one-off spellings.
+#
+# Never map two institutions together because their names look similar. A
+# ministry that was renamed and a ministry whose remit changed look identical
+# from here and are not the same thing.
+[organisations]
+"Näidisministeerium" = "Näidisministeerium"
+"NM" = "12345678"
+
+# Human reference -> record mode. The ONLY route to a FULL record.
+#
+# The planner proposes FULL_CANDIDATE for recent rows that carry real signals,
+# and those still land as ARCHIVE. Promoting one is an attestation that a person
+# has checked the matter is live (master specification 19.5).
+#
+# A row whose status means Koda stopped working on it cannot be forced to FULL:
+# a closed FULL Matter must carry a closure timestamp and the register never
+# recorded one. That request is refused rather than satisfied with a made-up
+# date.
+[record_modes]
+"2026_1" = "FULL"
+"2026_2" = "ARCHIVE"

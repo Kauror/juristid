@@ -12,6 +12,11 @@ dependencies = [
     # Word/Outlook content, so stored markup must be filtered against an
     # allowlist; hand-rolling that is not a defensible option (app/core/richtext.py).
     "nh3>=0.2.18",
+    # Workbook parsing for the legacy register import. openpyxl is used rather
+    # than pandas because hyperlinks, cell data types and number formats are
+    # provenance here, not incidental formatting, and pandas discards them
+    # (docs/adr/0012).
+    "openpyxl>=3.1.5",
 ]
 
 [dependency-groups]

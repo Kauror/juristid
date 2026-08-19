@@ -1,0 +1,180 @@
+# Ajastuleping — Tööd eelnõudega, leht 2024
+#
+# Seda faili loeb parser otse. Ükski leht ei tohi importida ilma vastava
+# lepinguta, ja tundmatu pealkiri on ülevaatuse leid, mitte äraarvamise koht.
+
+year = 2024
+sheet = "2024"
+era = "2023-2024"
+header_row = 1
+contract_version = "1.0"
+status = "reviewed"
+reviewed_by = "Stage 2A parser owner — iga veerg kontrollitud 2026-08 hetktõmmise vastu; osakonna sisuline kinnitus on veel andmata"
+notes = """
+Ilmub HETKESEIS. Kasutus on hõre ja ebaühtlane, 2024 sisaldab vabatekstilisi variante. Ainult täpne ülevaadatud vaste tohib täita Matter.stage või Matter.disposition; tundmatu väärtus jääb tooreks ja saab ülevaatuse märke. Hägusat seisundite normaliseerimist ei tehta.
+"""
+
+[[column]]
+letter = "A"
+header = "NR"
+canonical_field = "matter_reference"
+parser = "human_reference"
+authority = "authoritative"
+meaning = """
+Registri inimloetav viide kujul AAAA_N. Aastaosa peab kattuma lehe aastaga.
+"""
+null_semantics = """
+Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida.
+"""
+
+[[column]]
+letter = "B"
+header = "TEEMA"
+canonical_field = "title"
+parser = "text"
+authority = "authoritative"
+meaning = """
+Teema pealkiri täpselt allika sõnastuses.
+"""
+null_semantics = """
+Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse.
+"""
+
+[[column]]
+letter = "C"
+header = "ÕIGUSAKT"
+canonical_field = "legal_instrument"
+parser = "raw"
+authority = "deferred"
+meaning = """
+Õigusakti liik allika enda tähistuses.
+"""
+null_semantics = """
+Tühi tähendab, et liiki ei märgitud.
+"""
+notes = """
+Kanoonilist välja ei ole. See ei ole menetlusliik (Track) ega menetlusetapp (Hetkeseis), vaid instrumendi liik, ja tähistus muutus aastate jooksul ühetähelistest koodidest (S, M, D) sõnadeks (seadus, määrus, direktiiv, VTK, muu). Nende ühendamine on juristide sisuline otsus, mitte parseri oma, seega väärtus säilib toorena.
+"""
+
+[[column]]
+letter = "D"
+header = "SISSE"
+canonical_field = "received_date"
+parser = "date"
+authority = "authoritative"
+meaning = """
+Kuupäev, mil materjal Kotta saabus.
+"""
+null_semantics = """
+Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas.
+"""
+
+[[column]]
+letter = "E"
+header = "ARVAMUSE TÄHTAEG"
+canonical_field = "response_deadline"
+parser = "date"
+authority = "authoritative"
+meaning = """
+Kuupäev, milleks Koda pidi arvamuse esitama.
+"""
+null_semantics = """
+Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud.
+"""
+
+[[column]]
+letter = "F"
+header = "VÄLJA"
+canonical_field = "opinion_sent_date"
+parser = "date"
+authority = "deferred"
+meaning = """
+Kuupäev, mil Koda arvamuse välja saatis.
+"""
+null_semantics = """
+Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas.
+"""
+notes = """
+Kanoonilist välja ei ole ja see on teadlik. Väljasaadetud arvamuse kanooniline kirje on Submission, mille olek SENT nõuab nii saatmisaega kui muutumatut lõplikku tõendit. Ainult kuupäeva põhjal Submissioni loomine tekitaks tõendita saadetud arvamuse ja rikuks Stage 1 invariandi. Väärtus säilib toorena, kuni tõendite import Stage 2B-s selle katab.
+"""
+
+[[column]]
+letter = "G"
+header = "KELLELE"
+canonical_field = "addressee_organisation"
+parser = "text"
+authority = "optional"
+direction = "addressee"
+meaning = """
+Adressaat: kellele Koda arvamuse saatis.
+"""
+null_semantics = """
+Tühi tähendab teadmata asutust, mitte asutuse puudumist.
+"""
+notes = """
+Alates 2020. aastast tähendab see veerg adressaati, mitte saatjat. Varasemate aastate KELLELT-veeruga seda ei ühendata: tähendus on vastupidine.
+"""
+
+[[column]]
+letter = "H"
+header = "VASTUTAJA"
+canonical_field = "owner_name"
+parser = "text"
+authority = "optional"
+meaning = """
+Vastutav jurist, allikas eesnimena.
+"""
+null_semantics = """
+Tühi tähendab, et vastutajat ei ole kirjas.
+"""
+notes = """
+Allikas on eesnimi ja mõnel real on neid mitu. Kasutaja leitakse ainult täpse üheselt mõistetava vaste või ülevaadatud vastefaili järgi. Nime järgi kasutaja loomine või e-posti aadressi arvamine on keelatud: see omistaks töö valele inimesele.
+"""
+
+[[column]]
+letter = "I"
+header = "LIIKMETE ARV, KES ANDSID TAGASISIDET"
+canonical_field = "member_feedback_responded"
+parser = "count"
+authority = "deferred"
+meaning = """
+Tagasisidet andnud liikmete arv. Iseseisev vaatlus.
+"""
+null_semantics = """
+Tühi ei ole null. Mõõdetud null on eraldi fakt ja need kaks ei tohi kokku langeda.
+"""
+notes = """
+Edasi lükatud Stage 2C Kaasamisele. Vastamismäära sellest ei arvutata: see veerg ei ole järgmise alamhulk ja tegelikes andmetes on ridu, kus vastanuid on rohkem kui otse küsituid. Veergude järjekord on ootusele vastupidine — vastanute arv seisab küsitute arvu ees.
+"""
+
+[[column]]
+letter = "J"
+header = "LIIKMETE ARV, KELLELT OTSE KÜSISIME TAGASISIDET"
+canonical_field = "member_feedback_requested"
+parser = "count"
+authority = "deferred"
+meaning = """
+Liikmete arv, kellelt Koda otse tagasisidet küsis. Iseseisev vaatlus.
+"""
+null_semantics = """
+Tühi ei ole null.
+"""
+notes = """
+Edasi lükatud Stage 2C Kaasamisele. Vt eelmise veeru märkust.
+"""
+
+[[column]]
+letter = "K"
+header = "HETKESEIS"
+canonical_field = "legacy_status"
+parser = "status_label"
+authority = "authoritative"
+meaning = """
+Välise menetluse seis allika sõnastuses.
+"""
+null_semantics = """
+Tühi tähendab, et seisu ei märgitud.
+"""
+notes = """
+Kasutus on hõre ja ebaühtlane. 2024. aastal esineb vabatekstilisi variante, mis ei kuulu kontrollitud sõnastikku. Vaste otsitakse ajastupõhiselt LegacyStatusMappingust, seejärel üldisest vastest; kui kumbagi ei ole, jääb väärtus tooreks ja rida saab UNMAPPED_STATUS märke. Uut StageVocabulary rida ei looda kunagi automaatselt.
+"""

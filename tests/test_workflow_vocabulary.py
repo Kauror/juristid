@@ -90,3 +90,59 @@ def test_a_label_maps_to_a_stage_or_a_closure_reason_but_never_both():
             stage=stage,
             disposition=Disposition.COMPLETED,
         )
+
+
+# --------------------------------------------------------------------------
+# The vocabulary exists twice on purpose: once frozen inside the seed migration,
+# once importable for the offline inspector, which has no database. Duplication
+# is the cost of a migration that cannot change meaning retroactively; drift is
+# what these tests exist to prevent.
+# --------------------------------------------------------------------------
+
+
+def _seed_module():
+    import importlib
+
+    return importlib.import_module("app.workflow.migrations.0004_seed_stage_vocabulary")
+
+
+def test_the_importable_vocabulary_matches_the_seed_migration():
+    from app.workflow import vocabulary
+
+    seed = _seed_module()
+    assert vocabulary.RAW_LABEL_TO_STAGE == seed.RAW_LABEL_TO_STAGE
+    assert vocabulary.RAW_LABEL_TO_DISPOSITION == seed.RAW_LABEL_TO_DISPOSITION
+
+
+def test_the_controlled_vocabulary_has_the_workbooks_eleven_labels():
+    from app.workflow import vocabulary
+
+    assert len(vocabulary.CONTROLLED_LABELS) == 11
+    assert "ootan ELi õiguse ülevõtmist" in vocabulary.CONTROLLED_LABELS
+
+
+def test_the_closure_label_is_not_a_stage():
+    from app.workflow import vocabulary
+
+    assert "rohkem pole tegevusi plaanis" not in vocabulary.RAW_LABEL_TO_STAGE
+    assert "rohkem pole tegevusi plaanis" in vocabulary.RAW_LABEL_TO_DISPOSITION
+
+
+def test_free_text_variants_seen_in_the_real_register_are_not_silently_mapped():
+    """The real 2024 sheet contains these beside the controlled values.
+
+    `rohkem tegevusi pole` sits one word away from the controlled
+    `rohkem pole tegevusi plaanis`. Deciding those are the same value is a
+    lawyer's call, and the importer is not allowed to make it.
+    """
+    from app.workflow import vocabulary
+
+    for variant in (
+        "Riigikogus 2. lugemisel",
+        "riigikogus 2. lugemisel",
+        "kinnitatud",
+        "rohkem tegevusi pole",
+        "rohkem tegevusi pole plaanis",
+    ):
+        assert not vocabulary.is_known_label(variant)
+        assert resolve_legacy_status(variant, "2023-2024") is None
