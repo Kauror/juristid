@@ -12,7 +12,11 @@ record, not professional chronology (master specification 16.5).
 {% endcomment %}
 {% for item in timeline_items %}
   {% if item.is_entry %}
-    <article class="entrycard">
+    {% comment %}
+      The id is what a search result for an entry scrolls to. Server-rendered
+      anchor, no router: the timeline is already one page (Stage-2B brief 77).
+    {% endcomment %}
+    <article class="entrycard" id="sissekanne-{{ item.entry.pk }}">
       <span class="avatar avatar--composer" aria-hidden="true">
         {% if item.entry.author %}{{ item.entry.author.initials }}{% else %}··{% endif %}
       </span>

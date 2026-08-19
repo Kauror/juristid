@@ -76,6 +76,7 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
       EVIDENCE_ROOT: /app/evidence
+      DERIVATIVE_ROOT: /app/derivatives
       # Migrations and seeding are controlled one-off steps, never container
       # start-up work (master specification 24.2). A container that migrates on
       # boot will happily migrate on a restart nobody intended.
@@ -87,6 +88,57 @@ services:
       - "${JURISTID_HOST_PORT:-3020}:8000"
     volumes:
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/evidence:/app/evidence
+      # A separate directory, not a subdirectory of evidence. One of these must
+      # survive and be backed up; the other may be deleted and rebuilt from it.
+      # Mixing them puts an operator one `rm -rf` away from destroying the half
+      # that cannot be regenerated (docs/adr/0014).
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/derivatives:/app/derivatives
+    networks:
+      - internal
+
+  # Text extraction and OCR, in its own container.
+  #
+  # Separate from the web process because OCR on a scanned annex takes minutes
+  # and a lawyer filing incoming mail must not wait for it. Same image, so there
+  # is one thing to build and one version to reason about.
+  #
+  # It reaches the database and nothing else: no host port, no other network.
+  #
+  # Evidence is mounted read-write, which the first version of this file got
+  # wrong. The reasoning was that a worker only ever *reads* originals, so the
+  # container opening untrusted files with half a dozen parsers should not be
+  # able to alter them. That is true of every format except one: an email's
+  # attachments are themselves new evidence, and this is the process that
+  # captures them. The deployment found it — every `.eml` failed on a read-only
+  # filesystem — and it is recorded here rather than quietly changed, because
+  # the containment argument was appealing and wrong.
+  #
+  # Existing evidence is still immutable: enforced by a PostgreSQL trigger and
+  # by there being no code path that overwrites a stored object, neither of
+  # which a mount option was adding to.
+  extractor:
+    image: juristid-test-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-test-extractor
+    restart: unless-stopped
+    command:
+      - python
+      - manage.py
+      - run_extraction_worker
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-test/config/juristid.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      EVIDENCE_ROOT: /app/evidence
+      DERIVATIVE_ROOT: /app/derivatives
+      SEED_DEV_DATA: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/evidence:/app/evidence
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/derivatives:/app/derivatives
     networks:
       - internal
 

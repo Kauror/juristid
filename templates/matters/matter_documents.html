@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load document_state %}
 {% block title %}Dokumendid · {{ matter.display_reference }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -34,6 +35,7 @@ evidence until a specific version has been captured
                   <th scope="col">Fail</th>
                   <th scope="col">Suurus</th>
                   <th scope="col">Versioone</th>
+                  <th scope="col">Sisu</th>
                   <th scope="col">Lisatud</th>
                 </tr>
               </thead>
@@ -41,7 +43,7 @@ evidence until a specific version has been captured
                 {% for document in evidence_documents %}
                   <tr>
                     <td class="table__title">
-                      {{ document.title }}
+                      <a href="{% url 'documents:document_detail' pk=document.pk %}">{{ document.title }}</a>
                       {% if document.is_restricted %}
                         <span class="badge badge--restricted">Piiratud</span>
                       {% endif %}
@@ -62,6 +64,21 @@ evidence until a specific version has been captured
                       {% else %}—{% endif %}
                     </td>
                     <td class="table__date">{{ document.versions.count }}</td>
+                    <td>
+                      {% comment %}
+                        The processing state in words, never the enum. A lawyer
+                        should not have to learn that NOT_APPLICABLE means the
+                        format has no text worth extracting (Stage-2B brief 35).
+                      {% endcomment %}
+                      {% if document.current_version %}
+                        <span class="statechip statechip--{{ document.current_version.extraction_state|extraction_tone }}">
+                          {{ document.current_version.extraction_state|extraction_label }}
+                        </span>
+                        {% if document.current_version.extraction_state == "DONE" %}
+                          <a class="quietlink" href="{% url 'documents:document_detail' pk=document.pk %}">Vaata sisu</a>
+                        {% endif %}
+                      {% else %}—{% endif %}
+                    </td>
                     <td class="table__date">
                       <span class="muted">{{ document.created_at|date:"d.m.Y" }}</span>
                     </td>

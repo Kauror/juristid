@@ -17,6 +17,11 @@ or the rebuild died before reaching it.
 Run it after bulk changes that the per-write signals do not cover — renaming an
 Organisation, editing its aliases, merging a Tag — or whenever the index is
 suspect.
+
+It rebuilds document fragments too, but it does **not** re-extract them: it
+projects the derivatives that already exist. If the derived text itself is
+suspect, `rebuild_document_derivatives` is the command, and it reindexes what it
+rebuilds as it goes.
 """
 
 from __future__ import annotations
@@ -50,7 +55,9 @@ class Command(BaseCommand):
         result = rebuild_all(batch_size=options["batch_size"], clear=not options["keep_existing"])
         self.stdout.write(
             self.style.SUCCESS(
-                f"Indexed {result.matters} matters into {result.documents} documents "
-                f"in {result.seconds:.2f}s (index version {result.index_version})."
+                f"Indexed {result.matters} matters, {result.entries} entries, "
+                f"{result.submissions} submissions and {result.fragments} document "
+                f"fragments into {result.documents} rows in {result.seconds:.2f}s "
+                f"(index version {result.index_version})."
             )
         )

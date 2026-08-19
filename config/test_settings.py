@@ -41,14 +41,27 @@ STATIC_MANIFEST = False
 # `createcachetable` before the suite can run.
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
 
-# Evidence written by tests goes to a throwaway directory, never the checkout.
+# Evidence and derivatives written by tests go to throwaway directories, never
+# the checkout — and to *separate* ones, because keeping the two storage classes
+# apart is itself a property under test (docs/adr/0014).
+#
+# A fresh directory per process, which is worth knowing about: anything that
+# shells out to `manage.py` from inside the suite must pass
+# DJANGO_SETTINGS_MODULE=config.settings explicitly, or the child gets its own
+# empty evidence directory and every file it looks for is missing. The browser
+# suite learned this the hard way.
 EVIDENCE_ROOT = Path(tempfile.mkdtemp(prefix="juristid-evidence-"))
+DERIVATIVE_ROOT = Path(tempfile.mkdtemp(prefix="juristid-derivatives-"))
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     EVIDENCE_STORAGE_ALIAS: {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
         "OPTIONS": {"location": str(EVIDENCE_ROOT)},
+    },
+    DERIVATIVE_STORAGE_ALIAS: {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {"location": str(DERIVATIVE_ROOT)},
     },
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }

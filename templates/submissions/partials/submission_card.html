@@ -3,7 +3,8 @@ One submission. Status is a labelled badge, never a tint alone, and a sent
 submission carries its evidence block: the exact file, its checksum, and a link
 that goes through the authorization-checked download route.
 {% endcomment %}
-<article class="submission {% if submission.status == 'SUPERSEDED' %}submission--superseded{% endif %}">
+<article id="arvamus-{{ submission.pk }}"
+         class="submission {% if submission.status == 'SUPERSEDED' %}submission--superseded{% endif %}">
   <div class="submission__head">
     <span class="badge badge--{{ submission.status|lower }}">{{ submission.get_status_display }}</span>
     <h3 class="submission__title">{{ submission.title }}</h3>

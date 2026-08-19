@@ -13,15 +13,18 @@ from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, HttpRequest, HttpResponse
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import urlsafe_base64_encode
 from django.views.decorators.http import require_http_methods
 
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 from app.core.errors import DomainError
-from app.documents.enums import DocumentRole
-from app.documents.models import Document, DocumentVersion
+from app.documents.email_intake import attachments_of, parent_email_of
+from app.documents.enums import DerivativeKind, DerivativeStatus, DocumentRole
+from app.documents.extraction.orchestrator import derivative_storage
+from app.documents.models import Document, DocumentDerivative, DocumentVersion
+from app.documents.preview import build_preview
 from app.documents.services import add_evidence_version, create_document, evidence_storage
 from app.documents.uploads import UploadRejected, read_upload
 from app.matters.views import get_visible_matter
@@ -143,3 +146,75 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
         else f'attachment; filename="{version.original_filename}"'
     )
     return response
+
+
+@login_required
+def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
+    """Serve a generated preview image, inline.
+
+    Inline is safe here and only here. These bytes were produced by this process
+    — decoded, resized and re-encoded through Pillow — so whatever was
+    interesting about the uploaded file's structure did not survive the round
+    trip. The original still goes out as an attachment, because it is somebody
+    else's bytes and always will be.
+
+    Same visibility scope as every other document route, so a restricted
+    document's thumbnail 404s exactly as its download does. A preview that
+    leaked where a download did not would be the more embarrassing of the two.
+    """
+    derivative = get_object_or_404(
+        DocumentDerivative.objects.filter(
+            kind=DerivativeKind.THUMBNAIL,
+            status=DerivativeStatus.ACTIVE,
+            version__document__in=Document.objects.visible_to(request.user),
+        ).exclude(storage_key=""),
+        pk=pk,
+    )
+
+    handle = derivative_storage().open(derivative.storage_key, "rb")
+    response = FileResponse(handle, content_type="image/png")
+    response["X-Content-Type-Options"] = "nosniff"
+    # Belt and braces: even a generated PNG is served under a policy that
+    # forbids scripts, so a hypothetical polyglot has nothing to execute.
+    response["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    response["Cache-Control"] = "private, max-age=300"
+    return response
+
+
+@login_required
+def document_detail(request: HttpRequest, pk: Any) -> HttpResponse:
+    """One document: its evidence, its derived preview, and the line between.
+
+    The two are never presented as the same thing. The original is a download
+    with a checksum; everything else on this page is what a parser made of it
+    and says so, because a preview that looks like the source of record is the
+    provenance defect this whole stage exists to avoid
+    (master specification 15.3, Stage-2B brief 35, 76).
+
+    The queryset is the same ``visible_to`` scope every other document route
+    uses, so a restricted document 404s here exactly as it does everywhere else
+    — and for the same reason: a 403 would confirm it exists.
+    """
+    document = get_object_or_404(
+        Document.objects.visible_to(request.user).select_related("matter", "current_version"),
+        pk=pk,
+    )
+    version = document.current_version
+    versions = list(document.versions.order_by("-version_number"))
+
+    return render(
+        request,
+        "documents/document_detail.html",
+        {
+            "matter": document.matter,
+            "document": document,
+            "version": version,
+            "versions": versions,
+            "preview": build_preview(version) if version is not None else None,
+            # Provenance in both directions: what this file arrived inside, and
+            # what arrived inside it.
+            "parent_email": parent_email_of(version) if version is not None else None,
+            "attachments": attachments_of(version) if version is not None else [],
+            "nav_active": "teemad",
+        },
+    )

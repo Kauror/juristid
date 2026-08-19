@@ -21,15 +21,34 @@ the unified Sissekanne composer, `Järgmiseks` next actions, Submissions with
 immutable final evidence, and global search — all in the Koda CVI dark-mode
 interface.
 
-**Stage 2A — in review.** The legacy register import (per-era workbook
+**Stage 2A — complete, merged.** The legacy register import (per-era workbook
 contracts, offline inspection, dry run and apply, immutable provenance) and the
 rebuildable `SearchDocument` projection behind Estonian full-text search.
 
-**Deliberately unbuilt.** Stage 2B: document text extraction, OCR, MSG/EML,
-attachment previews and search over Entry and Submission content. Stage 2C:
-Kaasamine and structured member responses. Also unbuilt, and later still: EIS and
-Riigikogu integration, statistics dashboards, advocacy outcomes and attribution.
-Each stage is authorized by its own written brief; nothing is built ahead of one.
+**Stage 2A.5 — complete, merged.** The rehearsal's operational foundation:
+`Ülevaade`, the ministries as public reference data, `Saabunud` as a multi-file
+intake surface, and the corrections a week of real browser use produced.
+
+**Stage 2B — in review.** Content extraction and everything that depends on it:
+`DocumentDerivative` and locator-aware text fragments, parsers for PDF, DOCX,
+XLSX, PPTX, TXT, CSV, EML, MSG and images, local OCR for scanned pages, a
+database-backed extraction worker, email attachments captured as evidence with
+provenance back to the exact message, safe previews and thumbnails, and search
+extended to entries, submissions and document contents with child authorization
+evaluated live.
+
+**Synthetic rehearsal — deployed.** An instance on the Unraid host running
+invented data only, for the class of defect CI structurally cannot reach. See
+[`deploy/unraid-test/`](deploy/unraid-test/).
+
+**Secure Pilot Gate — not passed.** No real Koda, member or otherwise
+confidential data has entered any environment, and none may until it is.
+
+**Deliberately unbuilt.** Stage 2C: Kaasamine and structured member responses.
+Later still: EIS and Riigikogu integration, statistics dashboards, advocacy
+outcomes and attribution, and anything involving embeddings, semantic search or
+AI summarisation. Each stage is authorized by its own written brief; nothing is
+built ahead of one.
 
 [`docs/open-decisions.md`](docs/open-decisions.md) lists what still belongs to
 named people rather than to the code.
@@ -190,6 +209,40 @@ uv run python manage.py refresh_matter_search 2026_184
 
 The projection is derived data and safe to delete: nothing in the domain reads
 from it.
+
+It covers matters, entries, submissions and the contents of documents. A search
+result says which of those it is and where inside it the match was — `lk 17`,
+`slaid 3`, `leht "Kulud"` — and clicking one opens that document rather than
+merely its matter.
+
+## Content extraction
+
+Uploading a file does not wait for its contents to be read; a worker does that
+afterwards. On the deployment it is its own container, and locally it is a
+command:
+
+```bash
+uv run python manage.py run_extraction_worker
+```
+
+```bash
+uv run python manage.py extract_pending_documents --limit 25
+```
+
+Everything it produces — extracted text, OCR, thumbnails, the search index — is
+derived and rebuildable from the original bytes:
+
+```bash
+uv run python manage.py rebuild_document_derivatives --matter 2026_184
+```
+
+OCR needs Tesseract with Estonian and English language data. The image ships
+both; this says whether the runtime you are on actually has them, because an
+engine missing a language falls back to English and returns confident nonsense:
+
+```bash
+uv run python manage.py check_ocr_runtime
+```
 
 ## Tests and checks
 

@@ -235,7 +235,11 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill("pakendiseaduse")
     page.keyboard.press("Enter")
     expect(page.get_by_role("heading", name="Otsing")).to_be_visible()
-    expect(page.get_by_role("link", name=re.compile("Pakendiseaduse"))).to_be_visible()
+    # More than one row now, and that is the Stage-2B change: the entry and the
+    # sent opinion written earlier in this test are indexed too. Each result
+    # says which kind of thing it is, so a mixed list stays readable.
+    expect(page.get_by_role("link", name=re.compile("Pakendiseaduse")).first).to_be_visible()
+    expect(page.locator(".badge--source").first).to_be_visible()
     screenshots(page, "09-otsing")
 
     page.get_by_role("link", name=re.compile("Pakendiseaduse")).first.click()

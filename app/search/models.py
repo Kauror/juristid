@@ -25,20 +25,38 @@ from app.core.models import BaseModel
 
 #: Bumped when the indexed text or the vector configuration changes, so a
 #: partially rebuilt index is visible rather than merely stale.
-INDEX_VERSION = "2A.2"
+INDEX_VERSION = "2B.1"
 
 
 class SearchSourceKind(models.TextChoices):
     """What a document projects.
 
-    Stage 2A indexes Matter-level content only. ``ENTRY`` and ``SUBMISSION``
-    are named here because the kinds are part of the contract a later stage
-    fills in, not because anything writes them yet (docs/adr/0013).
+    Stage 2B fills in the kinds Stage 2A only named. A fragment of an extracted
+    document is its own row rather than text folded into the Matter's: a result
+    has to be able to say *which* file matched and *where* in it, and content
+    hidden inside the Matter row can say neither (docs/adr/0013, 0014).
     """
 
     MATTER = "MATTER", "Teema"
     ENTRY = "ENTRY", "Sissekanne"
     SUBMISSION = "SUBMISSION", "Arvamus"
+    DOCUMENT_FRAGMENT = "DOCUMENT_FRAGMENT", "Dokumendi sisu"
+
+
+#: Which live column carries each kind's own restriction, for the authorization
+#: join. ``MATTER`` maps to nothing because a Matter has no override above
+#: itself — its visibility *is* the parent visibility.
+#:
+#: This mapping is the whole reason child content can be indexed at all. Every
+#: entry names a real foreign key on this table, so a query can reach the
+#: child's *current* override instead of a copy of it taken at index time
+#: (docs/adr/0014, Stage-2B brief 43).
+SOURCE_OVERRIDE_FIELDS: dict[str, str | None] = {
+    SearchSourceKind.MATTER.value: None,
+    SearchSourceKind.ENTRY.value: "entry__visibility_override",
+    SearchSourceKind.SUBMISSION.value: "submission__visibility_override",
+    SearchSourceKind.DOCUMENT_FRAGMENT.value: "document__visibility_override",
+}
 
 
 class SearchDocument(BaseModel):
@@ -61,6 +79,59 @@ class SearchDocument(BaseModel):
         help_text="Sama mis teema, kui dokument projitseerib teemat ennast.",
     )
 
+    # -- live joins for authorization and display --------------------------
+    #
+    # ``source_object_id`` identifies the source; these *reach* it. A UUID
+    # column cannot be joined, and joining is the point: the child's current
+    # restriction has to participate in the query rather than being copied into
+    # this table, where it would go stale the moment somebody restricts a
+    # document (docs/adr/0013's central argument, one level down).
+    #
+    # All nullable, all CASCADE: a projection row for a deleted source is not
+    # stale data to be cleaned up later, it is a search result pointing at
+    # nothing.
+    entry = models.ForeignKey(
+        "matters.Entry",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="search_documents",
+        verbose_name="sissekanne",
+    )
+    submission = models.ForeignKey(
+        "submissions.Submission",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="search_documents",
+        verbose_name="arvamus",
+    )
+    document = models.ForeignKey(
+        "documents.Document",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="search_documents",
+        verbose_name="dokument",
+    )
+    document_version = models.ForeignKey(
+        "documents.DocumentVersion",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="search_documents",
+        verbose_name="tõendiversioon",
+        help_text="Täpne versioon, mille sisu see rida esindab.",
+    )
+    fragment = models.ForeignKey(
+        "documents.DocumentTextFragment",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="search_documents",
+        verbose_name="tekstiosa",
+    )
+
     title = models.TextField(blank=True, verbose_name="pealkiri")
     identifiers = models.TextField(
         blank=True,
@@ -75,7 +146,7 @@ class SearchDocument(BaseModel):
     body_text = models.TextField(
         blank=True,
         verbose_name="sisutekst",
-        help_text="Tühi 2A etapis; sissekannete ja arvamuste tekst tuleb 2B-s.",
+        help_text="Sissekande, arvamuse või dokumendi tekstiosa sisu.",
     )
     source_locator = models.CharField(
         max_length=200,
@@ -114,17 +185,30 @@ class SearchDocument(BaseModel):
             # is deliberately absent: trigram-indexing extracted document text
             # is how a PostgreSQL search installation becomes unmaintainable
             # (master specification 14.1).
+            #
+            # And they are now *partial*. Stage 2A had one row per Matter, so
+            # indexing every row's title cost nothing. Stage 2B adds a row per
+            # document fragment, where the design headroom is millions — and
+            # fuzzy-matching a typo against a fragment's title is not a feature
+            # anybody asked for. Restricting both indexes to MATTER rows keeps
+            # them the size they were, and the fuzzy tier in the query is
+            # restricted to the same rows so the planner can use them.
             GinIndex(
                 fields=["title"],
                 opclasses=["gin_trgm_ops"],
                 name="search_title_trigram",
+                condition=models.Q(source_kind="MATTER"),
             ),
             GinIndex(
                 fields=["identifiers"],
                 opclasses=["gin_trgm_ops"],
                 name="search_identifiers_trigram",
+                condition=models.Q(source_kind="MATTER"),
             ),
             models.Index(fields=["matter", "source_kind"], name="search_matter_kind"),
+            # Refreshing one document's projection deletes its rows first, and
+            # at fragment scale that lookup must not be a scan.
+            models.Index(fields=["document_version"], name="search_by_version"),
         ]
 
     def __str__(self) -> str:

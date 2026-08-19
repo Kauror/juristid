@@ -2208,3 +2208,180 @@
 .filelist__item:last-child {
   border-bottom: none;
 }
+
+/* -- Stage 2B: derived content ------------------------------------------- *
+ *
+ * The visual job here is one distinction: original versus derivative. Evidence
+ * reads as solid and authoritative; a preview reads as provisional, because a
+ * preview that looks like the source of record is the provenance defect this
+ * stage exists to avoid.
+ */
+
+.statechip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-15);
+  padding: 1px var(--spacing-15);
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border-default);
+  color: var(--text-muted);
+  font-size: var(--typography-size-label);
+  white-space: nowrap;
+}
+
+.statechip--ok {
+  color: var(--status-success);
+  border-color: var(--status-success-border);
+}
+
+.statechip--waiting {
+  color: var(--status-warning);
+  border-color: var(--status-warning-border);
+}
+
+.statechip--problem {
+  color: var(--status-danger);
+  border-color: var(--status-danger-border);
+}
+
+.quietlink {
+  margin-left: var(--spacing-2);
+  color: var(--accent-link);
+  font-size: var(--typography-size-meta-sm);
+}
+
+.crumbs {
+  margin-bottom: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.mono {
+  font-family: var(--typography-font-mono);
+  font-size: var(--typography-size-meta-sm);
+  word-break: break-all;
+}
+
+.detailgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacing-2) var(--spacing-4);
+  margin: var(--spacing-2) 0 0;
+}
+
+.detailgrid dt {
+  color: var(--text-muted);
+  font-size: var(--typography-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.detailgrid dd {
+  margin: 0;
+  font-size: var(--typography-size-row);
+}
+
+/* A dashed left edge, the same language the SharePoint working-document card
+ * already uses for "living, not evidence". */
+.card--derived {
+  border-left: 2px dashed var(--border-default);
+}
+
+.card--evidence {
+  border-left: 2px solid var(--status-success-border);
+}
+
+.fragments {
+  list-style: none;
+  margin: var(--spacing-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--spacing-3);
+}
+
+.fragment {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--spacing-2);
+}
+
+.fragment__locator {
+  margin: 0 0 var(--spacing-15);
+  color: var(--text-muted);
+  font-size: var(--typography-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fragment__text {
+  margin: 0;
+  font-size: var(--typography-size-row);
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.badge--ocr {
+  color: var(--status-warning);
+  border-color: var(--status-warning-border);
+}
+
+.badge--source {
+  color: var(--accent-link);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+
+.result__source {
+  display: block;
+  margin-top: var(--spacing-15);
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+.result__snippet {
+  display: block;
+  margin-top: var(--spacing-15);
+  font-size: var(--typography-size-row);
+  line-height: 1.5;
+}
+
+.result__snippet mark {
+  background: var(--accent-soft);
+  color: var(--accent-link);
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.thumbnail {
+  margin: var(--spacing-3) 0 0;
+  max-width: 320px;
+}
+
+.thumbnail img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+}
+
+.thumbnail figcaption {
+  margin-top: var(--spacing-15);
+  color: var(--text-muted);
+  font-size: var(--typography-size-label);
+}
+
+/* Anything a link can jump to has to clear the sticky chrome.
+ *
+ * The top bar is sticky at 0 and table headers are sticky at 48px, so a browser
+ * scrolling an element to the top of the viewport puts it *underneath* both.
+ * Stage 2B made this reachable: a search result for an entry links to
+ * `#sissekanne-<id>`, and without this the entry it lands on is behind the
+ * header. Playwright found the same thing trying to click a link in a table's
+ * first row. */
+.table tbody tr,
+.entrycard,
+.submission,
+.fragment {
+  scroll-margin-top: 96px;
+}

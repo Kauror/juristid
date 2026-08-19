@@ -253,14 +253,24 @@ def test_raw_workbook_rows_never_reach_the_index(db, specialist) -> None:
     assert document.body_text == ""
 
 
-def test_entry_text_is_not_indexed_in_this_stage(db, specialist) -> None:
-    """Deferred to Stage 2B on purpose (docs/adr/0013)."""
+def test_entry_text_is_indexed_as_its_own_row(db, specialist) -> None:
+    """The gap ADR 0013 stated, closed in Stage 2B — and closed *as its own row*.
+
+    Stage 2A asserted the opposite of this, correctly for that stage. What
+    matters now is not merely that the text is findable but that it is findable
+    as an entry: folding it into the Matter's row would make every hit read "the
+    matter matched" and lose which entry it was (docs/adr/0014).
+    """
     matter = create_matter(title="Sünteetiline teema", owner=specialist, reference_year=2026)
     factories.EntryFactory(matter=matter, body="<p>Konfidentsiaalne sissekande tekst</p>")
     rebuild_all()
 
+    assert SearchDocument.objects.filter(source_kind=SearchSourceKind.ENTRY).exists()
+    # The Matter row itself still carries no entry text.
+    matter_row = SearchDocument.objects.get(matter=matter, source_kind=SearchSourceKind.MATTER)
+    assert "sissekande" not in matter_row.body_text
+    # And a Matter-only search does not answer with the entry.
     assert search_matters(query="Konfidentsiaalne sissekande", user=specialist) == []
-    assert not SearchDocument.objects.filter(source_kind=SearchSourceKind.ENTRY).exists()
 
 
 def test_the_projection_stores_no_visibility_of_its_own(corpus) -> None:

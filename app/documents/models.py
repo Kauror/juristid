@@ -173,8 +173,21 @@ class DocumentVersion(BaseModel):
         max_length=32,
         choices=ExtractionState.choices,
         default=ExtractionState.PENDING,
+        db_index=True,
         verbose_name="teksti eraldamine",
     )
+    # When a worker claimed this row. A worker that dies mid-parse leaves
+    # PROCESSING behind forever unless somebody can tell a claim that is running
+    # from one that is abandoned, and the only honest difference between them is
+    # how long it has been. Cleared on every terminal outcome.
+    extraction_claimed_at = models.DateTimeField(
+        null=True, blank=True, verbose_name="töötlemine algas"
+    )
+    # Why a version is FAILED or NOT_APPLICABLE, in words an operator can act
+    # on. A failed parse writes a derivative row carrying the detail; a version
+    # that no parser handles has no derivative at all, and this is where its
+    # reason lives.
+    extraction_note = models.CharField(max_length=300, blank=True, verbose_name="eraldamise märkus")
 
     class Meta:
         verbose_name = "dokumendi versioon"
@@ -202,3 +215,24 @@ class DocumentVersion(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.original_filename} v{self.version_number}"
+
+
+# Derived content lives in its own module because it obeys the opposite rule to
+# everything above: it may be deleted at will. Imported here so Django's app
+# registry finds the models — splitting the file is a readability decision, not
+# a second app (docs/adr/0014).
+from app.documents.derivatives import (  # noqa: E402
+    AttachmentDisposition,
+    DocumentDerivative,
+    DocumentTextFragment,
+    EmailAttachmentLink,
+)
+
+__all__ = [
+    "AttachmentDisposition",
+    "Document",
+    "DocumentDerivative",
+    "DocumentTextFragment",
+    "DocumentVersion",
+    "EmailAttachmentLink",
+]

@@ -19,6 +19,8 @@ Three rules matter and are tested:
 
 from __future__ import annotations
 
+import functools
+import operator
 import uuid
 from dataclasses import dataclass
 
@@ -165,6 +167,60 @@ def child_visibility_q(
     return child_is_normal_q(
         parent_prefix=parent_prefix, override_field=override_field
     ) | restricted_participation_q(scope, prefix=parent_prefix)
+
+
+def projected_visibility_q(
+    scope: Scope,
+    *,
+    kind_field: str,
+    kind_overrides: dict[str, str | None],
+    parent_prefix: str = "matter__",
+) -> Q:
+    """Visibility for a table whose rows describe *different* kinds of source.
+
+    The search projection holds one row per Matter, per Entry, per Submission
+    and per document fragment, and each kind's own restriction lives in a
+    different table. Stage 2A deferred child content partly because that looked
+    like it would force a union of differently-scoped querysets — and a count
+    taken across a union is a count that can disagree with the rows beside it
+    (docs/adr/0013).
+
+    It does not. ``kind_overrides`` maps each kind to the field path that
+    reaches its live override, and the whole thing collapses into one ``Q``
+    over one queryset:
+
+        (parent is normal AND this row's own child is normal) OR participation
+
+    which is exactly ``child_visibility_q`` with the second half selected by
+    kind. Every override is read from the child's current row through a join, so
+    restricting a document takes effect on the next query with no reindex — the
+    property this codebase has refused to trade away twice now
+    (docs/adr/0005, 0013, 0014).
+
+    A kind mapped to ``None`` has no child of its own; the parent's visibility
+    is the whole answer. A kind absent from the mapping is not matched at all,
+    because authorization whitelists and an unrecognised source kind is not a
+    reason to show somebody a row.
+    """
+    if not scope.is_authenticated:
+        return NOTHING
+    if scope.sees_all_restricted:
+        return Q()
+
+    clauses: list[Q] = []
+    for kind, override_field in kind_overrides.items():
+        clause = Q(**{kind_field: kind})
+        if override_field is not None:
+            clause &= Q(**{f"{override_field}__in": UNRESTRICTED_OVERRIDE_VALUES})
+        clauses.append(clause)
+    if not clauses:
+        return NOTHING
+    child_is_normal = functools.reduce(operator.or_, clauses)
+
+    parent_is_normal = Q(**{f"{parent_prefix}visibility": Visibility.NORMAL})
+    return (parent_is_normal & child_is_normal) | restricted_participation_q(
+        scope, prefix=parent_prefix
+    )
 
 
 def effective_visibility_expression(
