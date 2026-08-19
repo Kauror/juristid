@@ -1,0 +1,96 @@
+# Juristid — synthetic rehearsal stack for the Unraid host.
+#
+# Additive and isolated by construction. Its own Compose project name, its own
+# bridge network, its own PostgreSQL, its own appdata tree. It joins no existing
+# network and touches no existing container, volume or port.
+#
+# SYNTHETIC DATA ONLY. This stack runs with DJANGO_DEBUG=1 so that the
+# development sign-in can work, which means it has no real authentication: any
+# visitor can sign in as any seeded user. That is acceptable for a rehearsal on
+# a trusted network with invented data, and it is exactly why the environment
+# file must keep REAL_DATA_ALLOWED=0 and why this must not be reachable from the
+# internet without an authenticating proxy in front of it.
+#
+# Always name both the file and the project explicitly, so a stray command can
+# never reach another stack on this host:
+#
+#   docker compose -p juristid-test -f compose.yml <command>
+
+name: juristid-test
+
+services:
+  db:
+    image: postgres:18
+    container_name: juristid-test-db
+    restart: unless-stopped
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-test/config/juristid.env}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-juristid}
+      POSTGRES_USER: ${POSTGRES_USER:-juristid}
+      # No POSTGRES_PASSWORD here: it comes from the env file above, which lives
+      # outside Git with restrictive permissions.
+    volumes:
+      # PostgreSQL 18 keeps its cluster in a major-version subdirectory
+      # (/var/lib/postgresql/18/docker), so the persistent mount belongs one
+      # level up. Mounting /var/lib/postgresql/data instead — the pattern from
+      # every PostgreSQL image up to 17 — produces a container that starts
+      # cleanly and stores nothing durable.
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/postgres:/var/lib/postgresql
+    networks:
+      - internal
+    # Deliberately no `ports:`. The database is reachable only from this
+    # project's network.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-juristid} -d ${POSTGRES_DB:-juristid}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: juristid-test-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-test-web
+    restart: unless-stopped
+    # The image's default CMD is gunicorn. It is repeated here so that reading
+    # this file answers "what actually serves requests" without a second lookup,
+    # and so nobody reintroduces `runserver` by editing one place.
+    command:
+      - gunicorn
+      - config.wsgi:application
+      - --bind
+      - 0.0.0.0:8000
+      - --workers
+      - "3"
+      - --timeout
+      - "60"
+      - --access-logfile
+      - "-"
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-test/config/juristid.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      EVIDENCE_ROOT: /app/evidence
+      # Migrations and seeding are controlled one-off steps, never container
+      # start-up work (master specification 24.2). A container that migrates on
+      # boot will happily migrate on a restart nobody intended.
+      SEED_DEV_DATA: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${JURISTID_HOST_PORT:-3020}:8000"
+    volumes:
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/evidence:/app/evidence
+    networks:
+      - internal
+
+networks:
+  internal:
+    name: juristid-test-internal
+    driver: bridge
