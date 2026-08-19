@@ -106,3 +106,41 @@ Recorded so they can be challenged rather than inherited silently.
    (ADR 0013).
 8. Entry and Submission text is not indexed in Stage 2A; the authorization work
    it needs belongs with the stage that brings document text (ADR 0013).
+
+## Decisions taken by the development agent in Stage 2B
+
+Recorded so they can be challenged rather than inherited silently. Parser
+choices are ADR material (ADR 0014); these are the ones with a product or
+security edge.
+
+1. Extracted text is **not** evidence, and the two are visibly separated
+   everywhere they appear together. A preview that reads as the source of
+   record is the provenance defect the whole stage is arranged to avoid.
+2. OCR is decided per page, not per file, and never runs where the page has its
+   own text. Where both exist the author's characters win, and every fragment
+   records which of the two it is.
+3. A DOCX match reports a section, a paragraph range or a table, and **never a
+   page**, because the format does not contain page boundaries.
+4. Email attachments become Documents with role `EMAIL_ATTACHMENT` and nothing
+   more specific. Mail arrives from ministries, members, associations and
+   colleagues alike, and a guessed role files half of them wrongly.
+5. Inline resources — signature logos, tracking pixels — are counted and do not
+   become Documents.
+6. Raw email HTML is never rendered. It is sanitised to text, and the original
+   message is one download away for anybody who needs the formatting.
+7. Every resource limit refuses rather than truncates. A partially extracted
+   legal document marked complete is worse than one marked failed.
+8. `SearchDocument` still stores no visibility. Child restrictions are read from
+   the live child row through a foreign key, which is what made Stage 2A's
+   deferral (item 8 above) safe to close.
+9. The OneNote tool ends at a neutral archive plus a reconciliation report.
+   Title similarity is a review queue and can never become an automatic match.
+
+## New decisions Stage 2B raises for Koda
+
+| Decision | Owner | When | Notes |
+| --- | --- | --- | --- |
+| Whether OCR text may be quoted in a submitted opinion, or must be checked against the original first | Department head | Before the Secure Pilot Gate | The system marks OCR text as OCR everywhere it appears. Whether that is a warning or a prohibition is a professional judgement, not a technical one. |
+| Whether legacy `.doc` and `.xls` are worth a conversion stack | Department head | When the archive's real composition is known | They are stored and downloadable today, and their contents are not searchable. The answer depends on how many of them there actually are. |
+| Whether a ZIP archive should ever be expanded into Documents | Department head + whoever owns security | Later | Stage 2B stores them whole and deliberately does not unpack. Expansion brings decompression limits, path handling and unclear business meaning, and nobody has yet asked for it. |
+| Retention for derived content, if it differs from the evidence it came from | Privacy/legal | With the retention policy | Derivatives are deleted and rebuilt freely today. If extracted text of member correspondence is itself subject to a retention rule, that rule needs saying. |
