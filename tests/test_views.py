@@ -16,10 +16,14 @@ def test_healthz_reports_database_connectivity(client):
     assert payload["database"] == "ok"
 
 
-def test_home_page_renders_for_anonymous_visitors(client):
+def test_home_page_renders_for_anonymous_visitors(client, settings):
+    """The doorway names the stage it is running, whatever that stage is."""
+    settings.APPLICATION_STAGE = "Stage 1"
     response = client.get(reverse("core:home"))
     assert response.status_code == 200
-    assert "Stage 0" in response.content.decode()
+    body = response.content.decode()
+    assert settings.APPLICATION_NAME in body
+    assert "Stage 1" in body
 
 
 def test_development_sign_in_is_absent_unless_explicitly_enabled(client, settings):
