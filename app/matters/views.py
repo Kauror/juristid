@@ -26,6 +26,7 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
@@ -33,6 +34,7 @@ from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
+from app.documents.uploads import UploadRejected
 from app.matters import selectors
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import RecordMode
@@ -60,12 +62,18 @@ from app.matters.services import (
 )
 from app.matters.timeline import matter_timeline
 from app.organisations.models import Organisation
+from app.submissions.enums import RecipientRole
 from app.submissions.forms import SubmissionCreateForm
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
 from app.workflow.enums import ActionKind, Disposition, Track
 from app.workflow.models import NextAction, StageVocabulary
-from app.workflow.services import complete_next_action, current_next_action, set_next_action
+from app.workflow.services import (
+    acknowledge_review,
+    complete_next_action,
+    current_next_action,
+    set_next_action,
+)
 
 PAGE_SIZE = 25
 TIMELINE_PAGE_SIZE = 30
@@ -108,6 +116,11 @@ def my_work(request: HttpRequest) -> HttpResponse:
             "waiting": waiting,
             "waiting_due": [action for action in waiting if action.is_due_for_review(today)],
             "attention": attention,
+            "without_next_action": list(
+                selectors.matters_without_next_action(request.user).filter(
+                    owner_id=request.user.pk
+                )[:20]
+            ),
             "active_matters": active,
             "active_count": selectors.my_active_matters(request.user).count(),
             "nav_active": "minu_too",
@@ -144,6 +157,98 @@ def inbox(request: HttpRequest) -> HttpResponse:
 # Teemad
 # ---------------------------------------------------------------------------
 
+
+#: Human labels for the filter chips. The chip and the query string are built
+#: from the same place, so what is on screen cannot disagree with the URL.
+FILTER_LABELS = {
+    "ulatus": "Ulatus",
+    "vastutaja": "Vastutaja",
+    "hetkeseis": "Hetkeseis",
+    "menetlusliik": "Menetlusliik",
+    "valdkond": "Valdkond",
+    "silt": "Silt",
+    "liik": "Kirje liik",
+}
+
+STATUS_SEGMENTS = (
+    ("avatud", "Avatud"),
+    ("suletud", "Suletud"),
+    ("arhiiv", "Arhiiv"),
+    ("koik", "Kõik"),
+)
+
+
+def _segment_queryset(user: Any, key: str) -> Any:
+    """The population one segment counts, scoped before the count is taken."""
+    base = Matter.objects.visible_to(user)
+    if key == "avatud":
+        return base.filter(is_open=True)
+    if key == "suletud":
+        return base.filter(is_open=False)
+    if key == "arhiiv":
+        return base.filter(record_mode=RecordMode.ARCHIVE)
+    return base
+
+
+def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
+    current = params.get("olek", "avatud")
+    options = []
+    for key, label in STATUS_SEGMENTS:
+        query = params.copy()
+        query["olek"] = key
+        query.pop("leht", None)
+        options.append(
+            {
+                "key": key,
+                "label": label,
+                "active": current == key,
+                "count": _segment_queryset(request.user, key).count(),
+                "query": query.urlencode(),
+            }
+        )
+    return options
+
+
+def _filter_display(request: HttpRequest, name: str, value: str) -> str:
+    """Show the reader a name, not a primary key."""
+    if name == "vastutaja":
+        person = User.objects.filter(pk=value).first()
+        return person.display_name if person else value
+    if name == "hetkeseis":
+        stage = StageVocabulary.objects.filter(key=value).first()
+        return stage.label_et if stage else value
+    if name == "menetlusliik":
+        return dict(Track.choices).get(value, value)
+    if name == "valdkond":
+        area = PolicyArea.objects.filter(key=value).first()
+        return area.name_et if area else value
+    if name == "liik":
+        return dict(RecordMode.choices).get(value, value)
+    if name == "ulatus":
+        return "Minu omad" if value == "minu" else "Kõik nähtavad"
+    return value
+
+
+def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
+    chips = []
+    for name, label in FILTER_LABELS.items():
+        value = params.get(name, "")
+        if not value or (name == "ulatus" and value == "koik"):
+            continue
+        without = params.copy()
+        without.pop(name, None)
+        without.pop("leht", None)
+        chips.append(
+            {
+                "name": name,
+                "label": label,
+                "value": _filter_display(request, name, value),
+                "remove_query": without.urlencode(),
+            }
+        )
+    return chips
+
+
 SORT_FIELDS = {
     "reference": ("-reference_year", "-reference_number"),
     "title": ("title",),
@@ -163,6 +268,8 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         queryset = queryset.filter(is_open=True)
     elif status == "suletud":
         queryset = queryset.filter(is_open=False)
+    elif status == "arhiiv":
+        queryset = queryset.filter(record_mode=RecordMode.ARCHIVE)
 
     scope = params.get("ulatus", "koik")
     if scope == "minu":
@@ -202,6 +309,8 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             "paginator": paginator,
             "total": paginator.count,
             "query_string": query_without_page.urlencode(),
+            "status_options": _status_options(request, params),
+            "active_filters": _active_filters(request, params),
             "filters": {
                 "olek": status,
                 "ulatus": scope,
@@ -297,13 +406,17 @@ def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     context.update(_header_context(request, matter))
     context["tab"] = "ulevaade"
     context["nav_active"] = "teemad"
-    context["dispositions"] = Disposition.choices
     return render(request, "matters/matter_detail.html", context)
 
 
 def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     return {
         "matter": matter,
+        "submission_count": Submission.objects.filter(matter=matter)
+        .visible_to(request.user)
+        .count(),
+        "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
+        "dispositions": Disposition.choices,
         "owners": User.objects.filter(is_active=True).order_by("display_name"),
         "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "organisations": Organisation.objects.order_by("name"),
@@ -323,13 +436,27 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
     placeholder that looks like a feature is worse than an honest gap.
     """
     matter = get_visible_matter(request, pk)
-    submissions = (
+    submissions = list(
         Submission.objects.filter(matter=matter)
         .visible_to(request.user)
         .select_related("final_version", "sent_by")
-        .prefetch_related("recipients", "joint_submitters")
+        .prefetch_related(
+            "recipient_rows__organisation",
+            "joint_submitter_rows__organisation",
+        )
         .order_by("-sent_at", "-created_at")
     )
+    # Split the recipients by role in Python off the prefetch, rather than
+    # issuing two more queries per card.
+    for submission in submissions:
+        rows = list(submission.recipient_rows.all())
+        submission.addressee_list = [
+            row.organisation for row in rows if row.role == RecipientRole.ADDRESSEE
+        ]
+        submission.information_list = [
+            row.organisation for row in rows if row.role == RecipientRole.FOR_INFORMATION
+        ]
+        submission.joint_rows = list(submission.joint_submitter_rows.all())
     context = _header_context(request, matter)
     context.update(
         {
@@ -383,6 +510,7 @@ def _render_overview(request: HttpRequest, matter: Matter, status: int = 200) ->
     never show different pictures of the same save.
     """
     context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
     return render(request, "matters/partials/overview.html", context, status=status)
 
 
@@ -391,10 +519,11 @@ def _render_overview(request: HttpRequest, matter: Matter, status: int = 200) ->
 def compose(request: HttpRequest, pk: Any) -> HttpResponse:
     """The unified composer save. Entry and `Järgmiseks` land together."""
     matter = get_visible_matter(request, pk)
-    form = ComposerForm(request.POST)
+    form = ComposerForm(request.POST, request.FILES)
 
     if not form.is_valid():
         context = _overview_context(request, matter)
+        context.update(_header_context(request, matter))
         context["composer_form"] = form
         return render(request, "matters/partials/overview.html", context, status=400)
 
@@ -407,9 +536,11 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
             occurred_at=form.cleaned_data.get("occurred_at"),
             organisation=form.cleaned_data.get("organisation"),
             next_action=form.next_action_kwargs(),
+            attachment=form.cleaned_data.get("attachment"),
         )
-    except DomainError as error:
+    except (DomainError, UploadRejected) as error:
         context = _overview_context(request, matter)
+        context.update(_header_context(request, matter))
         context["composer_form"] = form
         context["composer_error"] = str(error)
         return render(request, "matters/partials/overview.html", context, status=400)
@@ -426,6 +557,7 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
 
     if not form.is_valid():
         context = _overview_context(request, matter)
+        context.update(_header_context(request, matter))
         context["action_form"] = form
         return render(request, "matters/partials/overview.html", context, status=400)
 
@@ -433,6 +565,7 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
         set_next_action(matter=matter, actor=request.user, **form.as_service_kwargs())
     except DomainError as error:
         context = _overview_context(request, matter)
+        context.update(_header_context(request, matter))
         context["composer_error"] = str(error)
         return render(request, "matters/partials/overview.html", context, status=400)
 
@@ -450,8 +583,35 @@ def complete_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpRespon
         complete_next_action(action=action, actor=request.user)
     except DomainError as error:
         context = _overview_context(request, matter)
+        context.update(_header_context(request, matter))
         context["composer_error"] = str(error)
         return render(request, "matters/partials/overview.html", context, status=400)
+    return _render_overview(request, matter)
+
+
+@login_required
+@require_http_methods(["POST"])
+def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """Record that a WAIT or MONITOR was checked, and when to check again.
+
+    Reviewing is not completing: the Matter is still waiting on the same thing,
+    so the action keeps its identity and only its review date moves.
+    """
+    matter = get_visible_matter(request, pk)
+    action = get_object_or_404(
+        NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
+    )
+    raw_date = request.POST.get("next_review_date", "").strip()
+    next_review_date = parse_date(raw_date) if raw_date else None
+
+    try:
+        acknowledge_review(action=action, actor=request.user, next_review_date=next_review_date)
+    except DomainError as error:
+        context = _overview_context(request, matter)
+        context.update(_header_context(request, matter))
+        context["composer_error"] = str(error)
+        return render(request, "matters/partials/overview.html", context, status=400)
+
     return _render_overview(request, matter)
 
 

@@ -18,6 +18,9 @@ from app.audit.services import record_change_event
 from app.core.enums import Visibility, validate_visibility_override
 from app.core.errors import DomainError
 from app.core.richtext import excerpt, is_empty, sanitize_entry_html
+from app.documents.enums import DocumentRole
+from app.documents.services import add_evidence_version, create_document
+from app.documents.uploads import read_upload
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.models import Entry, EntryRevision, Matter, MatterReferenceSequence
@@ -524,6 +527,7 @@ def compose_update(
     occurred_at: Any = None,
     organisation: Any = None,
     next_action: dict[str, Any] | None = None,
+    attachment: Any = None,
 ) -> tuple[Entry | None, Any]:
     """The unified composer: one save, one transaction.
 
@@ -535,7 +539,7 @@ def compose_update(
     the action did not, the lawyer would believe both landed while the work
     queue quietly disagreed with the record.
     """
-    if not body.strip() and not next_action:
+    if not body.strip() and not next_action and attachment is None:
         raise DomainError("Täida sissekanne või järgmiseks.")
 
     entry = None
@@ -547,6 +551,25 @@ def compose_update(
             kind=kind,
             occurred_at=occurred_at,
             organisation=organisation,
+        )
+
+    if attachment is not None:
+        # An attachment is evidence like any other: same immutability, same
+        # checksum, same provenance. It is captured inside this transaction, so
+        # a failed save leaves neither the note nor the file behind.
+        upload = read_upload(attachment)
+        document = create_document(
+            matter=matter,
+            title=upload.filename,
+            role=DocumentRole.OTHER,
+            created_by=author,
+        )
+        add_evidence_version(
+            document=document,
+            content=upload.content,
+            original_filename=upload.filename,
+            mime_type=upload.mime_type,
+            uploaded_by=author,
         )
 
     action = None

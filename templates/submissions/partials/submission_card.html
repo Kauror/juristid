@@ -1,0 +1,117 @@
+{% comment %}
+One submission. Status is a labelled badge, never a tint alone, and a sent
+submission carries its evidence block: the exact file, its checksum, and a link
+that goes through the authorization-checked download route.
+{% endcomment %}
+<article class="submission {% if submission.status == 'SUPERSEDED' %}submission--superseded{% endif %}">
+  <div class="submission__head">
+    <span class="badge badge--{{ submission.status|lower }}">{{ submission.get_status_display }}</span>
+    <h3 class="submission__title">{{ submission.title }}</h3>
+    <span class="submission__kind">{{ submission.get_kind_display }}</span>
+  </div>
+
+  <dl class="submission__meta">
+    {% if submission.sent_at %}
+      <div>
+        <dt>Saadetud</dt>
+        <dd>
+          <time datetime="{{ submission.sent_at|date:'c' }}">
+            {{ submission.sent_at|date:"d.m.Y H:i" }}
+          </time>
+        </dd>
+      </div>
+    {% endif %}
+    {% comment %}
+      Addressee and "teadmiseks" are shown apart. Only the addressees answer the
+      question a reporting count asks — who Koda formally wrote to.
+    {% endcomment %}
+    {% if submission.addressee_list %}
+      <div>
+        <dt>Adressaat</dt>
+        <dd>
+          {% for organisation in submission.addressee_list %}{{ organisation.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+        </dd>
+      </div>
+    {% endif %}
+    {% if submission.information_list %}
+      <div>
+        <dt>Teadmiseks</dt>
+        <dd>
+          {% for organisation in submission.information_list %}{{ organisation.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+        </dd>
+      </div>
+    {% endif %}
+    {% if submission.channel %}
+      <div><dt>Kanal</dt><dd>{{ submission.channel }}</dd></div>
+    {% endif %}
+    {% if submission.reference %}
+      <div><dt>Viide</dt><dd>{{ submission.reference }}</dd></div>
+    {% endif %}
+  </dl>
+
+  {% if submission.joint_rows %}
+    <p class="entrycard__meta">
+      <span>Kaasesitajad:</span>
+      {% for row in submission.joint_rows %}
+        <span>
+          {{ row.organisation.name }}
+          {% if row.confirmed %}
+            <span class="badge badge--evidence">kinnitatud</span>
+          {% else %}
+            {% comment %} A joint letter is only joint once the co-signatory agrees. {% endcomment %}
+            <span class="badge badge--draft">kinnitamata</span>
+          {% endif %}
+        </span>
+      {% endfor %}
+    </p>
+  {% endif %}
+
+  {% if submission.final_version %}
+    <div class="evidenceblock">
+      <span>
+        <span class="badge badge--evidence">Tõend</span>
+        <a href="{% url 'documents:download' pk=submission.final_version.pk %}">
+          {{ submission.final_version.original_filename }}
+        </a>
+        <span class="muted">
+          v{{ submission.final_version.version_number }} ·
+          {{ submission.final_version.size_bytes|filesizeformat }}
+        </span>
+      </span>
+      <span class="evidenceblock__hash">
+        Täpne saadetud fail · SHA-256 {{ submission.final_version.sha256|slice:":16" }}…
+      </span>
+    </div>
+  {% endif %}
+
+  {% if submission.status == "DRAFT" %}
+    {% if not submission.final_version %}
+      <form class="inlineform" method="post" enctype="multipart/form-data"
+            action="{% url 'submissions:attach_evidence' pk=submission.pk %}">
+        {% csrf_token %}
+        <label class="field field--inline">
+          <span class="field__label">Lõplik saadetud fail</span>
+          <input class="field__input" type="file" name="upload" required
+                 aria-label="Lõplik saadetud fail">
+        </label>
+        <button class="button" type="submit">Lisa lõplik tõend</button>
+      </form>
+    {% else %}
+      <form class="inlineform" method="post"
+            action="{% url 'submissions:mark_sent' pk=submission.pk %}">
+        {% csrf_token %}
+        <label class="field field--inline">
+          <span class="field__label">Kanal</span>
+          <input class="field__input field__input--compact" type="text" name="channel"
+                 value="{{ submission.channel }}" placeholder="EIS, e-post…">
+        </label>
+        <button class="button button--primary" type="submit">Märgi saadetuks</button>
+      </form>
+    {% endif %}
+  {% elif submission.status == "SENT" %}
+    <form method="post" action="{% url 'submissions:withdraw' pk=submission.pk %}">
+      {% csrf_token %}
+      <button class="button button--quiet" type="submit">Võta tagasi</button>
+    </form>
+  {% endif %}
+</article>

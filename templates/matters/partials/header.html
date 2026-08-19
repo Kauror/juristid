@@ -1,40 +1,55 @@
 {% comment %}
-The Matter header. Core facts are editable in place: changing an owner should
-not mean opening an edit page and re-submitting every other value.
+The Matter header band: identity, state, the facts that matter at a glance, and
+the tabs.
 
-Each control posts one field to one service function and swaps this header back
-in, so what is on screen is always what was saved.
+Core facts are editable in place. The affordance is a dashed underline that
+strengthens on hover, so the strip reads as information first and as a form only
+when someone reaches for it — changing an owner should not mean opening an edit
+page and re-submitting every other value.
 {% endcomment %}
 <header class="matterhead" id="teema-pais">
-  <div class="matterhead__identity">
+  <p class="matterhead__crumbs">
+    <a href="{% url 'matters:matter_list' %}">Teemad</a>
+    <span aria-hidden="true">/</span>
     {% if matter.display_reference %}
-      <span class="reference reference--large">{{ matter.display_reference }}</span>
+      <span class="reference">{{ matter.display_reference }}</span>
+    {% else %}
+      <span class="muted">viiteta</span>
     {% endif %}
-    <h1 class="matterhead__title">{{ matter.title }}</h1>
-    <div class="rowflags">
-      {% if matter.record_mode == "ARCHIVE" %}<span class="badge badge--archive">Arhiivikirje</span>{% endif %}
-      {% if matter.is_restricted %}<span class="badge badge--restricted">Piiratud nähtavus</span>{% endif %}
+
+    <span class="matterhead__state">
       {% if matter.is_open %}
-        <span class="badge badge--open">Avatud</span>
+        <span class="badge badge--state badge--open">
+          <span class="badge__dot" aria-hidden="true"></span>Avatud
+        </span>
       {% else %}
-        <span class="badge badge--closed">Suletud — {{ matter.get_disposition_display }}</span>
+        <span class="badge badge--state badge--closed">Suletud</span>
       {% endif %}
-    </div>
-  </div>
+      {% if matter.record_mode == "ARCHIVE" %}
+        <span class="badge badge--archive">Arhiiv</span>
+      {% endif %}
+      {% if matter.is_restricted %}
+        <span class="badge badge--restricted">🔒 Piiratud</span>
+      {% endif %}
+    </span>
+  </p>
+
+  <h1 class="matterhead__title">{{ matter.title }}</h1>
 
   {% if field_error %}
     <p class="formerror" role="alert">{{ field_error }}</p>
   {% endif %}
 
-  <dl class="factgrid">
-    <div class="fact">
-      <dt class="fact__label">Hetkeseis</dt>
-      <dd class="fact__value">
-        <form hx-post="{% url 'matters:update_field' pk=matter.pk field='stage' %}"
+  <dl class="metastrip">
+    <div class="metafield">
+      <dt class="metafield__label">Hetkeseis</dt>
+      <dd class="metafield__value">
+        <form class="inlineform"
+              hx-post="{% url 'matters:update_field' pk=matter.pk field='stage' %}"
               hx-target="#teema-pais" hx-swap="outerHTML">
           {% csrf_token %}
           <select class="field__input field__input--compact" name="stage"
-                  aria-label="Hetkeseis" onchange="this.form.requestSubmit()">
+                  aria-label="Hetkeseis" data-autosubmit>
             <option value="">—</option>
             {% for stage in stages %}
               <option value="{{ stage.pk }}" {% if matter.stage_id == stage.pk %}selected{% endif %}>
@@ -48,14 +63,15 @@ in, so what is on screen is always what was saved.
       </dd>
     </div>
 
-    <div class="fact">
-      <dt class="fact__label">Vastutaja</dt>
-      <dd class="fact__value">
-        <form hx-post="{% url 'matters:update_field' pk=matter.pk field='owner' %}"
+    <div class="metafield">
+      <dt class="metafield__label">Vastutaja</dt>
+      <dd class="metafield__value">
+        <form class="inlineform"
+              hx-post="{% url 'matters:update_field' pk=matter.pk field='owner' %}"
               hx-target="#teema-pais" hx-swap="outerHTML">
           {% csrf_token %}
           <select class="field__input field__input--compact" name="owner"
-                  aria-label="Vastutaja" onchange="this.form.requestSubmit()">
+                  aria-label="Vastutaja" data-autosubmit>
             <option value="">Määramata</option>
             {% for person in owners %}
               <option value="{{ person.pk }}" {% if matter.owner_id == person.pk %}selected{% endif %}>
@@ -69,15 +85,31 @@ in, so what is on screen is always what was saved.
       </dd>
     </div>
 
-    <div class="fact">
-      {% comment %} Source and addressee are separate facts, never merged. {% endcomment %}
-      <dt class="fact__label">Algataja / saatja</dt>
-      <dd class="fact__value">
-        <form hx-post="{% url 'matters:update_field' pk=matter.pk field='source_organisation' %}"
+    <div class="metafield">
+      <dt class="metafield__label">Arvamuse tähtaeg</dt>
+      <dd class="metafield__value">
+        <form class="inlineform"
+              hx-post="{% url 'matters:update_field' pk=matter.pk field='response_deadline' %}"
+              hx-target="#teema-pais" hx-swap="outerHTML">
+          {% csrf_token %}
+          <input class="field__input field__input--compact" type="date" name="response_deadline"
+                 aria-label="Arvamuse tähtaeg" value="{{ matter.response_deadline|date:'Y-m-d' }}">
+          <button class="button button--quiet button--tiny" type="submit"
+                  aria-label="Salvesta tähtaja muudatus">Salvesta</button>
+        </form>
+      </dd>
+    </div>
+
+    <div class="metafield">
+      {% comment %} KELLELT and KELLELE are different facts, never merged. {% endcomment %}
+      <dt class="metafield__label">Kellelt</dt>
+      <dd class="metafield__value">
+        <form class="inlineform"
+              hx-post="{% url 'matters:update_field' pk=matter.pk field='source_organisation' %}"
               hx-target="#teema-pais" hx-swap="outerHTML">
           {% csrf_token %}
           <select class="field__input field__input--compact" name="source_organisation"
-                  aria-label="Algataja või saatja" onchange="this.form.requestSubmit()">
+                  aria-label="Algataja või saatja" data-autosubmit>
             <option value="">—</option>
             {% for organisation in organisations %}
               <option value="{{ organisation.pk }}"
@@ -92,14 +124,15 @@ in, so what is on screen is always what was saved.
       </dd>
     </div>
 
-    <div class="fact">
-      <dt class="fact__label">Adressaat</dt>
-      <dd class="fact__value">
-        <form hx-post="{% url 'matters:update_field' pk=matter.pk field='addressee_organisation' %}"
+    <div class="metafield">
+      <dt class="metafield__label">Kellele</dt>
+      <dd class="metafield__value">
+        <form class="inlineform"
+              hx-post="{% url 'matters:update_field' pk=matter.pk field='addressee_organisation' %}"
               hx-target="#teema-pais" hx-swap="outerHTML">
           {% csrf_token %}
           <select class="field__input field__input--compact" name="addressee_organisation"
-                  aria-label="Adressaat" onchange="this.form.requestSubmit()">
+                  aria-label="Adressaat" data-autosubmit>
             <option value="">—</option>
             {% for organisation in organisations %}
               <option value="{{ organisation.pk }}"
@@ -114,52 +147,21 @@ in, so what is on screen is always what was saved.
       </dd>
     </div>
 
-    <div class="fact">
-      <dt class="fact__label">Saabus</dt>
-      <dd class="fact__value">
-        <form hx-post="{% url 'matters:update_field' pk=matter.pk field='received_date' %}"
+    <div class="metafield">
+      <dt class="metafield__label">Saabus</dt>
+      <dd class="metafield__value">
+        <form class="inlineform"
+              hx-post="{% url 'matters:update_field' pk=matter.pk field='received_date' %}"
               hx-target="#teema-pais" hx-swap="outerHTML">
           {% csrf_token %}
           <input class="field__input field__input--compact" type="date" name="received_date"
-                 aria-label="Saabumise kuupäev"
-                 value="{{ matter.received_date|date:'Y-m-d' }}">
+                 aria-label="Saabumise kuupäev" value="{{ matter.received_date|date:'Y-m-d' }}">
           <button class="button button--quiet button--tiny" type="submit"
                   aria-label="Salvesta saabumise kuupäeva muudatus">Salvesta</button>
         </form>
       </dd>
     </div>
-
-    <div class="fact">
-      <dt class="fact__label">Arvamuse tähtaeg</dt>
-      <dd class="fact__value">
-        <form hx-post="{% url 'matters:update_field' pk=matter.pk field='response_deadline' %}"
-              hx-target="#teema-pais" hx-swap="outerHTML">
-          {% csrf_token %}
-          <input class="field__input field__input--compact" type="date" name="response_deadline"
-                 aria-label="Arvamuse tähtaeg"
-                 value="{{ matter.response_deadline|date:'Y-m-d' }}">
-          <button class="button button--quiet button--tiny" type="submit"
-                  aria-label="Salvesta tähtaja muudatus">Salvesta</button>
-        </form>
-      </dd>
-    </div>
-
-    {% if matter.policy_areas.all %}
-      <div class="fact">
-        <dt class="fact__label">Valdkonnad</dt>
-        <dd class="fact__value">
-          {% for area in matter.policy_areas.all %}<span class="tag">{{ area.name_et }}</span>{% endfor %}
-        </dd>
-      </div>
-    {% endif %}
-
-    {% if matter.tags.all %}
-      <div class="fact">
-        <dt class="fact__label">Sildid</dt>
-        <dd class="fact__value">
-          {% for tag in matter.tags.all %}<span class="tag">{{ tag.name_et }}</span>{% endfor %}
-        </dd>
-      </div>
-    {% endif %}
   </dl>
+
+  {% include "matters/partials/tabs.html" %}
 </header>

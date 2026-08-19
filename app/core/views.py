@@ -46,20 +46,22 @@ def home(request: HttpRequest) -> HttpResponse:
 
 
 SURFACE_TOKENS = (
-    "--surface-canvas",
-    "--surface-primary",
+    "--surface-base",
+    "--surface-nav",
     "--surface-raised",
-    "--surface-overlay",
-    "--surface-selected",
+    "--surface-panel",
+    "--surface-elevated",
     "--surface-hover",
+    "--surface-selected",
     "--surface-document",
 )
 
 TEXT_TOKENS = (
     "--text-primary",
+    "--text-body",
     "--text-secondary",
     "--text-muted",
-    "--text-link",
+    "--accent-link",
 )
 
 

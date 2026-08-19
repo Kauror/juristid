@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}{{ application_name }}{% endblock %}</title>
+    <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
     <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
@@ -16,8 +17,10 @@
     <div class="app">
       <header class="topbar">
         <a class="topbar__brand" href="{% url 'core:home' %}">
-          <span class="topbar__mark" aria-hidden="true">KÕ</span>
-          <span class="topbar__name">{{ application_name }}</span>
+          <img class="topbar__logo"
+               src="{% static 'brand/koda-logo-negative.png' %}"
+               alt="Eesti Kaubandus-Tööstuskoda">
+          <span class="topbar__product">ÕIGUSLOOME</span>
         </a>
 
         {% if user.is_authenticated %}
@@ -33,34 +36,37 @@
                href="{% url 'matters:matter_list' %}">Teemad</a>
           </nav>
 
-          <form class="globalsearch" role="search" method="get" action="{% url 'search:search' %}">
-            <label class="visually-hidden" for="global-search">Otsi teemasid</label>
-            <input class="globalsearch__input"
+          <span class="topbar__spacer"></span>
+
+          <form class="searchfield" role="search" method="get" action="{% url 'search:search' %}">
+            <label class="visually-hidden" for="global-search">Otsi teemat, viidet või asutust</label>
+            <input class="searchfield__input"
                    id="global-search"
                    type="search"
                    name="q"
                    value="{{ query|default:'' }}"
-                   placeholder="Otsi viidet või pealkirja…"
+                   placeholder="Otsi teemat, viidet, asutust…"
                    autocomplete="off">
-            <kbd class="globalsearch__hint" aria-hidden="true">Ctrl K</kbd>
+            <kbd class="searchfield__hint" aria-hidden="true">Ctrl K</kbd>
             <button class="visually-hidden" type="submit">Otsi</button>
           </form>
-        {% endif %}
 
-        <div class="topbar__meta">
+          <a class="button button--primary" href="{% url 'matters:matter_create' %}">+ Uus teema</a>
+
           {% if not real_data_allowed %}
-            <span class="badge badge--warning" title="Selles keskkonnas on lubatud ainult sünteetilised andmed">
-              Sünteetilised andmed
-            </span>
+            <span class="badge badge--restricted"
+                  title="Selles keskkonnas on lubatud ainult sünteetilised andmed">Sünteetilised</span>
           {% endif %}
-          {% if user.is_authenticated %}
-            <span class="topbar__user">{{ user.display_name }}</span>
-            <form method="post" action="{% url 'accounts:sign_out' %}">
-              {% csrf_token %}
-              <button type="submit" class="button button--quiet">Välju</button>
-            </form>
-          {% endif %}
-        </div>
+
+          <span class="avatar" title="{{ user.display_name }}">{{ user.initials }}</span>
+
+          <form method="post" action="{% url 'accounts:sign_out' %}">
+            {% csrf_token %}
+            <button type="submit" class="button button--quiet">Välju</button>
+          </form>
+        {% else %}
+          <span class="topbar__spacer"></span>
+        {% endif %}
       </header>
 
       {% if messages %}

@@ -18,7 +18,13 @@ from app.core.enums import Visibility
 from app.matters.entry_enums import EntryKind
 from app.organisations.models import Organisation
 from app.taxonomy.models import PolicyArea, Tag
-from app.workflow.enums import ActionKind, DateSemantics, Disposition, Track
+from app.workflow.enums import (
+    ActionKind,
+    DatePrecision,
+    DateSemantics,
+    Disposition,
+    Track,
+)
 from app.workflow.models import StageVocabulary
 
 
@@ -186,6 +192,7 @@ class NextActionForm(forms.Form):
             "kind": self.cleaned_data["kind"],
             "date_semantics": self.cleaned_data["date_semantics"],
             "target_date": self.cleaned_data.get("target_date"),
+            "date_precision": self.cleaned_data.get("date_precision") or DatePrecision.EXACT,
             "responsible": self.cleaned_data.get("responsible"),
         }
 
@@ -222,6 +229,12 @@ class ComposerForm(forms.Form):
     organisation = forms.ModelChoiceField(
         label="Asutus", queryset=Organisation.objects.none(), required=False, widget=SELECT_WIDGET
     )
+    attachment = forms.FileField(
+        label="Manus",
+        required=False,
+        widget=forms.ClearableFileInput(attrs={"class": "field__input"}),
+        help_text="Salvestatakse muutumatu tõendina teema dokumentide alla.",
+    )
 
     update_next_action = forms.BooleanField(
         label="Muuda ka Järgmiseks", required=False, widget=forms.CheckboxInput()
@@ -249,6 +262,14 @@ class ComposerForm(forms.Form):
         widget=SELECT_WIDGET,
     )
     next_target_date = forms.DateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
+    next_date_precision = forms.ChoiceField(
+        label="Täpsus",
+        choices=DatePrecision.choices,
+        initial=DatePrecision.EXACT,
+        required=False,
+        widget=SELECT_WIDGET,
+        help_text="Ligikaudse aja jaoks vali kuu või kvartal.",
+    )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -281,6 +302,7 @@ class ComposerForm(forms.Form):
             "kind": self.cleaned_data["next_kind"] or ActionKind.DO,
             "date_semantics": self.cleaned_data["next_date_semantics"] or DateSemantics.DEADLINE,
             "target_date": self.cleaned_data.get("next_target_date"),
+            "date_precision": self.cleaned_data.get("next_date_precision") or DatePrecision.EXACT,
         }
 
 

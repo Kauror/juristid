@@ -109,6 +109,9 @@ def test_recipients_and_joint_submitters_are_separate(normal_matter, specialist)
     )
     assert list(submission.recipients.all()) == [ministry]
     assert list(submission.joint_submitters.all()) == [partner]
+    # The roles are recorded, not just the links.
+    assert submission.recipient_rows.get().role == "ADDRESSEE"
+    assert submission.joint_submitter_rows.get().confirmed is False
 
 
 # -- sending ----------------------------------------------------------------

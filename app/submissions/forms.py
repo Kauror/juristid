@@ -31,12 +31,19 @@ class SubmissionCreateForm(forms.Form):
         required=False,
         widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "4"}),
     )
+    for_information = forms.ModelMultipleChoiceField(
+        label="Teadmiseks",
+        queryset=Organisation.objects.none(),
+        required=False,
+        widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "3"}),
+        help_text="Saajad, kellele saadetakse koopia. Neid ei loeta adressaatideks.",
+    )
     joint_submitters = forms.ModelMultipleChoiceField(
         label="Kaasesitajad",
         queryset=Organisation.objects.none(),
         required=False,
         widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "3"}),
-        help_text="Ühispöördumise puhul teised esitajad.",
+        help_text="Ühispöördumise puhul teised esitajad. Kinnitus märgitakse eraldi.",
     )
     channel = forms.CharField(
         label="Kanal",
@@ -49,6 +56,7 @@ class SubmissionCreateForm(forms.Form):
         super().__init__(*args, **kwargs)
         organisations = Organisation.objects.order_by("name")
         set_choices(self, "recipients", organisations)
+        set_choices(self, "for_information", organisations)
         set_choices(self, "joint_submitters", organisations)
 
 

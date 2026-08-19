@@ -18,7 +18,13 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
 from app.core.errors import DomainError
-from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
+from app.workflow.enums import (
+    REVIEW_KINDS,
+    ActionKind,
+    ActionStatus,
+    DatePrecision,
+    DateSemantics,
+)
 from app.workflow.models import NextAction
 
 
@@ -172,3 +178,45 @@ def end_open_action_for_closure(*, matter: Any, actor: Any = None) -> NextAction
     if action is None:
         return None
     return cancel_next_action(action=action, actor=actor, reason="Teema suleti")
+
+
+@transaction.atomic
+def acknowledge_review(
+    *,
+    action: NextAction,
+    actor: Any = None,
+    next_review_date: date | None = None,
+    date_precision: str = DatePrecision.EXACT,
+    note: str = "",
+) -> NextAction:
+    """Record that a WAIT or MONITOR was looked at, and when to look again.
+
+    Without this, a review date that has passed leaves the row permanently
+    "ripe": the only way to clear it is to edit the date, which looks like
+    changing the plan rather than doing the work of checking. Reviewing is not
+    completing — the Matter is still waiting on the same thing — so the action
+    stays open and keeps its identity.
+    """
+    if action.status != ActionStatus.OPEN:
+        raise DomainError("Ainult kehtivat tegevust saab üle vaadata.")
+    if action.kind not in REVIEW_KINDS:
+        raise DomainError("Üle vaadata saab ainult ootamist või jälgimist.")
+
+    previous = action.target_date
+    action.target_date = next_review_date
+    action.date_precision = date_precision
+    action.save(update_fields=["target_date", "date_precision", "updated_at"])
+
+    record_change_event(
+        event_type=ChangeEventType.NEXT_ACTION_REVIEWED,
+        matter=action.matter,
+        actor=actor,
+        obj=action,
+        summary=note[:200] or action.text[:200],
+        payload={
+            "from": previous.isoformat() if previous else None,
+            "to": next_review_date.isoformat() if next_review_date else None,
+            "kind": action.kind,
+        },
+    )
+    return action

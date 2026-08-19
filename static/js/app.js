@@ -1,16 +1,18 @@
 /*
- * Two small behaviours. Everything else is server-rendered HTML and HTMX.
+ * Small behaviours only. Everything else is server-rendered HTML and HTMX.
  *
  * The rule this file follows: nothing here is the only way to do anything.
- * Every shortcut has a visible control, and the page works with JavaScript
- * disabled (master specification 17.7).
+ * Every shortcut has a visible control, every disclosure is driven by a real
+ * form control, and the page works with JavaScript disabled — the optional
+ * composer fields simply start visible instead of hidden
+ * (master specification 17.7).
  */
 (function () {
   "use strict";
 
   /* ---- Ctrl/Cmd+K focuses the global search ------------------------------
-   * Focus, not a command palette. The search field is already visible on
-   * every page; the shortcut saves a reach for the mouse and nothing more.
+   * Focus, not a command palette. The field is already visible on every page;
+   * the shortcut saves a reach for the mouse and nothing more.
    */
   document.addEventListener("keydown", function (event) {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -23,41 +25,84 @@
     }
   });
 
-  /* ---- Composer: Ctrl/Cmd+Enter submits ---------------------------------- */
+  /* ---- Composer: Ctrl/Cmd+Enter submits, Esc closes optional fields ------ */
   document.addEventListener("keydown", function (event) {
-    if (!(event.ctrlKey || event.metaKey) || event.key !== "Enter") {
+    var composer = event.target.closest ? event.target.closest("form[data-composer]") : null;
+    if (!composer) {
       return;
     }
-    var composer = event.target.closest("form[data-composer]");
-    if (composer) {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
       event.preventDefault();
       composer.requestSubmit();
+      return;
+    }
+    if (event.key === "Escape") {
+      composer.querySelectorAll("[data-reveals]").forEach(function (trigger) {
+        var target = document.getElementById(trigger.getAttribute("data-reveals"));
+        if (target && !target.hidden) {
+          target.hidden = true;
+          trigger.classList.remove("is-active");
+        }
+      });
     }
   });
 
-  /* ---- Disclosure toggles ------------------------------------------------
-   * A plain <details> element would do most of this, but the composer needs
-   * the checkbox state to reach the server, so the panel is driven by the
-   * checkbox that is already being submitted.
+  /* ---- Progressive disclosure --------------------------------------------
+   * Two kinds. A "reveals" button shows an optional block; a "toggles"
+   * checkbox does the same but its state is submitted with the form, which is
+   * what lets one save carry both an entry and a Järgmiseks change.
    */
-  function syncToggle(toggle) {
+  function syncCheckbox(toggle) {
     var target = document.getElementById(toggle.getAttribute("data-toggles"));
     if (target) {
       target.hidden = !toggle.checked;
     }
+    var chip = toggle.closest("[data-toggle-chip]");
+    if (chip) {
+      chip.classList.toggle("is-active", toggle.checked);
+    }
   }
 
-  function bindToggles(root) {
-    (root || document).querySelectorAll("[data-toggles]").forEach(function (toggle) {
-      syncToggle(toggle);
+  function bind(root) {
+    var scope = root || document;
+
+    scope.querySelectorAll("[data-toggles]").forEach(function (toggle) {
+      syncCheckbox(toggle);
       toggle.addEventListener("change", function () {
-        syncToggle(toggle);
+        syncCheckbox(toggle);
+      });
+    });
+
+    scope.querySelectorAll("[data-reveals]").forEach(function (trigger) {
+      trigger.addEventListener("click", function () {
+        var target = document.getElementById(trigger.getAttribute("data-reveals"));
+        if (!target) {
+          return;
+        }
+        target.hidden = !target.hidden;
+        trigger.classList.toggle("is-active", !target.hidden);
+        if (!target.hidden) {
+          var first = target.querySelector("input, select, textarea");
+          if (first) {
+            first.focus();
+          }
+        }
+      });
+    });
+
+    /* An inline header edit commits on change; the visible Salvesta button
+       remains for keyboard users and for anyone with JS disabled. */
+    scope.querySelectorAll("[data-autosubmit]").forEach(function (control) {
+      control.addEventListener("change", function () {
+        if (control.form) {
+          control.form.requestSubmit();
+        }
       });
     });
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    bindToggles(document);
+    bind(document);
   });
 
   /* A rejected save returns 400 with the surface re-rendered and the errors in
@@ -72,10 +117,6 @@
 
   /* HTMX replaces whole surfaces, so re-bind inside whatever just arrived. */
   document.body.addEventListener("htmx:afterSwap", function (event) {
-    bindToggles(event.target);
-    var focusTarget = event.target.querySelector("[data-autofocus]");
-    if (focusTarget) {
-      focusTarget.focus();
-    }
+    bind(event.target);
   });
 })();

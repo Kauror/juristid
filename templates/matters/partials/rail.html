@@ -1,0 +1,73 @@
+{% comment %}
+The facts rail: compact supporting facts that would clutter the header but are
+worth having in view. Not a wall of every database field — less common metadata
+stays behind the tabs (master specification 8.7).
+{% endcomment %}
+<aside class="rail" aria-label="Teema andmed">
+  <div class="railcard">
+    <span class="railcard__label">Teema andmed</span>
+    <p class="railcard__row">
+      <span class="railcard__key">Menetlusliik</span>
+      <span>{% if matter.track %}{{ matter.get_track_display }}{% else %}<span class="muted">—</span>{% endif %}</span>
+    </p>
+    <p class="railcard__row">
+      <span class="railcard__key">Kirje liik</span>
+      <span>{{ matter.get_record_mode_display }}</span>
+    </p>
+    <p class="railcard__row">
+      <span class="railcard__key">Aruandlusaasta</span>
+      <span>{% if matter.reporting_year %}{{ matter.reporting_year }}{% else %}<span class="muted">—</span>{% endif %}</span>
+    </p>
+    {% if matter.closed_at %}
+      <p class="railcard__row">
+        <span class="railcard__key">Suletud</span>
+        <span>{{ matter.closed_at|date:"d.m.Y" }}</span>
+      </p>
+    {% endif %}
+  </div>
+
+  {% if matter.policy_areas.all or matter.tags.all %}
+    <div class="railcard">
+      <span class="railcard__label">Valdkonnad ja sildid</span>
+      <p class="railcard__row" style="flex-wrap:wrap;gap:var(--spacing-1)">
+        {% for area in matter.policy_areas.all %}<span class="tag">{{ area.name_et }}</span>{% endfor %}
+        {% for tag in matter.tags.all %}<span class="tag">{{ tag.name_et }}</span>{% endfor %}
+      </p>
+    </div>
+  {% endif %}
+
+  {% if matter.collaborators.all %}
+    <div class="railcard">
+      <span class="railcard__label">Kaastöötajad</span>
+      {% for person in matter.collaborators.all %}
+        <p class="railcard__row"><span>{{ person.display_name }}</span></p>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  {% if matter.is_open %}
+    <details class="disclosure">
+      <summary class="disclosure__summary">Sulge teema</summary>
+      <p class="field__help">
+        Sulgemine tähendab, et Koda ei tegele teemaga enam aktiivselt. See on eraldi otsus
+        menetluse etapist — jõustunud akt ei sulge teemat automaatselt.
+      </p>
+      <form class="form" method="post" action="{% url 'matters:close' pk=matter.pk %}">
+        {% csrf_token %}
+        <label class="field">
+          <span class="field__label">Lõpetamise põhjus</span>
+          <select class="field__input" name="disposition" required>
+            {% for value, label in dispositions %}
+              <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field__label">Selgitus</span>
+          <textarea class="field__input" name="reason" rows="2"></textarea>
+        </label>
+        <button class="button button--danger" type="submit">Sulge teema</button>
+      </form>
+    </details>
+  {% endif %}
+</aside>

@@ -2,63 +2,59 @@
 {% block title %}Uus teema · {{ application_name }}{% endblock %}
 
 {% comment %}
-Only the title is required. Everything else sits behind a disclosure, because
-demanding metadata at capture time is exactly what keeps a spreadsheet open on
-the second monitor (master specification 3.8).
+Only the title is required. Everything else sits behind a dashed disclosure,
+because demanding metadata at capture time is exactly what keeps a spreadsheet
+open on the second monitor (master specification 3.8).
 {% endcomment %}
 
 {% block content %}
 <div class="page page--narrow">
-  <header class="page__head">
-    <h1 class="page__title">Uus teema</h1>
-    <p class="page__lead">Pealkiri on ainus kohustuslik väli. Ülejäänu saab lisada hiljem.</p>
-  </header>
+  <div class="pagehead">
+    <h1 class="pagehead__title">Uus teema</h1>
+    <span class="pagehead__context">Pealkiri on ainus kohustuslik väli.</span>
+  </div>
 
   <form class="form" method="post" action="{% url 'matters:matter_create' %}">
     {% csrf_token %}
 
     {% if form.non_field_errors %}
-      <div class="formerror" role="alert">{{ form.non_field_errors }}</div>
+      <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
     {% endif %}
 
-    <div class="field">
-      <label class="field__label field__label--large" for="{{ form.title.id_for_label }}">
-        {{ form.title.label }}
-      </label>
+    <label class="field">
+      <span class="field__label">{{ form.title.label }}</span>
       {{ form.title }}
-      {% if form.title.errors %}<p class="field__error">{{ form.title.errors|first }}</p>{% endif %}
-    </div>
+      {% if form.title.errors %}<span class="field__error">{{ form.title.errors|first }}</span>{% endif %}
+    </label>
 
     <details class="disclosure" {% if form.errors %}open{% endif %}>
-      <summary class="disclosure__summary">Täpsusta teema andmeid</summary>
-
+      <summary class="disclosure__summary">+ Täpsusta teema andmeid</summary>
       <div class="formgrid">
         {% for field in form %}
           {% if field.name != "title" %}
-            <div class="field">
-              <label class="field__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+            <label class="field">
+              <span class="field__label">{{ field.label }}</span>
               {{ field }}
-              {% if field.help_text %}<p class="field__help">{{ field.help_text }}</p>{% endif %}
-              {% if field.errors %}<p class="field__error">{{ field.errors|first }}</p>{% endif %}
-            </div>
+              {% if field.help_text %}<span class="field__help">{{ field.help_text }}</span>{% endif %}
+              {% if field.errors %}<span class="field__error">{{ field.errors|first }}</span>{% endif %}
+            </label>
           {% endif %}
         {% endfor %}
       </div>
     </details>
 
     <details class="disclosure" {% if action_form.errors %}open{% endif %}>
-      <summary class="disclosure__summary">Määra kohe Järgmiseks</summary>
+      <summary class="disclosure__summary">+ Määra kohe Järgmiseks</summary>
       <p class="field__help">
         Kui tead juba, mis järgmiseks juhtuma peab, salvestub see koos teemaga.
       </p>
-
       <div class="formgrid">
         {% for field in action_form %}
-          <div class="field">
-            <label class="field__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+          <label class="field">
+            <span class="field__label">{{ field.label }}</span>
             {{ field }}
-            {% if field.errors %}<p class="field__error">{{ field.errors|first }}</p>{% endif %}
-          </div>
+            {% if field.errors %}<span class="field__error">{{ field.errors|first }}</span>{% endif %}
+          </label>
         {% endfor %}
       </div>
     </details>

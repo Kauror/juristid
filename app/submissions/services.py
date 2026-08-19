@@ -20,8 +20,12 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
 from app.documents.services import add_evidence_version, create_document
-from app.submissions.enums import SubmissionKind, SubmissionStatus
-from app.submissions.models import Submission
+from app.submissions.enums import RecipientRole, SubmissionKind, SubmissionStatus
+from app.submissions.models import (
+    Submission,
+    SubmissionJointSubmitter,
+    SubmissionRecipient,
+)
 
 
 @transaction.atomic
@@ -33,6 +37,7 @@ def create_submission(
     actor: Any = None,
     recipients: list[Any] | None = None,
     joint_submitters: list[Any] | None = None,
+    for_information: list[Any] | None = None,
     channel: str = "",
     reference: str = "",
     notes: str = "",
@@ -60,10 +65,17 @@ def create_submission(
         created_by=actor,
         visibility_override=visibility_override,
     )
-    if recipients:
-        submission.recipients.set(recipients)
-    if joint_submitters:
-        submission.joint_submitters.set(joint_submitters)
+    set_recipients(
+        submission=submission,
+        addressees=recipients or [],
+        for_information=for_information or [],
+        actor=None,
+        audit=False,
+    )
+    for organisation in joint_submitters or []:
+        SubmissionJointSubmitter.objects.get_or_create(
+            submission=submission, organisation=organisation
+        )
 
     record_change_event(
         event_type=ChangeEventType.SUBMISSION_CREATED,
@@ -220,7 +232,7 @@ def mark_submission_sent(
             "kind": locked.kind,
             "sent_at": locked.sent_at.isoformat(),
             "final_version": str(locked.final_version_id),
-            "recipients": [organisation.name for organisation in locked.recipients.all()],
+            "addressees": [organisation.name for organisation in addressees_of(locked)],
         },
     )
 
@@ -266,3 +278,83 @@ def supersede_submission(*, submission: Submission, actor: Any = None) -> Submis
         summary=submission.title[:200],
     )
     return submission
+
+
+@transaction.atomic
+def set_recipients(
+    *,
+    submission: Submission,
+    addressees: list[Any],
+    for_information: list[Any] | None = None,
+    actor: Any = None,
+    audit: bool = True,
+) -> Submission:
+    """Replace the recipient set, keeping the addressee/teadmiseks distinction.
+
+    Only addressees answer the question a reporting count asks — who Koda
+    formally wrote to. Copying a committee in is not the same act.
+    """
+    for_information = for_information or []
+    overlap = {organisation.pk for organisation in addressees} & {
+        organisation.pk for organisation in for_information
+    }
+    if overlap:
+        raise DomainError("Sama organisatsioon ei saa olla korraga adressaat ja teadmiseks saaja.")
+
+    SubmissionRecipient.objects.filter(submission=submission).delete()
+    rows = [
+        SubmissionRecipient(
+            submission=submission, organisation=organisation, role=RecipientRole.ADDRESSEE
+        )
+        for organisation in addressees
+    ] + [
+        SubmissionRecipient(
+            submission=submission, organisation=organisation, role=RecipientRole.FOR_INFORMATION
+        )
+        for organisation in for_information
+    ]
+    SubmissionRecipient.objects.bulk_create(rows)
+
+    if audit and rows:
+        record_change_event(
+            event_type=ChangeEventType.SUBMISSION_RECIPIENTS_CHANGED,
+            matter=submission.matter,
+            actor=actor,
+            obj=submission,
+            summary=submission.title[:200],
+            payload={
+                "addressees": [organisation.name for organisation in addressees],
+                "for_information": [organisation.name for organisation in for_information],
+            },
+        )
+    return submission
+
+
+@transaction.atomic
+def confirm_joint_submitter(
+    *, submission: Submission, organisation: Any, actor: Any = None
+) -> SubmissionJointSubmitter:
+    """Record that a co-signatory has actually agreed to sign.
+
+    A joint letter is only joint once the other association says so.
+    """
+    row = SubmissionJointSubmitter.objects.select_for_update().get(
+        submission=submission, organisation=organisation
+    )
+    if row.confirmed:
+        return row
+
+    row.confirmed = True
+    row.confirmed_at = timezone.now()
+    row.save(update_fields=["confirmed", "confirmed_at", "updated_at"])
+    return row
+
+
+def addressees_of(submission: Submission) -> list[Any]:
+    """The organisations Koda formally wrote to."""
+    return [
+        row.organisation
+        for row in submission.recipient_rows.filter(role=RecipientRole.ADDRESSEE).select_related(
+            "organisation"
+        )
+    ]

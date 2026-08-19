@@ -52,6 +52,7 @@ def create(request: HttpRequest, matter_id: Any) -> HttpResponse:
         kind=form.cleaned_data["kind"],
         actor=request.user,
         recipients=list(form.cleaned_data["recipients"]),
+        for_information=list(form.cleaned_data["for_information"]),
         joint_submitters=list(form.cleaned_data["joint_submitters"]),
         channel=form.cleaned_data["channel"],
     )

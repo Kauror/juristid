@@ -3,24 +3,23 @@
 
 {% comment %}
 Saabunud is a triage entry point, not a queue engine. Stage 1 gives it a strong
-"Uus teema" action and the unassigned open Matters. Machine intake and an
-IntakeItem model arrive only when there is a real feed to consume
+"Uus teema" action and the unassigned open Matters anyone can pick up. Machine
+intake and an IntakeItem model arrive only when there is a real feed to consume
 (master specification 7.3).
 {% endcomment %}
 
 {% block content %}
 <div class="page">
-  <header class="page__head">
-    <h1 class="page__title">Saabunud</h1>
-    <p class="page__lead">Alusta uut teemat või võta määramata teema enda peale.</p>
-    <a class="button button--primary" href="{% url 'matters:matter_create' %}">Uus teema</a>
-  </header>
+  <div class="pagehead">
+    <h1 class="pagehead__title">Saabunud</h1>
+    <span class="pagehead__context">Alusta uut teemat või võta määramata teema enda peale.</span>
+  </div>
 
-  <section class="panel panel--wide" aria-labelledby="maaramata-heading">
-    <div class="panel__head">
-      <h2 class="panel__title" id="maaramata-heading">Vastutajata teemad</h2>
-      <span class="panel__count">{{ unassigned|length }}</span>
-    </div>
+  <section aria-labelledby="maaramata-heading">
+    <h2 class="sectionlabel" id="maaramata-heading">
+      Vastutajata teemad
+      <span class="sectionlabel__count">{{ unassigned|length }}</span>
+    </h2>
     {% if unassigned %}
       {% include "matters/partials/matter_table.html" with matters=unassigned %}
     {% else %}
@@ -28,14 +27,15 @@ IntakeItem model arrive only when there is a real feed to consume
     {% endif %}
   </section>
 
-  <section class="panel panel--wide" aria-labelledby="hiljutised-heading">
-    <div class="panel__head">
-      <h2 class="panel__title" id="hiljutised-heading">Hiljuti loodud</h2>
-    </div>
+  <section aria-labelledby="hiljutised-heading">
+    <h2 class="sectionlabel" id="hiljutised-heading">Hiljuti loodud</h2>
     {% if recent %}
       {% include "matters/partials/matter_table.html" with matters=recent %}
     {% else %}
-      <p class="empty">Teemasid ei ole veel loodud.</p>
+      <p class="empty">
+        Teemasid ei ole veel loodud.
+        <a href="{% url 'matters:matter_create' %}">Loo esimene teema</a>.
+      </p>
     {% endif %}
   </section>
 </div>

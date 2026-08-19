@@ -85,6 +85,27 @@ class ActionStatus(models.TextChoices):
     SUPERSEDED = "SUPERSEDED", "Asendatud"
 
 
+#: Estonian month and period names, for rendering a date at the precision it
+#: was actually known to. "September 2026" is an honest rendering of an
+#: expectation; "01.09.2026" would invent a day nobody committed to.
+ESTONIAN_MONTHS: tuple[str, ...] = (
+    "jaanuar",
+    "veebruar",
+    "märts",
+    "aprill",
+    "mai",
+    "juuni",
+    "juuli",
+    "august",
+    "september",
+    "oktoober",
+    "november",
+    "detsember",
+)
+
+ROMAN_QUARTERS: tuple[str, ...] = ("I", "II", "III", "IV")
+
+
 #: Only this combination can be genuinely overdue.
 OVERDUE_KIND = ActionKind.DO
 OVERDUE_SEMANTICS = DateSemantics.DEADLINE

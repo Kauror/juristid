@@ -15,8 +15,8 @@ from django.db import models
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, scope_for_user
 from app.core.enums import Visibility
-from app.core.models import VisibilityInheritingModel
-from app.submissions.enums import SubmissionKind, SubmissionStatus
+from app.core.models import BaseModel, VisibilityInheritingModel
+from app.submissions.enums import RecipientRole, SubmissionKind, SubmissionStatus
 
 
 class SubmissionQuerySet(models.QuerySet):
@@ -52,12 +52,14 @@ class Submission(VisibilityInheritingModel):
 
     recipients = models.ManyToManyField(
         "organisations.Organisation",
+        through="submissions.SubmissionRecipient",
         blank=True,
         related_name="received_submissions",
-        verbose_name="adressaadid",
+        verbose_name="saajad",
     )
     joint_submitters = models.ManyToManyField(
         "organisations.Organisation",
+        through="submissions.SubmissionJointSubmitter",
         blank=True,
         related_name="joint_submissions",
         verbose_name="kaasesitajad",
@@ -153,3 +155,93 @@ class Submission(VisibilityInheritingModel):
     @property
     def has_final_evidence(self) -> bool:
         return self.final_version_id is not None
+
+
+class SubmissionRecipient(BaseModel):
+    """One organisation on a submission, and why it is there.
+
+    Addressee and "teadmiseks" are different facts. Only the addressees answer
+    the question a reporting count asks — who Koda formally wrote to.
+    """
+
+    submission = models.ForeignKey(
+        Submission,
+        on_delete=models.CASCADE,
+        related_name="recipient_rows",
+        verbose_name="arvamus",
+    )
+    organisation = models.ForeignKey(
+        "organisations.Organisation",
+        on_delete=models.PROTECT,
+        related_name="submission_recipient_rows",
+        verbose_name="organisatsioon",
+    )
+    role = models.CharField(
+        max_length=32,
+        choices=RecipientRole.choices,
+        default=RecipientRole.ADDRESSEE,
+        db_index=True,
+        verbose_name="roll",
+    )
+    note = models.CharField(max_length=200, blank=True, verbose_name="märkus")
+
+    class Meta:
+        verbose_name = "arvamuse saaja"
+        verbose_name_plural = "arvamuse saajad"
+        ordering = ["role", "organisation__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["submission", "organisation"],
+                name="submissions_unique_recipient_per_submission",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.organisation_id} ({self.role})"
+
+
+class SubmissionJointSubmitter(BaseModel):
+    """A co-signatory, and whether they have actually confirmed.
+
+    A joint letter is only joint once the other association agrees. Recording an
+    intended co-signatory as a confirmed one would overstate who stood behind
+    the text.
+    """
+
+    submission = models.ForeignKey(
+        Submission,
+        on_delete=models.CASCADE,
+        related_name="joint_submitter_rows",
+        verbose_name="arvamus",
+    )
+    organisation = models.ForeignKey(
+        "organisations.Organisation",
+        on_delete=models.PROTECT,
+        related_name="joint_submission_rows",
+        verbose_name="organisatsioon",
+    )
+    confirmed = models.BooleanField(default=False, verbose_name="kinnitatud")
+    confirmed_at = models.DateTimeField(null=True, blank=True, verbose_name="kinnitatud")
+    note = models.CharField(max_length=200, blank=True, verbose_name="märkus")
+
+    class Meta:
+        verbose_name = "kaasesitaja"
+        verbose_name_plural = "kaasesitajad"
+        ordering = ["organisation__name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["submission", "organisation"],
+                name="submissions_unique_joint_submitter",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(confirmed=False, confirmed_at__isnull=True)
+                    | models.Q(confirmed=True, confirmed_at__isnull=False)
+                ),
+                name="submissions_joint_confirmation_consistent",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        state = "kinnitatud" if self.confirmed else "ootel"
+        return f"{self.organisation_id} ({state})"

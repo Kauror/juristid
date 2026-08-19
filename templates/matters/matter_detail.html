@@ -2,42 +2,8 @@
 {% block title %}{{ matter.display_reference }} {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
 {% block content %}
-<div class="page page--matter">
+<div class="page">
   {% include "matters/partials/header.html" %}
-  {% include "matters/partials/tabs.html" %}
   {% include "matters/partials/overview.html" %}
-
-  {% if matter.is_open %}
-    <details class="disclosure disclosure--danger">
-      <summary class="disclosure__summary">Sulge teema</summary>
-      <p class="field__help">
-        Sulgemine tähendab, et Koda ei tegele teemaga enam aktiivselt. See on eraldi
-        otsus menetluse etapist — jõustunud akt ei sulge teemat automaatselt.
-      </p>
-      <form class="form" method="post" action="{% url 'matters:close' pk=matter.pk %}">
-        {% csrf_token %}
-        <div class="formgrid">
-          <label class="field">
-            <span class="field__label">Lõpetamise põhjus</span>
-            <select class="field__input" name="disposition" required>
-              {% for value, label in dispositions %}
-                <option value="{{ value }}">{{ label }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label class="field">
-            <span class="field__label">Selgitus</span>
-            <textarea class="field__input" name="reason" rows="2"></textarea>
-          </label>
-        </div>
-        <button class="button button--danger" type="submit">Sulge teema</button>
-      </form>
-    </details>
-  {% else %}
-    <form class="form" method="post" action="{% url 'matters:reopen' pk=matter.pk %}">
-      {% csrf_token %}
-      <button class="button button--secondary" type="submit">Taasava teema</button>
-    </form>
-  {% endif %}
 </div>
 {% endblock %}

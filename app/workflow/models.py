@@ -19,9 +19,11 @@ from app.core.authorization import child_visibility_q, scope_for_user
 from app.core.enums import Visibility
 from app.core.models import BaseModel, VisibilityInheritingModel
 from app.workflow.enums import (
+    ESTONIAN_MONTHS,
     OVERDUE_KIND,
     OVERDUE_SEMANTICS,
     REVIEW_KINDS,
+    ROMAN_QUARTERS,
     ActionKind,
     ActionStatus,
     DatePrecision,
@@ -340,6 +342,35 @@ class NextAction(VisibilityInheritingModel):
         if self.kind not in REVIEW_KINDS:
             return False
         return self.target_date <= (today or timezone.localdate())
+
+    @property
+    def display_date(self) -> str:
+        """The date rendered at the precision it was actually known to.
+
+        An EXPECTED_AROUND date is frequently a guess about someone else's
+        timetable — "some time in the autumn", "next quarter". Rendering that as
+        an exact day would manufacture a certainty the source never had, so the
+        stored precision decides the wording (master specification 3.5).
+        """
+        if self.target_date is None:
+            return ""
+
+        date_value = self.target_date
+        if self.date_precision == DatePrecision.YEAR:
+            return str(date_value.year)
+        if self.date_precision == DatePrecision.HALF_YEAR:
+            half = "I" if date_value.month <= 6 else "II"
+            return f"{half} poolaasta {date_value.year}"
+        if self.date_precision == DatePrecision.QUARTER:
+            quarter = ROMAN_QUARTERS[(date_value.month - 1) // 3]
+            return f"{quarter} kvartal {date_value.year}"
+        if self.date_precision == DatePrecision.MONTH:
+            return f"{ESTONIAN_MONTHS[date_value.month - 1]} {date_value.year}"
+        return date_value.strftime("%d.%m.%Y")
+
+    @property
+    def is_approximate(self) -> bool:
+        return self.date_precision != DatePrecision.EXACT
 
     @property
     def date_label(self) -> str:

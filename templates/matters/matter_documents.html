@@ -2,128 +2,137 @@
 {% block title %}Dokumendid · {{ matter.display_reference }} · {{ application_name }}{% endblock %}
 
 {% comment %}
-Evidence and working documents are shown apart and labelled differently on
-purpose. A mutable SharePoint file is not evidence until a specific version has
-been captured, and the interface must never suggest otherwise
+Evidence and working documents are shown apart and look different on purpose.
+Immutable evidence reads as authoritative — solid, green-bordered, with its
+checksum. A SharePoint working file is dashed and marked as living: it is not
+evidence until a specific version has been captured
 (master specification 8.6, 15.3).
 {% endcomment %}
 
 {% block content %}
-<div class="page page--matter">
+<div class="page">
   {% include "matters/partials/header.html" %}
-  {% include "matters/partials/tabs.html" %}
 
-  <section class="panel panel--wide" aria-labelledby="toendid-heading">
-    <div class="panel__head">
-      <h2 class="panel__title" id="toendid-heading">Tõendid</h2>
-      <span class="panel__count">{{ evidence_documents|length }}</span>
-    </div>
-    <p class="panel__note">
-      Muutumatud originaalid. Baidid ei muutu kunagi — parandus on uus versioon.
-    </p>
+  <div class="matterlayout">
+    <div class="mattermain">
+      {% include "matters/partials/matter_banner.html" %}
 
-    {% if evidence_documents %}
-      <div class="tablewrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th scope="col">Pealkiri</th>
-              <th scope="col">Roll</th>
-              <th scope="col">Fail</th>
-              <th scope="col">Tüüp</th>
-              <th scope="col">Suurus</th>
-              <th scope="col">Versioone</th>
-              <th scope="col">Lisatud</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for document in evidence_documents %}
-              <tr>
-                <td class="table__title">
-                  {{ document.title }}
-                  {% if document.is_restricted %}<span class="badge badge--restricted">Piiratud</span>{% endif %}
-                </td>
-                <td>{{ document.get_role_display }}</td>
-                <td>
-                  {% if document.current_version %}
-                    <a href="{% url 'documents:download' pk=document.current_version.pk %}">
-                      {{ document.current_version.original_filename }}
-                    </a>
-                  {% else %}
-                    <span class="muted">Tõendit ei ole</span>
-                  {% endif %}
-                </td>
-                <td class="muted">{{ document.current_version.mime_type|default:"—" }}</td>
-                <td class="table__number">
-                  {% if document.current_version %}{{ document.current_version.size_bytes|filesizeformat }}{% else %}—{% endif %}
-                </td>
-                <td class="table__number">{{ document.versions.count }}</td>
-                <td class="table__date">
-                  <time datetime="{{ document.created_at|date:'c' }}">{{ document.created_at|date:"d.m.Y" }}</time>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    {% else %}
-      <p class="empty">Tõendeid ei ole veel lisatud.</p>
-    {% endif %}
+      <section aria-labelledby="toendid-heading">
+        <h2 class="sectionlabel" id="toendid-heading">
+          Tõendid
+          <span class="sectionlabel__count">{{ evidence_documents|length }}</span>
+        </h2>
+        <p class="cardnote">Muutumatud originaalid. Baidid ei muutu kunagi — parandus on uus versioon.</p>
 
-    <details class="disclosure">
-      <summary class="disclosure__summary">Lisa tõend</summary>
-      <form class="form" method="post" enctype="multipart/form-data"
-            action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
-        {% csrf_token %}
-        <div class="formgrid">
-          <label class="field">
-            <span class="field__label">Pealkiri</span>
-            <input class="field__input" type="text" name="title" maxlength="400"
-                   placeholder="Jäta tühjaks, et kasutada failinime">
-          </label>
-          <label class="field">
-            <span class="field__label">Roll</span>
-            <select class="field__input" name="role">
-              {% for value, label in document_roles %}
-                <option value="{{ value }}">{{ label }}</option>
-              {% endfor %}
-            </select>
-          </label>
-          <label class="field">
-            <span class="field__label">Fail</span>
-            <input class="field__input" type="file" name="upload" required>
-            <span class="field__help">Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud.</span>
-          </label>
-        </div>
-        <button class="button button--primary" type="submit">Salvesta tõend</button>
-      </form>
-    </details>
-  </section>
+        {% if evidence_documents %}
+          <div class="tablewrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Pealkiri</th>
+                  <th scope="col">Roll</th>
+                  <th scope="col">Fail</th>
+                  <th scope="col">Suurus</th>
+                  <th scope="col">Versioone</th>
+                  <th scope="col">Lisatud</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for document in evidence_documents %}
+                  <tr>
+                    <td class="table__title">
+                      {{ document.title }}
+                      {% if document.is_restricted %}
+                        <span class="badge badge--restricted">Piiratud</span>
+                      {% endif %}
+                    </td>
+                    <td>{{ document.get_role_display }}</td>
+                    <td>
+                      {% if document.current_version %}
+                        <a href="{% url 'documents:download' pk=document.current_version.pk %}">
+                          {{ document.current_version.original_filename }}
+                        </a>
+                      {% else %}
+                        <span class="table__missing">Tõendit ei ole</span>
+                      {% endif %}
+                    </td>
+                    <td class="table__date">
+                      {% if document.current_version %}
+                        {{ document.current_version.size_bytes|filesizeformat }}
+                      {% else %}—{% endif %}
+                    </td>
+                    <td class="table__date">{{ document.versions.count }}</td>
+                    <td class="table__date">
+                      <span class="muted">{{ document.created_at|date:"d.m.Y" }}</span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="empty">Tõendeid ei ole veel lisatud.</p>
+        {% endif %}
 
-  <section class="panel panel--wide" aria-labelledby="toodokumendid-heading">
-    <div class="panel__head">
-      <h2 class="panel__title" id="toodokumendid-heading">Töödokumendid</h2>
-      <span class="panel__count">{{ working_documents|length }}</span>
-    </div>
-    <p class="panel__note">
-      Muudetavad SharePointi failid. Need ei ole tõendid enne, kui täpne versioon on jäädvustatud.
-    </p>
+        <details class="disclosure">
+          <summary class="disclosure__summary">+ Lisa tõend</summary>
+          <form class="form" method="post" enctype="multipart/form-data"
+                action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
+            {% csrf_token %}
+            <div class="formgrid">
+              <label class="field">
+                <span class="field__label">Pealkiri</span>
+                <input class="field__input" type="text" name="title" maxlength="400"
+                       placeholder="Jäta tühjaks, et kasutada failinime">
+              </label>
+              <label class="field">
+                <span class="field__label">Roll</span>
+                <select class="field__input" name="role">
+                  {% for value, label in document_roles %}
+                    <option value="{{ value }}">{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              <label class="field">
+                <span class="field__label">Fail</span>
+                <input class="field__input" type="file" name="upload" required>
+                <span class="field__help">Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud.</span>
+              </label>
+            </div>
+            <div class="form__actions">
+              <button class="button button--primary" type="submit">Salvesta tõend</button>
+            </div>
+          </form>
+        </details>
+      </section>
 
-    {% if working_documents %}
-      <ul class="documentlist">
+      <section aria-labelledby="toodokumendid-heading">
+        <h2 class="sectionlabel" id="toodokumendid-heading">
+          Töödokumendid
+          <span class="sectionlabel__count">{{ working_documents|length }}</span>
+        </h2>
+        <p class="cardnote">
+          Muudetavad SharePointi failid. Need ei ole tõendid enne, kui täpne versioon on jäädvustatud.
+        </p>
+
         {% for document in working_documents %}
-          <li class="documentrow">
-            <span class="badge badge--working">Töödokument — SharePoint</span>
-            <a href="{{ document.sharepoint_web_url }}" rel="noopener noreferrer">{{ document.title }}</a>
+          <p class="sharepointrow">
+            <span class="badge">Töödokument — SharePoint</span>
+            <a href="{{ document.sharepoint_web_url }}" rel="noopener noreferrer">
+              {{ document.title }} ↗
+            </a>
+            <span class="muted">elav fail</span>
             {% if document.sharepoint_observed_at %}
-              <span class="muted">viimati nähtud {{ document.sharepoint_observed_at|date:"d.m.Y" }}</span>
+              <span class="muted">· viimati nähtud {{ document.sharepoint_observed_at|date:"d.m.Y" }}</span>
             {% endif %}
-          </li>
+          </p>
+        {% empty %}
+          <p class="empty">Töödokumente ei ole seotud.</p>
         {% endfor %}
-      </ul>
-    {% else %}
-      <p class="empty">Töödokumente ei ole seotud.</p>
-    {% endif %}
-  </section>
+      </section>
+    </div>
+
+    {% include "matters/partials/rail.html" %}
+  </div>
 </div>
 {% endblock %}

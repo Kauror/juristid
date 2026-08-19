@@ -1,24 +1,33 @@
 {% comment %}
-One timeline projection over authored entries and selected change events.
+One timeline projection over authored entries and selected change events, in
+three shapes:
+
+* an authored entry is a card, because a person wrote it;
+* a system event is a one-line muted row, because the system recorded it;
+* a sent submission is a brand-soft card, because it is the outbound act the
+  whole file exists to produce.
+
 Security audit events never appear here: who downloaded what is a compliance
 record, not professional chronology (master specification 16.5).
 {% endcomment %}
 {% for item in timeline_items %}
   {% if item.is_entry %}
-    <article class="event event--entry">
-      <div class="event__gutter">
-        <span class="event__dot event__dot--entry" aria-hidden="true"></span>
-      </div>
-      <div class="event__body">
-        <p class="event__meta">
-          <span class="event__kind">{{ item.entry.get_kind_display }}</span>
+    <article class="entrycard">
+      <span class="avatar avatar--composer" aria-hidden="true">
+        {% if item.entry.author %}{{ item.entry.author.initials }}{% else %}··{% endif %}
+      </span>
+      <div class="entrycard__body">
+        <p class="entrycard__meta">
+          {% if item.entry.author %}
+            <span class="entrycard__author">{{ item.entry.author.display_name }}</span>
+          {% endif %}
+          <span class="entrytype">{{ item.entry.get_kind_display }}</span>
           <time datetime="{{ item.entry.occurred_at|date:'c' }}">
             {{ item.entry.occurred_at|date:"d.m.Y H:i" }}
           </time>
-          {% if item.entry.author %}<span class="event__actor">{{ item.entry.author.display_name }}</span>{% endif %}
-          {% if item.entry.organisation %}<span class="event__org">{{ item.entry.organisation.name }}</span>{% endif %}
+          {% if item.entry.organisation %}<span>{{ item.entry.organisation.name }}</span>{% endif %}
           {% if item.entry.was_edited %}
-            <span class="event__edited" title="Varasem sõnastus on säilitatud">muudetud</span>
+            <span title="Varasem sõnastus on säilitatud">muudetud</span>
           {% endif %}
         </p>
         {% comment %}
@@ -26,34 +35,46 @@ record, not professional chronology (master specification 16.5).
           fragment is safe to render. Nothing reaches this template that has not
           been through the allowlist.
         {% endcomment %}
-        <div class="event__text richtext">{{ item.entry.body|safe }}</div>
+        <div class="richtext">{{ item.entry.body|safe }}</div>
       </div>
     </article>
-  {% else %}
-    <article class="event event--system">
-      <div class="event__gutter">
-        <span class="event__dot" aria-hidden="true"></span>
-      </div>
-      <div class="event__body">
-        <p class="event__meta">
-          <span class="event__kind event__kind--system">{{ item.event.get_event_type_display }}</span>
-          <time datetime="{{ item.event.occurred_at|date:'c' }}">
-            {{ item.event.occurred_at|date:"d.m.Y H:i" }}
-          </time>
-          {% if item.event.actor %}<span class="event__actor">{{ item.event.actor.display_name }}</span>{% endif %}
-        </p>
-        {% if item.event.summary %}
-          <p class="event__summary">{{ item.event.summary }}</p>
+
+  {% elif item.event.event_type == "SUBMISSION_SENT" %}
+    <article class="submissionevent">
+      <p class="entrycard__meta">
+        <span class="submissionevent__label">Väljasaadetud · arvamus</span>
+        <time datetime="{{ item.event.occurred_at|date:'c' }}">
+          {{ item.event.occurred_at|date:"d.m.Y H:i" }}
+        </time>
+        {% if item.event.actor %}
+          <span class="entrycard__author">{{ item.event.actor.display_name }}</span>
         {% endif %}
-      </div>
+      </p>
+      <p class="workrow__action" style="white-space:normal">{{ item.event.summary }}</p>
+      {% if item.event.payload.addressees %}
+        <p class="entrycard__meta">
+          Saaja: {{ item.event.payload.addressees|join:", " }}
+        </p>
+      {% endif %}
     </article>
+
+  {% else %}
+    <p class="systemevent">
+      <span class="systemevent__dot" aria-hidden="true"></span>
+      <span class="systemevent__type">{{ item.event.get_event_type_display }}</span>
+      <time datetime="{{ item.event.occurred_at|date:'c' }}">
+        {{ item.event.occurred_at|date:"d.m.Y H:i" }}
+      </time>
+      {% if item.event.actor %}<span>{{ item.event.actor.display_name }}</span>{% endif %}
+      {% if item.event.summary %}<span>· {{ item.event.summary }}</span>{% endif %}
+    </p>
   {% endif %}
 {% empty %}
-  <p class="empty">Ajalugu on tühi. Esimene sissekanne ilmub siia.</p>
+  <p class="empty">Ajajoon on tühi. Esimene sissekanne ilmub siia.</p>
 {% endfor %}
 
 {% if timeline_has_more %}
-  <button class="button button--quiet timeline__more"
+  <button class="button button--quiet"
           hx-get="{% url 'matters:timeline_page' pk=matter.pk %}?nihe={{ next_offset }}"
           hx-target="this"
           hx-swap="outerHTML">

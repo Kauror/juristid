@@ -15,6 +15,7 @@ from typing import Any
 from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
 from django.utils import timezone
 
+from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
@@ -132,6 +133,22 @@ def my_waiting_actions(user: Any, today: date | None = None) -> list[NextAction]
     )
 
 
+def matters_without_next_action(user: Any) -> QuerySet[Matter]:
+    """Open FULL Matters carrying no current instruction.
+
+    This is the one attention state that cannot be derived from a date, which is
+    exactly why it needs a query of its own: without it a Matter simply stops
+    appearing anywhere and goes quiet (design handoff, recommendation 1).
+    """
+    has_open_action = NextAction.objects.filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
+    return (
+        matter_list_queryset(user)
+        .filter(is_open=True, record_mode=RecordMode.FULL)
+        .annotate(has_action=Exists(has_open_action))
+        .filter(has_action=False)
+    )
+
+
 @dataclass(frozen=True)
 class AttentionItem:
     """A deterministic, actionable data-quality problem.
@@ -156,8 +173,7 @@ def my_attention_items(user: Any, today: date | None = None) -> list[AttentionIt
         .select_related("stage")
     )
 
-    has_open_action = NextAction.objects.filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
-    for matter in owned.annotate(has_action=Exists(has_open_action)).filter(has_action=False)[:50]:
+    for matter in matters_without_next_action(user).filter(owner=user)[:50]:
         items.append(
             AttentionItem(
                 key="no_next_action",

@@ -1,0 +1,35 @@
+{% comment %}
+One DO row. The date cell carries both the number and what it means, because
+"21.08" alone does not say whether missing it matters.
+{% endcomment %}
+<a class="workrow {% if action.is_overdue %}workrow--overdue{% endif %}"
+   href="{% url 'matters:matter_detail' pk=action.matter.pk %}">
+  <span class="workrow__datecell">
+    <span class="workrow__date
+                 {% if action.is_overdue %}workrow__date--overdue
+                 {% elif action.target_date == today %}workrow__date--today{% endif %}">
+      {% if action.target_date == today %}täna
+      {% elif action.target_date %}{{ action.display_date|slice:":5" }}
+      {% else %}—{% endif %}
+    </span>
+    <span class="datemeaning">{{ action.date_label }}</span>
+  </span>
+
+  <span class="workrow__body">
+    <span class="workrow__action">{{ action.text }}</span>
+    <span class="workrow__matter">
+      {% if action.matter.display_reference %}
+        <span class="reference">{{ action.matter.display_reference }}</span> ·
+      {% endif %}
+      {{ action.matter.title }}
+    </span>
+  </span>
+
+  <span class="badge">
+    {% if action.matter.stage %}{{ action.matter.stage.label_et }}{% else %}Etapp määramata{% endif %}
+  </span>
+
+  <span class="avatar avatar--sm">
+    {% if action.responsible %}{{ action.responsible.initials }}{% else %}—{% endif %}
+  </span>
+</a>

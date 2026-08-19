@@ -26,3 +26,16 @@ class SubmissionStatus(models.TextChoices):
     SENT = "SENT", "Saadetud"
     WITHDRAWN = "WITHDRAWN", "Tagasi võetud"
     SUPERSEDED = "SUPERSEDED", "Asendatud"
+
+
+class RecipientRole(models.TextChoices):
+    """Why an organisation is on a submission.
+
+    The distinction is real Chamber practice: an opinion is addressed to the
+    ministry running the consultation, and copied to a committee or a partner
+    for information. Flattening both into one list would make "who did Koda
+    actually write to" unanswerable (design handoff, recommendation 4).
+    """
+
+    ADDRESSEE = "ADDRESSEE", "Adressaat"
+    FOR_INFORMATION = "FOR_INFORMATION", "Teadmiseks"

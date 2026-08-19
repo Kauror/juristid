@@ -1,11 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Arenduse sisselogimine — {{ application_name }}{% endblock %}
+{% block title %}Arenduse sisselogimine · {{ application_name }}{% endblock %}
 
 {% block content %}
+<div class="page page--narrow">
   <h1>Arenduse sisselogimine</h1>
 
-  <div class="notice notice--danger">
+  <div class="banner banner--restricted">
     <p>
       See sisselogimisviis eksisteerib ainult isoleeritud arenduskeskkonnas ja lubab sisse
       ainult sünteetilisi kasutajaid. Päris keskkonnas autenditakse Microsoft Entra ID kaudu.
@@ -13,11 +14,11 @@
   </div>
 
   {% if error %}
-    <div class="notice notice--danger" role="alert"><p>{{ error }}</p></div>
+    <div class="formerror" role="alert"><p>{{ error }}</p></div>
   {% endif %}
 
   {% if users %}
-    <form method="post" class="panel">
+    <form method="post" class="card" style="padding:var(--spacing-4)">
       {% csrf_token %}
       <fieldset>
         <legend>Vali sünteetiline kasutaja</legend>
@@ -31,14 +32,15 @@
           </p>
         {% endfor %}
       </fieldset>
-      <button type="submit" class="button">Logi sisse</button>
+      <button type="submit" class="button button--primary">Logi sisse</button>
     </form>
   {% else %}
-    <div class="panel">
+    <div class="empty">
       <p>
         Sünteetilisi kasutajaid ei ole. Loo need käsuga
         <code>python manage.py seed_dev_data</code>.
       </p>
     </div>
   {% endif %}
+</div>
 {% endblock %}

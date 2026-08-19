@@ -18,6 +18,11 @@ urlpatterns = [
         views.complete_action,
         name="complete_action",
     ),
+    path(
+        "teemad/<uuid:pk>/jargmiseks/<uuid:action_id>/vaadatud/",
+        views.review_action,
+        name="review_action",
+    ),
     path("teemad/<uuid:pk>/vali/<str:field>/", views.update_field, name="update_field"),
     path("teemad/<uuid:pk>/ajalugu/", views.timeline_page, name="timeline_page"),
     # Full-page posts

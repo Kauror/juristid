@@ -106,6 +106,16 @@ class User(AbstractBaseUser, PermissionsMixin, BaseModel):
     def __str__(self) -> str:
         return f"{self.display_name} ({self.upn})"
 
+    @property
+    def initials(self) -> str:
+        """Two letters for the avatar. Falls back to the UPN for odd names."""
+        parts = [part for part in self.display_name.split() if part]
+        if len(parts) >= 2:
+            return (parts[0][:1] + parts[-1][:1]).upper()
+        if parts:
+            return parts[0][:2].upper()
+        return self.upn[:2].upper()
+
     def get_full_name(self) -> str:
         return self.display_name
 
