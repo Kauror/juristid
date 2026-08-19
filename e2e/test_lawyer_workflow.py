@@ -73,7 +73,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     matter_url = page.url
 
     # It reaches Minu töö straight away.
-    page.get_by_role("link", name="Minu töö").click()
+    page.locator(".topnav__link", has_text="Minu töö").click()
     expect(
         page.locator(".workcolumn").first.get_by_text("Koosta ja saada koja arvamus")
     ).to_be_visible()
@@ -106,13 +106,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     screenshots(page, "05-komposer-jarel")
 
     # The Matter has moved from Teen to Ootan / kontrollin.
-    page.get_by_role("link", name="Minu töö").click()
+    page.locator(".topnav__link", has_text="Minu töö").click()
     waiting = page.locator("section", has=page.get_by_role("heading", name="Ootan ja kontrollin"))
     expect(waiting.get_by_text("Ootan ministeeriumi uut sõnastust")).to_be_visible()
 
     # -- Scenario C: a formal opinion with its exact evidence ------------
     page.goto(matter_url)
-    page.get_by_role("link", name="Seisukoht ja kaasamine").click()
+    page.locator(".tabs__tab", has_text="Seisukoht ja kaasamine").click()
     expect(page.get_by_role("heading", name="Koja seisukoht")).to_be_visible()
 
     page.locator("#id_position_summary").fill("Koda ei toeta pakendiaktsiisi kavandatud tõusu.")
@@ -161,7 +161,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator(".submission")).to_have_count(2)
 
     # -- Documents ------------------------------------------------------
-    page.get_by_role("link", name="Dokumendid").click()
+    page.locator(".tabs__tab", has_text="Dokumendid").click()
     expect(page.get_by_role("heading", name="Tõendid")).to_be_visible()
     expect(page.get_by_text("koja-arvamus.pdf").first).to_be_visible()
     expect(page.get_by_role("heading", name="Töödokumendid")).to_be_visible()
@@ -185,7 +185,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     )
 
     # -- Teemad ----------------------------------------------------------
-    page.get_by_role("link", name="Teemad").click()
+    page.locator(".topnav__link", has_text="Teemad").click()
     expect(page.get_by_role("heading", name="Teemad")).to_be_visible()
     expect(page.get_by_role("link", name=MATTER_TITLE)).to_be_visible()
     screenshots(page, "08-teemad")
@@ -206,7 +206,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator(".badge--archive").first).to_be_visible()
 
     # -- Scenario D: find it again ---------------------------------------
-    page.get_by_placeholder("Otsi viidet või pealkirja…").fill("pakendiseaduse")
+    page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill("pakendiseaduse")
     page.keyboard.press("Enter")
     expect(page.get_by_role("heading", name="Otsing")).to_be_visible()
     expect(page.get_by_role("link", name=re.compile("Pakendiseaduse"))).to_be_visible()
@@ -216,19 +216,19 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.get_by_role("heading", name=MATTER_TITLE)).to_be_visible()
 
     # The exact reference navigates straight to the file.
-    page.get_by_placeholder("Otsi viidet või pealkirja…").fill(reference)
+    page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill(reference)
     page.keyboard.press("Enter")
     expect(page.get_by_role("heading", name=MATTER_TITLE)).to_be_visible()
 
     # Ctrl+K focuses search rather than opening a command palette.
     page.keyboard.press("Control+k")
-    expect(page.get_by_placeholder("Otsi viidet või pealkirja…")).to_be_focused()
+    expect(page.get_by_placeholder("Otsi teemat, viidet, asutust…")).to_be_focused()
 
 
 def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(page, base_url):
     """A refused save must not half-apply, and must not discard what was typed."""
     sign_in(page, base_url, MARTIN)
-    page.get_by_role("link", name="Teemad").click()
+    page.locator(".topnav__link", has_text="Teemad").click()
     page.get_by_role("link", name="Tavaline avatud teema kõigile nähtav").click()
 
     page.locator(".composer__body").fill("See tekst peab alles jääma.")
@@ -251,12 +251,12 @@ class TestRestrictedMatterIsUnreachable:
 
     def test_the_owner_sees_it(self, page, base_url):
         sign_in(page, base_url, SANDRA)
-        page.get_by_role("link", name="Teemad").click()
+        page.locator(".topnav__link", has_text="Teemad").click()
         expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_be_visible()
 
     def test_the_department_head_sees_it(self, page, base_url):
         sign_in(page, base_url, HEAD)
-        page.get_by_role("link", name="Teemad").click()
+        page.locator(".topnav__link", has_text="Teemad").click()
         expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_be_visible()
 
     def test_an_unrelated_specialist_does_not(self, page, base_url):
@@ -266,11 +266,11 @@ class TestRestrictedMatterIsUnreachable:
         expect(page.get_by_text("Konfidentsiaalne järgmine samm")).to_have_count(0)
 
         # Not in the register.
-        page.get_by_role("link", name="Teemad").click()
+        page.locator(".topnav__link", has_text="Teemad").click()
         expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_have_count(0)
 
         # Not in search, and no snippet leaks.
-        page.get_by_placeholder("Otsi viidet või pealkirja…").fill("konfidentsiaalne")
+        page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill("konfidentsiaalne")
         page.keyboard.press("Enter")
         expect(page.get_by_text("Vasteid ei leitud", exact=False)).to_be_visible()
         assert RESTRICTED_TITLE not in page.content()
@@ -279,17 +279,17 @@ class TestRestrictedMatterIsUnreachable:
     def test_a_technical_administrator_does_not_either(self, page, base_url):
         """Administering the system is not permission to read the content."""
         sign_in(page, base_url, ADMIN)
-        page.get_by_role("link", name="Teemad").click()
+        page.locator(".topnav__link", has_text="Teemad").click()
         expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_have_count(0)
 
-        page.get_by_placeholder("Otsi viidet või pealkirja…").fill("konfidentsiaalne")
+        page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill("konfidentsiaalne")
         page.keyboard.press("Enter")
         assert RESTRICTED_TITLE not in page.content()
 
     def test_the_direct_url_is_not_reachable(self, page, base_url):
         """Guessing the address must behave exactly like the record not existing."""
         sign_in(page, base_url, SANDRA)
-        page.get_by_role("link", name="Teemad").click()
+        page.locator(".topnav__link", has_text="Teemad").click()
         page.get_by_role("link", name=RESTRICTED_TITLE).click()
         restricted_url = page.url
         sign_out(page, base_url)
