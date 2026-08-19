@@ -35,6 +35,12 @@ APPLICATION_ENVIRONMENT = "test"
 # production backend expects does not exist.
 STATIC_MANIFEST = False
 
+# In-process cache. The deployed settings use a database cache so that the PIN
+# lockout counter is shared between gunicorn workers; a test process has one
+# worker, so the reason does not apply, and this avoids needing
+# `createcachetable` before the suite can run.
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
+
 # Evidence written by tests goes to a throwaway directory, never the checkout.
 EVIDENCE_ROOT = Path(tempfile.mkdtemp(prefix="juristid-evidence-"))
 

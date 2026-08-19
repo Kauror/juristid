@@ -44,3 +44,44 @@ def test_a_clean_production_configuration_passes(settings):
     settings.DEV_LOGIN_ENABLED = False
     settings.REAL_DATA_ALLOWED = True
     assert _ids(settings) == set()
+
+
+# --------------------------------------------------------------------------
+# Language. Found by opening the deployed rehearsal in an ordinary browser:
+# LocaleMiddleware honours Accept-Language, Django ships an `en` locale, and an
+# English-language browser was served an Estonian interface with English dates
+# and English form errors. The browser suite never saw it because Chromium was
+# driven without a language preference.
+# --------------------------------------------------------------------------
+
+
+def test_the_product_offers_exactly_one_language():
+    """Estonian-first is a product decision, not a default (specification 3.10)."""
+    from django.conf import settings
+
+    assert settings.LANGUAGE_CODE == "et"
+    assert [code for code, _ in settings.LANGUAGES] == ["et"]
+
+
+def test_an_english_browser_still_gets_the_estonian_interface(client, settings):
+    """The regression itself, expressed as the request that exposed it."""
+    from django.utils import translation
+
+    settings.DEV_LOGIN_ENABLED = True
+    response = client.get("/", HTTP_ACCEPT_LANGUAGE="en-US,en;q=0.9,de;q=0.8")
+    assert response.status_code in {200, 302}
+    assert translation.get_language() == "et"
+
+
+def test_language_negotiation_cannot_reach_a_language_we_do_not_ship(client):
+    from django.utils.translation import get_language_from_request
+
+    class _Request:
+        META = {"HTTP_ACCEPT_LANGUAGE": "de,fr;q=0.9,en;q=0.8"}
+        COOKIES: dict[str, str] = {}
+        session: dict[str, str] = {}
+
+        def get_host(self):
+            return "testserver"
+
+    assert get_language_from_request(_Request()) == "et"
