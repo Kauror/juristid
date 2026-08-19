@@ -88,6 +88,7 @@ class Preview:
     email_fields: tuple[EmailField, ...] = ()
     is_image: bool = False
     ocr_used: bool = False
+    thumbnail_id: Any = None
     generator: str = ""
     generator_version: str = ""
     built_at: Any = None
@@ -173,8 +174,10 @@ def build_preview(version: DocumentVersion) -> Preview:
             text = ", ".join(value) if isinstance(value, list) else str(value)
             email_fields.append(EmailField(label=label, value=text))
 
+    thumbnail = active_derivative(version, DerivativeKind.THUMBNAIL)
     source = text_derivative or email_derivative
     return Preview(
+        thumbnail_id=thumbnail.pk if thumbnail is not None and thumbnail.storage_key else None,
         state=state,
         state_label=STATE_LABELS.get(state, state),
         state_tone=STATE_TONES.get(state, "quiet"),

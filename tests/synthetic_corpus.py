@@ -310,11 +310,12 @@ def _text_image(text: str, width: int = 900, height: int = 260):
     font is a fixture that fails on somebody else's machine.
     """
     from PIL import Image, ImageDraw
+    from PIL.Image import Resampling
 
     small = Image.new("RGB", (width // 4, height // 4), "white")
     draw = ImageDraw.Draw(small)
     draw.text((6, height // 12), text, fill="black")
-    return small.resize((width, height), Image.LANCZOS)
+    return small.resize((width, height), Resampling.LANCZOS)
 
 
 def scanned_png(text: str = ONLY_IN_OCR_IMAGE) -> bytes:

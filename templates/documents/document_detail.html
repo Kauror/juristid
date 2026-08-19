@@ -110,7 +110,19 @@
         </dl>
       {% endif %}
 
-      {% if preview.is_image %}
+      {% if preview.thumbnail_id %}
+        {% comment %}
+          A generated PNG, not the uploaded file. These bytes were produced by
+          Pillow from the original, so nothing interesting about the upload's
+          structure survived — which is why this one may be shown inline while
+          the original is always a download (app/documents/extraction/thumbnails.py).
+        {% endcomment %}
+        <figure class="thumbnail">
+          <img src="{% url 'documents:thumbnail' pk=preview.thumbnail_id %}"
+               alt="Dokumendi esimese lehe pisipilt" loading="lazy">
+          <figcaption>Masinaga loodud pisipilt, mitte originaal.</figcaption>
+        </figure>
+      {% elif preview.is_image %}
         <p class="cardnote">
           Pildifail. Ava originaal allalaadimise kaudu — Juristid ei kuva üleslaaditud
           faile lehel sees.

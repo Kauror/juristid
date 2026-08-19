@@ -274,3 +274,59 @@ def test_the_email_body_and_headers_are_both_searchable_text(email_version, extr
     assert "kirja sisu" in fragments
     assert "Kadri Näidis" in fragments["kirja päis"]
     assert corpus.ONLY_IN_EMAIL_BODY in fragments["kirja sisu"]
+
+
+# -- the thumbnail route ---------------------------------------------------
+
+
+def test_a_thumbnail_is_served_inline_and_the_original_never_is(
+    normal_matter, capture_evidence, extract, client, specialist
+) -> None:
+    """The whole point of generating one: the safe copy may be displayed.
+
+    The original keeps its attachment disposition, because it is somebody
+    else's bytes and always will be.
+    """
+    from app.documents.enums import DerivativeKind, DerivativeStatus
+    from app.documents.models import DocumentDerivative
+
+    version = capture_evidence(
+        normal_matter, corpus.government_pdf(), "kaaskiri.pdf", "application/pdf"
+    )
+    extract(version)
+    client.force_login(specialist)
+
+    thumbnail = DocumentDerivative.objects.get(
+        version=version, kind=DerivativeKind.THUMBNAIL, status=DerivativeStatus.ACTIVE
+    )
+    response = client.get(f"/dokumendid/pisipilt/{thumbnail.pk}/")
+
+    assert response.status_code == 200
+    assert response["Content-Type"] == "image/png"
+    assert response["X-Content-Type-Options"] == "nosniff"
+    assert "attachment" not in response.get("Content-Disposition", "")
+
+    original = client.get(f"/dokumendid/t%C3%B5end/{version.pk}/")
+    assert "attachment" in original["Content-Disposition"]
+
+
+def test_a_restricted_documents_thumbnail_is_not_served(
+    restricted_matter, capture_evidence, extract, client, other_specialist
+) -> None:
+    """A preview that leaked where a download did not would be the more
+    embarrassing of the two."""
+    from app.documents.enums import DerivativeKind, DerivativeStatus
+    from app.documents.models import DocumentDerivative
+
+    version = capture_evidence(
+        restricted_matter, corpus.government_pdf(), "salajane.pdf", "application/pdf"
+    )
+    extract(version)
+    client.force_login(other_specialist)
+
+    thumbnail = DocumentDerivative.objects.get(
+        version=version, kind=DerivativeKind.THUMBNAIL, status=DerivativeStatus.ACTIVE
+    )
+
+    assert client.get(f"/dokumendid/pisipilt/{thumbnail.pk}/").status_code == 404
+    assert client.get(f"/dokumendid/{version.document_id}/").status_code == 404

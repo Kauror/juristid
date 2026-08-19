@@ -2350,3 +2350,23 @@
   padding: 0 2px;
   border-radius: 2px;
 }
+
+.thumbnail {
+  margin: var(--spacing-3) 0 0;
+  max-width: 320px;
+}
+
+.thumbnail img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+}
+
+.thumbnail figcaption {
+  margin-top: var(--spacing-15);
+  color: var(--text-muted);
+  font-size: var(--typography-size-label);
+}

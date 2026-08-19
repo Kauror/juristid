@@ -448,3 +448,70 @@ def test_an_attachment_document_gets_its_own_role(normal_matter, capture_evidenc
 
     roles = set(normal_matter.documents.values_list("role", flat=True))
     assert DocumentRole.EMAIL_ATTACHMENT in roles
+
+
+# -- thumbnails ------------------------------------------------------------
+
+
+def test_a_pdf_gets_a_thumbnail_stored_apart_from_its_evidence(
+    pdf_version, extract, evidence_root
+) -> None:
+    extract(pdf_version)
+
+    thumbnail = DocumentDerivative.objects.get(
+        version=pdf_version, kind=DerivativeKind.THUMBNAIL, status=DerivativeStatus.ACTIVE
+    )
+    assert thumbnail.storage_key
+    assert thumbnail.metadata["format"] == "PNG"
+    # In the derivative store, and nowhere near the evidence.
+    assert (evidence_root / "derivatives" / thumbnail.storage_key).exists()
+    assert not (evidence_root / "evidence" / thumbnail.storage_key).exists()
+
+
+def test_a_thumbnail_is_a_generated_png_not_the_uploaded_bytes(pdf_version, extract) -> None:
+    """The reason one may be shown inline and the other may not.
+
+    These bytes were produced by Pillow from the original. Whatever was
+    interesting about the upload's structure did not survive the round trip.
+    """
+    from app.documents.extraction.orchestrator import derivative_storage
+
+    extract(pdf_version)
+    thumbnail = DocumentDerivative.objects.get(
+        version=pdf_version, kind=DerivativeKind.THUMBNAIL, status=DerivativeStatus.ACTIVE
+    )
+
+    with derivative_storage().open(thumbnail.storage_key, "rb") as handle:
+        content = handle.read()
+
+    assert content.startswith(b"\x89PNG\r\n\x1a\n")
+    assert content != pdf_version.storage_key.encode()
+    assert not content.startswith(b"%PDF")
+
+
+def test_discarding_derivatives_removes_the_stored_thumbnail(
+    pdf_version, extract, evidence_root
+) -> None:
+    extract(pdf_version)
+    key = DocumentDerivative.objects.get(
+        version=pdf_version, kind=DerivativeKind.THUMBNAIL
+    ).storage_key
+
+    discard_derivatives(pdf_version)
+
+    assert not (evidence_root / "derivatives" / key).exists()
+
+
+def test_a_thumbnail_failure_does_not_cost_the_extraction(
+    pdf_version, extract, monkeypatch
+) -> None:
+    """A missing thumbnail costs a preview tile. It must not cost the text."""
+    from app.documents.extraction import pdf as pdf_module
+
+    monkeypatch.setattr(pdf_module, "pdf_first_page_thumbnail", lambda content, limits: None)
+    report = extract(pdf_version)
+
+    assert report.state == ExtractionState.DONE
+    assert not DocumentDerivative.objects.filter(
+        version=pdf_version, kind=DerivativeKind.THUMBNAIL
+    ).exists()

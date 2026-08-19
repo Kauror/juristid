@@ -33,6 +33,7 @@ from app.documents.extraction.ocr import (
     ocr_is_available,
     recognise_image,
 )
+from app.documents.extraction.thumbnails import image_thumbnail
 
 #: Tried in order, and the list is short on purpose.
 #:
@@ -220,6 +221,11 @@ class ImageParser:
     def parse(self, source: SourceFile) -> ParseResult:
         limits = current_limits()
 
+        # Built first and kept whatever happens next. A photograph of a building
+        # is a perfectly valid piece of evidence with no text in it, and the
+        # useful thing to show for it is the picture.
+        thumbnail = image_thumbnail(source.content, limits)
+
         if not ocr_is_available():
             raise ExtractionFailed(
                 "ocr_unavailable",
@@ -238,23 +244,24 @@ class ImageParser:
             )
         guard_character_budget(len(text), limits)
 
-        return ParseResult(
-            derivatives=(
-                DerivativePayload(
-                    kind=DerivativeKind.OCR_TEXT,
-                    fragments=(
-                        Fragment(
-                            text=text,
-                            locator_kind=LocatorKind.BODY,
-                            locator={},
-                            locator_label="pildilt loetud tekst",
-                            text_source=TextSource.OCR,
-                        ),
+        payloads = [
+            DerivativePayload(
+                kind=DerivativeKind.OCR_TEXT,
+                fragments=(
+                    Fragment(
+                        text=text,
+                        locator_kind=LocatorKind.BODY,
+                        locator={},
+                        locator_label="pildilt loetud tekst",
+                        text_source=TextSource.OCR,
                     ),
-                    metadata={"ocr_engine": engine},
                 ),
+                metadata={"ocr_engine": engine},
             )
-        )
+        ]
+        if thumbnail is not None:
+            payloads.append(thumbnail)
+        return ParseResult(derivatives=tuple(payloads))
 
 
 registry.register(TextParser())

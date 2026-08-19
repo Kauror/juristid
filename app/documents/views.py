@@ -21,8 +21,9 @@ from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 from app.core.errors import DomainError
 from app.documents.email_intake import attachments_of, parent_email_of
-from app.documents.enums import DocumentRole
-from app.documents.models import Document, DocumentVersion
+from app.documents.enums import DerivativeKind, DerivativeStatus, DocumentRole
+from app.documents.extraction.orchestrator import derivative_storage
+from app.documents.models import Document, DocumentDerivative, DocumentVersion
 from app.documents.preview import build_preview
 from app.documents.services import add_evidence_version, create_document, evidence_storage
 from app.documents.uploads import UploadRejected, read_upload
@@ -144,6 +145,39 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
         if not version.original_filename.isascii()
         else f'attachment; filename="{version.original_filename}"'
     )
+    return response
+
+
+@login_required
+def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
+    """Serve a generated preview image, inline.
+
+    Inline is safe here and only here. These bytes were produced by this process
+    — decoded, resized and re-encoded through Pillow — so whatever was
+    interesting about the uploaded file's structure did not survive the round
+    trip. The original still goes out as an attachment, because it is somebody
+    else's bytes and always will be.
+
+    Same visibility scope as every other document route, so a restricted
+    document's thumbnail 404s exactly as its download does. A preview that
+    leaked where a download did not would be the more embarrassing of the two.
+    """
+    derivative = get_object_or_404(
+        DocumentDerivative.objects.filter(
+            kind=DerivativeKind.THUMBNAIL,
+            status=DerivativeStatus.ACTIVE,
+            version__document__in=Document.objects.visible_to(request.user),
+        ).exclude(storage_key=""),
+        pk=pk,
+    )
+
+    handle = derivative_storage().open(derivative.storage_key, "rb")
+    response = FileResponse(handle, content_type="image/png")
+    response["X-Content-Type-Options"] = "nosniff"
+    # Belt and braces: even a generated PNG is served under a policy that
+    # forbids scripts, so a hypothetical polyglot has nothing to execute.
+    response["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    response["Cache-Control"] = "private, max-age=300"
     return response
 
 

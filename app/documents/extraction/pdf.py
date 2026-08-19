@@ -35,6 +35,7 @@ from app.documents.extraction.ocr import (
     ocr_is_available,
     recognise_pil_image,
 )
+from app.documents.extraction.thumbnails import pdf_first_page_thumbnail
 
 logger = logging.getLogger(__name__)
 
@@ -144,22 +145,27 @@ class PdfParser:
             if ocr_pages == len(fragments)
             else DerivativeKind.EXTRACTED_TEXT
         )
-        return ParseResult(
-            derivatives=(
-                DerivativePayload(
-                    kind=kind,
-                    fragments=tuple(fragments),
-                    metadata={
-                        "page_count": page_count,
-                        "pages_with_text": len(fragments),
-                        "pages_from_ocr": ocr_pages,
-                        "ocr_engine": ocr_version,
-                        "ocr_languages": settings.EXTRACTION_OCR_LANGUAGES if ocr_pages else "",
-                    },
-                ),
-            ),
-            note=" ".join(notes),
-        )
+        payloads = [
+            DerivativePayload(
+                kind=kind,
+                fragments=tuple(fragments),
+                metadata={
+                    "page_count": page_count,
+                    "pages_with_text": len(fragments),
+                    "pages_from_ocr": ocr_pages,
+                    "ocr_engine": ocr_version,
+                    "ocr_languages": settings.EXTRACTION_OCR_LANGUAGES if ocr_pages else "",
+                },
+            )
+        ]
+        # The picture matters most exactly where the text is least trustworthy:
+        # on a scanned annex, the extracted text is a recognition guess and the
+        # first page is what a lawyer checks it against.
+        thumbnail = pdf_first_page_thumbnail(source.content, limits)
+        if thumbnail is not None:
+            payloads.append(thumbnail)
+
+        return ParseResult(derivatives=tuple(payloads), note=" ".join(notes))
 
 
 def _try_empty_password(reader: object) -> bool:
