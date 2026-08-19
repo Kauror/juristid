@@ -28,6 +28,7 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
+from app.core.enums import validate_visibility_override
 from app.core.errors import DomainError
 from app.core.ids import uuid7
 from app.documents.enums import DocumentRole, MalwareScanState
@@ -85,7 +86,13 @@ def create_document(
     **extra: Any,
 ) -> Document:
     if not title.strip():
-        raise DomainError("A document requires a title.")
+        raise DomainError("Dokument vajab pealkirja.")
+    if role not in DocumentRole.values:
+        raise DomainError(f"Tundmatu dokumendi roll {role!r}.")
+    try:
+        validate_visibility_override(visibility_override)
+    except ValueError as error:
+        raise DomainError(str(error)) from error
 
     document = Document(
         matter=matter,

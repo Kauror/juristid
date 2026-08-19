@@ -15,7 +15,7 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
-from app.core.enums import Visibility
+from app.core.enums import Visibility, validate_visibility_override
 from app.core.errors import DomainError
 from app.core.richtext import excerpt, is_empty, sanitize_entry_html
 from app.matters.entry_enums import EntryKind
@@ -59,6 +59,11 @@ def create_matter(
     """Create a Matter. Only the title is required (specification 3.8)."""
     if not title.strip():
         raise DomainError("Teema vajab pealkirja.")
+    if visibility not in Visibility.values:
+        raise DomainError(f"Tundmatu nähtavus {visibility!r}.")
+    track = extra.get("track", "")
+    if track and track not in Track.values:
+        raise DomainError(f"Tundmatu menetlusliik {track!r}.")
 
     year_number: tuple[int, int] | None = None
     if assign_reference:
@@ -335,11 +340,19 @@ def close_matter(
     into force with the file still open, and a file can close while the
     procedure continues elsewhere.
     """
-    if not matter.is_open:
-        raise DomainError("Teema on juba suletud.")
     if disposition not in Disposition.values:
         raise DomainError(f"Tundmatu lõpetamise põhjus {disposition!r}.")
 
+    # The same lock set_next_action takes, in the same order. Whichever
+    # transaction reaches the Matter row first wins: a closure that lands first
+    # makes the other call refuse, and a next action that lands first is
+    # cancelled by the closure. Neither ordering can leave a closed Matter
+    # carrying an open instruction (docs/adr/0011).
+    locked = Matter.objects.select_for_update().get(pk=matter.pk)
+    if not locked.is_open:
+        raise DomainError("Teema on juba suletud.")
+
+    matter = locked
     matter.is_open = False
     matter.disposition = disposition
     matter.disposition_reason = reason
@@ -424,6 +437,10 @@ def add_entry(
     """
     if kind not in EntryKind.values:
         raise DomainError(f"Tundmatu sissekande liik {kind!r}.")
+    try:
+        validate_visibility_override(visibility_override)
+    except ValueError as error:
+        raise DomainError(str(error)) from error
 
     clean_body = sanitize_entry_html(body)
     if is_empty(clean_body):
@@ -460,29 +477,41 @@ def edit_entry(*, entry: Entry, body: str, actor: Any = None) -> Entry:
     clean_body = sanitize_entry_html(body)
     if is_empty(clean_body):
         raise DomainError("Sissekanne vajab sisu.")
-    if clean_body == entry.body:
-        return entry
+
+    # Lock the row and re-read it before deciding anything. Two people editing
+    # the same entry at once would otherwise both compute the same revision
+    # number from a stale copy: one revision would collide, and one version of
+    # the wording would be lost. The second writer waits, then edits whatever is
+    # current by then.
+    locked = Entry.objects.select_for_update().get(pk=entry.pk)
+    if clean_body == locked.body:
+        return locked
 
     EntryRevision.objects.create(
-        entry=entry,
-        revision_number=entry.edit_count + 1,
-        body=entry.body,
+        entry=locked,
+        revision_number=locked.edit_count + 1,
+        body=locked.body,
         edited_by=actor,
     )
 
-    entry.body = clean_body
-    entry.edit_count += 1
-    entry.edited_at = timezone.now()
-    entry.save(update_fields=["body", "edit_count", "edited_at", "updated_at"])
+    locked.body = clean_body
+    locked.edit_count += 1
+    locked.edited_at = timezone.now()
+    locked.save(update_fields=["body", "edit_count", "edited_at", "updated_at"])
 
     record_change_event(
         event_type=ChangeEventType.ENTRY_EDITED,
-        matter=entry.matter,
+        matter=locked.matter,
         actor=actor,
-        obj=entry,
-        payload={"revision": entry.edit_count},
+        obj=locked,
+        payload={"revision": locked.edit_count},
     )
-    return entry
+
+    # Keep the caller's instance consistent with what was written.
+    entry.body = locked.body
+    entry.edit_count = locked.edit_count
+    entry.edited_at = locked.edited_at
+    return locked
 
 
 @transaction.atomic

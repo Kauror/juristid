@@ -11,6 +11,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any
 
+from django.apps import apps
 from django.db import transaction
 from django.utils import timezone
 
@@ -56,12 +57,25 @@ def set_next_action(
         raise DomainError(f"Tundmatu tegevuse liik {kind!r}.")
     if date_semantics not in DateSemantics.values:
         raise DomainError(f"Tundmatu kuupäeva tähendus {date_semantics!r}.")
-    if not matter.is_open:
+
+    # A deadline with no date cannot be met, missed, planned against or
+    # reported on. The form says so first for the user's sake, but the rule
+    # belongs here, where an importer or an integration also has to obey it.
+    if kind == ActionKind.DO and date_semantics == DateSemantics.DEADLINE and target_date is None:
+        raise DomainError("Tähtajaline tegevus vajab kuupäeva.")
+
+    # Lock the Matter, not just the action row. Closure and next-action changes
+    # both depend on the Matter's lifecycle state, so the Matter row is the
+    # concurrency boundary that keeps them from interleaving into a closed
+    # Matter that still carries an open instruction.
+    matter_model = apps.get_model("matters", "Matter")
+    locked_matter = matter_model.objects.select_for_update().get(pk=matter.pk)
+    if not locked_matter.is_open:
         raise DomainError("Suletud teemale ei saa järgmist tegevust määrata.")
 
     previous = (
         NextAction.objects.select_for_update()
-        .filter(matter=matter, status=ActionStatus.OPEN)
+        .filter(matter=locked_matter, status=ActionStatus.OPEN)
         .first()
     )
     if previous is not None:
@@ -71,14 +85,14 @@ def set_next_action(
         previous.save(update_fields=["status", "ended_at", "ended_by", "updated_at"])
 
     action = NextAction.objects.create(
-        matter=matter,
+        matter=locked_matter,
         text=text,
         kind=kind,
         date_semantics=date_semantics,
         target_date=target_date,
         date_precision=date_precision,
         source_text=source_text,
-        responsible=responsible or matter.owner,
+        responsible=responsible or locked_matter.owner,
         created_by=actor,
     )
 
@@ -90,7 +104,7 @@ def set_next_action(
 
     record_change_event(
         event_type=ChangeEventType.NEXT_ACTION_SET,
-        matter=matter,
+        matter=locked_matter,
         actor=actor,
         obj=action,
         summary=text[:200],

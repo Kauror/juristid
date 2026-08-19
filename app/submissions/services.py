@@ -15,6 +15,7 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
+from app.core.enums import Visibility, most_restrictive, validate_visibility_override
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
@@ -43,6 +44,10 @@ def create_submission(
         raise DomainError("Arvamus vajab pealkirja.")
     if kind not in SubmissionKind.values:
         raise DomainError(f"Tundmatu arvamuse liik {kind!r}.")
+    try:
+        validate_visibility_override(visibility_override)
+    except ValueError as error:
+        raise DomainError(str(error)) from error
 
     submission = Submission.objects.create(
         matter=matter,
@@ -69,6 +74,37 @@ def create_submission(
         payload={"kind": kind},
     )
     return submission
+
+
+def _effective(record: Any) -> str:
+    """The visibility that actually applies, derived not stored."""
+    return most_restrictive(
+        record.matter.visibility, record.visibility_override or Visibility.NORMAL
+    )
+
+
+def check_evidence_is_usable(*, submission: Submission, version: DocumentVersion) -> None:
+    """The two rules that make a piece of evidence usable as a final text.
+
+    Both are checked wherever evidence is attached, selected or sent, and both
+    have a database backstop, because a submission pointing at the wrong file is
+    a claim about what Koda argued that cannot be verified.
+
+    1. **Same Matter.** Evidence from another file is not evidence of this one.
+    2. **Not less restricted than the submission.** A restricted submission
+       whose final text sits on a normal document would be readable, and
+       downloadable, by people who cannot see the submission itself — the
+       restriction would be cosmetic.
+    """
+    document = version.document
+    if document.matter_id != submission.matter_id:
+        raise DomainError("Tõend peab kuuluma sama teema juurde.")
+
+    if most_restrictive(_effective(document), _effective(submission)) != _effective(document):
+        raise DomainError(
+            "Lõplik tõend ei tohi olla vähem piiratud kui arvamus ise. "
+            "Piira dokumenti või loo tõend arvamuse piiranguga."
+        )
 
 
 @transaction.atomic
@@ -98,8 +134,12 @@ def attach_final_evidence(
             title=submission.title[:400],
             role=DocumentRole.KODA_SUBMISSION_FINAL,
             created_by=actor,
+            # Evidence created for a restricted submission inherits that
+            # restriction rather than relying on the caller to remember.
             visibility_override=submission.visibility_override,
         )
+    elif document.matter_id != submission.matter_id:
+        raise DomainError("Tõend peab kuuluma sama teema juurde.")
 
     version = add_evidence_version(
         document=document,
@@ -108,6 +148,8 @@ def attach_final_evidence(
         mime_type=mime_type,
         uploaded_by=actor,
     )
+
+    check_evidence_is_usable(submission=submission, version=version)
 
     submission.final_version = version
     submission.save(update_fields=["final_version", "updated_at"])
@@ -121,8 +163,7 @@ def select_final_evidence(
     """Point a draft at an evidence version that is already in the Matter."""
     if submission.status != SubmissionStatus.DRAFT:
         raise DomainError("Lõplikku tõendit saab valida ainult koostatavale arvamusele.")
-    if version.document.matter_id != submission.matter_id:
-        raise DomainError("Tõend peab kuuluma sama teema juurde.")
+    check_evidence_is_usable(submission=submission, version=version)
 
     submission.final_version = version
     submission.save(update_fields=["final_version", "updated_at"])
@@ -149,10 +190,14 @@ def mark_submission_sent(
         raise DomainError("Arvamus on juba saadetud.")
     if locked.status != SubmissionStatus.DRAFT:
         raise DomainError("Ainult koostatava arvamuse saab saadetuks märkida.")
-    if locked.final_version_id is None:
+    final_version = locked.final_version
+    if final_version is None:
         raise DomainError(
             "Saadetud arvamus vajab täpset lõplikku tõendit. Lisa või vali saadetud fail."
         )
+    # Re-checked at the moment of sending: the document could have been
+    # re-pointed or relaxed between drafting and this call.
+    check_evidence_is_usable(submission=locked, version=final_version)
 
     locked.status = SubmissionStatus.SENT
     locked.sent_at = sent_at or timezone.now()

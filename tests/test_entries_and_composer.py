@@ -11,12 +11,13 @@ from datetime import timedelta
 from unittest import mock
 
 import pytest
+from django.db import DatabaseError, transaction
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
-from app.core.errors import DomainError
+from app.core.errors import DomainError, ImmutableRecordError
 from app.core.richtext import excerpt, plain_text, sanitize_entry_html
 from app.matters.entry_enums import EntryKind
 from app.matters.models import Entry, EntryRevision
@@ -211,7 +212,11 @@ def test_composer_accepts_a_next_action_alone(normal_matter, specialist):
     entry, action = compose_update(
         matter=normal_matter,
         author=specialist,
-        next_action={"text": "Ainult järgmiseks", "kind": ActionKind.DO},
+        next_action={
+            "text": "Ainult järgmiseks",
+            "kind": ActionKind.DO,
+            "target_date": timezone.localdate() + timedelta(days=3),
+        },
     )
     assert entry is None
     assert action is not None
@@ -245,7 +250,11 @@ def test_a_failing_entry_leaves_the_action_untouched(normal_matter, specialist):
     existing = compose_update(
         matter=normal_matter,
         author=specialist,
-        next_action={"text": "Algne tegevus", "kind": ActionKind.DO},
+        next_action={
+            "text": "Algne tegevus",
+            "kind": ActionKind.DO,
+            "target_date": timezone.localdate() + timedelta(days=3),
+        },
     )[1]
 
     with pytest.raises(RuntimeError):
@@ -290,3 +299,48 @@ def test_composer_produces_no_duplicate_timeline_events(normal_matter, specialis
 def test_entry_factory_is_synthetic():
     entry = factories.EntryFactory()
     assert "Sünteetiline" in plain_text(entry.body)
+
+
+# -- EntryRevision is append-only in the database ---------------------------
+
+
+def test_entry_revisions_cannot_be_edited_through_the_orm(normal_matter, specialist):
+    """A revision that can be rewritten proves nothing about what was said."""
+    entry = add_entry(matter=normal_matter, body="<p>Algne</p>", author=specialist)
+    edit_entry(entry=entry, body="<p>Parandatud</p>", actor=specialist)
+    revision = EntryRevision.objects.get(entry=entry)
+
+    revision.body = "<p>Ümber kirjutatud</p>"
+    with pytest.raises(ImmutableRecordError):
+        revision.save()
+
+
+def test_a_bulk_update_cannot_rewrite_an_entry_revision(normal_matter, specialist):
+    entry = add_entry(matter=normal_matter, body="<p>Algne</p>", author=specialist)
+    edit_entry(entry=entry, body="<p>Parandatud</p>", actor=specialist)
+    revision = EntryRevision.objects.get(entry=entry)
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        EntryRevision.objects.filter(pk=revision.pk).update(body="<p>Ümber kirjutatud</p>")
+
+
+def test_an_entry_revision_cannot_be_deleted(normal_matter, specialist):
+    entry = add_entry(matter=normal_matter, body="<p>Algne</p>", author=specialist)
+    edit_entry(entry=entry, body="<p>Parandatud</p>", actor=specialist)
+    revision = EntryRevision.objects.get(entry=entry)
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        EntryRevision.objects.filter(pk=revision.pk).delete()
+
+    assert EntryRevision.objects.filter(pk=revision.pk).exists()
+
+
+def test_an_unknown_visibility_override_is_refused_by_the_service(normal_matter, specialist):
+    """A clear domain error at the boundary, not an IntegrityError deep inside."""
+    with pytest.raises(DomainError):
+        add_entry(
+            matter=normal_matter,
+            body="<p>Tekst</p>",
+            author=specialist,
+            visibility_override="PUBLIC",
+        )

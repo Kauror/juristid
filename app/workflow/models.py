@@ -289,6 +289,16 @@ class NextAction(VisibilityInheritingModel):
                 condition=~models.Q(text=""),
                 name="workflow_next_action_text_required",
             ),
+            # The rule the work queue rests on: a deadline with no date cannot
+            # be met, missed or planned against. WAIT and MONITOR may be
+            # dateless, because "no idea when" is an honest state.
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(kind=ActionKind.DO, date_semantics=DateSemantics.DEADLINE)
+                    | models.Q(target_date__isnull=False)
+                ),
+                name="workflow_deadline_requires_a_date",
+            ),
             models.CheckConstraint(
                 condition=models.Q(
                     visibility_override__in=["", Visibility.NORMAL, Visibility.RESTRICTED]

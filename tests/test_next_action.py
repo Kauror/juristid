@@ -180,16 +180,99 @@ def test_a_do_deadline_in_the_future_is_not_overdue(normal_matter, specialist):
     assert action.is_overdue() is False
 
 
-def test_an_action_without_a_date_is_never_overdue(normal_matter, specialist):
+def test_the_service_refuses_a_deadline_without_a_date(normal_matter, specialist):
+    """A deadline with no date cannot be met, missed or planned against."""
+    with pytest.raises(DomainError):
+        set_next_action(
+            matter=normal_matter,
+            text="Millalgi",
+            kind=ActionKind.DO,
+            date_semantics=DateSemantics.DEADLINE,
+            target_date=None,
+            actor=specialist,
+        )
+
+
+def test_the_database_refuses_a_deadline_without_a_date(normal_matter, specialist):
+    """The service is not the only way in; an importer bypasses it."""
+    with pytest.raises(IntegrityError), transaction.atomic():
+        NextAction.objects.create(
+            matter=normal_matter,
+            text="Otse loodud",
+            kind=ActionKind.DO,
+            date_semantics=DateSemantics.DEADLINE,
+            target_date=None,
+        )
+
+
+def test_a_bulk_update_cannot_clear_a_deadline_date(normal_matter, specialist):
+    action = set_next_action(
+        matter=normal_matter, text="Koosta arvamus", actor=specialist, target_date=_tomorrow()
+    )
+    with pytest.raises(IntegrityError), transaction.atomic():
+        NextAction.objects.filter(pk=action.pk).update(target_date=None)
+
+
+def test_wait_without_a_date_remains_valid(normal_matter, specialist):
+    """Waiting with no idea when is an honest state, not an incomplete one."""
     action = set_next_action(
         matter=normal_matter,
-        text="Millalgi",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
+        text="Ootan ministeeriumi vastust",
+        kind=ActionKind.WAIT,
+        date_semantics=DateSemantics.REVIEW_ON,
         target_date=None,
         actor=specialist,
     )
+    assert action.target_date is None
     assert action.is_overdue() is False
+    assert action.is_due_for_review() is False
+
+
+def test_monitor_without_a_date_remains_valid(normal_matter, specialist):
+    action = set_next_action(
+        matter=normal_matter,
+        text="Jälgin rakendamist",
+        kind=ActionKind.MONITOR,
+        date_semantics=DateSemantics.EXPECTED_AROUND,
+        target_date=None,
+        actor=specialist,
+    )
+    assert action.target_date is None
+    assert action.is_overdue() is False
+
+
+def test_only_do_plus_deadline_can_ever_be_overdue(normal_matter, specialist):
+    """Every other combination stays out of the overdue queue by construction."""
+    overdue = set_next_action(
+        matter=normal_matter,
+        text="Tähtajaline",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=_yesterday(),
+        actor=specialist,
+    )
+    assert overdue.is_overdue() is True
+
+    for kind, semantics in (
+        (ActionKind.DO, DateSemantics.REVIEW_ON),
+        (ActionKind.DO, DateSemantics.EXPECTED_AROUND),
+        (ActionKind.WAIT, DateSemantics.DEADLINE),
+        (ActionKind.WAIT, DateSemantics.REVIEW_ON),
+        (ActionKind.WAIT, DateSemantics.EXPECTED_AROUND),
+        (ActionKind.MONITOR, DateSemantics.DEADLINE),
+        (ActionKind.MONITOR, DateSemantics.REVIEW_ON),
+        (ActionKind.MONITOR, DateSemantics.EXPECTED_AROUND),
+    ):
+        action = set_next_action(
+            matter=normal_matter,
+            text=f"{kind} {semantics}",
+            kind=kind,
+            date_semantics=semantics,
+            target_date=_yesterday(),
+            actor=specialist,
+        )
+        assert action.is_overdue() is False, (kind, semantics)
+    assert NextAction.objects.overdue().count() == 0
 
 
 def test_date_labels_distinguish_the_three_meanings(normal_matter, specialist):

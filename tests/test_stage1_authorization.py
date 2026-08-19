@@ -7,6 +7,8 @@ who is not involved and for an administrator whose role is technical only.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 from django.urls import reverse
 
@@ -31,7 +33,12 @@ def restricted_world(specialist):
         visibility=Visibility.RESTRICTED,
     )
     entry = add_entry(matter=matter, body="<p>Tundlik sissekanne</p>", author=specialist)
-    action = set_next_action(matter=matter, text="Tundlik tegevus", actor=specialist)
+    action = set_next_action(
+        matter=matter,
+        text="Tundlik tegevus",
+        actor=specialist,
+        target_date=date.today() + timedelta(days=5),
+    )
     submission = create_submission(matter=matter, title="Tundlik arvamus", actor=specialist)
     document = create_document(matter=matter, title="Tundlik tõend", created_by=specialist)
     version = add_evidence_version(

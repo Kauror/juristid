@@ -51,6 +51,42 @@ row without both `sent_at` and `final_version`. Evidence already captured is
 never re-pointed at a different file: replacing what was relied upon would
 rewrite history, so the path is withdraw and supersede.
 
+## Where the invariants are enforced
+
+Business validation is authoritative in the service layer. Forms validate early
+for the user's sake, and the database is the backstop for states that would be
+dangerous to have persisted at all. Three rules earned all three layers:
+
+**A DO action with a DEADLINE must carry a date.** The form said so first, but
+the rule belongs where an importer or an integration also has to obey it, and a
+CHECK constraint refuses the row outright. WAIT and MONITOR may be dateless —
+"waiting on the ministry, no idea when" is an honest state, not an incomplete
+one.
+
+**Closure and `Järgmiseks` serialise on the Matter row.** Both depend on the
+Matter's lifecycle state, so both take `select_for_update()` on the Matter and
+re-read `is_open` while holding it. Whichever transaction arrives first wins: a
+closure that lands first makes the later call refuse, and an action that lands
+first is cancelled by the closure. Neither ordering can end with a closed Matter
+still carrying an open instruction. The partial unique index is not the
+mechanism here — catching its error afterwards would mean the decision had
+already been made on a stale read.
+
+**Final evidence must belong to the submission's Matter, and must not be less
+restricted than the submission.** The first makes "what exactly did Koda send"
+answerable; the second stops the restriction being cosmetic, because otherwise
+the exact text of a restricted submission would be listed and downloadable by
+people who cannot see the submission. Two triggers back this up: one on
+`submissions_submission` for the moment evidence is attached or sent, and one on
+`documents_document` for the moment an already-referenced document is relaxed.
+Without the second, one `UPDATE` would undo the rule after the fact.
+
+`EntryRevision` is append-only in the database for the same reason the audit
+tables are: a record of superseded wording that can itself be rewritten proves
+nothing. `edit_entry` locks the Entry row and re-reads it before numbering a
+revision, so two simultaneous edits queue rather than colliding on a revision
+number or losing one wording.
+
 ## Consequences
 
 - Reporting derives a compatibility "sent date" from Submission through a
