@@ -139,6 +139,45 @@ AUTH_PASSWORD_VALIDATORS = [
 # Microsoft Entra ID. See docs/adr/0004-authentication-direction.md.
 DEV_LOGIN_ENABLED = env_bool("DEV_LOGIN_ENABLED", default=False)
 
+# A shared PIN in front of the synthetic sign-in. Empty means no PIN, which is
+# the right default for a laptop and for CI.
+#
+# It exists for one situation: the rehearsal instance is reachable from outside
+# the LAN, and the synthetic sign-in has no password by design — you pick a user
+# from a list. A short shared PIN is *not* authentication and is not pretending
+# to be. It is a speed bump that keeps a passer-by out, and it is only defensible
+# because the data behind it is invented.
+#
+# Anything reachable from the internet that holds real data needs Entra ID, or
+# an authenticating proxy, or both (docs/adr/0004).
+DEV_LOGIN_PIN = env("DEV_LOGIN_PIN", "")
+
+# How many wrong PINs from one address before it is locked out, and for how
+# long. A four-digit PIN is 10,000 guesses; without a limit that is seconds of
+# scripted work.
+DEV_LOGIN_PIN_MAX_ATTEMPTS = env_int("DEV_LOGIN_PIN_MAX_ATTEMPTS", 5)
+DEV_LOGIN_PIN_LOCKOUT_SECONDS = env_int("DEV_LOGIN_PIN_LOCKOUT_SECONDS", 300)
+
+# --------------------------------------------------------------------------
+# Cache
+# --------------------------------------------------------------------------
+
+# PostgreSQL, not local memory. The only thing this cache currently holds is the
+# PIN lockout counter, and gunicorn runs several worker processes: with the
+# default per-process cache each worker would keep its own count, so "five
+# attempts" would really mean five per worker. A shared backend makes the limit
+# the number it claims to be.
+#
+# Requires `python manage.py createcachetable`, which is idempotent and part of
+# the deployment steps. Redis is deliberately not introduced for this
+# (AGENTS.md): one small counter does not justify another service.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.db.DatabaseCache",
+        "LOCATION": env("CACHE_TABLE", "core_cache"),
+    }
+}
+
 # --------------------------------------------------------------------------
 # Internationalisation
 # --------------------------------------------------------------------------

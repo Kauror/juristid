@@ -25,27 +25,41 @@ force. Do not copy the register here. Do not run the importer against a real
 workbook here, not even a dry run. That belongs on an approved Koda-controlled
 workstation.
 
-**It has no authentication of its own.** `DEV_LOGIN_ENABLED=1` lets anyone who
-reaches the application sign in as any seeded user by picking them from a list,
-and `DJANGO_DEBUG=1` means Django returns a traceback on any unhandled error.
-Both are required for the other — the application refuses to start with
-development sign-in unless DEBUG is on (check `juristid.E002`).
+**Its sign-in is a shared PIN, not authentication.** `DEV_LOGIN_ENABLED=1` shows
+a list of seeded users with no password; `DEV_LOGIN_PIN` puts a short shared
+code in front of that list. `DJANGO_DEBUG=1` means Django returns a traceback on
+any unhandled error, and it is required for the synthetic sign-in to be
+permitted at all (check `juristid.E002`).
 
-So the front door is Cloudflare Access, not Django.
+A four-digit PIN is 10,000 guesses. What makes it more than decorative is the
+lockout: wrong attempts from one address are refused for
+`DEV_LOGIN_PIN_LOCKOUT_SECONDS` after `DEV_LOGIN_PIN_MAX_ATTEMPTS` failures, and
+the counter lives in a database cache so it is shared across gunicorn workers
+rather than counted three times over. An attacker who rotates source addresses
+still gets through eventually — that is the honest limit of a PIN, and it is
+acceptable here only because everything behind it is invented.
+
+**This is a rehearsal control and nothing more.** Anything holding real Koda or
+member data needs Entra ID, or an authenticating proxy, or both (ADR 0004) —
+and the Secure Pilot Gate before that.
 
 ## Public access
 
-`juristid.orgusaar.ee` is served through a Cloudflare Tunnel with an **Access
-policy in front of it**. An unauthenticated request never reaches the
-application: Cloudflare answers with its own login page and the origin is not
-contacted. Allowed identities are listed in the Access policy
-*Juristid rehearsal — allowed testers*; everything else is denied by default.
+`juristid.orgusaar.ee` is served through a Cloudflare Tunnel. **The PIN is the
+only gate**: Cloudflare Access is not in front of this hostname, so a request
+reaches the application and the application asks for the PIN.
 
-**The Access policy is the only thing protecting this deployment.** Remove it,
-or add a hostname that bypasses it, and the result is a passwordless,
-traceback-serving Django instance open to the internet on a host that also runs
-Immich, Plex and the Koda dashboard. Treat the policy as part of the deployment,
-not as an optional extra.
+That is a deliberate trade of protection for convenience, made because this is a
+synthetic rehearsal and an emailed one-time code on every visit was friction
+nobody wanted. It is the weakest configuration in this document and it should
+not outlive the rehearsal.
+
+**Putting Cloudflare Access back** takes about two minutes and is the right move
+the moment anything here stops being invented: Cloudflare One → Access controls →
+Applications → *Create new application* → Self-hosted, Public DNS → subdomain
+`juristid`, domain `orgusaar.ee` → one policy, action *Allow*, selector *Emails*,
+value the addresses that should get in. Nothing on the server changes; Access
+sits in front of the tunnel.
 
 The tunnel is *locally managed*: its credential was generated on the Unraid host
 by `cloudflared tunnel login` and has never left it. There is no token in this
