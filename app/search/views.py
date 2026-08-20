@@ -76,6 +76,11 @@ def _target_url(result: object) -> str:
         return reverse("documents:document_detail", kwargs={"pk": result.document_id})  # type: ignore[attr-defined]
     if kind == SearchSourceKind.ENTRY and result.entry_id:  # type: ignore[attr-defined]
         return f"{matter_url}#sissekanne-{result.entry_id}"  # type: ignore[attr-defined]
+    if kind == SearchSourceKind.LEGACY_SOURCE_PAGE and result.source_page_id:  # type: ignore[attr-defined]
+        return reverse(
+            "legacy_import:source_page",
+            kwargs={"pk": result.source_page_id},  # type: ignore[attr-defined]
+        )
     if kind == SearchSourceKind.SUBMISSION and result.submission_id:  # type: ignore[attr-defined]
         position = reverse("matters:matter_position", kwargs={"pk": result.matter.pk})  # type: ignore[attr-defined]
         return f"{position}#arvamus-{result.submission_id}"  # type: ignore[attr-defined]

@@ -17,6 +17,12 @@ class RecordMode(models.TextChoices):
 class MatterOrigin(models.TextChoices):
     NATIVE = "NATIVE", "Loodud süsteemis"
     LEGACY_IMPORT = "LEGACY_IMPORT", "Imporditud registrist"
+    # A Matter that exists only because somebody kept a OneNote page about it.
+    # Separate from LEGACY_IMPORT because it has no Excel row behind it: it has
+    # no register reference, no reviewed year contract and no row number, and
+    # claiming register provenance it does not have would make the archive look
+    # more authoritative than it is (Stage-2D brief 15).
+    LEGACY_ONENOTE = "LEGACY_ONENOTE", "Imporditud OneNote'ist"
     PROMOTED_LEGACY = "PROMOTED_LEGACY", "Arhiivist aktiveeritud"
     OTHER = "OTHER", "Muu"
 

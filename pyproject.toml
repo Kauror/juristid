@@ -41,6 +41,12 @@ dependencies = [
     # Tesseract binding. The engine itself is a system package, installed in
     # the Dockerfile and in CI so the runtime that ships is the runtime tested.
     "pytesseract>=0.3.13",
+    # -- Stage 2D authentication -------------------------------------------
+    # RS256 verification of the Cloudflare Access assertion. A JWT library
+    # rather than hand-rolled signature checking: the failure mode of getting
+    # this subtly wrong is an authentication bypass, not a bug report
+    # (docs/adr/0015).
+    "pyjwt[crypto]>=2.10",
 ]
 
 [dependency-groups]

@@ -39,6 +39,14 @@ logger = logging.getLogger(__name__)
 
 # Business formats the department actually exchanges. Anything else is refused
 # rather than stored and hoped about (master specification 15.6).
+#
+# Two lists guard two different doors, and conflating them would be a mistake in
+# one direction or the other. `app/documents/uploads.py` decides what a *browser*
+# may push at us and stays narrow. This one decides what the evidence store will
+# hold, and the historical corpus adds formats to it — signed containers, Office
+# templates, legacy word processing — that arrived from an archive whose every
+# byte was hashed before this code ran. Storing them is not the same as
+# accepting them from a stranger (docs/adr/0015).
 ALLOWED_EVIDENCE_MIME_TYPES: frozenset[str] = frozenset(
     {
         "application/pdf",
@@ -54,6 +62,29 @@ ALLOWED_EVIDENCE_MIME_TYPES: frozenset[str] = frozenset(
         "image/png",
         "image/jpeg",
         "application/zip",
+        # -- the historical corpus ----------------------------------------
+        # Preserved exactly, parsed by nothing. ASiC-E and BDoc especially:
+        # unpacking a signed container to index the document inside it would
+        # mean presenting the extract as the evidence, which inverts the one
+        # relationship this system is built on (Stage-2D brief 24).
+        "application/vnd.etsi.asic-e+zip",
+        "application/x-ddoc",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.template",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+        "application/rtf",
+        "text/html",
+        "application/xml",
+        "application/vnd.oasis.opendocument.text",
+        "application/vnd.oasis.opendocument.spreadsheet",
+        "image/gif",
+        "image/tiff",
+        "image/bmp",
+        "image/webp",
+        "video/mp4",
+        "application/x-mspublisher",
+        "application/vnd.visio",
+        "application/onenote",
+        "application/octet-stream",
     }
 )
 

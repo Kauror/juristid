@@ -54,6 +54,42 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
             )
         )
 
+    if settings.REAL_DATA_ALLOWED and not settings.CF_ACCESS_ENABLED:
+        problems.append(
+            Error(
+                "REAL_DATA_ALLOWED is on with no authenticator in front of it.",
+                hint=(
+                    "Set CF_ACCESS_ENABLED and configure CF_ACCESS_TEAM_DOMAIN and "
+                    "CF_ACCESS_AUDIENCE. Real member material must not be served to "
+                    "whoever reaches the port."
+                ),
+                id="juristid.E006",
+            )
+        )
+
+    if settings.CF_ACCESS_ENABLED and not (
+        settings.CF_ACCESS_TEAM_DOMAIN and settings.CF_ACCESS_AUDIENCE
+    ):
+        problems.append(
+            Error(
+                "CF_ACCESS_ENABLED is on but the team domain or audience is missing.",
+                hint=(
+                    "Without an audience tag, a token minted for any other application "
+                    "on the same Cloudflare team would verify here."
+                ),
+                id="juristid.E007",
+            )
+        )
+
+    if settings.CF_ACCESS_ENABLED and settings.DEV_LOGIN_ENABLED:
+        problems.append(
+            Error(
+                "DEV_LOGIN_ENABLED must not be combined with Cloudflare Access.",
+                hint="A synthetic sign-in page behind Access is a way around Access.",
+                id="juristid.E008",
+            )
+        )
+
     engine = settings.DATABASES["default"]["ENGINE"]
     if engine != "django.db.backends.postgresql":
         problems.append(

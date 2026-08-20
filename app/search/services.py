@@ -129,6 +129,7 @@ SOURCE_LABELS: dict[str, str] = {
     SearchSourceKind.ENTRY.value: "Sissekanne",
     SearchSourceKind.SUBMISSION.value: "Arvamus",
     SearchSourceKind.DOCUMENT_FRAGMENT.value: "Dokument",
+    SearchSourceKind.LEGACY_SOURCE_PAGE.value: "Ajalooline OneNote",
 }
 
 #: Deterministic tiers. Higher wins, and the gaps are wide so that a strong
@@ -167,7 +168,11 @@ MAX_RESULTS = 50
 #: that merely share a stem.
 TRIGRAM_THRESHOLD = 0.6
 
-CHILD_KINDS = (SearchSourceKind.ENTRY, SearchSourceKind.SUBMISSION)
+CHILD_KINDS = (
+    SearchSourceKind.ENTRY,
+    SearchSourceKind.SUBMISSION,
+    SearchSourceKind.LEGACY_SOURCE_PAGE,
+)
 
 
 @dataclass(frozen=True)
@@ -188,6 +193,7 @@ class SearchResult:
     document_version_id: Any = None
     entry_id: Any = None
     submission_id: Any = None
+    source_page_id: Any = None
     snippet: tuple[SnippetRun, ...] = ()
 
     @property
@@ -220,6 +226,8 @@ def visible_documents(user: Any) -> QuerySet[SearchDocument]:
         "document_version",
         "entry",
         "submission",
+        "matter_source_page",
+        "matter_source_page__source_page",
     )
     # The predicate is evaluated against the joined live rows — the Matter, and
     # for a child row its own current override — never against anything the
@@ -402,6 +410,7 @@ def search(*, query: str, user: Any, limit: int = MAX_RESULTS) -> list[SearchRes
             document_version_id=document.document_version_id,
             entry_id=document.entry_id,
             submission_id=document.submission_id,
+            source_page_id=document.matter_source_page_id,
             snippet=snippets.get(document.pk, ()),
         )
         for document in documents

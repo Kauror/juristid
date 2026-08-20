@@ -25,7 +25,7 @@ from app.core.models import BaseModel
 
 #: Bumped when the indexed text or the vector configuration changes, so a
 #: partially rebuilt index is visible rather than merely stale.
-INDEX_VERSION = "2B.1"
+INDEX_VERSION = "2D.1"
 
 
 class SearchSourceKind(models.TextChoices):
@@ -41,6 +41,12 @@ class SearchSourceKind(models.TextChoices):
     ENTRY = "ENTRY", "Sissekanne"
     SUBMISSION = "SUBMISSION", "Arvamus"
     DOCUMENT_FRAGMENT = "DOCUMENT_FRAGMENT", "Dokumendi sisu"
+    # One row per Matter↔page relationship rather than per page. A page shared
+    # by three Matters is three rows, because a SearchDocument belongs to one
+    # Matter and authorization is evaluated through that Matter — making one row
+    # answer for three would mean choosing which of them decides who may see it
+    # (Stage-2D brief 37).
+    LEGACY_SOURCE_PAGE = "LEGACY_SOURCE_PAGE", "Ajalooline OneNote'i leht"
 
 
 #: Which live column carries each kind's own restriction, for the authorization
@@ -56,6 +62,10 @@ SOURCE_OVERRIDE_FIELDS: dict[str, str | None] = {
     SearchSourceKind.ENTRY.value: "entry__visibility_override",
     SearchSourceKind.SUBMISSION.value: "submission__visibility_override",
     SearchSourceKind.DOCUMENT_FRAGMENT.value: "document__visibility_override",
+    # A source page has no restriction of its own. It is historical material
+    # attached to a Matter, and the Matter's visibility is the whole answer —
+    # so this maps to None, exactly like MATTER above.
+    SearchSourceKind.LEGACY_SOURCE_PAGE.value: None,
 }
 
 
@@ -130,6 +140,14 @@ class SearchDocument(BaseModel):
         blank=True,
         related_name="search_documents",
         verbose_name="tekstiosa",
+    )
+    matter_source_page = models.ForeignKey(
+        "legacy_import.MatterSourcePage",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="search_documents",
+        verbose_name="ajalooline lähteleht",
     )
 
     title = models.TextField(blank=True, verbose_name="pealkiri")

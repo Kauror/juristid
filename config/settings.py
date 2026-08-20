@@ -72,6 +72,10 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # After AuthenticationMiddleware, because it decides whether the session
+    # Django just restored belongs to the person Cloudflare authenticated.
+    # Inert unless CF_ACCESS_ENABLED (app/accounts/middleware.py).
+    "app.accounts.middleware.CloudflareAccessMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -230,6 +234,19 @@ EVIDENCE_ROOT = Path(env("EVIDENCE_ROOT", str(BASE_DIR / "evidence")))
 DERIVATIVE_STORAGE_ALIAS = "derivatives"
 DERIVATIVE_ROOT = Path(env("DERIVATIVE_ROOT", str(BASE_DIR / "derivatives")))
 
+# A third storage class, for the OneNote pages themselves. Their XML is source
+# evidence — kept byte for byte, hashed, and never rendered to anybody — but it
+# is not a Document, so putting it in the evidence store would mean rows in the
+# document tables that no DocumentVersion owns. Small (a few MB for 755 pages)
+# and **must be backed up**: it is the only copy the application controls
+# (docs/adr/0015, Stage-2D brief 11).
+LEGACY_SOURCE_STORAGE_ALIAS = "legacy_source"
+LEGACY_SOURCE_ROOT = Path(env("LEGACY_SOURCE_ROOT", str(BASE_DIR / "legacy-source")))
+
+# Where the read-only historical source material lives on the server. The
+# importer reads from here and never writes to it (Stage-2D brief 54).
+HISTORICAL_SOURCE_ROOT = env("HISTORICAL_SOURCE_ROOT", "")
+
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     EVIDENCE_STORAGE_ALIAS: {
@@ -239,6 +256,10 @@ STORAGES = {
     DERIVATIVE_STORAGE_ALIAS: {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
         "OPTIONS": {"location": str(DERIVATIVE_ROOT)},
+    },
+    LEGACY_SOURCE_STORAGE_ALIAS: {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {"location": str(LEGACY_SOURCE_ROOT)},
     },
     "staticfiles": {
         "BACKEND": (
@@ -349,6 +370,22 @@ APPLICATION_BUILT_AT = _build_stamp()
 # Real Koda, member or otherwise confidential data may only exist in an
 # environment that has passed the Secure Pilot Gate (master specification 16.3).
 REAL_DATA_ALLOWED = env_bool("REAL_DATA_ALLOWED", default=False)
+
+# -- Cloudflare Access ------------------------------------------------------
+#
+# The production authenticator. Cloudflare authenticates a person against the
+# Chamber's identity provider and forwards a signed assertion; this application
+# verifies that signature against the team's published keys before believing a
+# word of it. A request header on its own is attacker-controlled and proves
+# nothing (docs/adr/0015, app/accounts/cloudflare_access.py).
+#
+# The audience tag identifies *this* application inside the Cloudflare account.
+# Without it, a token minted for any other application on the same team would
+# verify, which is why an enabled-but-unconfigured Access denies rather than
+# defaults.
+CF_ACCESS_ENABLED = env_bool("CF_ACCESS_ENABLED", default=False)
+CF_ACCESS_TEAM_DOMAIN = env("CF_ACCESS_TEAM_DOMAIN", "")
+CF_ACCESS_AUDIENCE = env("CF_ACCESS_AUDIENCE", "")
 
 LOGGING = {
     "version": 1,

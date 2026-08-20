@@ -9,6 +9,7 @@ Synthetic only, and refuses to run anywhere that claims to hold real data.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import date, timedelta
 from typing import Any
 
@@ -42,6 +43,18 @@ MINISTRY = "Näidisministeerium"
 RESTRICTED_TITLE = "Konfidentsiaalne liikmete tagasiside"
 OPEN_TITLE = "Tavaline avatud teema kõigile nähtav"
 ARCHIVE_TITLE = "Arhiiviteema 2014 sünteetiline registrikirje"
+
+#: The historical world. One page attached to a normal Matter, so the case-file
+#: rendering has something to render, and one undecided candidate, so the
+#: reconciliation queue is not empty (Stage-2D brief 79).
+HISTORICAL_PAGE_TITLE = "Pakendiseaduse muutmise eelnõu 2019"
+HISTORICAL_INTRODUCTION = "Ettepaneku eestikeelne variant:"
+#: A signed container, not a PDF. Two reasons: it is the commonest thing on a
+#: real 2019 page, and it exercises the path where a file is marked unparseable
+#: at import time rather than leaving the extraction worker to discover that a
+#: synthetic stub is not a readable document (Stage-2D brief 24).
+HISTORICAL_FILENAME = "seisukoht-2019.asice"
+CANDIDATE_PAGE_TITLE = "Alkoholiaktsiisi töörühma märkmed"
 
 
 class Command(BaseCommand):
@@ -138,4 +151,162 @@ class Command(BaseCommand):
             reporting_year=2014,
         )
 
+        self._historical_world(visible)
         self.stdout.write(self.style.SUCCESS("E2E world ready."))
+
+    def _historical_world(self, matter: Matter) -> None:
+        """A OneNote page, its file, and one decision nobody has made yet.
+
+        Built through the ORM rather than through the importer. The importer has
+        its own suite against a synthetic archive; what the browser suite is for
+        is whether a lawyer can read a 2019 case file and whether an operator can
+        settle a match — and neither of those needs 4 GiB of source material to
+        be true (Stage-2D brief 79).
+        """
+        from app.documents.enums import DocumentRole, ExtractionState, MalwareScanState
+        from app.documents.models import DocumentVersion
+        from app.documents.services import add_evidence_version, create_document
+        from app.legacy_import.source_pages import (
+            CandidateClass,
+            HistoricalMatchCandidate,
+            LegacySourcePage,
+            LegacySourceResource,
+            LegacySourceResourceImport,
+            MatterSourcePage,
+            ResourceImportState,
+            SourceMatchClass,
+            SourceMatchMethod,
+            SourcePageRole,
+            SourceRelationshipKind,
+            SourceSystem,
+        )
+
+        if LegacySourcePage.objects.filter(title=HISTORICAL_PAGE_TITLE).exists():
+            return
+
+        content = bytes([80, 75, 3, 4]) + b" synthetic e2e ASiC-E container"
+        now = timezone.now()
+        blocks = [
+            {
+                "kind": "TEXT",
+                "ordinal": 1,
+                "text": (
+                    "Näidisministeerium saatis eelnõu kooskõlastusringile. "
+                    "Koda juhtis tähelepanu rakendusaja pikkusele."
+                ),
+            },
+            {"kind": "TEXT", "ordinal": 2, "text": HISTORICAL_INTRODUCTION},
+            {"kind": "FILE_ATTACHMENT", "ordinal": 3, "resource_key": "e2e-resource-1"},
+            {
+                "kind": "LIST_ITEM",
+                "ordinal": 4,
+                "depth": 1,
+                "text": "Ministeeriumi vastus saabus kuu hiljem.",
+            },
+        ]
+        page = LegacySourcePage.objects.create(
+            source_system=SourceSystem.ONENOTE_DESKTOP,
+            source_page_id="1-e2e0000000000000000000000000001",
+            page_key="e2e-page-1",
+            source_notebook="Näidiskoja õigusloome",
+            source_section="ARHIIV 2019",
+            title=HISTORICAL_PAGE_TITLE,
+            page_level=2,
+            page_order=1,
+            page_role=SourcePageRole.MATTER_LIKE,
+            role_reason="sünteetiline e2e maailm",
+            source_created_at=now,
+            source_modified_at=now,
+            capture_id="e2e-capture-1",
+            source_xml_sha256="0" * 64,
+            derived_text=" ".join(str(block.get("text", "")) for block in blocks),
+            blocks=blocks,
+            links=[{"url": "https://eelnoud.example.invalid/19-0001", "displayText": "EIS"}],
+            reading_order_strategy="VISUAL_THEN_XML",
+            text_characters=200,
+            block_count=len(blocks),
+            file_count=1,
+            file_bytes=len(content),
+            first_imported_at=now,
+            latest_imported_at=now,
+        )
+        resource = LegacySourceResource.objects.create(
+            source_page=page,
+            resource_key="e2e-resource-1",
+            original_filename=HISTORICAL_FILENAME,
+            resource_kind="FILE_ATTACHMENT",
+            source_block_ordinal=3,
+            sha256=hashlib.sha256(content).hexdigest(),
+            size_bytes=len(content),
+            archive_relative_path="resources/e2e-resource-1/original/" + HISTORICAL_FILENAME,
+        )
+        link = MatterSourcePage.objects.create(
+            matter=matter,
+            source_page=page,
+            relationship_kind=SourceRelationshipKind.PRIMARY,
+            match_method=SourceMatchMethod.EXCEL_EXACT_PAGE_ID,
+            match_class=SourceMatchClass.EXACT,
+            source_audit_reference="exact-matches.csv:e2e",
+        )
+
+        document = create_document(
+            matter=matter,
+            title=HISTORICAL_FILENAME,
+            role=DocumentRole.LEGACY_MATERIAL,
+            provenance_note="OneNote: ARHIIV 2019 → " + HISTORICAL_PAGE_TITLE,
+        )
+        version = add_evidence_version(
+            document=document,
+            content=content,
+            original_filename=HISTORICAL_FILENAME,
+            mime_type="application/vnd.etsi.asic-e+zip",
+            acquired_at=now,
+            source_identifier="e2e-page-1/e2e-resource-1",
+            malware_scan_state=MalwareScanState.PENDING,
+        )
+        # Nothing will ever parse a signed container, so it is marked here
+        # rather than left PENDING in a queue for ever.
+        DocumentVersion.objects.filter(pk=version.pk).update(
+            extraction_state=ExtractionState.NOT_APPLICABLE,
+            extraction_note="Allkirjastatud ümbrik. Sisu ei avata ega indekseerita.",
+        )
+        LegacySourceResourceImport.objects.create(
+            matter_source_page=link,
+            resource=resource,
+            document=document,
+            document_version=version,
+            state=ResourceImportState.IMPORTED,
+        )
+
+        candidate_page = LegacySourcePage.objects.create(
+            source_system=SourceSystem.ONENOTE_DESKTOP,
+            source_page_id="1-e2e0000000000000000000000000002",
+            page_key="e2e-page-2",
+            source_notebook="Näidiskoja õigusloome",
+            source_section="ARHIIV 2019",
+            title=CANDIDATE_PAGE_TITLE,
+            page_level=2,
+            page_order=2,
+            page_role=SourcePageRole.MATTER_LIKE,
+            source_created_at=now,
+            source_modified_at=now,
+            capture_id="e2e-capture-2",
+            source_xml_sha256="1" * 64,
+            derived_text="Töörühma märkmed alkoholiaktsiisi kohta.",
+            blocks=[{"kind": "TEXT", "ordinal": 1, "text": "Töörühma märkmed."}],
+            reading_order_strategy="VISUAL_THEN_XML",
+            text_characters=40,
+            block_count=1,
+            first_imported_at=now,
+            latest_imported_at=now,
+        )
+        HistoricalMatchCandidate.objects.create(
+            source_page=candidate_page,
+            matter=matter,
+            excel_reference="2019_44",
+            excel_title="Alkoholiaktsiisi eelnõu",
+            candidate_class=CandidateClass.REVIEW_REQUIRED,
+            score=0.44,
+            match_signals="pealkirja osaline kattuvus; sama aasta",
+            explanation="review-required.csv:2019_44",
+        )

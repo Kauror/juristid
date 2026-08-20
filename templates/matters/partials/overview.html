@@ -10,6 +10,28 @@ about the save that just happened.
   <div class="mattermain">
     {% include "matters/partials/matter_banner.html" %}
 
+    {% if historical %}
+      {% comment %}
+        A fact, not the page. Three numbers and a section name, because a lawyer
+        reads Ülevaade in about three seconds and a wall of 2019 narrative here
+        would cost them the thing they came for (Stage-2D brief 34).
+      {% endcomment %}
+      <section class="card" aria-labelledby="ajalooline-materjal-heading">
+        <h2 class="sectionlabel" id="ajalooline-materjal-heading">Ajalooline materjal</h2>
+        <p class="cardnote">
+          {{ historical.page_count }} OneNote'i lehte
+          · {{ historical.file_count }} faili
+          {% if historical.sections %}· {{ historical.sections|join:", " }}{% endif %}
+        </p>
+        <p class="form__actions">
+          <a class="button button--quiet"
+             href="{% url 'legacy_import:source_page' pk=historical.first.pk %}">
+            Vaata ajaloolist materjali
+          </a>
+        </p>
+      </section>
+    {% endif %}
+
     {% if incoming_documents %}
       {% comment %}
         Source material, visible from the file's own front page. A Matter that
