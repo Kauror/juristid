@@ -29,7 +29,7 @@ rebuildable `SearchDocument` projection behind Estonian full-text search.
 `Ülevaade`, the ministries as public reference data, `Saabunud` as a multi-file
 intake surface, and the corrections a week of real browser use produced.
 
-**Stage 2B — in review.** Content extraction and everything that depends on it:
+**Stage 2B — complete, merged.** Content extraction and everything that depends on it:
 `DocumentDerivative` and locator-aware text fragments, parsers for PDF, DOCX,
 XLSX, PPTX, TXT, CSV, EML, MSG and images, local OCR for scanned pages, a
 database-backed extraction worker, email attachments captured as evidence with
@@ -37,12 +37,24 @@ provenance back to the exact message, safe previews and thumbnails, and search
 extended to entries, submissions and document contents with child authorization
 evaluated live.
 
+**Stage 2D — in review.** Historical corpus integration: the OneNote desktop
+archive as first-class history beside the register. `LegacySourcePage` and its
+resources, a case-file rendering that keeps each file inside the narrative that
+introduces it, an operator queue for the matches a person still has to settle,
+and Cloudflare Access as the production authenticator. See
+[ADR 0015](docs/adr/0015-historical-corpus-integration.md).
+
 **Synthetic rehearsal — deployed.** An instance on the Unraid host running
 invented data only, for the class of defect CI structurally cannot reach. See
 [`deploy/unraid-test/`](deploy/unraid-test/).
 
-**Secure Pilot Gate — not passed.** No real Koda, member or otherwise
-confidential data has entered any environment, and none may until it is.
+**Real-data instance — deployed.** A separate stack, behind Cloudflare Access,
+with no host port at all. See [`deploy/unraid-main/`](deploy/unraid-main/).
+
+**No real data in this repository.** The repository is public. Only code and
+generated synthetic fixtures enter Git: every fixture the tests read is built at
+test time from code you can read, so a checked-in file could only be a real one
+that arrived by accident.
 
 **Deliberately unbuilt.** Stage 2C: Kaasamine and structured member responses.
 Later still: EIS and Riigikogu integration, statistics dashboards, advocacy

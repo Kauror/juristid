@@ -149,6 +149,57 @@ def fragment_values(fragment: DocumentTextFragment, now: object) -> dict[str, ob
     }
 
 
+def indexable_source_links() -> QuerySet:
+    """Matter↔page relationships, with the page they project."""
+    from app.legacy_import.source_pages import MatterSourcePage
+
+    return MatterSourcePage.objects.select_related("matter", "source_page")
+
+
+def source_link_values(link, now: object) -> dict[str, object]:
+    """One search row for one Matter's claim on one historical page.
+
+    The narrative is the body; the section and page title are the identity a
+    lawyer actually searches by. Raw page XML is deliberately absent — it is
+    source evidence, it is full of OneNote markup, and indexing it would fill
+    the corpus with attribute names (Stage-2D brief 36).
+    """
+    page = link.source_page
+    location = " · ".join(part for part in (page.source_section, page.source_parent_page) if part)
+    return {
+        "matter": link.matter,
+        "source_kind": SearchSourceKind.LEGACY_SOURCE_PAGE,
+        "source_object_id": link.pk,
+        "matter_source_page": link,
+        "title": page.title,
+        "identifiers": page.reference_tokens,
+        "alias_text": " ".join(
+            part
+            for part in (page.source_section, page.source_section_group, page.source_parent_page)
+            if part
+        ),
+        "body_text": page.derived_text[:MAX_INDEXED_FRAGMENT_CHARACTERS],
+        "source_locator": location[:200],
+        "index_version": INDEX_VERSION,
+        "indexed_at": now,
+    }
+
+
+def refresh_source_links(links: QuerySet) -> int:
+    rows = list(links)
+    if not rows:
+        return 0
+    now = timezone.now()
+    SearchDocument.objects.filter(
+        source_kind=SearchSourceKind.LEGACY_SOURCE_PAGE,
+        source_object_id__in=[link.pk for link in rows],
+    ).delete()
+    SearchDocument.objects.bulk_create(
+        [SearchDocument(**source_link_values(link, now)) for link in rows]
+    )
+    return len(rows)
+
+
 def refresh_entries(entries: QuerySet[Entry]) -> int:
     rows = list(entries)
     if not rows:

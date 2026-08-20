@@ -496,6 +496,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "timeline_has_more": has_more,
         "composer_form": ComposerForm(),
         "incoming_documents": _incoming_documents(request, matter),
+        "historical": _historical_context(matter, request.user),
         "today": timezone.localdate(),
     }
 
@@ -576,6 +577,19 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
     return render(request, "matters/matter_position.html", context)
 
 
+def _historical_context(matter: Any, user: Any) -> dict:
+    """Historical source material for a Matter, or nothing at all.
+
+    Imported lazily: `app.legacy_import` imports the matters app, and doing this
+    at module scope closes the circle. A Matter with no OneNote history gets an
+    empty dict and the templates render nothing — a heading over an empty list
+    reads as a data-quality problem rather than as an absence (Stage-2D 35).
+    """
+    from app.legacy_import.historical_views import historical_summary
+
+    return historical_summary(matter, user)
+
+
 @login_required
 def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
@@ -594,6 +608,7 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             "evidence_documents": [doc for doc in documents if not doc.has_working_document],
             "working_documents": [doc for doc in documents if doc.has_working_document],
             "document_roles": DocumentRole.choices,
+            "historical": _historical_context(matter, request.user),
         }
     )
     return render(request, "matters/matter_documents.html", context)

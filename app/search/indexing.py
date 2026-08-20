@@ -29,6 +29,7 @@ from django.utils import timezone
 
 from app.core.text import normalize_for_matching
 from app.documents.models import DocumentVersion
+from app.legacy_import.source_pages import MatterSourcePage
 from app.matters.models import Entry, Matter
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.submissions.models import Submission
@@ -74,6 +75,7 @@ class RebuildResult:
     entries: int = 0
     submissions: int = 0
     fragments: int = 0
+    source_pages: int = 0
 
 
 def indexable_matters() -> QuerySet[Matter]:
@@ -241,6 +243,20 @@ def refresh_submission(submission: Submission) -> int:
 
 
 @transaction.atomic
+@transaction.atomic
+def refresh_source_link(link: MatterSourcePage) -> int:
+    """Reproject one Matter↔page relationship."""
+    from app.search.child_indexing import indexable_source_links, refresh_source_links
+
+    count = refresh_source_links(indexable_source_links().filter(pk=link.pk))
+    _recompute_vectors(
+        SearchDocument.objects.filter(
+            source_kind=SearchSourceKind.LEGACY_SOURCE_PAGE, source_object_id=link.pk
+        )
+    )
+    return count
+
+
 def refresh_document_version(version: DocumentVersion) -> int:
     """Reproject one version's extracted content.
 
@@ -305,7 +321,7 @@ def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildR
             chunk = identifiers[offset : offset + batch_size]
             total += refresh_matters(indexable_matters().filter(pk__in=chunk))
 
-        entries, submissions, fragments = _rebuild_children(batch_size=batch_size)
+        entries, submissions, fragments, source_pages = _rebuild_children(batch_size=batch_size)
         documents = SearchDocument.objects.count()
 
     return RebuildResult(
@@ -314,12 +330,13 @@ def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildR
         entries=entries,
         submissions=submissions,
         fragments=fragments,
+        source_pages=source_pages,
         seconds=(timezone.now() - started).total_seconds(),
         index_version=INDEX_VERSION,
     )
 
 
-def _rebuild_children(*, batch_size: int) -> tuple[int, int, int]:
+def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int]:
     """Entries, submissions and document fragments, inside the caller's
     transaction.
 
@@ -332,21 +349,24 @@ def _rebuild_children(*, batch_size: int) -> tuple[int, int, int]:
     from app.search.child_indexing import (
         indexable_entries,
         indexable_fragments,
+        indexable_source_links,
         indexable_submissions,
         project_fragments,
         refresh_entries,
+        refresh_source_links,
         refresh_submissions,
     )
 
     entries = _in_batches(indexable_entries(), refresh_entries, batch_size)
     submissions = _in_batches(indexable_submissions(), refresh_submissions, batch_size)
     fragments = _in_batches(indexable_fragments(), project_fragments, batch_size)
+    source_pages = _in_batches(indexable_source_links(), refresh_source_links, batch_size)
 
     # One statement for every child row, rather than one per batch. The vectors
     # are computed in the database either way; doing it once means PostgreSQL
     # plans it once.
     _recompute_vectors(SearchDocument.objects.exclude(source_kind=SearchSourceKind.MATTER))
-    return entries, submissions, fragments
+    return entries, submissions, fragments, source_pages
 
 
 def _in_batches(queryset: QuerySet, refresh: object, batch_size: int) -> int:

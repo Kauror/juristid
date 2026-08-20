@@ -52,6 +52,7 @@ CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"
 # suite learned this the hard way.
 EVIDENCE_ROOT = Path(tempfile.mkdtemp(prefix="juristid-evidence-"))
 DERIVATIVE_ROOT = Path(tempfile.mkdtemp(prefix="juristid-derivatives-"))
+LEGACY_SOURCE_ROOT = Path(tempfile.mkdtemp(prefix="juristid-legacy-source-"))
 
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
@@ -62,6 +63,10 @@ STORAGES = {
     DERIVATIVE_STORAGE_ALIAS: {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
         "OPTIONS": {"location": str(DERIVATIVE_ROOT)},
+    },
+    LEGACY_SOURCE_STORAGE_ALIAS: {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {"location": str(LEGACY_SOURCE_ROOT)},
     },
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }

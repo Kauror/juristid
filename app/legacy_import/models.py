@@ -322,3 +322,48 @@ class ImportRowLedger(AppendOnlyModel):
 
     def __str__(self) -> str:
         return f"{self.source_sheet}:{self.source_row_number} {self.outcome}"
+
+
+# The historical corpus models live in their own module because they obey a
+# different rule to everything above: these are product data a lawyer reads,
+# not importer bookkeeping. Imported here so Django's app registry finds them
+# (docs/adr/0015).
+from app.legacy_import.source_pages import (  # noqa: E402
+    CandidateClass,
+    CandidateState,
+    HistoricalMatchCandidate,
+    LegacySourcePage,
+    LegacySourceResource,
+    LegacySourceResourceImport,
+    MatterSourcePage,
+    ResourceImportState,
+    ResourceKind,
+    SourceMatchClass,
+    SourceMatchMethod,
+    SourcePageRole,
+    SourceRelationshipKind,
+    SourceSystem,
+)
+
+__all__ = [
+    "CandidateClass",
+    "CandidateState",
+    "ConflictState",
+    "HistoricalMatchCandidate",
+    "ImportBatch",
+    "ImportRowLedger",
+    "LegacySourcePage",
+    "LegacySourceResource",
+    "LegacySourceResourceImport",
+    "MatchMethod",
+    "MatterSourcePage",
+    "MatterSourceReference",
+    "ReconciliationStatus",
+    "ResourceImportState",
+    "ResourceKind",
+    "SourceMatchClass",
+    "SourceMatchMethod",
+    "SourcePageRole",
+    "SourceRelationshipKind",
+    "SourceSystem",
+]

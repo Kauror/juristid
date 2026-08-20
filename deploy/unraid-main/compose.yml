@@ -1,0 +1,187 @@
+# Juristid — the real-data stack for the Unraid host.
+#
+# Additive and isolated by construction, and additive *with respect to the
+# rehearsal too*: its own Compose project name, its own bridge network, its own
+# PostgreSQL, its own appdata tree, its own containers. Nothing here touches
+# `juristid-test`, which stays running with its invented data.
+#
+# REAL DATA. This stack carries the Chamber's twenty-year register and the
+# member material attached to it. Three properties are what make that
+# defensible, and each one is enforced somewhere a mistake would show:
+#
+#   1. No host port. There is no `ports:` on any service. The only way in is
+#      through the Cloudflare tunnel, which means the only way in is through
+#      Cloudflare Access — you cannot reach this by typing the server's LAN
+#      address (Stage-2D brief 58).
+#   2. The application verifies Access itself. The tunnel forwards a signed
+#      assertion and `app/accounts/middleware.py` checks the signature against
+#      Cloudflare's published keys before believing the email in it. A header
+#      alone proves nothing (Stage-2D brief 57, docs/adr/0015).
+#   3. `DJANGO_DEBUG=0`, `DEV_LOGIN_ENABLED=0`, `REAL_DATA_ALLOWED=1`. A system
+#      check refuses to start a process that mixes those wrongly
+#      (juristid.E002/E003/E004/E006/E008).
+#
+# The rehearsal's shared PIN does not exist here and must never be added.
+#
+# Always name both the file and the project explicitly, so a stray command can
+# never reach another stack on this host:
+#
+#   docker compose -p juristid-main -f compose.yml <command>
+
+name: juristid-main
+
+services:
+  db:
+    image: postgres:18
+    container_name: juristid-main-db
+    restart: unless-stopped
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-juristid}
+      POSTGRES_USER: ${POSTGRES_USER:-juristid}
+      # No POSTGRES_PASSWORD here: it comes from the env file above, which lives
+      # outside Git with restrictive permissions.
+    volumes:
+      # PostgreSQL 18 keeps its cluster in a major-version subdirectory
+      # (/var/lib/postgresql/18/docker), so the persistent mount belongs one
+      # level up. Mounting /var/lib/postgresql/data instead — the pattern from
+      # every PostgreSQL image up to 17 — produces a container that starts
+      # cleanly and stores nothing durable.
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/postgres:/var/lib/postgresql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-juristid} -d ${POSTGRES_DB:-juristid}"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-main-web
+    restart: unless-stopped
+    command:
+      - gunicorn
+      - config.wsgi:application
+      - --bind
+      - 0.0.0.0:8000
+      - --workers
+      - "3"
+      - --timeout
+      - "120"
+      - --access-logfile
+      - "-"
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      EVIDENCE_ROOT: /app/evidence
+      DERIVATIVE_ROOT: /app/derivatives
+      LEGACY_SOURCE_ROOT: /app/legacy-source
+      HISTORICAL_SOURCE_ROOT: /srv/historical-source
+      # Migrations and seeding are controlled one-off steps, never container
+      # start-up work (master specification 24.2).
+      SEED_DEV_DATA: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Deliberately no `ports:`. See the header. Reaching this stack means going
+    # through Cloudflare Access.
+    volumes:
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/evidence:/app/evidence
+      # A separate directory, not a subdirectory of evidence. One of these must
+      # survive and be backed up; the other may be deleted and rebuilt from it
+      # (docs/adr/0014).
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/derivatives:/app/derivatives
+      # OneNote page XML, kept as source evidence beside the register.
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/legacy-source:/app/legacy-source
+      # The historical corpus, READ-ONLY. The importer reads it and never
+      # rewrites it: an importer that can write to its own source is one bad run
+      # away from having nothing to re-run against (Stage-2D brief 54).
+      - ${JURISTID_SOURCE_ROOT:-/mnt/user/juristid-main/source}:/srv/historical-source:ro
+    networks:
+      - internal
+
+  # Text extraction and OCR, in its own container.
+  #
+  # Separate from the web process because OCR on a scanned 2014 annex takes
+  # minutes and a lawyer opening a file must not wait for it. Same image, so
+  # there is one thing to build and one version to reason about. It reaches the
+  # database and nothing else: no host port, no other network.
+  #
+  # Evidence is mounted read-write on purpose. A worker only ever *reads*
+  # originals — except for email, whose attachments are themselves new evidence,
+  # and this is the process that captures them (docs/adr/0014). Existing
+  # evidence stays immutable through a PostgreSQL trigger, not a mount option.
+  extractor:
+    image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-main-extractor
+    restart: unless-stopped
+    command:
+      - python
+      - manage.py
+      - run_extraction_worker
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      EVIDENCE_ROOT: /app/evidence
+      DERIVATIVE_ROOT: /app/derivatives
+      LEGACY_SOURCE_ROOT: /app/legacy-source
+      HISTORICAL_SOURCE_ROOT: /srv/historical-source
+      SEED_DEV_DATA: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/evidence:/app/evidence
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/derivatives:/app/derivatives
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/legacy-source:/app/legacy-source
+      - ${JURISTID_SOURCE_ROOT:-/mnt/user/juristid-main/source}:/srv/historical-source:ro
+    networks:
+      - internal
+
+  # The only route in.
+  #
+  # Not opt-in, unlike the rehearsal's: there is no host port here, so without
+  # the tunnel this stack is unreachable, and a profile would only make that
+  # look like a choice.
+  #
+  # The tunnel is *locally managed*. Its credential was generated on this host
+  # by `cloudflared tunnel login` and lives in the ignored appdata directory —
+  # no token is stored in this file, in Git, or anywhere a copy could be made by
+  # reading the repository.
+  #
+  # Cloudflare Access sits in front of the hostname and is not optional. The
+  # application verifies the assertion Access adds, so a misconfigured or
+  # removed Access policy fails closed: requests arrive without a valid
+  # assertion and are refused rather than served.
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: juristid-main-tunnel
+    restart: unless-stopped
+    command:
+      - tunnel
+      - --config
+      - /home/nonroot/.cloudflared/config.yml
+      - run
+    volumes:
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/cloudflared:/home/nonroot/.cloudflared
+    depends_on:
+      - web
+    networks:
+      - internal
+
+networks:
+  internal:
+    name: juristid-main-internal
+    driver: bridge

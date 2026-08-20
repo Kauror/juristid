@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}{{ page.title|truncatechars:60 }} · Ajalooline materjal · {{ application_name }}{% endblock %}
+
+{% comment %}
+  A OneNote page as the case file it was.
+
+  The narrative and its files are one sequence, in the order somebody wrote
+  them, because that order is the content: "Ettepaneku eestikeelne variant"
+  means nothing three paragraphs above the PDF it introduces. An alphabetical
+  attachment list at the bottom would be easier to build and would throw away
+  the only thing OneNote was ever good at (Stage-2D brief 22, 31).
+
+  The view decided everything. This template renders and makes no judgements —
+  particularly not about what is safe to show: the page's own XML is never
+  rendered here, only offered as a download (app/legacy_import/historical_views.py).
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <nav class="crumbs" aria-label="Asukoht">
+    <a href="{% url 'matters:matter_detail' pk=matter.pk %}">
+      {{ matter.display_reference|default:"Ajalooline teema" }} · {{ matter.title|truncatechars:50 }}
+    </a>
+  </nav>
+
+  <header class="pagehead">
+    <h1>{{ page.title|default:"Nimetu leht" }}</h1>
+    <p class="pagehead__meta">
+      <span class="badge badge--source">Ajalooline OneNote</span>
+      {{ page.display_location }}
+      {% if page.source_modified_at %}
+        · muudetud {{ page.source_modified_at|date:"d.m.Y" }}
+      {% endif %}
+    </p>
+  </header>
+
+  <section class="card card--derived" aria-labelledby="allikas-heading">
+    <h2 class="sectionlabel" id="allikas-heading">Allikas</h2>
+    <p class="cardnote">
+      See on OneNote'i lehe sisu nii, nagu see arhiveeriti. Tegemist on ajaloolise
+      lähtematerjaliga, mitte süsteemis kirjutatud sissekannetega.
+    </p>
+    <dl class="detailgrid">
+      <div><dt>Märkmik</dt><dd>{{ page.source_notebook }}</dd></div>
+      <div><dt>Sektsioon</dt><dd>{{ page.source_section }}</dd></div>
+      {% if page.source_parent_page %}
+        <div><dt>Ülemleht</dt><dd>{{ page.source_parent_page }}</dd></div>
+      {% endif %}
+      <div><dt>Tase</dt><dd>{{ page.page_level }}</dd></div>
+      <div><dt>Faile</dt><dd>{{ page.file_count }} ({{ page.file_bytes|filesizeformat }})</dd></div>
+      <div><dt>Sidumine</dt><dd>{{ link.get_match_method_display }}</dd></div>
+    </dl>
+
+    {% if page.reading_order_ambiguous %}
+      {% comment %}
+        Said out loud rather than smoothed over. OneNote is a free-form canvas,
+        and on this page the raw XML order and the visual order disagreed — so
+        the sequence below is a best reading, not a fact (Stage-2D brief 32).
+      {% endcomment %}
+      <p class="formnote">
+        OneNote'i vaba paigutuse tõttu ei ole lugemisjärjekord üheselt määratud.
+        Allolev järjestus on parim tõlgendus, mitte lehe kindel struktuur.
+      </p>
+    {% endif %}
+
+    {% if other_matters %}
+      <p class="cardnote">
+        Sama leht on seotud ka:
+        {% for other in other_matters %}
+          <a href="{% url 'legacy_import:source_page' pk=other.pk %}">{{ other.matter.display_reference|default:other.matter.title|truncatechars:40 }}</a>{% if not forloop.last %},{% endif %}
+        {% endfor %}
+      </p>
+    {% endif %}
+
+    <details class="disclosure">
+      <summary>Tehnilised andmed</summary>
+      <dl class="detailgrid">
+        <div><dt>Lehe ID</dt><dd class="mono">{{ page.source_page_id }}</dd></div>
+        <div><dt>Arhiivi võti</dt><dd class="mono">{{ page.page_key }}</dd></div>
+        <div><dt>Lähte-XML SHA-256</dt><dd class="mono">{{ page.source_xml_sha256 }}</dd></div>
+        <div><dt>Hõive</dt><dd class="mono">{{ page.capture_id }}</dd></div>
+      </dl>
+      <p class="form__actions">
+        {% if page.source_xml_storage_key %}
+          <a class="button button--quiet" href="{% url 'legacy_import:source_xml' pk=link.pk %}">
+            Laadi alla lähte-XML
+          </a>
+        {% endif %}
+        {% if page.onenote_hyperlink %}
+          <a class="button button--quiet" href="{{ page.onenote_hyperlink }}">Ava OneNote'is</a>
+        {% endif %}
+      </p>
+    </details>
+  </section>
+
+  <section class="card" aria-labelledby="sisu-heading">
+    <h2 class="sectionlabel" id="sisu-heading">
+      Lehe sisu
+      <span class="sectionlabel__count">{{ blocks|length }}</span>
+    </h2>
+
+    {% if blocks %}
+      <div class="casefile">
+        {% for block in blocks %}
+          {% if block.kind == "text" %}
+            <p class="casefile__text {% if block.list_item %}casefile__text--item{% endif %}">{{ block.text }}</p>
+          {% else %}
+            <div class="casefile__file">
+              <span class="casefile__label">Materjal</span>
+              {% if block.document %}
+                <a class="casefile__name" href="{% url 'documents:document_detail' pk=block.document.pk %}">
+                  {{ block.filename }}
+                </a>
+                <span class="casefile__meta">
+                  {{ block.size_bytes|filesizeformat }}
+                  {% if block.version %}
+                    · <a href="{% url 'documents:download' pk=block.version.pk %}">Laadi alla</a>
+                  {% endif %}
+                </span>
+              {% else %}
+                <span class="casefile__name">{{ block.filename }}</span>
+                <span class="casefile__meta">
+                  {{ block.size_bytes|filesizeformat }} · <span class="statechip statechip--waiting">Kopeerimisel</span>
+                </span>
+              {% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty">Sellel lehel ei ole teksti ega faile.</p>
+    {% endif %}
+  </section>
+
+  {% if page.links %}
+    <section class="card" aria-labelledby="lingid-heading">
+      <h2 class="sectionlabel" id="lingid-heading">
+        Lehel olnud lingid
+        <span class="sectionlabel__count">{{ page.links|length }}</span>
+      </h2>
+      <ul class="filelist">
+        {% for item in page.links %}
+          <li class="filelist__item">
+            {% comment %}
+              Shown as text, not as a live link. These URLs come out of a
+              document; some are years dead and some point at intranet paths
+              that would leak a referrer. A reader can copy one deliberately.
+            {% endcomment %}
+            <span>{{ item.displayText|default:item.url|truncatechars:90 }}</span>
+            <span class="filelist__meta mono">{{ item.url|truncatechars:60 }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

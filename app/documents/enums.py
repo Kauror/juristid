@@ -18,6 +18,11 @@ class DocumentRole(models.TextChoices):
     # says exactly what is known — it came out of a message — and a lawyer
     # reclassifies it when they know more (Stage-2B brief 26).
     EMAIL_ATTACHMENT = "EMAIL_ATTACHMENT", "E-kirja manus"
+    # A file somebody attached to a OneNote page years ago. The placement is
+    # evidence of relevance and nothing more: a filename containing "arvamus"
+    # does not prove a formal submission, and guessing a business role from one
+    # is how the archive acquires facts it never had (Stage-2D brief 23, 65).
+    LEGACY_MATERIAL = "LEGACY_MATERIAL", "Ajalooline materjal"
     OUTCOME_EVIDENCE = "OUTCOME_EVIDENCE", "Tulemuse tõend"
     WORKING_DOCUMENT = "WORKING_DOCUMENT", "Töödokument"
     OTHER = "OTHER", "Muu"

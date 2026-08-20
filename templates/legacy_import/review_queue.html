@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Ajaloo ülevaatus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The reconciliation queue: everything the audit could not settle.
+
+  535 pending decisions, and each one is a judgement about whether two records
+  are the same piece of work. The evidence sits next to the buttons on purpose —
+  a reviewer who has to open two other pages to decide will decide badly, or not
+  at all (Stage-2D brief 39, 40).
+
+  Deliberately under Admin. This is migration work, not legal work.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Ajaloo ülevaatus</h1>
+    <span class="pagehead__context">
+      {{ total }} kirjet · ootel {{ counts.STRONG }} tugevat,
+      {{ counts.REVIEW_REQUIRED }} ülevaatust, {{ counts.CONFLICT }} vastuolu
+    </span>
+  </div>
+
+  <div class="card" style="padding:var(--spacing-15)">
+    <form class="form" method="get">
+      <div class="formgrid">
+        <label class="field">
+          <span class="field__label">Klass</span>
+          <select class="field__input" name="klass" onchange="this.form.submit()">
+            <option value="">Kõik</option>
+            {% for value, label in classes %}
+              <option value="{{ value }}" {% if value == candidate_class %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field__label">Olek</span>
+          <select class="field__input" name="olek" onchange="this.form.submit()">
+            {% for value, label in states %}
+              <option value="{{ value }}" {% if value == state %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+    </form>
+  </div>
+
+  {% if candidates %}
+    <div class="reviewlist">
+      {% for candidate in candidates %}
+        <article class="card reviewcard">
+          <div class="reviewcard__head">
+            <span class="badge badge--{{ candidate.candidate_class|lower }}">
+              {{ candidate.get_candidate_class_display }}
+            </span>
+            <span class="reference">{{ candidate.excel_reference|default:"—" }}</span>
+            <span class="reviewcard__score">hinne {{ candidate.score|floatformat:2 }}</span>
+          </div>
+
+          <div class="reviewcard__pair">
+            <div class="reviewcard__side">
+              <p class="sectionlabel">Register</p>
+              <p class="reviewcard__title">{{ candidate.excel_title|default:"(pealkirjata)" }}</p>
+              {% if candidate.matter %}
+                <p class="reviewcard__meta">
+                  <a href="{% url 'matters:matter_detail' pk=candidate.matter.pk %}">Ava teema</a>
+                </p>
+              {% else %}
+                <p class="reviewcard__meta">Registris ei leitud vastavat teemat.</p>
+              {% endif %}
+            </div>
+            <div class="reviewcard__side">
+              <p class="sectionlabel">OneNote</p>
+              {% if candidate.source_page %}
+                <p class="reviewcard__title">{{ candidate.source_page.title|default:"(pealkirjata)" }}</p>
+                <p class="reviewcard__meta">
+                  {{ candidate.source_page.display_location }}
+                  · {{ candidate.source_page.file_count }} faili
+                  · {{ candidate.source_page.text_characters }} märki
+                  · {{ candidate.source_page.get_page_role_display }}
+                </p>
+              {% else %}
+                <p class="reviewcard__meta">Lehte ei ole arhiivis.</p>
+              {% endif %}
+            </div>
+          </div>
+
+          {% if candidate.match_signals or candidate.conflicts %}
+            <p class="reviewcard__signals">
+              {% if candidate.match_signals %}<span>{{ candidate.match_signals|truncatechars:180 }}</span>{% endif %}
+              {% if candidate.conflicts %}
+                <span class="reviewcard__conflict">{{ candidate.conflicts|truncatechars:180 }}</span>
+              {% endif %}
+            </p>
+          {% endif %}
+
+          {% if candidate.state == "PENDING" %}
+            <form class="reviewcard__actions" method="post"
+                  action="{% url 'legacy_import:review_decide' pk=candidate.pk %}">
+              {% csrf_token %}
+              <input class="field__input reviewcard__note" type="text" name="note"
+                     placeholder="Märkus (valikuline)" maxlength="2000">
+              <button class="button button--primary" name="decision" value="link"
+                      {% if not candidate.matter or not candidate.source_page %}disabled{% endif %}>
+                Seo teemaga
+              </button>
+              <button class="button" name="decision" value="create"
+                      {% if not candidate.source_page %}disabled{% endif %}>
+                Loo uus teema
+              </button>
+              <button class="button button--quiet" name="decision" value="background">Taust</button>
+              <button class="button button--quiet" name="decision" value="container">Kategooria</button>
+              <button class="button button--quiet" name="decision" value="reject">Lükka tagasi</button>
+            </form>
+          {% else %}
+            <p class="reviewcard__decided">
+              {{ candidate.get_state_display }}
+              {% if candidate.decided_by %}· {{ candidate.decided_by.display_name }}{% endif %}
+              {% if candidate.decided_at %}· {{ candidate.decided_at|date:"d.m.Y H:i" }}{% endif %}
+              {% if candidate.decision_note %}· {{ candidate.decision_note|truncatechars:80 }}{% endif %}
+            </p>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+    {% if total > candidates|length %}
+      <p class="cardnote">Kuvatud {{ candidates|length }} kirjet {{ total }}-st.</p>
+    {% endif %}
+  {% else %}
+    <p class="empty">Selles vaates ei ole kirjeid.</p>
+  {% endif %}
+</div>
+{% endblock %}

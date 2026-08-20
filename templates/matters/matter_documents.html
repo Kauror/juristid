@@ -91,6 +91,39 @@ evidence until a specific version has been captured
           <p class="empty">Tõendeid ei ole veel lisatud.</p>
         {% endif %}
 
+        {% if historical %}
+          {% comment %}
+            Historical source pages sit above the upload form and below the
+            evidence table, because that is the order somebody reads this tab
+            in: what is here, where it came from, and only then how to add more
+            (Stage-2D brief 30).
+          {% endcomment %}
+          <section class="card card--derived" aria-labelledby="ajalooline-heading">
+            <h2 class="sectionlabel" id="ajalooline-heading">
+              Ajalooline OneNote
+              <span class="sectionlabel__count">{{ historical.page_count }}</span>
+            </h2>
+            <p class="cardnote">
+              Selle teemaga seotud OneNote'i lehed. Materjalid on lehe enda
+              järjekorras, koos teksti ja failidega, nagu need kirjutati.
+            </p>
+            <ul class="filelist">
+              {% for link in historical.links %}
+                <li class="filelist__item">
+                  <a href="{% url 'legacy_import:source_page' pk=link.pk %}">
+                    {{ link.source_page.title|default:"Nimetu leht" }}
+                  </a>
+                  <span class="filelist__meta">
+                    {{ link.source_page.source_section }}
+                    · {{ link.source_page.file_count }} faili
+                    · {{ link.get_match_method_display }}
+                  </span>
+                </li>
+              {% endfor %}
+            </ul>
+          </section>
+        {% endif %}
+
         {% comment %}
           Open by default and labelled "dokument", not "tõend". A lawyer
           attaching a ministry's PDF should not have to know the system's
