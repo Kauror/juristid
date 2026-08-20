@@ -53,3 +53,48 @@ def test_every_comment_tag_is_closed(template: Path) -> None:
     assert opened == closed, (
         f"{template} has {opened} `{{% comment %}}` and {closed} `{{% endcomment %}}`."
     )
+
+
+#: `id="…"` and `aria-labelledby="…"` with a literal value. Template-expression
+#: values are skipped: `id="entry-{{ entry.pk }}"` is unique by construction and
+#: cannot be checked without rendering.
+_LITERAL_ID = re.compile(r'\bid="([^"{}]+)"')
+_LABELLED_BY = re.compile(r'\baria-labelledby="([^"{}]+)"')
+
+
+@pytest.mark.parametrize("template", _templates(), ids=lambda p: p.name)
+def test_no_template_declares_the_same_id_twice(template: Path) -> None:
+    """Two elements sharing an id is invalid HTML, and it misroutes labels.
+
+    Found the expensive way: a new section reused `ajalugu-heading`, which the
+    timeline already owned, and the section then announced itself to a screen
+    reader as "Ajajoon". A browser test caught it; this catches it in a second
+    without one (Stage 2D).
+    """
+    source = template.read_text(encoding="utf-8")
+    found = _LITERAL_ID.findall(source)
+    duplicates = {value for value in found if found.count(value) > 1}
+    assert not duplicates, f"{template.name} declares {sorted(duplicates)} more than once"
+
+
+@pytest.mark.parametrize("template", _templates(), ids=lambda p: p.name)
+def test_every_label_reference_points_at_a_heading_in_the_same_file(template: Path) -> None:
+    """A dangling `aria-labelledby` leaves the region with no name at all.
+
+    Only checked within one file: an id defined in a parent template is a real
+    and correct pattern, so a reference this test cannot resolve is only a
+    finding when the file also defines *no* id of that name anywhere.
+    """
+    source = template.read_text(encoding="utf-8")
+    declared = set(_LITERAL_ID.findall(source))
+    if not declared:
+        return
+    for reference in _LABELLED_BY.findall(source):
+        # A reference to something this file never mentions may belong to an
+        # included parent. A reference to a name this file *does* use elsewhere
+        # but not as an id is the mistake worth failing on.
+        if reference in declared:
+            continue
+        assert reference not in source.replace(f'aria-labelledby="{reference}"', ""), (
+            f"{template.name}: aria-labelledby={reference!r} names something that is not an id here"
+        )
