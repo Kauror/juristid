@@ -12,6 +12,7 @@ import pytest
 from django.core.files.base import ContentFile
 from django.core.management import call_command
 from django.db import DatabaseError, connection, transaction
+from django.urls import reverse
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
@@ -113,14 +114,37 @@ def test_operational_state_on_a_version_stays_editable(specialist):
 
 
 def test_unaccepted_formats_are_refused(specialist):
+    """An executable is not a document, whatever somebody names it."""
     document = _document(created_by=specialist)
     with pytest.raises(DomainError):
         add_evidence_version(
             document=document,
-            content=b"<script>alert(1)</script>",
-            original_filename="evil.html",
-            mime_type="text/html",
+            content=bytes([77, 90, 144, 0]),
+            original_filename="setup.exe",
+            mime_type="application/x-msdownload",
         )
+
+
+def test_historical_html_is_storable_but_only_ever_a_download(specialist, client):
+    """The corpus contains saved web pages, and they are originals.
+
+    Refusing to *store* one would lose the evidence; the control is that stored
+    bytes are only ever served as an attachment, with nosniff, so untrusted
+    markup never runs in this application's origin (docs/adr/0015).
+    """
+    document = _document(created_by=specialist)
+    version = add_evidence_version(
+        document=document,
+        content=b"<script>alert(1)</script>",
+        original_filename="ministeeriumi-uudis.html",
+        mime_type="text/html",
+    )
+
+    client.force_login(specialist)
+    response = client.get(reverse("documents:download", kwargs={"pk": version.pk}))
+    assert response.status_code == 200
+    assert response["Content-Disposition"].startswith("attachment;")
+    assert response["X-Content-Type-Options"] == "nosniff"
 
 
 def test_empty_and_oversized_files_are_refused(specialist, settings):

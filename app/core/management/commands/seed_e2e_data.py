@@ -49,7 +49,11 @@ ARCHIVE_TITLE = "Arhiiviteema 2014 sünteetiline registrikirje"
 #: reconciliation queue is not empty (Stage-2D brief 79).
 HISTORICAL_PAGE_TITLE = "Pakendiseaduse muutmise eelnõu 2019"
 HISTORICAL_INTRODUCTION = "Ettepaneku eestikeelne variant:"
-HISTORICAL_FILENAME = "ettepanek-2019.pdf"
+#: A signed container, not a PDF. Two reasons: it is the commonest thing on a
+#: real 2019 page, and it exercises the path where a file is marked unparseable
+#: at import time rather than leaving the extraction worker to discover that a
+#: synthetic stub is not a readable document (Stage-2D brief 24).
+HISTORICAL_FILENAME = "seisukoht-2019.asice"
 CANDIDATE_PAGE_TITLE = "Alkoholiaktsiisi töörühma märkmed"
 
 
@@ -159,7 +163,8 @@ class Command(BaseCommand):
         settle a match — and neither of those needs 4 GiB of source material to
         be true (Stage-2D brief 79).
         """
-        from app.documents.enums import DocumentRole, MalwareScanState
+        from app.documents.enums import DocumentRole, ExtractionState, MalwareScanState
+        from app.documents.models import DocumentVersion
         from app.documents.services import add_evidence_version, create_document
         from app.legacy_import.source_pages import (
             CandidateClass,
@@ -179,7 +184,7 @@ class Command(BaseCommand):
         if LegacySourcePage.objects.filter(title=HISTORICAL_PAGE_TITLE).exists():
             return
 
-        content = b"%PDF-1.4\n% synthetic e2e proposal\n%%EOF\n"
+        content = bytes([80, 75, 3, 4]) + b" synthetic e2e ASiC-E container"
         now = timezone.now()
         blocks = [
             {
@@ -254,10 +259,16 @@ class Command(BaseCommand):
             document=document,
             content=content,
             original_filename=HISTORICAL_FILENAME,
-            mime_type="application/pdf",
+            mime_type="application/vnd.etsi.asic-e+zip",
             acquired_at=now,
             source_identifier="e2e-page-1/e2e-resource-1",
             malware_scan_state=MalwareScanState.PENDING,
+        )
+        # Nothing will ever parse a signed container, so it is marked here
+        # rather than left PENDING in a queue for ever.
+        DocumentVersion.objects.filter(pk=version.pk).update(
+            extraction_state=ExtractionState.NOT_APPLICABLE,
+            extraction_note="Allkirjastatud ümbrik. Sisu ei avata ega indekseerita.",
         )
         LegacySourceResourceImport.objects.create(
             matter_source_page=link,

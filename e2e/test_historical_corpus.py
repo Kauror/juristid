@@ -41,7 +41,7 @@ def test_the_overview_says_the_history_exists_without_becoming_it(page, base_url
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
 
-    section = page.get_by_role("region", name="Ajalooline materjal")
+    section = page.locator("section[aria-labelledby='ajalooline-materjal-heading']")
     expect(section).to_be_visible()
     expect(section).to_contain_text("OneNote")
     # The narrative itself is on its own page, not spilled onto the overview.

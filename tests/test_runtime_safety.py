@@ -39,10 +39,18 @@ def test_a_clean_development_configuration_passes(settings):
 
 
 def test_a_clean_production_configuration_passes(settings):
+    """What "clean" means now includes an authenticator in front.
+
+    Stage 2D added juristid.E006: real data with nothing authenticating the
+    request is not a configuration this system will start in (docs/adr/0015).
+    """
     settings.DEBUG = False
     settings.SECRET_KEY = "a-real-secret"  # noqa: S105
     settings.DEV_LOGIN_ENABLED = False
     settings.REAL_DATA_ALLOWED = True
+    settings.CF_ACCESS_ENABLED = True
+    settings.CF_ACCESS_TEAM_DOMAIN = "naidiskoda.cloudflareaccess.invalid"
+    settings.CF_ACCESS_AUDIENCE = "a" * 64
     assert _ids(settings) == set()
 
 
