@@ -1,0 +1,59 @@
+{% comment %}
+A searchable institution chooser: one text box that narrows one select.
+
+The real catalogue runs to hundreds of bodies. A select carrying all of them is
+unscannable and a wall of radio buttons is worse, so the list is fetched from
+the server for whatever was typed. No frontend library, no client-side store —
+HTMX swaps this same fragment back in, which is why the search box and the
+select live together in one file (Stage-2E.1 brief 13).
+
+Without JavaScript the select still holds the currently chosen body plus the
+first page of the catalogue, and the form still submits. The search box is an
+improvement on that, not a precondition for it.
+
+Rendered by the register's Täpsem otsing panel and re-rendered by
+`matters:organisation_choices`, so both paths produce identical markup.
+{% endcomment %}
+<fieldset class="field orgchooser" id="orgchooser-{{ field }}">
+  <legend class="field__label">{{ field_label }}</legend>
+
+  <label class="orgchooser__search">
+    <span class="visually-hidden">Otsi asutust</span>
+    <input class="field__input"
+           type="search"
+           name="{{ field }}_otsing"
+           value="{{ term }}"
+           autocomplete="off"
+           placeholder="Otsi asutust nime järgi"
+           hx-get="{% url 'matters:organisation_choices' %}"
+           hx-include="#orgchooser-{{ field }}"
+           hx-vals='{"vali": "{{ field }}"}'
+           hx-target="#orgchooser-{{ field }}"
+           hx-swap="outerHTML"
+           hx-trigger="input changed delay:250ms, search">
+  </label>
+
+  <label class="orgchooser__select">
+    <span class="visually-hidden">Vali asutus</span>
+    <select class="field__input" name="{{ field }}">
+      <option value="">Kõik</option>
+      <option value="puudub">Määramata</option>
+      {% comment %}
+        The chosen body is listed first and unconditionally. Searching for
+        something else must not silently drop a filter that is already applied.
+      {% endcomment %}
+      {% if chosen_organisation %}
+        <option value="{{ chosen_organisation.pk }}" selected>{{ chosen_organisation.name }}</option>
+      {% endif %}
+      {% for organisation in organisation_options %}
+        {% if not chosen_organisation or organisation.pk != chosen_organisation.pk %}
+          <option value="{{ organisation.pk }}">{{ organisation.name }}</option>
+        {% endif %}
+      {% endfor %}
+    </select>
+  </label>
+
+  {% if term and not organisation_options %}
+    <span class="field__help">Ühtegi asutust ei leitud.</span>
+  {% endif %}
+</fieldset>

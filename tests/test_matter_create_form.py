@@ -325,3 +325,35 @@ def test_the_whole_field_set_a_browser_sends_is_accepted(signed_in, evidence_roo
 
     matter = Matter.objects.get(title="Nagu brauser saadab")
     assert DocumentVersion.objects.filter(document__matter=matter).count() == 1
+
+
+def test_the_optional_next_action_block_does_not_block_the_browser(signed_in):
+    """The defect a browser found and no server-side test could.
+
+    `Järgmiseks` is optional, but its text field was rendered `required` inside
+    a closed `<details>`. Chrome will not submit a form holding an invalid
+    control it cannot focus, and says nothing — so the button did nothing.
+    """
+    body = signed_in.get(CREATE).content.decode()
+    import re
+
+    field = re.search(r'<[^>]*id="id_next-text"[^>]*>', body)
+    assert field, "the next-action field is not rendered"
+    assert "required" not in field.group(0), field.group(0)
+
+
+def test_a_next_action_is_still_validated_when_somebody_writes_one(signed_in):
+    """Optional in the browser, not optional once used."""
+    response = signed_in.post(
+        CREATE,
+        {
+            "title": "Poolik järgmiseks",
+            "next-text": "Koosta arvamus",
+            "next-kind": "DO",
+            "next-date_semantics": "DEADLINE",
+            "next-target_date": "",
+        },
+    )
+
+    assert response.status_code == 400
+    assert not Matter.objects.filter(title="Poolik järgmiseks").exists()

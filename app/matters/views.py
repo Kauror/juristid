@@ -64,10 +64,12 @@ from app.matters.services import (
     set_matter_dates,
     set_matter_visibility,
     set_organisations,
+    set_policy_area_other,
     set_position,
 )
 from app.matters.timeline import matter_timeline
 from app.organisations.models import Organisation
+from app.search import services as search_services
 from app.submissions.enums import RecipientRole
 from app.submissions.forms import SubmissionCreateForm
 from app.submissions.models import Submission
@@ -478,11 +480,72 @@ SORT_FIELDS = {
 }
 
 
+def _wants_fragment(request: HttpRequest) -> bool:
+    """Whether this request wants the results block rather than the whole page.
+
+    The register answers on **one** URL. A dedicated fragment route would be the
+    house pattern (``matters:timeline_page`` is one), but the live search has to
+    push the address it was answered from, and pushing a fragment route would
+    leave people with ``/teemad/tulemused/?q=...`` in the address bar and in the
+    links they share.
+
+    ``HX-History-Restore-Request`` is the exception that makes Back work. HTMX
+    sends it when its history cache has expired and it needs the whole page
+    again; answering that with a fragment would replace the document with a bare
+    table (Stage-2E.1 brief 7).
+    """
+    return (
+        request.headers.get("HX-Request") == "true"
+        and request.headers.get("HX-History-Restore-Request") != "true"
+    )
+
+
+def _apply_date_filters(queryset: Any, params: Any) -> tuple[Any, dict[str, str]]:
+    """``?saabus_alates=`` and its three siblings, as two closed intervals.
+
+    An unreadable date empties the list rather than being ignored, for the same
+    reason an unreadable year does: a chip reading "31.02.2024" above the whole
+    register is a lie the reader has no way to catch.
+    """
+    bounds: dict[str, dict[str, Any]] = {}
+    echo: dict[str, str] = {}
+    for parameter, (field, edge) in DATE_FILTERS.items():
+        raw = (params.get(parameter) or "").strip()
+        if not raw:
+            continue
+        echo[parameter] = raw
+        parsed = parse_date(raw)
+        if parsed is None:
+            return queryset.none(), echo
+        bounds.setdefault(field, {})[edge] = parsed
+
+    for field, edges in bounds.items():
+        queryset = queryset.filter(
+            selectors.date_range_q(field, start=edges.get("start"), end=edges.get("end"))
+        )
+    return queryset, echo
+
+
 @login_required
 def matter_list(request: HttpRequest) -> HttpResponse:
-    """The register. Dense, filtered through the URL, paginated server-side."""
+    """The register. Dense, filtered through the URL, paginated server-side.
+
+    Stage 2E.1 puts a search box on it. ``?q=`` narrows the *whole* filtered
+    population through the search projection — not the rows already rendered on
+    the current page — and composes with every structured filter as an
+    intersection, so ``?q=pakend&aasta=2024&vastutaja=...`` means all three at
+    once (Stage-2E.1 brief 8, 9, 10).
+    """
     params = request.GET
     queryset = selectors.matter_list_queryset(request.user)
+
+    # Applied first, so everything below narrows an already-searched population
+    # and the count beside the box is the count of the list under it.
+    query = (params.get("q") or "").strip()
+    if query:
+        queryset = queryset.filter(
+            pk__in=search_services.matching_matter_ids(query=query, user=request.user)
+        )
 
     status = params.get("olek", "avatud")
     if status == "avatud":
@@ -554,6 +617,18 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             queryset = queryset.filter(**{f"{field}_id": uuid.UUID(raw)})
         except ValueError:
             queryset = queryset.none()
+    # The convenience filter, beside the two precise ones rather than instead of
+    # them. Nothing stored is collapsed: this is an OR over two columns that
+    # keep their separate meanings (Stage-2E.1 brief 11F).
+    if involved := params.get("asutus"):
+        try:
+            queryset = queryset.filter(selectors.organisation_involved_q(uuid.UUID(involved)))
+        except ValueError:
+            queryset = queryset.none()
+    if materials := params.get("materjalid"):
+        queryset = selectors.filter_by_materials(queryset, request.user, materials)
+
+    queryset, date_echo = _apply_date_filters(queryset, params)
 
     sort = params.get("jarjestus", "reference")
     queryset = queryset.order_by(*SORT_FIELDS.get(sort, SORT_FIELDS["reference"]), "-created_at")
@@ -564,39 +639,138 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     query_without_page = params.copy()
     query_without_page.pop("leht", None)
 
+    # `Tuhjenda koik` returns to the bare register rather than to "everything
+    # except the one dimension I forgot to list".
+    cleared = params.copy()
+    for parameter in REGISTER_PARAMS:
+        cleared.pop(parameter, None)
+    cleared.pop("leht", None)
+
+    chips = _active_filters(request, params)
+    context: dict[str, Any] = {
+        "page": page,
+        "paginator": paginator,
+        "total": paginator.count,
+        "query": query,
+        "query_string": query_without_page.urlencode(),
+        "cleared_query": cleared.urlencode(),
+        "has_any_filter": bool(chips or query),
+        # What the search box submits alongside `q`, so typing narrows the
+        # chosen filters rather than silently widening the population.
+        "carried_params": [
+            (name, value) for name, value in params.items() if name not in {"q", "leht"} and value
+        ],
+        "status_options": _status_options(request, params),
+        "active_filters": chips,
+        "filters": {
+            "olek": status,
+            "ulatus": scope,
+            "q": query,
+            "asutus": params.get("asutus", ""),
+            "materjalid": params.get("materjalid", ""),
+            **date_echo,
+            "vastutaja": params.get("vastutaja", ""),
+            "hetkeseis": params.get("hetkeseis", ""),
+            "menetlusliik": params.get("menetlusliik", ""),
+            "valdkond": params.get("valdkond", ""),
+            "silt": params.get("silt", ""),
+            "liik": params.get("liik", ""),
+            "paritolu": params.get("paritolu", ""),
+            "aasta": params.get("aasta", ""),
+            "allikas": params.get("allikas", ""),
+            "tegevus": params.get("tegevus", ""),
+            "saatja": params.get("saatja", ""),
+            "adressaat": params.get("adressaat", ""),
+            "jarjestus": sort,
+        },
+        "owners": User.objects.filter(is_active=True).order_by("display_name"),
+        "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
+        "tracks": Track.choices,
+        "policy_areas": PolicyArea.objects.filter(is_active=True).order_by("name_et"),
+        "record_modes": RecordMode.choices,
+        "origins": MatterOrigin.choices,
+        "next_action_options": [(key, NEXT_ACTION_LABELS[key]) for key in NEXT_ACTION_LABELS],
+        "material_options": sorted(MATERIAL_LABELS.items()),
+        "chosen_organisation": _organisation_or_none(params.get("asutus", "")),
+        "organisation_options": _organisation_options(""),
+        "nav_active": "teemad",
+    }
+
+    if _wants_fragment(request):
+        # The whole results surface, not a patched piece of it: one render from
+        # one queryset cannot disagree with itself about how many rows there are
+        # (the convention this module opens with).
+        return render(request, "matters/partials/register_results.html", context)
+    return render(request, "matters/matter_list.html", context)
+
+
+#: The register dimensions that name an institution, and what each is called on
+#: screen. A parameter outside this mapping is a 404 rather than a field name
+#: reflected back into the page.
+ORGANISATION_CHOOSER_FIELDS = {
+    "asutus": "Asutus",
+    "saatja": "Algataja voi saatja",
+    "adressaat": "Adressaat",
+}
+
+#: How many organisations the chooser offers at a time. Enough to scan, few
+#: enough that the response stays small on a catalogue with hundreds of rows.
+ORGANISATION_CHOICES = 20
+
+
+def _organisation_options(term: str) -> list[Organisation]:
+    """Organisations whose name or recorded alias matches what was typed.
+
+    The canonical catalogue, ordered by name and carrying no counts.
+    Deliberately not ordered by usage and deliberately not narrowed to bodies
+    that appear on Matters this reader may see: either would make the *order* or
+    the *membership* of this list a statement about restricted work
+    (Stage-2E.1 brief 13).
+
+    ``Organisation`` is shared reference data that the existing pickers already
+    render in full, so listing it here discloses nothing new. Aliases
+    participate because they are reviewed data — searching ``MKM`` should find
+    the ministry filed under its full name (master specification 14.7).
+    """
+    catalogue = Organisation.objects.order_by("name")
+    text = term.strip()
+    if text:
+        catalogue = catalogue.filter(
+            Q(name__icontains=text) | Q(aliases__alias__icontains=text)
+        ).distinct()
+    return list(catalogue[:ORGANISATION_CHOICES])
+
+
+def _organisation_or_none(raw: str) -> Organisation | None:
+    """The chosen body, so the chooser keeps showing it after a search."""
+    try:
+        return Organisation.objects.filter(pk=uuid.UUID(raw)).first()
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
+@login_required
+def organisation_choices(request: HttpRequest) -> HttpResponse:
+    """The searchable organisation control, re-rendered for what was typed.
+
+    A server-backed chooser rather than a select carrying every institution: the
+    real catalogue runs to hundreds, and the alternative the brief rules out — a
+    wall of radio buttons — is unusable at that size. No frontend library is
+    introduced; this is one HTMX swap of one labelled ``<select>`` (brief 13).
+    """
+    field = request.GET.get("vali", "asutus")
+    if field not in ORGANISATION_CHOOSER_FIELDS:
+        raise Http404("Tundmatu vali.")
+    term = request.GET.get(f"{field}_otsing", "")
     return render(
         request,
-        "matters/matter_list.html",
+        "matters/partials/organisation_choices.html",
         {
-            "page": page,
-            "paginator": paginator,
-            "total": paginator.count,
-            "query_string": query_without_page.urlencode(),
-            "status_options": _status_options(request, params),
-            "active_filters": _active_filters(request, params),
-            "filters": {
-                "olek": status,
-                "ulatus": scope,
-                "vastutaja": params.get("vastutaja", ""),
-                "hetkeseis": params.get("hetkeseis", ""),
-                "menetlusliik": params.get("menetlusliik", ""),
-                "valdkond": params.get("valdkond", ""),
-                "silt": params.get("silt", ""),
-                "liik": params.get("liik", ""),
-                "paritolu": params.get("paritolu", ""),
-                "aasta": params.get("aasta", ""),
-                "allikas": params.get("allikas", ""),
-                "tegevus": params.get("tegevus", ""),
-                "saatja": params.get("saatja", ""),
-                "adressaat": params.get("adressaat", ""),
-                "jarjestus": sort,
-            },
-            "owners": User.objects.filter(is_active=True).order_by("display_name"),
-            "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
-            "tracks": Track.choices,
-            "policy_areas": PolicyArea.objects.filter(is_active=True).order_by("name_et"),
-            "record_modes": RecordMode.choices,
-            "nav_active": "teemad",
+            "field": field,
+            "field_label": ORGANISATION_CHOOSER_FIELDS[field],
+            "term": term,
+            "organisation_options": _organisation_options(term),
+            "chosen_organisation": _organisation_or_none(request.GET.get(field, "")),
         },
     )
 
@@ -1019,6 +1193,7 @@ FIELD_SERVICES = {
     "received_date",
     "response_deadline",
     "visibility",
+    "policy_area_other",
 }
 
 
@@ -1030,11 +1205,12 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         raise Http404("Tundmatu väli.")
 
     matter = get_visible_matter(request, pk)
+    surface = _FIELD_SURFACES.get(field, "matters/partials/header.html")
     form = MatterFieldForm(request.POST)
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
-        return render(request, "matters/partials/header.html", context, status=400)
+        return render(request, surface, context, status=400)
 
     value = form.cleaned_data.get(field)
     try:
@@ -1056,13 +1232,23 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
             set_matter_visibility(
                 matter=matter, visibility=value or Visibility.NORMAL, actor=request.user
             )
+        elif field == "policy_area_other":
+            set_policy_area_other(matter=matter, value=value or "", actor=request.user)
     except DomainError as error:
         context = _header_context(request, matter)
         context["field_error"] = str(error)
-        return render(request, "matters/partials/header.html", context, status=400)
+        return render(request, surface, context, status=400)
 
     matter.refresh_from_db()
-    return render(request, "matters/partials/header.html", _header_context(request, matter))
+    # Each field re-renders the surface it lives on. `Muu valdkond` sits in the
+    # facts rail rather than the header strip, and swapping the header for it
+    # would leave the value on screen unchanged while claiming it had saved.
+    return render(request, surface, _header_context(request, matter))
+
+
+#: Fields whose control is not in the header band. `_header_context` already
+#: carries everything the rail reads, so one context serves both.
+_FIELD_SURFACES = {"policy_area_other": "matters/partials/rail.html"}
 
 
 @login_required

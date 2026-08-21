@@ -1,0 +1,23 @@
+"""One more change event: the free-text `Muu valdkond` on a Matter.
+
+Choices only. No column changes shape, no data moves, and the append-only
+triggers on this table are untouched — an `AlterField` that narrows nothing is
+safe to run against a table nothing may update.
+"""
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('audit', '0005_alter_securityauditevent_event_type'),
+    ]
+
+    operations = [
+        migrations.AlterField(
+            model_name='changeevent',
+            name='event_type',
+            field=models.CharField(choices=[('MATTER_CREATED', 'Teema loodud'), ('MATTER_ASSIGNED', 'Teema määratud'), ('MATTER_STAGE_CHANGED', 'Hetkeseis muudetud'), ('MATTER_TRACK_CHANGED', 'Menetlusliik muudetud'), ('MATTER_ORGANISATION_CHANGED', 'Asutus muudetud'), ('MATTER_DATE_CHANGED', 'Kuupäev muudetud'), ('MATTER_POSITION_UPDATED', 'Seisukohta täiendatud'), ('MATTER_POLICY_AREA_OTHER_SET', 'Muu valdkond muudetud'), ('MATTER_VISIBILITY_CHANGED', 'Nähtavus muudetud'), ('MATTER_CLOSED', 'Teema suletud'), ('MATTER_REOPENED', 'Teema taasavatud'), ('NEXT_ACTION_SET', 'Järgmiseks määratud'), ('NEXT_ACTION_COMPLETED', 'Järgmiseks tehtud'), ('NEXT_ACTION_CANCELLED', 'Järgmiseks tühistatud'), ('NEXT_ACTION_REVIEWED', 'Järgmiseks üle vaadatud'), ('ENTRY_ADDED', 'Sissekanne lisatud'), ('ENTRY_EDITED', 'Sissekannet muudetud'), ('SUBMISSION_CREATED', 'Arvamus loodud'), ('SUBMISSION_SENT', 'Arvamus välja saadetud'), ('SUBMISSION_WITHDRAWN', 'Arvamus tagasi võetud'), ('SUBMISSION_SUPERSEDED', 'Arvamus asendatud'), ('SUBMISSION_RECIPIENTS_CHANGED', 'Arvamuse saajad muudetud'), ('DOCUMENT_CREATED', 'Dokument loodud'), ('EVIDENCE_VERSION_ADDED', 'Tõendiversioon lisatud'), ('TAG_ASSIGNED', 'Silt lisatud'), ('TAG_REMOVED', 'Silt eemaldatud'), ('IMPORT_APPLIED', 'Import rakendatud')], db_index=True, max_length=64),
+        ),
+    ]

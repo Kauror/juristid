@@ -3078,3 +3078,79 @@ a.barchart__row:hover {
   font-size: var(--typography-size-meta);
   word-break: break-word;
 }
+
+/* -- the register's search box --------------------------------------------- *
+ *
+ * A search that answers while you type. The form is a real GET form and the
+ * button is a real submit, so the page works with JavaScript off entirely —
+ * HTMX only makes the same request earlier (Stage-2E.1 brief 7).
+ */
+
+.registersearch {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-3);
+}
+
+.registersearch__field {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+/* HTMX toggles `htmx-request` on the form for the duration of the request. The
+ * indicator is a character rather than a spinner: it must not shift the layout
+ * of a control somebody is typing into. */
+.registersearch__spinner {
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 120ms linear;
+}
+
+.registersearch.htmx-request .registersearch__spinner {
+  opacity: 1;
+}
+
+.registercount {
+  margin: 0 0 var(--spacing-2);
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+}
+
+.filterbar--chips {
+  margin-bottom: var(--spacing-3);
+}
+
+.filterchip--clear {
+  border-style: dashed;
+}
+
+/* -- Täpsem otsing: the two-ended controls --------------------------------- *
+ *
+ * Both ends of a range are inclusive, and both wrap rather than scrolling
+ * sideways on a narrow window (brief 27, 28).
+ */
+
+.daterange,
+.orgchooser {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: end;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.daterange__end {
+  display: grid;
+  gap: var(--spacing-1);
+  flex: 1 1 9rem;
+  min-width: 0;
+}
+
+.orgchooser__search,
+.orgchooser__select {
+  flex: 1 1 12rem;
+  min-width: 0;
+}

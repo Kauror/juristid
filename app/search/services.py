@@ -386,7 +386,7 @@ def result_count(*, query: str, user: Any) -> int:
     return search_documents(query=query, user=user).count()
 
 
-def matching_matter_ids(*, query: str, user: Any) -> QuerySet[SearchDocument]:
+def matching_matter_ids(*, query: str, user: Any) -> QuerySet[SearchDocument, Any]:
     """The Matters this query reaches, as a subquery for another queryset.
 
     The register's live search narrows itself with this rather than growing a

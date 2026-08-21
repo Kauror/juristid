@@ -294,7 +294,22 @@ class MatterCreateForm(forms.Form):
 
 
 class NextActionForm(forms.Form):
-    """`Järgmiseks`, including what its date actually means."""
+    """`Järgmiseks`, including what its date actually means.
+
+    `use_required_attribute` is off, and that is not cosmetic. On Uus teema this
+    form is rendered inside a *closed* `<details>`, and setting a next action is
+    optional — the view only validates it when somebody typed something. With
+    the HTML `required` attribute present, the browser refuses to submit a form
+    containing an invalid control it cannot scroll to, reports nothing, and the
+    "Loo teema" button silently does nothing. Creating a Matter without a next
+    action was impossible in a browser and fine in every test that posted
+    directly (Stage-2E.1 brief 26).
+
+    The server-side requirement is unchanged: `text` is still required, and a
+    partially filled next action is still refused.
+    """
+
+    use_required_attribute = False
 
     text = forms.CharField(
         label="Järgmiseks",
@@ -472,6 +487,10 @@ class MatterFieldForm(forms.Form):
     received_date = forms.DateField(required=False)
     response_deadline = forms.DateField(required=False)
     visibility = forms.ChoiceField(choices=Visibility.choices, required=False)
+    # Editable after creation like every other fact on the record. Blank is a
+    # legitimate value here — it is how somebody clears a note that turned out
+    # to belong under a real PolicyArea after all (Stage-2E.1 brief 20).
+    policy_area_other = forms.CharField(max_length=400, required=False)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
