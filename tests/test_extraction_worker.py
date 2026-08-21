@@ -46,6 +46,22 @@ def pdf_version(normal_matter, capture_evidence):
     return capture_evidence(normal_matter, corpus.government_pdf(), "kaaskiri.pdf", PDF)
 
 
+@pytest.fixture
+def unscannable(normal_matter, capture_evidence):
+    """One stored PDF, with whichever scan state the case is about."""
+
+    def make(scan_state):
+        return capture_evidence(
+            normal_matter,
+            corpus.government_pdf(),
+            "kaaskiri.pdf",
+            PDF,
+            malware_scan_state=scan_state,
+        )
+
+    return make
+
+
 # -- the happy path --------------------------------------------------------
 
 
@@ -575,3 +591,96 @@ def test_an_email_attachment_is_written_by_the_worker_not_the_web_request(
     extract(version)
 
     assert DocumentVersion.objects.count() > before
+
+
+# --------------------------------------------------------------------------
+# The queue and the worker have to agree about what is workable.
+#
+# They did not, and the first real-data deployment found out: the worker claimed
+# an unscanned file, `extract_document_version` correctly declined to open it
+# and left it PENDING, and `pending_versions()` handed back the same row
+# immediately. A hot loop at full speed over 16,440 historical attachments,
+# extracting nothing and logging thousands of lines a second.
+# --------------------------------------------------------------------------
+
+
+def test_the_queue_does_not_offer_what_the_worker_will_refuse(settings, unscannable):
+    """The bug, stated as the invariant that was missing.
+
+    Not "unscanned files are extracted" — they are still not. They are simply
+    not *offered*, so the queue drains to empty and the worker idles.
+    """
+    from app.documents.extraction.orchestrator import (
+        is_eligible_for_extraction,
+        pending_versions,
+    )
+
+    settings.REAL_DATA_ALLOWED = True
+    version = unscannable(MalwareScanState.PENDING)
+
+    assert not is_eligible_for_extraction(version)
+    assert version not in list(pending_versions())
+
+
+def test_the_worker_stops_instead_of_spinning_on_an_unscannable_file(settings, unscannable):
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    settings.REAL_DATA_ALLOWED = True
+    version = unscannable(MalwareScanState.PENDING)
+
+    out = StringIO()
+    call_command("run_extraction_worker", "--once", stdout=out)
+
+    version.refresh_from_db()
+    assert version.extraction_state == ExtractionState.PENDING
+    assert "Töödeldud 0 faili" in out.getvalue()
+    # And it says why, so "0 files" is not mistaken for "nothing to do".
+    assert "pahavarakontrolli" in out.getvalue()
+
+
+def test_a_scanned_file_is_still_offered_with_real_data(settings, unscannable):
+    from app.documents.extraction.orchestrator import pending_versions
+
+    settings.REAL_DATA_ALLOWED = True
+    version = unscannable(MalwareScanState.CLEAN)
+    assert version in list(pending_versions())
+
+
+def test_without_real_data_an_unscanned_file_is_still_offered(settings, unscannable):
+    """The synthetic corpus has no scanner either, and has to be exercisable."""
+    from app.documents.extraction.orchestrator import pending_versions
+
+    settings.REAL_DATA_ALLOWED = False
+    version = unscannable(MalwareScanState.PENDING)
+    assert version in list(pending_versions())
+
+
+def test_the_queue_filter_and_the_worker_check_are_the_same_rule(settings, unscannable):
+    """Two expressions of one rule, kept honest against each other."""
+    from app.documents.extraction.orchestrator import (
+        is_eligible_for_extraction,
+        pending_versions,
+    )
+
+    for real_data in (True, False):
+        settings.REAL_DATA_ALLOWED = real_data
+        for state in (MalwareScanState.CLEAN, MalwareScanState.PENDING):
+            version = unscannable(state)
+            offered = version in list(pending_versions())
+            assert offered == is_eligible_for_extraction(version), (
+                f"REAL_DATA_ALLOWED={real_data}, scan={state}: "
+                f"queue says {offered}, worker says {is_eligible_for_extraction(version)}"
+            )
+
+
+def test_the_files_waiting_on_a_scanner_are_countable(settings, unscannable):
+    from app.documents.extraction.orchestrator import awaiting_scanner
+
+    settings.REAL_DATA_ALLOWED = True
+    unscannable(MalwareScanState.PENDING)
+    unscannable(MalwareScanState.PENDING)
+    unscannable(MalwareScanState.CLEAN)
+
+    assert awaiting_scanner().count() == 2
