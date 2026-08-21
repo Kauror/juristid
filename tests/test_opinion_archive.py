@@ -445,16 +445,39 @@ def test_a_date_only_source_never_claims_a_time(archive_path):
     assert submission.sent_at_precision == SentAtPrecision.DATE
 
 
-def test_without_a_sent_date_nothing_is_created(archive_path):
-    _, item = strict_pair(number=23, sent=None)
+def test_a_certain_matter_with_no_defensible_date_still_creates_nothing(archive_path):
+    """The hardest case to refuse: the Matter is *identity*, and it is still not enough.
+
+    Reached through the binary route, because that is the only route that can
+    name a Matter without a register date — a register row with no `VÄLJA` is
+    not indexed for date matching at all.
+    """
+    matter = register_matter(
+        year=2022, number=23, title="Näidisakti muutmine", sent=None, counterparty="Amet"
+    )
+    item = syn.opinion(date="2022-05-31", recipient="Amet", title="Näidisakti muutmine")
+    attach_to_onenote([matter], item.data)
+
     plan = plan_for(archive_path([item]))
     apply_plan(plan, batch=open_batch(plan))
+
     assert not Submission.objects.exists()
-    # The evidence is still catalogued and still reviewable.
+    # The evidence is still catalogued, still attached to the Matter, and the
+    # candidate has been demoted to the queue with the reason on it.
     assert OpinionArchiveItem.objects.count() == 1
-    assert OpinionMatchCandidate.objects.filter(
-        match_class=OpinionMatchClass.REVIEW_REQUIRED
-    ).exists()
+    proposal = proposal_for(plan, item)
+    assert proposal.match_class == OpinionMatchClass.REVIEW_REQUIRED
+    assert "kuupäeva ei ole" in proposal.explanation
+    assert OpinionMatchCandidate.objects.filter(matter=matter).exists()
+
+
+def test_a_register_row_with_no_sent_date_never_matches_on_date(archive_path):
+    _, item = strict_pair(number=24, sent=None)
+    plan = plan_for(archive_path([item]))
+    apply_plan(plan, batch=open_batch(plan))
+
+    assert not Submission.objects.exists()
+    assert proposal_for(plan, item).match_class == OpinionMatchClass.UNMATCHED
 
 
 def test_several_files_on_one_matter_and_day_are_one_letter_with_annexes(archive_path):

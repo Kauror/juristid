@@ -43,7 +43,7 @@ from app.legacy_import.opinion_match import (
 from app.legacy_import.opinion_sources import (
     ArchiveOccurrence,
     KodaDashRow,
-    fold,
+    keyword_fold,
     read_kodadash_artifact,
     read_opinion_archive,
 )
@@ -58,7 +58,6 @@ EXPLICIT_KINDS: tuple[tuple[str, str], ...] = (
     ("uhispoordumine", SubmissionKind.JOINT_LETTER),
     ("uhiskiri", SubmissionKind.JOINT_LETTER),
     ("taiendav arvamus", SubmissionKind.SUPPLEMENTARY_OPINION),
-    ("tiendav arvamus", SubmissionKind.SUPPLEMENTARY_OPINION),
 )
 
 #: What an archive of Chamber opinions is, when its own naming says nothing
@@ -477,7 +476,7 @@ def _occurrence_for(plan: OpinionArchivePlan, sha256: str) -> ArchiveOccurrence 
 
 
 def _kind_for(occurrence: ArchiveOccurrence) -> str:
-    folded = fold(occurrence.filename_title)
+    folded = keyword_fold(occurrence.filename_title)
     for token, kind in EXPLICIT_KINDS:
         if token in folded:
             return kind

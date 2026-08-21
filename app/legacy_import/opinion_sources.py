@@ -110,6 +110,26 @@ def fold(value: object) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", text).split())
 
 
+#: Estonian letters, transliterated. Used *only* by `keyword_fold`.
+TRANSLITERATION = str.maketrans({"ä": "a", "ö": "o", "õ": "o", "ü": "u", "š": "s", "ž": "z"})
+
+
+def keyword_fold(value: object) -> str:
+    """Like `fold`, but transliterating, for looking up words we chose ourselves.
+
+    The distinction is the whole reason there are two functions. `fold` compares
+    two *sources* and must not invent a character the archive destroyed, so it
+    replaces rather than transliterates — which splits `ühispöördumine` into
+    fragments. That is fine when both sides split identically and useless when
+    one side is a word this codebase wrote down. Transliteration is safe here
+    because nothing is being identified: a keyword either appears or it does
+    not, and a wrong answer costs a submission kind rather than a Matter.
+    """
+    text = unicodedata.normalize("NFC", str(value or "")).casefold().translate(TRANSLITERATION)
+    text = "".join(character if character.isascii() else " " for character in text)
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", text).split())
+
+
 def title_tokens(value: object) -> frozenset[str]:
     """Distinctive words in a title, for the third exact signal."""
     return frozenset(

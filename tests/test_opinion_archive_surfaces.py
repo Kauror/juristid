@@ -118,7 +118,11 @@ def test_an_administrator_may_open_the_queue(client, administrator):
     client.force_login(administrator)
     response = client.get(reverse("legacy_import:opinion_queue"))
     assert response.status_code == 200
-    assert "naidis.pdf" in response.content.decode()
+    body = response.content.decode()
+    # The card identifies the file by what it says it is and by its hash, which
+    # is what a reviewer needs; the storage filename is not the identity.
+    assert "Näidisarvamus" in body
+    assert item.sha256[:12] in body
 
 
 def test_a_decision_requires_a_post(client, administrator):
@@ -320,7 +324,8 @@ def test_the_era_note_names_the_real_coverage_rather_than_denying_measurement(
     result = compute(keys.SUBMISSIONS_SENT, context(specialist))
     note = result.definition.source_era_limitations_et
     assert "2020" in note
-    assert "ei ole mõõtmist" in note
+    assert "mõõtmist ei ole" in note
+    assert "ei tähenda, et arvamusi ei saadetud" in note
 
 
 # ---------------------------------------------------------------------------
