@@ -215,21 +215,8 @@ def test_a_matter_can_be_created_with_a_file_attached(page, base_url, tmp_path):
 
 
 # -- historical files --------------------------------------------------------
-
-
-def test_a_pdf_filename_opens_the_file_rather_than_a_page_about_it(page, base_url):
-    """The click should reach the material, not an intermediate screen."""
-    sign_in(page, base_url, MARTIN)
-    page.goto(f"{base_url}/teemad/")
-    page.get_by_role("link", name=re.compile("Tavaline avatud teema")).first.click()
-
-    historical = page.get_by_role("link", name="Vaata ajaloolist materjali")
-    if not historical.count():
-        pytest.skip("this world has no historical material attached")
-
-    historical.click()
-    link = page.locator(".casefile__name").first
-    expect(link).to_be_visible()
-
-    href = link.get_attribute("href") or ""
-    assert "/ava/" in href or href.endswith("/"), "the filename links straight at the bytes"
+#
+# Moved to `e2e/test_historical_files.py`. The assertion that lived here could
+# not fail: a download URL ends in "/", so `"/ava/" in href or href.endswith("/")`
+# was true for both answers. The seeded page now carries one openable material
+# and one that can only be saved, which is what makes the difference testable.

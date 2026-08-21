@@ -357,3 +357,72 @@ def test_a_next_action_is_still_validated_when_somebody_writes_one(signed_in):
 
     assert response.status_code == 400
     assert not Matter.objects.filter(title="Poolik järgmiseks").exists()
+
+
+def test_a_storage_failure_leaves_no_reachable_matter_behind(signed_in, evidence_root, monkeypatch):
+    """Validation is not the only way the second file can fail.
+
+    Uploads are read and checked before anything is written, which catches a
+    rejected *file*. It cannot catch the evidence store going away halfway
+    through — so the write is inside one transaction, and a Matter with one of
+    its two attachments must not survive the failure (Stage-2E.1 brief 23).
+    """
+    from app.matters import views as matter_views
+
+    real = matter_views.__dict__.get("_attach_incoming_file")
+    assert real is not None, "the attachment helper was renamed"
+
+    calls = {"n": 0}
+
+    def fail_on_the_second(matter, upload, *, actor):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise OSError("evidence store unavailable")
+        return real(matter, upload, actor=actor)
+
+    monkeypatch.setattr(matter_views, "_attach_incoming_file", fail_on_the_second)
+
+    with pytest.raises(OSError):
+        signed_in.post(
+            CREATE,
+            {
+                "title": "Katkise salvestusega",
+                "files": [
+                    upload("esimene.pdf", corpus.government_pdf()),
+                    upload("teine.pdf", corpus.government_pdf()),
+                ],
+            },
+        )
+
+    # Nothing half-made, and nothing hidden: the failure is not swallowed into
+    # a success message either.
+    assert not Matter.objects.filter(title="Katkise salvestusega").exists()
+    assert not Document.objects.filter(title="esimene.pdf").exists()
+
+
+def test_a_validation_error_gives_back_what_was_typed(signed_in, evidence_root):
+    """A refused save must not cost somebody the five fields they filled in.
+
+    The files themselves cannot come back — no browser lets a server refill a
+    file input — which is exactly why everything else has to (brief 25, 40.22).
+    """
+    area = factories.PolicyAreaFactory()
+    response = signed_in.post(
+        CREATE,
+        {
+            "title": "",  # the one required field, deliberately empty
+            "policy_areas": [str(area.pk)],
+            "received_date": "2024-03-07",
+            "policy_area_other_selected": "on",
+            "policy_area_other": "Kosmoseõigus",
+        },
+    )
+
+    assert response.status_code == 400
+    form = response.context["form"]
+    assert form.errors["title"]
+    assert form["received_date"].value() == "2024-03-07"
+    assert form["policy_area_other"].value() == "Kosmoseõigus"
+    assert form["policy_areas"].value() == [str(area.pk)]
+    # And the disclosure holding an entered value opens rather than hiding it.
+    assert "Kosmoseõigus" in response.content.decode()
