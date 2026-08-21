@@ -26,6 +26,7 @@ from django.views.decorators.http import require_http_methods
 from app.accounts.enums import UserRole
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import matter_visibility_q, scope_for_user
+from app.documents.inline import may_open_inline
 from app.documents.models import Document
 from app.legacy_import.historical_apply import index_source_link
 from app.legacy_import.source_pages import (
@@ -116,6 +117,18 @@ def _rendered_blocks(page: LegacySourcePage, resources: dict, documents: dict) -
                     "size_bytes": resource.size_bytes if resource else 0,
                     "document": record.document if record else None,
                     "version": record.document_version if record else None,
+                    # What clicking the filename should do. Decided here, from
+                    # the stored bytes' own extension and MIME type, so the
+                    # template cannot accidentally make something openable by
+                    # rendering it differently (app/documents/inline.py).
+                    "opens_inline": bool(
+                        record
+                        and record.document_version
+                        and may_open_inline(
+                            filename=record.document_version.original_filename,
+                            mime_type=record.document_version.mime_type,
+                        )
+                    ),
                     # A file the importer has not reached yet is shown as
                     # itself, waiting. Hiding it would make the page look like
                     # it had fewer materials than it does.

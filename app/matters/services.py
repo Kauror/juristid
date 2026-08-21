@@ -136,6 +136,13 @@ def create_matter(
     if assign_reference:
         year_number = allocate_matter_reference(reference_year)
 
+    # Free text, not taxonomy. Trimmed and length-capped here so it cannot
+    # arrive as whitespace or overflow the column, and deliberately *not*
+    # turned into a PolicyArea or a Tag (Stage-2E.1 brief 20).
+    other_area = str(extra.pop("policy_area_other", "") or "").strip()
+    if other_area:
+        extra["policy_area_other"] = other_area[:400]
+
     policy_areas = extra.pop("policy_areas", None)
 
     matter = Matter.objects.create(

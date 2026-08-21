@@ -98,6 +98,16 @@ class Matter(BaseModel):
         default="",
         verbose_name="andmekvaliteedi tase",
     )
+    policy_area_other = models.CharField(
+        max_length=400,
+        blank=True,
+        verbose_name="muu valdkond",
+        help_text=(
+            "Vabatekst, kui ükski loetletud valdkond ei sobi. Ei ole taksonoomia: "
+            "siit ei teki uut valdkonda ega silti, ja statistika ei loe seda "
+            "kanoonilise valdkonna hulka."
+        ),
+    )
     source_era = models.CharField(
         max_length=32,
         blank=True,

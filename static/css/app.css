@@ -2933,3 +2933,148 @@ a.barchart__row:hover {
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* -- every year, directly selectable -------------------------------------- *
+ *
+ * A twenty-year register is mostly consulted one year at a time. The quick
+ * choices answer "how are we doing now"; this answers "what happened in 2014",
+ * without making somebody click a chart bar to discover the URL.
+ */
+
+.yearpicker {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+  margin-top: var(--spacing-2);
+}
+
+.yearpicker__label {
+  color: var(--text-muted);
+  font-size: var(--typography-size-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.yearpicker__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.yearpicker__year {
+  display: inline-block;
+  padding: var(--spacing-1) var(--spacing-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.yearpicker__year:hover {
+  border-color: var(--border-subtle);
+  color: var(--text-primary);
+}
+
+.yearpicker__year.is-active {
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+  background: var(--surface-panel);
+}
+
+/* -- Uus teema: visible choices -------------------------------------------- *
+ *
+ * The control's shape is a promise about the data. Radios where the model holds
+ * one value, checkboxes where it holds several — a checkbox list for Vastutaja
+ * would offer something `Matter.owner` cannot keep. Both are styled as chips;
+ * neither stops being what it is (Stage-2E.1 brief 16, 19).
+ */
+
+.choicecards,
+.checkitems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-15);
+}
+
+.choicecard,
+.checkitem {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-15) var(--spacing-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+  cursor: pointer;
+  font-size: var(--typography-size-row);
+}
+
+.choicecard:hover,
+.checkitem:hover {
+  border-color: var(--accent-border);
+}
+
+.choicecard:has(input:checked),
+.checkitem:has(input:checked) {
+  border-color: var(--accent-border);
+  background: var(--surface-raised);
+}
+
+/* Focus has to survive on the label, because the input is the small part. */
+.choicecard:has(input:focus-visible),
+.checkitem:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.checkitems__other {
+  margin-top: var(--spacing-3);
+  max-width: 32rem;
+}
+
+.field--narrow {
+  max-width: 16rem;
+}
+
+.disclosure--inline {
+  margin-top: var(--spacing-2);
+  padding: 0;
+  border: 0;
+}
+
+/* -- the file area --------------------------------------------------------- */
+
+.dropzone {
+  padding: var(--spacing-3);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+}
+
+.dropzone.is-over {
+  border-color: var(--accent-border);
+  border-style: solid;
+}
+
+.dropzone__list {
+  display: grid;
+  gap: var(--spacing-1);
+  margin: var(--spacing-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dropzone__file {
+  padding: var(--spacing-1) var(--spacing-2);
+  border-left: 2px solid var(--accent-border);
+  background: var(--surface-base);
+  font-size: var(--typography-size-meta);
+  word-break: break-word;
+}

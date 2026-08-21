@@ -55,6 +55,7 @@ def _shell(request: HttpRequest, context: ReportingContext, tab: str) -> dict[st
         "tabs": TABS,
         "active_tab": tab,
         "period_options": filters.period_options(context),
+        "available_years": filters.available_years(context),
         "chips": filters.chips(context),
         "hidden_inputs": filters.hidden_inputs(context),
         # The whole filter state, for links that change one thing and must keep

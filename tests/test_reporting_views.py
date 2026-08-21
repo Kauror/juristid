@@ -351,3 +351,99 @@ def test_a_reader_who_cannot_open_the_review_queue_is_told_where_it_lives(world,
         )
         assert bool(row.url) is expect_link
         assert ("halduri ajaloo-ülevaatuse" in row.explanation) is not expect_link
+
+
+# --------------------------------------------------------------------------
+# Every year, directly selectable.
+#
+# The quick choices answer "how are we doing now". A twenty-year register is
+# mostly consulted one year at a time, and until now the only way to reach 2014
+# was to click a chart bar and read the URL (Stage-2E.1 brief 9, 10).
+# --------------------------------------------------------------------------
+
+
+def _year_labels(response):
+    import re
+
+    html = response.content.decode()
+    block = re.search(r'<nav class="yearpicker".*?</nav>', html, re.S)
+    return (
+        re.findall(r'class="yearpicker__year[^"]*"[^>]*>(\d{4})<', block.group(0)) if block else []
+    )
+
+
+def test_every_register_year_is_offered_newest_first(client, world, reporting_context):
+    from django.urls import reverse
+
+    client.force_login(world.martin)
+    response = client.get(reverse("reporting:overview"))
+
+    years = _year_labels(response)
+    assert years, "no year picker was rendered"
+    assert years == sorted(years, reverse=True)
+
+
+@pytest.mark.parametrize("year", ["2011", "2018", "2024", "2026"])
+def test_a_single_year_can_be_selected_by_url(client, world, year):
+    from django.urls import reverse
+
+    client.force_login(world.martin)
+    response = client.get(reverse("reporting:overview"), {"periood": year})
+
+    assert response.status_code == 200
+    assert response.context["reporting"].period.key == year
+    assert response.context["reporting"].period.start_year == int(year)
+
+
+def test_the_year_filter_applies_on_every_tab(client, world):
+    from django.urls import reverse
+
+    client.force_login(world.martin)
+    for name in ("overview", "matters", "activity", "historical", "quality"):
+        response = client.get(reverse(f"reporting:{name}"), {"periood": "2024"})
+        assert response.status_code == 200, name
+        assert response.context["reporting"].period.key == "2024", name
+
+
+def test_a_onenote_only_matter_never_contributes_a_selectable_year(client, world):
+    """Its `reporting_year` is when somebody last edited the page.
+
+    Offering that as a year would invite a reader to filter on one nobody filed
+    anything under (app/matters/enums.py).
+    """
+    from django.urls import reverse
+
+    from app.matters.enums import MatterOrigin
+    from tests import factories
+
+    # No register reference at all, which is what a OneNote-only Matter is:
+    # the year and the number are null together, as the constraint requires.
+    factories.MatterFactory(
+        origin=MatterOrigin.LEGACY_ONENOTE,
+        reporting_year=1999,
+        reference_year=None,
+        reference_number=None,
+    )
+    client.force_login(world.martin)
+
+    assert "1999" not in _year_labels(client.get(reverse("reporting:overview")))
+
+
+def test_a_year_that_exists_only_in_restricted_records_is_not_offered(client, world):
+    """An empty year in a list is itself a disclosure."""
+    from django.urls import reverse
+
+    from app.core.enums import Visibility
+    from app.matters.enums import MatterOrigin
+    from tests import factories
+
+    factories.MatterFactory(
+        origin=MatterOrigin.LEGACY_IMPORT,
+        reporting_year=1998,
+        reference_year=1998,
+        visibility=Visibility.RESTRICTED,
+        owner=factories.UserFactory(),
+    )
+    client.force_login(world.martin)
+
+    assert "1998" not in _year_labels(client.get(reverse("reporting:overview")))

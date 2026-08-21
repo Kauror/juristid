@@ -67,6 +67,44 @@ _LABELS: dict[str, str] = {
 }
 
 
+def available_years(context: ReportingContext) -> list[PeriodOption]:
+    """Every year a reader may actually select, newest first.
+
+    Built from the *authorized* population, so a year that exists only inside
+    records this viewer cannot see is not offered — an empty year in a list is
+    itself a disclosure.
+
+    Restricted to `REGISTER_YEAR_ORIGINS` for the reason that constant exists: a
+    OneNote-only Matter's `reporting_year` comes from when somebody last edited
+    the page, and offering 2021 because a page about a 2018 draft was touched
+    then would invite a reader to filter on a year nobody filed anything under.
+    Those Matters stay in *Teadmata aasta* here exactly as they do in the charts
+    (app/matters/enums.py, Stage-2E.1 brief 10).
+
+    Deliberately not the quick choices. Somebody who wants 2014 should be able
+    to pick 2014, not click a chart bar to discover the URL.
+    """
+    from app.matters.enums import REGISTER_YEAR_ORIGINS
+    from app.reporting.selectors.base import visible_matters
+
+    years = (
+        visible_matters(context)
+        .filter(reporting_year__isnull=False, origin__in=REGISTER_YEAR_ORIGINS)
+        .values_list("reporting_year", flat=True)
+        .distinct()
+        .order_by("-reporting_year")
+    )
+    return [
+        PeriodOption(
+            key=str(year),
+            label=str(year),
+            query=urlencode(context.query_params(**{ctx.PARAM_PERIOD: str(year)})),
+            active=context.period.key == str(year),
+        )
+        for year in years
+    ]
+
+
 def period_options(context: ReportingContext) -> list[PeriodOption]:
     options = [
         PeriodOption(

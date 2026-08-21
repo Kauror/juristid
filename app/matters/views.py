@@ -21,6 +21,7 @@ from typing import Any
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -569,45 +570,134 @@ def matter_list(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_http_methods(["GET", "POST"])
 def matter_create(request: HttpRequest) -> HttpResponse:
-    form = MatterCreateForm(request.POST or None)
+    """Create a Matter, with the files it arrived with.
+
+    A matter arrives as a title, a document and a person, so all three are
+    captured in one step. The files are read and validated *before* anything is
+    written: one rejected attachment must not leave a Matter behind carrying the
+    other three, which is the failure mode the intake surface already avoids
+    (Stage-2E.1 brief 23).
+    """
+    form = MatterCreateForm(request.POST or None, viewer=request.user)
     action_form = NextActionForm(request.POST or None, prefix="next")
+    uploads: list[Any] = []
+    upload_error = ""
 
     if request.method == "POST" and form.is_valid():
         wants_action = bool(request.POST.get("next-text", "").strip())
-        if wants_action and not action_form.is_valid():
+        try:
+            uploads = _read_new_matter_files(request)
+        except (DomainError, UploadRejected) as error:
+            upload_error = str(error)
+
+        if upload_error or (wants_action and not action_form.is_valid()):
+            if upload_error:
+                messages.error(request, upload_error)
             return render(
                 request,
                 "matters/matter_create.html",
-                {"form": form, "action_form": action_form, "nav_active": "teemad"},
+                _create_context(request, form, action_form),
                 status=400,
             )
 
         data = form.cleaned_data
-        matter = create_matter(
-            title=data["title"],
-            actor=request.user,
-            owner=data.get("owner"),
-            stage=data.get("stage"),
-            track=data.get("track") or "",
-            source_organisation=data.get("source_organisation"),
-            addressee_organisation=data.get("addressee_organisation"),
-            received_date=data.get("received_date"),
-            response_deadline=data.get("response_deadline"),
-            policy_areas=list(data.get("policy_areas") or []),
-            visibility=data.get("visibility") or Visibility.NORMAL,
-        )
+        with transaction.atomic():
+            matter = create_matter(
+                title=data["title"],
+                actor=request.user,
+                owner=data.get("owner"),
+                stage=data.get("stage"),
+                track=data.get("track") or "",
+                source_organisation=data.get("source_organisation"),
+                addressee_organisation=data.get("addressee_organisation"),
+                received_date=data.get("received_date"),
+                response_deadline=data.get("response_deadline"),
+                policy_areas=list(data.get("policy_areas") or []),
+                policy_area_other=data.get("policy_area_other") or "",
+                # Decided here, never read from the form. The control is gone
+                # from the page and an omitted field must not become a blank
+                # value the model would refuse (brief 21).
+                visibility=Visibility.NORMAL,
+            )
+            for upload in uploads:
+                _attach_incoming_file(matter, upload, actor=request.user)
 
-        if wants_action:
-            set_next_action(matter=matter, actor=request.user, **action_form.as_service_kwargs())
+            if wants_action:
+                set_next_action(
+                    matter=matter, actor=request.user, **action_form.as_service_kwargs()
+                )
 
-        messages.success(request, f"Teema {matter.display_reference} on loodud.")
+        if uploads:
+            messages.success(
+                request,
+                f"Teema {matter.display_reference} on loodud koos {len(uploads)} failiga.",
+            )
+        else:
+            messages.success(request, f"Teema {matter.display_reference} on loodud.")
         # Straight into the file: creation is the start of work, not the end.
         return redirect("matters:matter_detail", pk=matter.pk)
 
     return render(
-        request,
-        "matters/matter_create.html",
-        {"form": form, "action_form": action_form, "nav_active": "teemad"},
+        request, "matters/matter_create.html", _create_context(request, form, action_form)
+    )
+
+
+def _create_context(request: HttpRequest, form: Any, action_form: Any) -> dict[str, Any]:
+    return {
+        "form": form,
+        "action_form": action_form,
+        "frequent_senders": getattr(form, "frequent_senders", []),
+        # Named here rather than excluded in the template by listing the primary
+        # ones: a field added to the form later should appear *somewhere* by
+        # default, and the safe default is the disclosure.
+        "secondary_fields": (
+            "stage",
+            "track",
+            "addressee_organisation",
+            "response_deadline",
+        ),
+        "today": timezone.localdate(),
+        "nav_active": "teemad",
+    }
+
+
+def _read_new_matter_files(request: HttpRequest) -> list[Any]:
+    """Read and validate every attachment before a single row is written.
+
+    Reading is what validates: `read_upload` enforces the size, the MIME type
+    and the signature rules the rest of the system already relies on. Doing all
+    of it up front is the whole point — a Matter created with three of four
+    files, and an error message about the fourth, is worse than no Matter.
+    """
+    from app.documents.uploads import read_upload
+
+    files = request.FILES.getlist("files")
+    return [read_upload(handle) for handle in files if handle]
+
+
+def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
+    """One uploaded file as one Document with one immutable version.
+
+    Through the ordinary services, so a file arriving with a new Matter is
+    subject to the same evidence rules as one uploaded later: same storage, same
+    checksum, same immutability trigger, same scan state. Nothing is inferred
+    from the filename — not a stage, not a submission, not a date.
+    """
+    from app.documents.enums import DocumentRole
+    from app.documents.services import add_evidence_version, create_document
+
+    document = create_document(
+        matter=matter,
+        title=upload.filename,
+        role=DocumentRole.INCOMING_AUTHORITY,
+        created_by=actor,
+    )
+    add_evidence_version(
+        document=document,
+        content=upload.content,
+        original_filename=upload.filename,
+        mime_type=upload.mime_type,
+        uploaded_by=actor,
     )
 
 
