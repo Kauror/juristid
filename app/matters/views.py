@@ -30,12 +30,14 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
+from app.core.authorization import may_review_work_victory, may_write_business_content
 from app.core.decorators import gate_required, viewer_for
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.uploads import UploadRejected
+from app.intelligence.selectors import matter_intelligence
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters import selectors
 from app.matters.dashboard import build_dashboard
@@ -647,6 +649,13 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "composer_form": ComposerForm(),
         "incoming_documents": _incoming_documents(request, matter),
         "historical": _historical_context(matter, request.user),
+        # Stage 2G's structured facts. Read through their own selector, which
+        # scopes them like every other child record; the write controls are
+        # routed to `app.intelligence` rather than rendered from here, so this
+        # view knows nothing about how they are captured.
+        "intelligence": matter_intelligence(matter, request.user),
+        "can_write": may_write_business_content(request.user),
+        "can_review_victory": may_review_work_victory(request.user),
         "today": timezone.localdate(),
     }
 

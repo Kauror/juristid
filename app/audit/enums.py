@@ -36,6 +36,25 @@ class ChangeEventType(models.TextChoices):
     TAG_ASSIGNED = "TAG_ASSIGNED", "Silt lisatud"
     TAG_REMOVED = "TAG_REMOVED", "Silt eemaldatud"
     IMPORT_APPLIED = "IMPORT_APPLIED", "Import rakendatud"
+    # -- Stage 2G: structured Matter facts ---------------------------------
+    #
+    # Their own event types rather than a reused MATTER_DATE_CHANGED. A watched
+    # milestone, a commencement date and a claimed work victory are three
+    # different facts, and a history that called all of them "kuupäev muudetud"
+    # could not answer which one somebody changed. They are deliberately absent
+    # from `matters.timeline.TIMELINE_EVENT_TYPES`: adding a structured fact is
+    # not authored chronology, and echoing each one into the professional
+    # narrative would bury the meeting notes (Stage-2G brief 34, 37).
+    IMPORTANT_DATE_ADDED = "IMPORTANT_DATE_ADDED", "Oluline tähtaeg lisatud"
+    IMPORTANT_DATE_CHANGED = "IMPORTANT_DATE_CHANGED", "Olulist tähtaega muudetud"
+    IMPORTANT_DATE_CANCELLED = "IMPORTANT_DATE_CANCELLED", "Oluline tähtaeg tühistatud"
+    EFFECTIVE_DATE_ADDED = "EFFECTIVE_DATE_ADDED", "Jõustumine lisatud"
+    EFFECTIVE_DATE_CHANGED = "EFFECTIVE_DATE_CHANGED", "Jõustumist muudetud"
+    EFFECTIVE_DATE_CANCELLED = "EFFECTIVE_DATE_CANCELLED", "Jõustumine tühistatud"
+    WORK_VICTORY_PROPOSED = "WORK_VICTORY_PROPOSED", "Töövõidu kandidaat lisatud"
+    WORK_VICTORY_CHANGED = "WORK_VICTORY_CHANGED", "Töövõidu kirjet muudetud"
+    WORK_VICTORY_CONFIRMED = "WORK_VICTORY_CONFIRMED", "Töövõit kinnitatud"
+    WORK_VICTORY_REJECTED = "WORK_VICTORY_REJECTED", "Töövõit ei realiseerunud"
 
 
 class SecurityEventType(models.TextChoices):

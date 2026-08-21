@@ -2933,3 +2933,239 @@ a.barchart__row:hover {
   align-items: center;
   flex-wrap: wrap;
 }
+
+/* ---------------------------------------------------------------------------
+   Stage 2G — structured Matter facts
+   -------------------------------------------------------------------------- */
+
+.factsection {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--spacing-3);
+  margin-top: var(--spacing-4);
+}
+
+.factsection__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+.factlist {
+  list-style: none;
+  margin: var(--spacing-2) 0 0;
+  padding: 0;
+}
+
+.factrow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.factrow:last-child {
+  border-bottom: none;
+}
+
+.factrow__date {
+  flex: 0 0 auto;
+  min-width: 11ch;
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+/* An unknown date is an honest state, not a missing field, so it reads as
+   words rather than as an empty cell (Stage-2G brief 15). */
+.factrow__date--undated {
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-muted);
+}
+
+.factrow__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  flex: 1 1 auto;
+}
+
+.factrow__title {
+  color: var(--text-primary);
+}
+
+.factrow__matter {
+  color: var(--accent-link);
+  text-decoration: none;
+}
+
+.factrow__matter:hover {
+  text-decoration: underline;
+}
+
+/* Secondary by design: the Matter is the destination, the official source is a
+   check on it (Stage-2G brief 18). */
+.factrow__source {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.factrow__actions {
+  display: flex;
+  gap: var(--spacing-15);
+  flex: 0 0 auto;
+}
+
+/* Cancelled and past rows stay legible. They are history, not noise, and
+   fading them out of readability would be a quiet form of deletion. */
+.factrow--cancelled .factrow__title,
+.factrow--cancelled .factrow__date {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+
+.factrow--past .factrow__date {
+  color: var(--text-secondary);
+}
+
+.flag--cancelled {
+  border: 1px dashed var(--border-default);
+  color: var(--text-muted);
+}
+
+/* The two event kinds in the combined calendar are never merged visually.
+   A commencement is a legal fact; a watched milestone is somebody's plan. */
+.eventkind {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  padding: 1px 6px;
+}
+
+.eventkind--commencement {
+  color: var(--accent-link);
+  border-color: var(--accent-border);
+}
+
+/* Candidate, confirmed and not-realized differ in weight and border, never in
+   colour alone (the CVI rule Stage 1 established for DO/WAIT/MONITOR). */
+.victorystate {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  border-radius: var(--radius-control);
+  padding: 1px 6px;
+  border: 1px dashed var(--border-default);
+  color: var(--text-secondary);
+}
+
+.victorystate--confirmed {
+  border-style: solid;
+  border-color: var(--accent-border);
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+.victorystate--not_realized {
+  border-style: dotted;
+  color: var(--text-muted);
+}
+
+.periodhead {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin: var(--spacing-4) 0 0;
+}
+
+.periodfilter {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+.periodfilter__label {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.periodfilter__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-15);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.periodfilter__option {
+  font-size: var(--typography-size-meta);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  padding: 1px 6px;
+}
+
+.periodfilter__option:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.periodfilter__option.is-active {
+  background: var(--surface-selected);
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+}
+
+.choiceset {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-2) var(--spacing-25);
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  align-items: center;
+}
+
+.choiceset__option {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-15);
+  font-size: var(--typography-size-base);
+  color: var(--text-primary);
+}
+
+.periodfields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  align-items: flex-end;
+}
+
+/* `hidden` alone loses to any component rule that sets `display`, which broke
+   the composer's disclosure once already. The class carries the rule; the
+   attribute carries the meaning for assistive technology. */
+.periodfields__group.is-hidden,
+.choiceset.is-hidden,
+.periodfields.is-hidden {
+  display: none;
+}
+
+.empty--inline {
+  margin: var(--spacing-2) 0 0;
+  padding: var(--spacing-2) 0;
+  border: none;
+  background: none;
+}

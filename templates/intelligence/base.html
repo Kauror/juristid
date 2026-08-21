@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% comment %}
+The Jälgimine shell: heading, tab strip, filter row.
+
+Three generated views behind one navigation item, the shape Statistika already
+uses. Every one of them is built from the records lawyers keep on their own
+Matters — nobody maintains a list here, and there is nothing on these pages that
+can be edited (Stage-2G brief 38).
+
+Filter state lives entirely in the URL, so a view worth arguing about is a view
+somebody can paste into a message.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Jälgimine</h1>
+    <span class="pagehead__context">{% block page_context %}{% endblock %}</span>
+  </div>
+
+  <div class="filters">
+    <nav class="tabs" aria-label="Jälgimise vaated">
+      {% for key, label, route in tabs %}
+        <a class="tabs__tab {% if active_tab == key %}is-active{% endif %}"
+           {% if active_tab == key %}aria-current="page"{% endif %}
+           href="{% url route %}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+
+    {% block page_filters %}{% endblock %}
+  </div>
+
+  {% block watchlist %}{% endblock %}
+</div>
+{% endblock %}

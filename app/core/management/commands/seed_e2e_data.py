@@ -166,7 +166,120 @@ class Command(BaseCommand):
 
         self._historical_world(visible)
         self._statistics_world(visible, martin, ministry)
+        self._intelligence_world(visible, restricted, martin, sandra)
         self.stdout.write(self.style.SUCCESS("E2E world ready."))
+
+    def _intelligence_world(
+        self, visible: Matter, restricted: Matter, martin: Any, sandra: Any
+    ) -> None:
+        """Structured facts for the Jälgimine views and the Matter sections.
+
+        Entirely invented. The department's real lists live in OneNote and are
+        emphatically **not** used as fixtures; a later reviewed migration will
+        bring them across with their provenance (Stage-2G brief 43, 72).
+
+        One record of each kind that the browser suite has to be able to see,
+        plus one of each on the restricted Matter so an authorization test has
+        something that must *not* appear.
+        """
+        from app.intelligence.enums import EffectiveDateKind
+        from app.intelligence.services import (
+            add_effective_date,
+            add_important_date,
+            add_work_victory_candidate,
+        )
+        from app.workflow.dates import bounds_for, quarter_bounds, year_bounds
+        from app.workflow.enums import DatePrecision
+
+        if visible.important_dates.exists():
+            return
+
+        next_year = date.today().year + 1
+
+        # An exact upcoming date, so the calendar has a day-precision row.
+        exact = date.today() + timedelta(days=45)
+        exact_start, exact_end = bounds_for(DatePrecision.EXACT, exact_date=exact)
+        add_important_date(
+            matter=visible,
+            title="Eelnõu eeldatav kooskõlastusring",
+            actor=martin,
+            date_value=exact_start,
+            period_end=exact_end,
+            date_precision=DatePrecision.EXACT,
+        )
+
+        # And an approximate one, because rendering *II kvartal* rather than a
+        # manufactured first-of-the-quarter is the property worth a browser test.
+        quarter_start, quarter_end = quarter_bounds(next_year, 2)
+        add_important_date(
+            matter=visible,
+            title="Eeldatav VTK avalikustamine",
+            date_value=quarter_start,
+            period_end=quarter_end,
+            date_precision=DatePrecision.QUARTER,
+            actor=martin,
+        )
+
+        # Two commencements on one Matter: the point of the model.
+        add_effective_date(
+            matter=visible,
+            kind=EffectiveDateKind.KNOWN_DATE,
+            date_value=date(next_year, 9, 27),
+            period_end=date(next_year, 9, 27),
+            description="põhiosa",
+            actor=martin,
+        )
+        add_effective_date(
+            matter=visible,
+            kind=EffectiveDateKind.KNOWN_DATE,
+            date_value=date(next_year + 1, 1, 1),
+            period_end=date(next_year + 1, 1, 1),
+            description="osad sätted",
+            actor=martin,
+        )
+        add_effective_date(
+            matter=visible,
+            kind=EffectiveDateKind.GENERAL_ORDER,
+            description="rakendusmäärus",
+            actor=martin,
+        )
+
+        victory_start, victory_end = year_bounds(date.today().year)
+        add_work_victory_candidate(
+            matter=visible,
+            title="Koja ettepanek rakendusaja pikendamiseks võeti arvesse",
+            period_date=victory_start,
+            period_end=victory_end,
+            date_precision=DatePrecision.YEAR,
+            actor=martin,
+        )
+
+        # The restricted counterparts. Nothing about these may appear on the
+        # generated pages for anybody but Sandra and the department head.
+        add_important_date(
+            matter=restricted,
+            title="Konfidentsiaalne tähtaeg",
+            date_value=exact,
+            period_end=exact,
+            date_precision=DatePrecision.EXACT,
+            actor=sandra,
+        )
+        add_effective_date(
+            matter=restricted,
+            kind=EffectiveDateKind.KNOWN_DATE,
+            date_value=date(next_year, 9, 27),
+            period_end=date(next_year, 9, 27),
+            description="konfidentsiaalne jõustumine",
+            actor=sandra,
+        )
+        add_work_victory_candidate(
+            matter=restricted,
+            title="Konfidentsiaalne töövõidu kandidaat",
+            period_date=victory_start,
+            period_end=victory_end,
+            date_precision=DatePrecision.YEAR,
+            actor=sandra,
+        )
 
     def _statistics_world(self, visible: Matter, martin: Any, ministry: Any) -> None:
         """The records the Statistika tabs assert on.

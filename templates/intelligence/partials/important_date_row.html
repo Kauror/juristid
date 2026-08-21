@@ -1,0 +1,29 @@
+{% comment %}
+One `Oluline tähtaeg` on the Matter page.
+
+The date is rendered at its stored precision, so a quarter reads as a quarter.
+A cancelled row is marked rather than hidden, and a superseded one says what
+replaced it.
+{% endcomment %}
+<li class="factrow {% if past %}factrow--past{% endif %} {% if record.is_cancelled %}factrow--cancelled{% endif %}">
+  <span class="factrow__date {% if record.is_approximate %}dateline--approximate{% endif %}">
+    {{ record.display_date }}
+  </span>
+  <span class="factrow__body">
+    <span class="factrow__title">{{ record.title }}</span>
+    {% if record.note %}<span class="muted">{{ record.note }}</span>{% endif %}
+    {% if record.is_cancelled %}
+      <span class="flag flag--cancelled">Tühistatud</span>
+    {% elif record.status == "SUPERSEDED" %}
+      <span class="flag flag--cancelled">Asendatud</span>
+    {% endif %}
+  </span>
+  {% if can_write and record.status == "ACTIVE" %}
+    <span class="factrow__actions">
+      <a class="button button--quiet button--tiny"
+         href="{% url 'intelligence:edit_important_date' matter_id=matter.pk pk=record.pk %}">Muuda</a>
+      <a class="button button--quiet button--tiny"
+         href="{% url 'intelligence:cancel_important_date' matter_id=matter.pk pk=record.pk %}">Tühista</a>
+    </span>
+  {% endif %}
+</li>

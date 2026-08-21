@@ -1,0 +1,12 @@
+{% comment %}
+One ordinary form field. Rendered only when the form actually declares it, so
+the same page can serve a period form and a one-line reason form.
+{% endcomment %}
+{% if field %}
+  <label class="field">
+    <span class="field__label">{{ field.label }}</span>
+    {{ field }}
+    {% if field.help_text %}<span class="field__help">{{ field.help_text }}</span>{% endif %}
+    {% for error in field.errors %}<span class="field__error">{{ error }}</span>{% endfor %}
+  </label>
+{% endif %}

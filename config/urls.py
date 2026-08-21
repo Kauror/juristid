@@ -15,6 +15,11 @@ urlpatterns = [
         "statistika/",
         include(("app.reporting.urls", "reporting"), namespace="reporting"),
     ),
+    # Structured Matter facts. Mounted at the root because Olulised tähtajad,
+    # Jõustuvad aktid and Töövõidud are department destinations of their own;
+    # the Matter-scoped write routes inside it are exact paths and cannot
+    # shadow anything app.matters already claims.
+    path("", include(("app.intelligence.urls", "intelligence"), namespace="intelligence")),
     path("konto/", include(("app.accounts.urls", "accounts"), namespace="accounts")),
     path(
         "organisatsioonid/",

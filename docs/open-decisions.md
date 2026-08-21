@@ -169,3 +169,31 @@ security edge.
 | Which Statistika figures the DashKoda export must reproduce, and to what tolerance | DashKoda owner + reporting owner | Stage 4 | ADR 0007's contract predates the metric catalogue. Now that definitions exist in code, the export can be specified against them rather than against a prose description. |
 | Whether member-feedback counts are worth persisting as columns | Department head | If anyone asks for the number | Deferred in Stage 2E because recovering them means re-parsing raw spreadsheet cells. They would still never become a response rate: asked and answered are independent observations, and the register has rows where more answered than were asked. |
 | Whether the period picker should offer date ranges rather than whole years | Department head + lawyers | After the pages have been used | Whole years match the register's own reporting identity. A day-precision filter over a year-precision fact invites false precision, so it was not built speculatively. |
+
+## Decisions taken by the development agent in Stage 2G
+
+Recorded so they can be challenged rather than inherited silently. The
+architecture reasoning is in ADR 0018; these are the ones with a product edge.
+
+| Decision | Why | Reversibility |
+| --- | --- | --- |
+| `Oluline tähtaeg`, `Jõustumine` and `Töövõit` are three models, not tags and not one generic event table | Each carries validation, review state, provenance and audit that a tag assignment cannot; and every constraint that keeps a fabricated commencement date out of the database would become conditional on a `kind` column in a merged table. | Low — it is the point of the design |
+| A period is stored as its first day **and** its last, plus its precision | Ordering and "has this passed" both become plain SQL, and the second question needs the end: II poolaasta 2027 has not passed on 2 July 2027. | Moderate — two derived columns, one writer |
+| Only a `KNOWN_DATE` commencement may carry a date, enforced by a CHECK constraint | The brief allows an `UNKNOWN` row to have a null date; this goes further and forbids it having one at all. A date stored against "kuupäev täpsustamisel" is indistinguishable from a real one on every page downstream. | High — one constraint |
+| Year filtering only, for approximate periods | Every precision offered sits inside one calendar year, so the year is exact. A day-level range filter over a quarter-level fact would expose false precision. | High |
+| The work-victory form requires an explicit period answer, including "Teadmata periood" | Neither a silently unknown period nor a pre-filled current year is a fact somebody stated. Choosing costs one click and the record then says what a person meant. | High |
+| Writes go through full-page forms that redirect back to the Matter anchor, not HTMX fragment swaps | The Matter overview is rendered by `app.matters.views` from its own context builders; swapping part of it from `app.intelligence` would couple the two apps for half a second of latency. | High |
+| `Jälgimine` is one navigation item with three tabs | Three more top-level links would crowd a shell that already carries five. Statistika established the pattern. | High |
+| Structured text is **not** yet in `SearchDocument` | A structured fact deserves its own `SearchSourceKind` row so a result can name what matched, which means new foreign keys and signal wiring in a module Stage 2E.1 is editing concurrently. The dedicated pages filter their own records meanwhile. | High — additive when 2E.1 has landed |
+
+## New decisions Stage 2G raises for Koda
+
+| Decision | Owner | When | Notes |
+| --- | --- | --- | --- |
+| Whether a confirmed `Töövõit` must later carry a Proposal/Outcome/Attribution record | Department head + management | Before any work-victory figure is published outside the department | Today a confirmed victory means a person judged it one. The specification's eventual outcome model (6.6) is more demanding, and `MatterWorkVictory` is shaped so those rows can be referenced or migrated rather than discarded. Nothing in this stage computes influence. |
+| Whether a specialist may confirm a work victory, or only the department head | Department head | Before the pilot | Implemented as department-head only, because it is the Chamber's own claim about its influence. Specialists create and edit candidates freely on any Matter they can reach. One frozen set in `app.core.authorization` if the answer differs. |
+| Whether `Jõustumine` should keep appearing inside the combined *Olulised tähtajad* view | Department head + lawyers | After the pages have been used | Implemented as a labelled presentation over one source of truth, with a selector that narrows to either kind. No row is duplicated, so turning it off is a default change. |
+| The exact OneNote-list import and reconciliation procedure | Department head + whoever owns the archive | Before any import | Planned route: list entry → embedded OneNote page id → `LegacySourcePage` → `MatterSourcePage` → Matter → structured record with `legacy_source_page` and `source_text` set. Where a page relationship exists it is authoritative; where unique resolution fails the row goes to a review queue. **Title fuzzy-matching must never run automatically.** |
+| How a legacy line that says only "2 töövõitu" should be reviewed | Department head + the lawyer who wrote it | With the import | The importer will create **one** candidate preserving the raw sentence in `source_text`, for a person to split. It will not invent two descriptions, and there is deliberately no quantity column to put a 2 in. |
+| Whether these dates should eventually trigger reminders | Department head | After the pilot | Nothing schedules, mails or notifies in this stage. The structured dates make it possible; whether a deadline three weeks out should reach somebody's inbox is a working-practice decision, not a technical one. |
+| Whether a confirmed work victory should require a period | Department head + reporting owner | Before the first annual figure | A candidate may honestly have no period. Whether confirming one should force the question is a reporting decision; the constraint would be one line. |

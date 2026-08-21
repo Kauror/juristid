@@ -46,6 +46,15 @@
               corpus say about Koja work". Overloading the dashboard with both
               would make neither readable (Stage-2E brief 6).
             {% endcomment %}
+            {% comment %}
+              Olulised tähtajad, Jõustuvad aktid and Töövõidud behind one item
+              rather than three. They are generated reading surfaces over the
+              same structured facts, and three more top-level links would crowd
+              the shell for no gain (Stage-2G brief 38).
+            {% endcomment %}
+            <a class="topnav__link {% if nav_active == 'jalgimine' %}is-active{% endif %}"
+               {% if nav_active == 'jalgimine' %}aria-current="page"{% endif %}
+               href="{% url 'intelligence:important_dates' %}">Jälgimine</a>
             <a class="topnav__link {% if nav_active == 'statistika' %}is-active{% endif %}"
                {% if nav_active == 'statistika' %}aria-current="page"{% endif %}
                href="{% url 'reporting:overview' %}">Statistika</a>
