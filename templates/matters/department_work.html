@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% block title %}Osakonna töö · {{ application_name }}{% endblock %}
+
+{% comment %}
+Osakonna töö is an oversight surface, not a staff evaluation.
+
+Every column is a count of observable states — how many files sit with
+somebody, how many carry a late instruction, how many carry none. There is no
+ranking, no score, no rate, no percentage and no colour grading of people, and
+the table is ordered alphabetically on purpose: sorting it by any of its
+numbers would turn it into a leaderboard, which the specification forbids
+(18.8) and which would make the underlying data worth gaming.
+
+A count of open matters is inventory. One can be a two-line monitoring note and
+the next a year of consultation, so it measures neither effort nor performance.
+
+Urgency is never carried by colour alone: every emphasised cell also states its
+reason in words, so the page reads the same to somebody who cannot see the
+difference.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Osakonna töö</h1>
+    <span class="pagehead__context">{{ today|date:"l, j. F Y" }}</span>
+  </div>
+
+  <p class="field__help">
+    Osakonna praegune töö juristide kaupa. Arvud näitavad teemade hulka ja seisu,
+    mitte töömahtu ega töötulemust.
+  </p>
+
+  <section class="cardrow" aria-label="Koondnäitajad">
+    {% for card in work.cards %}
+      <a class="statcard {% if card.count and card.key == 'overdue' %}statcard--alert{% endif %}"
+         href="{{ card.url }}">
+        <span class="statcard__value">{{ card.count }}</span>
+        <span class="statcard__label">{{ card.label }}</span>
+        {% if card.note %}<span class="statcard__note">{{ card.note }}</span>{% endif %}
+      </a>
+    {% endfor %}
+  </section>
+
+  <section aria-labelledby="juristid-heading">
+    <h2 class="sectionlabel" id="juristid-heading">
+      Juristid
+      <span class="sectionlabel__count">{{ work.lawyers|length }}</span>
+    </h2>
+    <p class="field__help">
+      Tähestikulises järjekorras. Iga arv avab täpselt selle nimekirja, mille pealt
+      ta on loetud; tärniga tähistatud arvu puhul on nimekiri laiem, sest registril
+      ei ole selle kohta veel filtrit.
+    </p>
+
+    {% if work.lawyers %}
+      <div class="tablewrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Jurist</th>
+              <th scope="col">Aktiivsed teemad</th>
+              <th scope="col">Arvamuse tähtaeg 7 päeva</th>
+              <th scope="col">Tegevuse tähtaeg möödas</th>
+              <th scope="col">Järgmiseks puudub</th>
+              <th scope="col">Ülevaatus või ootamine käes</th>
+              <th scope="col">Saabunud 14 päeva jooksul</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in work.lawyers %}
+              <tr>
+                <th scope="row">
+                  {{ row.display_name }}
+                  {% if row.is_former_member %}
+                    <span class="badge badge--restricted"
+                          title="Kasutaja ei ole enam aktiivne, kuid tal on avatud teemasid">
+                      endine
+                    </span>
+                  {% endif %}
+                </th>
+                {% for cell in row.cells %}
+                  <td class="table__date">
+                    {% if cell.count %}
+                      <a href="{{ cell.url }}">{{ cell.count }}{% if cell.approximate %}*{% endif %}</a>
+                    {% else %}
+                      <span class="table__missing">0</span>
+                    {% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if work.has_former_members %}
+        <p class="field__help">
+          Märkega <em>endine</em> tähistatud kasutaja ei ole enam aktiivne, kuid tema
+          nimel on avatud teemasid. Need vajavad uut vastutajat.
+        </p>
+      {% endif %}
+    {% else %}
+      <p class="empty">Ühtki juristi ei ole veel kirjas.</p>
+    {% endif %}
+  </section>
+
+  <div class="dashgrid">
+    <div class="dashgrid__main">
+      <section aria-labelledby="osakond-tahelepanu-heading">
+        <h2 class="sectionlabel {% if work.attention %}sectionlabel--overdue{% endif %}"
+            id="osakond-tahelepanu-heading">
+          Tähelepanu kogu osakonnas
+          <span class="sectionlabel__count">{{ work.attention|length }}</span>
+        </h2>
+        {% if work.attention %}
+          <div class="tablewrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Viide</th>
+                  <th scope="col">Teema</th>
+                  <th scope="col">Vastutaja</th>
+                  <th scope="col">Põhjus</th>
+                  <th scope="col">Kuupäev</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in work.attention %}
+                  <tr>
+                    <td><span class="reference">{{ row.matter.display_reference|default:"—" }}</span></td>
+                    <td class="table__title"><a href="{{ row.url }}">{{ row.matter.title }}</a></td>
+                    <td>{{ row.owner_name }}</td>
+                    <td>{{ row.reason }}</td>
+                    <td class="table__date">
+                      {% if row.when %}
+                        {% comment %}
+                          The label travels with the date. Four different kinds
+                          of date share this column and must not read alike:
+                          a review date reached is not a missed deadline.
+                        {% endcomment %}
+                        <span class="muted">{{ row.date_label }}</span><br>
+                        {{ row.when|date:"d.m.Y" }}
+                      {% else %}—{% endif %}
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="empty">Praegu ei vaja osakonnas miski tähelepanu.</p>
+        {% endif %}
+      </section>
+
+      <section aria-labelledby="osakond-lahenevad-heading">
+        <h2 class="sectionlabel" id="osakond-lahenevad-heading">
+          Lähenevad kuupäevad
+          <span class="sectionlabel__count">{{ work.upcoming|length }}</span>
+        </h2>
+        {% if work.upcoming %}
+          <div class="tablewrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Kuupäev</th>
+                  <th scope="col">Tähendus</th>
+                  <th scope="col">Viide</th>
+                  <th scope="col">Teema</th>
+                  <th scope="col">Vastutaja</th>
+                  <th scope="col">Hetkeseis</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in work.upcoming %}
+                  <tr>
+                    <td class="table__date">{{ row.when|date:"d.m.Y" }}</td>
+                    <td><span class="muted">{{ row.meaning }}</span></td>
+                    <td><span class="reference">{{ row.matter.display_reference|default:"—" }}</span></td>
+                    <td class="table__title"><a href="{{ row.url }}">{{ row.matter.title }}</a></td>
+                    <td>{{ row.owner_name }}</td>
+                    <td>{{ row.stage_label }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="empty">Järgmise kahe nädala jooksul kuupäevi ei ole.</p>
+        {% endif %}
+      </section>
+
+      <section aria-labelledby="osakond-vastutajata-heading">
+        <h2 class="sectionlabel" id="osakond-vastutajata-heading">
+          Vastutajata teemad
+          <span class="sectionlabel__count">{{ work.unassigned_total }}</span>
+        </h2>
+        <p class="field__help">Avatud teemad, millel ei ole vastutajat. Arhiivikirjeid siin ei ole.</p>
+        {% if work.unassigned %}
+          <div class="tablewrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Viide</th>
+                  <th scope="col">Teema</th>
+                  <th scope="col">Saatja</th>
+                  <th scope="col">Arvamuse tähtaeg</th>
+                  <th scope="col">Hetkeseis</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for matter in work.unassigned %}
+                  <tr>
+                    <td><span class="reference">{{ matter.display_reference|default:"—" }}</span></td>
+                    <td class="table__title">
+                      <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
+                    </td>
+                    <td>{{ matter.source_organisation.name|default:"—" }}</td>
+                    <td class="table__date">
+                      {% if matter.response_deadline %}{{ matter.response_deadline|date:"d.m.Y" }}
+                      {% else %}<span class="table__missing">—</span>{% endif %}
+                    </td>
+                    <td>{{ matter.stage.label_et|default:"—" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <p class="field__help">
+            <a href="{% url 'matters:inbox' %}">Saabunud</a> —
+            sealt saab teemale vastutaja määrata.
+          </p>
+        {% else %}
+          <p class="empty">Kõikidel avatud teemadel on vastutaja.</p>
+        {% endif %}
+      </section>
+
+      <section aria-labelledby="osakond-saabunud-heading">
+        <h2 class="sectionlabel" id="osakond-saabunud-heading">Hiljuti saabunud</h2>
+        <p class="field__help">Saabumise kuupäeva järgi, mitte importimise aja järgi.</p>
+        {% if work.incoming %}
+          <div class="tablewrap">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">Saabus</th>
+                  <th scope="col">Viide</th>
+                  <th scope="col">Teema</th>
+                  <th scope="col">Saatja</th>
+                  <th scope="col">Vastutaja</th>
+                  <th scope="col">Hetkeseis</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for matter in work.incoming %}
+                  <tr>
+                    <td class="table__date">{{ matter.received_date|date:"d.m.Y" }}</td>
+                    <td><span class="reference">{{ matter.display_reference|default:"—" }}</span></td>
+                    <td class="table__title">
+                      <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
+                    </td>
+                    <td>{{ matter.source_organisation.name|default:"—" }}</td>
+                    <td>{{ matter.owner.display_name|default:"Vastutajata" }}</td>
+                    <td>{{ matter.stage.label_et|default:"—" }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <p class="empty">Viimase kahe nädala jooksul ei ole uusi materjale saabunud.</p>
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="dashgrid__rail" aria-label="Andmete seis">
+      <div class="railcard">
+        <span class="railcard__label">Täiendamist vajav</span>
+        {% comment %}
+          Operational triage only, and only for fields the current workflow
+          expects. An archive row without a stage is complete history, not a
+          defect, and calling it one would bury the few rows that matter. The
+          full picture lives on Statistika → Andmekvaliteet.
+        {% endcomment %}
+        {% for signal in work.quality %}
+          <a class="countrow" href="{{ signal.url }}" title="{{ signal.help_text }}">
+            <span class="countrow__label">{{ signal.label }}</span>
+            <span class="countrow__value">{{ signal.count }}</span>
+          </a>
+        {% endfor %}
+        <p class="field__help">
+          Ainult praegused aktiivsed teemad. Arhiivikirje tühi väli on ajalugu, mitte viga.
+        </p>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
