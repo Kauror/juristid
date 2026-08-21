@@ -191,7 +191,8 @@ def test_a_new_record_is_saved_as_a_candidate(page, base_url, screenshots):
     section(page, "Töövõidud").get_by_role("link", name="+ Lisa töövõidu kandidaat").click()
     page.wait_for_load_state("networkidle")
     page.get_by_label("Töövõit", exact=True).fill("Erisus jäi eelnõusse sisse")
-    page.get_by_label("Aasta täpsusega").check()
+    # `exact=True`, because "Poolaasta täpsusega" contains "Aasta täpsusega".
+    page.get_by_label("Aasta täpsusega", exact=True).check()
     page.get_by_label("Aasta", exact=True).fill("2030")
     page.get_by_role("button", name="Salvesta kandidaadina").click()
     page.wait_for_load_state("networkidle")
@@ -321,7 +322,9 @@ def test_the_work_victory_page_filters_by_state(page, base_url, screenshots):
     ).to_be_visible()
     screenshots(page, "jalgimine-toovoidud")
 
-    page.get_by_role("link", name="Ei realiseerunud", exact=True).click()
+    # Not exact: a status filter link carries its own count, so its accessible
+    # name is the label followed by a number.
+    page.get_by_role("link", name="Ei realiseerunud").click()
     page.wait_for_load_state("networkidle")
     expect(
         page.get_by_text("Koja ettepanek rakendusaja pikendamiseks võeti arvesse")
