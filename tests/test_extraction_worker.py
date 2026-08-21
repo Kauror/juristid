@@ -762,12 +762,22 @@ def test_the_window_is_the_one_the_system_already_uses(settings, heartbeat_path)
 
 
 def test_a_worker_that_cannot_write_its_mark_keeps_working(settings, heartbeat_path):
-    """The probe observes the work; it is not a precondition for it."""
+    """The probe observes the work; it is not a precondition for it.
+
+    A worker that cannot write its heartbeat should go on extracting. The
+    container goes red, which is correct and a far smaller problem than a queue
+    that stopped because a temporary directory was not writable.
+    """
     from app.documents.extraction import heartbeat
 
-    settings.EXTRACTION_WORKER_HEARTBEAT_PATH = str(heartbeat_path / "not-a-directory" / "x")
+    # A file where a directory would have to be, so `mkdir` genuinely fails.
+    blocker = heartbeat_path.parent / "blocker"
+    blocker.write_text("not a directory", encoding="utf-8")
+    settings.EXTRACTION_WORKER_HEARTBEAT_PATH = str(blocker / "worker.heartbeat")
+
     heartbeat.touch()  # must not raise
     assert heartbeat.age_seconds() is None
+    assert not heartbeat.is_alive()
 
 
 def test_the_healthcheck_command_fails_when_the_loop_has_stopped(heartbeat_path):
