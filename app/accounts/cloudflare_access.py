@@ -56,7 +56,11 @@ class AccessDenied(Exception):
 
 
 def is_enabled() -> bool:
-    return bool(getattr(settings, "CF_ACCESS_ENABLED", False))
+    """Access is on exactly when the deployment's mode says so."""
+    from app.accounts.enums import AuthMode
+    from app.accounts.shared_gate import current_mode
+
+    return current_mode() == AuthMode.CLOUDFLARE_ACCESS
 
 
 def _configuration() -> tuple[str, str]:

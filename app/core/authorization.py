@@ -50,6 +50,52 @@ class Scope:
         return self.sees_restricted_by_role or self.break_glass_grant_id is not None
 
 
+class DepartmentViewer:
+    """A reader who is past the door but has chosen no persona.
+
+    The shared-gate mode lands somebody on the department dashboard before they
+    say whose work they are looking at, and that page has to be useful. It must
+    not become useful by borrowing an arbitrary person's identity: a dashboard
+    rendered "as Marko" would show Marko's restricted files to whoever passed a
+    shared password (Stage-2D auth brief 6).
+
+    So this is not a `User`. It has no primary key, cannot be written to a
+    foreign key, cannot own anything and never appears as an audit actor. The
+    only thing it does is map to a scope: NORMAL visibility, and no
+    participation of any kind.
+    """
+
+    is_authenticated = True
+    is_active = True
+    is_anonymous = False
+    pk = None
+    role = ""
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "<DepartmentViewer>"
+
+
+#: One instance, compared by identity. A second one would still work, but
+#: `scope_for_user` recognising the *class* rather than the object leaves room
+#: for somebody to subclass their way into a scope, and there is no reason to.
+DEPARTMENT_VIEWER = DepartmentViewer()
+
+
+def department_scope() -> Scope:
+    """Everything NORMAL, and nothing that depends on knowing who you are.
+
+    `user=None` is load-bearing: `restricted_participation_q` refuses to build
+    an owner clause without a user, so this scope cannot reach a RESTRICTED
+    Matter by any route.
+    """
+    return Scope(
+        user=None,
+        is_authenticated=True,
+        sees_restricted_by_role=False,
+        break_glass_grant_id=None,
+    )
+
+
 def active_break_glass_grant_id(user: object) -> uuid.UUID | None:
     grant_model = apps.get_model("accounts", "BreakGlassGrant")
     grant = (
@@ -62,6 +108,11 @@ def active_break_glass_grant_id(user: object) -> uuid.UUID | None:
 
 
 def scope_for_user(user: object | None) -> Scope:
+    if isinstance(user, DepartmentViewer):
+        # Recognised before the generic path, because the generic path would go
+        # looking for this sentinel's break-glass grants and hand a non-model to
+        # the ORM.
+        return department_scope()
     if user is None or not getattr(user, "is_authenticated", False):
         return Scope(
             user=None,
@@ -117,7 +168,12 @@ def restricted_participation_q(
     collaborators_field: str = "collaborators",
 ) -> Q:
     """The Matter participation that unlocks RESTRICTED content."""
-    if not scope.is_authenticated:
+    if not scope.is_authenticated or scope.user is None:
+        # Without a user there is no participation to test, and building the
+        # clause anyway would be worse than useless: `Q(owner=None)` compiles to
+        # `owner IS NULL`, which matches every ownerless archive row — including
+        # the RESTRICTED ones. A scope that knows nobody must see nothing extra,
+        # not everything nobody owns.
         return NOTHING
     return Q(**{f"{prefix}{owner_field}": scope.user}) | Q(
         **{f"{prefix}{collaborators_field}": scope.user}

@@ -150,3 +150,91 @@ def test_the_row_level_report_does_contain_source_content(tmp_path: Path) -> Non
 
     rows = next(report for report in written.row_level if report.name == "rows.csv")
     assert title in rows.read_text(encoding="utf-8-sig")
+
+
+# --------------------------------------------------------------------------
+# Secrets
+#
+# The shared gate's password is a host-side secret and the repository is public.
+# A committed shared password is a published one, and unlike a leaked workbook
+# it would not look wrong in a diff — it would look like a default
+# (Stage-2D auth brief 2, 13; docs/adr/0016).
+# --------------------------------------------------------------------------
+
+#: Files that legitimately talk *about* secrets: templates, documentation and
+#: the tests below. They are allowed to name the variables; they may not carry
+#: a value.
+_SECRET_NAMES = (
+    "JURISTID_SHARED_GATE_PASSWORD",
+    "DJANGO_SECRET_KEY",
+    "POSTGRES_PASSWORD",
+    "DEV_LOGIN_PIN",
+)
+
+#: Values a template is allowed to assign. Anything else assigned to one of the
+#: names above is a value somebody meant to keep.
+_PLACEHOLDER_PREFIXES = ("", "replace-me", "${", "$(", "changeme", "unknown")
+
+
+def _tracked_files() -> list[str]:
+    result = _git("ls-files")
+    assert result.returncode == 0, result.stderr
+    return [line for line in result.stdout.splitlines() if line]
+
+
+def test_no_tracked_file_assigns_a_secret_a_real_value() -> None:
+    offenders: list[str] = []
+    for relative in _tracked_files():
+        path = REPOSITORY / relative
+        if path.suffix in {".png", ".ico", ".woff2", ".lock"} or not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        for number, line in enumerate(text.splitlines(), start=1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            for name in _SECRET_NAMES:
+                marker = f"{name}="
+                if marker not in stripped:
+                    continue
+                value = stripped.split(marker, 1)[1].strip().strip("\"'")
+                if value.lower().startswith(_PLACEHOLDER_PREFIXES):
+                    continue
+                offenders.append(f"{relative}:{number} {name}")
+    assert not offenders, "a real-looking secret is committed: " + ", ".join(offenders)
+
+
+def test_the_shared_gate_password_is_never_a_compose_or_dockerfile_default() -> None:
+    """Not a default anywhere an image or a stack would inherit it."""
+    for relative in _tracked_files():
+        if not (relative.endswith((".yml", ".yaml")) or relative.endswith("Dockerfile")):
+            continue
+        text = (REPOSITORY / relative).read_text(encoding="utf-8")
+        assert "JURISTID_SHARED_GATE_PASSWORD" not in text, relative
+
+
+def test_the_environment_file_pattern_is_ignored() -> None:
+    """`*.env` and the server's own file, so a copied one cannot be added."""
+    for candidate in ("juristid.env", "server.env", "deploy/unraid-main/juristid.env"):
+        result = _git("check-ignore", "-q", candidate)
+        assert result.returncode == 0, f"{candidate} is not ignored"
+
+
+def test_the_historical_corpus_directories_are_ignored() -> None:
+    for candidate in (
+        "onenote-desktop-archive/pages/x/page.json",
+        "onenote-juristid-export/anything",
+        "migration-audit/reports/reconciliation/exact-matches.csv",
+        "legacy-source/page.xml",
+    ):
+        result = _git("check-ignore", "-q", candidate)
+        assert result.returncode == 0, f"{candidate} is not ignored"
+
+
+def test_a_database_dump_cannot_be_committed() -> None:
+    for candidate in ("juristid.sql", "backup.sql.gz", "juristid-main.dump"):
+        result = _git("check-ignore", "-q", candidate)
+        assert result.returncode == 0, f"{candidate} is not ignored"

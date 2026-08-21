@@ -54,25 +54,64 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
             )
         )
 
-    if settings.REAL_DATA_ALLOWED and not settings.CF_ACCESS_ENABLED:
+    problems.extend(_authentication_problems())
+
+    engine = settings.DATABASES["default"]["ENGINE"]
+    if engine != "django.db.backends.postgresql":
+        problems.append(
+            Error(
+                f"Unsupported database engine {engine!r}; PostgreSQL 18+ is required.",
+                id="juristid.E005",
+            )
+        )
+
+    return problems
+
+
+def _authentication_problems() -> list[Error | Warning]:
+    """Whether this deployment has an authenticator worth the data behind it.
+
+    The rule is not "some authenticator is configured" but "the configured mode
+    is one this data may sit behind, and every safeguard that mode depends on is
+    actually present". The shared gate counts as an authenticator for real data
+    *only* with all of its safeguards — a long secret supplied host-side, no
+    debug output, and no synthetic sign-in beside it. Loosening any of those
+    turns a door with a lock into a door with a sign on it
+    (Stage-2D auth brief 3, docs/adr/0016).
+    """
+    from app.accounts import shared_gate
+    from app.accounts.enums import AuthMode
+
+    problems: list[Error | Warning] = []
+    mode = shared_gate.current_mode()
+
+    if (getattr(settings, "AUTH_MODE", "") or "").strip().lower() not in AuthMode.values:
+        problems.append(
+            Error(
+                f"AUTH_MODE={settings.AUTH_MODE!r} is not a mode this application has.",
+                hint=f"One of: {', '.join(AuthMode.values)}.",
+                id="juristid.E009",
+            )
+        )
+
+    if settings.REAL_DATA_ALLOWED and mode == AuthMode.NONE:
         problems.append(
             Error(
                 "REAL_DATA_ALLOWED is on with no authenticator in front of it.",
                 hint=(
-                    "Set CF_ACCESS_ENABLED and configure CF_ACCESS_TEAM_DOMAIN and "
-                    "CF_ACCESS_AUDIENCE. Real member material must not be served to "
-                    "whoever reaches the port."
+                    "Set AUTH_MODE to shared_gate or cloudflare_access. Real member "
+                    "material must not be served to whoever reaches the port."
                 ),
                 id="juristid.E006",
             )
         )
 
-    if settings.CF_ACCESS_ENABLED and not (
+    if mode == AuthMode.CLOUDFLARE_ACCESS and not (
         settings.CF_ACCESS_TEAM_DOMAIN and settings.CF_ACCESS_AUDIENCE
     ):
         problems.append(
             Error(
-                "CF_ACCESS_ENABLED is on but the team domain or audience is missing.",
+                "AUTH_MODE is cloudflare_access but the team domain or audience is missing.",
                 hint=(
                     "Without an audience tag, a token minted for any other application "
                     "on the same Cloudflare team would verify here."
@@ -81,21 +120,73 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
             )
         )
 
-    if settings.CF_ACCESS_ENABLED and settings.DEV_LOGIN_ENABLED:
+    if mode != AuthMode.NONE and settings.DEV_LOGIN_ENABLED:
         problems.append(
             Error(
-                "DEV_LOGIN_ENABLED must not be combined with Cloudflare Access.",
-                hint="A synthetic sign-in page behind Access is a way around Access.",
+                "DEV_LOGIN_ENABLED must not be combined with a real authenticator.",
+                hint="A passwordless sign-in page behind a gate is a way around the gate.",
                 id="juristid.E008",
             )
         )
 
-    engine = settings.DATABASES["default"]["ENGINE"]
-    if engine != "django.db.backends.postgresql":
+    if mode == AuthMode.SHARED_GATE:
+        problems.extend(_shared_gate_problems())
+
+    return problems
+
+
+#: Long enough that guessing is not the attack. Shorter than this and the
+#: throttle is doing all the work, which is not what a throttle is for.
+MINIMUM_SHARED_GATE_LENGTH = 12
+
+
+def _shared_gate_problems() -> list[Error | Warning]:
+    from app.accounts import shared_gate
+
+    problems: list[Error | Warning] = []
+    password = shared_gate.configured_password()
+
+    if not password:
         problems.append(
             Error(
-                f"Unsupported database engine {engine!r}; PostgreSQL 18+ is required.",
-                id="juristid.E005",
+                "AUTH_MODE is shared_gate but JURISTID_SHARED_GATE_PASSWORD is empty.",
+                hint=(
+                    "The password is a host-side secret. It belongs in the deployment's "
+                    "environment file and nowhere else — not in Git, not in Compose "
+                    "defaults, not in the image."
+                ),
+                id="juristid.E010",
+            )
+        )
+    elif len(password) < MINIMUM_SHARED_GATE_LENGTH:
+        problems.append(
+            Error(
+                f"The shared gate password is shorter than {MINIMUM_SHARED_GATE_LENGTH} "
+                "characters.",
+                hint=(
+                    "This replaced a four-digit PIN that was explicitly not good enough "
+                    "for real data. A longer password is the reason the replacement is "
+                    "acceptable; rate limiting is defence in depth, not the control."
+                ),
+                id="juristid.E011",
+            )
+        )
+
+    if settings.SHARED_GATE_MAX_ATTEMPTS < 1 or settings.SHARED_GATE_LOCKOUT_SECONDS < 1:
+        problems.append(
+            Error(
+                "The shared gate is configured with no working rate limit.",
+                hint="SHARED_GATE_MAX_ATTEMPTS and SHARED_GATE_LOCKOUT_SECONDS must be positive.",
+                id="juristid.E012",
+            )
+        )
+
+    if not settings.DEBUG and not settings.SESSION_COOKIE_SECURE:
+        problems.append(
+            Error(
+                "The shared gate is on with a session cookie that is not Secure.",
+                hint="One password guards everything here; its session must not travel in clear.",
+                id="juristid.E013",
             )
         )
 

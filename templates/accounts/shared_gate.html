@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Sisenemine · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The department's shared password, and nothing else on the page.
+
+  No user list, no hints about who works here, no version string — an
+  unauthenticated visitor should learn that this is Koda's Õigusloome and that
+  they need a password, and that is all (Stage-2D auth brief 15A).
+
+  The failure message never distinguishes a wrong password from a locked-out
+  client. Both are "try again"; only somebody probing the door benefits from
+  being able to tell which one they hit.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Koja õigusloome</h1>
+
+  <p class="lead">
+    See rakendus sisaldab Koja tööd eelnõudega ja liikmete materjale.
+    Sisenemiseks on vaja osakonna jagatud parooli.
+  </p>
+
+  {% if error %}
+    <div class="formerror" role="alert"><p>{{ error }}</p></div>
+  {% endif %}
+
+  <form method="post" class="card" style="padding:var(--spacing-4)">
+    {% csrf_token %}
+    <label class="field">
+      <span class="field__label">Parool</span>
+      <input class="field__input"
+             type="password"
+             name="password"
+             autocomplete="current-password"
+             autocapitalize="off"
+             spellcheck="false"
+             autofocus
+             required>
+    </label>
+    <p class="form__actions">
+      <button type="submit" class="button button--primary">Sisene</button>
+    </p>
+  </form>
+
+  {% comment %}
+    Said plainly, on the page, because the people using this need to know what
+    it is: the password proves that somebody from the department is here. It
+    does not identify which of them (docs/adr/0016).
+  {% endcomment %}
+  <p class="formnote">
+    Jagatud parool on ajutine arendusaegne lahendus. See tõendab, et sisenejal on
+    osakonna parool — mitte seda, kes täpselt rakendust kasutab. Isikupõhine
+    autentimine lisandub hiljem.
+  </p>
+</div>
+{% endblock %}

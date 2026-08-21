@@ -9,6 +9,8 @@ from django.http import HttpRequest
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
+from app.accounts import shared_gate
+
 
 @lru_cache(maxsize=8)
 def parse_built_at(raw: str) -> datetime | None:
@@ -47,4 +49,10 @@ def application(request: HttpRequest) -> dict[str, Any]:
         "application_built_at": parse_built_at(settings.APPLICATION_BUILT_AT),
         "real_data_allowed": settings.REAL_DATA_ALLOWED,
         "dev_login_enabled": settings.DEV_LOGIN_ENABLED,
+        # The header renders differently for somebody who is past the shared
+        # door but has chosen no persona: they get the department, and a clear
+        # way to say whose work they want (Stage-2D auth brief 7).
+        "auth_mode": shared_gate.current_mode(),
+        "shared_gate_mode": shared_gate.is_shared_gate(),
+        "gate_passed": shared_gate.has_passed(request),
     }

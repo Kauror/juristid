@@ -231,32 +231,62 @@ def test_containers_restart_unless_stopped(compose: dict[str, Any]) -> None:
 def test_the_template_is_the_combination_the_checks_permit(
     env_example: dict[str, str],
 ) -> None:
-    """Real data, an authenticator, no debug, no synthetic sign-in."""
+    """Real data, an authenticator, no debug, no passwordless sign-in."""
     assert env_example["REAL_DATA_ALLOWED"] == "1"
-    assert env_example["CF_ACCESS_ENABLED"] == "1"
+    assert env_example["AUTH_MODE"] in {"shared_gate", "cloudflare_access"}
     assert env_example["DJANGO_DEBUG"] == "0"
     assert env_example["DEV_LOGIN_ENABLED"] == "0"
 
 
 def test_the_template_has_no_shared_pin(env_example: dict[str, str]) -> None:
-    """The rehearsal's PIN has no equivalent here (Stage-2D brief 56)."""
+    """The rehearsal's PIN has no equivalent here (Stage-2D brief 56).
+
+    The shared gate is a different mechanism, not a longer PIN: its own mode,
+    its own safeguards, its own checks. Reusing `DEV_LOGIN_PIN` would have
+    quietly re-enabled a path that was forbidden with real data on purpose.
+    """
     text = ENV_EXAMPLE.read_text(encoding="utf-8")
     assert "DEV_LOGIN_PIN=" not in text
     assert "1925" not in text
     assert not any(key.startswith("DEV_LOGIN_PIN") for key in env_example)
 
 
+def test_the_shared_gate_is_rate_limited_in_the_template(
+    env_example: dict[str, str],
+) -> None:
+    """A long password is the control; the throttle is the defence in depth."""
+    assert int(env_example["SHARED_GATE_MAX_ATTEMPTS"]) >= 1
+    assert int(env_example["SHARED_GATE_LOCKOUT_SECONDS"]) >= 60
+    # Bounded, so escalation never becomes a permanent lockout.
+    assert 0 < int(env_example["SHARED_GATE_MAX_LOCKOUT_SECONDS"]) <= 24 * 3600
+
+
 def test_the_template_carries_no_secret(env_example: dict[str, str]) -> None:
-    for key in ("DJANGO_SECRET_KEY", "POSTGRES_PASSWORD", "CF_ACCESS_AUDIENCE"):
+    for key in (
+        "DJANGO_SECRET_KEY",
+        "POSTGRES_PASSWORD",
+        "JURISTID_SHARED_GATE_PASSWORD",
+    ):
         assert env_example[key].startswith("replace-me"), f"{key} looks like a real value"
+
+
+def test_the_shared_password_is_never_a_compose_default(compose: dict[str, Any]) -> None:
+    """It is a host-side secret, and Compose is in Git.
+
+    A default here would be committed, and a committed shared password is a
+    published one — the repository is public (Stage-2D auth brief 2, 13).
+    """
+    rendered = COMPOSE.read_text(encoding="utf-8")
+    assert "JURISTID_SHARED_GATE_PASSWORD" not in rendered
+    for service in compose["services"].values():
+        assert "JURISTID_SHARED_GATE_PASSWORD" not in service.get("environment", {})
 
 
 def test_the_template_names_no_real_host(env_example: dict[str, str]) -> None:
     """The repository is public; the hostname is filled in on the server."""
     text = ENV_EXAMPLE.read_text(encoding="utf-8")
     assert "orgusaar.ee" not in text
-    assert "cloudflareaccess.com" in env_example["CF_ACCESS_TEAM_DOMAIN"]
-    assert env_example["CF_ACCESS_TEAM_DOMAIN"].startswith("replace-me")
+    assert env_example["DJANGO_ALLOWED_HOSTS"].startswith("replace-me")
 
 
 def test_the_template_declares_what_the_application_needs(
@@ -266,9 +296,11 @@ def test_the_template_declares_what_the_application_needs(
         "REAL_DATA_ALLOWED",
         "DEV_LOGIN_ENABLED",
         "DJANGO_DEBUG",
-        "CF_ACCESS_ENABLED",
-        "CF_ACCESS_TEAM_DOMAIN",
-        "CF_ACCESS_AUDIENCE",
+        "AUTH_MODE",
+        "JURISTID_SHARED_GATE_PASSWORD",
+        "SHARED_GATE_MAX_ATTEMPTS",
+        "SHARED_GATE_LOCKOUT_SECONDS",
+        "SHARED_GATE_MAX_LOCKOUT_SECONDS",
         "DJANGO_SECRET_KEY",
         "DJANGO_ALLOWED_HOSTS",
         "DJANGO_CSRF_TRUSTED_ORIGINS",

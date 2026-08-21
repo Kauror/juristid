@@ -6,7 +6,8 @@ to it, in one system. This is the environment that holds the real thing.
 | | |
 | --- | --- |
 | LAN URL | **none — there is no host port** |
-| Public URL | behind Cloudflare Access; the hostname lives in the host's env file |
+| Auth mode | `shared_gate` (temporary; see below) |
+| Public URL | `https://juristid.orgusaar.ee` — behind the shared gate |
 | Compose project | `juristid-main` |
 | Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-extractor`, `juristid-main-tunnel` |
 | Network | `juristid-main-internal` (its own bridge) |
@@ -27,30 +28,82 @@ Four properties, each enforced somewhere a mistake would be visible rather than
 silent.
 
 **There is no host port.** No service in `compose.yml` has a `ports:` key. The
-only route in is the Cloudflare tunnel, which means the only route in goes
-through Cloudflare Access. You cannot reach this by typing the server's LAN
-address, and `tests/test_deployment_unraid_main.py` fails if a port ever appears.
+only route in is the Cloudflare tunnel. You cannot reach this by typing the
+server's LAN address, and `tests/test_deployment_unraid_main.py` fails if a port
+ever appears.
 
-**The application verifies Access itself.** Cloudflare adds a signed assertion
-to each request it forwards; `app/accounts/middleware.py` verifies the RS256
-signature against the team's published keys, checks the audience tag and the
-issuer, and only then believes the email. A request header on its own is
-attacker-controlled — anybody who could reach the container directly could set
-it to anything. There is no fallback to the unsigned
-`Cf-Access-Authenticated-User-Email` header.
+**There is an authenticator in front of it.** `AUTH_MODE` is `shared_gate`
+today and `cloudflare_access` when the Access application exists. Real data with
+`AUTH_MODE=none` refuses to start (`juristid.E006`).
 
-**Nobody is provisioned automatically.** A verified email that matches no active,
-non-synthetic account is refused. Widening an Access policy in a Cloudflare
-dashboard must not hand somebody a seat inside a system of confidential member
-material.
+**Nobody is provisioned automatically.** In `cloudflare_access` mode a verified
+email that matches no active, non-synthetic account is refused. In `shared_gate`
+mode the persona list is exactly the accounts an administrator created.
 
 **The unsafe combinations refuse to start.** `manage.py check` fails on real data
 with `DEBUG` (E004), real data with the synthetic sign-in (E003), real data with
-no authenticator (E006), Access enabled but unconfigured (E007), and the
-synthetic sign-in behind Access (E008).
+no authenticator (E006), `cloudflare_access` unconfigured (E007), the synthetic
+sign-in beside a real authenticator (E008), an unknown mode (E009), a missing or
+too-short gate password (E010, E011), a disabled rate limit (E012), and a gate
+session cookie that is not `Secure` (E013).
 
-There is no shared PIN here. The rehearsal's exists because everything behind it
-is invented; a shared code is not identity and has no place in front of this.
+## The shared gate — what it is, and what it is not
+
+**Temporary.** It exists so the development phase can proceed without waiting
+for a Cloudflare dashboard, and it is replaced by `AUTH_MODE=cloudflare_access`
+with no other change.
+
+**It authenticates the door.** One password for the department, supplied
+host-side in `JURISTID_SHARED_GATE_PASSWORD`, hashed once at process start,
+compared in constant time, and rate limited per client with an escalating,
+capped lockout. Passing it proves somebody knows the department's password.
+
+**It does not authenticate the person.** Behind the gate you pick whose work you
+are looking at. That selection drives `Minu töö`, ownership filters and profile
+context — and it is not evidence that the named human is at the keyboard. Every
+audit row records both:
+
+```
+authenticated_via = SHARED_GATE
+acting_as_user    = <the selected persona>
+```
+
+Passing the gate is logged as `SHARED_GATE_PASSED`, deliberately not as
+`AUTHENTICATION_SUCCEEDED`, so nobody reading the trail later mistakes "somebody
+typed the department password" for "this person signed in". Persona changes are
+logged every time, with the previous and the chosen persona.
+
+**What this means in practice.** Anyone with the password sees everything
+NORMAL and can select any persona, including one entitled to RESTRICTED
+material. The gate is the perimeter; the persona is a lens. One secret is shared
+by several people, so it cannot be revoked for one of them — only rotated for
+all. Anything that later needs "who did this" as evidence needs
+`cloudflare_access` first. See `docs/adr/0016`.
+
+### The flow
+
+```
+juristid.orgusaar.ee
+    ↓  shared password
+department Ülevaade          ← useful with no persona; NORMAL visibility only
+    ↓  Vali kasutaja
+selected persona → Minu töö
+```
+
+The landing dashboard renders for a *department scope*, not for an arbitrary
+person's identity: NORMAL visibility, no participation, so nothing RESTRICTED
+appears merely because the password was typed. Everything except Ülevaade needs
+a persona, because authoring anything needs somebody to attribute it to.
+
+Changing persona does not ask for the password again. Signing out closes both.
+
+### Rotating the password
+
+Edit `JURISTID_SHARED_GATE_PASSWORD` in the host's environment file and restart
+the web container. Nothing is stored anywhere else, so nothing else has to
+change. Everyone's session survives until it ages out
+(`SHARED_GATE_SESSION_SECONDS`); to end them immediately, also rotate
+`DJANGO_SECRET_KEY`.
 
 ## First deployment
 
@@ -98,16 +151,25 @@ Applications → this application → Overview → *Application Audience (AUD) T
 
 ### 3. Cloudflare
 
-Create the tunnel locally on the host — `cloudflared tunnel login`, then
-`cloudflared tunnel create juristid-main` — so the credential is generated here
-and never leaves. Put its JSON and a `config.yml` routing the hostname to
-`http://web:8000` in `/mnt/user/appdata/juristid-main/cloudflared/`.
+Create the tunnel locally on the host, so the credential is generated here and
+never leaves:
 
-Then create the Access application for the same hostname, with one policy:
-action *Allow*, selector *Emails*, value the addresses that should get in. Access
-must exist before the tunnel is started — the application refuses requests that
-arrive without a valid assertion, so a tunnel without Access serves 403s rather
-than serving the register.
+```bash
+cloudflared tunnel login
+cloudflared tunnel create juristid-main
+```
+
+Put its JSON and a `config.yml` routing the hostname to `http://web:8000` in
+`/mnt/user/appdata/juristid-main/cloudflared/`.
+
+`juristid.orgusaar.ee` is the live hostname. It served the synthetic rehearsal
+first, so the cutover is a change of which tunnel claims it — see **Cutover**
+below. There is no second live hostname.
+
+Cloudflare Access is the next hardening step and is **not** required to run:
+with `AUTH_MODE=shared_gate` the application authenticates its own requests. When
+the Access application exists, set `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUDIENCE`
+and `AUTH_MODE=cloudflare_access`, and restart. Nothing else changes.
 
 ### 4. Start
 
@@ -131,8 +193,9 @@ docker compose -p juristid-main -f compose.yml run --rm web \
   python manage.py createsuperuser --upn <email> --display_name "<name>"
 ```
 
-Use the addresses Cloudflare Access will assert. Do not invent `.invalid`
-identities here and do not use somebody else's address as a placeholder.
+These become the persona list behind the gate, and later the accounts Cloudflare
+Access asserts against. Use real addresses: do not invent `.invalid` identities
+here and do not use somebody else's address as a placeholder.
 
 ## Importing the historical corpus
 
@@ -203,3 +266,43 @@ docker compose -p juristid-main -f compose.yml up -d
 - **No real data leaving this host.** Not into Git, not into CI, not into a PR
   comment, not into a screenshot, not into a log uploaded anywhere. The
   repository is public.
+
+
+## Cutover
+
+`juristid.orgusaar.ee` is the live hostname and stays the live hostname. The
+synthetic rehearsal used it first; moving it means pointing the DNS record at
+this stack's tunnel, not creating a second name.
+
+```bash
+# The rehearsal keeps running, on its own project, network and database.
+# Its data is preserved. Only the public name moves.
+cloudflared tunnel route dns juristid-main juristid.orgusaar.ee
+docker compose -p juristid-main -f compose.yml up -d tunnel
+```
+
+`juristid-test` is not stopped, not removed, and not migrated. If it needs a
+public name of its own afterwards, give it an internal one — never a second
+live one.
+
+## Before calling it live
+
+From a new private window, in this order:
+
+| | Check |
+| --- | --- |
+| A | an unauthenticated visitor sees no Juristid data at all |
+| B | a wrong password is rejected |
+| C | repeated failures are rate limited |
+| D | the correct password opens the department Ülevaade |
+| E | the dashboard is useful with no persona selected |
+| F | selecting a persona changes `Minu töö` |
+| G | changing persona changes the profile context |
+| H | persona switching appears in the security audit |
+| I | RESTRICTED material does not appear in the department scope |
+| J | there is no direct origin bypass — no host port answers |
+| K | signing out ends both the persona and the gate |
+| L | historical data survives a container restart |
+
+A–L are covered by `tests/test_shared_gate.py` as logic. Doing them in a real
+browser is what catches the difference between the logic and the deployment.

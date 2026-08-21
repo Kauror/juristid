@@ -8,7 +8,7 @@ switched on without a user-table rewrite (master specification 16.2).
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
@@ -202,3 +202,82 @@ class BreakGlassGrant(BaseModel):
     @property
     def grant_id(self) -> uuid.UUID:
         return self.id
+
+
+class SharedGateThrottle(BaseModel):
+    """Failed shared-password attempts, per client, across every worker.
+
+    A table rather than a cache entry. The cache would be shared between
+    gunicorn workers and would survive a restart, but it is also *evictable* —
+    Django's database cache culls a third of its rows when it grows past
+    `MAX_ENTRIES`, and a lockout an attacker can flush by making noise is not a
+    lockout (Stage-2D auth brief 9).
+
+    Scoped to one client key and never global. A global counter would mean one
+    attacker can lock the department out of its own system: a denial-of-service
+    primitive wearing a control's clothes. Escalation is capped for the same
+    reason — long enough that guessing stops being viable, bounded so nothing
+    becomes permanent.
+    """
+
+    client_key = models.CharField(
+        max_length=64,
+        unique=True,
+        verbose_name="kliendi tunnus",
+        help_text="Aadressi räsi, mitte aadress ise.",
+    )
+    failures = models.PositiveIntegerField(default=0, verbose_name="ebaõnnestumisi")
+    lockout_cycles = models.PositiveIntegerField(default=0, verbose_name="lukustusi")
+    locked_until = models.DateTimeField(null=True, blank=True, verbose_name="lukus kuni")
+    last_failure_at = models.DateTimeField(null=True, blank=True, verbose_name="viimane katse")
+
+    class Meta:
+        verbose_name = "jagatud värava piirang"
+        verbose_name_plural = "jagatud värava piirangud"
+        ordering = ["-last_failure_at"]
+
+    def __str__(self) -> str:
+        return f"{self.client_key[:12]}… {self.failures} failure(s)"
+
+    def seconds_remaining(self, *, now: datetime | None = None) -> int:
+        now = now or timezone.now()
+        if self.locked_until is None or self.locked_until <= now:
+            return 0
+        return int((self.locked_until - now).total_seconds()) + 1
+
+    def register_failure(
+        self,
+        *,
+        max_attempts: int,
+        base_seconds: int,
+        ceiling_seconds: int,
+        now: datetime | None = None,
+    ) -> int:
+        """Count one wrong password and return the wait it earns, in seconds.
+
+        Each completed lockout cycle doubles the next one, so a scripted attack
+        slows geometrically while a person who mistyped waits five minutes once.
+        """
+        now = now or timezone.now()
+        self.failures += 1
+        self.last_failure_at = now
+
+        seconds = 0
+        if self.failures >= max_attempts:
+            seconds = min(base_seconds * (2**self.lockout_cycles), ceiling_seconds)
+            self.locked_until = now + timedelta(seconds=seconds)
+            self.lockout_cycles += 1
+            # The attempt counter restarts; the cycle counter does not. That is
+            # what makes the *next* lockout longer than this one.
+            self.failures = 0
+
+        self.save(
+            update_fields=[
+                "failures",
+                "lockout_cycles",
+                "locked_until",
+                "last_failure_at",
+                "updated_at",
+            ]
+        )
+        return seconds

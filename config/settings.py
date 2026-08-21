@@ -74,8 +74,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # After AuthenticationMiddleware, because it decides whether the session
     # Django just restored belongs to the person Cloudflare authenticated.
-    # Inert unless CF_ACCESS_ENABLED (app/accounts/middleware.py).
-    "app.accounts.middleware.CloudflareAccessMiddleware",
+    # Inert unless AUTH_MODE says otherwise (app/accounts/middleware.py).
+    "app.accounts.middleware.AuthenticationModeMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -127,7 +127,62 @@ MINIMUM_POSTGRESQL_VERSION = (18, 0)
 # --------------------------------------------------------------------------
 
 AUTH_USER_MODEL = "accounts.User"
-LOGIN_URL = "accounts:dev_login"
+# --------------------------------------------------------------------------
+# Authentication mode
+# --------------------------------------------------------------------------
+#
+# One setting decides how this deployment establishes who is at the keyboard,
+# and it is deliberately a mode rather than a pile of independent booleans: the
+# combinations that must never happen are then unrepresentable rather than
+# merely checked (app/accounts/enums.py, docs/adr/0016).
+#
+#   none              a developer laptop and CI
+#   shared_gate       one department password, then a persona from a list
+#   cloudflare_access Cloudflare verifies the individual; we verify Cloudflare
+#
+# Business authorization is identical in all three. What differs is how much
+# the deployment may claim about the identity it hands to that authorization.
+AUTH_MODE = env("AUTH_MODE", "none")
+
+# -- the shared gate --------------------------------------------------------
+#
+# A temporary development-phase authenticator: one password for the whole
+# department, supplied host-side and never anywhere else. It is genuine
+# authentication of the *door* — a long secret, hashed, constant-time compared,
+# rate limited — and it is emphatically not authentication of the *person*.
+#
+# The plaintext exists in this process's environment and is turned into a hash
+# once, at startup (app/accounts/shared_gate.py). It is never written to the
+# database, never logged, never rendered, and never reaches the client.
+SHARED_GATE_PASSWORD = env("JURISTID_SHARED_GATE_PASSWORD", "")
+
+# Wrong attempts from one client before it is locked out, the first lockout's
+# length, and the ceiling that stops escalation from becoming permanent. Each
+# further lockout cycle doubles the wait, capped — an attacker slows to a
+# standstill, and an operator who mistypes twice in a bad week does not lose
+# the afternoon.
+SHARED_GATE_MAX_ATTEMPTS = env_int("SHARED_GATE_MAX_ATTEMPTS", 5)
+SHARED_GATE_LOCKOUT_SECONDS = env_int("SHARED_GATE_LOCKOUT_SECONDS", 300)
+SHARED_GATE_MAX_LOCKOUT_SECONDS = env_int("SHARED_GATE_MAX_LOCKOUT_SECONDS", 3600)
+
+# How long a gate session lasts before the password is asked for again.
+SHARED_GATE_SESSION_SECONDS = env_int("SHARED_GATE_SESSION_SECONDS", 12 * 60 * 60)
+
+# Where `login_required` sends somebody who has no identity yet, which is a
+# different place in each mode:
+#
+#   shared_gate   the persona selector — they are already past the door, they
+#                 just have not said whose work they are looking at
+#   otherwise     the synthetic sign-in
+#
+# In shared-gate mode the middleware has already bounced anybody who is not
+# behind the password, so this redirect is only ever reached by a reader with no
+# persona (app/accounts/middleware.py).
+LOGIN_URL = (
+    "accounts:choose_persona"
+    if (AUTH_MODE or "").strip().lower() == "shared_gate"
+    else "accounts:dev_login"
+)
 LOGIN_REDIRECT_URL = "core:home"
 LOGOUT_REDIRECT_URL = "core:home"
 
@@ -383,7 +438,10 @@ REAL_DATA_ALLOWED = env_bool("REAL_DATA_ALLOWED", default=False)
 # Without it, a token minted for any other application on the same team would
 # verify, which is why an enabled-but-unconfigured Access denies rather than
 # defaults.
-CF_ACCESS_ENABLED = env_bool("CF_ACCESS_ENABLED", default=False)
+#
+# There is no separate on/off switch: Access is on exactly when
+# `AUTH_MODE=cloudflare_access`. Two switches for one decision is how a
+# deployment ends up with an authenticator that is configured and not running.
 CF_ACCESS_TEAM_DOMAIN = env("CF_ACCESS_TEAM_DOMAIN", "")
 CF_ACCESS_AUDIENCE = env("CF_ACCESS_AUDIENCE", "")
 

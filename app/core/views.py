@@ -57,10 +57,14 @@ def home(request: HttpRequest) -> HttpResponse:
     A signed-in lawyer wants the work list, not a welcome screen; anyone else
     needs to sign in first.
     """
-    if request.user.is_authenticated:
+    from app.accounts import shared_gate
+
+    if request.user.is_authenticated or shared_gate.has_passed(request):
         # Ülevaade rather than Minu töö: the first question on opening the
         # application is what is happening across the department, and the
-        # personal queue is one click away.
+        # personal queue is one click away. In shared-gate mode that is also
+        # true of somebody who has not chosen a persona — the department is
+        # exactly what they can see (Stage-2D auth brief 6).
         return redirect("matters:overview")
     return render(request, "core/home.html")
 
