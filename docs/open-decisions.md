@@ -169,3 +169,24 @@ security edge.
 | Which Statistika figures the DashKoda export must reproduce, and to what tolerance | DashKoda owner + reporting owner | Stage 4 | ADR 0007's contract predates the metric catalogue. Now that definitions exist in code, the export can be specified against them rather than against a prose description. |
 | Whether member-feedback counts are worth persisting as columns | Department head | If anyone asks for the number | Deferred in Stage 2E because recovering them means re-parsing raw spreadsheet cells. They would still never become a response rate: asked and answered are independent observations, and the register has rows where more answered than were asked. |
 | Whether the period picker should offer date ranges rather than whole years | Department head + lawyers | After the pages have been used | Whole years match the register's own reporting identity. A day-precision filter over a year-precision fact invites false precision, so it was not built speculatively. |
+
+## Decisions taken by the development agent in Stage 2E.1
+
+| Decision | Why | Reversibility |
+| --- | --- | --- |
+| The register's live search reuses the search projection rather than growing one | A second full-text implementation over the same Matters would be a second opinion about what a word means, and the two would drift. `search.services.matching_matter_ids` returns a subquery, so a keystroke stays one statement. | Low — it is the point |
+| `?q=` does not reorder the register | The list has its own sort control. Silently reordering by relevance the moment somebody types would move rows for reasons the column headers do not explain. | High |
+| Selectable years come from the authorized register population | A year offered but empty is itself a disclosure, and a OneNote-only Matter's `reporting_year` is a page timestamp rather than a filing year. Both rules already existed; the picker inherits them. | Low — same tuple, `REGISTER_YEAR_ORIGINS` |
+| `Asutus` is a query convenience over two columns that keep their meanings | `KELLELT` and `KELLELE` are different facts and the register changed which one its counterparty column meant in 2020. The convenience filter reads; it never writes, merges or rewrites either column. | High |
+| Both ends of every date range are inclusive | 01.01–31.01 means January. The columns are `DateField`s, so there is no time component for an inclusive bound to lose — the reasoning that makes `Period.end_datetime` exclusive does not apply. | High |
+| The organisation chooser is ordered by name and carries no counts | Ordering it by usage, or narrowing it to bodies that appear on visible Matters, would make the order or the membership of the list a statement about restricted work. | Moderate |
+| Inline display requires the extension and the stored MIME type to agree | A MIME type is a claim by whoever uploaded the file. Requiring both to land on the same allow-list entry means one wrong value cannot open the door. Anything unrecognised downloads. | Low — it is a security boundary |
+| `Nähtavus` leaves the creation form but not the model | Restricting a Matter is a rare, deliberate act; on the creation screen it was a field to skim past. New Matters are `NORMAL` decided server-side, never inferred from a field a caller could omit. | High — the control can come back |
+| `policy_area_other` is free text and never becomes taxonomy | The governed PolicyArea list will never cover everything, and the alternative people reach for is inventing a row nobody reviewed. It is searchable as descriptive metadata and counted by no statistic. | Moderate |
+
+## New decisions Stage 2E.1 raises for Koda
+
+| Decision | Owner | When | Notes |
+| --- | --- | --- | --- |
+| Whether recurring `Muu valdkond` values should become governed PolicyAreas | Department head | Once the field has been used for a while | The field is deliberately not self-promoting: nothing in the product turns free text into taxonomy. If the same words keep appearing, adding a reviewed PolicyArea is a decision for a person, and the existing rows can then be re-filed by hand. |
+| Whether `Materjalid` should distinguish incoming material from Koda's own | Department head + lawyers | If the filter proves useful | It currently answers "does this file carry any document I may open". Splitting it by `DocumentRole` is easy and was not built speculatively. |
