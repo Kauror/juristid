@@ -32,6 +32,7 @@ from urllib.parse import urlencode
 from django.http import StreamingHttpResponse
 from django.urls import reverse
 
+from app.core.http import content_disposition
 from app.reporting.context import ReportingContext
 from app.reporting.selectors import historical, quality
 from app.reporting.selectors import submissions as submission_selectors
@@ -63,7 +64,7 @@ def _stream(rows: Iterator[list[Any]], filename: str) -> StreamingHttpResponse:
             yield writer.writerow(row).encode("utf-8")
 
     response = StreamingHttpResponse(encoded(), content_type="text/csv; charset=utf-8")
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response["Content-Disposition"] = content_disposition("attachment", filename)
     return response
 
 
