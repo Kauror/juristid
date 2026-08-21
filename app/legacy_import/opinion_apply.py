@@ -44,6 +44,7 @@ from app.legacy_import.opinion_archive import (
     OpinionSubmissionImport,
 )
 from app.legacy_import.opinion_enums import (
+    OpinionCandidateState,
     OpinionMetadataSystem,
     RecipientBasis,
 )
@@ -271,6 +272,55 @@ def _write_candidates(
 # -- submissions ------------------------------------------------------------
 
 
+def _candidate_ids_by_key(plan: OpinionArchivePlan) -> dict[tuple[str, str, Any], Any]:
+    """The candidate each proposal wrote, keyed the way the row is unique.
+
+    ``(sha256, match_class, matter_id)`` is not a convenient approximation: it
+    is exactly the tuple `_write_candidates` passes to ``get_or_create``, so a
+    hit here is the same row and not a plausible neighbour. That is the whole
+    point — the Submission must point at the candidate that justified it, and
+    searching for "a candidate on this item" would quietly pick the wrong one
+    the day an occurrence carries two proposals.
+    """
+    return {
+        (proposal.sha256, proposal.match_class, proposal.matter_id): proposal.candidate_id
+        for proposal in plan.proposals
+        if proposal.candidate_id is not None
+    }
+
+
+def _candidate_for(submission_plan: SubmissionPlan, by_key: dict[tuple[str, str, Any], Any]) -> Any:
+    """The exact candidate behind one planned Submission, or ``None``.
+
+    A reviewed plan already carries its candidate. An automatic one is looked
+    up by the uniqueness key of the row this same run has just written.
+    """
+    if submission_plan.candidate_id is not None:
+        return submission_plan.candidate_id
+    key = (submission_plan.sha256, submission_plan.match_class, submission_plan.matter_id)
+    return by_key.get(key)
+
+
+def _mark_candidate_applied(candidate_id: Any) -> None:
+    """Record that this candidate produced a canonical Submission.
+
+    Only the workflow state moves. ``decided_by``, ``decided_at``,
+    ``decision_note``, ``reviewed_sent_date`` and ``review_approves_submission``
+    belong to whoever reviewed the row and are left exactly as they are —
+    including left empty, because the system applying a deterministic match is
+    not a person and must not be recorded as one (brief 51, 64).
+
+    Called only after the ``OpinionSubmissionImport`` row exists, so APPLIED
+    always describes something that happened rather than something the plan
+    expected to happen.
+    """
+    if candidate_id is None:
+        return
+    OpinionMatchCandidate.objects.filter(pk=candidate_id).exclude(
+        state=OpinionCandidateState.APPLIED
+    ).update(state=OpinionCandidateState.APPLIED)
+
+
 def _write_submissions(
     plan: OpinionArchivePlan,
     batch: OpinionArchiveBatch,
@@ -279,11 +329,12 @@ def _write_submissions(
     actor: Any,
 ) -> None:
     reader = _ArchiveReader(plan.archive_path)
+    by_key = _candidate_ids_by_key(plan)
     for submission_plan in plan.submissions:
         item = items.get(submission_plan.sha256)
         if item is None:
             continue
-        _write_one_submission(plan, submission_plan, item, batch, report, actor, reader)
+        _write_one_submission(plan, submission_plan, item, batch, report, actor, reader, by_key)
 
 
 def _write_one_submission(
@@ -294,13 +345,28 @@ def _write_one_submission(
     report: ApplyReport,
     actor: Any,
     reader: _ArchiveReader,
+    by_key: dict[tuple[str, str, Any], Any],
 ) -> None:
     from app.matters.models import Matter
     from app.submissions.models import Submission
 
-    if OpinionSubmissionImport.objects.filter(item=item).exists():
+    candidate_id = _candidate_for(submission_plan, by_key)
+
+    existing_import = OpinionSubmissionImport.objects.filter(item=item).first()
+    if existing_import is not None:
         # This occurrence has already been reconciled. Re-running must find the
         # row and stop, not add a second Submission for the same letter.
+        #
+        # It may still repair its own bookkeeping. An import written before the
+        # candidate link existed leaves a row that produced a canonical
+        # Submission while its candidate sits in the review queue as PENDING —
+        # a wrong statement about work that is finished. Repairing that writes
+        # no Submission, no Document, no version and no second import row; it
+        # only finishes recording what already happened (brief 64).
+        if existing_import.candidate_id is None and candidate_id is not None:
+            existing_import.candidate_id = candidate_id
+            existing_import.save(update_fields=["candidate", "updated_at"])
+        _mark_candidate_applied(existing_import.candidate_id or candidate_id)
         return
 
     if submission_plan.existing_submission_id is not None:
@@ -335,6 +401,7 @@ def _write_one_submission(
         item=item,
         submission=submission,
         batch=batch,
+        candidate_id=candidate_id,
         created_submission=submission_plan.existing_submission_id is None,
         match_class=submission_plan.match_class,
         sent_date_basis=submission_plan.sent_date_basis,
@@ -342,6 +409,11 @@ def _write_one_submission(
         matter_match_signals=list(submission_plan.signals),
         document_version=version,
     )
+    # Only now. Everything above can still bail out — most importantly the
+    # evidence write, which returns early when the bytes cannot be stored — and
+    # a candidate marked APPLIED by a run that then wrote nothing would be the
+    # worst of both states: absent from the queue and absent from the archive.
+    _mark_candidate_applied(candidate_id)
 
 
 def _provenance_note(submission_plan: SubmissionPlan) -> str:

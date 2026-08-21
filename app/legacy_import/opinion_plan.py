@@ -89,6 +89,12 @@ class SubmissionPlan:
     #: apply attaches provenance to it instead of creating a second record of
     #: one sent action (brief 67).
     existing_submission_id: Any = None
+    #: The reviewed candidate this plan came from, when a person approved it.
+    #: The automatic route leaves this unset because its candidate row does not
+    #: exist until the apply writes it; the apply resolves that one from the
+    #: proposal it was built from. Either way the Submission ends up pointing
+    #: at the exact candidate that justified it, never at a searched-for one.
+    candidate_id: Any = None
 
 
 @dataclass
@@ -462,6 +468,7 @@ def _plan_reviewed_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]
                 recipient_basis=recipient_basis,
                 match_class=candidate.match_class,
                 signals=list(candidate.signals),
+                candidate_id=candidate.pk,
             )
         )
         already.add(sha256)

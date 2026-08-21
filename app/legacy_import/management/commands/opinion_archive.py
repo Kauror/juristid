@@ -10,9 +10,15 @@
 Separate commands rather than a ``--apply`` flag, for the reason the historical
 importer already learned: the phases have different consequences and a flag is
 easy to mistype. ``audit`` and ``plan`` write nothing and touch no database
-rows. ``dry-run`` executes the real plan against the real schema and rolls it
-back. Only ``apply`` commits, and it refuses unless the sources still hash to
-what the plan was reviewed against (Stage-2H brief 47, 48, 49).
+rows. ``dry-run`` executes the real plan against the real schema and rolls the
+*database* back. Only ``apply`` commits, and it refuses unless the sources still
+hash to what the plan was reviewed against (Stage-2H brief 47, 48, 49).
+
+**The rollback is database-only.** ``add_evidence_version`` writes bytes to the
+evidence store, and the filesystem does not join the transaction: a dry-run that
+reaches the evidence stage can leave stored objects behind even though every row
+disappears. They are unreferenced rather than wrong, but "nothing was written"
+would be an overstatement. For a real import prefer ``plan`` → ``apply``.
 """
 
 from __future__ import annotations
@@ -100,7 +106,14 @@ class Command(BaseCommand):
         )
 
         require_unchanged_sources(plan)
-        self.stdout.write("Proovikäik — kõik allolev keeratakse tagasi.\n")
+        self.stdout.write("Proovikäik — andmebaasi muudatused keeratakse tagasi.\n")
+        self.stdout.write(
+            self.style.WARNING(
+                "Tähelepanu: tagasikeeramine hõlmab ainult andmebaasi. Kui proovikäik jõuab "
+                "tõendifailide salvestamiseni, võivad need failid salvestusse alles jääda — "
+                "failisüsteem ei osale transaktsioonis. Päris impordiks kasuta plan → apply."
+            )
+        )
 
         class _Rollback(Exception):
             pass
@@ -115,7 +128,9 @@ class Command(BaseCommand):
             pass
 
         self.stdout.write(carrier["report"].as_text())
-        self.stdout.write(self.style.SUCCESS("\nTagasi keeratud. Midagi ei kirjutatud."))
+        self.stdout.write(
+            self.style.SUCCESS("\nAndmebaasi muudatused keerati tagasi (failisalvestus mitte).")
+        )
         if options.get("report"):
             self._write_report(
                 options["report"], {"dry_run": carrier["report"].__dict__, "plan": plan.summary()}
