@@ -34,6 +34,12 @@ from app.legacy_import.opinion_archive import (
 from app.legacy_import.opinion_enums import OpinionCandidateState
 from app.legacy_import.opinion_plan import build_plan
 from app.legacy_import.parser import SOURCE_SYSTEM
+from app.legacy_import.source_pages import (
+    LegacySourcePage,
+    LegacySourceResource,
+    MatterSourcePage,
+    SourceMatchMethod,
+)
 from app.matters.models import Matter
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import Submission, SubmissionRecipient
@@ -91,6 +97,37 @@ def strict_pair(number: int = 21, *, sent: str | None = "2024-04-10"):
         marker=f"state-{number}",
     )
     return matter, item
+
+
+def attach_to_onenote(matters, data: bytes) -> None:
+    """Put these exact bytes on a OneNote page the given Matters claim.
+
+    Gives an occurrence an exact-binary Matter without a register sent date,
+    which is the shape a reviewer is asked to decide about.
+    """
+    page = LegacySourcePage.objects.create(
+        source_page_id=f"page-{syn.sha256(data)[:12]}",
+        page_key=f"key-{syn.sha256(data)[:12]}",
+        source_notebook="oigus",
+        source_section="ARHIIV",
+        title="Leht",
+        capture_id="capture-1",
+        first_imported_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+        latest_imported_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+    )
+    LegacySourceResource.objects.create(
+        source_page=page,
+        resource_key="resource-1",
+        original_filename="lisatud.pdf",
+        source_block_ordinal=3,
+        sha256=syn.sha256(data),
+        size_bytes=len(data),
+        archive_relative_path="pages/x/resource-1.pdf",
+    )
+    for matter in matters:
+        MatterSourcePage.objects.create(
+            matter=matter, source_page=page, match_method=SourceMatchMethod.EXCEL_EXACT_PAGE_ID
+        )
 
 
 def states():
@@ -201,13 +238,20 @@ def test_an_unmatched_candidate_stays_pending(archive_path):
 
 
 def test_a_matter_with_no_defensible_date_stays_pending(archive_path):
-    """No sent date, no canonical Submission — so nothing was applied."""
+    """No sent date, no canonical Submission — so nothing was applied.
+
+    Without a `VÄLJA` the register row cannot supply the third signal either,
+    so the occurrence ends up UNMATCHED and its candidate carries no Matter at
+    all. Assert on the candidate for the *item*, which is the row that exists.
+    """
     matter, item = strict_pair(number=33, sent=None)
     plan = plan_for(archive_path([item]))
     apply_plan(plan, batch=open_batch(plan))
 
     assert Submission.objects.filter(matter=matter).count() == 0
-    assert OpinionMatchCandidate.objects.get(matter=matter).state == OpinionCandidateState.PENDING
+    assert OpinionSubmissionImport.objects.count() == 0
+    candidate = OpinionMatchCandidate.objects.get(item__sha256=item.sha256)
+    assert candidate.state == OpinionCandidateState.PENDING
 
 
 def test_a_same_day_bundle_stays_review_work(archive_path):
@@ -256,7 +300,7 @@ def test_linking_an_existing_submission_also_applies_the_candidate(archive_path,
     version = add_evidence_version(
         document=document,
         content=item.data,
-        original_filename=item.original_filename,
+        original_filename=item.name.rsplit("/", 1)[-1],
         mime_type="application/pdf",
         acquired_at=timezone.now(),
         actor=specialist,
@@ -344,6 +388,10 @@ def test_a_reviewed_candidate_keeps_its_reviewer_when_it_becomes_applied(
 ):
     """APPLIED is a workflow state, not a decision. The person stays the person."""
     matter, item = strict_pair(number=101, sent=None)
+    # The exact binary gives the candidate its Matter; the missing VÄLJA is
+    # what stops it being applied automatically, which is exactly the row a
+    # reviewer is asked to decide about.
+    attach_to_onenote([matter], item.data)
     archive = archive_path([item])
 
     # Catalogue the archive so the candidate row exists; no date, so nothing
