@@ -105,9 +105,15 @@
           {% if block.kind == "text" %}
             <p class="casefile__text {% if block.list_item %}casefile__text--item{% endif %}">{{ block.text }}</p>
           {% else %}
+            {% comment %}
+              Four states, because they are four different facts and only one of
+              them means "wait". Six attachments in the real corpus are zero
+              bytes in OneNote itself; showing those as "Kopeerimisel" for ever
+              would be the page lying about its own material.
+            {% endcomment %}
             <div class="casefile__file">
               <span class="casefile__label">Materjal</span>
-              {% if block.document %}
+              {% if block.state == "imported" %}
                 <a class="casefile__name" href="{% url 'documents:document_detail' pk=block.document.pk %}">
                   {{ block.filename }}
                 </a>
@@ -120,7 +126,15 @@
               {% else %}
                 <span class="casefile__name">{{ block.filename }}</span>
                 <span class="casefile__meta">
-                  {{ block.size_bytes|filesizeformat }} · <span class="statechip statechip--waiting">Kopeerimisel</span>
+                  {% if block.state == "empty" %}
+                    Tühi fail · <span class="statechip">OneNote'is oli see fail tühi</span>
+                  {% elif block.state == "unavailable" %}
+                    {{ block.size_bytes|filesizeformat }} ·
+                    <span class="statechip statechip--problem">Kopeerimine ebaõnnestus</span>
+                  {% else %}
+                    {{ block.size_bytes|filesizeformat }} ·
+                    <span class="statechip statechip--waiting">Kopeerimisel</span>
+                  {% endif %}
                 </span>
               {% endif %}
             </div>
