@@ -250,7 +250,6 @@ def refresh_submission(submission: Submission) -> int:
 
 
 @transaction.atomic
-@transaction.atomic
 def refresh_source_link(link: MatterSourcePage) -> int:
     """Reproject one Matter↔page relationship."""
     from app.search.child_indexing import indexable_source_links, refresh_source_links
@@ -264,6 +263,7 @@ def refresh_source_link(link: MatterSourcePage) -> int:
     return count
 
 
+@transaction.atomic
 def refresh_document_version(version: DocumentVersion) -> int:
     """Reproject one version's extracted content.
 
@@ -271,6 +271,15 @@ def refresh_document_version(version: DocumentVersion) -> int:
     derivative and a findable document are the same event. A derivative that
     committed without its search rows would be content that exists and cannot be
     found — the silent half of every search complaint.
+
+    Atomic in its own right as well, and not only because its three siblings
+    are. The other caller is the ``Document`` ``post_save`` handler, which fires
+    wherever a document is saved — today always inside a service transaction,
+    tomorrow from whatever rename or reclassify route gets written. Every
+    refresh here deletes before it inserts, so an unwrapped call that failed
+    in between would leave the file's every page deleted from the index and
+    nothing put back: precisely the outcome the paragraph above rules out, but
+    reached from the other side.
     """
     from app.search.child_indexing import refresh_version_fragments
 
