@@ -64,6 +64,23 @@ class ChangeEventType(models.TextChoices):
     WORK_VICTORY_CHANGED = "WORK_VICTORY_CHANGED", "Töövõidu kirjet muudetud"
     WORK_VICTORY_CONFIRMED = "WORK_VICTORY_CONFIRMED", "Töövõit kinnitatud"
     WORK_VICTORY_REJECTED = "WORK_VICTORY_REJECTED", "Töövõit ei realiseerunud"
+    # -- Stage 2I: the historical cutover -----------------------------------
+    #
+    # Deliberately not `MATTER_CLOSED`. That event means a person closed active
+    # work today, and it carries a real disposition and a real timestamp. This
+    # one means something weaker and stranger: at the cutover the department
+    # decided that a pre-2026 register row is no longer current, while the date
+    # activity actually stopped and the reason it stopped remain unknown and
+    # are not invented.
+    #
+    # The event's own timestamp is when the normalisation ran, which is why it
+    # stays out of `matters.timeline.TIMELINE_EVENT_TYPES`: a line in the
+    # chronology reading "closed" on the cutover day would assert precisely the
+    # fact this operation refuses to claim (Stage-2I brief 8, 20).
+    MATTER_HISTORICAL_CUTOVER_CLOSED = (
+        "MATTER_HISTORICAL_CUTOVER_CLOSED",
+        "Ajalooline kirje: enam mitte jooksev töö",
+    )
 
 
 class SecurityEventType(models.TextChoices):

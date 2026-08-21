@@ -532,6 +532,93 @@ def reopen_matter(*, matter: Matter, actor: Any = None, reason: str = "") -> Mat
 
 
 @transaction.atomic
+def mark_historical_archive_inactive(
+    *, matter: Matter, actor: Any = None, provenance: dict[str, Any] | None = None
+) -> Matter:
+    """Record that an imported archive row is no longer current work.
+
+    Deliberately **not** :func:`close_matter`. That operation means a person is
+    closing live work now, so it rightly demands a disposition and stamps the
+    current time. Neither is available here: the register carried no closure
+    concept before 2025, so for a 2014 row the date activity stopped and the
+    reason it stopped are simply unknown (ADR 0020).
+
+    So exactly one field moves — ``is_open`` — and the resulting shape
+
+        record_mode=ARCHIVE, is_open=False, disposition="", closed_at=None
+
+    is intentional and is what the closure constraint already allows: "an
+    archive row is never forced to invent a closure reason it does not have".
+    It reads as *historical at cutover, exact closure fact unknown*, which is
+    the honest statement. It does **not** mean the Matter closed on the day
+    this ran, and nothing downstream may present it that way.
+
+    Refuses anything that is not an open ARCHIVE record. A FULL Matter is
+    current work somebody activated, and the bulk historical default is not
+    entitled to demote it.
+    """
+    if matter.record_mode != RecordMode.ARCHIVE:
+        raise DomainError("Ainult arhiivikirje saab muutuda ajalooliseks.")
+    if not matter.is_open:
+        raise DomainError("Teema on juba suletud.")
+
+    matter.is_open = False
+    matter.save(update_fields=["is_open", "updated_at"])
+
+    record_change_event(
+        event_type=ChangeEventType.MATTER_HISTORICAL_CUTOVER_CLOSED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary="Ajalooline kirje: enam mitte jooksev töö.",
+        payload={**(provenance or {}), "from_is_open": True, "to_is_open": False},
+    )
+    return matter
+
+
+@transaction.atomic
+def reactivate_historical_matter(*, matter: Matter, actor: Any = None, attestation: str) -> Matter:
+    """One old Matter, attested by a person as still current, becomes current.
+
+    The narrow exception the cutover leaves open. It is deliberately per-Matter
+    and deliberately requires somebody to say why: the whole point of the
+    historical default is that no rule can tell a live 2019 file from a
+    finished one, so only a person can (ADR 0020).
+
+    Two existing operations in the only order that works —
+    :func:`reopen_matter` first, because :func:`promote_matter_to_full` refuses
+    a closed Matter, then the promotion. `reporting_year` and the reference are
+    untouched by both, so the Matter keeps reporting under the year it belongs
+    to.
+
+    Refuses a Matter carrying a **real** recorded closure. Somebody wrote a
+    disposition there, and reversing a professional decision is that person's
+    call through the ordinary reopen route, not a side effect of a carry-over
+    convenience. This wrapper only reverses the *default* the cutover applied,
+    which is recognisable precisely because it invented nothing.
+
+    No `NextAction` is created. What happens next is a decision for whoever
+    picks the file up.
+    """
+    if not attestation.strip():
+        raise DomainError("Ajaloolise teema taasavamine vajab põhjendust.")
+    if matter.is_open:
+        raise DomainError("Teema on juba avatud.")
+    if matter.disposition or matter.closed_at is not None:
+        raise DomainError(
+            "Sellel teemal on tegelik salvestatud sulgemine; kasuta tavalist taasavamist."
+        )
+
+    reopen_matter(matter=matter, actor=actor, reason=attestation)
+    return promote_matter_to_full(
+        matter=matter,
+        actor=actor,
+        reason=attestation,
+        provenance={"operation": "reactivate_historical_matter"},
+    )
+
+
+@transaction.atomic
 def promote_matter_to_full(
     *, matter: Matter, actor: Any = None, reason: str = "", provenance: dict[str, Any] | None = None
 ) -> Matter:
