@@ -510,3 +510,37 @@ def test_the_search_index_is_not_consulted_when_nothing_was_typed(signed_in):
 
     response = signed_in.get(REGISTER, {"olek": "koik"})
     assert response.context["query"] == ""
+
+
+def test_the_choosers_own_search_text_is_not_a_filter(signed_in):
+    """It narrows a list of options, not the register.
+
+    The chooser's search box sits inside the Täpsem otsing form, so submitting
+    the form carries whatever was typed into it. That text must not survive into
+    a shared link, and `Tühjenda kõik` must not leave it behind looking like a
+    filter that is still applied (brief 12, 13).
+    """
+    factories.MatterFactory(title="Ükskõik")
+    response = signed_in.get(REGISTER, {"olek": "koik", "asutus_otsing": "kliima", "aasta": "2024"})
+
+    assert response.context["cleared_query"] == ""
+    assert "asutus_otsing" not in dict(response.context["carried_params"])
+    # And it narrows nothing: the register is unchanged by it.
+    assert total_of(signed_in.get(REGISTER, {"olek": "koik", "asutus_otsing": "kliima"})) == 1
+
+
+def test_a_keystroke_costs_less_than_a_full_page(signed_in, django_assert_max_num_queries):
+    """The fragment does not pay for selects it does not contain (brief 14)."""
+    for index in range(10):
+        indexed(factories.MatterFactory(title=f"Pakendiseaduse säte {index}"))
+    for _ in range(30):
+        factories.OrganisationFactory()
+
+    full = signed_in.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik"})
+    assert "organisation_options" in full.context
+
+    with django_assert_max_num_queries(12):
+        fragment = signed_in.get(
+            REGISTER, {"q": "pakendiseaduse", "olek": "koik"}, headers={"HX-Request": "true"}
+        )
+    assert fragment.status_code == 200

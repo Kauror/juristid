@@ -105,8 +105,9 @@ def test_either_direction_counts_as_involvement():
 
     factories.MatterFactory(title="Nemad saatsid", source_organisation=ministry)
     factories.MatterFactory(title="Meie vastasime", addressee_organisation=ministry)
-    factories.MatterFactory(title="Mõlemat pidi", source_organisation=ministry,
-                            addressee_organisation=ministry)
+    factories.MatterFactory(
+        title="Mõlemat pidi", source_organisation=ministry, addressee_organisation=ministry
+    )
     factories.MatterFactory(title="Kõrvaline", source_organisation=other)
 
     condition = selectors.organisation_involved_q(ministry.pk)

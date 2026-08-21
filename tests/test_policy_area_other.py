@@ -105,9 +105,7 @@ def test_an_unchanged_value_writes_nothing(specialist):
 
 def test_the_inline_edit_reaches_the_service(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
-    url = reverse(
-        "matters:update_field", kwargs={"pk": matter.pk, "field": "policy_area_other"}
-    )
+    url = reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "policy_area_other"})
 
     response = signed_in.post(url, {"policy_area_other": "  Kosmoseõigus "})
 
@@ -123,9 +121,7 @@ def test_the_inline_edit_re_renders_the_surface_it_lives_on(signed_in, specialis
     claiming the save had worked.
     """
     matter = factories.MatterFactory(owner=specialist)
-    url = reverse(
-        "matters:update_field", kwargs={"pk": matter.pk, "field": "policy_area_other"}
-    )
+    url = reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "policy_area_other"})
 
     body = signed_in.post(url, {"policy_area_other": "Kosmoseõigus"}).content.decode()
 

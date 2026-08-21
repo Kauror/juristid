@@ -299,6 +299,19 @@ MATERIAL_LABELS = {
 #: `FILTER_LABELS` is picked up by both without a second list to keep in step.
 REGISTER_PARAMS = (*FILTER_LABELS, "olek", "jarjestus", "q")
 
+#: Suffix of a parameter that steers a *control* rather than the population.
+#: The organisation chooser's own search box lives inside the filter form, so
+#: submitting the form carries whatever was typed into it. That text narrows a
+#: list of options and nothing else — it must not survive into a shared link,
+#: and `Tühjenda kõik` must not leave it behind looking like a filter that is
+#: still applied.
+CONTROL_PARAM_SUFFIX = "_otsing"
+
+
+def _is_control_param(name: str) -> bool:
+    return name.endswith(CONTROL_PARAM_SUFFIX)
+
+
 #: What `?allikas=` means. A word rather than a boolean, because `allikas=0`
 #: reads as "source number zero" in a URL somebody is editing by hand.
 SOURCE_PRESENT = "on"
@@ -645,6 +658,8 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     for parameter in REGISTER_PARAMS:
         cleared.pop(parameter, None)
     cleared.pop("leht", None)
+    for parameter in [name for name in cleared if _is_control_param(name)]:
+        cleared.pop(parameter, None)
 
     chips = _active_filters(request, params)
     context: dict[str, Any] = {
@@ -658,7 +673,9 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # What the search box submits alongside `q`, so typing narrows the
         # chosen filters rather than silently widening the population.
         "carried_params": [
-            (name, value) for name, value in params.items() if name not in {"q", "leht"} and value
+            (name, value)
+            for name, value in params.items()
+            if name not in {"q", "leht"} and value and not _is_control_param(name)
         ],
         "status_options": _status_options(request, params),
         "active_filters": chips,
@@ -683,16 +700,6 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             "adressaat": params.get("adressaat", ""),
             "jarjestus": sort,
         },
-        "owners": User.objects.filter(is_active=True).order_by("display_name"),
-        "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
-        "tracks": Track.choices,
-        "policy_areas": PolicyArea.objects.filter(is_active=True).order_by("name_et"),
-        "record_modes": RecordMode.choices,
-        "origins": MatterOrigin.choices,
-        "next_action_options": [(key, NEXT_ACTION_LABELS[key]) for key in NEXT_ACTION_LABELS],
-        "material_options": sorted(MATERIAL_LABELS.items()),
-        "chosen_organisation": _organisation_or_none(params.get("asutus", "")),
-        "organisation_options": _organisation_options(""),
         "nav_active": "teemad",
     }
 
@@ -700,7 +707,24 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # The whole results surface, not a patched piece of it: one render from
         # one queryset cannot disagree with itself about how many rows there are
         # (the convention this module opens with).
+        #
+        # Returned before the filter-control options are built. Those populate
+        # selects that are not in this fragment, and a keystroke must not pay
+        # for a list of organisations nobody is going to see (brief 14).
         return render(request, "matters/partials/register_results.html", context)
+
+    context |= {
+        "owners": User.objects.filter(is_active=True).order_by("display_name"),
+        "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
+        "tracks": Track.choices,
+        "policy_areas": PolicyArea.objects.filter(is_active=True).order_by("name_et"),
+        "record_modes": RecordMode.choices,
+        "origins": MatterOrigin.choices,
+        "next_action_options": list(NEXT_ACTION_LABELS.items()),
+        "material_options": sorted(MATERIAL_LABELS.items()),
+        "chosen_organisation": _organisation_or_none(params.get("asutus", "")),
+        "organisation_options": _organisation_options(""),
+    }
     return render(request, "matters/matter_list.html", context)
 
 
