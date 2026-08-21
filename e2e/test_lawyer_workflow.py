@@ -212,8 +212,10 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.get_by_role("link", name=MATTER_TITLE)).to_be_visible()
     screenshots(page, "08-teemad")
 
-    # Filters narrow the register and survive in the URL.
-    page.locator("summary", has_text="Filter").click()
+    # Filters narrow the register and survive in the URL. The disclosure is
+    # called `Täpsem otsing` since Stage 2E.1 — it now holds the date ranges and
+    # the institution chooser as well, and "+ Filter" undersold it.
+    page.locator("summary", has_text="Täpsem otsing").click()
     page.locator("select[name='ulatus']").select_option("minu")
     page.locator("select[name='hetkeseis']").select_option("consultation")
     page.get_by_role("button", name="Filtreeri").click()

@@ -42,6 +42,17 @@ def rows(page):
     return page.locator(".table tbody tr")
 
 
+def chip_text(page) -> str:
+    """Every chip's text, joined.
+
+    `.filterchip` legitimately matches several elements — one per active
+    dimension, plus `Tühjenda kõik` — so asserting against the locator itself is
+    a strict-mode violation the moment a second filter is applied. What the
+    tests below actually mean is "this appears somewhere in the chip strip".
+    """
+    return " · ".join(page.locator("#teemad-tulemused .filterchip").all_inner_texts())
+
+
 # -- the search box ----------------------------------------------------------
 
 
@@ -182,7 +193,7 @@ def test_the_owner_filter_narrows_the_register(page, base_url):
     page.get_by_role("button", name="Filtreeri").click()
 
     page.wait_for_url(re.compile(r"vastutaja="))
-    expect(page.locator(".filterchip")).to_contain_text("Vastutaja")
+    assert "Vastutaja" in chip_text(page)
     expect(page.locator(".table")).to_contain_text(OPEN_TITLE)
     expect(page.locator(".table")).not_to_contain_text(ARCHIVE_TITLE)
 
@@ -203,7 +214,7 @@ def test_the_organisation_chooser_narrows_by_typing(page, base_url):
     page.get_by_role("button", name="Filtreeri").click()
 
     page.wait_for_url(re.compile(r"asutus="))
-    expect(page.locator(".filterchip")).to_contain_text(MINISTRY)
+    assert MINISTRY in chip_text(page)
     expect(page.locator(".table")).to_contain_text(OPEN_TITLE)
 
 
@@ -217,7 +228,7 @@ def test_the_received_date_range_narrows_the_register(page, base_url):
     page.get_by_role("button", name="Filtreeri").click()
 
     page.wait_for_url(re.compile(r"saabus_alates="))
-    expect(page.locator(".filterchip")).to_contain_text("07.03.2024")
+    assert "07.03.2024" in chip_text(page)
 
 
 def test_the_register_scope_segments_work(page, base_url):
@@ -225,12 +236,13 @@ def test_the_register_scope_segments_work(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_register(page, base_url)
 
-    page.get_by_role("link", name=re.compile(r"^Arhiiv")).click()
+    segments = page.locator(".segmented")
+    segments.get_by_role("link", name=re.compile(r"^Arhiiv")).click()
     page.wait_for_url(re.compile(r"olek=arhiiv"))
     expect(page.locator(".table")).to_contain_text(ARCHIVE_TITLE)
     expect(page.locator(".table")).not_to_contain_text(OPEN_TITLE)
 
-    page.get_by_role("link", name=re.compile(r"^Avatud")).click()
+    segments.get_by_role("link", name=re.compile(r"^Avatud")).click()
     page.wait_for_url(re.compile(r"olek=avatud"))
     expect(page.locator(".table")).to_contain_text(OPEN_TITLE)
 
@@ -250,7 +262,7 @@ def test_a_query_and_a_filter_mean_both(page, base_url):
 
     expect(page.locator(".registercount")).to_contain_text("Tavaline")
     # Still filtered by owner: the chip is there and the URL still carries it.
-    expect(page.locator(".filterchip")).to_contain_text("Vastutaja")
+    assert "Vastutaja" in chip_text(page)
     page.wait_for_url(re.compile(r"vastutaja="))
     assert result_count(page) <= with_owner
 
@@ -262,8 +274,7 @@ def test_a_query_and_a_filter_each_render_a_chip(page, base_url):
     sign_in(page, base_url, MARTIN)
     page.goto(f"{base_url}/teemad/?olek=koik&q=Tavaline&menetlusliik=DOMESTIC")
 
-    chips = page.locator(".filterchip")
-    labels = " ".join(chips.all_inner_texts())
+    labels = chip_text(page)
     assert "Otsing:" in labels
     assert "Menetlusliik" in labels
 
@@ -272,7 +283,7 @@ def test_removing_one_chip_leaves_the_others(page, base_url):
     sign_in(page, base_url, MARTIN)
     page.goto(f"{base_url}/teemad/?olek=koik&q=Tavaline&menetlusliik=DOMESTIC")
 
-    page.locator(".filterchip", has_text="Menetlusliik").click()
+    page.locator("#teemad-tulemused .filterchip", has_text="Menetlusliik").click()
 
     page.wait_for_url(re.compile(r"q=Tavaline"))
     assert "menetlusliik=DOMESTIC" not in page.url
@@ -285,5 +296,5 @@ def test_clear_all_returns_to_the_bare_register(page, base_url):
 
     page.locator("#teemad-tulemused .filterchip--clear").click()
 
-    expect(page.locator(".filterchip")).to_have_count(0)
+    expect(page.locator("#teemad-tulemused .filterchip")).to_have_count(0)
     expect(page.locator("#teemad-otsing")).to_have_value("")

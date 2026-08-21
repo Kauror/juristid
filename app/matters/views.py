@@ -379,6 +379,25 @@ def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     return options
 
 
+def _named_by_pk(model: Any, raw: str) -> Any:
+    """Look a row up by primary key without trusting the string.
+
+    `Model.objects.filter(pk="mitte-uuid")` is not an empty result — it is a
+    `ValidationError` from the field, and it takes the whole register page down
+    with a 500. The register's own *filters* already guard against this by
+    parsing the UUID first; the code that renders a filter *chip* did not, so a
+    hand-edited or truncated URL crashed the page it was describing.
+
+    Returns None for anything unparseable, and the caller falls back to showing
+    the raw value — which is the honest thing to put in a chip for a filter that
+    matched nothing.
+    """
+    try:
+        return model.objects.filter(pk=uuid.UUID(raw)).first()
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     """Show the reader a name, not a primary key.
 
@@ -386,11 +405,15 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     up by primary key, and `pk="puudub"` is not a failed lookup — it is a
     ValidationError that takes the whole register page down with it. Found by
     the first CI round, on `?vastutaja=puudub`.
+
+    Malformed UUIDs are the same failure one step along, and were found the same
+    way: `?asutus=mitte-uuid` 500ed while `?asutus=puudub` did not. Both go
+    through `_named_by_pk` now.
     """
     if value == selectors.MISSING:
         return "Määramata"
     if name == "vastutaja":
-        person = User.objects.filter(pk=value).first()
+        person = _named_by_pk(User, value)
         return person.display_name if person else value
     if name == "hetkeseis":
         stage = StageVocabulary.objects.filter(key=value).first()
@@ -416,7 +439,7 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     if name == "tegevus":
         return NEXT_ACTION_LABELS.get(value, value)
     if name in {"saatja", "adressaat", "asutus"}:
-        organisation = Organisation.objects.filter(pk=value).first()
+        organisation = _named_by_pk(Organisation, value)
         return organisation.name if organisation else value
     if name == "materjalid":
         return MATERIAL_LABELS.get(value, value)
@@ -767,10 +790,8 @@ def _organisation_options(term: str) -> list[Organisation]:
 
 def _organisation_or_none(raw: str) -> Organisation | None:
     """The chosen body, so the chooser keeps showing it after a search."""
-    try:
-        return Organisation.objects.filter(pk=uuid.UUID(raw)).first()
-    except (ValueError, AttributeError, TypeError):
-        return None
+    organisation: Organisation | None = _named_by_pk(Organisation, raw)
+    return organisation
 
 
 @login_required
@@ -874,8 +895,16 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         # Straight into the file: creation is the start of work, not the end.
         return redirect("matters:matter_detail", pk=matter.pk)
 
+    # A refused save answers 400, the same as a rejected upload and a malformed
+    # `Järgmiseks` a few lines above. The form itself failing validation used to
+    # answer 200, which made the three refusals on one page indistinguishable to
+    # anything reading the status rather than the HTML.
+    status = 400 if request.method == "POST" else 200
     return render(
-        request, "matters/matter_create.html", _create_context(request, form, action_form)
+        request,
+        "matters/matter_create.html",
+        _create_context(request, form, action_form),
+        status=status,
     )
 
 
