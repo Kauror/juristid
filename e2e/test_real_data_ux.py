@@ -220,3 +220,31 @@ def test_a_matter_can_be_created_with_a_file_attached(page, base_url, tmp_path):
 # not fail: a download URL ends in "/", so `"/ava/" in href or href.endswith("/")`
 # was true for both answers. The seeded page now carries one openable material
 # and one that can only be saved, which is what makes the difference testable.
+
+
+def test_all_years_is_still_one_click_away(page, base_url):
+    """The year list joins the quick choices; it does not replace them.
+
+    "How are we doing now" and "what happened in 2014" are different questions,
+    and a page that could only answer the second would be a worse page
+    (Stage-2E.1 brief 9).
+    """
+    sign_in(page, base_url, MARTIN)
+    page.goto(f"{base_url}/statistika/?periood=koik")
+
+    expect(page.locator(".segmented__option.is-active")).to_have_text("Kõik aastad")
+    # And no year is claiming to be selected at the same time.
+    expect(page.locator(".yearpicker__year.is-active")).to_have_count(0)
+
+
+def test_a_year_is_marked_selected_in_exactly_one_place(page, base_url):
+    """Two controls showing the same choice as selected leaves the reader
+    wondering which of them they clicked."""
+    sign_in(page, base_url, MARTIN)
+    years = offered_years(page, base_url)
+    if not years:
+        pytest.skip("this world has no register years")
+
+    page.goto(f"{base_url}/statistika/?periood={years[0]}")
+    expect(page.locator(".yearpicker__year.is-active")).to_have_text(years[0])
+    expect(page.locator(".segmented__option.is-active")).to_have_count(0)
