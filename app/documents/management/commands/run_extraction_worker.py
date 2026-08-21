@@ -58,6 +58,7 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         from app.documents.extraction.orchestrator import (
+            awaiting_scanner,
             claim_version,
             extract_document_version,
             pending_versions,
@@ -78,6 +79,19 @@ class Command(BaseCommand):
             handler = getattr(signal, name, None)
             if handler is not None:
                 signal.signal(handler, stop)
+
+        # Said once, at the top, because "Töödeldud 0 faili" is the same output
+        # for "nothing to do" and "nothing may be done in this environment", and
+        # only one of those is fine.
+        blocked = awaiting_scanner().count()
+        if blocked:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"{blocked} faili ootab pahavarakontrolli ja neid ei töödelda "
+                    "selles keskkonnas. Sisu otsingusse ei jõua enne, kui skanner "
+                    "on olemas."
+                )
+            )
 
         processed = 0
         while not stopping["now"]:

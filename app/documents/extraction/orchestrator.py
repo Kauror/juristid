@@ -133,11 +133,37 @@ def _is_claimable(version: DocumentVersion, stale_before: Any) -> bool:
     return claimed is None or claimed < stale_before
 
 
+def eligibility_q() -> Q:
+    """`is_eligible_for_extraction`, as SQL.
+
+    The same rule in two places is a smell, and this one earns it: the queue has
+    to be able to *exclude* what the worker would refuse, and the worker has to
+    re-check after claiming because a scan state can change in between. What
+    must never differ is the rule itself, so the two are tested against each
+    other.
+    """
+    eligible = Q(malware_scan_state=MalwareScanState.CLEAN)
+    if not settings.REAL_DATA_ALLOWED:
+        eligible |= Q(malware_scan_state=MalwareScanState.PENDING)
+    return eligible
+
+
 def pending_versions() -> Any:
     """Versions a worker may pick up, oldest first.
 
     Includes stale PROCESSING claims, so a killed worker's queue drains without
     anyone running a recovery command.
+
+    **Excludes what is waiting on a scanner.** Without that filter the worker
+    claims an unscanned file, `extract_document_version` correctly declines to
+    open it and leaves it PENDING, and this query hands back the same row
+    immediately — a hot loop at full speed, for ever, logging thousands of lines
+    a second and extracting nothing. The first real-data deployment did exactly
+    that on all 16,440 historical attachments.
+
+    The rule is not relaxed here: a file waiting on a scanner is still not
+    processed. It is simply not offered, so the queue drains to empty and the
+    worker idles like it should.
     """
     stale_before = timezone.now() - timedelta(minutes=settings.EXTRACTION_STALE_CLAIM_MINUTES)
     return (
@@ -149,17 +175,33 @@ def pending_versions() -> Any:
             )
             | Q(extraction_state=ExtractionState.PROCESSING, extraction_claimed_at__isnull=True)
         )
+        .filter(eligibility_q())
         .select_related("document", "document__matter")
         .order_by("created_at")
+    )
+
+
+def awaiting_scanner() -> Any:
+    """Versions that will not be extracted until a scanner says CLEAN.
+
+    Counted so an operator reading "0 files processed" can tell the difference
+    between "nothing to do" and "nothing may be done here yet".
+    """
+    return DocumentVersion.objects.filter(extraction_state=ExtractionState.PENDING).exclude(
+        eligibility_q()
     )
 
 
 def extract_document_version(version: DocumentVersion, *, force: bool = False) -> ExtractionReport:
     """Parse one binary and publish what came out of it.
 
-    Assumes the caller has claimed the row (or passes ``force``). Every exit
-    path leaves the version in a terminal state; there is no way for this to
-    return with the row still PROCESSING.
+    Assumes the caller has claimed the row (or passes ``force``). No exit path
+    leaves the row PROCESSING — it ends DONE, FAILED, NOT_APPLICABLE, or back at
+    PENDING when the file is waiting on a scanner that has not run.
+
+    That last one is *not* terminal, deliberately: the file becomes extractable
+    the day a scanner marks it CLEAN. It is `pending_versions` that must not
+    keep offering it in the meantime, or the two of them spin.
     """
     started = time.monotonic()
 
