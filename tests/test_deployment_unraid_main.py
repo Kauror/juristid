@@ -282,6 +282,23 @@ def test_the_shared_password_is_never_a_compose_default(compose: dict[str, Any])
         assert "JURISTID_SHARED_GATE_PASSWORD" not in service.get("environment", {})
 
 
+def test_the_allowed_hosts_let_the_container_check_itself(
+    env_example: dict[str, str], compose: dict[str, Any]
+) -> None:
+    """The image's HEALTHCHECK calls itself on 127.0.0.1.
+
+    Without a loopback entry Django answers 400, the healthcheck fails for ever,
+    and the container reports `unhealthy` while serving every real request
+    perfectly. The first deployment ran that way for 176 consecutive failures.
+
+    The cost is not the red light. It is that a container which later becomes
+    genuinely unhealthy looks exactly the same.
+    """
+    hosts = {host.strip() for host in env_example["DJANGO_ALLOWED_HOSTS"].split(",")}
+    assert "127.0.0.1" in hosts, "the container cannot pass its own healthcheck"
+    assert "localhost" in hosts
+
+
 def test_the_template_names_no_real_host(env_example: dict[str, str]) -> None:
     """The repository is public; the hostname is filled in on the server."""
     text = ENV_EXAMPLE.read_text(encoding="utf-8")
