@@ -370,12 +370,15 @@ class Command(BaseCommand):
             match_signals="pealkirja osaline kattuvus; sama aasta",
             explanation="review-required.csv:2019_44",
         )
-        # A second candidate, in a class nothing decides. The review-required one
-        # above is settled by `test_an_operator_settles_a_match`, and a browser
-        # suite that shares one seeded database has to leave the statistics
-        # tests something no other test consumes.
+        # A second candidate, in a class nothing decides, and on a *different*
+        # page. Two things depend on that: the review-required one above is
+        # settled by `test_an_operator_settles_a_match`, so the statistics suite
+        # needs one no other test consumes; and that test finds its card by the
+        # page title, so a second card carrying the same title makes its
+        # locator ambiguous. Two register rows pointing at one page is what a
+        # CONFLICT is, so this is where it belongs anyway.
         HistoricalMatchCandidate.objects.create(
-            source_page=candidate_page,
+            source_page=page,
             matter=matter,
             excel_reference="2019_45",
             excel_title="Alkoholiaktsiisi eelnõu, teine rida",

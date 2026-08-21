@@ -138,7 +138,12 @@ def test_a_signed_container_is_never_shown_as_a_failure(page, base_url, screensh
     open_statistics(page, base_url, "ajalooline/")
     signed = page.locator(".metric").filter(has_text="Digiallkirjastatud materjale").first
     expect(signed).to_be_visible()
-    expect(signed).not_to_contain_text("ebaõnnestu")
+    # The card carries a count *and* says what the count is not. Asserting the
+    # sentence rather than the absence of a word: the note names extraction
+    # failure precisely in order to rule it out, so forbidding the word would
+    # forbid the explanation.
+    expect(signed).to_contain_text("ei kuulu kunagi eraldamise ebaõnnestumiste hulka")
+    assert int(signed.locator(".metric__value").inner_text().strip()) >= 1
     screenshots(page, "statistika-allkirjastatud")
 
 
