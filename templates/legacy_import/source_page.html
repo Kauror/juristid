@@ -114,14 +114,29 @@
             <div class="casefile__file">
               <span class="casefile__label">Materjal</span>
               {% if block.state == "imported" %}
-                <a class="casefile__name" href="{% url 'documents:document_detail' pk=block.document.pk %}">
-                  {{ block.filename }}
-                </a>
+                {% comment %}
+                  The filename does the useful thing. A PDF opens, a Word file
+                  saves — nobody wants an intermediate page between them and the
+                  material they clicked on. Document detail is still one link
+                  away for provenance, which is a different question and a rarer
+                  one (Stage-2E.1 brief 11, 13).
+                {% endcomment %}
+                {% if block.opens_inline %}
+                  <a class="casefile__name"
+                     href="{% url 'documents:open' pk=block.version.pk %}"
+                     target="_blank" rel="noopener">{{ block.filename }}</a>
+                {% else %}
+                  <a class="casefile__name"
+                     href="{% url 'documents:download' pk=block.version.pk %}"
+                     download>{{ block.filename }}</a>
+                {% endif %}
                 <span class="casefile__meta">
                   {{ block.size_bytes|filesizeformat }}
-                  {% if block.version %}
+                  {% if block.opens_inline %}
                     · <a href="{% url 'documents:download' pk=block.version.pk %}">Laadi alla</a>
                   {% endif %}
+                  · <a class="quietlink"
+                       href="{% url 'documents:document_detail' pk=block.document.pk %}">Päritolu</a>
                 </span>
               {% else %}
                 <span class="casefile__name">{{ block.filename }}</span>

@@ -136,6 +136,13 @@ def create_matter(
     if assign_reference:
         year_number = allocate_matter_reference(reference_year)
 
+    # Free text, not taxonomy. Trimmed and length-capped here so it cannot
+    # arrive as whitespace or overflow the column, and deliberately *not*
+    # turned into a PolicyArea or a Tag (Stage-2E.1 brief 20).
+    other_area = str(extra.pop("policy_area_other", "") or "").strip()
+    if other_area:
+        extra["policy_area_other"] = other_area[:400]
+
     policy_areas = extra.pop("policy_areas", None)
 
     matter = Matter.objects.create(
@@ -404,6 +411,37 @@ def set_position(
         actor=actor,
         obj=matter,
         payload={"fields": fields},
+    )
+    return matter
+
+
+@transaction.atomic
+def set_policy_area_other(*, matter: Matter, value: str, actor: Any = None) -> Matter:
+    """Record — or clear — the free-text area beside the canonical ones.
+
+    The counterpart to what `create_matter` accepts, so a Matter filed under
+    "Muu" on the day it arrived is not stuck with whatever was typed then. Same
+    trimming and same length cap, in one place, because two callers normalising
+    a string two ways is how the same value starts comparing unequal to itself.
+
+    It stays free text. Nothing here creates a `PolicyArea`, nothing creates a
+    `Tag`, and no statistic counts it (Stage-2E.1 brief 20).
+    """
+    cleaned = (value or "").strip()[:400]
+    if cleaned == matter.policy_area_other:
+        return matter
+
+    matter.policy_area_other = cleaned
+    matter.save(update_fields=["policy_area_other", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.MATTER_POLICY_AREA_OTHER_SET,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        # The value itself is not in the payload. A timeline entry that quotes
+        # the old and new text turns an audit row into a second, unmanaged copy
+        # of a field somebody may later have had a reason to clear.
+        payload={"cleared": not cleaned},
     )
     return matter
 

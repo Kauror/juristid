@@ -6,8 +6,11 @@ The register. Filter state lives in the URL so a view can be shared, bookmarked
 and reached with Back — which is what a saved-view framework would otherwise be
 invented to do (master specification 7.4).
 
-Active filters render as removable chips built from the same query string, so
-what is on screen and what is in the address bar can never disagree.
+Stage 2E.1 adds a search box that answers while you type, and a Täpsem otsing
+panel beside it. Both write to the same URL as the chips do, so what is on
+screen, what is in the address bar and what a colleague receives in a link are
+the same thing. Nothing about this page's state lives in session or
+localStorage (Stage-2E.1 brief 12).
 {% endcomment %}
 
 {% block content %}
@@ -18,7 +21,47 @@ what is on screen and what is in the address bar can never disagree.
   </div>
 
   <div class="filters">
-    <nav class="segmented" aria-label="Olek">
+    {% comment %}
+      A GET form around the search box, so pressing Enter still works and the
+      page is usable with JavaScript switched off entirely. HTMX only makes the
+      same request earlier (brief 7).
+
+      `hx-trigger` carries `changed`, which is what stops a request firing for
+      an arrow key or a repeated value; the 250 ms delay is inside the 200–350
+      window the brief asks for. `hx-push-url` writes the address the answer
+      came from, so refresh, Back, Forward and a pasted link all agree.
+    {% endcomment %}
+    <form class="registersearch" method="get" role="search"
+          action="{% url 'matters:matter_list' %}"
+          hx-get="{% url 'matters:matter_list' %}"
+          hx-target="#teemad-tulemused"
+          hx-swap="outerHTML"
+          hx-push-url="true"
+          hx-trigger="input changed delay:250ms from:#teemad-otsing, search from:#teemad-otsing, submit"
+          hx-indicator=".registersearch__spinner">
+      <label class="registersearch__field">
+        <span class="visually-hidden">Otsi teemadest</span>
+        <input class="field__input field__input--prominent"
+               type="search"
+               name="q"
+               id="teemad-otsing"
+               value="{{ query }}"
+               autocomplete="off"
+               placeholder="Otsi teemadest — pealkiri, viide (2026_123) või sisu">
+      </label>
+      {% comment %}
+        Every other chosen dimension travels with the query. Without these the
+        first keystroke would silently drop the year and the owner somebody had
+        already picked, and the count would jump for no visible reason.
+      {% endcomment %}
+      {% for name, value in carried_params %}
+        <input type="hidden" name="{{ name }}" value="{{ value }}">
+      {% endfor %}
+      <button class="button button--quiet" type="submit">Otsi</button>
+      <span class="registersearch__spinner" aria-hidden="true">…</span>
+    </form>
+
+    <nav class="segmented" aria-label="Kirje seis">
       {% for option in status_options %}
         <a class="segmented__option {% if option.active %}is-active{% endif %}"
            {% if option.active %}aria-current="true"{% endif %}
@@ -30,20 +73,22 @@ what is on screen and what is in the address bar can never disagree.
     </nav>
 
     <div class="filterbar">
-      {% for chip in active_filters %}
-        <a class="filterchip" href="?{{ chip.remove_query }}"
-           title="Eemalda filter: {{ chip.label }}">
-          <span class="filterchip__label">{{ chip.label }}:</span>
-          <span>{{ chip.value }}</span>
-          <span class="filterchip__remove" aria-hidden="true">×</span>
-          <span class="visually-hidden">Eemalda</span>
-        </a>
-      {% endfor %}
+      <details class="disclosure" id="tapsem-otsing"
+               style="padding:var(--spacing-15) var(--spacing-25)"
+               {% if active_filters %}open{% endif %}>
+        <summary class="disclosure__summary">Täpsem otsing</summary>
+        {% comment %}
+          A plain GET form. Submitting it navigates, which is exactly right for
+          a deliberate multi-field narrowing — the live behaviour belongs to the
+          text box above, where a keystroke is cheap.
 
-      <details class="disclosure" style="padding:var(--spacing-15) var(--spacing-25)">
-        <summary class="disclosure__summary">+ Filter</summary>
+          `q` rides along hidden so applying a filter keeps the search rather
+          than resetting to the whole register.
+        {% endcomment %}
         <form class="formgrid" method="get" style="margin-top:var(--spacing-3)">
+          <input type="hidden" name="q" value="{{ query }}">
           <input type="hidden" name="olek" value="{{ filters.olek }}">
+
           <label class="field">
             <span class="field__label">Ulatus</span>
             <select class="field__input" name="ulatus">
@@ -51,10 +96,19 @@ what is on screen and what is in the address bar can never disagree.
               <option value="minu" {% if filters.ulatus == "minu" %}selected{% endif %}>Minu omad</option>
             </select>
           </label>
+
+          <label class="field">
+            <span class="field__label">Aasta</span>
+            <input class="field__input" type="text" name="aasta" value="{{ filters.aasta }}"
+                   inputmode="numeric" placeholder="2024 või 2018-2024">
+            <span class="field__help">Aruandlusaasta. Vahemik sidekriipsuga.</span>
+          </label>
+
           <label class="field">
             <span class="field__label">Vastutaja</span>
             <select class="field__input" name="vastutaja">
               <option value="">Kõik</option>
+              <option value="puudub" {% if filters.vastutaja == "puudub" %}selected{% endif %}>Määramata</option>
               {% for owner in owners %}
                 <option value="{{ owner.pk }}"
                         {% if filters.vastutaja == owner.pk|stringformat:"s" %}selected{% endif %}>
@@ -63,6 +117,7 @@ what is on screen and what is in the address bar can never disagree.
               {% endfor %}
             </select>
           </label>
+
           <label class="field">
             <span class="field__label">Hetkeseis</span>
             <select class="field__input" name="hetkeseis">
@@ -74,6 +129,7 @@ what is on screen and what is in the address bar can never disagree.
               {% endfor %}
             </select>
           </label>
+
           <label class="field">
             <span class="field__label">Menetlusliik</span>
             <select class="field__input" name="menetlusliik">
@@ -83,6 +139,7 @@ what is on screen and what is in the address bar can never disagree.
               {% endfor %}
             </select>
           </label>
+
           <label class="field">
             <span class="field__label">Valdkond</span>
             <select class="field__input" name="valdkond">
@@ -92,6 +149,111 @@ what is on screen and what is in the address bar can never disagree.
               {% endfor %}
             </select>
           </label>
+
+          <label class="field">
+            <span class="field__label">Kirje liik</span>
+            <select class="field__input" name="liik">
+              <option value="">Kõik</option>
+              {% for value, label in record_modes %}
+                <option value="{{ value }}" {% if filters.liik == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Päritolu</span>
+            <select class="field__input" name="paritolu">
+              <option value="">Kõik</option>
+              {% for value, label in origins %}
+                <option value="{{ value }}" {% if filters.paritolu == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Järgmine tegevus</span>
+            <select class="field__input" name="tegevus">
+              <option value="">Kõik</option>
+              {% for value, label in next_action_options %}
+                <option value="{{ value }}" {% if filters.tegevus == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Materjalid</span>
+            <select class="field__input" name="materjalid">
+              <option value="">Kõik</option>
+              {% for value, label in material_options %}
+                <option value="{{ value }}" {% if filters.materjalid == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          {% comment %}
+            Both ends inclusive — 01.01–31.01 means January, including the 31st
+            (app/matters/selectors.py, `date_range_q`).
+          {% endcomment %}
+          <fieldset class="field daterange">
+            <legend class="field__label">Saabumise kuupäev</legend>
+            <label class="daterange__end">
+              <span class="field__help">Alates</span>
+              <input class="field__input" type="date" name="saabus_alates" value="{{ filters.saabus_alates }}">
+            </label>
+            <label class="daterange__end">
+              <span class="field__help">Kuni</span>
+              <input class="field__input" type="date" name="saabus_kuni" value="{{ filters.saabus_kuni }}">
+            </label>
+          </fieldset>
+
+          <fieldset class="field daterange">
+            <legend class="field__label">Arvamuse tähtaeg</legend>
+            <label class="daterange__end">
+              <span class="field__help">Alates</span>
+              <input class="field__input" type="date" name="tahtaeg_alates" value="{{ filters.tahtaeg_alates }}">
+            </label>
+            <label class="daterange__end">
+              <span class="field__help">Kuni</span>
+              <input class="field__input" type="date" name="tahtaeg_kuni" value="{{ filters.tahtaeg_kuni }}">
+            </label>
+          </fieldset>
+
+          {% comment %}
+            Three institution controls, never one. `asutus` is the convenience —
+            "was this body involved at all" — and the two beside it stay precise,
+            because the register itself changed which direction its single
+            counterparty column meant in 2020 (Stage-2E.1 brief 11F–H).
+          {% endcomment %}
+          {% include "matters/partials/organisation_choices.html" with field="asutus" field_label="Asutus (saatja või adressaat)" term="" %}
+
+          <label class="field">
+            <span class="field__label">Saatja / algataja</span>
+            <select class="field__input" name="saatja">
+              <option value="">Kõik</option>
+              <option value="puudub" {% if filters.saatja == "puudub" %}selected{% endif %}>Määramata</option>
+              {% for organisation in organisation_options %}
+                <option value="{{ organisation.pk }}"
+                        {% if filters.saatja == organisation.pk|stringformat:"s" %}selected{% endif %}>
+                  {{ organisation.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Adressaat</span>
+            <select class="field__input" name="adressaat">
+              <option value="">Kõik</option>
+              <option value="puudub" {% if filters.adressaat == "puudub" %}selected{% endif %}>Määramata</option>
+              {% for organisation in organisation_options %}
+                <option value="{{ organisation.pk }}"
+                        {% if filters.adressaat == organisation.pk|stringformat:"s" %}selected{% endif %}>
+                  {{ organisation.name }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
           <label class="field">
             <span class="field__label">Järjestus</span>
             <select class="field__input" name="jarjestus">
@@ -101,20 +263,16 @@ what is on screen and what is in the address bar can never disagree.
               <option value="title" {% if filters.jarjestus == "title" %}selected{% endif %}>Pealkiri</option>
             </select>
           </label>
+
           <div class="form__actions">
             <button class="button button--primary" type="submit">Filtreeri</button>
-            <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Lähtesta</a>
+            <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Tühjenda kõik</a>
           </div>
         </form>
       </details>
     </div>
   </div>
 
-  {% if page.object_list %}
-    {% include "matters/partials/matter_table.html" with matters=page.object_list %}
-    {% include "components/pagination.html" with page=page query_string=query_string %}
-  {% else %}
-    <p class="empty">Selle filtriga teemasid ei leitud.</p>
-  {% endif %}
+  {% include "matters/partials/register_results.html" %}
 </div>
 {% endblock %}

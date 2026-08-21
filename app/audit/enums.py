@@ -17,6 +17,10 @@ class ChangeEventType(models.TextChoices):
     MATTER_ORGANISATION_CHANGED = "MATTER_ORGANISATION_CHANGED", "Asutus muudetud"
     MATTER_DATE_CHANGED = "MATTER_DATE_CHANGED", "Kuupäev muudetud"
     MATTER_POSITION_UPDATED = "MATTER_POSITION_UPDATED", "Seisukohta täiendatud"
+    # Stage 2E.1. Its own event rather than a reused one: the free-text area
+    # is not a position, not a stage and not taxonomy, and a timeline that
+    # called it any of those would be describing a change that did not happen.
+    MATTER_POLICY_AREA_OTHER_SET = "MATTER_POLICY_AREA_OTHER_SET", "Muu valdkond muudetud"
     MATTER_VISIBILITY_CHANGED = "MATTER_VISIBILITY_CHANGED", "Nähtavus muudetud"
     MATTER_CLOSED = "MATTER_CLOSED", "Teema suletud"
     MATTER_REOPENED = "MATTER_REOPENED", "Teema taasavatud"

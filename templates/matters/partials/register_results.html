@@ -1,0 +1,63 @@
+{% comment %}
+Everything the register's answer consists of: how many rows, which filters
+produced them, the rows themselves and the pager.
+
+One fragment rather than three, and re-rendered whole rather than patched. The
+count, the chips and the table all come from one queryset in one render, so
+there is no arrangement of swaps in which the number at the top disagrees with
+the rows underneath it (app/matters/views.py opens with this convention).
+
+Swapped by the live search box, which sits *outside* it — replacing the input
+somebody is typing into would move the caret on every keystroke.
+{% endcomment %}
+<div id="teemad-tulemused">
+  {% comment %}
+    Assistive technology hears the count change without the focus leaving the
+    search box. `polite` rather than `assertive`: an interruption on every
+    keystroke would be unusable (Stage-2E.1 brief 35).
+  {% endcomment %}
+  <p class="registercount" role="status" aria-live="polite">
+    {% if query %}
+      <strong>{{ total }}</strong> teemat otsingule „{{ query }}”
+    {% else %}
+      <strong>{{ total }}</strong> teemat
+    {% endif %}
+  </p>
+
+  {% if active_filters or query %}
+    <div class="filterbar filterbar--chips">
+      {% if query %}
+        <a class="filterchip" href="?{{ cleared_query }}" title="Tühjenda otsing">
+          <span class="filterchip__label">Otsing:</span>
+          <span>{{ query }}</span>
+          <span class="filterchip__remove" aria-hidden="true">×</span>
+          <span class="visually-hidden">Eemalda filter</span>
+        </a>
+      {% endif %}
+      {% for chip in active_filters %}
+        <a class="filterchip" href="?{{ chip.remove_query }}"
+           title="Eemalda filter: {{ chip.label }}">
+          <span class="filterchip__label">{{ chip.label }}:</span>
+          <span>{{ chip.value }}</span>
+          <span class="filterchip__remove" aria-hidden="true">×</span>
+          <span class="visually-hidden">Eemalda filter</span>
+        </a>
+      {% endfor %}
+      {% if has_any_filter %}
+        <a class="filterchip filterchip--clear" href="?{{ cleared_query }}">Tühjenda kõik</a>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  {% if page.object_list %}
+    {% include "matters/partials/matter_table.html" with matters=page.object_list %}
+    {% include "components/pagination.html" with page=page query_string=query_string %}
+  {% elif query %}
+    <p class="empty">
+      Otsing „{{ query }}” ei andnud selle filtriga tulemusi.
+      <a href="?{{ cleared_query }}">Tühjenda otsing ja filtrid</a>
+    </p>
+  {% else %}
+    <p class="empty">Selle filtriga teemasid ei leitud.</p>
+  {% endif %}
+</div>
