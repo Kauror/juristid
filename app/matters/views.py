@@ -21,7 +21,7 @@ from typing import Any
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -36,10 +36,11 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.uploads import UploadRejected
+from app.legacy_import.source_pages import MatterSourcePage
 from app.matters import selectors
 from app.matters.dashboard import build_dashboard
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import RecordMode
+from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.forms import (
     CloseMatterForm,
     ComposerForm,
@@ -256,7 +257,20 @@ FILTER_LABELS = {
     "valdkond": "Valdkond",
     "silt": "Silt",
     "liik": "Kirje liik",
+    # Three dimensions the register gained so that a statistic can open the
+    # exact population it counted. Each one is the *same* condition the chart
+    # used — imported from `selectors`, not restated — because a drill-through
+    # that filters slightly differently from the bar above it is worse than no
+    # drill-through at all (Stage-2E brief 38, 66).
+    "aasta": "Aruandlusaasta",
+    "paritolu": "Päritolu",
+    "allikas": "Ajalooline allikas",
 }
+
+#: What `?allikas=` means. A word rather than a boolean, because `allikas=0`
+#: reads as "source number zero" in a URL somebody is editing by hand.
+SOURCE_PRESENT = "on"
+SOURCE_ABSENT = "puudub"
 
 STATUS_SEGMENTS = (
     ("avatud", "Avatud"),
@@ -314,6 +328,12 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         return dict(RecordMode.choices).get(value, value)
     if name == "ulatus":
         return "Minu omad" if value == "minu" else "Kõik nähtavad"
+    if name == "paritolu":
+        return dict(MatterOrigin.choices).get(value, value)
+    if name == "aasta":
+        return "Teadmata aasta" if value == selectors.UNKNOWN_YEAR else value
+    if name == "allikas":
+        return "Olemas" if value == SOURCE_PRESENT else "Puudub"
     return value
 
 
@@ -335,6 +355,33 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
             }
         )
     return chips
+
+
+def _filter_by_reporting_year(queryset: Any, value: str) -> Any:
+    """Apply `?aasta=`, using the same condition the year chart counted with.
+
+    Accepts `YYYY`, `YYYY-YYYY`, or the word that asks for the bucket with no
+    usable year. An unreadable value empties the list rather than being ignored:
+    a filter chip saying "2O24" above the whole register would be a lie the
+    reader has no way to catch.
+    """
+    if value == selectors.UNKNOWN_YEAR:
+        return queryset.filter(selectors.unknown_register_year_q())
+
+    parts = value.split("-")
+    try:
+        if len(parts) == 1:
+            first = last = int(parts[0])
+        elif len(parts) == 2:
+            first, last = int(parts[0]), int(parts[1])
+        else:
+            return queryset.none()
+    except ValueError:
+        return queryset.none()
+
+    if first > last:
+        return queryset.none()
+    return queryset.filter(selectors.register_year_q(start=first, end=last))
 
 
 SORT_FIELDS = {
@@ -379,6 +426,15 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         queryset = queryset.filter(tags__key=tag_key)
     if mode := params.get("liik"):
         queryset = queryset.filter(record_mode=mode)
+    if origin := params.get("paritolu"):
+        queryset = queryset.filter(origin=origin)
+    if year := params.get("aasta"):
+        queryset = _filter_by_reporting_year(queryset, year)
+    if source := params.get("allikas"):
+        has_page = Exists(MatterSourcePage.objects.filter(matter=OuterRef("pk")))
+        queryset = queryset.annotate(has_source_page=has_page).filter(
+            has_source_page=source == SOURCE_PRESENT
+        )
 
     sort = params.get("jarjestus", "reference")
     queryset = queryset.order_by(*SORT_FIELDS.get(sort, SORT_FIELDS["reference"]), "-created_at")
@@ -408,6 +464,9 @@ def matter_list(request: HttpRequest) -> HttpResponse:
                 "valdkond": params.get("valdkond", ""),
                 "silt": params.get("silt", ""),
                 "liik": params.get("liik", ""),
+                "paritolu": params.get("paritolu", ""),
+                "aasta": params.get("aasta", ""),
+                "allikas": params.get("allikas", ""),
                 "jarjestus": sort,
             },
             "owners": User.objects.filter(is_active=True).order_by("display_name"),

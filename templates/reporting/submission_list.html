@@ -1,0 +1,78 @@
+{% extends "reporting/base.html" %}
+{% block title %}Statistika · Arvamused · {{ application_name }}{% endblock %}
+
+{% comment %}
+The drill-through behind every submission number.
+
+This list exists because the product has no other list of sent Submissions —
+they are created and read from inside a Matter. Everything that *does* have a
+surface (the register, the reconciliation queue, Minu töö) is linked to rather
+than reimplemented here (Stage-2E brief 39).
+
+The rows come from the same selector the charts counted with, so the total above
+is the number the chart showed.
+{% endcomment %}
+
+{% block page_actions %}
+  <a class="button button--quiet" href="{{ export_url }}">Laadi CSV</a>
+{% endblock %}
+
+{% block statistics %}
+  <section aria-labelledby="arvamuste-loend-heading">
+    <h2 class="sectionlabel" id="arvamuste-loend-heading">
+      Saadetud arvamused
+      <span class="sectionlabel__count">{{ total }}</span>
+    </h2>
+
+    {% if page.object_list %}
+      <div class="tablewrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Saadetud</th>
+              <th scope="col">Liik</th>
+              <th scope="col">Viide</th>
+              <th scope="col">Teema</th>
+              <th scope="col">Adressaadid</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for submission in page.object_list %}
+              <tr>
+                <td class="table__date">{{ submission.sent_at|date:"d.m.Y" }}</td>
+                <td><span class="muted">{{ submission.get_kind_display }}</span></td>
+                <td>
+                  <span class="reference">
+                    {{ submission.matter.display_reference|default:"—" }}
+                  </span>
+                </td>
+                <td class="table__title">
+                  <a href="{% url 'matters:matter_detail' pk=submission.matter_id %}">
+                    {{ submission.title }}
+                  </a>
+                  <span class="muted">· {{ submission.matter.title }}</span>
+                </td>
+                <td>
+                  {% for row in submission.recipient_rows.all %}
+                    {% if row.role == "ADDRESSEE" %}
+                      {{ row.organisation.name }}{% if not forloop.last %}, {% endif %}
+                    {% endif %}
+                  {% empty %}
+                    <span class="table__missing">—</span>
+                  {% endfor %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% include "components/pagination.html" with page=page query_string=query_string %}
+    {% else %}
+      <p class="empty">
+        Valitud filtritega saadetud arvamusi ei ole. Struktuurne arvamuse kirje
+        tekib alles selles süsteemis, seega varasemate aastate kohta mõõtmist ei ole.
+      </p>
+    {% endif %}
+  </section>
+{% endblock %}

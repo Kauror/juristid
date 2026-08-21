@@ -1,0 +1,59 @@
+{% extends "reporting/base.html" %}
+{% block title %}Statistika · Teemad · {{ application_name }}{% endblock %}
+
+{% comment %}
+Teemad — what Koda has worked on, by every dimension the record supports.
+
+The two organisation tables at the bottom are kept apart on purpose.
+`Algataja või saatja` and `Adressaat` are opposite directions of the same
+relationship, and the register itself changed which one its single counterparty
+column meant in 2020. Merging them into one "ministries" chart would produce a
+number that means neither (Stage-2E brief 27).
+{% endcomment %}
+
+{% block page_actions %}
+  <a class="button button--quiet" href="{{ export_url }}">Laadi CSV</a>
+{% endblock %}
+
+{% block statistics %}
+  <section aria-labelledby="teemad-naitajad-heading">
+    <h2 class="sectionlabel" id="teemad-naitajad-heading">Näitajad</h2>
+    <div class="metricgrid">
+      {% for result in cards %}
+        {% include "reporting/_metric.html" with result=result %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="teemad-aastad-heading">
+    <h2 class="sectionlabel" id="teemad-aastad-heading">Aastate kaupa</h2>
+    <div class="chartgrid">
+      {% for item in trends %}
+        {% include "reporting/_trend.html" with item=item %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="teemad-jaotus-heading">
+    <h2 class="sectionlabel" id="teemad-jaotus-heading">Jaotused</h2>
+    <div class="chartgrid">
+      {% for item in compositions %}
+        {% include "reporting/_composition.html" with item=item %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="teemad-asutused-heading">
+    <h2 class="sectionlabel" id="teemad-asutused-heading">Asutused</h2>
+    <p class="chart__summary">
+      Kaks eri suunda, mida ei liideta: kellelt teema tuli ja kellele see oli
+      adresseeritud. Registris tähendas üks ja sama veerg 2011–2019 saatjat ning
+      2020–2026 adressaati.
+    </p>
+    <div class="chartgrid">
+      {% for item in organisation_tables %}
+        {% include "reporting/_composition.html" with item=item %}
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

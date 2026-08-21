@@ -1,0 +1,143 @@
+{% extends "reporting/base.html" %}
+{% block title %}Statistika · Andmekvaliteet · {{ application_name }}{% endblock %}
+
+{% comment %}
+Andmekvaliteet — what somebody can actually fix, kept apart from what they
+cannot.
+
+The distinction is the page. A queue that mixes "three conflicting matches
+nobody has decided" with "sixteen thousand files waiting on a malware scanner
+that does not exist yet" is a queue people stop opening. So the actionable rows
+carry a warning border, the coverage limitations carry a plain one, and only the
+first group counts towards the attention total.
+
+Legitimate archive sparsity is not listed at all. An ARCHIVE Matter with no next
+action, an old Matter with no modern stage, a OneNote-only Matter with no
+reference number, an ASiC-E with no derivative and an attachment that is zero
+bytes in OneNote itself are all correct states of the record
+(Stage-2E brief 36, 37).
+{% endcomment %}
+
+{% block page_actions %}
+  <a class="button button--quiet" href="{{ export_url }}">Laadi CSV</a>
+{% endblock %}
+
+{% block statistics %}
+  <section aria-labelledby="kvaliteet-naitajad-heading">
+    <h2 class="sectionlabel" id="kvaliteet-naitajad-heading">Näitajad</h2>
+    <div class="metricgrid">
+      {% for result in cards %}
+        {% include "reporting/_metric.html" with result=result %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="kvaliteet-jarjekorrad-heading">
+    <h2 class="sectionlabel" id="kvaliteet-jarjekorrad-heading">Järjekorrad</h2>
+    {% if queues %}
+      <div class="queuelist">
+        {% for queue in queues %}
+          <div class="queuerow {% if queue.is_coverage_note %}queuerow--note{% endif %}">
+            <span class="queuerow__count tabular">{{ queue.count }}</span>
+            <span>
+              <span class="queuerow__label">
+                {% if queue.url %}
+                  <a href="{{ queue.url }}">{{ queue.label }}</a>
+                {% else %}
+                  {{ queue.label }}
+                {% endif %}
+                {% if queue.is_coverage_note %}
+                  <span class="badge badge--state">Piirang, mitte ülesanne</span>
+                {% endif %}
+              </span>
+              <span class="queuerow__explanation">{{ queue.explanation }}</span>
+            </span>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="empty">Ükski andmekvaliteedi järjekord ei ole praegu täidetud.</p>
+    {% endif %}
+  </section>
+
+  <section aria-labelledby="kvaliteet-sidumine-heading">
+    <h2 class="sectionlabel" id="kvaliteet-sidumine-heading">Ajaloo sidumine</h2>
+    <div class="chartgrid">
+      {% for item in compositions %}
+        {% include "reporting/_composition.html" with item=item %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="kvaliteet-eraldamine-heading">
+    <h2 class="sectionlabel" id="kvaliteet-eraldamine-heading">Teksti eraldamine</h2>
+    <p class="chart__summary">
+      Viis eri seisundit, mida ei liideta. Pahavarakontrolli ootav fail ei ole
+      ebaõnnestumine ega järjekord, ja allkirjaümbrik ei ole kunagi kumbki:
+      seda ei avata teadlikult.
+    </p>
+
+    <section class="chart" aria-labelledby="eraldamine-jaotus-heading">
+      <div class="chart__head">
+        <h3 class="chart__title" id="eraldamine-jaotus-heading">Tõendiversioonide seisund</h3>
+      </div>
+      <div class="barchart">
+        {% for bar in extraction_states %}
+          <div class="barchart__row">
+            <span class="barchart__label" title="{{ bar.label }}">{{ bar.label }}</span>
+            <span class="barchart__track">
+              <span class="barchart__fill" style="width:{{ bar.width|floatformat:1 }}%"></span>
+            </span>
+            <span class="barchart__value">{{ bar.value }}</span>
+          </div>
+        {% endfor %}
+      </div>
+      <details class="chart__fallback">
+        <summary>Vaata tabelina</summary>
+        <div class="tablewrap">
+          <table class="data-table">
+            <caption class="visually-hidden">Tõendiversioonide eraldamise seisund</caption>
+            <thead>
+              <tr>
+                <th scope="col">Seisund</th>
+                <th scope="col">Arv</th>
+                <th scope="col">Märkus</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for bar in extraction_states %}
+                <tr>
+                  <th scope="row">{{ bar.label }}</th>
+                  <td class="numeric">{{ bar.value }}</td>
+                  <td>{{ bar.note }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </section>
+
+    <div class="metricgrid" style="margin-top:var(--spacing-4)">
+      {% for result in extraction %}
+        {% include "reporting/_metric.html" with result=result %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="kvaliteet-edasilykatud-heading">
+    <h2 class="sectionlabel" id="kvaliteet-edasilykatud-heading">Mida veel ei mõõdeta</h2>
+    <p class="chart__summary">
+      Need näitajad on teadlikult tegemata, sest kanoonilised andmed ei kanna
+      neid välja. Puuduv näitaja on aus vastus; oletatud number ei oleks.
+    </p>
+    <div class="notyet">
+      <dl>
+        {% for key, reason in deferred %}
+          <dt class="mono">{{ key }}</dt>
+          <dd>{{ reason }}</dd>
+        {% endfor %}
+      </dl>
+    </div>
+  </section>
+{% endblock %}

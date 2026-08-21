@@ -1,0 +1,63 @@
+{% comment %}
+One metric card: the number, what it was measured over, and how it was worked
+out.
+
+Three things are always present and none of them is optional decoration.
+
+* The **time basis**, because "2024" means a different population depending on
+  whether it is a reporting year or a send date.
+* The **coverage**, wherever the metric declares one. A percentage over a
+  silently partial population is the failure this whole module exists to
+  prevent (master specification 18.5).
+* **Kuidas arvutatakse?**, which opens the reviewed definition in place.
+
+A metric that declined to answer prints the reason instead of a figure. A zero
+and a refusal must never look alike (Stage-2E brief 9, 48).
+{% endcomment %}
+
+<div class="metric">
+  <span class="metric__label" id="metric-{{ result.key }}-label">{{ result.definition.label_et }}</span>
+
+  {% if result.has_value %}
+    {% if result.drillthrough_url %}
+      <a class="metric__value tabular" href="{{ result.drillthrough_url }}"
+         aria-describedby="metric-{{ result.key }}-label">
+        {{ result.value|floatformat:0 }}{% if result.definition.unit == "PERCENT" %}%{% endif %}
+      </a>
+    {% else %}
+      <span class="metric__value tabular">
+        {{ result.value|floatformat:0 }}{% if result.definition.unit == "PERCENT" %}%{% endif %}
+      </span>
+    {% endif %}
+  {% elif result.status == "NOT_APPLICABLE" %}
+    <span class="metric__unavailable">Ei kohaldu</span>
+  {% else %}
+    <span class="metric__unavailable">Ebapiisavad andmed</span>
+  {% endif %}
+
+  <span class="metric__basis">
+    {{ result.time_basis_label }}{% if result.definition.respects_period %} · {{ reporting.period.label }}{% else %} · kogu korpus{% endif %}
+  </span>
+
+  {% if result.coverage_denominator %}
+    <span class="metric__coverage">
+      {{ result.definition.coverage_description_et|default:"Katvus" }}:
+      <strong>{{ result.coverage_count }} / {{ result.coverage_denominator }}</strong>
+      ({{ result.coverage_percentage|floatformat:1 }}%)
+    </span>
+    <span class="coveragebar" aria-hidden="true">
+      <span class="coveragebar__fill" style="width:{{ result.coverage_percentage|floatformat:1 }}%"></span>
+    </span>
+  {% endif %}
+
+  {% for note in result.notes %}
+    <p class="metric__note">{{ note }}</p>
+  {% endfor %}
+
+  <details class="definition">
+    <summary class="definition__summary">Kuidas arvutatakse?</summary>
+    <div class="definition__body">
+      {% include "reporting/_definition.html" with definition=result.definition result=result %}
+    </div>
+  </details>
+</div>

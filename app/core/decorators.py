@@ -20,13 +20,16 @@ from collections.abc import Callable
 from typing import Any
 
 from django.conf import settings
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest
+from django.http.response import HttpResponseBase
 from django.shortcuts import redirect
 
 from app.accounts import shared_gate
 
 
-def gate_required(view: Callable[..., HttpResponse]) -> Callable[..., HttpResponse]:
+def gate_required[R: HttpResponseBase](
+    view: Callable[..., R],
+) -> Callable[..., R | HttpResponseBase]:
     """Allow a signed-in user, or anybody past the shared gate.
 
     In every other mode this is exactly `login_required`: `none` has no gate to
@@ -36,7 +39,7 @@ def gate_required(view: Callable[..., HttpResponse]) -> Callable[..., HttpRespon
     """
 
     @functools.wraps(view)
-    def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+    def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> R | HttpResponseBase:
         user = getattr(request, "user", None)
         if user is not None and user.is_authenticated:
             return view(request, *args, **kwargs)

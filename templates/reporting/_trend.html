@@ -1,0 +1,114 @@
+{% comment %}
+A trend: one inline SVG polyline whose coordinates the server computed.
+
+`role="img"` with a title and a description, because the picture itself carries
+no text a screen reader can use. Each point is also a real link with an
+accessible name, so the drill-through works from the keyboard — and the data
+table below gives exact values, which is what a chart is never allowed to be
+the only source of (master specification 17.8; Stage-2E brief 46, 60).
+
+A single observation is not drawn. A line through one point invents a
+direction; the number is shown as text instead.
+{% endcomment %}
+
+<section class="chart" aria-labelledby="trend-{{ item.result.key }}-heading">
+  <div class="chart__head">
+    <h3 class="chart__title" id="trend-{{ item.result.key }}-heading">
+      {{ item.result.definition.label_et }}
+    </h3>
+    <span class="muted">
+      {% if item.result.definition.respects_period %}{{ reporting.period.label }}{% else %}Kogu korpus{% endif %}
+    </span>
+  </div>
+
+  <p class="chart__summary">{{ item.summary }}</p>
+
+  {% if item.trend.is_drawable %}
+    <svg class="trend"
+         viewBox="0 0 {{ item.trend.width }} {{ item.trend.height }}"
+         role="img"
+         aria-labelledby="trend-{{ item.result.key }}-heading trend-{{ item.result.key }}-desc">
+      <desc id="trend-{{ item.result.key }}-desc">{{ item.summary }}</desc>
+
+      <line class="trend__axis"
+            x1="44" y1="{{ item.trend.baseline_y }}"
+            x2="{{ item.trend.width }}" y2="{{ item.trend.baseline_y }}"></line>
+      <text class="trend__tick" x="4" y="20">{{ item.trend.maximum }}</text>
+      <text class="trend__tick" x="4" y="{{ item.trend.baseline_y }}">0</text>
+
+      <polyline class="trend__line" points="{{ item.trend.polyline }}"></polyline>
+
+      {% for point in item.trend.points %}
+        {% if point.url %}
+          <a href="{{ point.url }}">
+            <title>{{ point.label }}: {{ point.value }}</title>
+            <circle class="trend__hit" cx="{{ point.x }}" cy="{{ point.y }}" r="12"></circle>
+            <circle class="trend__point" cx="{{ point.x }}" cy="{{ point.y }}" r="4"></circle>
+          </a>
+        {% else %}
+          <circle class="trend__point" cx="{{ point.x }}" cy="{{ point.y }}" r="4">
+            <title>{{ point.label }}: {{ point.value }}</title>
+          </circle>
+        {% endif %}
+      {% endfor %}
+
+      {% for point in item.trend.axis_labels %}
+        <text class="trend__tick" x="{{ point.x }}" y="{{ item.trend.height }}"
+              text-anchor="middle">{{ point.label }}</text>
+      {% endfor %}
+    </svg>
+  {% elif item.bars %}
+    <p class="notyet">
+      <strong>{{ item.bars.0.label }}:</strong> {{ item.bars.0.value }}.
+      Ühest mõõtmisest trendi ei joonistata.
+    </p>
+  {% else %}
+    <p class="empty">
+      {% if item.result.status == "INSUFFICIENT_DATA" %}
+        Mõõdetud aastaid ei ole. Puuduv mõõtmine ei ole null.
+      {% else %}
+        Valitud perioodil kirjeid ei ole.
+      {% endif %}
+    </p>
+  {% endif %}
+
+  {% if item.bars %}
+    <details class="chart__fallback">
+      <summary>Vaata tabelina</summary>
+      <div class="tablewrap">
+        <table class="data-table">
+          <caption class="visually-hidden">
+            {{ item.result.definition.label_et }} — täpsed väärtused
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Periood</th>
+              <th scope="col">Arv</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for bar in item.bars %}
+              <tr>
+                <th scope="row">
+                  {% if bar.url %}<a href="{{ bar.url }}">{{ bar.label }}</a>{% else %}{{ bar.label }}{% endif %}
+                </th>
+                <td class="numeric">{{ bar.value }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  {% endif %}
+
+  {% for note in item.result.notes %}
+    <p class="metric__note">{{ note }}</p>
+  {% endfor %}
+
+  <details class="definition">
+    <summary class="definition__summary">Kuidas arvutatakse?</summary>
+    <div class="definition__body">
+      {% include "reporting/_definition.html" with definition=item.result.definition result=item.result %}
+    </div>
+  </details>
+</section>

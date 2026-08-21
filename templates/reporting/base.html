@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% comment %}
+The Statistika shell: heading, period control, filter chips, tab strip.
+
+Filter state lives in the URL, so every one of these controls is a link or a
+GET form and nothing is remembered server-side. A view that is worth arguing
+about is a view somebody can paste into a message (master specification 18.10).
+
+Statistika is not Ülevaade. Ülevaade answers "what needs attention now" and is
+a work surface; this answers "what does the corpus say about Koda's work" and
+is a reading surface. Keeping them apart is why this has its own navigation
+item rather than another tab on the dashboard (Stage-2E brief 6).
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Statistika</h1>
+    <span class="pagehead__context">
+      {% if reporting.period.is_all %}Kõik aastad{% else %}{{ reporting.period.label }}{% endif %}
+    </span>
+    <div class="pagehead__actions statspage__actions">
+      {% block page_actions %}{% endblock %}
+      <a class="button button--quiet" href="{% url 'reporting:definitions' %}">Definitsioonid</a>
+    </div>
+  </div>
+
+  <div class="filters">
+    <nav class="segmented" aria-label="Periood">
+      {% for option in period_options %}
+        <a class="segmented__option {% if option.active %}is-active{% endif %}"
+           {% if option.active %}aria-current="true"{% endif %}
+           href="?{{ option.query }}">{{ option.label }}</a>
+      {% endfor %}
+    </nav>
+
+    <div class="filterbar">
+      {% for chip in chips %}
+        <a class="filterchip" href="?{{ chip.remove_query }}"
+           title="Eemalda filter: {{ chip.label }}">
+          <span class="filterchip__label">{{ chip.label }}:</span>
+          <span>{{ chip.value }}</span>
+          <span class="filterchip__remove" aria-hidden="true">×</span>
+          <span class="visually-hidden">Eemalda</span>
+        </a>
+      {% endfor %}
+
+      <details class="disclosure" style="padding:var(--spacing-15) var(--spacing-25)">
+        <summary class="disclosure__summary">+ Filter</summary>
+        <form class="formgrid" method="get" style="margin-top:var(--spacing-3)">
+          <input type="hidden" name="periood" value="{{ reporting.period.key }}">
+
+          <label class="field">
+            <span class="field__label">Kirje liik</span>
+            <select class="field__input" name="liik">
+              <option value="">Kõik</option>
+              {% for value, label in record_modes %}
+                <option value="{{ value }}"
+                        {% if reporting.record_mode == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Päritolu</span>
+            <select class="field__input" name="paritolu">
+              <option value="">Kõik</option>
+              {% for value, label in origins %}
+                <option value="{{ value }}"
+                        {% if reporting.origin == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Vastutaja</span>
+            <select class="field__input" name="vastutaja">
+              <option value="">Kõik</option>
+              {% for owner in owners %}
+                <option value="{{ owner.pk }}"
+                        {% if reporting.owner_id == owner.pk %}selected{% endif %}>
+                  {{ owner.display_name }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Valdkond</span>
+            <select class="field__input" name="valdkond">
+              <option value="">Kõik</option>
+              {% for area in policy_areas %}
+                <option value="{{ area.key }}"
+                        {% if reporting.policy_area_key == area.key %}selected{% endif %}>
+                  {{ area.name_et }}
+                </option>
+              {% endfor %}
+            </select>
+          </label>
+
+          {% if show_stage %}
+            <label class="field">
+              <span class="field__label">Hetkeseis</span>
+              <select class="field__input" name="hetkeseis">
+                <option value="">Kõik</option>
+                {% for stage in stages %}
+                  <option value="{{ stage.key }}"
+                          {% if reporting.stage_key == stage.key %}selected{% endif %}>
+                    {{ stage.label_et }}
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+          {% endif %}
+
+          {% if show_track %}
+            <label class="field">
+              <span class="field__label">Menetlusliik</span>
+              <select class="field__input" name="menetlusliik">
+                <option value="">Kõik</option>
+                {% for value, label in tracks %}
+                  <option value="{{ value }}"
+                          {% if reporting.track == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          {% endif %}
+
+          {% if show_tag %}
+            <label class="field">
+              <span class="field__label">Silt</span>
+              <select class="field__input" name="silt">
+                <option value="">Kõik</option>
+                {% for tag in tags %}
+                  <option value="{{ tag.key }}"
+                          {% if reporting.tag_key == tag.key %}selected{% endif %}>
+                    {{ tag.name_et }}
+                  </option>
+                {% endfor %}
+              </select>
+            </label>
+          {% endif %}
+
+          {% if show_section %}
+            <label class="field">
+              <span class="field__label">OneNote'i sektsioon</span>
+              <select class="field__input" name="sektsioon">
+                <option value="">Kõik</option>
+                {% for section in sections %}
+                  <option value="{{ section }}"
+                          {% if reporting.section == section %}selected{% endif %}>{{ section }}</option>
+                {% endfor %}
+              </select>
+            </label>
+          {% endif %}
+
+          <div class="form__actions">
+            <button class="button button--primary" type="submit">Rakenda</button>
+          </div>
+        </form>
+      </details>
+    </div>
+
+    <nav class="tabs" aria-label="Statistika vaated">
+      {% for key, label, route in tabs %}
+        {% comment %}
+          The tab carries the whole filter state, not only the period. Changing
+          tab while silently dropping the owner filter would show a different
+          population under an unchanged chip strip.
+        {% endcomment %}
+        <a class="tabs__tab {% if active_tab == key %}is-active{% endif %}"
+           {% if active_tab == key %}aria-current="page"{% endif %}
+           href="{% url route %}?{{ filter_query }}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  {% block statistics %}{% endblock %}
+</div>
+{% endblock %}

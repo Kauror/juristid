@@ -1,0 +1,64 @@
+{% extends "reporting/base.html" %}
+{% block title %}Statistika · Koja tegevus · {{ application_name }}{% endblock %}
+
+{% comment %}
+Koja tegevus — the structured work this system records, and nothing else.
+
+Historical attachment volume is not lawyer activity and is not on this page.
+Neither is any comparison between people: `Teemad vastutaja järgi` lives on the
+Teemad tab and is called inventory there, because a count of open files does not
+measure effort (master specification 18.8).
+
+Submissions are canonical `Submission` records. Nothing here is inferred from a
+filename, a PDF or the register's outbound-date column, and the era note on
+every submission card says where the measurement actually starts.
+{% endcomment %}
+
+{% block page_actions %}
+  <a class="button button--quiet" href="{% url 'reporting:submissions' %}?{{ filter_query }}">
+    Arvamuste loend
+  </a>
+  <a class="button button--quiet" href="{{ export_url }}">Laadi CSV</a>
+{% endblock %}
+
+{% block statistics %}
+  <section aria-labelledby="tegevus-naitajad-heading">
+    <h2 class="sectionlabel" id="tegevus-naitajad-heading">Näitajad</h2>
+    <div class="metricgrid">
+      {% for result in cards %}
+        {% include "reporting/_metric.html" with result=result %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="tegevus-arvamused-heading">
+    <h2 class="sectionlabel" id="tegevus-arvamused-heading">Arvamused ajas</h2>
+    <div class="chartgrid">
+      {% for item in trends %}
+        {% include "reporting/_trend.html" with item=item %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="tegevus-jaotus-heading">
+    <h2 class="sectionlabel" id="tegevus-jaotus-heading">Jaotused</h2>
+    <div class="chartgrid">
+      {% for item in compositions %}
+        {% include "reporting/_composition.html" with item=item %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="tegevus-saajad-heading">
+    <h2 class="sectionlabel" id="tegevus-saajad-heading">Kellele Koda kirjutas</h2>
+    <p class="chart__summary">
+      Ainult adressaadid. Rollis „teadmiseks“ olevad saajad on eraldi fakt ja
+      neid siin ei loeta.
+    </p>
+    <div class="chartgrid">
+      {% for item in recipient_tables %}
+        {% include "reporting/_composition.html" with item=item %}
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

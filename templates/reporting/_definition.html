@@ -1,0 +1,67 @@
+{% comment %}
+The reviewed definition of one metric, rendered from the catalogue entry itself.
+
+Written for a lawyer rather than a developer: population, time basis, coverage,
+exclusions, era limits. No table names, no field paths, no enum values. The
+audience for this panel is somebody deciding whether to quote the number in a
+board paper, and what they need to know is what it counted and what it could
+not (Stage-2E brief 48).
+{% endcomment %}
+
+<dl>
+  <dt>Mida see mõõdab</dt>
+  <dd>{{ definition.description_et }}</dd>
+
+  <dt>Populatsioon</dt>
+  <dd>{{ definition.source_population_et }}</dd>
+
+  <dt>Ajavaade</dt>
+  <dd>
+    {{ definition.time_basis|default:"—" }} —
+    {% if definition.respects_period %}
+      piiratud valitud perioodiga
+    {% else %}
+      periood ei piira seda näitajat
+    {% endif %}
+  </dd>
+
+  {% if result and result.coverage_denominator %}
+    <dt>Katvus</dt>
+    <dd>
+      {{ result.coverage_count }} / {{ result.coverage_denominator }}
+      ({{ result.coverage_percentage|floatformat:1 }}%)
+      {% if definition.coverage_description_et %} — {{ definition.coverage_description_et }}{% endif %}
+    </dd>
+  {% elif definition.coverage_description_et %}
+    <dt>Katvus</dt>
+    <dd>{{ definition.coverage_description_et }}</dd>
+  {% endif %}
+
+  {% if definition.exclusions_et %}
+    <dt>Välja jäetud</dt>
+    <dd>{{ definition.exclusions_et }}</dd>
+  {% endif %}
+
+  {% if definition.earliest_reliable_period %}
+    <dt>Varaseim usaldusväärne aasta</dt>
+    <dd>{{ definition.earliest_reliable_period }}</dd>
+  {% endif %}
+
+  {% if definition.source_era_limitations_et %}
+    <dt>Allika piirangud</dt>
+    <dd>{{ definition.source_era_limitations_et }}</dd>
+  {% endif %}
+
+  {% if definition.notes_et %}
+    <dt>Märkus</dt>
+    <dd>{{ definition.notes_et }}</dd>
+  {% endif %}
+
+  {% if definition.drillthrough_et %}
+    <dt>Kust kirjed avanevad</dt>
+    <dd>{{ definition.drillthrough_et }}</dd>
+  {% endif %}
+
+  <dt>Definitsiooni versioon</dt>
+  <dd class="mono">{{ definition.qualified_key }}</dd>
+</dl>

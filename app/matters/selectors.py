@@ -15,7 +15,7 @@ from typing import Any
 from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
 from django.utils import timezone
 
-from app.matters.enums import RecordMode
+from app.matters.enums import REGISTER_YEAR_ORIGINS, RecordMode
 from app.matters.models import Matter
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
@@ -23,6 +23,35 @@ from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 
 HORIZON_DAYS = 7
+
+#: The URL value that means "no usable reporting year". A word rather than a
+#: blank, so that `?aasta=` (a cleared filter) and `?aasta=teadmata` (a
+#: deliberate ask for the unknown bucket) cannot be confused.
+UNKNOWN_YEAR = "teadmata"
+
+
+def register_year_q(*, start: int, end: int) -> Q:
+    """Matters whose reporting year is a *register* year inside the span.
+
+    Both the year chart and the register's own `?aasta=` filter build their
+    query here, which is the only reason the bar and the list it opens can be
+    asserted to agree. Two similar conditions written in two places is how a
+    count and its drill-through start disagreeing (Stage-2E brief 66).
+    """
+    return Q(
+        reporting_year__gte=start,
+        reporting_year__lte=end,
+        origin__in=REGISTER_YEAR_ORIGINS,
+    )
+
+
+def unknown_register_year_q() -> Q:
+    """Matters with no reporting year, or one that is not a register year.
+
+    The exact complement of :func:`register_year_q` over all years, so the two
+    buckets partition the population and nothing falls between them.
+    """
+    return Q(reporting_year__isnull=True) | ~Q(origin__in=REGISTER_YEAR_ORIGINS)
 
 
 def open_action_prefetch() -> Prefetch:
