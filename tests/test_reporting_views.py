@@ -333,3 +333,21 @@ def test_the_quality_page_says_what_it_deliberately_does_not_measure(client, wor
     body = client.get("/statistika/andmekvaliteet/").content.decode()
     assert "LEGACY_MEMBER_ASKED_COUNT" in body
     assert "vastamismäära" in body
+
+
+def test_a_reader_who_cannot_open_the_review_queue_is_told_where_it_lives(world, reporting_context):
+    """A number with no link and no explanation reads as a dead end.
+
+    The queue can create Matters, so it stays administrator-only. What a lawyer
+    gets instead is the count and a sentence saying whose job it is.
+    """
+    from app.reporting.selectors.quality import queues
+
+    for viewer, expect_link in ((world.martin, False), (world.admin, True)):
+        row = next(
+            queue
+            for queue in queues(reporting_context(viewer))
+            if queue.key == "reconciliation_conflict"
+        )
+        assert bool(row.url) is expect_link
+        assert ("halduri ajaloo-ülevaatuse" in row.explanation) is not expect_link

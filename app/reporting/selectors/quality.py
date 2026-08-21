@@ -81,6 +81,17 @@ def _review_url(context: ReportingContext, **params: str) -> str:
     return f"{base}?{query}" if query else base
 
 
+#: Appended to a reconciliation row when the reader cannot open the queue. A
+#: number with no link and no explanation reads as a dead end; this says the
+#: work has a home and whose it is (the queue can create Matters, so it stays
+#: administrator-only).
+_ADMIN_ONLY = " Lahendatakse halduri ajaloo-ülevaatuse vaates."
+
+
+def _reconciliation_note(context: ReportingContext, explanation: str) -> str:
+    return explanation if can_open_review_queue(context) else explanation + _ADMIN_ONLY
+
+
 # ---------------------------------------------------------------------------
 # Reconciliation
 # ---------------------------------------------------------------------------
@@ -231,7 +242,9 @@ def queues(context: ReportingContext) -> list[QualityQueue]:
             url=_review_url(
                 context, olek=CandidateState.PENDING.value, klass=CandidateClass.CONFLICT.value
             ),
-            explanation="Tõendus on omavahel vastuolus. Otsustada saab ainult inimene.",
+            explanation=_reconciliation_note(
+                context, "Tõendus on omavahel vastuolus. Otsustada saab ainult inimene."
+            ),
         ),
         QualityQueue(
             key="reconciliation_review",
@@ -244,7 +257,9 @@ def queues(context: ReportingContext) -> list[QualityQueue]:
                 olek=CandidateState.PENDING.value,
                 klass=CandidateClass.REVIEW_REQUIRED.value,
             ),
-            explanation="Pakutud seos, mida keegi ei ole veel kinnitanud ega tagasi lükanud.",
+            explanation=_reconciliation_note(
+                context, "Pakutud seos, mida keegi ei ole veel kinnitanud ega tagasi lükanud."
+            ),
         ),
         QualityQueue(
             key="reconciliation_strong",
@@ -255,7 +270,9 @@ def queues(context: ReportingContext) -> list[QualityQueue]:
             url=_review_url(
                 context, olek=CandidateState.PENDING.value, klass=CandidateClass.STRONG.value
             ),
-            explanation="Tõenäoliselt õige seos, mis ootab kinnitust.",
+            explanation=_reconciliation_note(
+                context, "Tõenäoliselt õige seos, mis ootab kinnitust."
+            ),
         ),
         QualityQueue(
             key="broken_excel_link",
@@ -268,7 +285,9 @@ def queues(context: ReportingContext) -> list[QualityQueue]:
                 olek=CandidateState.PENDING.value,
                 klass=CandidateClass.BROKEN_EXCEL_LINK.value,
             ),
-            explanation="Registri link ei viita ühelegi arhiveeritud lehele.",
+            explanation=_reconciliation_note(
+                context, "Registri link ei viita ühelegi arhiveeritud lehele."
+            ),
         ),
         QualityQueue(
             key="unlinked_page",
@@ -279,7 +298,9 @@ def queues(context: ReportingContext) -> list[QualityQueue]:
                 olek=CandidateState.PENDING.value,
                 klass=CandidateClass.UNLINKED_PAGE.value,
             ),
-            explanation="Teemalaadne OneNote'i leht, mis ei kuulu ühegi teema alla.",
+            explanation=_reconciliation_note(
+                context, "Teemalaadne OneNote'i leht, mis ei kuulu ühegi teema alla."
+            ),
         ),
         _from_metric(
             "active_without_owner",
