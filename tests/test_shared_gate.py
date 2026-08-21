@@ -477,3 +477,67 @@ def test_real_data_with_a_short_password_still_refuses(settings):
     settings.SESSION_COOKIE_SECURE = True
     settings.SHARED_GATE_PASSWORD = "1925"  # noqa: S105
     assert "juristid.E011" in {problem.id for problem in check_runtime_safety(None)}
+
+
+# -- response headers --------------------------------------------------------
+#
+# Found on the live deployment, over real HTTPS: authenticated pages carried no
+# `Cache-Control` at all, and no `Strict-Transport-Security`, because nothing
+# told Django that something in front had terminated TLS.
+
+
+def test_a_page_behind_the_gate_is_never_stored(behind_the_gate):
+    """`Vary: Cookie` stops a shared cache. It does not stop the back button.
+
+    After signing out, a browser would re-display a page of member material from
+    its own history cache without asking the server anything. `no-store` is what
+    closes that, and it has to be `no-store` rather than `no-cache` — the latter
+    permits storing and only asks for revalidation.
+    """
+    response = behind_the_gate.get("/ulevaade/")
+    assert "no-store" in response["Cache-Control"]
+
+
+def test_a_page_for_a_selected_persona_is_never_stored(behind_the_gate):
+    marko = factories.UserFactory()
+    behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(marko.pk)})
+    assert "no-store" in behind_the_gate.get("/minu-too/")["Cache-Control"]
+
+
+def test_the_gate_page_itself_may_be_cached(client, gate_url):
+    """It is the same bytes for everybody and holds nothing worth protecting."""
+    assert "no-store" not in client.get(gate_url).get("Cache-Control", "")
+
+
+def test_static_files_stay_cacheable(behind_the_gate):
+    """Content-hashed and identical for everybody; making them uncacheable
+    would cost every page load for no privacy gain."""
+    response = behind_the_gate.get("/static/css/app.css")
+    assert "no-store" not in response.get("Cache-Control", "")
+
+
+def test_a_view_that_set_its_own_caching_keeps_it(behind_the_gate, settings):
+    """`setdefault`, not assignment — a download that thought about this wins."""
+    from django.http import HttpResponse
+
+    from app.core.middleware import PrivateResponseMiddleware
+
+    def view(request):
+        response = HttpResponse("x")
+        response["Cache-Control"] = "private, max-age=60"
+        return response
+
+    middleware = PrivateResponseMiddleware(view)
+    request = behind_the_gate.get("/ulevaade/").wsgi_request
+    assert middleware(request)["Cache-Control"] == "private, max-age=60"
+
+
+def test_a_deployment_behind_a_proxy_must_say_so(settings):
+    """Without it: no HSTS, `is_secure()` False, and CSRF skips its referer check."""
+    from app.core.checks import check_runtime_safety
+
+    settings.DEBUG = False
+    settings.SECRET_KEY = "a-real-secret"  # noqa: S105
+    settings.SESSION_COOKIE_SECURE = True
+    settings.SECURE_PROXY_SSL_HEADER = None
+    assert "juristid.E014" in {problem.id for problem in check_runtime_safety(None)}

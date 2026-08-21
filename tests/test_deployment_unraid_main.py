@@ -305,6 +305,7 @@ def test_the_template_declares_what_the_application_needs(
         "DJANGO_ALLOWED_HOSTS",
         "DJANGO_CSRF_TRUSTED_ORIGINS",
         "DJANGO_SECURE_SSL_REDIRECT",
+        "DJANGO_BEHIND_TLS_PROXY",
         "APPLICATION_ENVIRONMENT",
         "APPLICATION_REVISION",
         "POSTGRES_DB",
@@ -314,6 +315,17 @@ def test_the_template_declares_what_the_application_needs(
         "HISTORICAL_SOURCE_ROOT",
     }
     assert required <= set(env_example)
+
+
+def test_the_template_says_a_proxy_terminates_tls(env_example: dict[str, str]) -> None:
+    """Only safe because there is no host port.
+
+    Without it Django believes every request arrived over plain HTTP: no HSTS,
+    `request.is_secure()` False, CSRF skips its referer check. Trusting
+    `X-Forwarded-Proto` would be wrong on a stack a client could reach directly
+    — this one cannot be reached except through the tunnel.
+    """
+    assert env_example["DJANGO_BEHIND_TLS_PROXY"] == "1"
 
 
 def test_the_database_host_is_the_compose_service_not_a_shared_one(

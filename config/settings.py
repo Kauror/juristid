@@ -76,6 +76,9 @@ MIDDLEWARE = [
     # Django just restored belongs to the person Cloudflare authenticated.
     # Inert unless AUTH_MODE says otherwise (app/accounts/middleware.py).
     "app.accounts.middleware.AuthenticationModeMiddleware",
+    # After the authenticator, because it asks who the response turned out to
+    # be for (app/core/middleware.py).
+    "app.core.middleware.PrivateResponseMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -388,6 +391,16 @@ SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SECURE = not DEBUG
 X_FRAME_OPTIONS = "DENY"
 
+# Whether something in front terminates TLS and forwards the scheme.
+#
+# Not cosmetic. Without it Django believes every request arrived over plain
+# HTTP, and then: HSTS is never sent, `request.is_secure()` is False, and CSRF
+# skips its referer check. The first real deployment shipped without it and the
+# missing `Strict-Transport-Security` header is how it was noticed.
+#
+# Only ever set where something really does terminate TLS. Trusting
+# `X-Forwarded-Proto` from a client that can reach the application directly
+# would let that client claim its own connection was secure.
 if env_bool("DJANGO_BEHIND_TLS_PROXY", default=False):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
