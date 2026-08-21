@@ -29,7 +29,7 @@ from geometry (master specification 17.8, 18.10; Stage-2E brief 46, 60).
              href="{{ bar.url }}">
             <span class="barchart__label" title="{{ bar.label }}">{{ bar.label }}</span>
             <span class="barchart__track">
-              <span class="barchart__fill" style="width:{{ bar.width|floatformat:1 }}%"></span>
+              <span class="barchart__fill" style="width:{{ bar.width_css }}%"></span>
             </span>
             <span class="barchart__value">{{ bar.value }}</span>
           </a>
@@ -37,7 +37,7 @@ from geometry (master specification 17.8, 18.10; Stage-2E brief 46, 60).
           <div class="barchart__row {% if bar.is_unknown %}barchart__row--unknown{% endif %}">
             <span class="barchart__label" title="{{ bar.label }}">{{ bar.label }}</span>
             <span class="barchart__track">
-              <span class="barchart__fill" style="width:{{ bar.width|floatformat:1 }}%"></span>
+              <span class="barchart__fill" style="width:{{ bar.width_css }}%"></span>
             </span>
             <span class="barchart__value">{{ bar.value }}</span>
           </div>

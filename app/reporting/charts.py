@@ -51,7 +51,24 @@ class Bar:
 
     @property
     def share_text(self) -> str:
+        """For a reader: Estonian uses a decimal comma."""
         return f"{self.share * 100:.1f}%".replace(".", ",")
+
+    @property
+    def width_css(self) -> str:
+        """For CSS: a decimal *point*, whatever the reader's language.
+
+        Django localizes every number a template renders, and Estonian uses a
+        comma — so `width:25,0%` reaches the browser, which is not a CSS length,
+        so the fill loses its width and fills its track. Every bar on every
+        chart then renders full length.
+
+        A screenshot from the first green CI round is what caught it: four bars
+        reading 1, 0, 0 and 0, all exactly the same size. No test asserting
+        counts could have — the numbers beside the bars were right all along
+        (docs/adr/0010: some defects only a browser shows).
+        """
+        return f"{self.width:.1f}"
 
 
 @dataclass(frozen=True)
@@ -61,6 +78,16 @@ class Point:
     label: str
     value: int
     url: str
+
+    #: SVG coordinates, formatted here for the same reason as ``Bar.width_css``:
+    #: `cx="123,4"` is not a coordinate, and the browser drops the attribute.
+    @property
+    def cx(self) -> str:
+        return f"{self.x:.1f}"
+
+    @property
+    def cy(self) -> str:
+        return f"{self.y:.1f}"
 
 
 @dataclass(frozen=True)
@@ -84,6 +111,10 @@ class Trend:
     @property
     def baseline_y(self) -> float:
         return TREND_HEIGHT - TREND_PAD_BOTTOM
+
+    @property
+    def baseline_css(self) -> str:
+        return f"{self.baseline_y:.1f}"
 
     @property
     def axis_labels(self) -> tuple[Point, ...]:

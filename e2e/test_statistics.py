@@ -219,6 +219,35 @@ def test_a_definition_is_available_beside_every_number(page, base_url, screensho
     screenshots(page, "statistika-definitsioon")
 
 
+def test_a_bar_is_as_long_as_its_number(page, base_url):
+    """The defect a screenshot found and no count-based test could.
+
+    Django localizes numbers rendered through a template, so `width:25,0%`
+    reached the browser, which dropped the declaration — and every bar filled
+    its track while the number printed beside it stayed correct. Four bars
+    reading 1, 0, 0 and 0 were all the same length.
+
+    So this measures pixels: the largest bar is wider than a zero one.
+    """
+    sign_in(page, base_url, MARTIN)
+    open_statistics(page, base_url, "ajalooline/")
+
+    chart = page.locator("section.chart").filter(has_text="Materjalide ülekandmise seis").first
+    rows = chart.locator(".barchart__row")
+    widths = []
+    for index in range(rows.count()):
+        row = rows.nth(index)
+        value = int(row.locator(".barchart__value").inner_text().strip())
+        box = row.locator(".barchart__fill").bounding_box()
+        widths.append((value, box["width"] if box else 0.0))
+
+    assert widths, "the materialisation chart drew no bars"
+    largest = max(widths, key=lambda pair: pair[0])
+    for value, width in widths:
+        if value == 0:
+            assert width < largest[1], f"a bar of 0 is as wide as one of {largest[0]}"
+
+
 def test_a_chart_can_be_read_as_a_table(page, base_url):
     """Nobody has to estimate a value from the length of a bar."""
     sign_in(page, base_url, MARTIN)

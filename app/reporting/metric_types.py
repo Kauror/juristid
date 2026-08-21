@@ -261,6 +261,22 @@ class MetricResult:
         return 100.0 * count / self.coverage_denominator
 
     @property
+    def is_whole_corpus(self) -> bool:
+        """Whether the metric's own basis already says "the whole corpus"."""
+        return self.definition.time_basis == TimeBasis.WHOLE_CORPUS
+
+    @property
+    def coverage_css(self) -> str:
+        """The coverage percentage as a CSS length, with a decimal point.
+
+        Not ``|floatformat`` in the template: Django localizes it, and Estonian
+        writes 16,7 — which is correct in the sentence beside the bar and
+        useless inside ``style="width:…%"`` (see ``charts.Bar.width_css``).
+        """
+        percentage = self.coverage_percentage
+        return "0.0" if percentage is None else f"{percentage:.1f}"
+
+    @property
     def missing_from_coverage(self) -> int:
         if self.coverage_denominator is None:
             return 0

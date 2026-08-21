@@ -35,8 +35,13 @@ and a refusal must never look alike (Stage-2E brief 9, 48).
     <span class="metric__unavailable">Ebapiisavad andmed</span>
   {% endif %}
 
+  {% comment %}
+    The clock this number was measured on, then the window it covers. A metric
+    whose basis is already the whole corpus does not say so twice — "Kogu korpus
+    · kogu korpus" is what the first CI screenshot showed on every archive card.
+  {% endcomment %}
   <span class="metric__basis">
-    {{ result.time_basis_label }}{% if result.definition.respects_period %} · {{ reporting.period.label }}{% else %} · kogu korpus{% endif %}
+    {{ result.time_basis_label }}{% if result.definition.respects_period %} · {{ reporting.period.label }}{% elif not result.is_whole_corpus %} · kogu korpus{% endif %}
   </span>
 
   {% if result.coverage_denominator %}
@@ -46,7 +51,7 @@ and a refusal must never look alike (Stage-2E brief 9, 48).
       ({{ result.coverage_percentage|floatformat:1 }}%)
     </span>
     <span class="coveragebar" aria-hidden="true">
-      <span class="coveragebar__fill" style="width:{{ result.coverage_percentage|floatformat:1 }}%"></span>
+      <span class="coveragebar__fill" style="width:{{ result.coverage_css }}%"></span>
     </span>
   {% endif %}
 

@@ -31,10 +31,10 @@ direction; the number is shown as text instead.
       <desc id="trend-{{ item.result.key }}-desc">{{ item.summary }}</desc>
 
       <line class="trend__axis"
-            x1="44" y1="{{ item.trend.baseline_y }}"
-            x2="{{ item.trend.width }}" y2="{{ item.trend.baseline_y }}"></line>
+            x1="44" y1="{{ item.trend.baseline_css }}"
+            x2="{{ item.trend.width }}" y2="{{ item.trend.baseline_css }}"></line>
       <text class="trend__tick" x="4" y="20">{{ item.trend.maximum }}</text>
-      <text class="trend__tick" x="4" y="{{ item.trend.baseline_y }}">0</text>
+      <text class="trend__tick" x="4" y="{{ item.trend.baseline_css }}">0</text>
 
       <polyline class="trend__line" points="{{ item.trend.polyline }}"></polyline>
 
@@ -42,18 +42,18 @@ direction; the number is shown as text instead.
         {% if point.url %}
           <a href="{{ point.url }}">
             <title>{{ point.label }}: {{ point.value }}</title>
-            <circle class="trend__hit" cx="{{ point.x }}" cy="{{ point.y }}" r="12"></circle>
-            <circle class="trend__point" cx="{{ point.x }}" cy="{{ point.y }}" r="4"></circle>
+            <circle class="trend__hit" cx="{{ point.cx }}" cy="{{ point.cy }}" r="12"></circle>
+            <circle class="trend__point" cx="{{ point.cx }}" cy="{{ point.cy }}" r="4"></circle>
           </a>
         {% else %}
-          <circle class="trend__point" cx="{{ point.x }}" cy="{{ point.y }}" r="4">
+          <circle class="trend__point" cx="{{ point.cx }}" cy="{{ point.cy }}" r="4">
             <title>{{ point.label }}: {{ point.value }}</title>
           </circle>
         {% endif %}
       {% endfor %}
 
       {% for point in item.trend.axis_labels %}
-        <text class="trend__tick" x="{{ point.x }}" y="{{ item.trend.height }}"
+        <text class="trend__tick" x="{{ point.cx }}" y="{{ item.trend.height }}"
               text-anchor="middle">{{ point.label }}</text>
       {% endfor %}
     </svg>
