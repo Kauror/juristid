@@ -304,3 +304,19 @@ def test_the_report_counts_the_data_quality_of_what_it_would_activate() -> None:
         of_which["with_response_deadline"] + of_which["without_response_deadline"]
         == figures["would_promote"]
     )
+
+
+def test_planning_a_promotion_writes_nothing() -> None:
+    """``--dry-run`` is a promise, and the planner is what keeps it.
+
+    Every classification test above builds a plan without applying it, but
+    none of them re-reads the database afterwards — so a planner that promoted
+    as it classified would pass all of them.
+    """
+    portfolio = build_portfolio()
+
+    plan = build_promotion_plan(year=CURRENT_YEAR)
+
+    assert plan.promotable, "the fixture must offer something to promote"
+    assert portfolio.matter(OWNED_CANDIDATE).record_mode == RecordMode.ARCHIVE
+    assert portfolio.matter(UNASSIGNED).record_mode == RecordMode.ARCHIVE

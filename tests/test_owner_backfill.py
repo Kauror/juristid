@@ -20,6 +20,7 @@ from app.legacy_import.owner_backfill import (
     build_backfill_plan,
     summary,
 )
+from app.legacy_import.parser import SOURCE_SYSTEM
 from app.legacy_import.resolution import (
     METHOD_EXACT,
     METHOD_GIVEN_NAME,
@@ -145,6 +146,45 @@ def test_a_mapping_at_a_user_who_does_not_exist_fails_loudly() -> None:
     tables = MappingTables(owners={"alex": "nobody@example.invalid"})
     with pytest.raises(MappingFileError):
         resolve("Alex", alex, mappings=tables)
+
+
+def test_a_full_name_that_matches_nobody_is_not_decomposed_into_a_given_name() -> None:
+    """``Sandra Teistmoodi`` is a different person, not a longer way of writing Sandra.
+
+    The sharp case, and the reason this is worth its own test: the *first
+    token* names somebody real. A resolver that fell back to given-name
+    matching whenever the whole name missed would hand this row to Sandra
+    Näidis, and the audit would record a confident `given_name` match with
+    nothing to say it had guessed. A name with a space in it is a full name.
+    """
+    sandra = factories.UserFactory(display_name="Sandra Näidis")
+    resolution = resolve("Sandra Teistmoodi", sandra)
+    assert resolution.value is None
+    assert resolution.needs_mapping
+
+
+def test_an_inactive_person_is_not_offered_as_a_current_owner() -> None:
+    """The other half of the departed-colleague rule.
+
+    Resolvable in history, absent from the choices. Stage 2F is what makes
+    this load-bearing: until the resolver started naming inactive users, no
+    departed colleague could become an owner at all, so nothing tested that
+    they stay out of the controls for handing out *new* work.
+
+    Asserted against ``active_users()`` — the selector every owner control is
+    built from — rather than against one form, because the rule belongs to
+    this stage and which widget renders it belongs to another.
+    """
+    from app.matters.forms import active_users
+
+    former = factories.UserFactory(display_name="Kadri Endine", is_active=False)
+    current = factories.UserFactory(display_name="Ireen Näidis")
+
+    offered = set(active_users())
+    assert current in offered
+    assert former not in offered
+    # And still resolvable as a historical owner, which is the whole point.
+    assert resolve("Kadri", former).value == former
 
 
 # =========================================================================
@@ -278,3 +318,54 @@ def test_the_summary_is_aggregate_only() -> None:
     for forbidden in (OWNED_CANDIDATE, SHARED_OWNER, "Sandra", "Kadri"):
         assert forbidden not in rendered
     assert figures["would_update"] >= 1
+
+
+def test_planning_the_backfill_writes_nothing() -> None:
+    """``--dry-run`` is a promise, and the planner is what keeps it.
+
+    Every other test here builds a plan and applies it in the same breath,
+    which would not notice a planner that assigned as it went.
+    """
+    portfolio = build_portfolio()
+
+    plan = build_backfill_plan()
+
+    assert any(p.assigns for p in plan.plans), "the fixture must offer something to assign"
+    assert portfolio.matter(OWNED_CANDIDATE).owner is None
+    assert portfolio.matter(HISTORICAL).owner is None
+
+
+def test_the_owner_column_is_read_through_the_era_contract_not_a_fixed_letter() -> None:
+    """A value under the wrong letter for its era must resolve to nothing.
+
+    ``VASTUTAJA`` is column H on the current sheet and the contract is what
+    says so. Code that reached for a hard-coded letter — or that scanned the
+    row for anything resembling a name — would find this and assign it.
+    """
+    matter = factories.MatterFactory(owner=None)
+    factories.MatterSourceReferenceFactory(
+        matter=matter,
+        source_system=SOURCE_SYSTEM,
+        source_sheet="2026",
+        source_era="2026",
+        source_row_raw={"ZZ": "Sandra"},
+    )
+    factories.UserFactory(display_name="Sandra Näidis")
+
+    apply_backfill_plan(build_backfill_plan())
+
+    matter.refresh_from_db()
+    assert matter.owner is None
+
+
+def test_a_matter_with_no_provenance_is_left_alone() -> None:
+    """No source reference, no opinion. The backfill reads provenance only."""
+    factories.UserFactory(display_name="Sandra Näidis")
+    native = factories.MatterFactory(owner=None)
+
+    plan = build_backfill_plan()
+    apply_backfill_plan(plan)
+
+    native.refresh_from_db()
+    assert native.owner is None
+    assert native.pk not in {p.matter.pk for p in plan.plans}
