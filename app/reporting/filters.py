@@ -14,6 +14,7 @@ cannot apply to what is on screen teaches people to distrust the ones that can
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
@@ -105,7 +106,22 @@ def available_years(context: ReportingContext) -> list[PeriodOption]:
     ]
 
 
-def period_options(context: ReportingContext) -> list[PeriodOption]:
+def period_options(
+    context: ReportingContext, *, also_offered: Collection[str] = ()
+) -> list[PeriodOption]:
+    """The quick choices, plus whatever the URL is actually showing.
+
+    ``also_offered`` names periods some *other* control already shows as
+    selected — in practice the year list below. Since Stage 2E.1 that list
+    covers every individual year, so appending 2014 here as well would mark the
+    same choice selected twice on one screen and invite the reader to wonder
+    which of the two they clicked.
+
+    The fallback still earns its place for anything the year list cannot hold: a
+    drill-through carrying a *span* like ``2018-2024`` has no entry there, and
+    highlighting nothing at all would leave the reader guessing what period they
+    are looking at.
+    """
     options = [
         PeriodOption(
             key=period.key,
@@ -115,10 +131,8 @@ def period_options(context: ReportingContext) -> list[PeriodOption]:
         )
         for period in ctx.period_options(context.today)
     ]
-    if not any(option.active for option in options):
-        # A drill-through link carrying an explicit year lands here. Showing it
-        # as a fifth, selected option is more honest than highlighting nothing
-        # and leaving the reader to wonder which period they are looking at.
+    already_shown = set(also_offered)
+    if not any(option.active for option in options) and context.period.key not in already_shown:
         options.append(
             PeriodOption(
                 key=context.period.key,

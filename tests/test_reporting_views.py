@@ -383,7 +383,7 @@ def test_every_register_year_is_offered_newest_first(client, world, reporting_co
     assert years == sorted(years, reverse=True)
 
 
-@pytest.mark.parametrize("year", ["2011", "2018", "2024", "2026"])
+@pytest.mark.parametrize("year", ["2011", "2018", "2024", "2025", "2026"])
 def test_a_single_year_can_be_selected_by_url(client, world, year):
     from django.urls import reverse
 
@@ -393,6 +393,44 @@ def test_a_single_year_can_be_selected_by_url(client, world, year):
     assert response.status_code == 200
     assert response.context["reporting"].period.key == year
     assert response.context["reporting"].period.start_year == int(year)
+    assert response.context["reporting"].period.end_year == int(year)
+
+
+def test_all_years_remains_a_choice_beside_the_individual_ones(client, world):
+    """The quick choices are not replaced by the year list, only joined by it.
+
+    "How are we doing now" and "what happened in 2014" are different questions,
+    and a page that could only answer the second would be a worse page
+    (Stage-2E.1 brief 9).
+    """
+    from django.urls import reverse
+
+    client.force_login(world.martin)
+    response = client.get(reverse("reporting:overview"), {"periood": "koik"})
+
+    period = response.context["reporting"].period
+    assert period.is_all
+    assert period.start_year is None and period.end_year is None
+
+    quick = {option.key for option in response.context["period_options"]}
+    assert {"kaesolev", "viimased5", "koik"} <= quick
+
+
+def test_a_selected_year_is_the_one_marked_selected(client, world):
+    """Exactly one, and the right one. Nothing marked is worse than nothing
+    offered: the reader is then guessing what they are looking at."""
+    from django.urls import reverse
+
+    client.force_login(world.martin)
+    years = _year_labels(client.get(reverse("reporting:overview")))
+    if not years:
+        pytest.skip("this world has no register years")
+
+    body = client.get(reverse("reporting:overview"), {"periood": years[0]}).content.decode()
+    import re
+
+    active = re.findall(r'class="yearpicker__year is-active"[^>]*>(\d{4})<', body)
+    assert active == [years[0]]
 
 
 def test_the_year_filter_applies_on_every_tab(client, world):
