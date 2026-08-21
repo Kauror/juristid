@@ -245,12 +245,31 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.get_by_role("link", name=re.compile("Pakendiseaduse")).first.click()
     expect(page.get_by_role("heading", name=MATTER_TITLE)).to_be_visible()
 
-    # The exact reference navigates straight to the file.
+    # The exact reference navigates straight to the file — from anywhere, which
+    # is the whole point of typing a reference.
+    #
+    # Started from Ülevaade on purpose. Run from the file's own page, the
+    # assertion below matched the heading that was *already on screen* and
+    # passed before the navigation had begun: a step that looked like a wait and
+    # was not. That is what made the next one flake.
+    page.goto(f"{base_url}/ulevaade/")
+    page.wait_for_url(f"{base_url}/ulevaade/")
+
     page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill(reference)
     page.keyboard.press("Enter")
+    # The URL, because it is the one thing that cannot match the page we came
+    # from. Every element assertion here can be satisfied by the previous
+    # document, which is exactly how this went wrong.
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     expect(page.get_by_role("heading", name=MATTER_TITLE)).to_be_visible()
 
     # Ctrl+K focuses search rather than opening a command palette.
+    #
+    # `app.js` is loaded with `defer`, so its keydown listener is attached after
+    # parsing and before DOMContentLoaded. Waiting for that state is therefore
+    # the exact guarantee this needs: a heading can be visible mid-parse, while
+    # the handler that makes this shortcut work does not exist yet.
+    page.wait_for_load_state("domcontentloaded")
     page.keyboard.press("Control+k")
     expect(page.get_by_placeholder("Otsi teemat, viidet, asutust…")).to_be_focused()
 
