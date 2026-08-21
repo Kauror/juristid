@@ -1,0 +1,64 @@
+{% extends "intelligence/base.html" %}
+{% block title %}Olulised tähtajad · {{ application_name }}{% endblock %}
+
+{% comment %}
+Generated from every Matter's own `Oluline tähtaeg` records, plus — labelled as
+such — the commencement dates that have a known date. The commencement rows are
+read live from their own table; nothing is copied here, so editing one on the
+Matter moves it on this page in the same instant (Stage-2G brief 47, 48).
+
+Each row shows its date at the precision it was actually recorded to. A quarter
+never prints as a day, and a heading never invents a month for one.
+{% endcomment %}
+
+{% block page_context %}{{ context_label }}{% endblock %}
+
+{% block page_filters %}
+  {% include "intelligence/partials/filter_row.html" with options=direction_options label="Ajaline suund" %}
+  {% include "intelligence/partials/filter_row.html" with options=source_options label="Sündmuste allikas" %}
+  {% include "intelligence/partials/year_filter.html" with options=year_options label_id="tahtajad-periood" %}
+{% endblock %}
+
+{% block watchlist %}
+  <section aria-labelledby="olulised-tahtajad-heading">
+    <h2 class="sectionlabel" id="olulised-tahtajad-heading">
+      Olulised tähtajad
+      <span class="sectionlabel__count">{{ total }}</span>
+    </h2>
+
+    {% if groups %}
+      {% for group in groups %}
+        <h3 class="periodhead">{{ group.label }}</h3>
+        <ul class="factlist">
+          {% for entry in group.entries %}
+            <li class="factrow">
+              <span class="factrow__date {% if entry.record.is_approximate %}dateline--approximate{% endif %}">
+                {{ entry.display_date }}
+              </span>
+              <span class="factrow__body">
+                <span class="eventkind {% if entry.is_effective_date %}eventkind--commencement{% endif %}">
+                  {% if entry.is_effective_date %}Jõustumine{% else %}Tähtaeg{% endif %}
+                </span>
+                {% if entry.title %}<span class="factrow__title">{{ entry.title }}</span>{% endif %}
+                <a class="factrow__matter" href="{% url 'matters:matter_detail' pk=entry.matter.pk %}">
+                  {% if entry.matter.display_reference %}
+                    <span class="reference">{{ entry.matter.display_reference }}</span>
+                  {% endif %}
+                  {{ entry.matter.title }}
+                </a>
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% endfor %}
+
+      {% include "components/pagination.html" with page=page query_string=query_string %}
+    {% else %}
+      <p class="empty">
+        Valitud vaates ei ole ühtegi tähtaega. Seda loendit ei peeta käsitsi — see
+        koostatakse teemadele lisatud kirjetest, nii et lisa oluline tähtaeg teema
+        lehel ja see ilmub siia.
+      </p>
+    {% endif %}
+  </section>
+{% endblock %}

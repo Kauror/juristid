@@ -1,0 +1,13 @@
+{% comment %}
+One segmented control. Each option carries the whole filter state, built in
+`app.intelligence.filters` rather than assembled here, so what the link does and
+what the chip says cannot drift apart.
+{% endcomment %}
+<nav class="segmented" aria-label="{{ label }}">
+  {% for option in options %}
+    <a class="segmented__option {% if option.active %}is-active{% endif %}"
+       {% if option.active %}aria-current="true"{% endif %}
+       href="?{{ option.query }}">{{ option.label }}{% if option.count is not None %}
+      <span class="segmented__count">{{ option.count }}</span>{% endif %}</a>
+  {% endfor %}
+</nav>

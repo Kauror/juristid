@@ -1,0 +1,21 @@
+{% comment %}
+Every year the reader's own records mention, listed rather than hidden in a
+dropdown: the list is short, and a reader scanning for 2027 finds it faster than
+they can open a select.
+
+The options come from the authorized querysets, so a year that only a restricted
+Matter uses is not offered to somebody who may not read it — an empty year
+filter is itself a disclosure (Stage-2G brief 31).
+{% endcomment %}
+<nav class="periodfilter" aria-label="Periood">
+  <span class="periodfilter__label" id="{{ label_id }}">Periood</span>
+  <ul class="periodfilter__list" aria-labelledby="{{ label_id }}">
+    {% for option in options %}
+      <li>
+        <a class="periodfilter__option {% if option.active %}is-active{% endif %}"
+           {% if option.active %}aria-current="true"{% endif %}
+           href="?{{ option.query }}">{{ option.label }}</a>
+      </li>
+    {% endfor %}
+  </ul>
+</nav>

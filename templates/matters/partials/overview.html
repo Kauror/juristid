@@ -142,6 +142,15 @@ about the save that just happened.
       {% include "matters/partials/composer.html" %}
     {% endif %}
 
+    {% comment %}
+      Olulised tähtajad, Jõustumine and Töövõidud: structured facts about this
+      Matter, recorded once here and read by the generated department views. They
+      sit above the chronology and below the composer — substantive information
+      rather than technical metadata, but never in front of the capture box the
+      whole page exists for (Stage-2G brief 36).
+    {% endcomment %}
+    {% include "intelligence/partials/matter_sections.html" %}
+
     <section class="timeline" aria-labelledby="ajalugu-heading">
       <div class="timeline__head">
         <h2 class="timeline__label" id="ajalugu-heading">Ajajoon</h2>

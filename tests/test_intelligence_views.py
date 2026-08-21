@@ -1,0 +1,514 @@
+"""The generated pages and the Matter-page sections, through the real views.
+
+These assert the things a selector test cannot: that the number in the heading
+is the number of rows below it, that a filter link leads to the population it
+promises, that an approximate period is rendered as a period, and that the write
+forms accept what a browser actually posts.
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import date, timedelta
+
+import pytest
+from django.urls import reverse
+from django.utils import timezone
+
+from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictoryStatus
+from app.intelligence.services import (
+    add_effective_date,
+    add_important_date,
+    add_work_victory_candidate,
+    confirm_work_victory,
+)
+from app.workflow.dates import quarter_bounds, year_bounds
+from app.workflow.enums import DatePrecision
+from tests import factories
+
+pytestmark = pytest.mark.django_db
+
+IMPORTANT_DATES = "intelligence:important_dates"
+EFFECTIVE_DATES = "intelligence:effective_dates"
+WORK_VICTORIES = "intelligence:work_victories"
+
+
+def _text(response) -> str:
+    return response.content.decode()
+
+
+# -- Olulised tähtajad ------------------------------------------------------
+
+
+def test_the_calendar_renders_an_approximate_period_as_a_period(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    start, end = quarter_bounds(2030, 2)
+    add_important_date(
+        matter=matter,
+        title="Eeldatav VTK kooskõlastusring",
+        date_value=start,
+        period_end=end,
+        date_precision=DatePrecision.QUARTER,
+        actor=specialist,
+    )
+
+    body = _text(signed_in.get(reverse(IMPORTANT_DATES), {"suund": "koik"}))
+    assert "II kvartal 2030" in body
+    assert "01.04.2030" not in body
+
+
+def test_the_calendar_labels_a_commencement_as_one(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    add_effective_date(
+        matter=matter,
+        description="alkoholiregister kaotatakse",
+        date_value=date(2030, 11, 1),
+        period_end=date(2030, 11, 1),
+        actor=specialist,
+    )
+
+    body = _text(signed_in.get(reverse(IMPORTANT_DATES), {"suund": "koik"}))
+    assert "Jõustumine" in body
+    assert "alkoholiregister kaotatakse" in body
+
+
+def test_the_source_selector_narrows_the_calendar(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    add_important_date(
+        matter=matter,
+        title="Ainult tähtaeg",
+        date_value=date(2030, 5, 1),
+        period_end=date(2030, 5, 1),
+        actor=specialist,
+    )
+    add_effective_date(
+        matter=matter,
+        description="Ainult jõustumine",
+        date_value=date(2030, 6, 1),
+        period_end=date(2030, 6, 1),
+        actor=specialist,
+    )
+
+    only_dates = _text(
+        signed_in.get(reverse(IMPORTANT_DATES), {"suund": "koik", "allikad": "tahtajad"})
+    )
+    assert "Ainult tähtaeg" in only_dates
+    assert "Ainult jõustumine" not in only_dates
+
+    only_commencements = _text(
+        signed_in.get(reverse(IMPORTANT_DATES), {"suund": "koik", "allikad": "joustumised"})
+    )
+    assert "Ainult jõustumine" in only_commencements
+    assert "Ainult tähtaeg" not in only_commencements
+
+
+def test_upcoming_and_past_split_on_the_end_of_the_period(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    today = timezone.localdate()
+    add_important_date(
+        matter=matter,
+        title="Tulevik",
+        date_value=today + timedelta(days=5),
+        period_end=today + timedelta(days=5),
+        actor=specialist,
+    )
+    add_important_date(
+        matter=matter,
+        title="Minevik",
+        date_value=today - timedelta(days=5),
+        period_end=today - timedelta(days=5),
+        actor=specialist,
+    )
+
+    upcoming = _text(signed_in.get(reverse(IMPORTANT_DATES), {"suund": "tulevased"}))
+    assert "Tulevik" in upcoming
+    assert "Minevik" not in upcoming
+
+    past = _text(signed_in.get(reverse(IMPORTANT_DATES), {"suund": "moodunud"}))
+    assert "Minevik" in past
+    assert "Tulevik" not in past
+
+
+def test_the_heading_count_matches_the_rows(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    for index in range(3):
+        add_important_date(
+            matter=matter,
+            title=f"Tähtaeg {index}",
+            date_value=date(2030, 5, index + 1),
+            period_end=date(2030, 5, index + 1),
+            actor=specialist,
+        )
+
+    response = signed_in.get(reverse(IMPORTANT_DATES), {"suund": "koik"})
+    body = _text(response)
+    assert response.context["total"] == 3
+    # `<li class="factrow"` and not `class="factrow`: the row's own child
+    # elements use `factrow__…` classes and would each match the shorter
+    # pattern, which would make this assertion pass for the wrong reason.
+    assert len(re.findall(r'<li class="factrow"', body)) == 3
+
+
+def test_a_hand_edited_year_parameter_does_not_break_the_page(signed_in):
+    response = signed_in.get(reverse(IMPORTANT_DATES), {"aasta": "eelmine"})
+    assert response.status_code == 200
+    assert response.context["total"] == 0
+
+
+def test_the_empty_state_explains_where_the_records_come_from(signed_in):
+    body = _text(signed_in.get(reverse(IMPORTANT_DATES)))
+    assert "Seda loendit ei peeta käsitsi" in body
+
+
+# -- Jõustuvad aktid --------------------------------------------------------
+
+
+def test_the_commencement_page_groups_by_period(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    add_effective_date(
+        matter=matter,
+        description="põhiosa",
+        date_value=date(2030, 9, 27),
+        period_end=date(2030, 9, 27),
+        actor=specialist,
+    )
+    add_effective_date(
+        matter=matter,
+        description="osad sätted",
+        date_value=date(2030, 10, 1),
+        period_end=date(2030, 10, 1),
+        actor=specialist,
+    )
+
+    response = signed_in.get(reverse(EFFECTIVE_DATES), {"suund": "koik"})
+    labels = [group.label for group in response.context["groups"]]
+    assert labels == ["september 2030", "oktoober 2030"]
+
+
+def test_the_undated_view_is_reachable_and_counted_separately(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    add_effective_date(
+        matter=matter,
+        kind=EffectiveDateKind.GENERAL_ORDER,
+        description="rakendusmäärus",
+        actor=specialist,
+    )
+
+    listed = _text(signed_in.get(reverse(EFFECTIVE_DATES), {"suund": "tapsustamisel"}))
+    assert "Jõustub üldises korras" in listed
+    assert "rakendusmäärus" in listed
+
+    dated = signed_in.get(reverse(EFFECTIVE_DATES))
+    assert dated.context["undated_count"] == 1
+    assert "kuupäev on täpsustamisel" in _text(dated)
+
+
+def test_a_source_url_is_offered_beside_the_matter_and_not_instead_of_it(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    add_effective_date(
+        matter=matter,
+        description="põhiosa",
+        date_value=date(2030, 9, 27),
+        period_end=date(2030, 9, 27),
+        source_url="https://www.riigiteataja.ee/akt/000000000",
+        actor=specialist,
+    )
+
+    body = _text(signed_in.get(reverse(EFFECTIVE_DATES), {"suund": "koik"}))
+    assert reverse("matters:matter_detail", kwargs={"pk": matter.pk}) in body
+    assert "Ametlik allikas" in body
+
+
+# -- Töövõidud --------------------------------------------------------------
+
+
+def test_the_work_victory_filters_agree_with_their_rows(signed_in, specialist, department_head):
+    matter = factories.MatterFactory(owner=specialist)
+    start, end = year_bounds(2026)
+    confirmed = add_work_victory_candidate(
+        matter=matter,
+        title="Kinnitatud võit",
+        period_date=start,
+        period_end=end,
+        date_precision=DatePrecision.YEAR,
+        actor=specialist,
+    )
+    confirm_work_victory(record=confirmed, actor=department_head)
+    add_work_victory_candidate(
+        matter=matter,
+        title="Kandidaat",
+        period_date=start,
+        period_end=end,
+        date_precision=DatePrecision.YEAR,
+        actor=specialist,
+    )
+    add_work_victory_candidate(matter=matter, title="Teadmata ajaga", actor=specialist)
+
+    response = signed_in.get(
+        reverse(WORK_VICTORIES), {"aasta": "2026", "staatus": WorkVictoryStatus.CONFIRMED}
+    )
+    body = _text(response)
+    assert response.context["total"] == 1
+    assert "Kinnitatud võit" in body
+    assert "Kandidaat" not in body
+    assert "Teadmata ajaga" not in body
+
+    unknown = signed_in.get(reverse(WORK_VICTORIES), {"aasta": "teadmata"})
+    assert unknown.context["total"] == 1
+    assert "Teadmata ajaga" in _text(unknown)
+
+
+def test_the_unknown_period_option_only_appears_when_there_is_one(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    start, end = year_bounds(2026)
+    add_work_victory_candidate(
+        matter=matter,
+        title="Dateeritud",
+        period_date=start,
+        period_end=end,
+        date_precision=DatePrecision.YEAR,
+        actor=specialist,
+    )
+
+    keys = [
+        option["key"] for option in signed_in.get(reverse(WORK_VICTORIES)).context["year_options"]
+    ]
+    assert "teadmata" not in keys
+
+    add_work_victory_candidate(matter=matter, title="Teadmata", actor=specialist)
+    keys = [
+        option["key"] for option in signed_in.get(reverse(WORK_VICTORIES)).context["year_options"]
+    ]
+    assert "teadmata" in keys
+
+
+def test_the_page_publishes_no_rate_or_ranking(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    add_work_victory_candidate(matter=matter, title="Kandidaat", actor=specialist)
+
+    response = signed_in.get(reverse(WORK_VICTORIES))
+    body = _text(response)
+    for forbidden in ("edukus", "edetabel", "protsent", "tulemuslikkus"):
+        assert forbidden not in body.lower()
+    # And nothing in the context is a ratio waiting for a template to render it.
+    assert "rate" not in response.context
+    assert "share" not in response.context
+
+
+# -- the Matter page --------------------------------------------------------
+
+
+def test_the_matter_page_shows_all_three_sections(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+
+    assert 'id="olulised-tahtajad"' in body
+    assert 'id="joustumine"' in body
+    assert 'id="toovoidud"' in body
+    assert "Olulisi tähtaegu pole lisatud." in body
+    assert "Jõustumise infot pole lisatud." in body
+    assert "Töövõite ega kandidaate pole lisatud." in body
+
+
+def test_the_matter_page_marks_a_cancelled_milestone(signed_in, specialist):
+    from app.intelligence.services import cancel_important_date
+
+    matter = factories.MatterFactory(owner=specialist)
+    record = add_important_date(
+        matter=matter,
+        title="Ärajäänud ring",
+        date_value=timezone.localdate() + timedelta(days=10),
+        period_end=timezone.localdate() + timedelta(days=10),
+        actor=specialist,
+    )
+    cancel_important_date(record=record, actor=specialist)
+
+    body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    assert "Ärajäänud ring" in body
+    assert "Tühistatud" in body
+
+
+def test_a_reader_sees_the_facts_and_none_of_the_controls(client, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    add_important_date(
+        matter=matter,
+        title="Nähtav tähtaeg",
+        date_value=date(2030, 5, 1),
+        period_end=date(2030, 5, 1),
+        actor=specialist,
+    )
+    reader = factories.UserFactory(role="READER")
+    client.force_login(reader)
+
+    body = _text(client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    assert "Nähtav tähtaeg" in body
+    assert "+ Lisa oluline tähtaeg" not in body
+    assert "+ Lisa töövõidu kandidaat" not in body
+
+
+def test_a_specialist_sees_no_confirmation_control(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    add_work_victory_candidate(matter=matter, title="Kandidaat", actor=specialist)
+
+    body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    assert "+ Lisa töövõidu kandidaat" in body
+    assert "Kinnita töövõiduks" not in body
+
+
+def test_the_department_head_sees_the_confirmation_control(client, specialist, department_head):
+    matter = factories.MatterFactory(owner=specialist)
+    add_work_victory_candidate(matter=matter, title="Kandidaat", actor=specialist)
+    client.force_login(department_head)
+
+    body = _text(client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    assert "Kinnita töövõiduks" in body
+
+
+# -- the write forms --------------------------------------------------------
+
+
+def test_a_quarter_posted_from_the_form_stores_a_quarter(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    response = signed_in.post(
+        reverse("intelligence:add_important_date", kwargs={"matter_id": matter.pk}),
+        {"title": "Kooskõlastusring", "precision": "QUARTER", "quarter": "2", "year": "2027"},
+    )
+
+    assert response.status_code == 302
+    record = matter.important_dates.get()
+    assert record.date_precision == DatePrecision.QUARTER
+    assert (record.date_value, record.period_end) == (date(2027, 4, 1), date(2027, 6, 30))
+    assert record.display_date == "II kvartal 2027"
+
+
+def test_a_quarter_with_no_year_is_refused_on_the_field_that_is_missing(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    response = signed_in.post(
+        reverse("intelligence:add_important_date", kwargs={"matter_id": matter.pk}),
+        {"title": "Kooskõlastusring", "precision": "QUARTER", "quarter": "2"},
+    )
+
+    assert response.status_code == 400
+    assert matter.important_dates.count() == 0
+    assert "Aasta on puudu." in _text(response)
+
+
+def test_a_general_order_commencement_refuses_an_offered_date(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    response = signed_in.post(
+        reverse("intelligence:add_effective_date", kwargs={"matter_id": matter.pk}),
+        {
+            "kind": EffectiveDateKind.GENERAL_ORDER,
+            "precision": "EXACT",
+            "exact_date": "2026-01-01",
+            "description": "rakendusmäärus",
+        },
+    )
+
+    assert response.status_code == 400
+    assert matter.effective_dates.count() == 0
+    assert "ainult teadaoleva jõustumise" in _text(response)
+
+
+def test_a_general_order_commencement_saves_with_no_date(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    response = signed_in.post(
+        reverse("intelligence:add_effective_date", kwargs={"matter_id": matter.pk}),
+        {"kind": EffectiveDateKind.GENERAL_ORDER, "description": "rakendusmäärus"},
+    )
+
+    assert response.status_code == 302
+    record = matter.effective_dates.get()
+    assert record.date_value is None
+    assert record.display_when == "Jõustub üldises korras"
+
+
+def test_a_work_victory_form_defaults_to_a_candidate(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    signed_in.post(
+        reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk}),
+        {"title": "Ettepanek arvestati", "precision": "YEAR", "year": "2026"},
+    )
+
+    record = matter.work_victories.get()
+    assert record.status == WorkVictoryStatus.CANDIDATE
+    assert record.display_period == "2026"
+
+
+def test_a_work_victory_may_be_saved_with_no_period(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    signed_in.post(
+        reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk}),
+        {"title": "Millalgi varem", "precision": ""},
+    )
+
+    record = matter.work_victories.get()
+    assert record.period_date is None
+
+
+def test_the_edit_form_reopens_a_quarter_as_a_quarter(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    start, end = quarter_bounds(2027, 3)
+    record = add_important_date(
+        matter=matter,
+        title="Kooskõlastusring",
+        date_value=start,
+        period_end=end,
+        date_precision=DatePrecision.QUARTER,
+        actor=specialist,
+    )
+
+    response = signed_in.get(
+        reverse(
+            "intelligence:edit_important_date",
+            kwargs={"matter_id": matter.pk, "pk": record.pk},
+        )
+    )
+    initial = response.context["form"].initial
+    assert initial["precision"] == DatePrecision.QUARTER
+    assert initial["quarter"] == "3"
+    assert initial["year"] == 2027
+    assert "exact_date" not in initial
+
+
+def test_cancelling_through_the_form_keeps_the_record(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    record = add_important_date(
+        matter=matter,
+        title="Ärajäänud",
+        date_value=date(2030, 5, 1),
+        period_end=date(2030, 5, 1),
+        actor=specialist,
+    )
+
+    response = signed_in.post(
+        reverse(
+            "intelligence:cancel_important_date",
+            kwargs={"matter_id": matter.pk, "pk": record.pk},
+        ),
+        {"reason": "Ministeerium loobus"},
+    )
+
+    assert response.status_code == 302
+    record.refresh_from_db()
+    assert record.status == FactStatus.CANCELLED
+
+
+def test_the_confirmation_page_states_what_is_being_claimed(client, specialist, department_head):
+    matter = factories.MatterFactory(owner=specialist)
+    record = add_work_victory_candidate(
+        matter=matter, title="Ettepanek arvestati", actor=specialist
+    )
+    client.force_login(department_head)
+
+    body = _text(
+        client.get(
+            reverse(
+                "intelligence:confirm_work_victory",
+                kwargs={"matter_id": matter.pk, "pk": record.pk},
+            )
+        )
+    )
+    assert "Ettepanek arvestati" in body
+    assert "Teadmata periood" in body
+    assert "Kinnita töövõiduks" in body

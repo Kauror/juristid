@@ -164,8 +164,63 @@
     });
   }
 
+  /* ---- The period control: show only the fields the precision needs -------
+   * Progressive enhancement only. With scripting off every group is visible,
+   * every one is optional, and the server decides which of them it needs — so
+   * the form still works and still refuses an impossible combination
+   * (app/intelligence/forms.py, Stage-2G brief 7, 49).
+   */
+  function bindPeriodFields(scope) {
+    var fields = scope.querySelector("#perioodi-valjad");
+    var chooser = scope.querySelector("#tapsuse-valik");
+    if (!fields || !chooser) {
+      return;
+    }
+    /* Jõustumine asks a question before the precision one: a commencement that
+     * happens "üldises korras" has no date to be precise about, so the whole
+     * control goes away rather than sitting there inviting a fabricated day. */
+    var kindChooser = scope.querySelector("#joustumise-liik");
+    var groups = Array.prototype.slice.call(
+      fields.querySelectorAll(".periodfields__group")
+    );
+    var sync = function () {
+      var chosen = chooser.querySelector("input:checked");
+      var value = chosen ? chosen.value : "";
+      if (kindChooser) {
+        var kind = kindChooser.querySelector("input:checked");
+        var dated = kind ? kind.value === "KNOWN_DATE" : true;
+        chooser.hidden = !dated;
+        chooser.classList.toggle("is-hidden", !dated);
+        fields.hidden = !dated;
+        fields.classList.toggle("is-hidden", !dated);
+        if (!dated) {
+          return;
+        }
+      }
+      groups.forEach(function (group) {
+        var applicable = (group.getAttribute("data-precision") || "").split(" ");
+        /* `hidden` alone loses to any component rule that sets `display`, which
+         * is how the composer's disclosure was broken once already — so the
+         * class carries the rule and `hidden` carries the semantics. */
+        var show = value !== "" && applicable.indexOf(value) !== -1;
+        group.hidden = !show;
+        group.classList.toggle("is-hidden", !show);
+      });
+    };
+    chooser.querySelectorAll("input[type=radio]").forEach(function (radio) {
+      radio.addEventListener("change", sync);
+    });
+    if (kindChooser) {
+      kindChooser.querySelectorAll("input[type=radio]").forEach(function (radio) {
+        radio.addEventListener("change", sync);
+      });
+    }
+    sync();
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     bind(document);
+    bindPeriodFields(document);
   });
 
   /* A rejected save returns 400 with the surface re-rendered and the errors in
