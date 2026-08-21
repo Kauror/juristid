@@ -203,6 +203,13 @@ def test_a_matter_can_be_created_with_a_file_attached(page, base_url, tmp_path):
     expect(page.locator(".dropzone__file")).to_have_text("kaaskiri.txt")
 
     page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_load_state("domcontentloaded")
+
+    # If the form refused, say what it said. A bare navigation timeout tells you
+    # only that nothing happened, which is the least useful half of the answer.
+    complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
+    assert not complaints, f"the form refused: {complaints}"
+
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     expect(page.get_by_role("heading", name="Browseri testist loodud teema")).to_be_visible()
 
