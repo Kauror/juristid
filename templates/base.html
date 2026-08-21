@@ -40,6 +40,15 @@
             <a class="topnav__link {% if nav_active == 'teemad' %}is-active{% endif %}"
                {% if nav_active == 'teemad' %}aria-current="page"{% endif %}
                href="{% url 'matters:matter_list' %}">Teemad</a>
+            {% comment %}
+              Statistika is its own destination, not a tab on Ülevaade. Ülevaade
+              answers "what needs attention now"; this answers "what does the
+              corpus say about Koja work". Overloading the dashboard with both
+              would make neither readable (Stage-2E brief 6).
+            {% endcomment %}
+            <a class="topnav__link {% if nav_active == 'statistika' %}is-active{% endif %}"
+               {% if nav_active == 'statistika' %}aria-current="page"{% endif %}
+               href="{% url 'reporting:overview' %}">Statistika</a>
           </nav>
 
           <span class="topbar__spacer"></span>

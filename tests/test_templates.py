@@ -98,3 +98,42 @@ def test_every_label_reference_points_at_a_heading_in_the_same_file(template: Pa
         assert reference not in source.replace(f'aria-labelledby="{reference}"', ""), (
             f"{template.name}: aria-labelledby={reference!r} names something that is not an id here"
         )
+
+
+#: A template variable used as a CSS *length*: a declaration value followed by a
+#: unit. Deliberately not every variable inside a `style="…"` — a CSS custom
+#: property name is a string and localization cannot touch it.
+_STYLE_VARIABLE = re.compile(r'style="[^"]*:\s*\{\{\s*([^}]+?)\s*\}\}\s*(?:%|px|rem|em|vh|vw)')
+_SVG_GEOMETRY = re.compile(r'(?:cx|cy|x1|y1|x2|y2|x|y|r|width|height)="\{\{\s*([^}]+?)\s*\}\}"')
+
+#: Expressions that are safe there: a name ending in `_css` is a string this
+#: codebase formatted itself, and an integer is not localized unless
+#: USE_THOUSAND_SEPARATOR is on, which it is not.
+_SAFE_GEOMETRY = re.compile(r"(_css|\.width|\.height)$")
+
+
+@pytest.mark.parametrize("template", _templates(), ids=lambda p: p.name)
+def test_no_css_or_svg_length_is_rendered_through_localization(template: Path) -> None:
+    """`width:25,0%` is not a CSS length, and `cx="123,4"` is not a coordinate.
+
+    Django localizes every number a template renders, and Estonian uses a
+    decimal comma. The browser then drops the attribute — so a bar loses its
+    width and fills its track, and every chart on the page renders every bar the
+    same length while the numbers printed beside them stay correct.
+
+    No count-based test can catch that. A CI screenshot did, once: four bars
+    reading 1, 0, 0 and 0, all identical. This is the cheap version of that
+    screenshot. Values formatted in Python end in `_css`.
+    """
+    source = template.read_text(encoding="utf-8")
+    offenders = [
+        expression
+        for pattern in (_STYLE_VARIABLE, _SVG_GEOMETRY)
+        for expression in pattern.findall(source)
+        if not _SAFE_GEOMETRY.search(expression.split("|")[0].strip())
+    ]
+    assert not offenders, (
+        f"{template.name} renders {offenders} into a CSS or SVG length. "
+        f"Format it in Python and expose it as a `_css` string, or the decimal "
+        f"comma will silently break the geometry."
+    )

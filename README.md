@@ -44,6 +44,13 @@ introduces it, an operator queue for the matches a person still has to settle,
 and Cloudflare Access as the production authenticator. See
 [ADR 0015](docs/adr/0015-historical-corpus-integration.md).
 
+**Stage 2E — implemented on a feature branch, pending integration.** Statistics,
+reporting and data quality: a code-defined, versioned metric catalogue, a
+Statistika workspace of five tabs, coverage on every number, drill-through from
+every chart segment, CSV exports and a daily operational snapshot. Nothing here
+is deployed yet. See
+[ADR 0017](docs/adr/0017-statistics-and-the-metric-catalogue.md).
+
 **Synthetic rehearsal — deployed.** An instance on the Unraid host running
 invented data only, for the class of defect CI structurally cannot reach. See
 [`deploy/unraid-test/`](deploy/unraid-test/).
@@ -57,9 +64,8 @@ test time from code you can read, so a checked-in file could only be a real one
 that arrived by accident.
 
 **Deliberately unbuilt.** Stage 2C: Kaasamine and structured member responses.
-Later still: EIS and Riigikogu integration, statistics dashboards, advocacy
-outcomes and attribution, and anything involving embeddings, semantic search or
-AI summarisation. Each stage is authorized by its own written brief; nothing is
+Later still: EIS and Riigikogu integration, advocacy outcomes and attribution,
+and anything involving embeddings, semantic search or AI summarisation. Each stage is authorized by its own written brief; nothing is
 built ahead of one.
 
 [`docs/open-decisions.md`](docs/open-decisions.md) lists what still belongs to
@@ -256,6 +262,51 @@ engine missing a language falls back to English and returns confident nonsense:
 uv run python manage.py check_ocr_runtime
 ```
 
+## Statistics
+
+`Statistika` is the fifth main-navigation item and five tabs: Üldpilt, Teemad,
+Koja tegevus, Ajalooline materjal and Andmekvaliteet. It answers what the corpus
+says about Koda's work, which is a different question from Ülevaade's "what
+needs attention now" — and keeping them apart is why it has its own destination
+rather than another panel on the dashboard.
+
+Three rules run through it, and they are the reason to trust a number on it.
+
+**Every metric has a versioned definition in code.** `app/reporting/
+metric_catalogue.py` is the reviewable artefact: population, time basis,
+eligibility, exclusions, earliest reliable period, source-era limitations,
+thresholds and coverage. Every card carries a *Kuidas arvutatakse?* panel built
+from that entry, and `/statistika/definitsioonid/` renders the whole catalogue.
+There is no screen for editing a definition.
+
+**Authorization precedes aggregation.** Every count starts from the authorized
+population and is filtered, grouped and exported only after that. A restricted
+Matter contributes nothing to a total, a bar, a coverage denominator or a CSV
+row. Counting first and hiding rows at render time leaves the hidden rows inside
+the numbers, and nothing on screen looks wrong.
+
+**Every number opens exactly what it counted**, and where an honest link is
+impossible there is no link. The test suite follows each link through the real
+view and compares the count the page reports with the number the card claimed.
+
+Trends are short, and the pages say so. Structured `Submission` records begin
+with this system; a year before that has no measurement, and a missing
+measurement is not a zero.
+
+The one table that is not answered from canonical records:
+
+```bash
+uv run python manage.py capture_operational_snapshot
+```
+
+It photographs the open FULL portfolio once, for one day, and is idempotent per
+date. It wants a daily run in production — `0 3 * * *` — installed as a
+deployment step. There is deliberately no backfill: pointing it at last March
+would write today's portfolio under March's date, which is today's picture with
+a false caption.
+
+See [ADR 0017](docs/adr/0017-statistics-and-the-metric-catalogue.md).
+
 ## Tests and checks
 
 Everything below is exactly what CI runs. The test suite needs a PostgreSQL 18
@@ -334,11 +385,13 @@ app/
   audit/                   append-only ChangeEvent and SecurityAuditEvent
   search/                  PostgreSQL search capabilities and extensions
   legacy_import/           ImportBatch and immutable MatterSourceReference
+  submissions/             the canonical outbound Submission and its recipients
+  reporting/               metric catalogue, selectors, Statistika views, snapshots
 docs/
   master-specification.md  authoritative specification
   adr/                     architecture decision records
   data-contracts/          export contract, per-era Excel contracts, snapshot manifest
-  metric-catalog/          metric definition and coverage rules
+  metric-catalog/          the rules metric definitions obey (definitions live in code)
   secure-pilot-gate.md     checklist gating real data
   open-decisions.md        what business owners still have to decide
 static/css/                design tokens and baseline styles

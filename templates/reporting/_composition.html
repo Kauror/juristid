@@ -1,0 +1,96 @@
+{% comment %}
+A composition chart: one CSS bar per segment, each one a link into the records
+behind it.
+
+Every row prints its own number, so the chart is readable without measuring a
+bar. The "unknown" bucket is hatched as well as differently coloured, so the
+distinction survives a monochrome print and a colour-vision difference. Beneath
+it, `Vaata tabelina` opens exact values — a reader must never have to estimate
+from geometry (master specification 17.8, 18.10; Stage-2E brief 46, 60).
+{% endcomment %}
+
+<section class="chart" aria-labelledby="chart-{{ item.result.key }}-heading">
+  <div class="chart__head">
+    <h3 class="chart__title" id="chart-{{ item.result.key }}-heading">
+      {{ item.result.definition.label_et }}
+    </h3>
+    <span class="muted">
+      {% if item.result.definition.respects_period %}{{ reporting.period.label }}{% else %}Kogu korpus{% endif %}
+    </span>
+  </div>
+
+  <p class="chart__summary">{{ item.summary }}</p>
+
+  {% if item.bars %}
+    <div class="barchart">
+      {% for bar in item.bars %}
+        {% if bar.url %}
+          <a class="barchart__row {% if bar.is_unknown %}barchart__row--unknown{% endif %}"
+             href="{{ bar.url }}">
+            <span class="barchart__label" title="{{ bar.label }}">{{ bar.label }}</span>
+            <span class="barchart__track">
+              <span class="barchart__fill" style="width:{{ bar.width_css }}%"></span>
+            </span>
+            <span class="barchart__value">{{ bar.value }}</span>
+          </a>
+        {% else %}
+          <div class="barchart__row {% if bar.is_unknown %}barchart__row--unknown{% endif %}">
+            <span class="barchart__label" title="{{ bar.label }}">{{ bar.label }}</span>
+            <span class="barchart__track">
+              <span class="barchart__fill" style="width:{{ bar.width_css }}%"></span>
+            </span>
+            <span class="barchart__value">{{ bar.value }}</span>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    <details class="chart__fallback">
+      <summary>Vaata tabelina</summary>
+      <div class="tablewrap">
+        <table class="data-table">
+          <caption class="visually-hidden">
+            {{ item.result.definition.label_et }} — täpsed väärtused
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Rühm</th>
+              <th scope="col">Arv</th>
+              <th scope="col">Osakaal</th>
+              <th scope="col">Märkus</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for bar in item.bars %}
+              <tr>
+                <th scope="row">{{ bar.label }}{% if bar.is_unknown %} (määramata){% endif %}</th>
+                <td class="numeric">{{ bar.value }}</td>
+                <td class="numeric">{{ bar.share_text }}</td>
+                <td>{{ bar.note }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  {% else %}
+    <p class="empty">
+      {% if item.result.status == "INSUFFICIENT_DATA" %}
+        Selle näitaja jaoks ei ole veel piisavalt andmeid.
+      {% else %}
+        Valitud filtritega kirjeid ei ole.
+      {% endif %}
+    </p>
+  {% endif %}
+
+  {% for note in item.result.notes %}
+    <p class="metric__note">{{ note }}</p>
+  {% endfor %}
+
+  <details class="definition">
+    <summary class="definition__summary">Kuidas arvutatakse?</summary>
+    <div class="definition__body">
+      {% include "reporting/_definition.html" with definition=item.result.definition result=item.result %}
+    </div>
+  </details>
+</section>

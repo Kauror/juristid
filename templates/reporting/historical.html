@@ -1,0 +1,113 @@
+{% extends "reporting/base.html" %}
+{% block title %}Statistika · Ajalooline materjal · {{ application_name }}{% endblock %}
+
+{% comment %}
+Ajalooline materjal — how much institutional memory there is, and its shape.
+
+Two numbers on this page look alike and are not. `Ajaloolisi materjale` counts
+**occurrences**: one file as it sits on one page, so the same bytes attached to
+two pages are two. `Unikaalseid failisisusid` counts distinct SHA-256 values.
+They are shown side by side precisely so nobody has to guess which one a figure
+came from (Stage-2E brief 29).
+
+The section chart is the OneNote filing structure — where somebody put a
+document in 2019 — and is labelled as history, never as a policy area. The
+modern taxonomy is a separate reviewed decision and lives on the Teemad tab
+(Stage-2D brief 9, Stage-2E brief 21).
+{% endcomment %}
+
+{% block page_actions %}
+  <a class="button button--quiet" href="{% url 'reporting:materials' %}?{{ filter_query }}">
+    Materjalide loend
+  </a>
+  <a class="button button--quiet" href="{{ export_url }}">Laadi CSV</a>
+{% endblock %}
+
+{% block statistics %}
+  <section aria-labelledby="ajalugu-naitajad-heading">
+    <h2 class="sectionlabel" id="ajalugu-naitajad-heading">Maht</h2>
+    <div class="metricgrid">
+      {% for result in cards %}
+        {% include "reporting/_metric.html" with result=result %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="ajalugu-jaotus-heading">
+    <h2 class="sectionlabel" id="ajalugu-jaotus-heading">Jaotused</h2>
+    <div class="chartgrid">
+      {% for item in compositions %}
+        {% include "reporting/_composition.html" with item=item %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="ajalugu-allikaaeg-heading">
+    <h2 class="sectionlabel" id="ajalugu-allikaaeg-heading">Lähteallika ajalugu</h2>
+    <p class="chart__summary">
+      OneNote'i lehe enda ajatempel. See ei ole teema aruandlusaasta ja neid kahte
+      ei liideta.
+    </p>
+    <div class="chartgrid">
+      {% for item in trends %}
+        {% include "reporting/_trend.html" with item=item %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="ajalugu-jaotused-heading">
+    <h2 class="sectionlabel" id="ajalugu-jaotused-heading">Jaotuse kuju</h2>
+    <p class="chart__summary">
+      Mediaan ja protsentiilid, mitte aritmeetiline keskmine: enamikul lehtedel on
+      käputäis faile ja ühel neist sadu.
+    </p>
+    <div class="chartgrid">
+      {% for result in distributions %}
+        <section class="chart" aria-labelledby="dist-{{ result.key }}-heading">
+          <div class="chart__head">
+            <h3 class="chart__title" id="dist-{{ result.key }}-heading">
+              {{ result.definition.label_et }}
+            </h3>
+            <span class="muted">N = {{ result.distribution.n }}</span>
+          </div>
+          {% if result.distribution and not result.distribution.is_empty %}
+            <div class="distribution">
+              <span class="distribution__cell">
+                <span class="distribution__key">Mediaan</span>
+                <span class="distribution__number">{{ result.distribution.median|floatformat:1 }}</span>
+              </span>
+              <span class="distribution__cell">
+                <span class="distribution__key">p75</span>
+                <span class="distribution__number">{{ result.distribution.p75|floatformat:0 }}</span>
+              </span>
+              <span class="distribution__cell">
+                <span class="distribution__key">p90</span>
+                <span class="distribution__number">{{ result.distribution.p90|floatformat:0 }}</span>
+              </span>
+              <span class="distribution__cell">
+                <span class="distribution__key">p95</span>
+                <span class="distribution__number">{{ result.distribution.p95|floatformat:0 }}</span>
+              </span>
+              <span class="distribution__cell">
+                <span class="distribution__key">Suurim</span>
+                <span class="distribution__number">{{ result.distribution.maximum }}</span>
+              </span>
+              <span class="distribution__cell">
+                <span class="distribution__key">Kokku</span>
+                <span class="distribution__number">{{ result.distribution.total }}</span>
+              </span>
+            </div>
+          {% else %}
+            <p class="empty">Kirjeid ei ole.</p>
+          {% endif %}
+          <details class="definition">
+            <summary class="definition__summary">Kuidas arvutatakse?</summary>
+            <div class="definition__body">
+              {% include "reporting/_definition.html" with definition=result.definition result=result %}
+            </div>
+          </details>
+        </section>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

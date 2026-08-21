@@ -27,6 +27,24 @@ class MatterOrigin(models.TextChoices):
     OTHER = "OTHER", "Muu"
 
 
+#: Origins whose ``reporting_year`` may be read as a *reporting* year.
+#:
+#: ``LEGACY_ONENOTE`` is deliberately absent. The historical importer fills a
+#: OneNote-only Matter's ``reporting_year`` from the page's own
+#: ``source_created_at``, which is the right thing for it to do — it is the only
+#: date that page has. It is not a reporting year: nobody filed that matter
+#: under it, and a page edited in 2021 about a 2018 draft would be reported as
+#: 2021 work. So a Matter-by-year statistic places those in *Teadmata aasta*,
+#: and the page timestamps are analysed separately as source history
+#: (master specification 19.4, Stage-2E brief 14, 15).
+REGISTER_YEAR_ORIGINS: tuple[str, ...] = (
+    MatterOrigin.NATIVE.value,
+    MatterOrigin.LEGACY_IMPORT.value,
+    MatterOrigin.PROMOTED_LEGACY.value,
+    MatterOrigin.OTHER.value,
+)
+
+
 class DataQualityTier(models.TextChoices):
     """How much of this record has been verified (master specification 19.6)."""
 

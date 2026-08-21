@@ -11,6 +11,10 @@ urlpatterns = [
         "",
         include(("app.legacy_import.urls", "legacy_import"), namespace="legacy_import"),
     ),
+    path(
+        "statistika/",
+        include(("app.reporting.urls", "reporting"), namespace="reporting"),
+    ),
     path("konto/", include(("app.accounts.urls", "accounts"), namespace="accounts")),
     path(
         "organisatsioonid/",

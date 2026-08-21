@@ -56,6 +56,19 @@ HISTORICAL_INTRODUCTION = "Ettepaneku eestikeelne variant:"
 HISTORICAL_FILENAME = "seisukoht-2019.asice"
 CANDIDATE_PAGE_TITLE = "Alkoholiaktsiisi töörühma märkmed"
 
+#: The Statistika world. Three records the tabs need in order to say anything
+#: at all: something genuinely late, something formally sent, and an
+#: unclassified Matter so the *Klassifitseerimata* bucket is not empty
+#: (Stage-2E brief 69).
+OVERDUE_TITLE = "Tähtaja ületanud sünteetiline teema"
+SUBMISSION_TITLE = "Sünteetiline arvamus ministeeriumile"
+#: A signed container, not a PDF, and for two reasons. It is what a Chamber
+#: opinion actually goes out as; and a synthetic stub with a `.pdf` extension is
+#: a *broken* PDF, which the extraction worker correctly reports as a failure —
+#: putting a false entry in the Andmekvaliteet queue the browser suite asserts
+#: is empty. Found by the first CI round.
+SUBMISSION_FILENAME = "arvamus-2026.asice"
+
 
 class Command(BaseCommand):
     help = "Create the deterministic synthetic world the Playwright suite asserts against."
@@ -152,7 +165,54 @@ class Command(BaseCommand):
         )
 
         self._historical_world(visible)
+        self._statistics_world(visible, martin, ministry)
         self.stdout.write(self.style.SUCCESS("E2E world ready."))
+
+    def _statistics_world(self, visible: Matter, martin: Any, ministry: Any) -> None:
+        """The records the Statistika tabs assert on.
+
+        Kept to three, and each one is there because a tab would otherwise show
+        an honest but untestable emptiness: a metric with no records at all
+        reports *insufficient data*, which is correct and proves nothing about
+        the page (Stage-2E brief 69).
+        """
+        from app.submissions.services import (
+            attach_final_evidence,
+            create_submission,
+            mark_submission_sent,
+        )
+
+        overdue = create_matter(
+            title=OVERDUE_TITLE,
+            actor=martin,
+            owner=martin,
+            track=Track.DOMESTIC,
+            source_organisation=ministry,
+            received_date=date.today() - timedelta(days=40),
+        )
+        set_next_action(
+            matter=overdue,
+            text="Saada arvamus ministeeriumile",
+            kind=ActionKind.DO,
+            date_semantics=DateSemantics.DEADLINE,
+            target_date=date.today() - timedelta(days=3),
+            actor=martin,
+        )
+
+        submission = create_submission(
+            matter=visible,
+            title=SUBMISSION_TITLE,
+            actor=martin,
+            recipients=[ministry],
+        )
+        attach_final_evidence(
+            submission=submission,
+            content=bytes([80, 75, 3, 4]) + b" synthetic e2e signed opinion",
+            original_filename=SUBMISSION_FILENAME,
+            mime_type="application/vnd.etsi.asic-e+zip",
+            actor=martin,
+        )
+        mark_submission_sent(submission=submission, actor=martin, channel="EIS")
 
     def _historical_world(self, matter: Matter) -> None:
         """A OneNote page, its file, and one decision nobody has made yet.
@@ -309,4 +369,22 @@ class Command(BaseCommand):
             score=0.44,
             match_signals="pealkirja osaline kattuvus; sama aasta",
             explanation="review-required.csv:2019_44",
+        )
+        # A second candidate, in a class nothing decides, and on a *different*
+        # page. Two things depend on that: the review-required one above is
+        # settled by `test_an_operator_settles_a_match`, so the statistics suite
+        # needs one no other test consumes; and that test finds its card by the
+        # page title, so a second card carrying the same title makes its
+        # locator ambiguous. Two register rows pointing at one page is what a
+        # CONFLICT is, so this is where it belongs anyway.
+        HistoricalMatchCandidate.objects.create(
+            source_page=page,
+            matter=matter,
+            excel_reference="2019_45",
+            excel_title="Alkoholiaktsiisi eelnõu, teine rida",
+            candidate_class=CandidateClass.CONFLICT,
+            score=0.51,
+            match_signals="kaks rida osutavad samale lehele",
+            conflicts="2019_44 vs 2019_45",
+            explanation="conflicts.csv:2019_45",
         )

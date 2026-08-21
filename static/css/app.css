@@ -2587,3 +2587,349 @@
   color: var(--text-muted);
   font-size: var(--typography-size-meta);
 }
+
+/* ====================================================================
+ * Statistika
+ *
+ * Charts are CSS bars and one inline SVG polyline, drawn from geometry the
+ * server computed. No chart library and no client-side aggregation, so what is
+ * on screen is what the selectors counted (docs/adr/0017).
+ *
+ * Nothing here carries meaning in colour alone. Every bar prints its own
+ * number, an "unknown" bucket is hatched *and* labelled, and each chart has a
+ * data table beneath it.
+ * ==================================================================== */
+
+.metricgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--spacing-3);
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-15);
+  padding: var(--spacing-4);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  min-width: 0;
+}
+
+.metric__label {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.metric__value {
+  font-size: var(--typography-size-page-title);
+  font-weight: var(--typography-weight-bold);
+  line-height: var(--typography-line-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+a.metric__value:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+/* A metric that declined to answer says so in words, in the place the number
+   would have been. A dash or a zero would both be read as a measurement. */
+.metric__unavailable {
+  font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-2) var(--spacing-25);
+}
+
+.metric__basis,
+.metric__coverage,
+.metric__note {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.metric__note {
+  margin: 0;
+  max-width: none;
+}
+
+.metric__coverage strong {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.coveragebar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-hover);
+  overflow: hidden;
+}
+
+.coveragebar__fill {
+  display: block;
+  height: 100%;
+  background: var(--accent-primary);
+}
+
+.definition {
+  margin-top: var(--spacing-1);
+}
+
+.definition__summary {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.definition__summary:hover {
+  color: var(--text-primary);
+}
+
+.definition__body {
+  margin-top: var(--spacing-2);
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.definition__body dt {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-muted);
+  margin-top: var(--spacing-15);
+}
+
+.definition__body dd {
+  margin: 0;
+}
+
+/* -- charts ---------------------------------------------------------- */
+
+.chartgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: var(--spacing-4);
+  align-items: start;
+}
+
+.chart {
+  padding: var(--spacing-4);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  min-width: 0;
+}
+
+.chart__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-1);
+}
+
+.chart__title {
+  font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.chart__summary {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  margin: 0 0 var(--spacing-3);
+  max-width: none;
+}
+
+.barchart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-15);
+}
+
+.barchart__row {
+  display: grid;
+  grid-template-columns: minmax(90px, 34%) 1fr auto;
+  align-items: center;
+  gap: var(--spacing-25);
+  text-decoration: none;
+  color: var(--text-primary);
+  padding: 2px var(--spacing-1);
+  border-radius: var(--radius-sm);
+}
+
+a.barchart__row:hover {
+  background: var(--surface-hover);
+}
+
+.barchart__label {
+  font-size: var(--typography-size-meta);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barchart__track {
+  height: 10px;
+  background: var(--surface-hover);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.barchart__fill {
+  display: block;
+  height: 100%;
+  background: var(--accent-primary);
+}
+
+/* An "unknown" bucket is hatched as well as differently coloured, so the
+   distinction survives a monochrome print and a colour-vision difference. */
+.barchart__row--unknown .barchart__fill {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--primitive-neutral-400),
+    var(--primitive-neutral-400) 3px,
+    var(--surface-hover) 3px,
+    var(--surface-hover) 6px
+  );
+}
+
+.barchart__value {
+  font-size: var(--typography-size-meta);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--typography-weight-semibold);
+  min-width: 4ch;
+  text-align: right;
+}
+
+.trend {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.trend__line {
+  fill: none;
+  stroke: var(--accent-primary);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+.trend__point {
+  fill: var(--accent-primary);
+}
+
+.trend__axis {
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+}
+
+.trend__tick {
+  fill: var(--text-muted);
+  font-size: 11px;
+}
+
+.trend__hit {
+  fill: transparent;
+}
+
+.trend__hit:hover + .trend__point,
+.trend__hit:focus-visible + .trend__point {
+  fill: var(--accent-hover);
+  r: 6;
+}
+
+.chart__fallback {
+  margin-top: var(--spacing-3);
+}
+
+.chart__fallback summary {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* -- data-quality queues --------------------------------------------- */
+
+.queuelist {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.queuerow {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--spacing-3);
+  align-items: baseline;
+  padding: var(--spacing-25) var(--spacing-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--status-warning);
+  border-radius: var(--radius-sm);
+}
+
+/* A coverage limitation is not a job. Different border, different word, so the
+   list of things to do is not padded with things nobody can do. */
+.queuerow--note {
+  border-left-color: var(--border-strong);
+}
+
+.queuerow__count {
+  font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-bold);
+  font-variant-numeric: tabular-nums;
+  min-width: 5ch;
+  text-align: right;
+}
+
+.queuerow__label {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.queuerow__explanation {
+  display: block;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.distribution {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+}
+
+.distribution__cell {
+  text-align: center;
+}
+
+.distribution__key {
+  display: block;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.distribution__number {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--typography-weight-semibold);
+}
+
+.statspage__actions {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: center;
+  flex-wrap: wrap;
+}

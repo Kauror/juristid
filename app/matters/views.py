@@ -21,7 +21,7 @@ from typing import Any
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Q
+from django.db.models import Count, Exists, OuterRef, Q
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -36,10 +36,11 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.uploads import UploadRejected
+from app.legacy_import.source_pages import MatterSourcePage
 from app.matters import selectors
 from app.matters.dashboard import build_dashboard
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import RecordMode
+from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.forms import (
     CloseMatterForm,
     ComposerForm,
@@ -256,6 +257,49 @@ FILTER_LABELS = {
     "valdkond": "Valdkond",
     "silt": "Silt",
     "liik": "Kirje liik",
+    # Three dimensions the register gained so that a statistic can open the
+    # exact population it counted. Each one is the *same* condition the chart
+    # used — imported from `selectors`, not restated — because a drill-through
+    # that filters slightly differently from the bar above it is worse than no
+    # drill-through at all (Stage-2E brief 38, 66).
+    "aasta": "Aruandlusaasta",
+    "paritolu": "Päritolu",
+    "allikas": "Ajalooline allikas",
+    "tegevus": "Järgmine tegevus",
+    # Two organisation filters, never one. `KELLELT` and `KELLELE` are
+    # different facts and the register itself changed which one its single
+    # counterparty column meant in 2020, so a combined filter would answer a
+    # question nobody asked (Stage-2E brief 27).
+    "saatja": "Algataja või saatja",
+    "adressaat": "Adressaat",
+}
+
+#: What `?allikas=` means. A word rather than a boolean, because `allikas=0`
+#: reads as "source number zero" in a URL somebody is editing by hand.
+SOURCE_PRESENT = "on"
+SOURCE_ABSENT = "puudub"
+#: More than one archived page claims this Matter. A separate value rather than
+#: a count parameter because it is the only threshold any statistic asks about,
+#: and 402 Matters in the real corpus have it (Stage-2D brief 12).
+SOURCE_SEVERAL = "mitu"
+
+#: How each `?tegevus=` value reads in a filter chip. Wording matters here: a
+#: WAIT whose review date has passed is "ülevaatus käes", never "hilinenud".
+#: The two organisation directions, as URL parameters. Never merged: the same
+#: register column meant the sender until 2019 and the addressee from 2020.
+ORGANISATION_FILTERS = {
+    "saatja": "source_organisation",
+    "adressaat": "addressee_organisation",
+}
+
+NEXT_ACTION_LABELS = {
+    "puudub": "Puudub",
+    "teen": "Teen",
+    "ootan": "Ootan",
+    "jalgin": "Jälgin",
+    "hilinenud": "Tähtaeg möödas",
+    "ootan-ulevaatus": "Ootan — ülevaatus käes",
+    "jalgin-ulevaatus": "Jälgin — ülevaatus käes",
 }
 
 STATUS_SEGMENTS = (
@@ -298,7 +342,15 @@ def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
 
 
 def _filter_display(request: HttpRequest, name: str, value: str) -> str:
-    """Show the reader a name, not a primary key."""
+    """Show the reader a name, not a primary key.
+
+    The `puudub` sentinel is resolved *first*. Every branch below looks a value
+    up by primary key, and `pk="puudub"` is not a failed lookup — it is a
+    ValidationError that takes the whole register page down with it. Found by
+    the first CI round, on `?vastutaja=puudub`.
+    """
+    if value == selectors.MISSING:
+        return "Määramata"
     if name == "vastutaja":
         person = User.objects.filter(pk=value).first()
         return person.display_name if person else value
@@ -314,6 +366,20 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         return dict(RecordMode.choices).get(value, value)
     if name == "ulatus":
         return "Minu omad" if value == "minu" else "Kõik nähtavad"
+    if name == "paritolu":
+        labels = dict(MatterOrigin.choices)
+        return ", ".join(labels.get(part, part) for part in value.split(","))
+    if name == "aasta":
+        return "Teadmata aasta" if value == selectors.UNKNOWN_YEAR else value
+    if name == "allikas":
+        if value == SOURCE_SEVERAL:
+            return "Mitu lähtelehte"
+        return "Olemas" if value == SOURCE_PRESENT else "Puudub"
+    if name == "tegevus":
+        return NEXT_ACTION_LABELS.get(value, value)
+    if name in {"saatja", "adressaat"}:
+        organisation = Organisation.objects.filter(pk=value).first()
+        return organisation.name if organisation else value
     return value
 
 
@@ -335,6 +401,33 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
             }
         )
     return chips
+
+
+def _filter_by_reporting_year(queryset: Any, value: str) -> Any:
+    """Apply `?aasta=`, using the same condition the year chart counted with.
+
+    Accepts `YYYY`, `YYYY-YYYY`, or the word that asks for the bucket with no
+    usable year. An unreadable value empties the list rather than being ignored:
+    a filter chip saying "2O24" above the whole register would be a lie the
+    reader has no way to catch.
+    """
+    if value == selectors.UNKNOWN_YEAR:
+        return queryset.filter(selectors.unknown_register_year_q())
+
+    parts = value.split("-")
+    try:
+        if len(parts) == 1:
+            first = last = int(parts[0])
+        elif len(parts) == 2:
+            first, last = int(parts[0]), int(parts[1])
+        else:
+            return queryset.none()
+    except ValueError:
+        return queryset.none()
+
+    if first > last:
+        return queryset.none()
+    return queryset.filter(selectors.register_year_q(start=first, end=last))
 
 
 SORT_FIELDS = {
@@ -363,22 +456,64 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     if scope == "minu":
         queryset = queryset.filter(Q(owner=request.user) | Q(collaborators=request.user))
 
+    # `puudub` is the one word every dimension uses for "this field is empty",
+    # so that the *Määramata* bucket on a chart is a link like any other bar
+    # rather than a number the reader has to take on trust (Stage-2E brief 42).
     if owner_id := params.get("vastutaja"):
-        # A hand-edited URL must not reach the database as a malformed UUID.
-        try:
-            queryset = queryset.filter(owner_id=uuid.UUID(owner_id))
-        except ValueError:
-            queryset = queryset.none()
+        if owner_id == selectors.MISSING:
+            queryset = queryset.filter(owner__isnull=True)
+        else:
+            # A hand-edited URL must not reach the database as a malformed UUID.
+            try:
+                queryset = queryset.filter(owner_id=uuid.UUID(owner_id))
+            except ValueError:
+                queryset = queryset.none()
     if stage_key := params.get("hetkeseis"):
-        queryset = queryset.filter(stage__key=stage_key)
+        if stage_key == selectors.MISSING:
+            queryset = queryset.filter(stage__isnull=True)
+        else:
+            queryset = queryset.filter(stage__key=stage_key)
     if track := params.get("menetlusliik"):
-        queryset = queryset.filter(track=track)
+        queryset = queryset.filter(track="" if track == selectors.MISSING else track)
     if area_key := params.get("valdkond"):
-        queryset = queryset.filter(policy_areas__key=area_key)
+        if area_key == selectors.MISSING:
+            queryset = queryset.filter(policy_areas__isnull=True)
+        else:
+            queryset = queryset.filter(policy_areas__key=area_key)
     if tag_key := params.get("silt"):
         queryset = queryset.filter(tags__key=tag_key)
     if mode := params.get("liik"):
         queryset = queryset.filter(record_mode=mode)
+    if origin := params.get("paritolu"):
+        # Comma-separated, because one statistic legitimately means two origins:
+        # a register row is `LEGACY_IMPORT` or an archive row somebody activated
+        # (`PROMOTED_LEGACY`), and the bar counting both has to open both.
+        queryset = queryset.filter(origin__in=origin.split(","))
+    if year := params.get("aasta"):
+        queryset = _filter_by_reporting_year(queryset, year)
+    if source := params.get("allikas"):
+        if source == SOURCE_SEVERAL:
+            queryset = queryset.annotate(
+                source_page_count=Count("source_pages", distinct=True)
+            ).filter(source_page_count__gte=2)
+        else:
+            has_page = Exists(MatterSourcePage.objects.filter(matter=OuterRef("pk")))
+            queryset = queryset.annotate(has_source_page=has_page).filter(
+                has_source_page=source == SOURCE_PRESENT
+            )
+    if action_filter := params.get("tegevus"):
+        queryset = selectors.filter_by_next_action(queryset, request.user, action_filter)
+    for parameter, field in ORGANISATION_FILTERS.items():
+        raw = params.get(parameter)
+        if not raw:
+            continue
+        if raw == selectors.MISSING:
+            queryset = queryset.filter(**{f"{field}__isnull": True})
+            continue
+        try:
+            queryset = queryset.filter(**{f"{field}_id": uuid.UUID(raw)})
+        except ValueError:
+            queryset = queryset.none()
 
     sort = params.get("jarjestus", "reference")
     queryset = queryset.order_by(*SORT_FIELDS.get(sort, SORT_FIELDS["reference"]), "-created_at")
@@ -408,6 +543,12 @@ def matter_list(request: HttpRequest) -> HttpResponse:
                 "valdkond": params.get("valdkond", ""),
                 "silt": params.get("silt", ""),
                 "liik": params.get("liik", ""),
+                "paritolu": params.get("paritolu", ""),
+                "aasta": params.get("aasta", ""),
+                "allikas": params.get("allikas", ""),
+                "tegevus": params.get("tegevus", ""),
+                "saatja": params.get("saatja", ""),
+                "adressaat": params.get("adressaat", ""),
                 "jarjestus": sort,
             },
             "owners": User.objects.filter(is_active=True).order_by("display_name"),

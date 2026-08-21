@@ -1,0 +1,73 @@
+{% extends "reporting/base.html" %}
+{% block title %}Statistika · Ajalooline materjal · {{ application_name }}{% endblock %}
+
+{% comment %}
+The drill-through behind every historical-material number.
+
+One row per **occurrence** — one file as it sits on one page — which is what the
+headline count counts. The SHA-256 column is shown so a reader can see for
+themselves which rows are the same bytes twice, rather than having to trust that
+the "unique contents" figure elsewhere means what it says (Stage-2E brief 29).
+
+Filenames and page titles come from the archive and are escaped like any other
+database text. Historical OneNote content never becomes markup.
+{% endcomment %}
+
+{% block page_actions %}
+  <a class="button button--quiet" href="{{ export_url }}">Laadi CSV</a>
+{% endblock %}
+
+{% block statistics %}
+  <section aria-labelledby="materjalide-loend-heading">
+    <h2 class="sectionlabel" id="materjalide-loend-heading">
+      Ajaloolised materjalid
+      <span class="sectionlabel__count">{{ total }}</span>
+    </h2>
+
+    <div class="filterbar" style="margin-bottom:var(--spacing-3)">
+      {% if selection.file_type %}
+        <span class="filterchip">
+          <span class="filterchip__label">Failitüüp:</span>
+          <span>{{ selection.file_type }}</span>
+        </span>
+      {% endif %}
+      {% if selection.state %}
+        <span class="filterchip">
+          <span class="filterchip__label">Seisund:</span>
+          <span>{{ state_label }}</span>
+        </span>
+      {% endif %}
+    </div>
+
+    {% if page.object_list %}
+      <div class="tablewrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Fail</th>
+              <th scope="col">Sektsioon</th>
+              <th scope="col">Leht</th>
+              <th scope="col">Maht</th>
+              <th scope="col">Sisu SHA-256</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for resource in page.object_list %}
+              <tr>
+                <td class="table__title">{{ resource.original_filename }}</td>
+                <td>{{ resource.source_page.source_section }}</td>
+                <td>{{ resource.source_page.title|default:"—" }}</td>
+                <td class="numeric">{{ resource.size_bytes }}</td>
+                <td class="mono">{{ resource.sha256|slice:":12" }}…</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% include "components/pagination.html" with page=page query_string=query_string %}
+    {% else %}
+      <p class="empty">Valitud filtritega materjale ei ole.</p>
+    {% endif %}
+  </section>
+{% endblock %}

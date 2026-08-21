@@ -1,0 +1,74 @@
+{% extends "reporting/base.html" %}
+{% block title %}Statistika · Definitsioonid · {{ application_name }}{% endblock %}
+
+{% comment %}
+The whole metric catalogue as one page.
+
+The same content the "Kuidas arvutatakse?" panels show, gathered so a definition
+can be linked to in a message without asking somebody to find the card it
+belongs to. It is generated from the catalogue itself, so it cannot describe a
+rule the code does not follow.
+
+The last section lists what is deliberately *not* measured. A missing metric
+with a stated reason is a great deal more useful than a number nobody can
+defend (Stage-2E brief 58, 78).
+{% endcomment %}
+
+{% block statistics %}
+  <section aria-labelledby="definitsioonid-heading">
+    <h2 class="sectionlabel" id="definitsioonid-heading">
+      Näitajate definitsioonid
+      <span class="sectionlabel__count">{{ definitions|length }}</span>
+    </h2>
+    <p class="chart__summary">
+      Iga näitaja definitsioon on koodis, versioonitud ja üle vaadatud. Ühtki
+      arvu ei kuvata ilma siinse kirjeta.
+    </p>
+
+    <div class="chartgrid">
+      {% for definition in definitions %}
+        <section class="chart" aria-labelledby="def-{{ definition.key }}-heading">
+          <div class="chart__head">
+            <h3 class="chart__title" id="def-{{ definition.key }}-heading">
+              {{ definition.label_et }}
+            </h3>
+            <span class="muted mono">{{ definition.qualified_key }}</span>
+          </div>
+          <div class="definition__body">
+            {% include "reporting/_definition.html" with definition=definition result=None %}
+          </div>
+        </section>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="edasilykatud-heading">
+    <h2 class="sectionlabel" id="edasilykatud-heading">Teadlikult mõõtmata</h2>
+    <div class="notyet">
+      <dl>
+        {% for key, reason in deferred %}
+          <dt class="mono">{{ key }}</dt>
+          <dd>{{ reason }}</dd>
+        {% endfor %}
+      </dl>
+    </div>
+  </section>
+
+  <section aria-labelledby="keelatud-heading">
+    <h2 class="sectionlabel" id="keelatud-heading">Mida see süsteem kunagi ei mõõda</h2>
+    <div class="notyet">
+      <p>
+        Juristi tootlikkus või tulemuslikkus teemade ja arvamuste arvust.
+        Töökoormus avatud teemade arvust. „Kõige produktiivsem“ jurist.
+        Ajalooline vastamismäär registri kokkusobimatutest arvudest. Koja
+        võiduprotsent, mõjuskoor või ministeeriumide edetabel. Teemade arvust
+        tuletatud arvamuste maht. Segatud menetlusliikide keskmine kestus.
+      </p>
+      <p>
+        Need ei ole tegemata — need on keelatud, sest iga üks neist annaks arvu,
+        mida keegi ei saa kontrollida ja mida hakataks juhtima
+        (spetsifikatsioon 18.8).
+      </p>
+    </div>
+  </section>
+{% endblock %}
