@@ -181,6 +181,19 @@ def _shared_gate_problems() -> list[Error | Warning]:
             )
         )
 
+    if not settings.DEBUG and not getattr(settings, "SECURE_PROXY_SSL_HEADER", None):
+        problems.append(
+            Warning(
+                "The shared gate is on but nothing tells Django the connection is secure.",
+                hint=(
+                    "Set DJANGO_BEHIND_TLS_PROXY=1 where a proxy terminates TLS. Without "
+                    "it no HSTS header is sent, request.is_secure() is False, and CSRF "
+                    "skips its referer check."
+                ),
+                id="juristid.E014",
+            )
+        )
+
     if not settings.DEBUG and not settings.SESSION_COOKIE_SECURE:
         problems.append(
             Error(
