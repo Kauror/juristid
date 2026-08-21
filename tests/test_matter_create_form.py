@@ -290,3 +290,38 @@ def test_the_form_reports_a_refused_file_instead_of_silently_staying_put(signed_
     assert response.status_code == 400
     messages = [str(m) for m in response.context["messages"]]
     assert any("laiend" in text.lower() for text in messages), messages
+
+
+def test_the_whole_field_set_a_browser_sends_is_accepted(signed_in, evidence_root):
+    """Everything the rendered page posts, including the empty NextAction block.
+
+    The browser submits every field on the form — the prefilled date, the
+    NextAction selects with their initial values, the unticked "Muu". A test
+    that posts only a title exercises a POST no browser ever makes.
+    """
+    from django.utils import timezone as tz
+
+    signed_in.post(
+        CREATE,
+        {
+            "title": "Nagu brauser saadab",
+            "owner": "",
+            "received_date": tz.localdate().isoformat(),
+            "source_organisation": "",
+            "source_organisation_other": "",
+            "policy_area_other": "",
+            "stage": "",
+            "track": "",
+            "addressee_organisation": "",
+            "response_deadline": "",
+            "next-text": "",
+            "next-kind": "DO",
+            "next-date_semantics": "DEADLINE",
+            "next-target_date": "",
+            "next-responsible": "",
+            "files": upload("kaaskiri.txt", "Näidiskaaskiri.".encode(), "text/plain"),
+        },
+    )
+
+    matter = Matter.objects.get(title="Nagu brauser saadab")
+    assert DocumentVersion.objects.filter(document__matter=matter).count() == 1

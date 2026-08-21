@@ -273,7 +273,29 @@ FILTER_LABELS = {
     # question nobody asked (Stage-2E brief 27).
     "saatja": "Algataja või saatja",
     "adressaat": "Adressaat",
+    # Stage 2E.1. The convenience filter sits *beside* the two precise ones and
+    # never replaces them: `asutus` asks "was this body involved at all", which
+    # is the question somebody has when they cannot remember which direction a
+    # letter went (Stage-2E.1 brief 11F).
+    "asutus": "Asutus",
+    "saabus_alates": "Saabus alates",
+    "saabus_kuni": "Saabus kuni",
+    "tahtaeg_alates": "Tähtaeg alates",
+    "tahtaeg_kuni": "Tähtaeg kuni",
+    "materjalid": "Materjalid",
 }
+
+#: What `?materjalid=` reads as in a chip.
+MATERIAL_LABELS = {
+    selectors.MATERIALS_PRESENT: "Failid olemas",
+    selectors.MATERIALS_ABSENT: "Failid puuduvad",
+}
+
+#: Every filter parameter the register understands, plus the sort and the free
+#: text. Used to decide whether `Tühjenda kõik` has anything to clear and to
+#: build the hidden inputs the search box carries, so a dimension added to
+#: `FILTER_LABELS` is picked up by both without a second list to keep in step.
+REGISTER_PARAMS = (*FILTER_LABELS, "olek", "jarjestus", "q")
 
 #: What `?allikas=` means. A word rather than a boolean, because `allikas=0`
 #: reads as "source number zero" in a URL somebody is editing by hand.
@@ -378,10 +400,27 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         return "Olemas" if value == SOURCE_PRESENT else "Puudub"
     if name == "tegevus":
         return NEXT_ACTION_LABELS.get(value, value)
-    if name in {"saatja", "adressaat"}:
+    if name in {"saatja", "adressaat", "asutus"}:
         organisation = Organisation.objects.filter(pk=value).first()
         return organisation.name if organisation else value
+    if name == "materjalid":
+        return MATERIAL_LABELS.get(value, value)
+    if name in DATE_FILTERS:
+        # The stored value is ISO because that is what `<input type=date>`
+        # submits; the chip reads it back the way Estonians write dates.
+        parsed = parse_date(value)
+        return f"{parsed:%d.%m.%Y}" if parsed else value
     return value
+
+
+#: Which parameters hold a date, and which column each pair narrows. Both ends
+#: of each pair are inclusive — see `selectors.date_range_q`.
+DATE_FILTERS = {
+    "saabus_alates": ("received_date", "start"),
+    "saabus_kuni": ("received_date", "end"),
+    "tahtaeg_alates": ("response_deadline", "start"),
+    "tahtaeg_kuni": ("response_deadline", "end"),
+}
 
 
 def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
