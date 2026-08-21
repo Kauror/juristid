@@ -14,7 +14,6 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, HttpRequest, HttpResponse, HttpResponseBase
 from django.shortcuts import get_object_or_404, redirect, render
-from django.utils.http import urlsafe_base64_encode
 from django.views.decorators.http import require_http_methods
 
 from app.accounts import shared_gate
@@ -22,6 +21,7 @@ from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 from app.core.decorators import gate_required, viewer_for
 from app.core.errors import DomainError
+from app.core.http import content_disposition
 from app.documents import inline
 from app.documents.email_intake import attachments_of, parent_email_of
 from app.documents.enums import DerivativeKind, DerivativeStatus, DocumentRole
@@ -149,11 +149,10 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
         filename=version.original_filename,
     )
     response["X-Content-Type-Options"] = "nosniff"
-    response["Content-Disposition"] = (
-        f"attachment; filename*=UTF-8''{urlsafe_base64_encode(version.original_filename.encode())}"
-        if not version.original_filename.isascii()
-        else f'attachment; filename="{version.original_filename}"'
-    )
+    # Set explicitly rather than left to `FileResponse`, because the filename
+    # also has to be safe: an upload's name is whatever the multipart part
+    # claimed, quotes and directory separators included (app/core/http.py).
+    response["Content-Disposition"] = content_disposition("attachment", version.original_filename)
     return response
 
 

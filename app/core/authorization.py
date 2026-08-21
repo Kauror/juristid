@@ -25,7 +25,7 @@ import uuid
 from dataclasses import dataclass
 
 from django.apps import apps
-from django.db.models import Case, CharField, Q, QuerySet, Value, When
+from django.db.models import Case, CharField, Count, Q, QuerySet, Value, When
 from django.utils import timezone
 
 from app.accounts.enums import UserRole
@@ -380,3 +380,29 @@ def apply[QuerySetT: QuerySet](queryset: QuerySetT, condition: Q) -> QuerySetT:
     if not condition.children and not condition.negated:
         return queryset
     return queryset.filter(condition).distinct()
+
+
+def scoped_count() -> Count:
+    """``Count("id", distinct=True)`` — the only counter safe over a scoped set.
+
+    The companion to :func:`apply`, and it lives here because the reason for it
+    lives here. ``matter_visibility_q`` reaches RESTRICTED work through the
+    ``collaborators`` many-to-many, so applying it emits a ``LEFT OUTER JOIN``
+    on the through table: one Matter with three collaborators is three rows.
+    ``apply`` answers that with ``.distinct()``, which fixes ``.count()`` and
+    every row it hands back — and does **nothing** for an aggregate, because
+    ``COUNT(id)`` inside a ``GROUP BY`` counts join rows before the outer
+    ``DISTINCT`` is ever reached.
+
+    So a scoped queryset has two counting rules, not one, and only the second
+    needs remembering. Every ``values(...).annotate(...)`` over anything that
+    passed through ``apply`` must count distinctly or it publishes a number
+    inflated by however many colleagues happen to share the file.
+
+    The failure is invisible in exactly the wrong way. A DEPARTMENT_HEAD sees
+    ``Q()`` — no join, no fan-out — so the person most likely to review the
+    dashboard is the one person for whom it is right; a specialist opening the
+    same page gets bars that overshoot the headline beside them and a
+    drill-through that opens a shorter list than the bar it came from.
+    """
+    return Count("id", distinct=True)
