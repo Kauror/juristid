@@ -56,6 +56,14 @@ HISTORICAL_INTRODUCTION = "Ettepaneku eestikeelne variant:"
 HISTORICAL_FILENAME = "seisukoht-2019.asice"
 CANDIDATE_PAGE_TITLE = "Alkoholiaktsiisi töörühma märkmed"
 
+#: The Statistika world. Three records the tabs need in order to say anything
+#: at all: something genuinely late, something formally sent, and an
+#: unclassified Matter so the *Klassifitseerimata* bucket is not empty
+#: (Stage-2E brief 69).
+OVERDUE_TITLE = "Tähtaja ületanud sünteetiline teema"
+SUBMISSION_TITLE = "Sünteetiline arvamus ministeeriumile"
+SUBMISSION_FILENAME = "arvamus-2026.pdf"
+
 
 class Command(BaseCommand):
     help = "Create the deterministic synthetic world the Playwright suite asserts against."
@@ -152,7 +160,54 @@ class Command(BaseCommand):
         )
 
         self._historical_world(visible)
+        self._statistics_world(visible, martin, ministry)
         self.stdout.write(self.style.SUCCESS("E2E world ready."))
+
+    def _statistics_world(self, visible: Matter, martin: Any, ministry: Any) -> None:
+        """The records the Statistika tabs assert on.
+
+        Kept to three, and each one is there because a tab would otherwise show
+        an honest but untestable emptiness: a metric with no records at all
+        reports *insufficient data*, which is correct and proves nothing about
+        the page (Stage-2E brief 69).
+        """
+        from app.submissions.services import (
+            attach_final_evidence,
+            create_submission,
+            mark_submission_sent,
+        )
+
+        overdue = create_matter(
+            title=OVERDUE_TITLE,
+            actor=martin,
+            owner=martin,
+            track=Track.DOMESTIC,
+            source_organisation=ministry,
+            received_date=date.today() - timedelta(days=40),
+        )
+        set_next_action(
+            matter=overdue,
+            text="Saada arvamus ministeeriumile",
+            kind=ActionKind.DO,
+            date_semantics=DateSemantics.DEADLINE,
+            target_date=date.today() - timedelta(days=3),
+            actor=martin,
+        )
+
+        submission = create_submission(
+            matter=visible,
+            title=SUBMISSION_TITLE,
+            actor=martin,
+            recipients=[ministry],
+        )
+        attach_final_evidence(
+            submission=submission,
+            content=b"%PDF-1.4 sunteetiline arvamus",
+            original_filename=SUBMISSION_FILENAME,
+            mime_type="application/pdf",
+            actor=martin,
+        )
+        mark_submission_sent(submission=submission, actor=martin, channel="EIS")
 
     def _historical_world(self, matter: Matter) -> None:
         """A OneNote page, its file, and one decision nobody has made yet.

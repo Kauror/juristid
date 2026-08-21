@@ -144,3 +144,28 @@ security edge.
 | Whether legacy `.doc` and `.xls` are worth a conversion stack | Department head | When the archive's real composition is known | They are stored and downloadable today, and their contents are not searchable. The answer depends on how many of them there actually are. |
 | Whether a ZIP archive should ever be expanded into Documents | Department head + whoever owns security | Later | Stage 2B stores them whole and deliberately does not unpack. Expansion brings decompression limits, path handling and unclear business meaning, and nobody has yet asked for it. |
 | Retention for derived content, if it differs from the evidence it came from | Privacy/legal | With the retention policy | Derivatives are deleted and rebuilt freely today. If extracted text of member correspondence is itself subject to a retention rule, that rule needs saying. |
+
+
+## Decisions taken by the development agent in Stage 2E
+
+| Decision | Why | Reversibility |
+| --- | --- | --- |
+| Metric definitions live in code, not in a table | A definition editable through the product is a definition nobody reviewed, and "who changed the population" becomes unanswerable exactly when somebody disputes a figure. `services.COMPUTERS` is asserted at import to cover the catalogue in both directions. | Low — it is the point of the design |
+| A OneNote-only Matter has no *reporting* year | Its `reporting_year` is the page's own timestamp. The importer is right to record the only date it has; reporting is not entitled to call that a reporting year, so those Matters sit in **Teadmata aasta** and their page dates are analysed separately as source history. | Moderate — one tuple, `REGISTER_YEAR_ORIGINS` |
+| Default period is the current year | The question a lawyer opens the page with is about now. Archive-wide metrics ignore the period and say *kogu korpus* on their own cards, so the default cannot hide the corpus. | High |
+| A file occurrence is the headline material count | The same bytes on two pages are two occurrences, because the corpus contains the thing twice. Distinct SHA-256 is a separate metric shown beside it. | Moderate |
+| Materialisation state is per occurrence, best state across visible links | The corpus-level question is whether a file has been brought across at all. A page shared between Matters can be materialised for one and not the other. | Moderate |
+| CSV is semicolon-delimited UTF-8 with a byte-order mark | A comma-delimited UTF-8 file opens in Tallinn as one column of mojibake, and an export nobody can open is an export nobody uses. | High |
+| No materialized views | None has been justified by a measurement, and adding one before measuring buys a refresh problem. | High |
+| Six new register filters and a `puudub` sentinel | Every chart segment promises a list. Without them the promise could not be kept for the year axis, the origin bars, the *määramata* buckets or the next-action counts. | Moderate — other surfaces may come to depend on them |
+
+## New decisions Stage 2E raises for Koda
+
+| Decision | Owner | When | Notes |
+| --- | --- | --- | --- |
+| Which `SubmissionKind` values count towards the annual report's "kirjalikud arvamused" | Department head + reporting owner | Before the first annual report drawn from this system | The Statistika page shows submissions by kind and deliberately does not add them into one headline figure. The kinds exist; which of them the Chamber counts is a business decision. |
+| Whether the register's `VÄLJA` dates should ever appear in annual reporting | Department head | When the historical numbers are next quoted | They are outbound-date observations with no evidence behind them. They are not Submissions and must never be merged with `Submission.sent_at`. Making them queryable at all is work nobody has asked for yet. |
+| What completeness threshold a duration metric would need | Department head + reporting owner | Before any median response time is published | The result infrastructure supports medians and percentiles. Nothing ships until start and end semantics are precise, the population is homogeneous and the sample is large enough — otherwise `INSUFFICIENT_DATA` is the correct answer. |
+| Which Statistika figures the DashKoda export must reproduce, and to what tolerance | DashKoda owner + reporting owner | Stage 4 | ADR 0007's contract predates the metric catalogue. Now that definitions exist in code, the export can be specified against them rather than against a prose description. |
+| Whether member-feedback counts are worth persisting as columns | Department head | If anyone asks for the number | Deferred in Stage 2E because recovering them means re-parsing raw spreadsheet cells. They would still never become a response rate: asked and answered are independent observations, and the register has rows where more answered than were asked. |
+| Whether the period picker should offer date ranges rather than whole years | Department head + lawyers | After the pages have been used | Whole years match the register's own reporting identity. A day-precision filter over a year-precision fact invites false precision, so it was not built speculatively. |

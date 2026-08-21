@@ -22,6 +22,10 @@ consequences and reversibility.
 | [0011](0011-next-action-and-submission-modelling.md) | NextAction and Submission modelling | Accepted |
 | [0012](0012-legacy-register-import.md) | Legacy register import architecture | Accepted |
 | [0013](0013-search-projection-and-child-content.md) | The search projection, and why child content waits | Accepted |
+| [0014](0014-content-extraction-and-derivatives.md) | Content extraction and rebuildable derivatives | Accepted |
+| [0015](0015-historical-corpus-integration.md) | Historical corpus integration | Accepted |
+| [0016](0016-authentication-modes-and-the-shared-gate.md) | Authentication modes and the shared gate | Accepted |
+| [0017](0017-statistics-and-the-metric-catalogue.md) | Statistics, the metric catalogue and operational snapshots | Accepted, on a feature branch |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -30,3 +34,6 @@ Naming: `NNNN-short-decision-title.md`.
 - 0001–0009 — Stage 0 foundation
 - 0010–0011 — Stage 1 vertical slice
 - 0012–0013 — Stage 2A import and search foundation
+- 0014 — Stage 2B evidence and content intelligence
+- 0015–0016 — Stage 2D historical corpus and authentication modes
+- 0017 — Stage 2E statistics and reporting
