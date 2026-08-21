@@ -11,10 +11,11 @@ from __future__ import annotations
 from typing import Any, cast
 
 from django import forms
-from django.db.models import Count, QuerySet
+from django.db.models import QuerySet
 from django.utils import timezone
 
 from app.accounts.models import User
+from app.core.authorization import scoped_count
 from app.core.enums import Visibility
 from app.matters.entry_enums import EntryKind
 from app.organisations.models import Organisation
@@ -89,7 +90,11 @@ def policy_areas_by_usage(viewer: Any) -> list[PolicyArea]:
         # data is missing rather than like a bug.
         .order_by()
         .values("policy_areas")
-        .annotate(total=Count("policy_areas"))
+        # Distinct *Matters* per area. `Count("policy_areas")` counted the join
+        # rows the visibility predicate produces, so an area used on files with
+        # several collaborators floated to the top of the list for a specialist
+        # and stayed put for the department head (app/core/authorization.py).
+        .annotate(total=scoped_count())
     )
     counts = {row["policy_areas"]: row["total"] for row in usage}
     areas = list(PolicyArea.objects.filter(is_active=True))
@@ -114,7 +119,7 @@ def organisations_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation
         # of one (see `policy_areas_by_usage`).
         .order_by()
         .values("source_organisation")
-        .annotate(total=Count("id"))
+        .annotate(total=scoped_count())
         .order_by("-total")[:limit]
     )
     ranking = {row["source_organisation"]: index for index, row in enumerate(usage)}
