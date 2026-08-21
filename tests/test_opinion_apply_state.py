@@ -303,7 +303,7 @@ def test_linking_an_existing_submission_also_applies_the_candidate(archive_path,
         original_filename=item.name.rsplit("/", 1)[-1],
         mime_type="application/pdf",
         acquired_at=timezone.now(),
-        actor=specialist,
+        uploaded_by=specialist,
     )
     Submission.objects.create(
         matter=matter,
