@@ -28,6 +28,7 @@ consequences and reversibility.
 | [0017](0017-statistics-and-the-metric-catalogue.md) | Statistics, the metric catalogue and operational snapshots | Accepted, on a feature branch |
 | [0018](0018-structured-matter-facts.md) | Structured Matter facts, and the generated department views | Accepted, on a feature branch |
 | [0019](0019-opinion-archive-reconciliation.md) | Reconstructing historical submissions from the opinions archive | Accepted, on a feature branch |
+| [0020](0020-historical-cutover-current-state.md) | The historical cutover, and what a closed archive row may claim | Accepted, on a feature branch |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -41,3 +42,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0017 — Stage 2E statistics and reporting
 - 0018 — Stage 2G structured Matter facts
 - 0019 — Stage 2H opinion archive and historical submissions
+- 0020 — Stage 2I historical cutover state
