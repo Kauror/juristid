@@ -25,6 +25,69 @@
     }
   });
 
+  /* ---- Uus teema: the "Muu" valdkond reveals its own text field --------
+   * Progressive enhancement only. Without JavaScript the input is visible from
+   * the start and the form still works — the server decides what "Muu" means,
+   * not this (Stage-2E.1 brief 20).
+   */
+  var otherArea = document.querySelector("#valdkond-muu input[type=checkbox]");
+  var otherAreaText = document.getElementById("valdkond-muu-tekst");
+  if (otherArea && otherAreaText) {
+    var syncOtherArea = function () {
+      otherAreaText.hidden = !otherArea.checked;
+      if (otherArea.checked) {
+        var input = otherAreaText.querySelector("input");
+        if (input) {
+          input.focus();
+        }
+      }
+    };
+    otherArea.addEventListener("change", syncOtherArea);
+    syncOtherArea();
+  }
+
+  /* ---- Uus teema: say which files are about to be uploaded --------------
+   * A file input shows "3 files" and nothing about which three. This lists
+   * them before saving, so a wrong pick is visible while it is still cheap.
+   */
+  var fileInput = document.getElementById("id_files");
+  var fileList = document.getElementById("valitud-failid");
+  if (fileInput && fileList) {
+    fileInput.addEventListener("change", function () {
+      fileList.textContent = "";
+      var chosen = Array.prototype.slice.call(fileInput.files || []);
+      fileList.hidden = chosen.length === 0;
+      chosen.forEach(function (file) {
+        var item = document.createElement("li");
+        item.className = "dropzone__file";
+        item.textContent = file.name;
+        fileList.appendChild(item);
+      });
+    });
+
+    var zone = fileInput.closest(".dropzone");
+    if (zone) {
+      ["dragenter", "dragover"].forEach(function (name) {
+        zone.addEventListener(name, function (event) {
+          event.preventDefault();
+          zone.classList.add("is-over");
+        });
+      });
+      ["dragleave", "drop"].forEach(function (name) {
+        zone.addEventListener(name, function (event) {
+          event.preventDefault();
+          zone.classList.remove("is-over");
+        });
+      });
+      zone.addEventListener("drop", function (event) {
+        if (event.dataTransfer && event.dataTransfer.files.length) {
+          fileInput.files = event.dataTransfer.files;
+          fileInput.dispatchEvent(new Event("change"));
+        }
+      });
+    }
+  }
+
   /* ---- Composer: Ctrl/Cmd+Enter submits, Esc closes optional fields ------ */
   document.addEventListener("keydown", function (event) {
     var composer = event.target.closest ? event.target.closest("form[data-composer]") : null;

@@ -34,6 +34,19 @@
             <a class="topnav__link {% if nav_active == 'minu_too' %}is-active{% endif %}"
                {% if nav_active == 'minu_too' %}aria-current="page"{% endif %}
                href="{% url 'matters:my_work' %}">Minu töö</a>
+            {% comment %}
+              Osakonna töö is offered only to the department head, by role.
+              Everybody else — specialists, readers, the technical
+              administrator, and a session that passed the shared password
+              without choosing a persona — does not see it, and the route
+              itself 404s for them rather than relying on this being hidden
+              (Stage-2F brief 28, 30).
+            {% endcomment %}
+            {% if is_department_head %}
+              <a class="topnav__link {% if nav_active == 'osakonna_too' %}is-active{% endif %}"
+                 {% if nav_active == 'osakonna_too' %}aria-current="page"{% endif %}
+                 href="{% url 'matters:department_work' %}">Osakonna töö</a>
+            {% endif %}
             <a class="topnav__link {% if nav_active == 'saabunud' %}is-active{% endif %}"
                {% if nav_active == 'saabunud' %}aria-current="page"{% endif %}
                href="{% url 'matters:inbox' %}">Saabunud</a>

@@ -12,14 +12,17 @@ from typing import Any
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import FileResponse, HttpRequest, HttpResponse
+from django.http import FileResponse, HttpRequest, HttpResponse, HttpResponseBase
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import urlsafe_base64_encode
 from django.views.decorators.http import require_http_methods
 
+from app.accounts import shared_gate
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
+from app.core.decorators import gate_required, viewer_for
 from app.core.errors import DomainError
+from app.documents import inline
 from app.documents.email_intake import attachments_of, parent_email_of
 from app.documents.enums import DerivativeKind, DerivativeStatus, DocumentRole
 from app.documents.extraction.orchestrator import derivative_storage
@@ -100,7 +103,7 @@ def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
     return redirect("matters:matter_documents", pk=document.matter_id)
 
 
-@login_required
+@gate_required
 def download(request: HttpRequest, pk: Any) -> FileResponse:
     """Stream one evidence version to a user entitled to read it.
 
@@ -108,24 +111,30 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
     document 404s for anyone outside its Matter rather than 403ing — the same
     reason the Matter route does.
     """
+    viewer = viewer_for(request)
     version = get_object_or_404(
         DocumentVersion.objects.filter(
-            document__in=Document.objects.visible_to(request.user)
+            document__in=Document.objects.visible_to(viewer)
         ).select_related("document"),
         pk=pk,
     )
 
     record_security_event(
         event_type=SecurityEventType.DOCUMENT_DOWNLOADED,
-        actor=request.user,
+        # The persona if one was selected, and nobody otherwise. `audit_detail`
+        # records how the reader got in beside it, so a row from a shared-gate
+        # session never reads as an individual having signed for the file.
+        actor=request.user if request.user.is_authenticated else None,
         subject=version,
         ip_address=request.META.get("REMOTE_ADDR"),
         user_agent=request.META.get("HTTP_USER_AGENT", ""),
-        detail={
-            "document": str(version.document_id),
-            "matter": str(version.document.matter_id),
-            "sha256": version.sha256,
-        },
+        detail=shared_gate.audit_detail(
+            request,
+            document=str(version.document_id),
+            matter=str(version.document.matter_id),
+            sha256=version.sha256,
+            disposition="attachment",
+        ),
     )
 
     storage = evidence_storage()
@@ -148,7 +157,53 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
     return response
 
 
-@login_required
+@gate_required
+def open_inline(request: HttpRequest, pk: Any) -> HttpResponseBase:
+    """Render one stored file in the browser, when that is safe.
+
+    The same authorized queryset as `download`, so an unreadable document is a
+    404 here exactly as it is there — a second route onto the same bytes must
+    not be a second answer about who may have them.
+
+    Safety is decided by `app/documents/inline.py`, which requires the extension
+    and the stored MIME type to agree. Anything it declines redirects to the
+    download route rather than erroring: the reader asked to see a file, and
+    "here it is, saved instead" is a better answer than a stack trace.
+
+    The response claims *our* MIME type, never the uploaded one.
+    """
+    viewer = viewer_for(request)
+    version = get_object_or_404(
+        DocumentVersion.objects.filter(
+            document__in=Document.objects.visible_to(viewer)
+        ).select_related("document"),
+        pk=pk,
+    )
+
+    if not inline.may_open_inline(filename=version.original_filename, mime_type=version.mime_type):
+        return redirect("documents:download", pk=version.pk)
+
+    record_security_event(
+        event_type=SecurityEventType.DOCUMENT_DOWNLOADED,
+        actor=request.user if request.user.is_authenticated else None,
+        subject=version,
+        ip_address=request.META.get("REMOTE_ADDR"),
+        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        detail=shared_gate.audit_detail(
+            request,
+            document=str(version.document_id),
+            matter=str(version.document.matter_id),
+            sha256=version.sha256,
+            disposition="inline",
+        ),
+    )
+
+    handle = evidence_storage().open(version.storage_key, "rb")
+    response = FileResponse(handle, content_type=inline.inline_mime_for(version.original_filename))
+    return inline.apply_inline_headers(response, filename=version.original_filename)
+
+
+@gate_required
 def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
     """Serve a generated preview image, inline.
 
@@ -166,7 +221,7 @@ def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
         DocumentDerivative.objects.filter(
             kind=DerivativeKind.THUMBNAIL,
             status=DerivativeStatus.ACTIVE,
-            version__document__in=Document.objects.visible_to(request.user),
+            version__document__in=Document.objects.visible_to(viewer_for(request)),
         ).exclude(storage_key=""),
         pk=pk,
     )
@@ -181,7 +236,7 @@ def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
     return response
 
 
-@login_required
+@gate_required
 def document_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     """One document: its evidence, its derived preview, and the line between.
 
@@ -196,7 +251,9 @@ def document_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     — and for the same reason: a 403 would confirm it exists.
     """
     document = get_object_or_404(
-        Document.objects.visible_to(request.user).select_related("matter", "current_version"),
+        Document.objects.visible_to(viewer_for(request)).select_related(
+            "matter", "current_version"
+        ),
         pk=pk,
     )
     version = document.current_version

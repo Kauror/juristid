@@ -38,6 +38,7 @@ from app.legacy_import.parser import (
     WorkbookInventory,
 )
 from app.legacy_import.resolution import (
+    KnownPeople,
     MappingTables,
     Resolution,
     StatusResolution,
@@ -184,6 +185,10 @@ def build_plan(
     """Read a snapshot and decide what an import would do. Writes nothing."""
     tables = mappings or MappingTables.empty()
     when = today or timezone.localdate()
+    # Read once for the whole run. The department is a handful of accounts and
+    # the register is thousands of rows, so one query beats one per row — and
+    # the ambiguity test needs the whole set to be exact anyway.
+    people = KnownPeople.load()
 
     with RegisterWorkbook(workbook_path) as workbook:
         inventory = workbook.inventory()
@@ -212,7 +217,7 @@ def build_plan(
             sheet_counts[sheet_inventory.name] = summarize(rows)
 
             for row in rows:
-                plans.append(_plan_row(row, snapshot, tables, when))
+                plans.append(_plan_row(row, snapshot, tables, when, people))
                 if row.reference is not None and row.reference.year == row.year:
                     highest[row.year] = max(highest.get(row.year, 0), row.reference.number)
 
@@ -225,7 +230,13 @@ def build_plan(
     )
 
 
-def _plan_row(row: ExtractedRow, snapshot: str, mappings: MappingTables, today: dt.date) -> RowPlan:
+def _plan_row(
+    row: ExtractedRow,
+    snapshot: str,
+    mappings: MappingTables,
+    today: dt.date,
+    people: KnownPeople,
+) -> RowPlan:
     if row.is_blank:
         return RowPlan(row=row, outcome=RowOutcome.BLANK_PADDING.value)
     if row.is_reserved_reference:
@@ -264,7 +275,7 @@ def _plan_row(row: ExtractedRow, snapshot: str, mappings: MappingTables, today: 
             note="Rida kannab tõket: " + ", ".join(sorted(set(row.anomalies) & BLOCKING_ANOMALIES)),
         )
 
-    owner = resolve_owner(row.owner_raw, mappings)
+    owner = resolve_owner(row.owner_raw, mappings, people)
     organisation = resolve_organisation(row.counterparty_raw, mappings)
     status = resolve_status(row.status_raw, row.era)
 

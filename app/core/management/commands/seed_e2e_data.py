@@ -54,6 +54,18 @@ HISTORICAL_INTRODUCTION = "Ettepaneku eestikeelne variant:"
 #: at import time rather than leaving the extraction worker to discover that a
 #: synthetic stub is not a readable document (Stage-2D brief 24).
 HISTORICAL_FILENAME = "seisukoht-2019.asice"
+#: The inline-safe counterpart, on the same page. Two materials rather than one
+#: because the Stage-2E.1 rule is a *contrast*: a filename either opens or
+#: downloads, and a page holding only one of them cannot show the difference.
+#:
+#: Plain text on purpose. It is genuinely readable, so the extraction worker
+#: succeeds on it and the Andmekvaliteet queue the browser suite asserts is
+#: empty stays empty — the trap a `.pdf` stub fell into once already.
+HISTORICAL_INLINE_FILENAME = "markmed-2019.txt"
+HISTORICAL_INLINE_TEXT = (
+    "Sünteetilised märkmed 2019. aasta kooskõlastusringilt.\n"
+    "Koda pidas rakendusaega liiga lühikeseks.\n"
+)
 CANDIDATE_PAGE_TITLE = "Alkoholiaktsiisi töörühma märkmed"
 
 #: The Statistika world. Three records the tabs need in order to say anything
@@ -68,6 +80,21 @@ SUBMISSION_TITLE = "Sünteetiline arvamus ministeeriumile"
 #: putting a false entry in the Andmekvaliteet queue the browser suite asserts
 #: is empty. Found by the first CI round.
 SUBMISSION_FILENAME = "arvamus-2026.asice"
+
+#: The Osakonna töö world. Four records, each present because the
+#: department-head page would otherwise show an honest emptiness that proves
+#: nothing: a current file with nobody's name on it, one whose review date has
+#: arrived (which is *not* overdue), one carrying no instruction at all, and a
+#: former colleague who still owns live work (Stage-2F brief 42, 45).
+UNASSIGNED_TITLE = "Vastutajata sünteetiline teema"
+REVIEW_DUE_TITLE = "Ootamise ülevaatuse aeg on käes"
+NO_ACTION_TITLE = "Järgmiseta sünteetiline teema"
+FORMER_OWNER_TITLE = "Endise kolleegi avatud teema"
+
+#: A colleague who has left. Inactive on purpose: they must not appear in the
+#: persona list, and their open file must still be visible to the head.
+FORMER_UPN = "endine@example.invalid"
+FORMER_NAME = "Kadri Endine"
 
 
 class Command(BaseCommand):
@@ -166,6 +193,7 @@ class Command(BaseCommand):
 
         self._historical_world(visible)
         self._statistics_world(visible, martin, ministry)
+        self._department_world(sandra, martin, ministry, stage)
         self._intelligence_world(visible, restricted, martin, sandra)
         self.stdout.write(self.style.SUCCESS("E2E world ready."))
 
@@ -327,6 +355,73 @@ class Command(BaseCommand):
         )
         mark_submission_sent(submission=submission, actor=martin, channel="EIS")
 
+    def _department_world(self, sandra: Any, martin: Any, ministry: Any, stage: Any) -> None:
+        """The states Osakonna töö exists to surface.
+
+        Each one is a distinct operational fact and they must not read alike.
+        A review date reached is not a missed deadline; a file with no
+        instruction is not a file with a late one; and an open matter owned by
+        somebody who has left is an anomaly the head should be shown rather
+        than a row to quietly drop (Stage-2F brief 32, 34, 45).
+        """
+        today = date.today()
+
+        create_matter(
+            title=UNASSIGNED_TITLE,
+            actor=martin,
+            owner=None,
+            stage=stage,
+            track=Track.DOMESTIC,
+            source_organisation=ministry,
+            received_date=today - timedelta(days=3),
+            response_deadline=today + timedelta(days=4),
+        )
+
+        review_due = create_matter(
+            title=REVIEW_DUE_TITLE,
+            actor=sandra,
+            owner=sandra,
+            stage=stage,
+            track=Track.DOMESTIC,
+            source_organisation=ministry,
+            received_date=today - timedelta(days=30),
+        )
+        set_next_action(
+            matter=review_due,
+            text="Ootame ministeeriumi vastust",
+            kind=ActionKind.WAIT,
+            date_semantics=DateSemantics.REVIEW_ON,
+            target_date=today - timedelta(days=1),
+            actor=sandra,
+        )
+
+        create_matter(
+            title=NO_ACTION_TITLE,
+            actor=martin,
+            owner=martin,
+            stage=stage,
+            track=Track.DOMESTIC,
+            source_organisation=ministry,
+            received_date=today - timedelta(days=6),
+        )
+
+        former = User.objects.filter(upn=FORMER_UPN).first()
+        if former is None:
+            former = create_synthetic_user(
+                upn=FORMER_UPN, display_name=FORMER_NAME, role=UserRole.SPECIALIST
+            )
+            User.objects.filter(pk=former.pk).update(is_active=False)
+            former.refresh_from_db()
+        create_matter(
+            title=FORMER_OWNER_TITLE,
+            actor=martin,
+            owner=former,
+            stage=stage,
+            track=Track.DOMESTIC,
+            source_organisation=ministry,
+            received_date=today - timedelta(days=9),
+        )
+
     def _historical_world(self, matter: Matter) -> None:
         """A OneNote page, its file, and one decision nobody has made yet.
 
@@ -358,6 +453,7 @@ class Command(BaseCommand):
             return
 
         content = bytes([80, 75, 3, 4]) + b" synthetic e2e ASiC-E container"
+        inline_content = HISTORICAL_INLINE_TEXT.encode("utf-8")
         now = timezone.now()
         blocks = [
             {
@@ -376,6 +472,7 @@ class Command(BaseCommand):
                 "depth": 1,
                 "text": "Ministeeriumi vastus saabus kuu hiljem.",
             },
+            {"kind": "FILE_ATTACHMENT", "ordinal": 5, "resource_key": "e2e-resource-2"},
         ]
         page = LegacySourcePage.objects.create(
             source_system=SourceSystem.ONENOTE_DESKTOP,
@@ -398,8 +495,8 @@ class Command(BaseCommand):
             reading_order_strategy="VISUAL_THEN_XML",
             text_characters=200,
             block_count=len(blocks),
-            file_count=1,
-            file_bytes=len(content),
+            file_count=2,
+            file_bytes=len(content) + len(inline_content),
             first_imported_at=now,
             latest_imported_at=now,
         )
@@ -448,6 +545,44 @@ class Command(BaseCommand):
             resource=resource,
             document=document,
             document_version=version,
+            state=ResourceImportState.IMPORTED,
+        )
+
+        # The second material: readable, and therefore openable. Its whole job
+        # is to sit beside the signed container so a browser can prove that the
+        # two filenames behave differently (Stage-2E.1 brief 11, 13).
+        inline_resource = LegacySourceResource.objects.create(
+            source_page=page,
+            resource_key="e2e-resource-2",
+            original_filename=HISTORICAL_INLINE_FILENAME,
+            resource_kind="FILE_ATTACHMENT",
+            source_block_ordinal=5,
+            sha256=hashlib.sha256(inline_content).hexdigest(),
+            size_bytes=len(inline_content),
+            archive_relative_path=(
+                "resources/e2e-resource-2/original/" + HISTORICAL_INLINE_FILENAME
+            ),
+        )
+        inline_document = create_document(
+            matter=matter,
+            title=HISTORICAL_INLINE_FILENAME,
+            role=DocumentRole.LEGACY_MATERIAL,
+            provenance_note="OneNote: ARHIIV 2019 → " + HISTORICAL_PAGE_TITLE,
+        )
+        inline_version = add_evidence_version(
+            document=inline_document,
+            content=inline_content,
+            original_filename=HISTORICAL_INLINE_FILENAME,
+            mime_type="text/plain",
+            acquired_at=now,
+            source_identifier="e2e-page-1/e2e-resource-2",
+            malware_scan_state=MalwareScanState.PENDING,
+        )
+        LegacySourceResourceImport.objects.create(
+            matter_source_page=link,
+            resource=inline_resource,
+            document=inline_document,
+            document_version=inline_version,
             state=ResourceImportState.IMPORTED,
         )
 

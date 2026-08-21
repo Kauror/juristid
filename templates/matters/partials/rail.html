@@ -3,7 +3,7 @@ The facts rail: compact supporting facts that would clutter the header but are
 worth having in view. Not a wall of every database field — less common metadata
 stays behind the tabs (master specification 8.7).
 {% endcomment %}
-<aside class="rail" aria-label="Teema andmed">
+<aside class="rail" id="teema-andmed" aria-label="Teema andmed">
   <div class="railcard">
     <span class="railcard__label">Teema andmed</span>
     <p class="railcard__row">
@@ -26,13 +26,71 @@ stays behind the tabs (master specification 8.7).
     {% endif %}
   </div>
 
-  {% if matter.policy_areas.all or matter.tags.all %}
+  {% if matter.policy_areas.all or matter.tags.all or matter.policy_area_other %}
     <div class="railcard">
       <span class="railcard__label">Valdkonnad ja sildid</span>
       <p class="railcard__row" style="flex-wrap:wrap;gap:var(--spacing-1)">
         {% for area in matter.policy_areas.all %}<span class="tag">{{ area.name_et }}</span>{% endfor %}
         {% for tag in matter.tags.all %}<span class="tag">{{ tag.name_et }}</span>{% endfor %}
       </p>
+      {% comment %}
+        Free text, and shown as free text. Deliberately not styled as a `tag`
+        chip beside the canonical ones: it is what somebody wrote when none of
+        them fitted, no statistic counts it, and dressing it up as taxonomy is
+        exactly the confusion the field exists to avoid (Stage-2E.1 brief 20).
+      {% endcomment %}
+      {% if matter.policy_area_other %}
+        <p class="railcard__row">
+          <span class="railcard__key">Muu valdkond</span>
+          <span>{{ matter.policy_area_other }}</span>
+        </p>
+      {% endif %}
+      {% comment %}
+        Editable after the fact, like every other recorded fact. It is common
+        for a matter to be filed under "Muu" on the day it arrives and to gain a
+        real PolicyArea a week later, at which point the note wants clearing —
+        so an empty submission is a valid one (Stage-2E.1 brief 20).
+      {% endcomment %}
+      <details class="disclosure disclosure--inline">
+        <summary class="disclosure__summary">
+          {% if matter.policy_area_other %}Muuda muud valdkonda{% else %}Lisa muu valdkond{% endif %}
+        </summary>
+        <form class="inlineform"
+              hx-post="{% url 'matters:update_field' pk=matter.pk field='policy_area_other' %}"
+              hx-target="#teema-andmed" hx-swap="outerHTML"
+              style="margin-top:var(--spacing-2)">
+          {% csrf_token %}
+          <label class="field">
+            <span class="visually-hidden">Muu valdkond</span>
+            <input class="field__input field__input--compact" type="text"
+                   name="policy_area_other" maxlength="400"
+                   value="{{ matter.policy_area_other }}"
+                   placeholder="Millisesse valdkonda see kuulub?">
+          </label>
+          <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
+        </form>
+      </details>
+    </div>
+  {% else %}
+    <div class="railcard">
+      <span class="railcard__label">Valdkonnad ja sildid</span>
+      <p class="railcard__row"><span class="muted">Valdkondi ei ole määratud.</span></p>
+      <details class="disclosure disclosure--inline">
+        <summary class="disclosure__summary">Lisa muu valdkond</summary>
+        <form class="inlineform"
+              hx-post="{% url 'matters:update_field' pk=matter.pk field='policy_area_other' %}"
+              hx-target="#teema-andmed" hx-swap="outerHTML"
+              style="margin-top:var(--spacing-2)">
+          {% csrf_token %}
+          <label class="field">
+            <span class="visually-hidden">Muu valdkond</span>
+            <input class="field__input field__input--compact" type="text"
+                   name="policy_area_other" maxlength="400"
+                   placeholder="Millisesse valdkonda see kuulub?">
+          </label>
+          <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
+        </form>
+      </details>
     </div>
   {% endif %}
 

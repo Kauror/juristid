@@ -11,7 +11,8 @@ from __future__ import annotations
 from typing import Any, cast
 
 from django import forms
-from django.db.models import QuerySet
+from django.db.models import Count, QuerySet
+from django.utils import timezone
 
 from app.accounts.models import User
 from app.core.enums import Visibility
@@ -64,12 +65,78 @@ def active_stages() -> Any:
     return StageVocabulary.objects.filter(is_active=True).order_by("sort_order", "label_et")
 
 
+def policy_areas_by_usage(viewer: Any) -> list[PolicyArea]:
+    """Active policy areas, most-used first.
+
+    Ordered by how often the department actually files under them, because a
+    list ordered by an admin's `sort_order` puts Keskkond below something used
+    twice in 2013 and makes people hunt.
+
+    Counted only over Matters the *viewer* may read. An area's popularity is
+    derived from records, and deriving it from records somebody cannot see would
+    let the order of a checkbox list disclose that restricted work exists
+    (Stage-2E.1 brief 19).
+    """
+    from app.matters.models import Matter
+
+    usage = (
+        Matter.objects.visible_to(viewer)
+        .filter(policy_areas__isnull=False)
+        # `order_by()` with no arguments, before the grouping. `Matter.Meta`
+        # sets a default ordering, and Django adds ordering columns to the
+        # GROUP BY — which silently turns one row per area into one row per
+        # (area, created_at) and makes every count 1. It looks like the usage
+        # data is missing rather than like a bug.
+        .order_by()
+        .values("policy_areas")
+        .annotate(total=Count("policy_areas"))
+    )
+    counts = {row["policy_areas"]: row["total"] for row in usage}
+    areas = list(PolicyArea.objects.filter(is_active=True))
+    areas.sort(key=lambda area: (-counts.get(area.pk, 0), area.sort_order, area.name_et))
+    return areas
+
+
+def organisations_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
+    """The senders this department actually hears from, most frequent first.
+
+    Same authorization reasoning as the policy areas, and the same refusal to
+    hard-code: which ministry is most active changes with the government, and a
+    list written into the source would be wrong within a year.
+    """
+    from app.matters.models import Matter
+
+    usage = (
+        Matter.objects.visible_to(viewer)
+        .filter(source_organisation__isnull=False)
+        # Cleared first, then re-ordered by the aggregate. The default ordering
+        # would otherwise join the GROUP BY and give every organisation a count
+        # of one (see `policy_areas_by_usage`).
+        .order_by()
+        .values("source_organisation")
+        .annotate(total=Count("id"))
+        .order_by("-total")[:limit]
+    )
+    ranking = {row["source_organisation"]: index for index, row in enumerate(usage)}
+    if not ranking:
+        return list(Organisation.objects.order_by("name")[:limit])
+    found = Organisation.objects.filter(pk__in=ranking)
+    return sorted(found, key=lambda organisation: ranking[organisation.pk])
+
+
 class MatterCreateForm(forms.Form):
     """Creating a Teema requires a title and nothing else.
 
     Everything else is optional and disclosed under a details panel. Demanding
     metadata at capture time is precisely what makes people keep a spreadsheet
     open instead (master specification 3.8, 9.1).
+
+    What changed in Stage 2E.1 is *which* optional fields are in front of you.
+    A new matter arrives as a title, a file, a person, a sender and a date, and
+    those now use visible controls rather than five dropdowns — for a department
+    of four, a select is a click to find out what the options even are. The
+    procedural metadata that used to sit beside them is still here, one
+    disclosure down (brief 14, 15).
     """
 
     title = forms.CharField(
@@ -87,7 +154,10 @@ class MatterCreateForm(forms.Form):
         label="Vastutaja",
         queryset=User.objects.none(),
         required=False,
-        widget=SELECT_WIDGET,
+        # Radios, not checkboxes, and the styling makes them look like chips.
+        # `Matter.owner` is one person; a control that lets you tick two would be
+        # promising something the model cannot keep (brief 16).
+        widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
     )
     stage = forms.ModelChoiceField(
         label="Hetkeseis",
@@ -102,11 +172,20 @@ class MatterCreateForm(forms.Form):
         widget=SELECT_WIDGET,
     )
     source_organisation = forms.ModelChoiceField(
-        label="Algataja või saatja",
+        label="Saatja",
+        queryset=Organisation.objects.none(),
+        required=False,
+        widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
+        help_text="Kellelt teema tuli.",
+    )
+    #: The long tail. Shown only when the reader asks for it, and validated
+    #: against the same queryset, so this is a second way to pick an existing
+    #: organisation rather than a way to invent one.
+    source_organisation_other = forms.ModelChoiceField(
+        label="Muu saatja",
         queryset=Organisation.objects.none(),
         required=False,
         widget=SELECT_WIDGET,
-        help_text="Kellelt teema tuli.",
     )
     addressee_organisation = forms.ModelChoiceField(
         label="Adressaat",
@@ -115,7 +194,15 @@ class MatterCreateForm(forms.Form):
         widget=SELECT_WIDGET,
         help_text="Kellele Koda vastab. Eraldi fakt saatjast.",
     )
-    received_date = forms.DateField(label="Saabus", required=False, widget=DATE_WIDGET)
+    received_date = forms.DateField(
+        label="Saabus",
+        required=False,
+        widget=DATE_WIDGET,
+        # Today, because that is when nearly everything arrives. `initial` only
+        # ever fills an *unbound* form, so a POSTed value always wins and
+        # nothing here can overwrite what somebody typed (brief 18).
+        initial=timezone.localdate,
+    )
     response_deadline = forms.DateField(
         label="Arvamuse tähtaeg", required=False, widget=DATE_WIDGET
     )
@@ -123,38 +210,106 @@ class MatterCreateForm(forms.Form):
         label="Valdkonnad",
         queryset=PolicyArea.objects.none(),
         required=False,
-        widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "4"}),
+        # Checkboxes because a Matter really can belong to several areas, and a
+        # multi-select hides that behind a modifier key nobody uses (brief 19).
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
     )
-    visibility = forms.ChoiceField(
-        label="Nähtavus",
-        choices=Visibility.choices,
-        initial=Visibility.NORMAL,
-        # Not required, so a Matter really can be created from a title alone
-        # (specification 3.8). On screen the select is always present and
-        # preselected; this is about the form not refusing a bare POST.
+    policy_area_other_selected = forms.BooleanField(
+        label="Muu",
         required=False,
-        widget=SELECT_WIDGET,
-        help_text="Piiratud teemat näevad ainult vastutaja, kaastöötajad ja osakonnajuht.",
+        widget=forms.CheckboxInput(attrs={"class": "checkitem__input"}),
     )
+    policy_area_other = forms.CharField(
+        label="Muu valdkond",
+        max_length=400,
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "field__input", "placeholder": "Millisesse valdkonda see kuulub?"}
+        ),
+        help_text="Vabatekst. Siit ei teki uut valdkonda ega silti.",
+    )
+    #: `Nähtavus` is deliberately absent from this form.
+    #:
+    #: Restricting a Matter is a rare, deliberate act, and putting it on the
+    #: creation screen made it a field to skim past. The model, the enum, the
+    #: authorization and every existing restricted record are untouched; what is
+    #: gone is the control. New Matters are NORMAL, decided server-side rather
+    #: than inferred from a field somebody could omit (brief 21).
 
-    def clean_visibility(self) -> str:
-        return self.cleaned_data.get("visibility") or Visibility.NORMAL
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # The long-tail sender only counts when nothing was picked from the
+        # frequent list, so the two controls cannot disagree about one field.
+        if not cleaned.get("source_organisation") and cleaned.get("source_organisation_other"):
+            cleaned["source_organisation"] = cleaned["source_organisation_other"]
+
+        # Free text belongs to the checkbox that reveals it. Unticking "Muu"
+        # and leaving the box full must not quietly save the text.
+        if not cleaned.get("policy_area_other_selected"):
+            cleaned["policy_area_other"] = ""
+        cleaned["policy_area_other"] = (cleaned.get("policy_area_other") or "").strip()
+
+        if cleaned.get("policy_area_other_selected") and not cleaned["policy_area_other"]:
+            self.add_error("policy_area_other", "Kirjuta, millise valdkonnaga on tegemist.")
+
+        return cleaned
+
+    def __init__(self, *args: Any, viewer: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        self.viewer = viewer
+
         set_choices(self, "owner", active_users())
         set_choices(self, "stage", active_stages())
-        set_choices(self, "source_organisation", Organisation.objects.order_by("name"))
         set_choices(self, "addressee_organisation", Organisation.objects.order_by("name"))
+
+        # Every organisation is a *valid* sender; only the frequent ones are
+        # offered as chips. Validation therefore runs against the full set —
+        # narrowing it to the visible ten would reject a correct answer given
+        # through the search control.
+        everything = Organisation.objects.order_by("name")
+        set_choices(self, "source_organisation", everything)
+        set_choices(self, "source_organisation_other", everything)
+
         set_choices(
             self,
             "policy_areas",
             PolicyArea.objects.filter(is_active=True).order_by("sort_order", "name_et"),
         )
 
+        # Ordering is a presentation concern, so it is applied to the rendered
+        # choices rather than to the validating queryset.
+        if viewer is not None:
+            # `fields[...]` is typed as the base Field, which has no `choices`.
+            # These two are ChoiceFields by construction a few lines above.
+            areas = cast(Any, self.fields["policy_areas"])
+            senders = cast(Any, self.fields["source_organisation"])
+            areas.choices = [(area.pk, area.name_et) for area in policy_areas_by_usage(viewer)]
+            self.frequent_senders = organisations_by_usage(viewer)
+            senders.choices = [
+                (organisation.pk, organisation.name) for organisation in self.frequent_senders
+            ]
+        else:
+            self.frequent_senders = []
+
 
 class NextActionForm(forms.Form):
-    """`Järgmiseks`, including what its date actually means."""
+    """`Järgmiseks`, including what its date actually means.
+
+    `use_required_attribute` is off, and that is not cosmetic. On Uus teema this
+    form is rendered inside a *closed* `<details>`, and setting a next action is
+    optional — the view only validates it when somebody typed something. With
+    the HTML `required` attribute present, the browser refuses to submit a form
+    containing an invalid control it cannot scroll to, reports nothing, and the
+    "Loo teema" button silently does nothing. Creating a Matter without a next
+    action was impossible in a browser and fine in every test that posted
+    directly (Stage-2E.1 brief 26).
+
+    The server-side requirement is unchanged: `text` is still required, and a
+    partially filled next action is still refused.
+    """
+
+    use_required_attribute = False
 
     text = forms.CharField(
         label="Järgmiseks",
@@ -332,6 +487,10 @@ class MatterFieldForm(forms.Form):
     received_date = forms.DateField(required=False)
     response_deadline = forms.DateField(required=False)
     visibility = forms.ChoiceField(choices=Visibility.choices, required=False)
+    # Editable after creation like every other fact on the record. Blank is a
+    # legitimate value here — it is how somebody clears a note that turned out
+    # to belong under a real PolicyArea after all (Stage-2E.1 brief 20).
+    policy_area_other = forms.CharField(max_length=400, required=False)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)

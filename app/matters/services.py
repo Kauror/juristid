@@ -22,7 +22,7 @@ from app.documents.enums import DocumentRole
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import read_upload
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import MatterOrigin, RecordMode
+from app.matters.enums import DataQualityTier, MatterOrigin, RecordMode
 from app.matters.models import Entry, EntryRevision, Matter, MatterReferenceSequence
 from app.workflow.enums import Disposition, Track
 from app.workflow.services import end_open_action_for_closure, set_next_action
@@ -136,6 +136,13 @@ def create_matter(
     if assign_reference:
         year_number = allocate_matter_reference(reference_year)
 
+    # Free text, not taxonomy. Trimmed and length-capped here so it cannot
+    # arrive as whitespace or overflow the column, and deliberately *not*
+    # turned into a PolicyArea or a Tag (Stage-2E.1 brief 20).
+    other_area = str(extra.pop("policy_area_other", "") or "").strip()
+    if other_area:
+        extra["policy_area_other"] = other_area[:400]
+
     policy_areas = extra.pop("policy_areas", None)
 
     matter = Matter.objects.create(
@@ -204,8 +211,19 @@ def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None)
 
 
 @transaction.atomic
-def assign_matter(*, matter: Matter, owner: Any, actor: Any = None) -> Matter:
-    """Give the Matter an owner, or hand it to someone else."""
+def assign_matter(
+    *, matter: Matter, owner: Any, actor: Any = None, provenance: dict[str, Any] | None = None
+) -> Matter:
+    """Give the Matter an owner, or hand it to someone else.
+
+    ``provenance`` is for the assignments no colleague made: the owner backfill
+    derives ownership from imported register cells, and the event has to say so
+    — which era, which row, and by which resolution rule — or a reader months
+    later cannot tell an attested mapping from an inference. It is merged into
+    the change-event payload rather than kept in a second table, because this
+    *is* the assignment event and one record is easier to trust than two
+    (Stage-2F brief 9).
+    """
     previous = matter.owner
     if previous == owner:
         return matter
@@ -222,6 +240,7 @@ def assign_matter(*, matter: Matter, owner: Any, actor: Any = None) -> Matter:
         payload={
             "from_name": getattr(previous, "display_name", None),
             "to_name": getattr(owner, "display_name", None),
+            **(provenance or {}),
         },
     )
     return matter
@@ -397,6 +416,37 @@ def set_position(
 
 
 @transaction.atomic
+def set_policy_area_other(*, matter: Matter, value: str, actor: Any = None) -> Matter:
+    """Record — or clear — the free-text area beside the canonical ones.
+
+    The counterpart to what `create_matter` accepts, so a Matter filed under
+    "Muu" on the day it arrived is not stuck with whatever was typed then. Same
+    trimming and same length cap, in one place, because two callers normalising
+    a string two ways is how the same value starts comparing unequal to itself.
+
+    It stays free text. Nothing here creates a `PolicyArea`, nothing creates a
+    `Tag`, and no statistic counts it (Stage-2E.1 brief 20).
+    """
+    cleaned = (value or "").strip()[:400]
+    if cleaned == matter.policy_area_other:
+        return matter
+
+    matter.policy_area_other = cleaned
+    matter.save(update_fields=["policy_area_other", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.MATTER_POLICY_AREA_OTHER_SET,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        # The value itself is not in the payload. A timeline entry that quotes
+        # the old and new text turns an audit row into a second, unmanaged copy
+        # of a field somebody may later have had a reason to clear.
+        payload={"cleared": not cleaned},
+    )
+    return matter
+
+
+@transaction.atomic
 def close_matter(
     *, matter: Matter, disposition: str, actor: Any = None, reason: str = ""
 ) -> Matter:
@@ -477,6 +527,76 @@ def reopen_matter(*, matter: Matter, actor: Any = None, reason: str = "") -> Mat
         actor=actor,
         obj=matter,
         summary=reason[:200],
+    )
+    return matter
+
+
+@transaction.atomic
+def promote_matter_to_full(
+    *, matter: Matter, actor: Any = None, reason: str = "", provenance: dict[str, Any] | None = None
+) -> Matter:
+    """Activate an imported archive record as current work.
+
+    The reviewed "promote to full Matter" operation the specification describes:
+    it *enriches and activates* an existing record and changes neither its
+    identity nor its provenance (19.4). The reference stays, the source
+    references stay, the title stays, and the imported owner, stage and dates
+    stay exactly as the register left them.
+
+    ``origin`` becomes ``PROMOTED_LEGACY``, which is what that value has always
+    been for. It stays inside ``REGISTER_YEAR_ORIGINS``, so no year statistic
+    moves; what it adds is the ability to ask which records the cutover
+    activated rather than inferring it from a date.
+
+    The data-quality tier moves no further than **Tier 2**. Tier 1 means
+    "verified at cutover" and the specification is explicit that the active set
+    is attested by people, one lawyer's slice at a time (19.5, 19.6). A bulk
+    operator command has not done that, and claiming it had would put a
+    verification badge on records nobody read.
+
+    Nothing is fabricated. No next action, no submission, no sent date, no
+    outcome and no closure timestamp: a promoted Matter with no ``Järgmiseks``
+    correctly shows *Järgmiseks puudub*, which is useful current data quality
+    rather than a hole to fill with a guess (Stage-2F brief 18, 19).
+    """
+    if matter.record_mode == RecordMode.FULL:
+        raise DomainError("Teema on juba täielik kirje.")
+    if not matter.is_open:
+        # A FULL Matter that is closed must carry a closure timestamp, and the
+        # register never recorded one. Promoting this would mean either
+        # inventing a date or writing a row the database refuses
+        # (``matters_closure_fields_consistent``).
+        raise DomainError(
+            "Suletud arhiivikirjet ei aktiveerita; sulgemise kuupäeva allikas ei ole."
+        )
+
+    previous_origin = matter.origin
+    previous_tier = matter.data_quality_tier
+
+    matter.record_mode = RecordMode.FULL
+    matter.origin = MatterOrigin.PROMOTED_LEGACY
+    if previous_tier == DataQualityTier.TIER_3_REGISTER_ARCHIVE or not previous_tier:
+        matter.data_quality_tier = DataQualityTier.TIER_2_RICH_HISTORY
+    matter.save(
+        update_fields=["record_mode", "origin", "data_quality_tier", "updated_at"],
+    )
+
+    record_change_event(
+        event_type=ChangeEventType.MATTER_PROMOTED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=reason[:200],
+        payload={
+            "from_record_mode": RecordMode.ARCHIVE.value,
+            "to_record_mode": RecordMode.FULL.value,
+            "is_open": matter.is_open,
+            "from_origin": previous_origin,
+            "to_origin": matter.origin,
+            "from_data_quality_tier": previous_tier,
+            "to_data_quality_tier": matter.data_quality_tier,
+            **(provenance or {}),
+        },
     )
     return matter
 
