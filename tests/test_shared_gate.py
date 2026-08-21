@@ -119,16 +119,23 @@ def test_repeated_failures_are_locked_out(client, gate_url, gate_mode):
 
 
 def test_the_refusal_never_says_which_refusal_it_was(client, gate_url, gate_mode):
-    """ "Wrong password" and "locked out" are two facts; a prober gets neither."""
-    wrong = client.post(gate_url, {"password": "vale"}).content.decode()
+    """Two different facts, and a prober should not be able to tell them apart.
+
+    "Wrong password" tells somebody the account exists and the guess was wrong.
+    "Locked out" tells them the throttle exists and roughly where its edge is.
+    The locked page in particular must never confirm that the password it just
+    refused was the correct one (Stage-2D auth brief 9).
+    """
+    wrong = client.post(gate_url, {"password": "vale"}).content.decode().lower()
     for _ in range(gate_mode.SHARED_GATE_MAX_ATTEMPTS):
         client.post(gate_url, {"password": "vale"})
-    locked = client.post(gate_url, {"password": PASSWORD}).content.decode()
+    locked = client.post(gate_url, {"password": PASSWORD}).content.decode().lower()
 
-    assert "vale parool" in wrong.lower()
-    # The locked page says "try later" and never confirms the password was right.
-    assert "õige" not in locked.lower()
-    assert "parool on" not in locked.lower()
+    assert "vale parool" in wrong
+    # The correct password, refused, and the page says only "try again later".
+    assert "vale parool" not in locked
+    assert "õige" not in locked
+    assert "liiga palju katseid" in locked
 
 
 def test_each_lockout_cycle_is_longer_than_the_last(gate_mode):

@@ -126,8 +126,9 @@ One line makes it safe, and it is worth naming because the bug it prevents is
 silent:
 
 ```python
+# restricted_participation_q
 if not scope.is_authenticated or scope.user is None:
-    return NOTHING          # restricted_participation_q
+    return NOTHING
 ```
 
 Without it, `Q(owner=None)` compiles to `owner IS NULL` — which matches every
