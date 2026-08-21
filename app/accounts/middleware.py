@@ -1,24 +1,30 @@
-"""Signing a person in from a verified Cloudflare Access assertion.
+"""Establishing who is at the keyboard, according to the deployment's mode.
 
-Runs after Django's own `AuthenticationMiddleware`, so `request.user` already
-holds whatever the session says. This middleware's job is narrow:
+One middleware, three modes, and a deliberate asymmetry between them: the mode
+decides how much the deployment may *claim*, and the claim is recorded on every
+audit row it produces (`app/accounts/enums.py`, docs/adr/0016).
 
-1. verify the assertion cryptographically (`cloudflare_access.verify`),
-2. make sure the session belongs to the person the assertion names,
-3. sign in a *known, active* account — and nobody else.
+**`cloudflare_access`** — Cloudflare authenticates the individual and forwards a
+signed assertion; this verifies the RS256 signature against the team's published
+keys before believing the email in it. A request header on its own is
+attacker-controlled: anybody who could reach the container directly could set it
+to anything. There is no fallback to the unsigned
+`Cf-Access-Authenticated-User-Email` header, and nobody is provisioned — a
+verified email that matches no active, non-synthetic account is refused, because
+widening an Access policy in a Cloudflare dashboard must not hand somebody a
+seat inside a system of confidential member material (Stage-2D brief 59).
 
-**Nobody is provisioned here.** An account exists in this system because an
-administrator created it. Auto-creating a User from a verified email would mean
-that widening an Access policy — a change made in a Cloudflare dashboard, by
-somebody who may not know what this application holds — silently grants a
-stranger a seat inside a system of confidential member material
-(Stage-2D brief 59).
+**`shared_gate`** — one department password guards the door; a persona is picked
+behind it. Passing the gate is required for *everything*, so an unauthenticated
+visitor sees a password form and no data. Selecting a persona is a choice, not a
+proof, and the audit says so.
 
-The failure mode is chosen deliberately too. When the assertion is missing or
-invalid the request is **denied**, not passed through as anonymous: there is no
-public surface behind Access to fall through to, and a soft failure would mean a
-misconfiguration presents as "please sign in" rather than as an outage
-(Stage-2D brief 58).
+**`none`** — a developer laptop and CI. This middleware does nothing at all.
+
+In every mode the failure is a refusal, not a pass-through as anonymous. There
+is no public surface behind any of these to fall through to, and a soft failure
+would make a misconfiguration present as "please sign in" rather than as the
+outage it is (Stage-2D brief 58).
 """
 
 from __future__ import annotations
@@ -29,8 +35,11 @@ from typing import Any
 from django.conf import settings
 from django.contrib.auth import login, logout
 from django.http import HttpRequest, HttpResponse
+from django.shortcuts import redirect
+from django.urls import reverse
 
-from app.accounts import cloudflare_access
+from app.accounts import cloudflare_access, shared_gate
+from app.accounts.enums import AuthMode
 from app.accounts.models import User
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
@@ -45,18 +54,42 @@ MODEL_BACKEND = "django.contrib.auth.backends.ModelBackend"
 EXEMPT_PREFIXES = ("/healthz", "/static/")
 
 
-class CloudflareAccessMiddleware:
-    """Trust the signature, never the header."""
+class AuthenticationModeMiddleware:
+    """Whatever `AUTH_MODE` says, applied before any view runs."""
 
     def __init__(self, get_response: Any) -> None:
         self.get_response = get_response
 
     def __call__(self, request: HttpRequest) -> HttpResponse:
-        if not cloudflare_access.is_enabled():
+        mode = shared_gate.current_mode()
+        if mode == AuthMode.NONE or request.path.startswith(EXEMPT_PREFIXES):
             return self.get_response(request)
-        if request.path.startswith(EXEMPT_PREFIXES):
+        if mode == AuthMode.CLOUDFLARE_ACCESS:
+            return self._cloudflare_access(request)
+        return self._shared_gate(request)
+
+    # -- shared gate -------------------------------------------------------
+
+    def _shared_gate(self, request: HttpRequest) -> HttpResponse:
+        gate_url = reverse("accounts:shared_gate")
+
+        if shared_gate.has_passed(request):
             return self.get_response(request)
 
+        # A session that carries a persona but not a valid gate is a session
+        # whose gate expired, or one restored from before the gate existed.
+        # Either way the persona goes with it: keeping it would let an aged-out
+        # session go on acting as somebody.
+        if getattr(request, "user", None) is not None and request.user.is_authenticated:
+            logout(request)
+
+        if request.path == gate_url:
+            return self.get_response(request)
+        return redirect(gate_url)
+
+    # -- cloudflare access -------------------------------------------------
+
+    def _cloudflare_access(self, request: HttpRequest) -> HttpResponse:
         try:
             email, claims = cloudflare_access.identity_from_request(request.META)
         except cloudflare_access.AccessDenied as error:
@@ -100,10 +133,12 @@ class CloudflareAccessMiddleware:
         )
 
 
-def cloudflare_access_settings() -> dict[str, object]:
-    """What the deployment thinks it is doing, for `manage.py check`."""
+def authentication_settings() -> dict[str, object]:
+    """What the deployment thinks it is doing, for an operator reading `check`."""
+    mode = shared_gate.current_mode()
     return {
-        "enabled": cloudflare_access.is_enabled(),
-        "team_domain": getattr(settings, "CF_ACCESS_TEAM_DOMAIN", ""),
-        "audience_configured": bool(getattr(settings, "CF_ACCESS_AUDIENCE", "")),
+        "mode": mode,
+        "shared_gate_configured": shared_gate.is_configured(),
+        "cloudflare_team_domain": getattr(settings, "CF_ACCESS_TEAM_DOMAIN", ""),
+        "cloudflare_audience_configured": bool(getattr(settings, "CF_ACCESS_AUDIENCE", "")),
     }

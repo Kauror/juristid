@@ -30,6 +30,7 @@ from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
+from app.core.decorators import gate_required, viewer_for
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
@@ -101,19 +102,27 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
 # ---------------------------------------------------------------------------
 
 
-@login_required
+@gate_required
 def overview(request: HttpRequest) -> HttpResponse:
     """Ülevaade — the department portfolio, scoped to what this reader may see.
 
     Deliberately not Minu töö. That page answers "what do I have to do today";
     this one answers "what is the state of the files", which is the question a
     morning department review starts from.
+
+    The one page that renders without a persona. In shared-gate mode somebody
+    lands here straight from the password, and the dashboard has to be worth
+    looking at before they have said who they are — so it is built for a
+    *department* scope rather than borrowed from an arbitrary person's identity.
+    That scope sees NORMAL visibility and no participation, which means nothing
+    RESTRICTED appears merely because a shared password was typed
+    (Stage-2D auth brief 6, app/core/authorization.py).
     """
     return render(
         request,
         "matters/overview_dashboard.html",
         {
-            "dashboard": build_dashboard(request.user),
+            "dashboard": build_dashboard(viewer_for(request)),
             "today": timezone.localdate(),
             "nav_active": "ulevaade",
         },

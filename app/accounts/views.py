@@ -10,15 +10,19 @@ from __future__ import annotations
 
 import hmac
 import uuid
+from typing import Any
 
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth import login, logout
 from django.core.cache import cache
 from django.db.models import QuerySet
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods
 
+from app.accounts import shared_gate
 from app.accounts.models import User
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
@@ -170,5 +174,176 @@ def dev_login(request: HttpRequest) -> HttpResponse:
 
 @require_http_methods(["POST"])
 def sign_out(request: HttpRequest) -> HttpResponse:
+    """Leave. Both the persona and the gate, in that order.
+
+    `logout` flushes the session, which takes the gate state with it — so
+    signing out really does mean the password is asked for again, rather than
+    dropping back to a still-open door with nobody standing in it.
+    """
+    actor = request.user if request.user.is_authenticated else None
+    if shared_gate.is_shared_gate():
+        record_security_event(
+            event_type=SecurityEventType.SHARED_GATE_CLOSED,
+            actor=actor,
+            ip_address=request.META.get("REMOTE_ADDR"),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            detail=shared_gate.audit_detail(request),
+        )
+    shared_gate.close_gate(request)
     logout(request)
     return redirect("core:home")
+
+
+# --------------------------------------------------------------------------
+# The shared gate, and the persona picked behind it
+# --------------------------------------------------------------------------
+
+
+@require_http_methods(["GET", "POST"])
+def gate(request: HttpRequest) -> HttpResponse:
+    """One password for the department. Not one identity.
+
+    Deliberately says nothing about *why* an attempt failed. "Wrong password",
+    "locked out" and "no password is configured here" are three different
+    pieces of information, and only somebody probing the door benefits from
+    being able to tell them apart (Stage-2D auth brief 9).
+    """
+    if not shared_gate.is_shared_gate():
+        raise Http404("This deployment does not use a shared gate.")
+
+    if shared_gate.has_passed(request):
+        return redirect(settings.LOGIN_REDIRECT_URL)
+
+    context: dict[str, Any] = {}
+
+    if request.method == "POST":
+        try:
+            shared_gate.require_not_locked(request)
+        except shared_gate.GateLocked as locked:
+            return _gate_refused(request, context, reason="locked_out", wait=locked.seconds)
+
+        if not shared_gate.verify_password(request.POST.get("password", "")):
+            wait = shared_gate.record_failure(request)
+            return _gate_refused(request, context, reason="bad_password", wait=wait)
+
+        shared_gate.record_success(request)
+        shared_gate.open_gate(request)
+        record_security_event(
+            event_type=SecurityEventType.SHARED_GATE_PASSED,
+            ip_address=request.META.get("REMOTE_ADDR"),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            detail=shared_gate.audit_detail(request),
+        )
+        return redirect(settings.LOGIN_REDIRECT_URL)
+
+    return render(request, "accounts/shared_gate.html", context)
+
+
+def _gate_refused(
+    request: HttpRequest, context: dict[str, Any], *, reason: str, wait: int
+) -> HttpResponse:
+    record_security_event(
+        event_type=SecurityEventType.AUTHENTICATION_FAILED,
+        succeeded=False,
+        ip_address=request.META.get("REMOTE_ADDR"),
+        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        # The reason is recorded for an operator reading the log, and not shown.
+        detail=shared_gate.audit_detail(request, path="shared_gate", reason=reason),
+    )
+    message = "Vale parool."
+    if wait:
+        minutes = max(1, round(wait / 60))
+        message = f"Liiga palju katseid. Proovi umbes {minutes} minuti pärast uuesti."
+    return render(
+        request,
+        "accounts/shared_gate.html",
+        {**context, "error": message},
+        status=429 if wait else 400,
+    )
+
+
+@require_http_methods(["GET"])
+def choose_persona(request: HttpRequest) -> HttpResponse:
+    """Whose work am I looking at?
+
+    Not a sign-in page, and worded so nobody mistakes it for one. The list is
+    every active account; picking one changes which work the application shows
+    and proves nothing about who is reading it.
+    """
+    if not shared_gate.is_shared_gate():
+        raise Http404("This deployment does not use a persona selector.")
+    if not shared_gate.has_passed(request):
+        return redirect("accounts:shared_gate")
+
+    return render(
+        request,
+        "accounts/choose_persona.html",
+        {
+            "people": User.objects.filter(is_active=True).order_by("display_name"),
+            "current": request.user if request.user.is_authenticated else None,
+            "next_url": _safe_next(request),
+        },
+    )
+
+
+@require_http_methods(["POST"])
+def act_as(request: HttpRequest) -> HttpResponse:
+    """Become a persona, or stop being one. Logged either way."""
+    if not shared_gate.is_shared_gate():
+        raise Http404("This deployment does not use a persona selector.")
+    if not shared_gate.has_passed(request):
+        return redirect("accounts:shared_gate")
+
+    previous = request.user if request.user.is_authenticated else None
+    raw = request.POST.get("user_id", "")
+
+    if raw == "":
+        # Stepping back to the department view. Worth having: it is the only way
+        # to see what a page looks like to somebody with no persona selected.
+        logout(request)
+        shared_gate.open_gate(request)
+        _record_persona_change(request, previous=previous, chosen=None)
+        return redirect("matters:overview")
+
+    person = _selected_user(User.objects.filter(is_active=True), raw)
+    if person is None:
+        messages.error(request, "Vali kehtiv kasutaja.")
+        return redirect("accounts:choose_persona")
+
+    login(request, person, backend=MODEL_BACKEND)
+    # `login` cycles the session key and would otherwise drop the gate state
+    # with it, sending somebody back to the password form for changing persona.
+    shared_gate.open_gate(request)
+    shared_gate.note_persona_chosen(request)
+    _record_persona_change(request, previous=previous, chosen=person)
+    messages.success(request, f"Vaatad rakendust nüüd kasutajana {person.display_name}.")
+    return redirect(_safe_next(request) or "matters:my_work")
+
+
+def _record_persona_change(request: HttpRequest, *, previous: Any, chosen: Any) -> None:
+    """Every persona change, with what it is and is not evidence of."""
+    record_security_event(
+        event_type=SecurityEventType.PERSONA_SELECTED,
+        actor=chosen,
+        ip_address=request.META.get("REMOTE_ADDR"),
+        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        detail=shared_gate.audit_detail(
+            request,
+            previous_persona=str(previous.pk) if previous is not None else None,
+            chosen_persona=str(chosen.pk) if chosen is not None else None,
+        ),
+    )
+
+
+def _safe_next(request: HttpRequest) -> str:
+    """A redirect target, only if it points back at this site.
+
+    An open redirect on the one page everybody passes through would be a
+    convenient place to send somebody somewhere else.
+    """
+    candidate = request.POST.get("next") or request.GET.get("next") or ""
+    if candidate and url_has_allowed_host_and_scheme(
+        candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return candidate
+    return ""

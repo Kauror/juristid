@@ -48,7 +48,7 @@ def test_a_clean_production_configuration_passes(settings):
     settings.SECRET_KEY = "a-real-secret"  # noqa: S105
     settings.DEV_LOGIN_ENABLED = False
     settings.REAL_DATA_ALLOWED = True
-    settings.CF_ACCESS_ENABLED = True
+    settings.AUTH_MODE = "cloudflare_access"
     settings.CF_ACCESS_TEAM_DOMAIN = "naidiskoda.cloudflareaccess.invalid"
     settings.CF_ACCESS_AUDIENCE = "a" * 64
     assert _ids(settings) == set()

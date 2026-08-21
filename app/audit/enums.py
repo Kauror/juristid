@@ -51,3 +51,12 @@ class SecurityEventType(models.TextChoices):
     ROLE_CHANGED = "ROLE_CHANGED", "Roll muudetud"
     AUTHENTICATION_SUCCEEDED = "AUTHENTICATION_SUCCEEDED", "Sisselogimine õnnestus"
     AUTHENTICATION_FAILED = "AUTHENTICATION_FAILED", "Sisselogimine ebaõnnestus"
+    # -- the shared gate ---------------------------------------------------
+    #
+    # Kept distinct from AUTHENTICATION_SUCCEEDED on purpose. Passing a shared
+    # password is not somebody signing in; recording it as if it were would put
+    # a claim in the audit trail that the deployment cannot support
+    # (docs/adr/0016).
+    SHARED_GATE_PASSED = "SHARED_GATE_PASSED", "Jagatud parool sisestati"
+    SHARED_GATE_CLOSED = "SHARED_GATE_CLOSED", "Jagatud seanss lõpetati"
+    PERSONA_SELECTED = "PERSONA_SELECTED", "Kasutajavaade valiti"

@@ -26,7 +26,7 @@
           <span class="topbar__product">ÕIGUSLOOME</span>
         </a>
 
-        {% if user.is_authenticated %}
+        {% if user.is_authenticated or gate_passed %}
           <nav class="topnav" aria-label="Peamine">
             <a class="topnav__link {% if nav_active == 'ulevaade' %}is-active{% endif %}"
                {% if nav_active == 'ulevaade' %}aria-current="page"{% endif %}
@@ -57,14 +57,36 @@
             <button class="visually-hidden" type="submit">Otsi</button>
           </form>
 
-          <a class="button button--primary" href="{% url 'matters:matter_create' %}">+ Uus teema</a>
+          {% if user.is_authenticated %}
+            <a class="button button--primary" href="{% url 'matters:matter_create' %}">+ Uus teema</a>
+          {% endif %}
 
           {% if not real_data_allowed %}
             <span class="badge badge--restricted"
                   title="Selles keskkonnas on lubatud ainult sünteetilised andmed">Sünteetilised</span>
           {% endif %}
 
-          <span class="avatar" title="{{ user.display_name }}">{{ user.initials }}</span>
+          {% comment %}
+            Who the application is showing work for, and a way to change it.
+
+            Named rather than reduced to an avatar, because in shared-gate mode
+            this is not "you" — it is a view somebody selected, and it has to be
+            obvious at a glance which one is active before anybody reads a
+            dashboard as their own (Stage-2D auth brief 7).
+          {% endcomment %}
+          {% if shared_gate_mode %}
+            <span class="actingas">
+              {% if user.is_authenticated %}
+                <span class="actingas__label">Kasutaja</span>
+                <span class="actingas__name">{{ user.display_name }}</span>
+                <a class="button button--quiet" href="{% url 'accounts:choose_persona' %}">Vaheta</a>
+              {% else %}
+                <a class="button button--quiet" href="{% url 'accounts:choose_persona' %}">Vali kasutaja</a>
+              {% endif %}
+            </span>
+          {% elif user.is_authenticated %}
+            <span class="avatar" title="{{ user.display_name }}">{{ user.initials }}</span>
+          {% endif %}
 
           <form method="post" action="{% url 'accounts:sign_out' %}">
             {% csrf_token %}

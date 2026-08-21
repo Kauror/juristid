@@ -37,3 +37,34 @@ import-output/
 
 # Written into the image at build time; never a source file.
 BUILD_STAMP
+
+# The Stage-2D historical corpus and everything derived from it. The archive is
+# 4.14 GiB of members' legal work; a page's own XML and its derived text are the
+# same material in a smaller file.
+onenote-desktop-archive/
+onenote-juristid-export/
+migration-audit/
+historical-source/
+legacy-source/
+derivatives/
+*.tsv
+!tests/**/*.tsv
+
+# Host-side secrets. The shared gate password, the tunnel credential and the
+# server's environment file exist on the server and nowhere else (docs/adr/0016).
+*.env
+juristid.env
+cloudflared/
+cert.pem
+*credentials*.json
+
+# Database dumps.
+*.sql
+*.sql.gz
+*.dump
+
+# Screenshots and browser artefacts. A screenshot of the real deployment is real
+# data in an image, which no reviewer of a diff would think to look at.
+artifacts/
+*.png
+!static/**/*.png

@@ -19,7 +19,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from django.core.cache import cache
 
 from app.accounts import cloudflare_access
-from app.accounts.enums import UserRole
+from app.accounts.enums import AuthMode, UserRole
 from app.accounts.models import User
 from tests import factories
 
@@ -53,7 +53,7 @@ def other_key():
 
 @pytest.fixture(autouse=True)
 def access_configured(settings, signing_key, monkeypatch):
-    settings.CF_ACCESS_ENABLED = True
+    settings.AUTH_MODE = AuthMode.CLOUDFLARE_ACCESS
     settings.CF_ACCESS_TEAM_DOMAIN = TEAM_DOMAIN
     settings.CF_ACCESS_AUDIENCE = AUDIENCE
     settings.DEV_LOGIN_ENABLED = False
@@ -233,7 +233,7 @@ def test_the_health_check_answers_before_anybody_is_authenticated(client):
 
 @pytest.mark.django_db
 def test_access_off_leaves_every_request_alone(client, settings):
-    settings.CF_ACCESS_ENABLED = False
+    settings.AUTH_MODE = AuthMode.NONE
     person = real_person()
     client.force_login(person)
     assert client.get("/ulevaade/").status_code == 200
@@ -246,7 +246,7 @@ def test_real_data_without_an_authenticator_fails_the_deployment_check(settings)
     from app.core.checks import check_runtime_safety
 
     settings.REAL_DATA_ALLOWED = True
-    settings.CF_ACCESS_ENABLED = False
+    settings.AUTH_MODE = AuthMode.NONE
     settings.DEBUG = False
     assert "juristid.E006" in {problem.id for problem in check_runtime_safety(None)}
 
@@ -254,7 +254,7 @@ def test_real_data_without_an_authenticator_fails_the_deployment_check(settings)
 def test_a_synthetic_sign_in_behind_access_fails_the_deployment_check(settings):
     from app.core.checks import check_runtime_safety
 
-    settings.CF_ACCESS_ENABLED = True
+    settings.AUTH_MODE = AuthMode.CLOUDFLARE_ACCESS
     settings.DEV_LOGIN_ENABLED = True
     assert "juristid.E008" in {problem.id for problem in check_runtime_safety(None)}
 
@@ -262,6 +262,6 @@ def test_a_synthetic_sign_in_behind_access_fails_the_deployment_check(settings):
 def test_an_unconfigured_access_fails_the_deployment_check(settings):
     from app.core.checks import check_runtime_safety
 
-    settings.CF_ACCESS_ENABLED = True
+    settings.AUTH_MODE = AuthMode.CLOUDFLARE_ACCESS
     settings.CF_ACCESS_AUDIENCE = ""
     assert "juristid.E007" in {problem.id for problem in check_runtime_safety(None)}

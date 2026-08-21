@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Vali kasutaja · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Whose work am I looking at?
+
+  Deliberately not worded as a sign-in. "Logi sisse" would claim something this
+  page cannot deliver: the shared password is already behind us, and choosing a
+  name here changes which work is shown, not who the system believes is reading
+  it (Stage-2D auth brief 5).
+
+  The department option is first and stays available, because it is the only way
+  to see what a page looks like before anybody is selected — which is exactly
+  the state a visitor lands in.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Vali kasutaja</h1>
+    <span class="pagehead__context">Määrab, kelle tööd rakendus näitab</span>
+  </div>
+
+  <div class="banner banner--restricted">
+    <p>
+      Kasutaja valimine ei ole autentimine. See määrab, kelle vaadet rakendus
+      näitab — <strong>Minu töö</strong>, omaniku vaated ja profiilikontekst.
+      Tegevused salvestatakse märkega, et sisenemine toimus jagatud parooliga.
+    </p>
+  </div>
+
+  <ul class="personalist">
+    {% for person in people %}
+      <li class="personalist__item {% if current and current.pk == person.pk %}is-current{% endif %}">
+        <form method="post" action="{% url 'accounts:act_as' %}">
+          {% csrf_token %}
+          <input type="hidden" name="user_id" value="{{ person.pk }}">
+          {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+          <span class="avatar" aria-hidden="true">{{ person.initials }}</span>
+          <span class="personalist__name">
+            {{ person.display_name }}
+            <span class="personalist__role">{{ person.get_role_display }}</span>
+          </span>
+          {% if current and current.pk == person.pk %}
+            <span class="badge">Praegu valitud</span>
+          {% else %}
+            <button type="submit" class="button button--quiet">Vali</button>
+          {% endif %}
+        </form>
+      </li>
+    {% empty %}
+      <li class="empty">Ühtegi aktiivset kasutajat ei ole veel loodud.</li>
+    {% endfor %}
+  </ul>
+
+  <form method="post" action="{% url 'accounts:act_as' %}" class="form__actions">
+    {% csrf_token %}
+    <input type="hidden" name="user_id" value="">
+    <button type="submit" class="button button--quiet">
+      Ilma kasutajata — ainult osakonna ülevaade
+    </button>
+  </form>
+</div>
+{% endblock %}
