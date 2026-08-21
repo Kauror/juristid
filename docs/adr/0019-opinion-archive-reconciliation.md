@@ -1,4 +1,4 @@
-# 0018 — Reconstructing historical submissions from the opinions archive
+# 0019 — Reconstructing historical submissions from the opinions archive
 
 - **Status:** Accepted — implemented on the `stage-2h-opinions-archive` branch, pending integration
 - **Date:** 2026-08-21

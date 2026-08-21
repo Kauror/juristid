@@ -35,6 +35,57 @@ from app.core.enums import Visibility
 # ADMINISTRATOR is deliberately absent (master specification 5.2).
 ROLES_WITH_RESTRICTED_ACCESS: frozenset[str] = frozenset({UserRole.DEPARTMENT_HEAD.value})
 
+# Roles that may add or change business content on a Matter they can already
+# see. ADMINISTRATOR is absent for the same reason it is absent above: technical
+# administration is not business authorship, and an administrator who needs to
+# author work has a business role for it. READER is absent because reading
+# without editing is the entire definition of the role (specification 5.1).
+ROLES_WITH_BUSINESS_WRITE: frozenset[str] = frozenset(
+    {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value}
+)
+
+# Who may turn a claimed work victory into a confirmed one, or record that it
+# did not happen. A `Töövõit` is the department's own claim about its influence,
+# so the judgement belongs with the person answerable for it. Specialists write
+# and edit candidates freely; only the department head decides
+# (specification 5.1, Stage-2G brief 25).
+ROLES_WITH_WORK_VICTORY_REVIEW: frozenset[str] = frozenset({UserRole.DEPARTMENT_HEAD.value})
+
+
+def _business_role(user: object | None) -> str:
+    """The role a *person* is acting under, or "" if there is no person.
+
+    The shared-gate sentinel and anonymous users fall through to "", which is in
+    none of the role sets above. That is the property that keeps a shared
+    password from authoring anything: `DepartmentViewer` is not somebody, it
+    cannot be an audit actor, and it must never reach a write
+    (docs/adr/0016, Stage-2G brief 29).
+    """
+    if isinstance(user, DepartmentViewer):
+        return ""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return ""
+    if not getattr(user, "is_active", False):
+        return ""
+    return str(getattr(user, "role", "") or "")
+
+
+def may_write_business_content(user: object | None) -> bool:
+    """May this user add or change business content on a Matter they can read?
+
+    Deliberately not "is this the Matter's owner". The department maintains
+    these records collaboratively today, and narrowing authorship to the owner
+    would make the product slower than the OneNote page it replaces
+    (Stage-2G brief 29). *Which* Matters they can reach is a separate question,
+    answered by `matter_visibility_q` before this is ever asked.
+    """
+    return _business_role(user) in ROLES_WITH_BUSINESS_WRITE
+
+
+def may_review_work_victory(user: object | None) -> bool:
+    """May this user confirm a work victory, or record that it did not happen?"""
+    return _business_role(user) in ROLES_WITH_WORK_VICTORY_REVIEW
+
 
 @dataclass(frozen=True)
 class Scope:
@@ -79,6 +130,31 @@ class DepartmentViewer:
 #: `scope_for_user` recognising the *class* rather than the object leaves room
 #: for somebody to subclass their way into a scope, and there is no reason to.
 DEPARTMENT_VIEWER = DepartmentViewer()
+
+
+def is_department_head(user: object | None) -> bool:
+    """Whether this reader is the department head, by role.
+
+    A *read* helper over the same role vocabulary the scope uses, not a second
+    authorization system: it answers "may this person open the management
+    surface", while what that surface may then *show* is still decided by
+    ``visible_to`` like everything else.
+
+    Three things it is deliberately not. It is not a name — hard-coding a
+    colleague would break the day the role changes hands. It is not
+    ``is_superuser`` or ADMINISTRATOR — technical administration is not
+    business access, and that is the rule this module exists to hold
+    (specification 5.2). And it is not the shared-gate sentinel: knowing the
+    department's password proves somebody is behind the door, never that they
+    are the head (Stage-2F brief 28).
+
+    Resolved through `_business_role` so that "who is acting" is decided in one
+    place. Stage 2G arrived with its own copy of those three refusals for
+    `may_review_work_victory`, which answers the same question about the same
+    person; two copies that agree today are two copies that can stop agreeing
+    the day one of them learns about a new kind of non-person.
+    """
+    return _business_role(user) == UserRole.DEPARTMENT_HEAD.value
 
 
 def department_scope() -> Scope:

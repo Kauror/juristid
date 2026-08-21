@@ -1,0 +1,18 @@
+{% comment %}
+One ordinary form field. Rendered only when the form actually declares it, so
+the same page can serve a period form and a one-line reason form.
+
+The label is associated by `for=` rather than by wrapping the control, which is
+not a style preference. A wrapping `<label>` around a `<select>` takes its
+accessible name from everything inside it — including every option — so the
+quarter field announced itself as "Kvartal — I kvartal II kvartal III kvartal
+IV kvartal". CI found it: a browser test could not address the field at all.
+{% endcomment %}
+{% if field %}
+  <div class="field">
+    <label class="field__label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+    {{ field }}
+    {% if field.help_text %}<span class="field__help">{{ field.help_text }}</span>{% endif %}
+    {% for error in field.errors %}<span class="field__error">{{ error }}</span>{% endfor %}
+  </div>
+{% endif %}

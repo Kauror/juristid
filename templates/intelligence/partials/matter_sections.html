@@ -1,0 +1,139 @@
+{% comment %}
+The three structured-fact sections of a Matter page.
+
+Substantive operational information, not technical metadata, so they sit in the
+main column with `Järgmiseks` and the chronology rather than behind a tab
+(Stage-2G brief 36).
+
+Every write leaves this page: the forms are their own small server-rendered
+pages under `app.intelligence`, which POST and come back to the anchor they came
+from. That keeps this app out of the Matter view's rendering entirely
+(Stage-2G brief 74).
+
+Nothing here is deleted. A cancelled expectation stays visible and marked,
+because a plan that changed is part of the file's history.
+{% endcomment %}
+
+<section class="factsection" id="olulised-tahtajad" aria-labelledby="teema-tahtajad-heading">
+  <div class="factsection__head">
+    <h2 class="sectionlabel" id="teema-tahtajad-heading">Olulised tähtajad</h2>
+    {% if can_write %}
+      <a class="button button--quiet button--tiny"
+         href="{% url 'intelligence:add_important_date' matter_id=matter.pk %}">+ Lisa oluline tähtaeg</a>
+    {% endif %}
+  </div>
+
+  {% if intelligence.has_dates %}
+    <ul class="factlist factlist--compact">
+      {% for record in intelligence.upcoming_dates %}
+        {% include "intelligence/partials/important_date_row.html" with record=record matter=matter can_write=can_write %}
+      {% endfor %}
+      {% for record in intelligence.past_dates %}
+        {% include "intelligence/partials/important_date_row.html" with record=record matter=matter can_write=can_write past=True %}
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty empty--inline">Olulisi tähtaegu pole lisatud.</p>
+  {% endif %}
+</section>
+
+<section class="factsection" id="joustumine" aria-labelledby="teema-joustumine-heading">
+  <div class="factsection__head">
+    <h2 class="sectionlabel" id="teema-joustumine-heading">Jõustumine</h2>
+    {% if can_write %}
+      <a class="button button--quiet button--tiny"
+         href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}">+ Lisa jõustumine</a>
+    {% endif %}
+  </div>
+
+  {% if intelligence.has_effective_dates %}
+    <ul class="factlist factlist--compact">
+      {% for record in intelligence.effective_dates %}
+        <li class="factrow {% if record.is_cancelled %}factrow--cancelled{% endif %}">
+          <span class="factrow__date {% if record.is_approximate %}dateline--approximate{% endif %}
+                       {% if not record.has_known_date %}factrow__date--undated{% endif %}">
+            {{ record.display_when }}
+          </span>
+          <span class="factrow__body">
+            {% if record.description %}
+              <span class="factrow__title">{{ record.description }}</span>
+            {% endif %}
+            {% if record.note %}<span class="muted">{{ record.note }}</span>{% endif %}
+            {% if record.is_cancelled %}
+              <span class="flag flag--cancelled">Tühistatud</span>
+            {% endif %}
+            {% if record.source_url %}
+              <a class="factrow__source" href="{{ record.source_url }}"
+                 rel="noopener noreferrer external" target="_blank">Ametlik allikas</a>
+            {% endif %}
+          </span>
+          {% if can_write and not record.is_cancelled %}
+            <span class="factrow__actions">
+              <a class="button button--quiet button--tiny"
+                 href="{% url 'intelligence:edit_effective_date' matter_id=matter.pk pk=record.pk %}">Muuda</a>
+              <a class="button button--quiet button--tiny"
+                 href="{% url 'intelligence:cancel_effective_date' matter_id=matter.pk pk=record.pk %}">Tühista</a>
+            </span>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty empty--inline">Jõustumise infot pole lisatud.</p>
+  {% endif %}
+</section>
+
+<section class="factsection" id="toovoidud" aria-labelledby="teema-toovoidud-heading">
+  <div class="factsection__head">
+    <h2 class="sectionlabel" id="teema-toovoidud-heading">Töövõidud</h2>
+    {% if can_write %}
+      <a class="button button--quiet button--tiny"
+         href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}">+ Lisa töövõidu kandidaat</a>
+    {% endif %}
+  </div>
+
+  {% if intelligence.has_work_victories %}
+    <ul class="factlist factlist--compact">
+      {% for record in intelligence.work_victories %}
+        <li class="factrow">
+          <span class="factrow__date">
+            {% if record.has_period %}
+              {{ record.display_period }}
+            {% else %}
+              <span class="factrow__date--undated">Teadmata periood</span>
+            {% endif %}
+          </span>
+          <span class="factrow__body">
+            <span class="victorystate victorystate--{{ record.status|lower }}">
+              {{ record.get_status_display }}
+            </span>
+            <span class="factrow__title">{{ record.title }}</span>
+            {% if record.detail %}<span class="muted">{{ record.detail }}</span>{% endif %}
+            {% if record.confirmed_by %}
+              <span class="muted">
+                Kinnitas {{ record.confirmed_by.display_name }}
+                {{ record.confirmed_at|date:"d.m.Y" }}
+              </span>
+            {% endif %}
+          </span>
+          <span class="factrow__actions">
+            {% if can_review_victory and not record.is_confirmed %}
+              <a class="button button--tiny"
+                 href="{% url 'intelligence:confirm_work_victory' matter_id=matter.pk pk=record.pk %}">Kinnita töövõiduks</a>
+            {% endif %}
+            {% if can_write %}
+              <a class="button button--quiet button--tiny"
+                 href="{% url 'intelligence:edit_work_victory' matter_id=matter.pk pk=record.pk %}">Muuda</a>
+            {% endif %}
+            {% if can_review_victory and record.status != "NOT_REALIZED" %}
+              <a class="button button--quiet button--tiny"
+                 href="{% url 'intelligence:reject_work_victory' matter_id=matter.pk pk=record.pk %}">Ei realiseerunud</a>
+            {% endif %}
+          </span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="empty empty--inline">Töövõite ega kandidaate pole lisatud.</p>
+  {% endif %}
+</section>

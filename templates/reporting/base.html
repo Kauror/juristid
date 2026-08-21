@@ -35,6 +35,30 @@ item rather than another tab on the dashboard (Stage-2E brief 6).
       {% endfor %}
     </nav>
 
+    {% comment %}
+      Every year, listed. The quick choices above answer "how are we doing now";
+      this answers "what happened in 2014", which a twenty-year register is
+      mostly for. Newest first, because that is the order people look.
+
+      Not a <select>: the whole list is a dozen or so items, and a reader
+      scanning for a year finds it faster than they can open a dropdown
+      (Stage-2E.1 brief 9).
+    {% endcomment %}
+    {% if available_years %}
+      <nav class="yearpicker" aria-label="Aasta">
+        <span class="yearpicker__label" id="aasta-label">Aasta</span>
+        <ul class="yearpicker__list" aria-labelledby="aasta-label">
+          {% for year in available_years %}
+            <li>
+              <a class="yearpicker__year {% if year.active %}is-active{% endif %}"
+                 {% if year.active %}aria-current="true"{% endif %}
+                 href="?{{ year.query }}">{{ year.label }}</a>
+            </li>
+          {% endfor %}
+        </ul>
+      </nav>
+    {% endif %}
+
     <div class="filterbar">
       {% for chip in chips %}
         <a class="filterchip" href="?{{ chip.remove_query }}"

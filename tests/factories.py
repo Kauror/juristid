@@ -14,6 +14,12 @@ from app.accounts.models import User
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
+from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictoryStatus
+from app.intelligence.models import (
+    MatterEffectiveDate,
+    MatterImportantDate,
+    MatterWorkVictory,
+)
 from app.legacy_import.models import ImportBatch, MatchMethod, MatterSourceReference
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import MatterOrigin, RecordMode
@@ -22,7 +28,7 @@ from app.organisations.models import Organisation, OrganisationType
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea, Tag
-from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
+from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.models import NextAction, StageVocabulary
 
 
@@ -172,3 +178,46 @@ class SubmissionFactory(factory.django.DjangoModelFactory):
     title = factory.Sequence(lambda n: f"Naidisarvamus {n}")
     kind = SubmissionKind.FORMAL_OPINION
     status = SubmissionStatus.DRAFT
+
+
+class ImportantDateFactory(factory.django.DjangoModelFactory):
+    """A raw `Oluline tähtaeg`, exact by default.
+
+    Prefer `app.intelligence.services.add_important_date` for anything testing
+    behaviour: the service is what validates the period, and a factory that
+    bypassed it would let a test assert against a shape the product cannot
+    create.
+    """
+
+    class Meta:
+        model = MatterImportantDate
+
+    matter = factory.SubFactory(MatterFactory)
+    title = factory.Sequence(lambda n: f"Naidistahtaeg {n}")
+    date_value = factory.LazyFunction(timezone.localdate)
+    period_end = factory.LazyAttribute(lambda record: record.date_value)
+    date_precision = DatePrecision.EXACT
+    status = FactStatus.ACTIVE
+
+
+class EffectiveDateFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = MatterEffectiveDate
+
+    matter = factory.SubFactory(MatterFactory)
+    kind = EffectiveDateKind.KNOWN_DATE
+    date_value = factory.LazyFunction(timezone.localdate)
+    period_end = factory.LazyAttribute(lambda record: record.date_value)
+    date_precision = DatePrecision.EXACT
+    description = "põhiosa"
+    status = FactStatus.ACTIVE
+
+
+class WorkVictoryFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = MatterWorkVictory
+
+    matter = factory.SubFactory(MatterFactory)
+    status = WorkVictoryStatus.CANDIDATE
+    title = factory.Sequence(lambda n: f"Naidistoovoit {n}")
+    date_precision = DatePrecision.YEAR

@@ -170,6 +170,83 @@ security edge.
 | Whether member-feedback counts are worth persisting as columns | Department head | If anyone asks for the number | Deferred in Stage 2E because recovering them means re-parsing raw spreadsheet cells. They would still never become a response rate: asked and answered are independent observations, and the register has rows where more answered than were asked. |
 | Whether the period picker should offer date ranges rather than whole years | Department head + lawyers | After the pages have been used | Whole years match the register's own reporting identity. A day-precision filter over a year-precision fact invites false precision, so it was not built speculatively. |
 
+## Decisions taken by the development agent in Stage 2E.1
+
+| Decision | Why | Reversibility |
+| --- | --- | --- |
+| The register's live search reuses the search projection rather than growing one | A second full-text implementation over the same Matters would be a second opinion about what a word means, and the two would drift. `search.services.matching_matter_ids` returns a subquery, so a keystroke stays one statement. | Low — it is the point |
+| `?q=` does not reorder the register | The list has its own sort control. Silently reordering by relevance the moment somebody types would move rows for reasons the column headers do not explain. | High |
+| Selectable years come from the authorized register population | A year offered but empty is itself a disclosure, and a OneNote-only Matter's `reporting_year` is a page timestamp rather than a filing year. Both rules already existed; the picker inherits them. | Low — same tuple, `REGISTER_YEAR_ORIGINS` |
+| `Asutus` is a query convenience over two columns that keep their meanings | `KELLELT` and `KELLELE` are different facts and the register changed which one its counterparty column meant in 2020. The convenience filter reads; it never writes, merges or rewrites either column. | High |
+| Both ends of every date range are inclusive | 01.01–31.01 means January. The columns are `DateField`s, so there is no time component for an inclusive bound to lose — the reasoning that makes `Period.end_datetime` exclusive does not apply. | High |
+| The organisation chooser is ordered by name and carries no counts | Ordering it by usage, or narrowing it to bodies that appear on visible Matters, would make the order or the membership of the list a statement about restricted work. | Moderate |
+| Inline display requires the extension and the stored MIME type to agree | A MIME type is a claim by whoever uploaded the file. Requiring both to land on the same allow-list entry means one wrong value cannot open the door. Anything unrecognised downloads. | Low — it is a security boundary |
+| `Nähtavus` leaves the creation form but not the model | Restricting a Matter is a rare, deliberate act; on the creation screen it was a field to skim past. New Matters are `NORMAL` decided server-side, never inferred from a field a caller could omit. | High — the control can come back |
+| `policy_area_other` is free text and never becomes taxonomy | The governed PolicyArea list will never cover everything, and the alternative people reach for is inventing a row nobody reviewed. It is searchable as descriptive metadata and counted by no statistic. | Moderate |
+
+## New decisions Stage 2E.1 raises for Koda
+
+| Decision | Owner | When | Notes |
+| --- | --- | --- | --- |
+| Whether recurring `Muu valdkond` values should become governed PolicyAreas | Department head | Once the field has been used for a while | The field is deliberately not self-promoting: nothing in the product turns free text into taxonomy. If the same words keep appearing, adding a reviewed PolicyArea is a decision for a person, and the existing rows can then be re-filed by hand. |
+| Whether `Materjalid` should distinguish incoming material from Koda's own | Department head + lawyers | If the filter proves useful | It currently answers "does this file carry any document I may open". Splitting it by `DocumentRole` is easy and was not built speculatively. |
+
+## Decisions taken by the development agent in Stage 2F
+
+Recorded so they can be challenged rather than inherited silently.
+
+| Decision | Why | Reversibility |
+| --- | --- | --- |
+| A lone given name resolves to a user when **exactly one** known person carries it | The register's `VASTUTAJA` column holds a first name and an account holds a full one. Comparing them for equality meant the commonest shape in the source matched nothing, and current matters imported ownerless while the register named somebody on almost every row. The rule stays deterministic: a mapping, an exact full name, or a unique given name. Nothing else. | Low — it is the fix |
+| Ambiguity is judged against **all** known users, active and inactive | A departed `Kadri` makes a present-day `Kadri` unsafe. Looking at only the active half would turn an ambiguous match into a confident one and hand a former colleague's files to whoever shares their first name. | Low |
+| Historical ownership may resolve to an **inactive** user | A 2014 file was owned by whoever owned it. Refusing to name them leaves part of the archive ownerless while the source says otherwise. They stay out of persona selection and out of ordinary owner choice. | Moderate |
+| A deterministic answer standing beside an unidentified non-blank one is a **conflict**, not agreement | The unidentified cell may name the same person or somebody else, and there is no evidence which. Resolving in favour of the half we happen to understand would be an inference nobody could later distinguish from a fact. | Moderate — it is the strictest reading |
+| Promotion sets `origin = PROMOTED_LEGACY` | The value has always been for exactly this, it stays inside `REGISTER_YEAR_ORIGINS` so no year statistic moves, and it makes "which records did the cutover activate" a query rather than a guess from a date. | High |
+| A promoted Matter reaches **Tier 2**, never Tier 1 | Tier 1 means verified at cutover, and the specification is explicit that the active set is attested by people one lawyer's slice at a time (19.5, 19.6). A bulk operator command has not done that. | High — one line, once the attestation happens |
+| `REVIEWED_CURRENT_YEARS` is a code constant, not a command flag | The decision that a register year represents current work belongs to the department. A flag is something a tired operator passes; a constant is a reviewed change with a diff and a reviewer. | High |
+| `my_active_matters` filters to FULL records | It was the one current-work selector that did not, which was invisible while imported archive rows had no owner. Restoring the register's owners would otherwise fill every lawyer's Minu töö with a decade of archive records. | Low — archive is not a work queue |
+| Osakonna töö reuses Ülevaade's selectors rather than restating them | A second definition of "overdue" written next door is how two screens start disagreeing about the same Matter, and the department head is exactly the person who would notice and stop believing both. | Low |
+| Three matrix columns link to a **superset** and say so | The register cannot yet filter a deadline window or a combined WAIT/MONITOR review state. A superset link marked with `*` is honest; a subset link showing fewer rows than the number above it reads as a broken count. | High — the marks come off when the filters exist |
+
+## New decisions Stage 2F raises for Koda
+
+| Decision | Owner | When | Notes |
+| --- | --- | --- | --- |
+| Whether any **2025** matters should be promoted to current work | Department head | Before the 2025 register is quoted as current | `promote_current_register --year 2025 --dry-run` produces the analysis today and **refuses to apply**. The 2026 decision was about 2026; extending it backwards is a separate decision, recorded by adding the year to `REVIEWED_CURRENT_YEARS`. |
+| Who the unresolved **multi-person** owner cells actually refer to | Department head + the lawyers named | When the backfill is run on real data | A cell naming two people is a shared file. The system will not split it, and will not pick one. An operator mapping line settles each case; there is no bulk answer. |
+| Whether a former colleague's **open** matters should be reassigned | Department head | Before go-live | The head's dashboard surfaces them rather than hiding them, and the resolver will keep naming the departed owner in history either way. Reassigning current work is a business decision about who picks it up. |
+| Whether source `JÄRGMISEKS` should get an assisted human conversion flow | Department head + lawyers | After the pages have been used | The text survives verbatim and is deliberately not converted: the same column holds a thing to do, a thing to wait for and somebody else's expected timing. A reviewed one-at-a-time conversion is possible; a bulk one would destroy the distinction Stage 1 created. |
+| Which current-register rows have **unclear closure semantics** | Department head | When the real dry run is read | The promotion respects an explicit closure label and treats everything else as current. Any row where that reading is wrong will show up as an unexpected `PROMOTE` or `EXPLICITLY_CLOSED` in the aggregate report. |
+| Whether the register should gain a **deadline-window** filter | Department head + reporting owner | With the next Teemad work | Three department-head counts currently link to a wider list because the register cannot express "response deadline within seven days" or "WAIT and MONITOR review due". Not built here, to avoid two query languages beside Stage 2E.1's filters. |
+
+## Decisions taken by the development agent in Stage 2G
+
+Recorded so they can be challenged rather than inherited silently. The
+architecture reasoning is in ADR 0018; these are the ones with a product edge.
+
+| Decision | Why | Reversibility |
+| --- | --- | --- |
+| `Oluline tähtaeg`, `Jõustumine` and `Töövõit` are three models, not tags and not one generic event table | Each carries validation, review state, provenance and audit that a tag assignment cannot; and every constraint that keeps a fabricated commencement date out of the database would become conditional on a `kind` column in a merged table. | Low — it is the point of the design |
+| A period is stored as its first day **and** its last, plus its precision | Ordering and "has this passed" both become plain SQL, and the second question needs the end: II poolaasta 2027 has not passed on 2 July 2027. | Moderate — two derived columns, one writer |
+| Only a `KNOWN_DATE` commencement may carry a date, enforced by a CHECK constraint | The brief allows an `UNKNOWN` row to have a null date; this goes further and forbids it having one at all. A date stored against "kuupäev täpsustamisel" is indistinguishable from a real one on every page downstream. | High — one constraint |
+| Year filtering only, for approximate periods | Every precision offered sits inside one calendar year, so the year is exact. A day-level range filter over a quarter-level fact would expose false precision. | High |
+| The work-victory form requires an explicit period answer, including "Teadmata periood" | Neither a silently unknown period nor a pre-filled current year is a fact somebody stated. Choosing costs one click and the record then says what a person meant. | High |
+| Writes go through full-page forms that redirect back to the Matter anchor, not HTMX fragment swaps | The Matter overview is rendered by `app.matters.views` from its own context builders; swapping part of it from `app.intelligence` would couple the two apps for half a second of latency. | High |
+| `Jälgimine` is one navigation item with three tabs | Three more top-level links would crowd a shell that already carries five. Statistika established the pattern. | High |
+| Structured text is **not** yet in `SearchDocument` | A structured fact deserves its own `SearchSourceKind` row so a result can name what matched, which means new foreign keys and signal wiring in a module Stage 2E.1 is editing concurrently. The dedicated pages filter their own records meanwhile. | High — additive when 2E.1 has landed |
+
+## New decisions Stage 2G raises for Koda
+
+| Decision | Owner | When | Notes |
+| --- | --- | --- | --- |
+| Whether a confirmed `Töövõit` must later carry a Proposal/Outcome/Attribution record | Department head + management | Before any work-victory figure is published outside the department | Today a confirmed victory means a person judged it one. The specification's eventual outcome model (6.6) is more demanding, and `MatterWorkVictory` is shaped so those rows can be referenced or migrated rather than discarded. Nothing in this stage computes influence. |
+| Whether a specialist may confirm a work victory, or only the department head | Department head | Before the pilot | Implemented as department-head only, because it is the Chamber's own claim about its influence. Specialists create and edit candidates freely on any Matter they can reach. One frozen set in `app.core.authorization` if the answer differs. |
+| Whether `Jõustumine` should keep appearing inside the combined *Olulised tähtajad* view | Department head + lawyers | After the pages have been used | Implemented as a labelled presentation over one source of truth, with a selector that narrows to either kind. No row is duplicated, so turning it off is a default change. |
+| The exact OneNote-list import and reconciliation procedure | Department head + whoever owns the archive | Before any import | Planned route: list entry → embedded OneNote page id → `LegacySourcePage` → `MatterSourcePage` → Matter → structured record with `legacy_source_page` and `source_text` set. Where a page relationship exists it is authoritative; where unique resolution fails the row goes to a review queue. **Title fuzzy-matching must never run automatically.** |
+| How a legacy line that says only "2 töövõitu" should be reviewed | Department head + the lawyer who wrote it | With the import | The importer will create **one** candidate preserving the raw sentence in `source_text`, for a person to split. It will not invent two descriptions, and there is deliberately no quantity column to put a 2 in. |
+| Whether these dates should eventually trigger reminders | Department head | After the pilot | Nothing schedules, mails or notifies in this stage. The structured dates make it possible; whether a deadline three weeks out should reach somebody's inbox is a working-practice decision, not a technical one. |
+| Whether a confirmed work victory should require a period | Department head + reporting owner | Before the first annual figure | A candidate may honestly have no period. Whether confirming one should force the question is a reporting decision; the constraint would be one line. |
+
 ## Decisions taken by the development agent in Stage 2H
 
 | Decision | Why | Reversibility |

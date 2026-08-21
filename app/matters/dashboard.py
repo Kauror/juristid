@@ -90,8 +90,12 @@ class SummaryCard:
     note: str = ""
 
 
-def _overdue_actions(user: Any, today: date) -> QuerySet[NextAction]:
+def overdue_actions(user: Any, today: date) -> QuerySet[NextAction]:
     """Genuinely late work, and nothing else.
+
+    Public rather than private because the department-head dashboard counts the
+    same thing, and a second definition of "overdue" written next door is how
+    two pages start disagreeing about the same Matter (Stage-2F brief 32).
 
     Only DO + DEADLINE can be overdue. A WAIT whose review date has passed is
     due for a look, not missed — describing an ordinary dependency on a ministry
@@ -110,7 +114,7 @@ def _overdue_actions(user: Any, today: date) -> QuerySet[NextAction]:
     )
 
 
-def _reviews_due(user: Any, today: date) -> QuerySet[NextAction]:
+def reviews_due(user: Any, today: date) -> QuerySet[NextAction]:
     """WAIT and MONITOR whose review date has arrived. Never called overdue."""
     return (
         NextAction.objects.visible_to(user)
@@ -124,7 +128,7 @@ def _reviews_due(user: Any, today: date) -> QuerySet[NextAction]:
     )
 
 
-def _without_next_action(user: Any) -> QuerySet[Matter]:
+def without_next_action(user: Any) -> QuerySet[Matter]:
     has_open = NextAction.objects.filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
     return active_matters(user).annotate(has_action=Exists(has_open)).filter(has_action=False)
 
@@ -153,14 +157,14 @@ def summary_cards(user: Any, today: date | None = None) -> list[SummaryCard]:
         SummaryCard(
             key="overdue",
             label="Tähtaeg möödas",
-            count=_overdue_actions(user, today).count(),
+            count=overdue_actions(user, today).count(),
             url=reverse("matters:my_work"),
             note="Ainult tähtajaga tegevused",
         ),
         SummaryCard(
             key="no_action",
             label="Järgmine tegevus puudub",
-            count=_without_next_action(user).count(),
+            count=without_next_action(user).count(),
             url=_teemad(olek="avatud", liik=RecordMode.FULL),
         ),
         SummaryCard(
@@ -221,7 +225,7 @@ def attention_rows(user: Any, today: date | None = None) -> list[AttentionRow]:
     today = today or timezone.localdate()
     rows: list[AttentionRow] = []
 
-    for action in _overdue_actions(user, today).order_by("target_date")[:ATTENTION_LIMIT]:
+    for action in overdue_actions(user, today).order_by("target_date")[:ATTENTION_LIMIT]:
         rows.append(
             AttentionRow(
                 order=1,
@@ -256,7 +260,7 @@ def attention_rows(user: Any, today: date | None = None) -> list[AttentionRow]:
             )
         )
 
-    for action in _reviews_due(user, today).order_by("target_date")[:ATTENTION_LIMIT]:
+    for action in reviews_due(user, today).order_by("target_date")[:ATTENTION_LIMIT]:
         rows.append(
             AttentionRow(
                 order=3,
@@ -283,7 +287,7 @@ def attention_rows(user: Any, today: date | None = None) -> list[AttentionRow]:
             )
         )
 
-    without_action = _without_next_action(user).select_related("owner", "stage")
+    without_action = without_next_action(user).select_related("owner", "stage")
     for quiet in without_action.order_by("-updated_at")[:ATTENTION_LIMIT]:
         rows.append(
             AttentionRow(

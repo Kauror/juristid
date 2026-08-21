@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Kinnita töövõit · {{ matter.title|truncatechars:40 }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+Confirmation is its own page and its own decision.
+
+A candidate must not become a confirmed work victory because somebody tidied its
+wording, so the transition has no shortcut: this page states what is being
+claimed and for which period, and the button does one thing
+(master specification 3.5, Stage-2G brief 53).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Kinnita töövõiduks</h1>
+    <span class="pagehead__context">
+      {% if matter.display_reference %}
+        <span class="reference">{{ matter.display_reference }}</span>
+      {% endif %}
+      {{ matter.title }}
+    </span>
+  </div>
+
+  <section class="card" aria-labelledby="kinnitatav-toovoit-heading">
+    <h2 class="sectionlabel" id="kinnitatav-toovoit-heading">Töövõit</h2>
+    <p class="nextaction__text">{{ record.title }}</p>
+    {% if record.detail %}<p class="cardnote">{{ record.detail }}</p>{% endif %}
+    <p class="railcard__row">
+      <span class="railcard__key">Periood</span>
+      <span>
+        {% if record.has_period %}
+          {{ record.display_period }}
+        {% else %}
+          <span class="muted">Teadmata periood</span>
+        {% endif %}
+      </span>
+    </p>
+    <p class="railcard__row">
+      <span class="railcard__key">Praegune olek</span>
+      <span>{{ record.get_status_display }}</span>
+    </p>
+  </section>
+
+  <p class="cardnote">
+    Kinnitamine tähendab, et osakond loeb selle Koja töövõiduks. See on inimese
+    otsus, mitte süsteemi järeldus — süsteem ei mõõda põhjuslikku mõju.
+  </p>
+
+  <form class="form" method="post" action="{{ form_action }}">
+    {% csrf_token %}
+    <div class="form__actions">
+      <button class="button button--primary" type="submit">Kinnita töövõiduks</button>
+      <a class="button button--quiet" href="{% url 'matters:matter_detail' pk=matter.pk %}">Loobu</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

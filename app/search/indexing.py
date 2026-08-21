@@ -125,6 +125,13 @@ def _alias_text_for(matter: Matter) -> str:
         parts.extend(alias.alias for alias in organisation.aliases.all())
     for area in matter.policy_areas.all():
         parts.append(area.name_et)
+    # The free-text area, beside the canonical names rather than instead of
+    # them. It is descriptive metadata somebody typed, so it belongs in the
+    # alias column at weight C with the other names — and it is emphatically
+    # *not* a PolicyArea: no statistic counts it and no taxonomy row exists for
+    # it (Stage-2E.1 brief 20, app/matters/models.py).
+    if matter.policy_area_other:
+        parts.append(matter.policy_area_other)
     for tag in matter.tags.all():
         parts.append(tag.name_et)
         parts.extend(alias.alias for alias in tag.aliases.all())

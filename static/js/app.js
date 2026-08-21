@@ -25,6 +25,69 @@
     }
   });
 
+  /* ---- Uus teema: the "Muu" valdkond reveals its own text field --------
+   * Progressive enhancement only. Without JavaScript the input is visible from
+   * the start and the form still works — the server decides what "Muu" means,
+   * not this (Stage-2E.1 brief 20).
+   */
+  var otherArea = document.querySelector("#valdkond-muu input[type=checkbox]");
+  var otherAreaText = document.getElementById("valdkond-muu-tekst");
+  if (otherArea && otherAreaText) {
+    var syncOtherArea = function () {
+      otherAreaText.hidden = !otherArea.checked;
+      if (otherArea.checked) {
+        var input = otherAreaText.querySelector("input");
+        if (input) {
+          input.focus();
+        }
+      }
+    };
+    otherArea.addEventListener("change", syncOtherArea);
+    syncOtherArea();
+  }
+
+  /* ---- Uus teema: say which files are about to be uploaded --------------
+   * A file input shows "3 files" and nothing about which three. This lists
+   * them before saving, so a wrong pick is visible while it is still cheap.
+   */
+  var fileInput = document.getElementById("id_files");
+  var fileList = document.getElementById("valitud-failid");
+  if (fileInput && fileList) {
+    fileInput.addEventListener("change", function () {
+      fileList.textContent = "";
+      var chosen = Array.prototype.slice.call(fileInput.files || []);
+      fileList.hidden = chosen.length === 0;
+      chosen.forEach(function (file) {
+        var item = document.createElement("li");
+        item.className = "dropzone__file";
+        item.textContent = file.name;
+        fileList.appendChild(item);
+      });
+    });
+
+    var zone = fileInput.closest(".dropzone");
+    if (zone) {
+      ["dragenter", "dragover"].forEach(function (name) {
+        zone.addEventListener(name, function (event) {
+          event.preventDefault();
+          zone.classList.add("is-over");
+        });
+      });
+      ["dragleave", "drop"].forEach(function (name) {
+        zone.addEventListener(name, function (event) {
+          event.preventDefault();
+          zone.classList.remove("is-over");
+        });
+      });
+      zone.addEventListener("drop", function (event) {
+        if (event.dataTransfer && event.dataTransfer.files.length) {
+          fileInput.files = event.dataTransfer.files;
+          fileInput.dispatchEvent(new Event("change"));
+        }
+      });
+    }
+  }
+
   /* ---- Composer: Ctrl/Cmd+Enter submits, Esc closes optional fields ------ */
   document.addEventListener("keydown", function (event) {
     var composer = event.target.closest ? event.target.closest("form[data-composer]") : null;
@@ -101,8 +164,63 @@
     });
   }
 
+  /* ---- The period control: show only the fields the precision needs -------
+   * Progressive enhancement only. With scripting off every group is visible,
+   * every one is optional, and the server decides which of them it needs — so
+   * the form still works and still refuses an impossible combination
+   * (app/intelligence/forms.py, Stage-2G brief 7, 49).
+   */
+  function bindPeriodFields(scope) {
+    var fields = scope.querySelector("#perioodi-valjad");
+    var chooser = scope.querySelector("#tapsuse-valik");
+    if (!fields || !chooser) {
+      return;
+    }
+    /* Jõustumine asks a question before the precision one: a commencement that
+     * happens "üldises korras" has no date to be precise about, so the whole
+     * control goes away rather than sitting there inviting a fabricated day. */
+    var kindChooser = scope.querySelector("#joustumise-liik");
+    var groups = Array.prototype.slice.call(
+      fields.querySelectorAll(".periodfields__group")
+    );
+    var sync = function () {
+      var chosen = chooser.querySelector("input:checked");
+      var value = chosen ? chosen.value : "";
+      if (kindChooser) {
+        var kind = kindChooser.querySelector("input:checked");
+        var dated = kind ? kind.value === "KNOWN_DATE" : true;
+        chooser.hidden = !dated;
+        chooser.classList.toggle("is-hidden", !dated);
+        fields.hidden = !dated;
+        fields.classList.toggle("is-hidden", !dated);
+        if (!dated) {
+          return;
+        }
+      }
+      groups.forEach(function (group) {
+        var applicable = (group.getAttribute("data-precision") || "").split(" ");
+        /* `hidden` alone loses to any component rule that sets `display`, which
+         * is how the composer's disclosure was broken once already — so the
+         * class carries the rule and `hidden` carries the semantics. */
+        var show = value !== "" && applicable.indexOf(value) !== -1;
+        group.hidden = !show;
+        group.classList.toggle("is-hidden", !show);
+      });
+    };
+    chooser.querySelectorAll("input[type=radio]").forEach(function (radio) {
+      radio.addEventListener("change", sync);
+    });
+    if (kindChooser) {
+      kindChooser.querySelectorAll("input[type=radio]").forEach(function (radio) {
+        radio.addEventListener("change", sync);
+      });
+    }
+    sync();
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     bind(document);
+    bindPeriodFields(document);
   });
 
   /* A rejected save returns 400 with the surface re-rendered and the errors in

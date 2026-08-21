@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }} · {{ matter.title|truncatechars:40 }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+One small server-rendered page for adding, correcting or cancelling a structured
+fact. Not the Django admin, and not a modal that needs JavaScript to exist: this
+works with scripting off, and the period control below simply starts with every
+option visible (Stage-2G brief 49).
+
+The precision control asks *how exactly do you know this* first, and then only
+for the parts that answer needs. Nobody types an anchor date for a quarter,
+because the anchor is not a fact — it is how the database sorts
+(Stage-2G brief 7, 51).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <div class="pagehead">
+    <h1 class="pagehead__title">{{ heading }}</h1>
+    <span class="pagehead__context">
+      {% if matter.display_reference %}
+        <span class="reference">{{ matter.display_reference }}</span>
+      {% endif %}
+      {{ matter.title }}
+    </span>
+  </div>
+
+  {% if help_text %}<p class="cardnote">{{ help_text }}</p>{% endif %}
+
+  <form class="form factform" method="post" action="{{ form_action }}">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+      <div class="formerror" role="alert">
+        {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+      </div>
+    {% endif %}
+
+    {% include "intelligence/partials/field.html" with field=form.title %}
+    {% include "intelligence/partials/field.html" with field=form.description %}
+
+    {% if form.kind %}
+      <fieldset class="choiceset" id="joustumise-liik">
+        <legend class="field__label">{{ form.kind.label }}</legend>
+        {% for choice in form.kind %}
+          <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
+        {% endfor %}
+        {% for error in form.kind.errors %}<span class="field__error">{{ error }}</span>{% endfor %}
+      </fieldset>
+    {% endif %}
+
+    {% if form.precision %}
+      <fieldset class="choiceset" id="tapsuse-valik">
+        <legend class="field__label">{{ form.precision.label }}</legend>
+        {% for choice in form.precision %}
+          <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
+        {% endfor %}
+        {% for error in form.precision.errors %}<span class="field__error">{{ error }}</span>{% endfor %}
+      </fieldset>
+
+      <div class="periodfields" id="perioodi-valjad">
+        <div class="periodfields__group" data-precision="EXACT">
+          {% include "intelligence/partials/field.html" with field=form.exact_date %}
+        </div>
+        <div class="periodfields__group" data-precision="MONTH">
+          {% include "intelligence/partials/field.html" with field=form.month %}
+        </div>
+        <div class="periodfields__group" data-precision="QUARTER">
+          {% include "intelligence/partials/field.html" with field=form.quarter %}
+        </div>
+        <div class="periodfields__group" data-precision="HALF_YEAR">
+          {% include "intelligence/partials/field.html" with field=form.half %}
+        </div>
+        <div class="periodfields__group" data-precision="MONTH QUARTER HALF_YEAR YEAR">
+          {% include "intelligence/partials/field.html" with field=form.year %}
+        </div>
+      </div>
+    {% endif %}
+
+    {% include "intelligence/partials/field.html" with field=form.detail %}
+    {% include "intelligence/partials/field.html" with field=form.source_url %}
+    {% include "intelligence/partials/field.html" with field=form.note %}
+    {% include "intelligence/partials/field.html" with field=form.reason %}
+
+    <div class="form__actions">
+      <button class="button button--primary" type="submit">{{ submit_label }}</button>
+      <a class="button button--quiet" href="{% url 'matters:matter_detail' pk=matter.pk %}">Loobu</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

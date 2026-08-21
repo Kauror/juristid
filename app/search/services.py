@@ -386,6 +386,32 @@ def result_count(*, query: str, user: Any) -> int:
     return search_documents(query=query, user=user).count()
 
 
+def matching_matter_ids(*, query: str, user: Any) -> QuerySet[SearchDocument, Any]:
+    """The Matters this query reaches, as a subquery for another queryset.
+
+    The register's live search narrows itself with this rather than growing a
+    text search of its own. One projection, one set of tiers, one authorization
+    predicate — a second full-text implementation over the same Matters would
+    be a second opinion about what a word means, and the two would drift
+    (Stage-2E.1 brief 8).
+
+    Returns a values queryset rather than a list of ids on purpose: composed
+    into ``filter(pk__in=...)`` it stays a single SQL statement, so a keystroke
+    over a corpus-scale register never becomes a Python-side pass over
+    thousands of rows.
+
+    ``order_by()`` clears the ranking first. Ordering columns join a ``SELECT
+    DISTINCT`` and a ``GROUP BY``, and the ranking annotations are not columns
+    the caller wants — leaving them in produces a subquery PostgreSQL rejects.
+
+    Ranking is deliberately discarded here. The register has its own sort
+    (``?jarjestus=``), and silently reordering it by relevance the moment
+    somebody types would move rows for reasons the column headers do not
+    explain.
+    """
+    return search_documents(query=query, user=user).order_by().values("matter_id")
+
+
 def search(*, query: str, user: Any, limit: int = MAX_RESULTS) -> list[SearchResult]:
     """Find things. Authorization first, deterministic tiers, then relevance."""
     term = (query or "").strip()

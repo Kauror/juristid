@@ -6,7 +6,7 @@ whole migration rests on:
 
     an exact, unambiguous match, or nothing.
 
-No fuzzy matching. No "closest name". No creating a user from a first name, and
+No fuzzy matching. No "closest name". No creating a user from a name, and
 no creating an Organisation from a spelling variant. The register contains
 ``MKM`` and ``Majandus- ja Kommunikatsiooniministeerium`` for the same ministry
 across different years, and it contains ``Keskkonnaministeerium`` and
@@ -25,13 +25,14 @@ from __future__ import annotations
 
 import json
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from django.contrib.auth import get_user_model
 from django.db.models import Q
 
+from app.accounts.models import User
 from app.core.text import normalize_for_matching
 from app.organisations.models import Organisation
 from app.workflow.models import LegacyStatusMapping, StageVocabulary, resolve_legacy_status
@@ -91,12 +92,34 @@ def _normalised_section(raw: dict[str, Any], key: str, path: Path) -> dict[str, 
     return {normalize_for_matching(str(k)): str(v) for k, v in section.items()}
 
 
+#: How an owner lookup succeeded. Recorded on every assignment the backfill
+#: makes, so a reviewer can tell an attested mapping from an inference the code
+#: drew for itself.
+METHOD_MAPPING = "mapping"
+METHOD_EXACT = "exact"
+METHOD_GIVEN_NAME = "given_name"
+
+#: Every way an owner lookup can fail, kept apart because they need different
+#: answers. ``multi_person`` needs a decision about who actually holds the file;
+#: ``ambiguous`` needs a mapping line; ``unresolved`` may just be somebody who
+#: never had an account.
+METHOD_BLANK = "blank"
+METHOD_UNRESOLVED = "unresolved"
+METHOD_AMBIGUOUS = "ambiguous"
+METHOD_MULTI_PERSON = "multi_person"
+
+#: Owner methods that mean a person was identified beyond doubt.
+DETERMINISTIC_OWNER_METHODS: frozenset[str] = frozenset(
+    {METHOD_MAPPING, METHOD_EXACT, METHOD_GIVEN_NAME}
+)
+
+
 @dataclass(frozen=True)
 class Resolution:
     """The outcome of one lookup, with how it was reached."""
 
     value: Any
-    method: str  # "exact" | "alias" | "mapping" | "unresolved" | "ambiguous" | "blank"
+    method: str  # the METHOD_* constants above; "alias" belongs to organisations
 
     @property
     def resolved(self) -> bool:
@@ -104,44 +127,140 @@ class Resolution:
 
     @property
     def needs_mapping(self) -> bool:
-        return self.method in {"unresolved", "ambiguous"}
+        return self.method in {METHOD_UNRESOLVED, METHOD_AMBIGUOUS, METHOD_MULTI_PERSON}
 
 
-UNRESOLVED = Resolution(value=None, method="unresolved")
-BLANK = Resolution(value=None, method="blank")
-AMBIGUOUS = Resolution(value=None, method="ambiguous")
+UNRESOLVED = Resolution(value=None, method=METHOD_UNRESOLVED)
+BLANK = Resolution(value=None, method=METHOD_BLANK)
+AMBIGUOUS = Resolution(value=None, method=METHOD_AMBIGUOUS)
+MULTI_PERSON = Resolution(value=None, method=METHOD_MULTI_PERSON)
+
+#: Punctuation that means the cell names more than one person. The register
+#: writes ``Kadri, Mart`` and ``Kadri / Mart`` for a file two people shared.
+_MULTI_PERSON_MARKERS: tuple[str, ...] = (",", ";", "/", "&", "+")
+
+#: Conjunctions, compared as whole normalised tokens. No Estonian personal name
+#: is the single token ``ja``, so this cannot swallow a real name — and a cell
+#: reading ``Kadri ja Mart`` is exactly as shared as ``Kadri, Mart``.
+_MULTI_PERSON_WORDS: frozenset[str] = frozenset({"ja", "ning", "and"})
 
 
-def resolve_owner(raw_name: str, mappings: MappingTables) -> Resolution:
-    """Find the user a register first name refers to.
+@dataclass(frozen=True)
+class KnownPeople:
+    """Every user an owner lookup may resolve to, indexed for exact comparison.
 
-    The register writes ``Marko``, and some rows write ``Marko, Katre``. A first
-    name is not an identity, so this resolves only when exactly one active user
-    matches it outright — and an explicit mapping always wins, because a person
-    decided it.
+    Loaded once per run rather than queried per row: the department is a handful
+    of people and the register is thousands of rows, so the whole table costs
+    less than one query per row — and it makes the ambiguity test exact rather
+    than a ``LIMIT 2`` that cannot tell two candidates from twenty.
+
+    **Inactive users are included, deliberately.** A 2014 file was owned by
+    whoever owned it, and that person may have left years ago; refusing to name
+    them would leave part of the archive ownerless while the source says
+    otherwise. They stay out of persona selection and out of ordinary owner
+    choice — a former colleague may be named in history and must not be offered
+    as somebody to hand new work to (Stage-2F brief 6).
+
+    Ambiguity is judged against *everyone* for the same reason: a departed
+    ``Kadri`` makes a present-day ``Kadri`` ambiguous, and looking at only the
+    active half would turn that unsafe match into a confident one.
+    """
+
+    by_full_name: dict[str, tuple[User, ...]]
+    by_given_name: dict[str, tuple[User, ...]]
+    by_upn: dict[str, User]
+
+    @classmethod
+    def load(cls) -> KnownPeople:
+        return cls.of(User.objects.all())
+
+    @classmethod
+    def of(cls, users: Iterable[User]) -> KnownPeople:
+        full: dict[str, list[User]] = {}
+        given: dict[str, list[User]] = {}
+        upns: dict[str, User] = {}
+        for user in users:
+            upns[user.upn.strip().casefold()] = user
+            key = normalize_for_matching(user.display_name)
+            if not key:
+                continue
+            full.setdefault(key, []).append(user)
+            given.setdefault(key.split(" ")[0], []).append(user)
+        return cls(
+            by_full_name={key: tuple(value) for key, value in full.items()},
+            by_given_name={key: tuple(value) for key, value in given.items()},
+            by_upn=upns,
+        )
+
+
+def names_more_than_one_person(raw_name: str) -> bool:
+    """Whether one source cell unmistakably names several people."""
+    if any(marker in raw_name for marker in _MULTI_PERSON_MARKERS):
+        return True
+    tokens = normalize_for_matching(raw_name).split(" ")
+    return any(token in _MULTI_PERSON_WORDS for token in tokens)
+
+
+def resolve_owner(
+    raw_name: str, mappings: MappingTables, people: KnownPeople | None = None
+) -> Resolution:
+    """Find the user a register owner cell refers to. Deterministically or not.
+
+    The register's ``VASTUTAJA`` column holds a **first name** — ``Kadri`` — and
+    an account holds a full one — ``Kadri Näidis``. The first version of this
+    function compared the two for equality, so the register's commonest shape
+    matched nothing at all and current matters imported with no owner even
+    though the source named one on almost every row (Stage-2F brief 3).
+
+    Three ways in, in order, and nothing else:
+
+    1. a reviewed mapping, because a person decided it;
+    2. the whole display name, compared after normalisation;
+    3. a lone given name, **only** where exactly one known person carries it.
+
+    There is no fourth. No edit distance, no closest match, no surname guessed
+    from an initial, no account invented from a name, and no cell naming two
+    people resolved to one of them: misattributing somebody else's advocacy is
+    not the kind of error a reviewer catches afterwards.
     """
     name = raw_name.strip()
     if not name:
         return BLANK
 
-    user_model = get_user_model()
+    directory = people if people is not None else KnownPeople.load()
     normalized = normalize_for_matching(name)
 
+    # 1. A reviewed answer outranks everything, including the multi-person
+    #    refusal below: an operator who writes down who ``Kadri / Mart`` means
+    #    has made exactly the decision this code refuses to make for itself.
     if (target := mappings.owners.get(normalized)) is not None:
-        user = user_model.objects.filter(upn__iexact=target).first()
+        user = directory.by_upn.get(target.strip().casefold())
         if user is None:
             raise MappingFileError(
                 f"Mapping file points {name!r} at {target!r}, which is not a known user."
             )
-        return Resolution(value=user, method="mapping")
+        return Resolution(value=user, method=METHOD_MAPPING)
 
-    # Several names in one cell is a shared file, not a person. Left for review.
-    if "," in name or ";" in name or "/" in name:
+    # 2. Several names in one cell is a shared file, not a person.
+    if names_more_than_one_person(name):
+        return MULTI_PERSON
+
+    # 3. The whole name, normalised. Casing, spacing and diacritics may differ;
+    #    identity may not.
+    exact = directory.by_full_name.get(normalized, ())
+    if len(exact) == 1:
+        return Resolution(value=exact[0], method=METHOD_EXACT)
+    if len(exact) > 1:
+        return AMBIGUOUS
+
+    # 4. One personal-name token, and exactly one person carrying it. Two
+    #    colleagues whose names begin alike make this unanswerable, and
+    #    unanswerable is the right answer.
+    if " " in normalized:
         return UNRESOLVED
-
-    candidates = list(user_model.objects.filter(is_active=True, display_name__iexact=name)[:2])
+    candidates = directory.by_given_name.get(normalized, ())
     if len(candidates) == 1:
-        return Resolution(value=candidates[0], method="exact")
+        return Resolution(value=candidates[0], method=METHOD_GIVEN_NAME)
     if len(candidates) > 1:
         return AMBIGUOUS
     return UNRESOLVED

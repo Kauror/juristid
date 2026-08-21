@@ -17,9 +17,18 @@ class ChangeEventType(models.TextChoices):
     MATTER_ORGANISATION_CHANGED = "MATTER_ORGANISATION_CHANGED", "Asutus muudetud"
     MATTER_DATE_CHANGED = "MATTER_DATE_CHANGED", "Kuupäev muudetud"
     MATTER_POSITION_UPDATED = "MATTER_POSITION_UPDATED", "Seisukohta täiendatud"
+    # Stage 2E.1. Its own event rather than a reused one: the free-text area
+    # is not a position, not a stage and not taxonomy, and a timeline that
+    # called it any of those would be describing a change that did not happen.
+    MATTER_POLICY_AREA_OTHER_SET = "MATTER_POLICY_AREA_OTHER_SET", "Muu valdkond muudetud"
     MATTER_VISIBILITY_CHANGED = "MATTER_VISIBILITY_CHANGED", "Nähtavus muudetud"
     MATTER_CLOSED = "MATTER_CLOSED", "Teema suletud"
     MATTER_REOPENED = "MATTER_REOPENED", "Teema taasavatud"
+    # An archive register record activated as current work. Distinct from
+    # MATTER_CREATED — nothing was created, the identity and the provenance are
+    # the ones the register already had — and from MATTER_REOPENED, which is
+    # about a closure being undone (master specification 19.4).
+    MATTER_PROMOTED = "MATTER_PROMOTED", "Arhiivikirjest aktiivne teema"
     NEXT_ACTION_SET = "NEXT_ACTION_SET", "Järgmiseks määratud"
     NEXT_ACTION_COMPLETED = "NEXT_ACTION_COMPLETED", "Järgmiseks tehtud"
     NEXT_ACTION_CANCELLED = "NEXT_ACTION_CANCELLED", "Järgmiseks tühistatud"
@@ -36,6 +45,25 @@ class ChangeEventType(models.TextChoices):
     TAG_ASSIGNED = "TAG_ASSIGNED", "Silt lisatud"
     TAG_REMOVED = "TAG_REMOVED", "Silt eemaldatud"
     IMPORT_APPLIED = "IMPORT_APPLIED", "Import rakendatud"
+    # -- Stage 2G: structured Matter facts ---------------------------------
+    #
+    # Their own event types rather than a reused MATTER_DATE_CHANGED. A watched
+    # milestone, a commencement date and a claimed work victory are three
+    # different facts, and a history that called all of them "kuupäev muudetud"
+    # could not answer which one somebody changed. They are deliberately absent
+    # from `matters.timeline.TIMELINE_EVENT_TYPES`: adding a structured fact is
+    # not authored chronology, and echoing each one into the professional
+    # narrative would bury the meeting notes (Stage-2G brief 34, 37).
+    IMPORTANT_DATE_ADDED = "IMPORTANT_DATE_ADDED", "Oluline tähtaeg lisatud"
+    IMPORTANT_DATE_CHANGED = "IMPORTANT_DATE_CHANGED", "Olulist tähtaega muudetud"
+    IMPORTANT_DATE_CANCELLED = "IMPORTANT_DATE_CANCELLED", "Oluline tähtaeg tühistatud"
+    EFFECTIVE_DATE_ADDED = "EFFECTIVE_DATE_ADDED", "Jõustumine lisatud"
+    EFFECTIVE_DATE_CHANGED = "EFFECTIVE_DATE_CHANGED", "Jõustumist muudetud"
+    EFFECTIVE_DATE_CANCELLED = "EFFECTIVE_DATE_CANCELLED", "Jõustumine tühistatud"
+    WORK_VICTORY_PROPOSED = "WORK_VICTORY_PROPOSED", "Töövõidu kandidaat lisatud"
+    WORK_VICTORY_CHANGED = "WORK_VICTORY_CHANGED", "Töövõidu kirjet muudetud"
+    WORK_VICTORY_CONFIRMED = "WORK_VICTORY_CONFIRMED", "Töövõit kinnitatud"
+    WORK_VICTORY_REJECTED = "WORK_VICTORY_REJECTED", "Töövõit ei realiseerunud"
 
 
 class SecurityEventType(models.TextChoices):
