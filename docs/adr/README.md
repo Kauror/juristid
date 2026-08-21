@@ -27,6 +27,7 @@ consequences and reversibility.
 | [0016](0016-authentication-modes-and-the-shared-gate.md) | Authentication modes and the shared gate | Accepted |
 | [0017](0017-statistics-and-the-metric-catalogue.md) | Statistics, the metric catalogue and operational snapshots | Accepted, on a feature branch |
 | [0018](0018-structured-matter-facts.md) | Structured Matter facts, and the generated department views | Accepted, on a feature branch |
+| [0019](0019-opinion-archive-reconciliation.md) | Reconstructing historical submissions from the opinions archive | Accepted, on a feature branch |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -39,3 +40,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0015–0016 — Stage 2D historical corpus and authentication modes
 - 0017 — Stage 2E statistics and reporting
 - 0018 — Stage 2G structured Matter facts
+- 0019 — Stage 2H opinion archive and historical submissions

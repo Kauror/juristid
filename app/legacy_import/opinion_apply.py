@@ -1,0 +1,478 @@
+"""Executing the plan, once, and never twice.
+
+Everything here is a get-or-create against a stable source identity. Running
+audit → plan → apply a second time against the same snapshots must add no
+occurrence, no Document, no DocumentVersion, no Submission and no recipient row
+— because the alternative is an evidence archive that grows a copy of itself
+every time somebody re-runs the importer, and nobody notices until a count is
+wrong (Stage-2H brief 64, 65).
+
+Three rules the code enforces rather than documents.
+
+**A sent action is counted once.** The same bytes may reach a Matter from the
+OneNote materialisation, from an email attachment and from this archive. Those
+are three provenance records of one letter. If a Submission already carries the
+binary, this run attaches provenance to it and creates nothing (brief 67, 68).
+
+**Bytes are stored once.** If the exact SHA-256 already exists as a
+DocumentVersion on the Matter, that version becomes the final evidence. A second
+copy of a 400 KB PDF is not extra safety, it is a second thing that can drift
+(brief 30).
+
+**Evidence enters through the front door.** ``create_document`` and
+``add_evidence_version``, with the malware state left PENDING for the normal
+scanner. No parallel store, no hand-set CLEAN (brief 32).
+"""
+
+from __future__ import annotations
+
+import datetime
+import zipfile
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from django.db import transaction
+from django.utils import timezone
+
+from app.documents.enums import DocumentRole
+from app.legacy_import.opinion_archive import (
+    OpinionArchiveBatch,
+    OpinionArchiveItem,
+    OpinionArchiveMetadata,
+    OpinionMatchCandidate,
+    OpinionSubmissionImport,
+)
+from app.legacy_import.opinion_enums import (
+    OpinionMetadataSystem,
+    RecipientBasis,
+)
+from app.legacy_import.opinion_plan import OpinionArchivePlan, SubmissionPlan
+from app.submissions.enums import RecipientRole, SentAtPrecision, SubmissionStatus
+
+IMPORTER_VERSION = "opinion-archive/1.0.0"
+
+#: The anchor a date-only historical value is stored at. It exists because
+#: ``sent_at`` is a ``DateTimeField`` and the corpus supplies dates; it is never
+#: rendered, because ``sent_at_precision`` tells the UI not to. Midnight local
+#: time is chosen so that the date a query groups by is the date the source
+#: wrote — which is not true of a UTC midnight anchor east of Greenwich.
+HISTORICAL_ANCHOR_TIME = datetime.time(0, 0)
+
+
+class OpinionApplyError(RuntimeError):
+    """Apply refused to run against these sources."""
+
+
+@dataclass
+class ApplyReport:
+    items_created: int = 0
+    items_existing: int = 0
+    metadata_rows_written: int = 0
+    candidates_written: int = 0
+    documents_created: int = 0
+    versions_created: int = 0
+    versions_reused: int = 0
+    submissions_created: int = 0
+    submissions_linked: int = 0
+    recipients_created: int = 0
+    recipients_unresolved: int = 0
+    skipped: list[str] = field(default_factory=list)
+
+    def as_text(self) -> str:
+        return "\n".join(
+            [
+                "Arvamuste arhiivi import",
+                f"  uusi arhiivikirjeid        {self.items_created:>6}",
+                f"  juba olemas                {self.items_existing:>6}",
+                f"  tuletatud metaandmeid      {self.metadata_rows_written:>6}",
+                f"  sidumiskandidaate          {self.candidates_written:>6}",
+                f"  uusi dokumente             {self.documents_created:>6}",
+                f"  uusi tõendiversioone       {self.versions_created:>6}",
+                f"  taaskasutatud tõendeid     {self.versions_reused:>6}",
+                f"  loodud arvamusi            {self.submissions_created:>6}",
+                f"  seotud olemasolevaid       {self.submissions_linked:>6}",
+                f"  loodud saajaid             {self.recipients_created:>6}",
+                f"  lahendamata saajaid        {self.recipients_unresolved:>6}",
+            ]
+            + [f"  vahele jäetud: {reason}" for reason in self.skipped]
+        )
+
+
+def open_batch(plan: OpinionArchivePlan) -> OpinionArchiveBatch:
+    return OpinionArchiveBatch.objects.create(
+        archive_file_name=plan.archive_path.name,
+        archive_sha256=plan.archive_sha256,
+        archive_occurrence_count=len(plan.occurrences),
+        archive_distinct_sha_count=plan.distinct_binaries,
+        excel_sha256=plan.excel_sha256,
+        kodadash_artifact_name=plan.kodadash_path.name if plan.kodadash_path else "",
+        kodadash_artifact_sha256=plan.kodadash_sha256,
+        onenote_capture_id=plan.onenote_capture_id,
+        importer_version=IMPORTER_VERSION,
+        started_at=timezone.now(),
+    )
+
+
+def require_unchanged_sources(plan: OpinionArchivePlan) -> None:
+    """Refuse to apply a plan approved against different evidence.
+
+    The plan was built by re-reading the archive, so its hash is current by
+    construction; what has to be re-checked is the *database* side, where the
+    register snapshot or the OneNote capture may have been replaced between the
+    review and the apply (brief 48).
+    """
+    from app.legacy_import.opinion_plan import onenote_capture_id, register_snapshot_sha256
+
+    current_excel = register_snapshot_sha256()
+    if plan.excel_sha256 and current_excel and current_excel != plan.excel_sha256:
+        raise OpinionApplyError(
+            "The register was imported from a different Excel snapshot than the plan was "
+            f"reviewed against ({current_excel[:16]}… vs {plan.excel_sha256[:16]}…). "
+            "Rebuild the plan; a reviewed plan describes one set of sources."
+        )
+    current_capture = onenote_capture_id()
+    if plan.onenote_capture_id and current_capture and current_capture != plan.onenote_capture_id:
+        raise OpinionApplyError(
+            "The OneNote capture changed since the plan was built "
+            f"({current_capture} vs {plan.onenote_capture_id}). Rebuild the plan."
+        )
+
+
+@transaction.atomic
+def apply_plan(
+    plan: OpinionArchivePlan, *, batch: OpinionArchiveBatch, actor: Any = None
+) -> ApplyReport:
+    """Write the catalogue, the metadata, the candidates and the Submissions."""
+    report = ApplyReport()
+    items = _write_items(plan, batch, report)
+    _write_metadata(plan, items, report)
+    _write_candidates(plan, batch, items, report)
+    _write_submissions(plan, batch, items, report, actor)
+    return report
+
+
+# -- catalogue --------------------------------------------------------------
+
+
+def _write_items(
+    plan: OpinionArchivePlan, batch: OpinionArchiveBatch, report: ApplyReport
+) -> dict[str, OpinionArchiveItem]:
+    """One row per occurrence, keyed by (archive, path, bytes).
+
+    Keyed by the occurrence rather than by the binary: two paths holding
+    identical bytes are two filings of one letter, and the archive is the only
+    place that fact survives (brief 29).
+    """
+    items: dict[str, OpinionArchiveItem] = {}
+    for occurrence in plan.occurrences:
+        item, created = OpinionArchiveItem.objects.get_or_create(
+            archive_sha256=plan.archive_sha256,
+            archive_relative_path=occurrence.relative_path,
+            sha256=occurrence.sha256,
+            defaults={
+                "batch": batch,
+                "original_filename": occurrence.original_filename[:500],
+                "filename_encoding": occurrence.filename_encoding,
+                "size_bytes": occurrence.size_bytes,
+                "detected_type": occurrence.detected_type,
+                "filename_date": occurrence.filename_date,
+                "filename_recipient": occurrence.filename_recipient[:300],
+                "filename_title": occurrence.filename_title,
+            },
+        )
+        report.items_created += int(created)
+        report.items_existing += int(not created)
+        items.setdefault(occurrence.sha256, item)
+    return items
+
+
+def _write_metadata(
+    plan: OpinionArchivePlan, items: dict[str, OpinionArchiveItem], report: ApplyReport
+) -> None:
+    """KodaDash's reading, stored beside the evidence and under its own name."""
+    if not plan.kodadash_rows:
+        return
+    captured = timezone.now()
+    for sha256, row in plan.kodadash_rows.items():
+        item = items.get(sha256)
+        if item is None:
+            continue
+        _, created = OpinionArchiveMetadata.objects.get_or_create(
+            item=item,
+            source_system=OpinionMetadataSystem.KODADASH,
+            source_artifact_sha256=plan.kodadash_sha256,
+            external_id=row.external_id,
+            defaults={
+                "source_artifact_name": plan.kodadash_path.name if plan.kodadash_path else "",
+                "captured_at": captured,
+                "recipient_raw": row.recipient_raw[:400],
+                "recipient_normalized": row.recipient_normalized[:400],
+                "recipient_filter_group": row.recipient_filter_group[:200],
+                "recipient_type": row.recipient_type[:40],
+                "recipient_secondary": row.recipient_secondary[:400],
+                "recipient_review_required": row.recipient_review_required,
+                "document_date": row.document_date,
+                "title": row.title,
+                "related_koda_news_url": row.related_news_url,
+                "related_koda_news_id": row.related_news_id[:100],
+                "policy_thread_id": row.policy_thread_id[:100],
+                "public_import_eligible": row.public_import_eligible,
+                "excluded_from_public": row.excluded_from_public,
+                "exclusion_reason": row.exclusion_reason,
+                "payload": row.payload,
+            },
+        )
+        report.metadata_rows_written += int(created)
+
+
+def _write_candidates(
+    plan: OpinionArchivePlan,
+    batch: OpinionArchiveBatch,
+    items: dict[str, OpinionArchiveItem],
+    report: ApplyReport,
+) -> None:
+    """Every proposal, including the ones nothing will be done with.
+
+    An unmatched file is a finding, not an absence. Recording it is what lets
+    the review queue say "these 300 have no defensible Matter" instead of the
+    corpus quietly shrinking to the part that matched (brief 40, 51).
+    """
+    for proposal in plan.proposals:
+        item = items.get(proposal.sha256)
+        if item is None:
+            continue
+        # `matter_id` is legitimately null for an unmatched occurrence, which
+        # the ORM accepts and the type stubs do not describe.
+        matter_id: Any = proposal.matter_id
+        candidate, created = OpinionMatchCandidate.objects.get_or_create(
+            item=item,
+            matter_id=matter_id,
+            match_class=proposal.match_class,
+            defaults={
+                "batch": batch,
+                "signals": list(proposal.signals),
+                "conflicts": list(proposal.conflicts),
+                "excel_reference": proposal.excel_reference[:40],
+                "excel_sent_date": proposal.excel_sent_date,
+                "excel_addressee_raw": proposal.excel_addressee_raw[:400],
+                "onenote_page_key": proposal.onenote_page_key[:100],
+                "onenote_page_title": proposal.onenote_page_title,
+                "onenote_section": proposal.onenote_section[:300],
+                "onenote_block_ordinal": proposal.onenote_block_ordinal,
+                "competing_matter_count": proposal.competing_matter_count,
+                "explanation": proposal.explanation,
+            },
+        )
+        report.candidates_written += int(created)
+        proposal.candidate_id = candidate.pk
+
+
+# -- submissions ------------------------------------------------------------
+
+
+def _write_submissions(
+    plan: OpinionArchivePlan,
+    batch: OpinionArchiveBatch,
+    items: dict[str, OpinionArchiveItem],
+    report: ApplyReport,
+    actor: Any,
+) -> None:
+    reader = _ArchiveReader(plan.archive_path)
+    for submission_plan in plan.submissions:
+        item = items.get(submission_plan.sha256)
+        if item is None:
+            continue
+        _write_one_submission(plan, submission_plan, item, batch, report, actor, reader)
+
+
+def _write_one_submission(
+    plan: OpinionArchivePlan,
+    submission_plan: SubmissionPlan,
+    item: OpinionArchiveItem,
+    batch: OpinionArchiveBatch,
+    report: ApplyReport,
+    actor: Any,
+    reader: _ArchiveReader,
+) -> None:
+    from app.matters.models import Matter
+    from app.submissions.models import Submission
+
+    if OpinionSubmissionImport.objects.filter(item=item).exists():
+        # This occurrence has already been reconciled. Re-running must find the
+        # row and stop, not add a second Submission for the same letter.
+        return
+
+    if submission_plan.existing_submission_id is not None:
+        submission = Submission.objects.get(pk=submission_plan.existing_submission_id)
+        report.submissions_linked += 1
+        version = submission.final_version
+    else:
+        matter = Matter.objects.get(pk=submission_plan.matter_id)
+        version, _reused = _final_version_for(matter, submission_plan, item, actor, reader, report)
+        if version is None:
+            report.skipped.append(
+                f"{item.original_filename[:60]}: lõplikku tõendit ei õnnestunud salvestada"
+            )
+            return
+        submission = Submission.objects.create(
+            matter=matter,
+            kind=submission_plan.kind,
+            title=submission_plan.title,
+            status=SubmissionStatus.SENT,
+            sent_at=timezone.make_aware(
+                datetime.datetime.combine(submission_plan.sent_date, HISTORICAL_ANCHOR_TIME)
+            ),
+            sent_at_precision=SentAtPrecision.DATE,
+            final_version=version,
+            created_by=actor,
+            notes=_provenance_note(submission_plan),
+        )
+        report.submissions_created += 1
+        _attach_recipient(submission, submission_plan, report)
+
+    OpinionSubmissionImport.objects.create(
+        item=item,
+        submission=submission,
+        batch=batch,
+        created_submission=submission_plan.existing_submission_id is None,
+        match_class=submission_plan.match_class,
+        sent_date_basis=submission_plan.sent_date_basis,
+        recipient_basis=submission_plan.recipient_basis,
+        matter_match_signals=list(submission_plan.signals),
+        document_version=version,
+    )
+
+
+def _provenance_note(submission_plan: SubmissionPlan) -> str:
+    """Why this record says what it says, in words a lawyer can read.
+
+    The structured answer lives on ``OpinionSubmissionImport``; this is the
+    same answer where somebody reading the Submission will actually look.
+    """
+    return (
+        "Taastatud arvamuste arhiivist.\n"
+        f"Teema tuvastus: {submission_plan.match_class} "
+        f"({', '.join(submission_plan.signals) or 'ilma signaalideta'}).\n"
+        f"Kuupäeva alus: {submission_plan.sent_date_basis}.\n"
+        f"Saaja alus: {submission_plan.recipient_basis} — „{submission_plan.recipient_raw}“."
+    )
+
+
+def _final_version_for(
+    matter: Any,
+    submission_plan: SubmissionPlan,
+    item: OpinionArchiveItem,
+    actor: Any,
+    reader: _ArchiveReader,
+    report: ApplyReport,
+) -> tuple[Any, bool]:
+    """The exact binary, stored once.
+
+    If the Matter already holds this SHA — because the OneNote materialisation
+    put it there — that version is the evidence and nothing is written. The
+    archive's copy is then provenance rather than a second file (brief 30).
+    """
+    from app.documents.models import DocumentVersion
+    from app.documents.services import add_evidence_version, create_document
+
+    existing = (
+        DocumentVersion.objects.filter(document__matter=matter, sha256=item.sha256)
+        .order_by("version_number")
+        .first()
+    )
+    if existing is not None:
+        report.versions_reused += 1
+        return existing, True
+
+    content = reader.read(item.archive_relative_path)
+    if content is None:
+        return None, False
+
+    document = create_document(
+        matter=matter,
+        title=submission_plan.title,
+        role=DocumentRole.KODA_SUBMISSION_FINAL,
+        created_by=actor,
+        provenance_note=(
+            f"Arvamuste arhiiv · {item.archive_relative_path} · "
+            f"arhiivi SHA-256 {item.archive_sha256[:16]}…"
+        ),
+    )
+    report.documents_created += 1
+    version = add_evidence_version(
+        document=document,
+        content=content,
+        original_filename=item.original_filename,
+        mime_type=item.detected_type or "application/pdf",
+        uploaded_by=actor,
+        acquired_at=timezone.now(),
+        source_path=item.archive_relative_path,
+        source_identifier=f"opinions-archive:{item.archive_sha256}",
+    )
+    report.versions_created += 1
+    return version, False
+
+
+def _attach_recipient(
+    submission: Any, submission_plan: SubmissionPlan, report: ApplyReport
+) -> None:
+    """Resolve the recipient conservatively, or preserve it unresolved.
+
+    Exact identity or a reviewed alias. No similarity, and no creating an
+    Organisation from a historical spelling: the register writes both
+    ``Keskkonnaministeerium`` and ``Kliimaministeerium``, which look alike and
+    are not the same body (brief 22).
+    """
+    from app.legacy_import.resolution import MappingTables, resolve_organisation
+    from app.submissions.models import SubmissionRecipient
+
+    raw = submission_plan.recipient_raw.strip()
+    if not raw or submission_plan.recipient_basis == RecipientBasis.UNRESOLVED:
+        report.recipients_unresolved += 1
+        return
+
+    resolution = resolve_organisation(raw, MappingTables.empty())
+    if resolution.value is None:
+        report.recipients_unresolved += 1
+        return
+
+    _, created = SubmissionRecipient.objects.get_or_create(
+        submission=submission,
+        organisation=resolution.value,
+        defaults={"role": RecipientRole.ADDRESSEE, "note": raw[:200]},
+    )
+    report.recipients_created += int(created)
+
+
+class _ArchiveReader:
+    """Reads one occurrence's bytes, from a ZIP or a directory.
+
+    Opened once for the whole apply rather than per file: 767 separate opens of
+    a 105 MB ZIP is the kind of thing that looks fine on a laptop and takes
+    minutes on a server.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._zip: zipfile.ZipFile | None = None
+        self._names: dict[str, str] = {}
+        if path.is_file():
+            from app.legacy_import.opinion_sources import _decode_entry_name
+
+            self._zip = zipfile.ZipFile(path)
+            for info in self._zip.infolist():
+                if not info.is_dir():
+                    decoded, _ = _decode_entry_name(info)
+                    self._names[decoded] = info.filename
+
+    def read(self, relative_path: str) -> bytes | None:
+        if self._zip is not None:
+            name = self._names.get(relative_path)
+            if name is None:
+                return None
+            return self._zip.read(name)
+        candidate = self._path / relative_path
+        if not candidate.is_file():
+            return None
+        return candidate.read_bytes()

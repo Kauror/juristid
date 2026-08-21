@@ -16,9 +16,21 @@ that goes through the authorization-checked download route.
       <div>
         <dt>Saadetud</dt>
         <dd>
-          <time datetime="{{ submission.sent_at|date:'c' }}">
-            {{ submission.sent_at|date:"d.m.Y H:i" }}
-          </time>
+          {% comment %}
+            A historical submission reconstructed from the register carries a
+            date, not a time. The column still holds a timestamp because it has
+            to, but the anchor in it was never supplied by any source, so
+            showing "00:00" would tell a lawyer the letter went out at midnight.
+          {% endcomment %}
+          {% if submission.sent_at_precision == "DATE" %}
+            <time datetime="{{ submission.sent_at|date:'Y-m-d' }}">
+              {{ submission.sent_at|date:"d.m.Y" }}
+            </time>
+          {% else %}
+            <time datetime="{{ submission.sent_at|date:'c' }}">
+              {{ submission.sent_at|date:"d.m.Y H:i" }}
+            </time>
+          {% endif %}
         </dd>
       </div>
     {% endif %}
@@ -84,6 +96,23 @@ that goes through the authorization-checked download route.
       </span>
     </div>
   {% endif %}
+
+  {% comment %}
+    Where a reconstructed record's facts come from. One line, not a panel: a
+    lawyer needs to know this was recovered from the archive rather than typed
+    here, and the structured answer lives on OpinionSubmissionImport for
+    whoever needs the rest.
+  {% endcomment %}
+  {% for record in submission.archive_import_rows %}
+    <p class="muted submission__provenance">
+      Taastatud arvamuste arhiivist · teema tuvastus
+      {{ record.get_match_class_display|lower }}
+      {% if record.sent_date_basis %}
+        · kuupäeva alus {{ record.get_sent_date_basis_display|lower }}
+      {% endif %}
+      · saaja alus {{ record.get_recipient_basis_display|lower }}
+    </p>
+  {% endfor %}
 
   {% if submission.status == "DRAFT" %}
     {% if not submission.final_version %}
