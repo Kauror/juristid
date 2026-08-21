@@ -130,3 +130,45 @@ def extract():
         return extract_document_version(claimed)
 
     return run
+
+
+# ---------------------------------------------------------------------------
+# Statistika
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def world(db):
+    """The synthetic department the Statistika suite reads.
+
+    One fixture rather than a factory call per test: the metrics are about
+    *populations*, and a test that built its own three records would assert
+    against a world too small for the buckets that matter — Teadmata aasta, a
+    duplicate SHA-256, a file waiting on a scanner (tests/synthetic_statistics.py).
+    """
+    from tests.synthetic_statistics import build_world
+
+    return build_world()
+
+
+@pytest.fixture
+def reporting_context(world):
+    """A context builder bound to the fixture's day.
+
+    reporting_context(world.martin)                    # current year
+    reporting_context(world.martin, period="koik")     # everything
+    """
+    from django.utils import timezone
+
+    from app.reporting.context import ReportingContext, parse_period
+
+    def build(viewer, *, period: str = "koik", **overrides):
+        return ReportingContext(
+            viewer=viewer,
+            period=parse_period(period, world.today),
+            today=world.today,
+            now=timezone.now(),
+            **overrides,
+        )
+
+    return build

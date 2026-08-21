@@ -233,6 +233,16 @@ def unknown_year_url(context: ReportingContext) -> str:
     return register_url(context, aasta=UNKNOWN_YEAR)
 
 
+def corpus_url(context: ReportingContext, **overrides: str) -> str:
+    """A register link for a metric the period does not narrow.
+
+    Drops `aasta` explicitly. A card labelled *kogu korpus* whose link carried
+    this year's filter would open a shorter list than the number it came from,
+    and that inconsistency is the one thing a drill-through must never do.
+    """
+    return register_url(context, aasta="", **overrides)
+
+
 # ---------------------------------------------------------------------------
 # Assembling a result
 # ---------------------------------------------------------------------------
@@ -292,13 +302,16 @@ def top_segments(
     *,
     limit: int = TOP_N,
     remainder_label: str = "Muud",
-    remainder_url: str = "",
 ) -> tuple[Segment, ...]:
     """Keep the largest ``limit`` segments and make the tail an explicit row.
 
-    The remainder is labelled and counted. A chart that shows twelve bars out of
-    forty without saying so reads as the whole picture, and the reader has no
-    way to tell.
+    The remainder is labelled and counted, and carries **no link**. There is no
+    single filter that opens "the other twenty-eight groups", and a link that
+    opened something else would be worse than none — the promise behind every
+    other segment is that clicking it shows exactly what it counted.
+
+    A chart that shows twelve bars out of forty without saying so reads as the
+    whole picture, and the reader has no way to tell.
     """
     if len(rows) <= limit:
         return tuple(rows)
@@ -307,7 +320,7 @@ def top_segments(
     tail = rows[limit:]
     remainder = sum(segment.value for segment in tail)
     note = f"{len(tail)} muud rühma"
-    return (*head, Segment(label=remainder_label, value=remainder, url=remainder_url, note=note))
+    return (*head, Segment(label=remainder_label, value=remainder, note=note))
 
 
 def coverage_note(missing: int, what: str) -> tuple[str, ...]:

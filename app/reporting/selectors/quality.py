@@ -29,27 +29,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import Q, QuerySet
 from django.urls import reverse
 
 from app.accounts.enums import UserRole
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import matter_visibility_q, scope_for_user
 from app.legacy_import.source_pages import CandidateClass, CandidateState, HistoricalMatchCandidate
+from app.matters.selectors import MISSING
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import definition
 from app.reporting.metric_types import MetricResult, Segment
 from app.reporting.selectors import activity, documents, historical
 from app.reporting.selectors.base import (
+    corpus_url,
     count,
     eligible_matters,
     grouped_count,
-    register_url,
     simple_result,
 )
-from app.workflow.enums import ActionStatus
-from app.workflow.models import NextAction
 
 
 def visible_candidates(context: ReportingContext) -> QuerySet[HistoricalMatchCandidate]:
@@ -199,6 +198,22 @@ def _unresolved_legacy_organisations(context: ReportingContext) -> int:
     return count(matters)
 
 
+def _from_metric(key: str, label: str, result: MetricResult, explanation: str) -> QualityQueue:
+    """A queue row that borrows its count *and its link* from the metric.
+
+    Rebuilding the link here would be a second definition of the same
+    population, and the first time the two drifted the queue would send an
+    operator to a list that does not contain what the number promised.
+    """
+    return QualityQueue(
+        key=key,
+        label=label,
+        count=result.value,
+        url=result.drillthrough_url,
+        explanation=explanation,
+    )
+
+
 def _materials_state_url(context: ReportingContext, state: str) -> str:
     return (
         f"{reverse('reporting:materials')}?"
@@ -208,11 +223,6 @@ def _materials_state_url(context: ReportingContext, state: str) -> str:
 
 def queues(context: ReportingContext) -> list[QualityQueue]:
     """Everything the Andmekvaliteet tab lists, in the order it is acted on."""
-    has_open = NextAction.objects.filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
-    active = eligible_matters(context, definition(keys.ACTIVE_WITHOUT_NEXT_ACTION)).filter(
-        is_open=True
-    )
-
     rows = [
         QualityQueue(
             key="reconciliation_conflict",
@@ -271,39 +281,36 @@ def queues(context: ReportingContext) -> list[QualityQueue]:
             ),
             explanation="Teemalaadne OneNote'i leht, mis ei kuulu ühegi teema alla.",
         ),
-        QualityQueue(
-            key="active_without_owner",
-            label="Aktiivne teema ilma vastutajata",
-            count=activity.active_without_owner(context).value,
-            url=reverse("matters:inbox"),
-            explanation="Avatud täielik teema, mille eest ei vastuta praegu keegi.",
+        _from_metric(
+            "active_without_owner",
+            "Aktiivne teema ilma vastutajata",
+            activity.active_without_owner(context),
+            "Avatud täielik teema, mille eest ei vastuta praegu keegi.",
         ),
-        QualityQueue(
-            key="active_without_next_action",
-            label="Aktiivne teema ilma järgmise tegevuseta",
-            count=count(active.annotate(has_action=Exists(has_open)).filter(has_action=False)),
-            url=register_url(context, olek="avatud", liik="FULL", aasta=""),
-            explanation="Ilma järgmise tegevuseta teema kaob vaikselt igalt töölaualt.",
+        _from_metric(
+            "active_without_next_action",
+            "Aktiivne teema ilma järgmise tegevuseta",
+            activity.active_without_next_action(context),
+            "Ilma järgmise tegevuseta teema kaob vaikselt igalt töölaualt.",
         ),
-        QualityQueue(
-            key="active_without_stage",
-            label="Aktiivne teema ilma hetkeseisuta",
-            count=activity.active_without_stage(context).value,
-            url=register_url(context, olek="avatud", liik="FULL", aasta=""),
-            explanation="Avatud teema, mille menetlusetapp ei ole määratud.",
+        _from_metric(
+            "active_without_stage",
+            "Aktiivne teema ilma hetkeseisuta",
+            activity.active_without_stage(context),
+            "Avatud teema, mille menetlusetapp ei ole määratud.",
         ),
         QualityQueue(
             key="active_without_policy_area",
             label="Aktiivne teema ilma valdkonnata",
             count=_matters_missing_policy_area(context),
-            url=register_url(context, olek="avatud", aasta=""),
+            url=corpus_url(context, olek="avatud", valdkond=MISSING),
             explanation="Ainult avatud teemad. Vana klassifitseerimata arhiivirida ei ole viga.",
         ),
         QualityQueue(
             key="unresolved_organisation",
             label="Aktiivne teema ilma asutuseta",
             count=_unresolved_legacy_organisations(context),
-            url=register_url(context, olek="avatud", aasta=""),
+            url=corpus_url(context, olek="avatud", saatja=MISSING, adressaat=MISSING),
             explanation="Ei saatjat ega adressaati. Sageli lahendamata nimevaste registrist.",
         ),
         QualityQueue(

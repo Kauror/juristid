@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import functools
 import operator
+from typing import Any
 from urllib.parse import urlencode
 
 from django.db.models import Exists, OuterRef, Q, QuerySet, Sum
@@ -52,9 +53,9 @@ from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import definition
 from app.reporting.metric_types import MetricResult, Segment, distribution_from
 from app.reporting.selectors.base import (
+    corpus_url,
     grouped_count,
     grouped_count_over,
-    register_url,
     simple_result,
     top_segments,
     visible_matters,
@@ -125,22 +126,39 @@ def visible_links(context: ReportingContext) -> QuerySet[MatterSourcePage]:
 
 
 def visible_pages(context: ReportingContext) -> QuerySet[LegacySourcePage]:
-    """Pages claimed by at least one Matter this viewer may read."""
-    return LegacySourcePage.objects.filter(
-        matter_links__matter__in=visible_matters(context)
-    ).distinct()
+    """Pages claimed by at least one Matter this viewer may read.
+
+    Resolved through a primary-key subquery rather than a joined
+    ``distinct()``. The join to ``matter_links`` fans out — a page claimed by
+    three Matters is three rows — and ``distinct()`` only collapses that while
+    every column is still selected. The moment something narrows the selection,
+    as ``values_list("text_characters")`` does for a distribution, DISTINCT
+    starts deduplicating *values* instead of rows and four pages with two
+    identical lengths silently become three.
+
+    A pk subquery has no fan-out to collapse, so counts, sums and value lists
+    are all exact without anyone having to remember why.
+    """
+    matched = LegacySourcePage.objects.filter(matter_links__matter__in=visible_matters(context))
+    pages = LegacySourcePage.objects.filter(pk__in=matched.values("pk"))
+    # The section filter belongs here rather than on each caller: it is one of
+    # the tab's own dimensions, and applying it in one place is what keeps the
+    # page count, the file count and the list on this tab talking about the
+    # same corpus.
+    return pages.filter(source_section=context.section) if context.section else pages
 
 
 def visible_resources(
-    context: ReportingContext, *, file_type: str = "", section: str = "", state: str = ""
+    context: ReportingContext, *, file_type: str = "", state: str = ""
 ) -> QuerySet[LegacySourceResource]:
-    """The one population behind every material number and its list."""
-    queryset = LegacySourceResource.objects.filter(
-        source_page__matter_links__matter__in=visible_matters(context)
-    ).distinct()
+    """The one population behind every material number and its list.
 
-    if section:
-        queryset = queryset.filter(source_page__source_section=section)
+    The section narrowing arrives through ``visible_pages`` — it is a context
+    dimension, not an argument — so a caller cannot apply it to the list and
+    forget it on the count.
+    """
+    queryset = LegacySourceResource.objects.filter(source_page__in=visible_pages(context))
+
     if file_type:
         queryset = queryset.filter(file_type_q(file_type))
     if state:
@@ -179,9 +197,32 @@ def materialisation_q(context: ReportingContext, state: str) -> Q:
     raise ValueError(f"Unknown materialisation state {state!r}.")
 
 
+def _values(queryset: QuerySet[Any], field: str) -> list[int]:
+    """One number per row, with the row's identity kept alongside.
+
+    Selecting the primary key as well is not decoration: an authorized queryset
+    can carry ``distinct()``, and a single-column ``values_list`` under DISTINCT
+    deduplicates *values* — four pages of which two are empty become three. The
+    pk makes every tuple unique, so the list has one entry per row.
+    """
+    return [row[1] for row in queryset.values_list("pk", field)]
+
+
+def _section_url(context: ReportingContext, section: str) -> str:
+    """The Ajalooline materjal tab itself, narrowed to one OneNote section."""
+    params = {**context.query_params(), "sektsioon": section}
+    return f"{reverse('reporting:historical')}?{urlencode(params)}"
+
+
 def _materials_url(context: ReportingContext, **extra: str) -> str:
-    params = {key: value for key, value in extra.items() if value}
-    params.setdefault("periood", context.period.key)
+    """The material list, carrying every filter that is currently active.
+
+    Starting from ``query_params`` rather than from the period alone: a reader
+    who has narrowed the tab to one owner and clicks the MSG bar expects MSG
+    files *for that owner*, and a link that silently widened the population
+    would show a bigger number than the bar it came from.
+    """
+    params = {**context.query_params(), **{k: v for k, v in extra.items() if v}}
     return f"{reverse('reporting:materials')}?{urlencode(params)}"
 
 
@@ -197,8 +238,14 @@ def legacy_source_pages(context: ReportingContext) -> MetricResult:
         spec,
         context=context,
         value=pages.count(),
-        url=register_url(context, allikas="on"),
-        notes=("Leht imporditakse üks kord, olenemata sellest, mitu teemat sellele viitab.",),
+        # Pages have no list of their own — the materials list counts file
+        # occurrences, which is a different number. A link to it would open
+        # something other than what this card counted (Stage-2E brief 38).
+        url="",
+        notes=(
+            "Leht imporditakse üks kord, olenemata sellest, mitu teemat sellele viitab.",
+            "Lehte loetakse teema juurest; eraldi lehtede loendit ei ole.",
+        ),
     )
 
 
@@ -213,17 +260,21 @@ def legacy_source_pages_by_section(context: ReportingContext) -> MetricResult:
     spec = definition(keys.LEGACY_SOURCE_PAGES_BY_SECTION)
     pages = visible_pages(context)
     rows = pages.values("source_section").annotate(total=grouped_count()).order_by("-total")
+    # A section bar re-scopes the whole tab rather than opening the file list:
+    # the bar counts *pages* and the file list counts *occurrences*, so a link
+    # there would open a longer list than the number promised. Narrowing the
+    # tab makes every number on it — pages, files, bytes, states — describe
+    # that section (Stage-2E brief 38, 66).
     segments = top_segments(
         [
             Segment(
                 label=row["source_section"] or "Sektsioonita",
                 value=row["total"],
-                url=_materials_url(context, sektsioon=row["source_section"]),
+                url=_section_url(context, row["source_section"]),
                 is_unknown=not row["source_section"],
             )
             for row in rows
         ],
-        remainder_url=_materials_url(context),
     )
     return simple_result(
         spec,
@@ -303,7 +354,7 @@ def reading_order_ambiguous(context: ReportingContext) -> MetricResult:
 
 def source_page_text_length(context: ReportingContext) -> MetricResult:
     spec = definition(keys.SOURCE_PAGE_TEXT_LENGTH)
-    values = list(visible_pages(context).values_list("text_characters", flat=True))
+    values = _values(visible_pages(context), "text_characters")
     distribution = distribution_from(values)
     return simple_result(
         spec,
@@ -342,7 +393,9 @@ def historical_unique_binary_contents(context: ReportingContext) -> MetricResult
         context=context,
         value=unique,
         population_count=occurrences,
-        url=_materials_url(context),
+        # The materials list enumerates occurrences, not distinct contents, so
+        # it would open a longer list than this number. Deliberately unlinked.
+        url="",
         notes=(
             f"{occurrences - unique} esinemist on baiditäpsed kordused juba loetud failisisust."
             if occurrences > unique
@@ -413,7 +466,9 @@ def _type_group(context: ReportingContext, key: str, types: tuple[str, ...]) -> 
             )
             for name in types
         ),
-        url=_materials_url(context, failityyp=types[0]),
+        # The group's own bars link exactly; the group total does not, because
+        # no single filter selects "MSG or EML".
+        url="",
     )
 
 
@@ -437,10 +492,8 @@ def historical_signed_containers(context: ReportingContext) -> MetricResult:
 
 def resources_per_page(context: ReportingContext) -> MetricResult:
     spec = definition(keys.RESOURCES_PER_PAGE)
-    values = list(
-        visible_pages(context)
-        .annotate(files=grouped_count_over("resources"))
-        .values_list("files", flat=True)
+    values = _values(
+        visible_pages(context).annotate(files=grouped_count_over("resources")), "files"
     )
     distribution = distribution_from(values)
     return simple_result(
@@ -455,11 +508,11 @@ def resources_per_page(context: ReportingContext) -> MetricResult:
 
 def resources_per_matter(context: ReportingContext) -> MetricResult:
     spec = definition(keys.RESOURCES_PER_MATTER)
-    values = list(
+    values = _values(
         visible_matters(context)
         .filter(source_pages__isnull=False)
-        .annotate(files=grouped_count_over("source_pages__source_page__resources"))
-        .values_list("files", flat=True)
+        .annotate(files=grouped_count_over("source_pages__source_page__resources")),
+        "files",
     )
     distribution = distribution_from(values)
     return simple_result(
@@ -468,7 +521,7 @@ def resources_per_matter(context: ReportingContext) -> MetricResult:
         value=distribution.total,
         population_count=distribution.n,
         distribution=distribution,
-        url=register_url(context, allikas="on"),
+        url=corpus_url(context, allikas="on"),
     )
 
 
@@ -517,11 +570,11 @@ def materialisation_failed(context: ReportingContext) -> MetricResult:
 
 
 def list_rows(
-    context: ReportingContext, *, file_type: str = "", section: str = "", state: str = ""
+    context: ReportingContext, *, file_type: str = "", state: str = ""
 ) -> QuerySet[LegacySourceResource]:
     """The drill-through list, from the same selector the numbers used."""
     return (
-        visible_resources(context, file_type=file_type, section=section, state=state)
+        visible_resources(context, file_type=file_type, state=state)
         .select_related("source_page")
         .order_by("source_page__source_section", "source_page__page_order", "original_filename")
     )

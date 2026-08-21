@@ -21,7 +21,7 @@ from typing import Any
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Count, Exists, OuterRef, Q
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -265,12 +265,42 @@ FILTER_LABELS = {
     "aasta": "Aruandlusaasta",
     "paritolu": "Päritolu",
     "allikas": "Ajalooline allikas",
+    "tegevus": "Järgmine tegevus",
+    # Two organisation filters, never one. `KELLELT` and `KELLELE` are
+    # different facts and the register itself changed which one its single
+    # counterparty column meant in 2020, so a combined filter would answer a
+    # question nobody asked (Stage-2E brief 27).
+    "saatja": "Algataja või saatja",
+    "adressaat": "Adressaat",
 }
 
 #: What `?allikas=` means. A word rather than a boolean, because `allikas=0`
 #: reads as "source number zero" in a URL somebody is editing by hand.
 SOURCE_PRESENT = "on"
 SOURCE_ABSENT = "puudub"
+#: More than one archived page claims this Matter. A separate value rather than
+#: a count parameter because it is the only threshold any statistic asks about,
+#: and 402 Matters in the real corpus have it (Stage-2D brief 12).
+SOURCE_SEVERAL = "mitu"
+
+#: How each `?tegevus=` value reads in a filter chip. Wording matters here: a
+#: WAIT whose review date has passed is "ülevaatus käes", never "hilinenud".
+#: The two organisation directions, as URL parameters. Never merged: the same
+#: register column meant the sender until 2019 and the addressee from 2020.
+ORGANISATION_FILTERS = {
+    "saatja": "source_organisation",
+    "adressaat": "addressee_organisation",
+}
+
+NEXT_ACTION_LABELS = {
+    "puudub": "Puudub",
+    "teen": "Teen",
+    "ootan": "Ootan",
+    "jalgin": "Jälgin",
+    "hilinenud": "Tähtaeg möödas",
+    "ootan-ulevaatus": "Ootan — ülevaatus käes",
+    "jalgin-ulevaatus": "Jälgin — ülevaatus käes",
+}
 
 STATUS_SEGMENTS = (
     ("avatud", "Avatud"),
@@ -329,11 +359,21 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     if name == "ulatus":
         return "Minu omad" if value == "minu" else "Kõik nähtavad"
     if name == "paritolu":
-        return dict(MatterOrigin.choices).get(value, value)
+        labels = dict(MatterOrigin.choices)
+        return ", ".join(labels.get(part, part) for part in value.split(","))
     if name == "aasta":
         return "Teadmata aasta" if value == selectors.UNKNOWN_YEAR else value
     if name == "allikas":
+        if value == SOURCE_SEVERAL:
+            return "Mitu lähtelehte"
         return "Olemas" if value == SOURCE_PRESENT else "Puudub"
+    if name == "tegevus":
+        return NEXT_ACTION_LABELS.get(value, value)
+    if name in {"saatja", "adressaat"}:
+        organisation = Organisation.objects.filter(pk=value).first()
+        return organisation.name if organisation else value
+    if value == selectors.MISSING:
+        return "Määramata"
     return value
 
 
@@ -410,31 +450,64 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     if scope == "minu":
         queryset = queryset.filter(Q(owner=request.user) | Q(collaborators=request.user))
 
+    # `puudub` is the one word every dimension uses for "this field is empty",
+    # so that the *Määramata* bucket on a chart is a link like any other bar
+    # rather than a number the reader has to take on trust (Stage-2E brief 42).
     if owner_id := params.get("vastutaja"):
-        # A hand-edited URL must not reach the database as a malformed UUID.
-        try:
-            queryset = queryset.filter(owner_id=uuid.UUID(owner_id))
-        except ValueError:
-            queryset = queryset.none()
+        if owner_id == selectors.MISSING:
+            queryset = queryset.filter(owner__isnull=True)
+        else:
+            # A hand-edited URL must not reach the database as a malformed UUID.
+            try:
+                queryset = queryset.filter(owner_id=uuid.UUID(owner_id))
+            except ValueError:
+                queryset = queryset.none()
     if stage_key := params.get("hetkeseis"):
-        queryset = queryset.filter(stage__key=stage_key)
+        if stage_key == selectors.MISSING:
+            queryset = queryset.filter(stage__isnull=True)
+        else:
+            queryset = queryset.filter(stage__key=stage_key)
     if track := params.get("menetlusliik"):
-        queryset = queryset.filter(track=track)
+        queryset = queryset.filter(track="" if track == selectors.MISSING else track)
     if area_key := params.get("valdkond"):
-        queryset = queryset.filter(policy_areas__key=area_key)
+        if area_key == selectors.MISSING:
+            queryset = queryset.filter(policy_areas__isnull=True)
+        else:
+            queryset = queryset.filter(policy_areas__key=area_key)
     if tag_key := params.get("silt"):
         queryset = queryset.filter(tags__key=tag_key)
     if mode := params.get("liik"):
         queryset = queryset.filter(record_mode=mode)
     if origin := params.get("paritolu"):
-        queryset = queryset.filter(origin=origin)
+        # Comma-separated, because one statistic legitimately means two origins:
+        # a register row is `LEGACY_IMPORT` or an archive row somebody activated
+        # (`PROMOTED_LEGACY`), and the bar counting both has to open both.
+        queryset = queryset.filter(origin__in=origin.split(","))
     if year := params.get("aasta"):
         queryset = _filter_by_reporting_year(queryset, year)
     if source := params.get("allikas"):
-        has_page = Exists(MatterSourcePage.objects.filter(matter=OuterRef("pk")))
-        queryset = queryset.annotate(has_source_page=has_page).filter(
-            has_source_page=source == SOURCE_PRESENT
-        )
+        if source == SOURCE_SEVERAL:
+            queryset = queryset.annotate(
+                source_page_count=Count("source_pages", distinct=True)
+            ).filter(source_page_count__gte=2)
+        else:
+            has_page = Exists(MatterSourcePage.objects.filter(matter=OuterRef("pk")))
+            queryset = queryset.annotate(has_source_page=has_page).filter(
+                has_source_page=source == SOURCE_PRESENT
+            )
+    if action_filter := params.get("tegevus"):
+        queryset = selectors.filter_by_next_action(queryset, request.user, action_filter)
+    for parameter, field in ORGANISATION_FILTERS.items():
+        raw = params.get(parameter)
+        if not raw:
+            continue
+        if raw == selectors.MISSING:
+            queryset = queryset.filter(**{f"{field}__isnull": True})
+            continue
+        try:
+            queryset = queryset.filter(**{f"{field}_id": uuid.UUID(raw)})
+        except ValueError:
+            queryset = queryset.none()
 
     sort = params.get("jarjestus", "reference")
     queryset = queryset.order_by(*SORT_FIELDS.get(sort, SORT_FIELDS["reference"]), "-created_at")
@@ -467,6 +540,9 @@ def matter_list(request: HttpRequest) -> HttpResponse:
                 "paritolu": params.get("paritolu", ""),
                 "aasta": params.get("aasta", ""),
                 "allikas": params.get("allikas", ""),
+                "tegevus": params.get("tegevus", ""),
+                "saatja": params.get("saatja", ""),
+                "adressaat": params.get("adressaat", ""),
                 "jarjestus": sort,
             },
             "owners": User.objects.filter(is_active=True).order_by("display_name"),

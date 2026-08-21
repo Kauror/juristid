@@ -36,7 +36,7 @@ from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import definition
 from app.reporting.metric_types import MetricResult, Segment
-from app.reporting.selectors.base import register_url, simple_result, visible_matters
+from app.reporting.selectors.base import simple_result, visible_matters
 
 
 def visible_versions(context: ReportingContext) -> QuerySet[DocumentVersion]:
@@ -70,7 +70,11 @@ def _state_result(
         context=context,
         value=queryset.count(),
         population_count=visible_versions(context).count(),
-        url=register_url(context),
+        # No URL: the product has no list of evidence versions, and a link that
+        # opened a Matter register filtered by nothing in particular would be a
+        # promise this number cannot keep. The definition says where the files
+        # themselves are read instead (Stage-2E brief 38, 39).
+        url="",
     )
 
 
@@ -194,6 +198,6 @@ def searchable_document_coverage(context: ReportingContext) -> MetricResult:
         eligible_count=openable,
         coverage_count=extracted,
         coverage_denominator=openable,
-        url=register_url(context),
+        url="",
         notes=tuple(notes),
     )

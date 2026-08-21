@@ -24,11 +24,13 @@ from django.db.models import Count, Exists, OuterRef, Q
 
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters.enums import REGISTER_YEAR_ORIGINS, MatterOrigin, RecordMode
+from app.matters.selectors import MISSING
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import definition
 from app.reporting.metric_types import MetricResult, Segment
 from app.reporting.selectors.base import (
+    corpus_url,
     count,
     eligible_matters,
     grouped_count,
@@ -241,7 +243,7 @@ def matters_by_stage(context: ReportingContext) -> MetricResult:
             Segment(
                 label=NO_STAGE_LABEL,
                 value=without,
-                url=register_url(context),
+                url=register_url(context, hetkeseis=MISSING),
                 note="Enamasti arhiivikirjed",
                 is_unknown=True,
             )
@@ -287,7 +289,7 @@ def matters_by_owner(context: ReportingContext) -> MetricResult:
             Segment(
                 label=NO_OWNER_LABEL,
                 value=unassigned,
-                url=register_url(context),
+                url=register_url(context, vastutaja=MISSING),
                 is_unknown=True,
             )
         )
@@ -330,7 +332,7 @@ def matters_by_policy_area(context: ReportingContext) -> MetricResult:
         )
         for row in rows
     ]
-    segments = list(top_segments(segments, remainder_url=register_url(context)))
+    segments = list(top_segments(segments))
 
     unclassified = population_count - classified
     if unclassified:
@@ -338,7 +340,7 @@ def matters_by_policy_area(context: ReportingContext) -> MetricResult:
             Segment(
                 label=UNCLASSIFIED_LABEL,
                 value=unclassified,
-                url=register_url(context),
+                url=register_url(context, valdkond=MISSING),
                 note="Sageli vanemad arhiivikirjed",
                 is_unknown=True,
             )
@@ -353,7 +355,10 @@ def matters_by_policy_area(context: ReportingContext) -> MetricResult:
         coverage_count=classified,
         coverage_denominator=population_count,
         segments=tuple(segments),
-        url=register_url(context),
+        # No metric-level link: "Matters carrying at least one of these" is not
+        # a filter the register has, and every bar below links exactly. A link
+        # that opened the whole population would contradict the number above it.
+        url="",
     )
 
 
@@ -367,7 +372,7 @@ def matters_unclassified_policy_area(context: ReportingContext) -> MetricResult:
         context=context,
         value=unclassified,
         population_count=population_count,
-        url=register_url(context),
+        url=register_url(context, valdkond=MISSING),
     )
 
 
@@ -398,7 +403,7 @@ def matters_by_track(context: ReportingContext) -> MetricResult:
             Segment(
                 label=NO_TRACK_LABEL,
                 value=population_count - classified,
-                url=register_url(context),
+                url=register_url(context, menetlusliik=MISSING),
                 is_unknown=True,
             )
         )
@@ -411,7 +416,10 @@ def matters_by_track(context: ReportingContext) -> MetricResult:
         coverage_count=classified,
         coverage_denominator=population_count,
         segments=tuple(segments),
-        url=register_url(context),
+        # No metric-level link: "Matters carrying at least one of these" is not
+        # a filter the register has, and every bar below links exactly. A link
+        # that opened the whole population would contradict the number above it.
+        url="",
     )
 
 
@@ -443,8 +451,7 @@ def matters_by_tag(context: ReportingContext) -> MetricResult:
                     url=register_url(context, silt=row["tags__key"]),
                 )
                 for row in rows
-            ],
-            remainder_url=register_url(context),
+            ]
         )
     )
 
@@ -456,7 +463,10 @@ def matters_by_tag(context: ReportingContext) -> MetricResult:
         coverage_count=tagged,
         coverage_denominator=population_count,
         segments=tuple(segments),
-        url=register_url(context),
+        # No metric-level link: "Matters carrying at least one of these" is not
+        # a filter the register has, and every bar below links exactly. A link
+        # that opened the whole population would contradict the number above it.
+        url="",
     )
 
 
@@ -477,7 +487,7 @@ def matters_with_historical_source(context: ReportingContext) -> MetricResult:
         population_count=population_count,
         coverage_count=with_source,
         coverage_denominator=population_count,
-        url=register_url(context, allikas="on"),
+        url=corpus_url(context, allikas="on"),
     )
 
 
@@ -491,7 +501,7 @@ def matters_without_historical_source(context: ReportingContext) -> MetricResult
         context=context,
         value=without,
         population_count=population_count,
-        url=register_url(context, allikas="puudub"),
+        url=corpus_url(context, allikas="puudub"),
         notes=(
             "Vanal registrireal ei pruukinud kunagi OneNote'i lehte olla. "
             "See ei ole andmekvaliteedi viga.",
@@ -507,7 +517,7 @@ def onenote_only_matters(context: ReportingContext) -> MetricResult:
         spec,
         context=context,
         value=total,
-        url=register_url(context, paritolu=MatterOrigin.LEGACY_ONENOTE.value, aasta=""),
+        url=corpus_url(context, paritolu=MatterOrigin.LEGACY_ONENOTE.value),
         notes=(
             "Neil teemadel ei ole viitenumbrit ega registri aruandlusaastat, "
             "sest registris neid kunagi ei olnud.",
@@ -530,7 +540,7 @@ def matters_with_multiple_source_pages(context: ReportingContext) -> MetricResul
         context=context,
         value=several,
         population_count=population_count,
-        url=register_url(context, allikas="on"),
+        url=corpus_url(context, allikas="mitu"),
     )
 
 
@@ -544,27 +554,28 @@ def historical_source_coverage_classes(context: ReportingContext) -> MetricResul
     spec = definition(keys.HISTORICAL_SOURCE_COVERAGE_CLASSES)
     population = population_for(context, spec).annotate(has=_has_source_page())
     register_origins = (MatterOrigin.LEGACY_IMPORT.value, MatterOrigin.PROMOTED_LEGACY.value)
+    register_parameter = ",".join(register_origins)
 
     buckets = [
         (
             "Registririda koos OneNote'i allikaga",
             population.filter(origin__in=register_origins, has=True),
-            register_url(context, allikas="on"),
+            corpus_url(context, paritolu=register_parameter, allikas="on"),
         ),
         (
             "Registririda ilma OneNote'i allikata",
             population.filter(origin__in=register_origins, has=False),
-            register_url(context, allikas="puudub"),
+            corpus_url(context, paritolu=register_parameter, allikas="puudub"),
         ),
         (
             "Ainult OneNote'i-põhine teema",
             population.filter(origin=MatterOrigin.LEGACY_ONENOTE),
-            register_url(context, paritolu=MatterOrigin.LEGACY_ONENOTE.value, aasta=""),
+            corpus_url(context, paritolu=MatterOrigin.LEGACY_ONENOTE.value),
         ),
         (
             "Süsteemis loodud teema",
             population.filter(origin=MatterOrigin.NATIVE),
-            register_url(context, paritolu=MatterOrigin.NATIVE.value),
+            corpus_url(context, paritolu=MatterOrigin.NATIVE.value),
         ),
     ]
     segments = tuple(
@@ -576,5 +587,5 @@ def historical_source_coverage_classes(context: ReportingContext) -> MetricResul
         context=context,
         value=count(population),
         segments=segments,
-        url=register_url(context),
+        url=corpus_url(context),
     )

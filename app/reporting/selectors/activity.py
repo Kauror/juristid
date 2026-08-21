@@ -21,16 +21,17 @@ from django.urls import reverse
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import RecordMode
 from app.matters.models import Entry, Matter
+from app.matters.selectors import MISSING
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import definition
 from app.reporting.metric_types import MetricResult, Segment
 from app.reporting.selectors.base import (
+    corpus_url,
     count,
     eligible_matters,
     grouped_count,
     population_for,
-    register_url,
     simple_result,
     visible_matters,
 )
@@ -80,7 +81,14 @@ def new_native_full_matters(context: ReportingContext) -> MetricResult:
         eligible_count=value,
         coverage_count=dated,
         coverage_denominator=population_count,
-        url=register_url(context, liik=RecordMode.FULL.value),
+        # Measured on `received_date`; the register filters on reporting year.
+        # Linking there would open a population selected on a different column,
+        # so this card is deliberately unlinked and says why.
+        url="",
+        notes=(
+            "Mõõdetud saabumise kuupäeva järgi. Registris saab filtreerida "
+            "aruandlusaasta järgi, mis ei ole sama veerg.",
+        ),
     )
 
 
@@ -100,7 +108,7 @@ def active_without_next_action(context: ReportingContext) -> MetricResult:
         context=context,
         value=count(quiet),
         population_count=count(active),
-        url=register_url(context, olek="avatud", liik=RecordMode.FULL.value, aasta=""),
+        url=corpus_url(context, olek="avatud", liik=RecordMode.FULL.value, tegevus=MISSING),
         notes=("Arhiivikirjed ei ole siin. Arhiivikirjel ei peagi järgmist tegevust olema.",),
     )
 
@@ -113,7 +121,7 @@ def active_without_owner(context: ReportingContext) -> MetricResult:
         context=context,
         value=count(active.filter(owner__isnull=True)),
         population_count=count(active),
-        url=reverse("matters:inbox"),
+        url=corpus_url(context, olek="avatud", liik=RecordMode.FULL.value, vastutaja=MISSING),
     )
 
 
@@ -125,7 +133,7 @@ def active_without_stage(context: ReportingContext) -> MetricResult:
         context=context,
         value=count(active.filter(stage__isnull=True)),
         population_count=count(active),
-        url=register_url(context, olek="avatud", liik=RecordMode.FULL.value, aasta=""),
+        url=corpus_url(context, olek="avatud", liik=RecordMode.FULL.value, hetkeseis=MISSING),
     )
 
 
@@ -138,7 +146,11 @@ def response_deadlines_open(context: ReportingContext) -> MetricResult:
         context=context,
         value=count(ahead),
         population_count=count(active),
-        url=register_url(context, olek="avatud", liik=RecordMode.FULL.value, aasta=""),
+        url="",
+        notes=(
+            "Registris ei ole eraldi tähtajafiltrit, seega avaneb siit "
+            "täisnimekiri „Teemad“ vaates sorteerituna tähtaja järgi.",
+        ),
     )
 
 
@@ -159,7 +171,7 @@ def overdue_do_deadline(context: ReportingContext) -> MetricResult:
         context=context,
         value=count(actions),
         population_count=count(open_actions(context)),
-        url=reverse("matters:my_work"),
+        url=corpus_url(context, olek="avatud", tegevus="hilinenud"),
         notes=("Ainult TEEN koos tähtajaga. Ootamine ja jälgimine ei ole hilinemine.",),
     )
 
@@ -179,7 +191,7 @@ def wait_review_due(context: ReportingContext) -> MetricResult:
         context=context,
         value=count(_review_due(context, ActionKind.WAIT)),
         population_count=count(open_actions(context).filter(kind=ActionKind.WAIT)),
-        url=reverse("matters:my_work"),
+        url=corpus_url(context, olek="avatud", tegevus="ootan-ulevaatus"),
         notes=("Ülevaatuse aeg on käes. See ei ole tähtaja ületamine.",),
     )
 
@@ -191,7 +203,7 @@ def monitor_review_due(context: ReportingContext) -> MetricResult:
         context=context,
         value=count(_review_due(context, ActionKind.MONITOR)),
         population_count=count(open_actions(context).filter(kind=ActionKind.MONITOR)),
-        url=reverse("matters:my_work"),
+        url=corpus_url(context, olek="avatud", tegevus="jalgin-ulevaatus"),
         notes=("Ülevaatuse aeg on käes. See ei ole tähtaja ületamine.",),
     )
 
@@ -199,12 +211,21 @@ def monitor_review_due(context: ReportingContext) -> MetricResult:
 def next_action_by_kind(context: ReportingContext) -> MetricResult:
     spec = definition(keys.NEXT_ACTION_BY_KIND)
     labels = dict(ActionKind.choices)
+    #: One `?tegevus=` value per action kind, so each bar opens exactly the
+    #: Matters it counted. One open action per Matter is a database constraint,
+    #: which is what makes the action count and the Matter count the same
+    #: number (app/workflow/models.py).
+    parameters = {
+        ActionKind.DO.value: "teen",
+        ActionKind.WAIT.value: "ootan",
+        ActionKind.MONITOR.value: "jalgin",
+    }
     rows = open_actions(context).values("kind").annotate(total=grouped_count()).order_by("kind")
     segments = tuple(
         Segment(
             label=labels.get(row["kind"], row["kind"]),
             value=row["total"],
-            url=reverse("matters:my_work"),
+            url=corpus_url(context, olek="avatud", tegevus=parameters.get(row["kind"], "")),
         )
         for row in rows
     )
@@ -240,8 +261,11 @@ def entry_count(context: ReportingContext) -> MetricResult:
         context=context,
         value=count(visible_entries(context)),
         population_count=count(ever),
-        url=register_url(context),
-        notes=("OneNote'i lehed ei ole sissekanded ja neid siin ei loeta.",),
+        url="",
+        notes=(
+            "OneNote'i lehed ei ole sissekanded ja neid siin ei loeta.",
+            "Sissekannete eraldi loendit ei ole — need elavad teema ajajoonel.",
+        ),
     )
 
 
@@ -259,5 +283,5 @@ def entry_count_by_kind(context: ReportingContext) -> MetricResult:
         context=context,
         value=count(visible_entries(context)),
         segments=segments,
-        url=register_url(context),
+        url="",
     )

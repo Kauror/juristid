@@ -37,7 +37,9 @@ from app.reporting.selectors.base import (
 )
 
 
-def _by_organisation(context: ReportingContext, key: str, field: str, note: str) -> MetricResult:
+def _by_organisation(
+    context: ReportingContext, key: str, field: str, note: str, parameter: str
+) -> MetricResult:
     spec = definition(key)
     population = population_for(context, spec)
     population_count = count(population)
@@ -54,12 +56,11 @@ def _by_organisation(context: ReportingContext, key: str, field: str, note: str)
             Segment(
                 label=row[f"{field}__name"],
                 value=row["total"],
-                url=register_url(context),
+                url=register_url(context, **{parameter: str(row[f"{field}__id"])}),
                 note=note,
             )
             for row in rows
         ],
-        remainder_url=register_url(context),
     )
 
     return simple_result(
@@ -83,6 +84,7 @@ def matters_by_source_organisation(context: ReportingContext) -> MetricResult:
         keys.MATTERS_BY_SOURCE_ORGANISATION,
         "source_organisation",
         "Algataja või saatja",
+        "saatja",
     )
 
 
@@ -93,4 +95,5 @@ def matters_by_addressee_organisation(context: ReportingContext) -> MetricResult
         keys.MATTERS_BY_ADDRESSEE_ORGANISATION,
         "addressee_organisation",
         "Adressaat",
+        "adressaat",
     )

@@ -291,9 +291,11 @@ def submissions_list(request: HttpRequest) -> HttpResponse:
 def materials_list(request: HttpRequest) -> HttpResponse:
     """Historical resource occurrences, filtered exactly as the chart was."""
     context = reporting_context.from_request(request)
+    # `sektsioon` is deliberately absent: it is a context dimension and reaches
+    # the population through `visible_pages`, so the list and the tab's numbers
+    # cannot be narrowed differently.
     selection = {
         "file_type": request.GET.get("failityyp", "").strip().upper(),
-        "section": request.GET.get("sektsioon", "").strip(),
         "state": request.GET.get("seisund", "").strip(),
     }
     if selection["state"] and selection["state"] not in historical.MATERIALISATION_LABELS:
@@ -321,7 +323,6 @@ def materials_list(request: HttpRequest) -> HttpResponse:
                 context,
                 "materjalid",
                 failityyp=selection["file_type"],
-                sektsioon=selection["section"],
                 seisund=selection["state"],
             ),
         },
@@ -371,7 +372,6 @@ def export(request: HttpRequest, slug: str) -> StreamingHttpResponse:
         return exports.materials_csv(
             context,
             file_type=request.GET.get("failityyp", "").strip().upper(),
-            section=request.GET.get("sektsioon", "").strip(),
             state=request.GET.get("seisund", "").strip(),
         )
     if slug == "andmekvaliteet":

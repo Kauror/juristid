@@ -108,8 +108,8 @@ def measured_window(context: ReportingContext) -> tuple[int, int] | None:
 
 
 def _submission_url(context: ReportingContext, **extra: str) -> str:
-    params = {key: value for key, value in extra.items() if value}
-    params.setdefault("periood", context.period.key)
+    """The submission list, carrying every filter that is currently active."""
+    params = {**context.query_params(), **{k: v for k, v in extra.items() if v}}
     return f"{reverse('reporting:submissions')}?{urlencode(params)}"
 
 
@@ -214,7 +214,6 @@ def submissions_by_recipient(context: ReportingContext) -> MetricResult:
             )
             for row in rows
         ],
-        remainder_url=_submission_url(context),
     )
 
     addressed = count(population.filter(recipient_rows__role=RecipientRole.ADDRESSEE))
@@ -278,13 +277,12 @@ def matters_by_submission_count(context: ReportingContext) -> MetricResult:
         ("Üks arvamus", annotated.filter(sent_count=1)),
         ("Kaks või rohkem", annotated.filter(sent_count__gte=2)),
     )
+    #: No link on the buckets: the register has no "how many submissions" filter
+    #: and inventing one for three numbers would be a lot of surface for little
+    #: gain. The data table beneath the chart carries the exact values, which is
+    #: what a reader needs here (Stage-2E brief 39, 60).
     segments = tuple(
-        Segment(
-            label=label,
-            value=queryset.distinct().count(),
-            url=register_url(context, liik=RecordMode.FULL.value),
-        )
-        for label, queryset in buckets
+        Segment(label=label, value=queryset.distinct().count()) for label, queryset in buckets
     )
     return simple_result(
         spec,

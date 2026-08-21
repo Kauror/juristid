@@ -29,6 +29,29 @@ HORIZON_DAYS = 7
 #: deliberate ask for the unknown bucket) cannot be confused.
 UNKNOWN_YEAR = "teadmata"
 
+#: The URL value that means "this field is empty". One word across every
+#: dimension, because *Vastutaja määramata* is a real bucket on every chart and
+#: a bucket you cannot click is a bucket the reader has to take on trust
+#: (master specification 18.9, Stage-2E brief 42).
+MISSING = "puudub"
+
+#: What `?tegevus=` selects. Each value is a condition on the Matter's *open*
+#: next action, and each one exists because some statistic counts exactly it.
+#:
+#: The rule the whole set rests on is Stage 1's: only DO + DEADLINE can be
+#: overdue. `ootan-ulevaatus` and `jalgin-ulevaatus` are due for a look, and are
+#: never described as late, because an ordinary dependency on a ministry is not
+#: a failure (master specification 18.8).
+NEXT_ACTION_FILTERS: tuple[str, ...] = (
+    MISSING,
+    "teen",
+    "ootan",
+    "jalgin",
+    "hilinenud",
+    "ootan-ulevaatus",
+    "jalgin-ulevaatus",
+)
+
 
 def register_year_q(*, start: int, end: int) -> Q:
     """Matters whose reporting year is a *register* year inside the span.
@@ -52,6 +75,55 @@ def unknown_register_year_q() -> Q:
     buckets partition the population and nothing falls between them.
     """
     return Q(reporting_year__isnull=True) | ~Q(origin__in=REGISTER_YEAR_ORIGINS)
+
+
+def _open_action_condition(value: str, today: date) -> Q:
+    """The `NextAction` condition behind one `?tegevus=` value."""
+    open_now = Q(status=ActionStatus.OPEN)
+    if value == "teen":
+        return open_now & Q(kind=ActionKind.DO)
+    if value == "ootan":
+        return open_now & Q(kind=ActionKind.WAIT)
+    if value == "jalgin":
+        return open_now & Q(kind=ActionKind.MONITOR)
+    if value == "hilinenud":
+        return open_now & Q(
+            kind=ActionKind.DO,
+            date_semantics=DateSemantics.DEADLINE,
+            target_date__lt=today,
+        )
+    if value == "ootan-ulevaatus":
+        return open_now & Q(kind=ActionKind.WAIT, target_date__isnull=False, target_date__lte=today)
+    if value == "jalgin-ulevaatus":
+        return open_now & Q(
+            kind=ActionKind.MONITOR, target_date__isnull=False, target_date__lte=today
+        )
+    return open_now
+
+
+def filter_by_next_action(
+    queryset: QuerySet[Matter], user: Any, value: str, today: date | None = None
+) -> QuerySet[Matter]:
+    """Apply `?tegevus=`, through the same authorization the statistic used.
+
+    The subquery is ``NextAction.objects.visible_to(user)`` rather than the raw
+    table, because an action can carry a restriction its Matter does not. A
+    statistic that counted authorized *actions* and a list that counted Matters
+    with *any* action would disagree on exactly the rows it matters most about
+    (Stage-2E brief 66).
+
+    One open action per Matter is a database constraint, which is what makes the
+    action count and the Matter count the same number.
+    """
+    if value not in NEXT_ACTION_FILTERS:
+        return queryset.none()
+
+    today = today or timezone.localdate()
+    actions = NextAction.objects.visible_to(user).filter(
+        _open_action_condition(value, today), matter=OuterRef("pk")
+    )
+    annotated = queryset.annotate(matches_action=Exists(actions))
+    return annotated.filter(matches_action=value != MISSING)
 
 
 def open_action_prefetch() -> Prefetch:

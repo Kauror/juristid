@@ -272,6 +272,8 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         "Ajaloolise materjaliga teemasid",
         "Teemad, mille küljes on vähemalt üks OneNote'i lähteleht.",
         population="Nähtavad teemad",
+        time_basis=TimeBasis.WHOLE_CORPUS,
+        respects_period=False,
         source_era_limitations_et=(
             "Täpne Exceli ja OneNote'i identiteedivaste on usaldusväärne peamiselt "
             "alates 2020. aastast."
@@ -286,6 +288,8 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "kunagi OneNote'i lehte olla — see ei ole viga."
         ),
         population="Nähtavad teemad",
+        time_basis=TimeBasis.WHOLE_CORPUS,
+        respects_period=False,
         notes_et="Arhiivi hõredus ei ole andmekvaliteedi puudus.",
     ),
     _matter(
@@ -296,6 +300,12 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "registri viidet ega aruandlusaastat, ja see on õige."
         ),
         population="Nähtavad teemad, päritolu LEGACY_ONENOTE",
+        # No period. These Matters have no register reporting year by
+        # definition, so a year filter could only ever return none of them —
+        # which would read as "there are none" rather than "the question does
+        # not apply" (Stage-2E brief 15).
+        time_basis=TimeBasis.WHOLE_CORPUS,
+        respects_period=False,
         eligible_origins=(MatterOrigin.LEGACY_ONENOTE.value,),
         source_era_limitations_et=_ERA_ONENOTE_YEAR,
     ),
@@ -304,6 +314,8 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         "Mitme lähtelehega teemasid",
         "Teemad, mille külge on seotud rohkem kui üks OneNote'i leht.",
         population="Nähtavad teemad, millel on vähemalt kaks lähtelehte",
+        time_basis=TimeBasis.WHOLE_CORPUS,
+        respects_period=False,
     ),
     _matter(
         HISTORICAL_SOURCE_COVERAGE_CLASSES,
@@ -313,6 +325,8 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "ainult OneNote'i-põhine teema ja süsteemis loodud teema."
         ),
         population="Nähtavad teemad",
+        time_basis=TimeBasis.WHOLE_CORPUS,
+        respects_period=False,
     ),
     # -- Koja tegevus ------------------------------------------------------
     MetricDefinition(
@@ -704,6 +718,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "ootavat faili ei pakuta järjekorda ega loeta ebaõnnestunuks."
         ),
         source_population_et="Nähtavate teemade tõendiversioonid",
+        drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
         time_basis=TimeBasis.POINT_IN_TIME,
         respects_period=False,
     ),
@@ -713,6 +728,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         label_et="Eraldatud",
         description_et="Versioonid, mille kõik nõutud tuletised said valmis.",
         source_population_et="Nähtavate teemade tõendiversioonid",
+        drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
         time_basis=TimeBasis.POINT_IN_TIME,
         respects_period=False,
     ),
@@ -722,6 +738,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         label_et="Eraldamise järjekorras",
         description_et="Versioonid, mis ootavad töötlemist või on töös.",
         source_population_et="Nähtavate teemade tõendiversioonid",
+        drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
         time_basis=TimeBasis.POINT_IN_TIME,
         respects_period=False,
     ),
@@ -734,6 +751,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "See ei ole ebaõnnestumine ega järjekord."
         ),
         source_population_et="Nähtavate teemade tõendiversioonid",
+        drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
         time_basis=TimeBasis.POINT_IN_TIME,
         respects_period=False,
         notes_et="Selles keskkonnas võib see olla nullist erinev ja see on korras.",
@@ -746,6 +764,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "Tõeline parseri viga. Allkirjaümbrikud ja skannerit ootavad failid ei kuulu siia."
         ),
         source_population_et="Nähtavate teemade tõendiversioonid",
+        drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
         time_basis=TimeBasis.POINT_IN_TIME,
         respects_period=False,
     ),
@@ -755,6 +774,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         label_et="Ei kohaldu",
         description_et="Vormingud, mida ükski parser ei ava — näiteks allkirjaümbrikud.",
         source_population_et="Nähtavate teemade tõendiversioonid",
+        drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
         time_basis=TimeBasis.POINT_IN_TIME,
         respects_period=False,
     ),
@@ -767,6 +787,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "Nimetajast on välja jäetud need, mida ükski parser ei ava."
         ),
         source_population_et="Nähtavate teemade tõendiversioonid",
+        drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
         time_basis=TimeBasis.POINT_IN_TIME,
         unit=Unit.PERCENT,
         exclusions_et=f"Versioonid olekus {ExtractionState.NOT_APPLICABLE.label}",
