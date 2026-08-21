@@ -51,11 +51,16 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.get_by_role("heading", name="Uus teema")).to_be_visible()
 
     page.locator("#id_title").fill(MATTER_TITLE)
+
+    # Owner, sender and the arrival date are visible choices now, not selects
+    # inside the disclosure — that is the Stage-2E.1 redesign, and driving them
+    # the old way is what this test is for (docs/adr, brief 15–17).
+    page.get_by_role("radio", name=SANDRA.display_name).check()
+    page.get_by_role("radio", name="Näidisministeerium").check()
+
     page.locator("summary", has_text="Täpsusta teema andmeid").click()
-    page.locator("#id_owner").select_option(label=SANDRA.display_name)
     page.locator("#id_stage").select_option(label="Kooskõlastusringil")
     page.locator("#id_track").select_option(label="Riigisisene")
-    page.locator("#id_source_organisation").select_option(label="Näidisministeerium")
     page.locator("#id_response_deadline").fill(_future(21))
 
     page.locator("summary", has_text="Määra kohe Järgmiseks").click()
@@ -207,8 +212,10 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.get_by_role("link", name=MATTER_TITLE)).to_be_visible()
     screenshots(page, "08-teemad")
 
-    # Filters narrow the register and survive in the URL.
-    page.locator("summary", has_text="Filter").click()
+    # Filters narrow the register and survive in the URL. The disclosure is
+    # called `Täpsem otsing` since Stage 2E.1 — it now holds the date ranges and
+    # the institution chooser as well, and "+ Filter" undersold it.
+    page.locator("summary", has_text="Täpsem otsing").click()
     page.locator("select[name='ulatus']").select_option("minu")
     page.locator("select[name='hetkeseis']").select_option("consultation")
     page.get_by_role("button", name="Filtreeri").click()

@@ -42,6 +42,12 @@ MISSING = "puudub"
 #: overdue. `ootan-ulevaatus` and `jalgin-ulevaatus` are due for a look, and are
 #: never described as late, because an ordinary dependency on a ministry is not
 #: a failure (master specification 18.8).
+#: What `?materjalid=` selects. Words rather than a boolean for the same reason
+#: `?allikas=` uses them: `materjalid=0` reads as "material number zero" in a URL
+#: somebody is editing by hand.
+MATERIALS_PRESENT = "on"
+MATERIALS_ABSENT = "puudub"
+
 NEXT_ACTION_FILTERS: tuple[str, ...] = (
     MISSING,
     "teen",
@@ -75,6 +81,61 @@ def unknown_register_year_q() -> Q:
     buckets partition the population and nothing falls between them.
     """
     return Q(reporting_year__isnull=True) | ~Q(origin__in=REGISTER_YEAR_ORIGINS)
+
+
+def date_range_q(field: str, *, start: date | None, end: date | None) -> Q:
+    """A closed interval on one date column, either end optional.
+
+    **Both ends are inclusive.** A lawyer who asks for 01.01–31.01 means
+    January, and a `kuni` that quietly excluded the 31st would drop the busiest
+    day of the month from a deadline report without saying so. The column is a
+    `DateField`, so there is no time component for an inclusive bound to lose —
+    the reasoning that makes `Period.end_datetime` exclusive does not apply here
+    (app/reporting/context.py).
+
+    Missing endpoints are open ends rather than errors: "everything since March"
+    is a question people ask.
+    """
+    condition = Q()
+    if start is not None:
+        condition &= Q(**{f"{field}__gte": start})
+    if end is not None:
+        condition &= Q(**{f"{field}__lte": end})
+    return condition
+
+
+def organisation_involved_q(organisation_id: Any) -> Q:
+    """Either direction: this body sent it, or Koda answered it.
+
+    A *query* convenience and nothing more. `KELLELT` and `KELLELE` remain two
+    separate stored facts with two separate precise filters, because the
+    register itself changed which one its single counterparty column meant in
+    2020 and collapsing them would answer a question nobody asked
+    (Stage-2E brief 27, Stage-2E.1 brief 11F).
+
+    Nothing here writes, merges or rewrites either column.
+    """
+    return Q(source_organisation_id=organisation_id) | Q(addressee_organisation_id=organisation_id)
+
+
+def filter_by_materials(queryset: QuerySet[Matter], user: Any, value: str) -> QuerySet[Matter]:
+    """Matters that do or do not carry a file this reader may open.
+
+    Scoped through ``Document.objects.visible_to`` rather than the Matter's own
+    relation. A document can be restricted below its Matter, and answering
+    "failid olemas" from the raw table would tell somebody that material they
+    cannot open exists — the same leak the search projection is careful about
+    one level up (docs/adr/0014).
+
+    One ``EXISTS`` subquery for the whole page rather than a count per row.
+    """
+    from app.documents.models import Document
+
+    if value not in {MATERIALS_PRESENT, MATERIALS_ABSENT}:
+        return queryset.none()
+    documents = Document.objects.visible_to(user).filter(matter=OuterRef("pk"))
+    annotated = queryset.annotate(has_material=Exists(documents))
+    return annotated.filter(has_material=value == MATERIALS_PRESENT)
 
 
 def _open_action_condition(value: str, today: date) -> Q:

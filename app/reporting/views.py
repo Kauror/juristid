@@ -50,11 +50,17 @@ TABS: tuple[tuple[str, str, str], ...] = (
 
 def _shell(request: HttpRequest, context: ReportingContext, tab: str) -> dict[str, Any]:
     """Everything every Statistika page needs around its own content."""
+    # Derived once and handed to both controls, so the year list and the quick
+    # strip cannot disagree about which periods are on offer.
+    years = filters.available_years(context)
     return {
         "reporting": context,
         "tabs": TABS,
         "active_tab": tab,
-        "period_options": filters.period_options(context),
+        "period_options": filters.period_options(
+            context, also_offered=[year.key for year in years]
+        ),
+        "available_years": years,
         "chips": filters.chips(context),
         "hidden_inputs": filters.hidden_inputs(context),
         # The whole filter state, for links that change one thing and must keep

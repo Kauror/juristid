@@ -9,6 +9,10 @@ urlpatterns = [
     path("saabunud/lisa/", views.intake, name="intake"),
     path("teemad/", views.matter_list, name="matter_list"),
     path("teemad/uus/", views.matter_create, name="matter_create"),
+    # The searchable institution control on Tapsem otsing. A fragment route
+    # because it swaps one field; the register itself deliberately does not
+    # have one (app/matters/views.py, `_wants_fragment`).
+    path("teemad/asutused/", views.organisation_choices, name="organisation_choices"),
     path("teemad/<uuid:pk>/", views.matter_detail, name="matter_detail"),
     path("teemad/<uuid:pk>/seisukoht/", views.matter_position, name="matter_position"),
     path("teemad/<uuid:pk>/dokumendid/", views.matter_documents, name="matter_documents"),

@@ -21,6 +21,7 @@ from typing import Any
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -63,10 +64,12 @@ from app.matters.services import (
     set_matter_dates,
     set_matter_visibility,
     set_organisations,
+    set_policy_area_other,
     set_position,
 )
 from app.matters.timeline import matter_timeline
 from app.organisations.models import Organisation
+from app.search import services as search_services
 from app.submissions.enums import RecipientRole
 from app.submissions.forms import SubmissionCreateForm
 from app.submissions.models import Submission
@@ -272,7 +275,42 @@ FILTER_LABELS = {
     # question nobody asked (Stage-2E brief 27).
     "saatja": "Algataja või saatja",
     "adressaat": "Adressaat",
+    # Stage 2E.1. The convenience filter sits *beside* the two precise ones and
+    # never replaces them: `asutus` asks "was this body involved at all", which
+    # is the question somebody has when they cannot remember which direction a
+    # letter went (Stage-2E.1 brief 11F).
+    "asutus": "Asutus",
+    "saabus_alates": "Saabus alates",
+    "saabus_kuni": "Saabus kuni",
+    "tahtaeg_alates": "Tähtaeg alates",
+    "tahtaeg_kuni": "Tähtaeg kuni",
+    "materjalid": "Materjalid",
 }
+
+#: What `?materjalid=` reads as in a chip.
+MATERIAL_LABELS = {
+    selectors.MATERIALS_PRESENT: "Failid olemas",
+    selectors.MATERIALS_ABSENT: "Failid puuduvad",
+}
+
+#: Every filter parameter the register understands, plus the sort and the free
+#: text. Used to decide whether `Tühjenda kõik` has anything to clear and to
+#: build the hidden inputs the search box carries, so a dimension added to
+#: `FILTER_LABELS` is picked up by both without a second list to keep in step.
+REGISTER_PARAMS = (*FILTER_LABELS, "olek", "jarjestus", "q")
+
+#: Suffix of a parameter that steers a *control* rather than the population.
+#: The organisation chooser's own search box lives inside the filter form, so
+#: submitting the form carries whatever was typed into it. That text narrows a
+#: list of options and nothing else — it must not survive into a shared link,
+#: and `Tühjenda kõik` must not leave it behind looking like a filter that is
+#: still applied.
+CONTROL_PARAM_SUFFIX = "_otsing"
+
+
+def _is_control_param(name: str) -> bool:
+    return name.endswith(CONTROL_PARAM_SUFFIX)
+
 
 #: What `?allikas=` means. A word rather than a boolean, because `allikas=0`
 #: reads as "source number zero" in a URL somebody is editing by hand.
@@ -341,6 +379,25 @@ def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     return options
 
 
+def _named_by_pk(model: Any, raw: str) -> Any:
+    """Look a row up by primary key without trusting the string.
+
+    `Model.objects.filter(pk="mitte-uuid")` is not an empty result — it is a
+    `ValidationError` from the field, and it takes the whole register page down
+    with a 500. The register's own *filters* already guard against this by
+    parsing the UUID first; the code that renders a filter *chip* did not, so a
+    hand-edited or truncated URL crashed the page it was describing.
+
+    Returns None for anything unparseable, and the caller falls back to showing
+    the raw value — which is the honest thing to put in a chip for a filter that
+    matched nothing.
+    """
+    try:
+        return model.objects.filter(pk=uuid.UUID(raw)).first()
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     """Show the reader a name, not a primary key.
 
@@ -348,11 +405,15 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     up by primary key, and `pk="puudub"` is not a failed lookup — it is a
     ValidationError that takes the whole register page down with it. Found by
     the first CI round, on `?vastutaja=puudub`.
+
+    Malformed UUIDs are the same failure one step along, and were found the same
+    way: `?asutus=mitte-uuid` 500ed while `?asutus=puudub` did not. Both go
+    through `_named_by_pk` now.
     """
     if value == selectors.MISSING:
         return "Määramata"
     if name == "vastutaja":
-        person = User.objects.filter(pk=value).first()
+        person = _named_by_pk(User, value)
         return person.display_name if person else value
     if name == "hetkeseis":
         stage = StageVocabulary.objects.filter(key=value).first()
@@ -377,10 +438,27 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         return "Olemas" if value == SOURCE_PRESENT else "Puudub"
     if name == "tegevus":
         return NEXT_ACTION_LABELS.get(value, value)
-    if name in {"saatja", "adressaat"}:
-        organisation = Organisation.objects.filter(pk=value).first()
+    if name in {"saatja", "adressaat", "asutus"}:
+        organisation = _named_by_pk(Organisation, value)
         return organisation.name if organisation else value
+    if name == "materjalid":
+        return MATERIAL_LABELS.get(value, value)
+    if name in DATE_FILTERS:
+        # The stored value is ISO because that is what `<input type=date>`
+        # submits; the chip reads it back the way Estonians write dates.
+        parsed = parse_date(value)
+        return f"{parsed:%d.%m.%Y}" if parsed else value
     return value
+
+
+#: Which parameters hold a date, and which column each pair narrows. Both ends
+#: of each pair are inclusive — see `selectors.date_range_q`.
+DATE_FILTERS = {
+    "saabus_alates": ("received_date", "start"),
+    "saabus_kuni": ("received_date", "end"),
+    "tahtaeg_alates": ("response_deadline", "start"),
+    "tahtaeg_kuni": ("response_deadline", "end"),
+}
 
 
 def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
@@ -438,11 +516,72 @@ SORT_FIELDS = {
 }
 
 
+def _wants_fragment(request: HttpRequest) -> bool:
+    """Whether this request wants the results block rather than the whole page.
+
+    The register answers on **one** URL. A dedicated fragment route would be the
+    house pattern (``matters:timeline_page`` is one), but the live search has to
+    push the address it was answered from, and pushing a fragment route would
+    leave people with ``/teemad/tulemused/?q=...`` in the address bar and in the
+    links they share.
+
+    ``HX-History-Restore-Request`` is the exception that makes Back work. HTMX
+    sends it when its history cache has expired and it needs the whole page
+    again; answering that with a fragment would replace the document with a bare
+    table (Stage-2E.1 brief 7).
+    """
+    return (
+        request.headers.get("HX-Request") == "true"
+        and request.headers.get("HX-History-Restore-Request") != "true"
+    )
+
+
+def _apply_date_filters(queryset: Any, params: Any) -> tuple[Any, dict[str, str]]:
+    """``?saabus_alates=`` and its three siblings, as two closed intervals.
+
+    An unreadable date empties the list rather than being ignored, for the same
+    reason an unreadable year does: a chip reading "31.02.2024" above the whole
+    register is a lie the reader has no way to catch.
+    """
+    bounds: dict[str, dict[str, Any]] = {}
+    echo: dict[str, str] = {}
+    for parameter, (field, edge) in DATE_FILTERS.items():
+        raw = (params.get(parameter) or "").strip()
+        if not raw:
+            continue
+        echo[parameter] = raw
+        parsed = parse_date(raw)
+        if parsed is None:
+            return queryset.none(), echo
+        bounds.setdefault(field, {})[edge] = parsed
+
+    for field, edges in bounds.items():
+        queryset = queryset.filter(
+            selectors.date_range_q(field, start=edges.get("start"), end=edges.get("end"))
+        )
+    return queryset, echo
+
+
 @login_required
 def matter_list(request: HttpRequest) -> HttpResponse:
-    """The register. Dense, filtered through the URL, paginated server-side."""
+    """The register. Dense, filtered through the URL, paginated server-side.
+
+    Stage 2E.1 puts a search box on it. ``?q=`` narrows the *whole* filtered
+    population through the search projection — not the rows already rendered on
+    the current page — and composes with every structured filter as an
+    intersection, so ``?q=pakend&aasta=2024&vastutaja=...`` means all three at
+    once (Stage-2E.1 brief 8, 9, 10).
+    """
     params = request.GET
     queryset = selectors.matter_list_queryset(request.user)
+
+    # Applied first, so everything below narrows an already-searched population
+    # and the count beside the box is the count of the list under it.
+    query = (params.get("q") or "").strip()
+    if query:
+        queryset = queryset.filter(
+            pk__in=search_services.matching_matter_ids(query=query, user=request.user)
+        )
 
     status = params.get("olek", "avatud")
     if status == "avatud":
@@ -514,6 +653,18 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             queryset = queryset.filter(**{f"{field}_id": uuid.UUID(raw)})
         except ValueError:
             queryset = queryset.none()
+    # The convenience filter, beside the two precise ones rather than instead of
+    # them. Nothing stored is collapsed: this is an OR over two columns that
+    # keep their separate meanings (Stage-2E.1 brief 11F).
+    if involved := params.get("asutus"):
+        try:
+            queryset = queryset.filter(selectors.organisation_involved_q(uuid.UUID(involved)))
+        except ValueError:
+            queryset = queryset.none()
+    if materials := params.get("materjalid"):
+        queryset = selectors.filter_by_materials(queryset, request.user, materials)
+
+    queryset, date_echo = _apply_date_filters(queryset, params)
 
     sort = params.get("jarjestus", "reference")
     queryset = queryset.order_by(*SORT_FIELDS.get(sort, SORT_FIELDS["reference"]), "-created_at")
@@ -524,39 +675,147 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     query_without_page = params.copy()
     query_without_page.pop("leht", None)
 
+    # `Tuhjenda koik` returns to the bare register rather than to "everything
+    # except the one dimension I forgot to list".
+    cleared = params.copy()
+    for parameter in REGISTER_PARAMS:
+        cleared.pop(parameter, None)
+    cleared.pop("leht", None)
+    for parameter in [name for name in cleared if _is_control_param(name)]:
+        cleared.pop(parameter, None)
+
+    chips = _active_filters(request, params)
+    context: dict[str, Any] = {
+        "page": page,
+        "paginator": paginator,
+        "total": paginator.count,
+        "query": query,
+        "query_string": query_without_page.urlencode(),
+        "cleared_query": cleared.urlencode(),
+        "has_any_filter": bool(chips or query),
+        # What the search box submits alongside `q`, so typing narrows the
+        # chosen filters rather than silently widening the population.
+        "carried_params": [
+            (name, value)
+            for name, value in params.items()
+            if name not in {"q", "leht"} and value and not _is_control_param(name)
+        ],
+        "status_options": _status_options(request, params),
+        "active_filters": chips,
+        "filters": {
+            "olek": status,
+            "ulatus": scope,
+            "q": query,
+            "asutus": params.get("asutus", ""),
+            "materjalid": params.get("materjalid", ""),
+            **date_echo,
+            "vastutaja": params.get("vastutaja", ""),
+            "hetkeseis": params.get("hetkeseis", ""),
+            "menetlusliik": params.get("menetlusliik", ""),
+            "valdkond": params.get("valdkond", ""),
+            "silt": params.get("silt", ""),
+            "liik": params.get("liik", ""),
+            "paritolu": params.get("paritolu", ""),
+            "aasta": params.get("aasta", ""),
+            "allikas": params.get("allikas", ""),
+            "tegevus": params.get("tegevus", ""),
+            "saatja": params.get("saatja", ""),
+            "adressaat": params.get("adressaat", ""),
+            "jarjestus": sort,
+        },
+        "nav_active": "teemad",
+    }
+
+    if _wants_fragment(request):
+        # The whole results surface, not a patched piece of it: one render from
+        # one queryset cannot disagree with itself about how many rows there are
+        # (the convention this module opens with).
+        #
+        # Returned before the filter-control options are built. Those populate
+        # selects that are not in this fragment, and a keystroke must not pay
+        # for a list of organisations nobody is going to see (brief 14).
+        return render(request, "matters/partials/register_results.html", context)
+
+    context |= {
+        "owners": User.objects.filter(is_active=True).order_by("display_name"),
+        "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
+        "tracks": Track.choices,
+        "policy_areas": PolicyArea.objects.filter(is_active=True).order_by("name_et"),
+        "record_modes": RecordMode.choices,
+        "origins": MatterOrigin.choices,
+        "next_action_options": list(NEXT_ACTION_LABELS.items()),
+        "material_options": sorted(MATERIAL_LABELS.items()),
+        "chosen_organisation": _organisation_or_none(params.get("asutus", "")),
+        "organisation_options": _organisation_options(""),
+    }
+    return render(request, "matters/matter_list.html", context)
+
+
+#: The register dimensions that name an institution, and what each is called on
+#: screen. A parameter outside this mapping is a 404 rather than a field name
+#: reflected back into the page.
+ORGANISATION_CHOOSER_FIELDS = {
+    "asutus": "Asutus",
+    "saatja": "Algataja voi saatja",
+    "adressaat": "Adressaat",
+}
+
+#: How many organisations the chooser offers at a time. Enough to scan, few
+#: enough that the response stays small on a catalogue with hundreds of rows.
+ORGANISATION_CHOICES = 20
+
+
+def _organisation_options(term: str) -> list[Organisation]:
+    """Organisations whose name or recorded alias matches what was typed.
+
+    The canonical catalogue, ordered by name and carrying no counts.
+    Deliberately not ordered by usage and deliberately not narrowed to bodies
+    that appear on Matters this reader may see: either would make the *order* or
+    the *membership* of this list a statement about restricted work
+    (Stage-2E.1 brief 13).
+
+    ``Organisation`` is shared reference data that the existing pickers already
+    render in full, so listing it here discloses nothing new. Aliases
+    participate because they are reviewed data — searching ``MKM`` should find
+    the ministry filed under its full name (master specification 14.7).
+    """
+    catalogue = Organisation.objects.order_by("name")
+    text = term.strip()
+    if text:
+        catalogue = catalogue.filter(
+            Q(name__icontains=text) | Q(aliases__alias__icontains=text)
+        ).distinct()
+    return list(catalogue[:ORGANISATION_CHOICES])
+
+
+def _organisation_or_none(raw: str) -> Organisation | None:
+    """The chosen body, so the chooser keeps showing it after a search."""
+    organisation: Organisation | None = _named_by_pk(Organisation, raw)
+    return organisation
+
+
+@login_required
+def organisation_choices(request: HttpRequest) -> HttpResponse:
+    """The searchable organisation control, re-rendered for what was typed.
+
+    A server-backed chooser rather than a select carrying every institution: the
+    real catalogue runs to hundreds, and the alternative the brief rules out — a
+    wall of radio buttons — is unusable at that size. No frontend library is
+    introduced; this is one HTMX swap of one labelled ``<select>`` (brief 13).
+    """
+    field = request.GET.get("vali", "asutus")
+    if field not in ORGANISATION_CHOOSER_FIELDS:
+        raise Http404("Tundmatu vali.")
+    term = request.GET.get(f"{field}_otsing", "")
     return render(
         request,
-        "matters/matter_list.html",
+        "matters/partials/organisation_choices.html",
         {
-            "page": page,
-            "paginator": paginator,
-            "total": paginator.count,
-            "query_string": query_without_page.urlencode(),
-            "status_options": _status_options(request, params),
-            "active_filters": _active_filters(request, params),
-            "filters": {
-                "olek": status,
-                "ulatus": scope,
-                "vastutaja": params.get("vastutaja", ""),
-                "hetkeseis": params.get("hetkeseis", ""),
-                "menetlusliik": params.get("menetlusliik", ""),
-                "valdkond": params.get("valdkond", ""),
-                "silt": params.get("silt", ""),
-                "liik": params.get("liik", ""),
-                "paritolu": params.get("paritolu", ""),
-                "aasta": params.get("aasta", ""),
-                "allikas": params.get("allikas", ""),
-                "tegevus": params.get("tegevus", ""),
-                "saatja": params.get("saatja", ""),
-                "adressaat": params.get("adressaat", ""),
-                "jarjestus": sort,
-            },
-            "owners": User.objects.filter(is_active=True).order_by("display_name"),
-            "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
-            "tracks": Track.choices,
-            "policy_areas": PolicyArea.objects.filter(is_active=True).order_by("name_et"),
-            "record_modes": RecordMode.choices,
-            "nav_active": "teemad",
+            "field": field,
+            "field_label": ORGANISATION_CHOOSER_FIELDS[field],
+            "term": term,
+            "organisation_options": _organisation_options(term),
+            "chosen_organisation": _organisation_or_none(request.GET.get(field, "")),
         },
     )
 
@@ -569,45 +828,142 @@ def matter_list(request: HttpRequest) -> HttpResponse:
 @login_required
 @require_http_methods(["GET", "POST"])
 def matter_create(request: HttpRequest) -> HttpResponse:
-    form = MatterCreateForm(request.POST or None)
+    """Create a Matter, with the files it arrived with.
+
+    A matter arrives as a title, a document and a person, so all three are
+    captured in one step. The files are read and validated *before* anything is
+    written: one rejected attachment must not leave a Matter behind carrying the
+    other three, which is the failure mode the intake surface already avoids
+    (Stage-2E.1 brief 23).
+    """
+    form = MatterCreateForm(request.POST or None, viewer=request.user)
     action_form = NextActionForm(request.POST or None, prefix="next")
+    uploads: list[Any] = []
+    upload_error = ""
 
     if request.method == "POST" and form.is_valid():
         wants_action = bool(request.POST.get("next-text", "").strip())
-        if wants_action and not action_form.is_valid():
+        try:
+            uploads = _read_new_matter_files(request)
+        except (DomainError, UploadRejected) as error:
+            upload_error = str(error)
+
+        if upload_error or (wants_action and not action_form.is_valid()):
+            if upload_error:
+                messages.error(request, upload_error)
             return render(
                 request,
                 "matters/matter_create.html",
-                {"form": form, "action_form": action_form, "nav_active": "teemad"},
+                _create_context(request, form, action_form),
                 status=400,
             )
 
         data = form.cleaned_data
-        matter = create_matter(
-            title=data["title"],
-            actor=request.user,
-            owner=data.get("owner"),
-            stage=data.get("stage"),
-            track=data.get("track") or "",
-            source_organisation=data.get("source_organisation"),
-            addressee_organisation=data.get("addressee_organisation"),
-            received_date=data.get("received_date"),
-            response_deadline=data.get("response_deadline"),
-            policy_areas=list(data.get("policy_areas") or []),
-            visibility=data.get("visibility") or Visibility.NORMAL,
-        )
+        with transaction.atomic():
+            matter = create_matter(
+                title=data["title"],
+                actor=request.user,
+                owner=data.get("owner"),
+                stage=data.get("stage"),
+                track=data.get("track") or "",
+                source_organisation=data.get("source_organisation"),
+                addressee_organisation=data.get("addressee_organisation"),
+                received_date=data.get("received_date"),
+                response_deadline=data.get("response_deadline"),
+                policy_areas=list(data.get("policy_areas") or []),
+                policy_area_other=data.get("policy_area_other") or "",
+                # Decided here, never read from the form. The control is gone
+                # from the page and an omitted field must not become a blank
+                # value the model would refuse (brief 21).
+                visibility=Visibility.NORMAL,
+            )
+            for upload in uploads:
+                _attach_incoming_file(matter, upload, actor=request.user)
 
-        if wants_action:
-            set_next_action(matter=matter, actor=request.user, **action_form.as_service_kwargs())
+            if wants_action:
+                set_next_action(
+                    matter=matter, actor=request.user, **action_form.as_service_kwargs()
+                )
 
-        messages.success(request, f"Teema {matter.display_reference} on loodud.")
+        if uploads:
+            messages.success(
+                request,
+                f"Teema {matter.display_reference} on loodud koos {len(uploads)} failiga.",
+            )
+        else:
+            messages.success(request, f"Teema {matter.display_reference} on loodud.")
         # Straight into the file: creation is the start of work, not the end.
         return redirect("matters:matter_detail", pk=matter.pk)
 
+    # A refused save answers 400, the same as a rejected upload and a malformed
+    # `Järgmiseks` a few lines above. The form itself failing validation used to
+    # answer 200, which made the three refusals on one page indistinguishable to
+    # anything reading the status rather than the HTML.
+    status = 400 if request.method == "POST" else 200
     return render(
         request,
         "matters/matter_create.html",
-        {"form": form, "action_form": action_form, "nav_active": "teemad"},
+        _create_context(request, form, action_form),
+        status=status,
+    )
+
+
+def _create_context(request: HttpRequest, form: Any, action_form: Any) -> dict[str, Any]:
+    return {
+        "form": form,
+        "action_form": action_form,
+        "frequent_senders": getattr(form, "frequent_senders", []),
+        # Named here rather than excluded in the template by listing the primary
+        # ones: a field added to the form later should appear *somewhere* by
+        # default, and the safe default is the disclosure.
+        "secondary_fields": (
+            "stage",
+            "track",
+            "addressee_organisation",
+            "response_deadline",
+        ),
+        "today": timezone.localdate(),
+        "nav_active": "teemad",
+    }
+
+
+def _read_new_matter_files(request: HttpRequest) -> list[Any]:
+    """Read and validate every attachment before a single row is written.
+
+    Reading is what validates: `read_upload` enforces the size, the MIME type
+    and the signature rules the rest of the system already relies on. Doing all
+    of it up front is the whole point — a Matter created with three of four
+    files, and an error message about the fourth, is worse than no Matter.
+    """
+    from app.documents.uploads import read_upload
+
+    files = request.FILES.getlist("files")
+    return [read_upload(handle) for handle in files if handle]
+
+
+def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
+    """One uploaded file as one Document with one immutable version.
+
+    Through the ordinary services, so a file arriving with a new Matter is
+    subject to the same evidence rules as one uploaded later: same storage, same
+    checksum, same immutability trigger, same scan state. Nothing is inferred
+    from the filename — not a stage, not a submission, not a date.
+    """
+    from app.documents.enums import DocumentRole
+    from app.documents.services import add_evidence_version, create_document
+
+    document = create_document(
+        matter=matter,
+        title=upload.filename,
+        role=DocumentRole.INCOMING_AUTHORITY,
+        created_by=actor,
+    )
+    add_evidence_version(
+        document=document,
+        content=upload.content,
+        original_filename=upload.filename,
+        mime_type=upload.mime_type,
+        uploaded_by=actor,
     )
 
 
@@ -890,6 +1246,7 @@ FIELD_SERVICES = {
     "received_date",
     "response_deadline",
     "visibility",
+    "policy_area_other",
 }
 
 
@@ -901,11 +1258,12 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         raise Http404("Tundmatu väli.")
 
     matter = get_visible_matter(request, pk)
+    surface = _FIELD_SURFACES.get(field, "matters/partials/header.html")
     form = MatterFieldForm(request.POST)
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
-        return render(request, "matters/partials/header.html", context, status=400)
+        return render(request, surface, context, status=400)
 
     value = form.cleaned_data.get(field)
     try:
@@ -927,13 +1285,23 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
             set_matter_visibility(
                 matter=matter, visibility=value or Visibility.NORMAL, actor=request.user
             )
+        elif field == "policy_area_other":
+            set_policy_area_other(matter=matter, value=value or "", actor=request.user)
     except DomainError as error:
         context = _header_context(request, matter)
         context["field_error"] = str(error)
-        return render(request, "matters/partials/header.html", context, status=400)
+        return render(request, surface, context, status=400)
 
     matter.refresh_from_db()
-    return render(request, "matters/partials/header.html", _header_context(request, matter))
+    # Each field re-renders the surface it lives on. `Muu valdkond` sits in the
+    # facts rail rather than the header strip, and swapping the header for it
+    # would leave the value on screen unchanged while claiming it had saved.
+    return render(request, surface, _header_context(request, matter))
+
+
+#: Fields whose control is not in the header band. `_header_context` already
+#: carries everything the rail reads, so one context serves both.
+_FIELD_SURFACES = {"policy_area_other": "matters/partials/rail.html"}
 
 
 @login_required
