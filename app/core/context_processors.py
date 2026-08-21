@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from app.accounts import shared_gate
+from app.core.authorization import is_department_head
 
 
 @lru_cache(maxsize=8)
@@ -55,4 +56,11 @@ def application(request: HttpRequest) -> dict[str, Any]:
         "auth_mode": shared_gate.current_mode(),
         "shared_gate_mode": shared_gate.is_shared_gate(),
         "gate_passed": shared_gate.has_passed(request),
+        # Whether to offer the department-head surface in the navigation.
+        # Computed here rather than compared in the template: a template that
+        # asks `user.role == "DEPARTMENT_HEAD"` puts a copy of an authorization
+        # rule in a file nothing type-checks, and a typo there fails open by
+        # rendering nothing rather than loudly. The route enforces the same
+        # check again — this only decides whether the link is shown.
+        "is_department_head": is_department_head(getattr(request, "user", None)),
     }

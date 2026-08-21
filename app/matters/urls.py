@@ -1,10 +1,11 @@
 from django.urls import path
 
-from app.matters import views
+from app.matters import department_views, views
 
 urlpatterns = [
     path("ulevaade/", views.overview, name="overview"),
     path("minu-too/", views.my_work, name="my_work"),
+    path("osakonna-too/", department_views.department_work, name="department_work"),
     path("saabunud/", views.inbox, name="inbox"),
     path("saabunud/lisa/", views.intake, name="intake"),
     path("teemad/", views.matter_list, name="matter_list"),

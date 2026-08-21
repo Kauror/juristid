@@ -81,6 +81,21 @@ SUBMISSION_TITLE = "Sünteetiline arvamus ministeeriumile"
 #: is empty. Found by the first CI round.
 SUBMISSION_FILENAME = "arvamus-2026.asice"
 
+#: The Osakonna töö world. Four records, each present because the
+#: department-head page would otherwise show an honest emptiness that proves
+#: nothing: a current file with nobody's name on it, one whose review date has
+#: arrived (which is *not* overdue), one carrying no instruction at all, and a
+#: former colleague who still owns live work (Stage-2F brief 42, 45).
+UNASSIGNED_TITLE = "Vastutajata sünteetiline teema"
+REVIEW_DUE_TITLE = "Ootamise ülevaatuse aeg on käes"
+NO_ACTION_TITLE = "Järgmiseta sünteetiline teema"
+FORMER_OWNER_TITLE = "Endise kolleegi avatud teema"
+
+#: A colleague who has left. Inactive on purpose: they must not appear in the
+#: persona list, and their open file must still be visible to the head.
+FORMER_UPN = "endine@example.invalid"
+FORMER_NAME = "Kadri Endine"
+
 
 class Command(BaseCommand):
     help = "Create the deterministic synthetic world the Playwright suite asserts against."
@@ -178,6 +193,7 @@ class Command(BaseCommand):
 
         self._historical_world(visible)
         self._statistics_world(visible, martin, ministry)
+        self._department_world(sandra, martin, ministry, stage)
         self.stdout.write(self.style.SUCCESS("E2E world ready."))
 
     def _statistics_world(self, visible: Matter, martin: Any, ministry: Any) -> None:
@@ -225,6 +241,73 @@ class Command(BaseCommand):
             actor=martin,
         )
         mark_submission_sent(submission=submission, actor=martin, channel="EIS")
+
+    def _department_world(self, sandra: Any, martin: Any, ministry: Any, stage: Any) -> None:
+        """The states Osakonna töö exists to surface.
+
+        Each one is a distinct operational fact and they must not read alike.
+        A review date reached is not a missed deadline; a file with no
+        instruction is not a file with a late one; and an open matter owned by
+        somebody who has left is an anomaly the head should be shown rather
+        than a row to quietly drop (Stage-2F brief 32, 34, 45).
+        """
+        today = date.today()
+
+        create_matter(
+            title=UNASSIGNED_TITLE,
+            actor=martin,
+            owner=None,
+            stage=stage,
+            track=Track.DOMESTIC,
+            source_organisation=ministry,
+            received_date=today - timedelta(days=3),
+            response_deadline=today + timedelta(days=4),
+        )
+
+        review_due = create_matter(
+            title=REVIEW_DUE_TITLE,
+            actor=sandra,
+            owner=sandra,
+            stage=stage,
+            track=Track.DOMESTIC,
+            source_organisation=ministry,
+            received_date=today - timedelta(days=30),
+        )
+        set_next_action(
+            matter=review_due,
+            text="Ootame ministeeriumi vastust",
+            kind=ActionKind.WAIT,
+            date_semantics=DateSemantics.REVIEW_ON,
+            target_date=today - timedelta(days=1),
+            actor=sandra,
+        )
+
+        create_matter(
+            title=NO_ACTION_TITLE,
+            actor=martin,
+            owner=martin,
+            stage=stage,
+            track=Track.DOMESTIC,
+            source_organisation=ministry,
+            received_date=today - timedelta(days=6),
+        )
+
+        former = User.objects.filter(upn=FORMER_UPN).first()
+        if former is None:
+            former = create_synthetic_user(
+                upn=FORMER_UPN, display_name=FORMER_NAME, role=UserRole.SPECIALIST
+            )
+            User.objects.filter(pk=former.pk).update(is_active=False)
+            former.refresh_from_db()
+        create_matter(
+            title=FORMER_OWNER_TITLE,
+            actor=martin,
+            owner=former,
+            stage=stage,
+            track=Track.DOMESTIC,
+            source_organisation=ministry,
+            received_date=today - timedelta(days=9),
+        )
 
     def _historical_world(self, matter: Matter) -> None:
         """A OneNote page, its file, and one decision nobody has made yet.

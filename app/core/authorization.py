@@ -81,6 +81,31 @@ class DepartmentViewer:
 DEPARTMENT_VIEWER = DepartmentViewer()
 
 
+def is_department_head(user: object | None) -> bool:
+    """Whether this reader is the department head, by role.
+
+    A *read* helper over the same role vocabulary the scope uses, not a second
+    authorization system: it answers "may this person open the management
+    surface", while what that surface may then *show* is still decided by
+    ``visible_to`` like everything else.
+
+    Three things it is deliberately not. It is not a name — hard-coding a
+    colleague would break the day the role changes hands. It is not
+    ``is_superuser`` or ADMINISTRATOR — technical administration is not
+    business access, and that is the rule this module exists to hold
+    (specification 5.2). And it is not the shared-gate sentinel: knowing the
+    department's password proves somebody is behind the door, never that they
+    are the head (Stage-2F brief 28).
+    """
+    if isinstance(user, DepartmentViewer):
+        return False
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    if not getattr(user, "is_active", False):
+        return False
+    return getattr(user, "role", "") == UserRole.DEPARTMENT_HEAD.value
+
+
 def department_scope() -> Scope:
     """Everything NORMAL, and nothing that depends on knowing who you are.
 

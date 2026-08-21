@@ -373,10 +373,17 @@ def my_active_matters(user: Any) -> QuerySet[Matter]:
     Called inventory, never workload: a count of open files says nothing about
     effort, and the specification forbids presenting it as if it did
     (master specification 7.2, 18.8).
+
+    FULL only, like every other current-work surface. Until Stage 2F this was
+    the one selector that did not say so, and it did not matter because
+    imported archive rows had no owner and so matched nobody. Restoring the
+    register's owners makes it matter a great deal: without this filter, every
+    lawyer's Minu töö would fill with a decade of archive records the moment
+    the backfill runs. An archive row is history, not a work queue.
     """
     return (
         matter_list_queryset(user)
-        .filter(Q(owner=user) | Q(collaborators=user), is_open=True)
+        .filter(Q(owner=user) | Q(collaborators=user), is_open=True, record_mode=RecordMode.FULL)
         .distinct()
         .order_by("-updated_at")
     )

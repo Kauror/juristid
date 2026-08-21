@@ -3,6 +3,14 @@
 #   python manage.py import_legacy_register PATH --dry-run \
 #       --mapping-file private-data/mapping.toml
 #
+#   python manage.py backfill_legacy_owners --dry-run \
+#       --mapping-file private-data/mapping.toml
+#
+# The same file for both. The backfill reads ownership out of provenance the
+# import already stored, so a name it cannot identify is the same name the
+# import could not identify — and answering that twice in two files is how
+# the two answers drift apart.
+#
 # The importer refuses to guess who a register name refers to. This file is how
 # a person answers the questions it refuses to answer for itself. It is input:
 # nothing here is ever written by the importer.
@@ -18,11 +26,21 @@
 # silent skip: a mapping file with a typo must fail loudly, or it looks like the
 # mapping simply had no effect.
 
-# Register first name -> the user's upn.
-# Only needed where the name is not already an exact, unique display_name.
+# Register owner cell -> the user's upn.
+#
+# Only needed where the cell does not resolve on its own. It resolves when it
+# is an exact display name, or a first name exactly one known person carries.
+# It does NOT resolve when two colleagues' names begin the same way, when the
+# cell names several people, or when nobody carries that name at all — and
+# those are precisely the lines that belong here.
+#
+# A mapping outranks everything, including the refusal to split a shared
+# cell: writing one here is a person deciding who actually holds that file.
 [owners]
 "Kadri" = "kadri.naidis@example.invalid"
 "K. Näidis" = "kadri.naidis@example.invalid"
+# A shared cell, settled by a person rather than split by the importer.
+"Kadri / Mart" = "kadri.naidis@example.invalid"
 
 # Source institution text -> an Organisation's registry code or exact name.
 # Prefer recording a durable OrganisationAlias instead where the variant is one

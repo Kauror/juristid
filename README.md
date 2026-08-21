@@ -211,6 +211,50 @@ Validate the contracts and regenerate their overview:
 uv run python manage.py check_era_contracts
 ```
 
+### The current portfolio
+
+Two operations run once, after an import, in this order. Both read the
+provenance the import already stored — neither opens a workbook, and neither
+touches a source byte. Both default to nothing: `--dry-run` and `--apply` are
+separate words for the same reason the importer has no default mode.
+
+Put the register's owners back. The register writes a first name and an account
+holds a full one; where exactly one known person carries that name, the owner is
+restored, and where two people are named in one cell nobody is assigned:
+
+```bash
+uv run python manage.py backfill_legacy_owners --dry-run
+```
+
+```bash
+uv run python manage.py backfill_legacy_owners --apply --mapping-file private-data/mapping.toml
+```
+
+Activate one reviewed register year as current work. The year must be listed in
+`REVIEWED_CURRENT_YEARS`; any other year can be analysed and cannot be applied,
+because deciding that a year represents current work is the department's call
+and not a flag:
+
+```bash
+uv run python manage.py promote_current_register --year 2026 --dry-run
+```
+
+```bash
+uv run python manage.py promote_current_register --year 2026 --apply
+```
+
+Both reports are aggregate: counts, classifications and reasons, no matter
+titles and no source cells. The distinct owner values nobody could identify are
+source content, and are written only on request and only into ignored local
+storage:
+
+```bash
+uv run python manage.py backfill_legacy_owners --dry-run --unresolved-file import-output/owner-backfill/unresolved.csv
+```
+
+Promotion writes no snapshot and rewrites none. The next
+`capture_operational_snapshot` run records the new operational state.
+
 ## Search
 
 Search reads a rebuildable projection. Ordinary writes keep it current by
