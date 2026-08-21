@@ -173,6 +173,19 @@ def _classify(
     """
     latest = max(source_years)
 
+    # An existing closure is a fact, possibly a real professional one with a
+    # disposition and a timestamp behind it. Never rewrite it into a cutover
+    # default. Checked before the record mode on purpose: a FULL Matter that
+    # somebody activated and later closed properly is *already closed*, and
+    # that is the more precise thing to say about it than "current exception".
+    if not matter.is_open:
+        return HistoricalCutoverCandidate(
+            matter=matter,
+            source_year=latest,
+            classification=Classification.ALREADY_CLOSED,
+            reason="Juba suletud; olemasolevat sulgemist ei kirjutata ule.",
+        )
+
     # A Matter somebody activated is current work, whatever year it came from.
     # Re-running the cutover after a manual carry-over attestation must leave
     # that attestation standing.
@@ -182,16 +195,6 @@ def _classify(
             source_year=latest,
             classification=Classification.CURRENT_EXCEPTION,
             reason="Kirje on aktiveeritud jooksvaks tööks; ajalooline vaikimisi ei kehti.",
-        )
-
-    # An existing closure is a fact, possibly a real professional one with a
-    # disposition behind it. Never rewrite it into a cutover default.
-    if not matter.is_open:
-        return HistoricalCutoverCandidate(
-            matter=matter,
-            source_year=latest,
-            classification=Classification.ALREADY_CLOSED,
-            reason="Juba suletud; olemasolevat sulgemist ei kirjutata ule.",
         )
 
     if matter.origin not in REGISTER_ORIGINS:

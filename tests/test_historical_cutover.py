@@ -237,6 +237,22 @@ def test_an_already_closed_old_matter_is_a_no_op(specialist) -> None:
     ).exists()
 
 
+def test_a_closed_archive_row_is_already_closed_not_a_default(specialist) -> None:
+    """The other branch of the same rule.
+
+    A row the cutover already retired, or one closed by any earlier route, is
+    ALREADY_CLOSED — the classification is decided by `is_open` before the
+    record mode is consulted, so both a closed ARCHIVE row and a closed FULL
+    one report the precise thing rather than "current exception".
+    """
+    matter = register_matter(2014, owner=specialist)
+    mark_historical_archive_inactive(matter=matter)
+    matter.refresh_from_db()
+
+    plan = build_cutover_plan(cutover_year=CUTOVER)
+    assert classifications(plan)[matter.pk] == Classification.ALREADY_CLOSED
+
+
 def test_an_activated_old_matter_is_a_current_exception(specialist) -> None:
     """Somebody attested this one. Re-running must not retire it again."""
     matter = register_matter(2019, record_mode=RecordMode.FULL, owner=specialist)
