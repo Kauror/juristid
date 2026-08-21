@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block title %}Arvamuste ülevaatus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The opinion-archive reconciliation queue.
+
+  Roughly two thirds of the archive cannot be filed on evidence alone, so this
+  list is long by design. Everything a reviewer needs to decide sits on the card:
+  what the archive called the file, what the register row says, what the OneNote
+  page was, which signals fired and which conflicts held it back. A reviewer who
+  has to open three other pages will decide badly, or not at all.
+
+  Two different buttons on purpose. "Seo teemaga" says which matter the letter
+  belongs to. "Kinnita saadetuks" additionally asserts Koda sent it on a date,
+  which is a bigger claim and needs a date to stand behind it.
+
+  Under Admin. This is migration work, not legal work (Stage-2H brief 62, 63).
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Arvamuste ülevaatus</h1>
+    <span class="pagehead__context">
+      {{ total }} kirjet · ootel {{ counts.STRICT_MULTI_SIGNAL }} mitmesignaalilist,
+      {{ counts.REVIEW_REQUIRED }} ülevaatust, {{ counts.CONFLICT }} vastuolu,
+      {{ counts.UNMATCHED }} sidumata
+    </span>
+  </div>
+
+  <div class="card" style="padding:var(--spacing-15)">
+    <form class="form" method="get">
+      <div class="formgrid">
+        <label class="field">
+          <span class="field__label">Klass</span>
+          <select class="field__input" name="klass" onchange="this.form.submit()">
+            <option value="">Kõik</option>
+            {% for value, label in classes %}
+              <option value="{{ value }}" {% if value == match_class %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field__label">Olek</span>
+          <select class="field__input" name="olek" onchange="this.form.submit()">
+            {% for value, label in states %}
+              <option value="{{ value }}" {% if value == state %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+    </form>
+  </div>
+
+  {% if candidates %}
+    <div class="reviewlist">
+      {% for candidate in candidates %}
+        <article class="card reviewcard">
+          <div class="reviewcard__head">
+            <span class="badge">{{ candidate.get_match_class_display }}</span>
+            <span class="reference">{{ candidate.excel_reference|default:"—" }}</span>
+            {% if candidate.competing_matter_count > 1 %}
+              <span class="reviewcard__score">{{ candidate.competing_matter_count }} konkureerivat teemat</span>
+            {% endif %}
+          </div>
+
+          <div class="reviewcard__pair">
+            <div class="reviewcard__side">
+              <p class="sectionlabel">Arhiivi fail</p>
+              <p class="reviewcard__title">{{ candidate.item.filename_title|default:candidate.item.original_filename }}</p>
+              <p class="reviewcard__meta">
+                {{ candidate.item.filename_date|date:"d.m.Y"|default:"kuupäevata" }}
+                · {{ candidate.item.filename_recipient|default:"saajata" }}
+                · {{ candidate.item.size_bytes|filesizeformat }}
+                · SHA-256 {{ candidate.item.sha256|slice:":12" }}…
+              </p>
+              {% comment %}
+                KodaDash's reading, marked as derived. The normalised recipient
+                is shown beside the raw one rather than instead of it: the
+                producer folds Keskkonnaministeerium into Kliimaministeerium,
+                which is a defensible analytics bucket and not a historical fact.
+              {% endcomment %}
+              {% for meta in candidate.item.metadata_rows.all %}
+                <p class="reviewcard__meta">
+                  Tuletatud ({{ meta.get_source_system_display }}):
+                  saaja „{{ meta.recipient_raw|default:"—" }}“
+                  {% if meta.recipient_normalized and meta.recipient_normalized != meta.recipient_raw %}
+                    · analüütiline rühm „{{ meta.recipient_normalized }}“
+                  {% endif %}
+                  {% if meta.excluded_from_public %}· avalikust rakendusest välja jäetud{% endif %}
+                </p>
+              {% endfor %}
+            </div>
+            <div class="reviewcard__side">
+              <p class="sectionlabel">Register ja OneNote</p>
+              {% if candidate.matter %}
+                <p class="reviewcard__title">{{ candidate.matter.title|truncatechars:120 }}</p>
+                <p class="reviewcard__meta">
+                  VÄLJA {{ candidate.excel_sent_date|date:"d.m.Y"|default:"—" }}
+                  · KELLELE {{ candidate.excel_addressee_raw|default:"—" }}
+                  · <a href="{% url 'matters:matter_detail' pk=candidate.matter.pk %}">Ava teema</a>
+                </p>
+              {% else %}
+                <p class="reviewcard__meta">Ühtki teemat ei ole pakutud.</p>
+              {% endif %}
+              {% if candidate.onenote_page_key %}
+                <p class="reviewcard__meta">
+                  OneNote: {{ candidate.onenote_section }} · {{ candidate.onenote_page_title|truncatechars:70 }}
+                  {% if candidate.onenote_block_ordinal %}· plokk {{ candidate.onenote_block_ordinal }}{% endif %}
+                </p>
+              {% endif %}
+            </div>
+          </div>
+
+          {% if candidate.explanation %}
+            <p class="reviewcard__signals">{{ candidate.explanation }}</p>
+          {% endif %}
+          {% if candidate.signals or candidate.conflicts %}
+            <p class="reviewcard__signals">
+              {% for signal in candidate.signals %}<span>{{ signal }}</span>{% if not forloop.last %} · {% endif %}{% endfor %}
+              {% if candidate.conflicts %}
+                <span class="reviewcard__conflict">
+                  {% for conflict in candidate.conflicts %}{{ conflict }}{% if not forloop.last %} · {% endif %}{% endfor %}
+                </span>
+              {% endif %}
+            </p>
+          {% endif %}
+
+          {% if candidate.state == "PENDING" %}
+            <form class="reviewcard__actions" method="post"
+                  action="{% url 'legacy_import:opinion_decide' pk=candidate.pk %}">
+              {% csrf_token %}
+              <label class="field field--inline">
+                <span class="field__label">Saatmise kuupäev</span>
+                <input class="field__input field__input--compact" type="date" name="sent_date"
+                       value="{{ candidate.excel_sent_date|date:'Y-m-d' }}">
+              </label>
+              <input class="field__input reviewcard__note" type="text" name="note"
+                     placeholder="Märkus (valikuline)" maxlength="2000">
+              <button class="button button--primary" name="decision" value="confirm-sent"
+                      {% if not candidate.matter %}disabled{% endif %}>
+                Kinnita saadetuks
+              </button>
+              <button class="button" name="decision" value="link"
+                      {% if not candidate.matter %}disabled{% endif %}>
+                Seo teemaga
+              </button>
+              <button class="button button--quiet" name="decision" value="duplicate">Duplikaat</button>
+              <button class="button button--quiet" name="decision" value="not-opinion">Ei ole arvamus</button>
+              <button class="button button--quiet" name="decision" value="defer">Lükka edasi</button>
+              <button class="button button--quiet" name="decision" value="reject">Lükka tagasi</button>
+            </form>
+          {% else %}
+            <p class="reviewcard__decided">
+              {{ candidate.get_state_display }}
+              {% if candidate.review_approves_submission %}· saatmine kinnitatud{% endif %}
+              {% if candidate.decided_by %}· {{ candidate.decided_by.display_name }}{% endif %}
+              {% if candidate.decided_at %}· {{ candidate.decided_at|date:"d.m.Y H:i" }}{% endif %}
+              {% if candidate.decision_note %}· {{ candidate.decision_note|truncatechars:80 }}{% endif %}
+            </p>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+    {% if total > candidates|length %}
+      <p class="cardnote">Kuvatud {{ candidates|length }} kirjet {{ total }}-st.</p>
+    {% endif %}
+  {% else %}
+    <p class="empty">Selles vaates ei ole kirjeid.</p>
+  {% endif %}
+</div>
+{% endblock %}

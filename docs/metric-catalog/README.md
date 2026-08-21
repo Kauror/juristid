@@ -94,6 +94,33 @@ rendered on the Andmekvaliteet tab. As of Stage 2E that covers the register's
 member-feedback counts and its `VÄLJA` outbound dates — present in the source,
 read by the importer, but not persisted as queryable columns.
 
+## What Stage 2H changed, and why the versions moved
+
+Until the opinions archive was reconciled, every submission metric carried the
+same era note: *structured submission records begin in this system, so there is
+no measurement for earlier years*. That statement is now obsolete, and it was
+replaced rather than deleted.
+
+`SUBMISSIONS_SENT`, `SUBMISSIONS_SENT_BY_PERIOD`, `SUBMISSIONS_BY_RECIPIENT`,
+`SUBMISSIONS_BY_KIND`, `MATTERS_BY_SUBMISSION_COUNT` and
+`MATTERS_WITH_MULTIPLE_SUBMISSIONS` are all at **version 2**. What they count
+did not change; what populates them did, and a reader comparing a figure across
+that boundary is comparing two things.
+
+The new era note says three true things instead of one:
+
+1. historical submissions are reconstructed from the opinions archive;
+2. that archive begins in **2020** — the register begins in 2011, and the gap
+   is absence of evidence rather than absence of advocacy;
+3. even inside 2020–2026 the coverage is partial, because a file that cannot be
+   tied to one Matter on evidence waits in a review queue instead of being
+   guessed into a count.
+
+`SUBMISSIONS_SENT_BY_PERIOD` therefore declares `earliest_reliable_period` as
+2020. The archive's own completeness is reported separately, under
+**Andmekvaliteet**, so that "how much did Koda write" and "how much of the
+archive have we placed" can never be read as the same number.
+
 ## Template
 
 ```yaml

@@ -20,7 +20,14 @@ from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import CATALOGUE
 from app.reporting.metric_types import MetricResult
-from app.reporting.selectors import activity, documents, historical, organisations, quality
+from app.reporting.selectors import (
+    activity,
+    documents,
+    historical,
+    opinions,
+    organisations,
+    quality,
+)
 from app.reporting.selectors import matters as matter_selectors
 from app.reporting.selectors import submissions as submission_selectors
 
@@ -94,6 +101,12 @@ COMPUTERS: dict[str, Computer] = {
     keys.EXTRACTION_NOT_APPLICABLE: documents.extraction_not_applicable,
     keys.SEARCHABLE_DOCUMENT_COVERAGE: documents.searchable_document_coverage,
     # Andmekvaliteet
+    keys.OPINION_ARCHIVE_OCCURRENCES: opinions.opinion_archive_occurrences,
+    keys.OPINION_ARCHIVE_DISTINCT_BINARIES: opinions.opinion_archive_distinct_binaries,
+    keys.OPINION_ARCHIVE_MATTER_COVERAGE: opinions.opinion_archive_matter_coverage,
+    keys.OPINION_ARCHIVE_UNRESOLVED: opinions.opinion_archive_unresolved,
+    keys.HISTORICAL_SUBMISSION_COVERAGE: opinions.historical_submission_coverage,
+    keys.SUBMISSION_RECIPIENT_COVERAGE: opinions.submission_recipient_coverage,
     keys.RECONCILIATION_PENDING: quality.reconciliation_pending,
     keys.RECONCILIATION_CONFLICT: quality.reconciliation_conflict,
     keys.RECONCILIATION_BY_CLASS: quality.reconciliation_by_class,
@@ -212,6 +225,8 @@ HISTORICAL_CARDS = [
     keys.HISTORICAL_UNIQUE_BINARY_CONTENTS,
     keys.HISTORICAL_RESOURCE_BYTES,
     keys.HISTORICAL_SIGNED_CONTAINERS,
+    keys.OPINION_ARCHIVE_OCCURRENCES,
+    keys.OPINION_ARCHIVE_DISTINCT_BINARIES,
 ]
 
 HISTORICAL_CHARTS = [
@@ -233,6 +248,13 @@ QUALITY_CARDS = [
     keys.RECONCILIATION_PENDING,
     keys.RECONCILIATION_CONFLICT,
     keys.SEARCHABLE_DOCUMENT_COVERAGE,
+    # The opinion archive's own coverage. Grouped here rather than under
+    # "Koja tegevus" because an unmatched letter is a reconciliation gap, not
+    # a statement about how much advocacy happened (Stage-2H brief 55).
+    keys.OPINION_ARCHIVE_MATTER_COVERAGE,
+    keys.HISTORICAL_SUBMISSION_COVERAGE,
+    keys.SUBMISSION_RECIPIENT_COVERAGE,
+    keys.OPINION_ARCHIVE_UNRESOLVED,
 ]
 
 QUALITY_CHARTS = [

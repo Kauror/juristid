@@ -44,9 +44,18 @@ _ERA_ORGANISATION = (
     "aastatel 2020–2026 adressaati. Need on eri faktid ja neid ei liideta."
 )
 _ERA_SUBMISSION = (
-    "Struktuurne arvamuse kirje tekib alles selles süsteemis. Varasemate "
-    "aastate kohta ei ole mõõtmist — see ei tähenda, et arvamusi ei saadetud."
+    "Ajaloolised arvamused on taastatud arvamuste arhiivist ja need on olemas "
+    "alates 2020. aastast. Varasemate aastate kohta arhiivis materjali ei ole, "
+    "seega mõõtmist ei ole — see ei tähenda, et arvamusi ei saadetud. Ka "
+    "2020+ katvus ei ole täielik: osa arhiivi failidest ei ole veel üheselt "
+    "teemaga seotud ja ootab ülevaatust."
 )
+
+#: The first year the opinions archive holds anything at all. Measured, not
+#: assumed: the register begins in 2011, the archive does not, and reporting a
+#: 2014 trend from a corpus that starts in 2020 would present absence as zero
+#: (Stage-2H brief 52, 54).
+OPINION_ARCHIVE_FIRST_YEAR = 2020
 _ERA_ONENOTE_YEAR = (
     "OneNote'i-põhistel teemadel puudub registri aruandlusaasta; nad on rühmas „Teadmata aasta“."
 )
@@ -123,6 +132,14 @@ EXTRACTION_NOT_APPLICABLE = "EXTRACTION_NOT_APPLICABLE"
 EXTRACTION_AWAITING_SCANNER = "EXTRACTION_AWAITING_SCANNER"
 SEARCHABLE_DOCUMENT_COVERAGE = "SEARCHABLE_DOCUMENT_COVERAGE"
 
+OPINION_ARCHIVE_OCCURRENCES = "OPINION_ARCHIVE_OCCURRENCES"
+OPINION_ARCHIVE_DISTINCT_BINARIES = "OPINION_ARCHIVE_DISTINCT_BINARIES"
+
+OPINION_ARCHIVE_MATTER_COVERAGE = "OPINION_ARCHIVE_MATTER_COVERAGE"
+OPINION_ARCHIVE_UNRESOLVED = "OPINION_ARCHIVE_UNRESOLVED"
+HISTORICAL_SUBMISSION_COVERAGE = "HISTORICAL_SUBMISSION_COVERAGE"
+SUBMISSION_RECIPIENT_COVERAGE = "SUBMISSION_RECIPIENT_COVERAGE"
+
 RECONCILIATION_PENDING = "RECONCILIATION_PENDING"
 RECONCILIATION_CONFLICT = "RECONCILIATION_CONFLICT"
 RECONCILIATION_BY_CLASS = "RECONCILIATION_BY_CLASS"
@@ -140,12 +157,13 @@ def _matter(
     *,
     population: str,
     time_basis: TimeBasis = TimeBasis.REPORTING_YEAR,
+    version: int = 1,
     **kwargs: object,
 ) -> MetricDefinition:
     """A Matter-population definition with this file's shared defaults."""
     return MetricDefinition(
         key=key,
-        version=1,
+        version=version,
         label_et=label,
         description_et=description,
         source_population_et=population,
@@ -331,7 +349,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     # -- Koja tegevus ------------------------------------------------------
     MetricDefinition(
         key=SUBMISSIONS_SENT,
-        version=1,
+        version=2,
         label_et="Saadetud arvamusi",
         description_et=(
             "Kanoonilised saadetud Submission-kirjed. Arvamust ei tuletata "
@@ -348,7 +366,8 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     ),
     MetricDefinition(
         key=SUBMISSIONS_SENT_BY_PERIOD,
-        version=1,
+        version=2,
+        earliest_reliable_period=OPINION_ARCHIVE_FIRST_YEAR,
         label_et="Saadetud arvamused ajas",
         description_et=(
             "Saadetud arvamused aastate kaupa. Enne süsteemi kasutuselevõttu "
@@ -364,7 +383,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     ),
     MetricDefinition(
         key=SUBMISSIONS_BY_RECIPIENT,
-        version=1,
+        version=2,
         label_et="Arvamuste adressaadid",
         description_et=(
             "Kellele Koda ametlikult kirjutas. Ainult adressaadid — "
@@ -380,7 +399,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     ),
     MetricDefinition(
         key=SUBMISSIONS_BY_KIND,
-        version=1,
+        version=2,
         label_et="Arvamused liigi järgi",
         description_et="Ametlik arvamus, täiendav arvamus, pöördumine, ühispöördumine.",
         source_population_et="Nähtavad arvamused olekus SAADETUD",
@@ -397,14 +416,20 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         "Teemad arvamuste arvu järgi",
         "Mitu saadetud arvamust ühel teemal on: 0, 1 või 2 ja rohkem.",
         population="Nähtavad täielikud teemad",
+        version=2,
         eligible_record_modes=(RecordMode.FULL.value,),
         source_era_limitations_et=_ERA_SUBMISSION,
+        notes_et=(
+            "„0 arvamust“ tähendab nüüd sageli, et arhiivist ei õnnestunud ühtki "
+            "faili selle teemaga üheselt siduda, mitte et arvamust ei saadetud."
+        ),
     ),
     _matter(
         MATTERS_WITH_MULTIPLE_SUBMISSIONS,
         "Mitme arvamusega teemasid",
         "Teemad, millelt on saadetud rohkem kui üks arvamus.",
         population="Nähtavad täielikud teemad",
+        version=2,
         eligible_record_modes=(RecordMode.FULL.value,),
         source_era_limitations_et=_ERA_SUBMISSION,
     ),
@@ -798,7 +823,91 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "Kui eraldamine on turvakontrolli taga, ei väida see näitaja otsitavuse täielikkust."
         ),
     ),
+    # -- Arvamuste arhiiv --------------------------------------------------
+    MetricDefinition(
+        key=OPINION_ARCHIVE_OCCURRENCES,
+        version=1,
+        label_et="Arvamuste arhiivi esinemisi",
+        description_et=(
+            "Failide esinemisi arhiivis. Sama fail kahes kohas on kaks esinemist "
+            "ja üks baidijada — mõlemad on tõsi ja mõlemad loetakse eraldi."
+        ),
+        source_population_et="Kataloogitud arvamuste arhiivi kirjed",
+        time_basis=TimeBasis.WHOLE_CORPUS,
+        unit=Unit.FILES,
+        respects_period=False,
+        drillthrough_et="Halduse arvamuste ülevaatuse järjekord",
+    ),
+    MetricDefinition(
+        key=OPINION_ARCHIVE_DISTINCT_BINARIES,
+        version=1,
+        label_et="Erinevaid arvamuse faile",
+        description_et="Erinevate SHA-256 väärtuste arv arvamuste arhiivis.",
+        source_population_et="Kataloogitud arvamuste arhiivi kirjed",
+        time_basis=TimeBasis.WHOLE_CORPUS,
+        unit=Unit.FILES,
+        respects_period=False,
+    ),
     # -- Andmekvaliteet ----------------------------------------------------
+    MetricDefinition(
+        key=OPINION_ARCHIVE_MATTER_COVERAGE,
+        version=1,
+        label_et="Arhiivi failid teemaga seotud",
+        description_et=(
+            "Kui suur osa arhiivi failidest on jõudnud kindla teemani. "
+            "Sidumata fail ei ole puuduv arvamus, vaid lahendamata tõendus."
+        ),
+        source_population_et="Kataloogitud arvamuste arhiivi kirjed",
+        time_basis=TimeBasis.POINT_IN_TIME,
+        unit=Unit.PERCENT,
+        coverage_description_et="Failid, millel on kinnitatud teema",
+        minimum_coverage=0.0,
+        respects_period=False,
+        drillthrough_et="Halduse arvamuste ülevaatuse järjekord",
+    ),
+    MetricDefinition(
+        key=OPINION_ARCHIVE_UNRESOLVED,
+        version=1,
+        label_et="Ülevaatust ootavaid arvamusi",
+        description_et="Arhiivi failid, mille teemat ei õnnestunud tõenduse põhjal otsustada.",
+        source_population_et="Arvamuste sidumiskandidaadid olekus OOTEL",
+        time_basis=TimeBasis.POINT_IN_TIME,
+        respects_period=False,
+        drillthrough_et="Halduse arvamuste ülevaatuse järjekord",
+    ),
+    MetricDefinition(
+        key=HISTORICAL_SUBMISSION_COVERAGE,
+        version=1,
+        label_et="Taastatud arvamusi arhiivist",
+        description_et=(
+            "Arhiivi failid, millest sai kanooniline saadetud arvamus. "
+            "Lävi on range: üks teema, kaitstav kuupäev ja täpne lõplik tõend."
+        ),
+        source_population_et="Kataloogitud arvamuste arhiivi kirjed",
+        time_basis=TimeBasis.POINT_IN_TIME,
+        unit=Unit.PERCENT,
+        coverage_description_et="Failid, millest sai saadetud arvamus",
+        minimum_coverage=0.0,
+        respects_period=False,
+        notes_et=("Ülejäänu ei ole kadunud: tõendus on alles ja ootab ülevaatust."),
+    ),
+    MetricDefinition(
+        key=SUBMISSION_RECIPIENT_COVERAGE,
+        version=1,
+        label_et="Arvamusi adressaadiga",
+        description_et=(
+            "Saadetud arvamused, millel on vähemalt üks lahendatud adressaat. "
+            "Lahendamata saaja tähendab, et nime ei õnnestunud üheselt "
+            "organisatsiooniga siduda — mitte et adressaati ei olnud."
+        ),
+        source_population_et="Nähtavad arvamused olekus SAADETUD",
+        time_basis=TimeBasis.POINT_IN_TIME,
+        unit=Unit.PERCENT,
+        coverage_description_et="Arvamused, millel on adressaat",
+        minimum_coverage=0.0,
+        respects_period=False,
+        exclusions_et="Rollis „teadmiseks“ olevad saajad",
+    ),
     MetricDefinition(
         key=RECONCILIATION_PENDING,
         version=1,

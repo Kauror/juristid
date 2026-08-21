@@ -25,7 +25,15 @@ REPOSITORY = Path(settings.BASE_DIR)
 #: Directories an operator is told to use for real material. Every one of them
 #: must be ignored, and the tests below prove it rather than trusting the
 #: .gitignore to be read.
-LOCAL_ONLY_DIRECTORIES = ("private-data", "import-input", "import-output")
+LOCAL_ONLY_DIRECTORIES = (
+    "private-data",
+    "import-input",
+    "import-output",
+    # Stage 2H's reconciliation output. The row-level report names matters,
+    # ministries and archive filenames.
+    ".local",
+    "opinion-archive",
+)
 
 
 def _git(*arguments: str) -> subprocess.CompletedProcess[str]:

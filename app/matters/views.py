@@ -695,6 +695,10 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
         .prefetch_related(
             "recipient_rows__organisation",
             "joint_submitter_rows__organisation",
+            # Why a reconstructed submission says what it says. Prefetched
+            # rather than fetched per card: a historical Matter can carry
+            # several, and a query per card is a query per card.
+            "archive_imports",
         )
         .order_by("-sent_at", "-created_at")
     )
@@ -709,6 +713,7 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
             row.organisation for row in rows if row.role == RecipientRole.FOR_INFORMATION
         ]
         submission.joint_rows = list(submission.joint_submitter_rows.all())
+        submission.archive_import_rows = list(submission.archive_imports.all())
     context = _header_context(request, matter)
     context.update(
         {

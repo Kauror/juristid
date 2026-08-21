@@ -16,7 +16,12 @@ from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, scope_for_user
 from app.core.enums import Visibility
 from app.core.models import BaseModel, VisibilityInheritingModel
-from app.submissions.enums import RecipientRole, SubmissionKind, SubmissionStatus
+from app.submissions.enums import (
+    RecipientRole,
+    SentAtPrecision,
+    SubmissionKind,
+    SubmissionStatus,
+)
 
 
 class SubmissionQuerySet(models.QuerySet):
@@ -67,6 +72,18 @@ class Submission(VisibilityInheritingModel):
     )
 
     sent_at = models.DateTimeField(null=True, blank=True, db_index=True, verbose_name="saadetud")
+    # How much of `sent_at` the source actually said. A submission captured in
+    # this system carries a real timestamp; one reconstructed from the historical
+    # register carries a date, and the time in the column is an anchor nobody
+    # supplied. Rendering that anchor as "00:00" would tell a lawyer the letter
+    # went out at midnight, so the UI asks this field before it picks a format
+    # and the anchor never reaches a screen (Stage-2H brief 20).
+    sent_at_precision = models.CharField(
+        max_length=16,
+        choices=SentAtPrecision.choices,
+        default=SentAtPrecision.TIMESTAMP,
+        verbose_name="kuupäeva täpsus",
+    )
     channel = models.CharField(
         max_length=200,
         blank=True,

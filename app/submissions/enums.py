@@ -39,3 +39,17 @@ class RecipientRole(models.TextChoices):
 
     ADDRESSEE = "ADDRESSEE", "Adressaat"
     FOR_INFORMATION = "FOR_INFORMATION", "Teadmiseks"
+
+
+class SentAtPrecision(models.TextChoices):
+    """How much of ``sent_at`` the source actually supplied.
+
+    The register gives a date. Storing it in a ``DateTimeField`` forces an
+    anchor time, and rendering that anchor as "00:00" tells a lawyer the letter
+    went out at midnight — a fact no source ever supplied. The anchor stays an
+    implementation detail; this field is what the UI reads before choosing a
+    format (Stage-2H brief 20).
+    """
+
+    TIMESTAMP = "TIMESTAMP", "Kuupäev ja kellaaeg"
+    DATE = "DATE", "Ainult kuupäev"
