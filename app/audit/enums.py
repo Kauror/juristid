@@ -20,6 +20,11 @@ class ChangeEventType(models.TextChoices):
     MATTER_VISIBILITY_CHANGED = "MATTER_VISIBILITY_CHANGED", "Nähtavus muudetud"
     MATTER_CLOSED = "MATTER_CLOSED", "Teema suletud"
     MATTER_REOPENED = "MATTER_REOPENED", "Teema taasavatud"
+    # An archive register record activated as current work. Distinct from
+    # MATTER_CREATED — nothing was created, the identity and the provenance are
+    # the ones the register already had — and from MATTER_REOPENED, which is
+    # about a closure being undone (master specification 19.4).
+    MATTER_PROMOTED = "MATTER_PROMOTED", "Arhiivikirjest aktiivne teema"
     NEXT_ACTION_SET = "NEXT_ACTION_SET", "Järgmiseks määratud"
     NEXT_ACTION_COMPLETED = "NEXT_ACTION_COMPLETED", "Järgmiseks tehtud"
     NEXT_ACTION_CANCELLED = "NEXT_ACTION_CANCELLED", "Järgmiseks tühistatud"
