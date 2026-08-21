@@ -240,17 +240,26 @@ class LawyerRow:
 def _by_owner(queryset: QuerySet[Matter]) -> dict[Any, int]:
     """Count one authorized population per owner, in one query.
 
-    ``order_by()`` is not decoration. Matter carries a ``Meta.ordering``, and
-    Django puts an ordering column into the GROUP BY of a ``values().annotate()``
-    aggregate — which silently splits every owner's total across as many rows as
-    there are distinct reference numbers. Clearing it is what makes this one row
-    per person (found in Stage 2E, and it looks correct until you count).
+    The aggregate deliberately runs over a **re-wrapped** query rather than
+    over the population directly, because the populations arriving here are not
+    all the same shape. Some carry an ``Exists`` annotation; some have had
+    ``.distinct()`` applied by ``visible_to``; all carry Matter's
+    ``Meta.ordering``. Each of those leaks into a ``values().annotate()``
+    aggregate in its own way — an annotation and an ordering column both end up
+    in the GROUP BY, which splits one person's total across several rows, and a
+    result that is silently split still looks like a number.
 
-    ``distinct=True`` guards the other half: ``visible_to`` joins collaborators
-    for a scope that is not the department head's, and a many-to-many join
-    multiplies rows.
+    Restricting an unannotated, unordered query to the authorized primary keys
+    gives a GROUP BY of exactly ``owner_id`` whatever came in. Authorization is
+    not weakened: the inner query is the authorized one, and the outer can only
+    see rows it returned.
     """
-    grouped = queryset.order_by().values("owner_id").annotate(total=Count("id", distinct=True))
+    grouped = (
+        Matter.objects.filter(pk__in=queryset.values("pk"))
+        .order_by()
+        .values("owner_id")
+        .annotate(total=Count("id"))
+    )
     return {row["owner_id"]: row["total"] for row in grouped}
 
 

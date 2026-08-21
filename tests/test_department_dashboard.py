@@ -275,16 +275,19 @@ def test_the_head_page_and_ulevaade_agree_about_what_is_overdue(portfolio: Portf
 def test_the_matrix_does_not_query_once_per_lawyer(
     django_assert_max_num_queries, portfolio: Portfolio
 ) -> None:
-    """Six grouped queries and one for the people, whatever the headcount.
+    """Six grouped counts, one for the people, and a few scope lookups.
 
-    The real department is small enough that the naive shape would work and
-    still be wrong: a query count that grows when somebody is hired is a page
-    that degrades exactly when it matters (Stage-2F brief 47).
+    A budget rather than an exact number, because the interesting property is
+    that it does not move with the headcount. Eleven more colleagues here; a
+    per-lawyer-per-metric implementation would be into the seventies. The real
+    department is small enough that the naive shape would work and still be
+    wrong — a query count that grows when somebody is hired is a page that
+    degrades exactly when it matters (Stage-2F brief 47).
     """
     for index in range(6):
         factories.UserFactory(display_name=f"Lisajurist {index}")
 
-    with django_assert_max_num_queries(12):
+    with django_assert_max_num_queries(16):
         list(lawyer_matrix(portfolio.people.head))
 
 

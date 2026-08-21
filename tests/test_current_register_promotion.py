@@ -132,7 +132,7 @@ def test_a_onenote_only_matter_is_never_promoted() -> None:
     )
 
 
-def test_a_conflicted_source_reference_goes_to_review_not_to_promotion() -> None:
+def test_a_source_reference_marked_conflicting_is_not_promoted() -> None:
     from app.legacy_import.models import ConflictState, MatterSourceReference
 
     portfolio = build_portfolio()
