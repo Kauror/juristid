@@ -57,6 +57,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
+        from app.documents.extraction import heartbeat
         from app.documents.extraction.orchestrator import (
             awaiting_scanner,
             claim_version,
@@ -95,6 +96,10 @@ class Command(BaseCommand):
 
         processed = 0
         while not stopping["now"]:
+            # Before the query, not after it. The point of the mark is that the
+            # loop is turning; recording it only on the way out would make a
+            # worker that is stuck *on* the query look alive.
+            heartbeat.touch()
             candidate = pending_versions().first()
             if candidate is None:
                 if options["once"]:
@@ -119,4 +124,8 @@ class Command(BaseCommand):
             if limit and processed >= limit:
                 break
 
+        # Removed on the way out, so a stopped worker is never reported alive by
+        # a mark it left behind. `--once` runs are the common case here: they
+        # finish in seconds and would otherwise look like a healthy daemon.
+        heartbeat.clear()
         self.stdout.write(self.style.SUCCESS(f"Töödeldud {processed} faili."))

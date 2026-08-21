@@ -7,6 +7,7 @@ tree, so a deployed container is configured the same way the local container is.
 
 from __future__ import annotations
 
+import tempfile
 from pathlib import Path
 
 from config.env import database_config_from_url, env, env_bool, env_int, env_list
@@ -373,6 +374,18 @@ EXTRACTION_OCR_ENABLED = env_bool("EXTRACTION_OCR_ENABLED", default=True)
 # worker's queue drains the same day.
 EXTRACTION_STALE_CLAIM_MINUTES = env_int("EXTRACTION_STALE_CLAIM_MINUTES", 30)
 EXTRACTION_WORKER_IDLE_SECONDS = env_int("EXTRACTION_WORKER_IDLE_SECONDS", 10)
+
+# Where the worker marks that its loop turned, so a container healthcheck can
+# tell a wedged worker from a busy one. Inside the container and per-container
+# on purpose: it describes *this* process, and a restarted worker starts a new
+# heartbeat (app/documents/extraction/heartbeat.py).
+EXTRACTION_WORKER_HEARTBEAT_PATH = env(
+    "EXTRACTION_WORKER_HEARTBEAT_PATH",
+    # The system temporary directory rather than a shared volume: the mark
+    # describes one process, and a durable location would leave a stopped
+    # worker's heartbeat behind for the next container to be judged by.
+    str(Path(tempfile.gettempdir()) / "juristid-extraction-worker.heartbeat"),
+)
 
 # --------------------------------------------------------------------------
 # Security
