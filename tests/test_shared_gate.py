@@ -465,6 +465,9 @@ def test_the_shared_gate_counts_as_an_authenticator_for_real_data(settings):
     settings.SECRET_KEY = "a-real-secret"  # noqa: S105
     settings.REAL_DATA_ALLOWED = True
     settings.SESSION_COOKIE_SECURE = True
+    # Behind the tunnel, and saying so — without which no HSTS header is sent
+    # and CSRF skips its referer check (juristid.E014).
+    settings.SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     assert check_runtime_safety(None) == []
 
 

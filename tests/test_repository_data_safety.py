@@ -182,6 +182,7 @@ def _tracked_files() -> list[str]:
     return [line for line in result.stdout.splitlines() if line]
 
 
+@requires_git
 def test_no_tracked_file_assigns_a_secret_a_real_value() -> None:
     offenders: list[str] = []
     for relative in _tracked_files():
@@ -207,6 +208,7 @@ def test_no_tracked_file_assigns_a_secret_a_real_value() -> None:
     assert not offenders, "a real-looking secret is committed: " + ", ".join(offenders)
 
 
+@requires_git
 def test_the_shared_gate_password_is_never_a_compose_or_dockerfile_default() -> None:
     """Not a default anywhere an image or a stack would inherit it."""
     for relative in _tracked_files():
@@ -216,6 +218,7 @@ def test_the_shared_gate_password_is_never_a_compose_or_dockerfile_default() -> 
         assert "JURISTID_SHARED_GATE_PASSWORD" not in text, relative
 
 
+@requires_git
 def test_the_environment_file_pattern_is_ignored() -> None:
     """`*.env` and the server's own file, so a copied one cannot be added."""
     for candidate in ("juristid.env", "server.env", "deploy/unraid-main/juristid.env"):
@@ -223,6 +226,7 @@ def test_the_environment_file_pattern_is_ignored() -> None:
         assert result.returncode == 0, f"{candidate} is not ignored"
 
 
+@requires_git
 def test_the_historical_corpus_directories_are_ignored() -> None:
     for candidate in (
         "onenote-desktop-archive/pages/x/page.json",
@@ -234,6 +238,7 @@ def test_the_historical_corpus_directories_are_ignored() -> None:
         assert result.returncode == 0, f"{candidate} is not ignored"
 
 
+@requires_git
 def test_a_database_dump_cannot_be_committed() -> None:
     for candidate in ("juristid.sql", "backup.sql.gz", "juristid-main.dump"):
         result = _git("check-ignore", "-q", candidate)
