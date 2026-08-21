@@ -71,7 +71,11 @@ difference.
             {% for row in work.lawyers %}
               <tr>
                 <th scope="row">
-                  {{ row.display_name }}
+                  {% comment %}
+                    The name in its own element, so a test — and a reader —
+                    can tell the person apart from the badge beside them.
+                  {% endcomment %}
+                  <span class="lawyer__name">{{ row.display_name }}</span>
                   {% if row.is_former_member %}
                     <span class="badge badge--restricted"
                           title="Kasutaja ei ole enam aktiivne, kuid tal on avatud teemasid">
