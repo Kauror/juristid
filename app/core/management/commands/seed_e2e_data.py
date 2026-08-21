@@ -62,7 +62,12 @@ CANDIDATE_PAGE_TITLE = "Alkoholiaktsiisi töörühma märkmed"
 #: (Stage-2E brief 69).
 OVERDUE_TITLE = "Tähtaja ületanud sünteetiline teema"
 SUBMISSION_TITLE = "Sünteetiline arvamus ministeeriumile"
-SUBMISSION_FILENAME = "arvamus-2026.pdf"
+#: A signed container, not a PDF, and for two reasons. It is what a Chamber
+#: opinion actually goes out as; and a synthetic stub with a `.pdf` extension is
+#: a *broken* PDF, which the extraction worker correctly reports as a failure —
+#: putting a false entry in the Andmekvaliteet queue the browser suite asserts
+#: is empty. Found by the first CI round.
+SUBMISSION_FILENAME = "arvamus-2026.asice"
 
 
 class Command(BaseCommand):
@@ -202,9 +207,9 @@ class Command(BaseCommand):
         )
         attach_final_evidence(
             submission=submission,
-            content=b"%PDF-1.4 sunteetiline arvamus",
+            content=bytes([80, 75, 3, 4]) + b" synthetic e2e signed opinion",
             original_filename=SUBMISSION_FILENAME,
-            mime_type="application/pdf",
+            mime_type="application/vnd.etsi.asic-e+zip",
             actor=martin,
         )
         mark_submission_sent(submission=submission, actor=martin, channel="EIS")
@@ -364,4 +369,19 @@ class Command(BaseCommand):
             score=0.44,
             match_signals="pealkirja osaline kattuvus; sama aasta",
             explanation="review-required.csv:2019_44",
+        )
+        # A second candidate, in a class nothing decides. The review-required one
+        # above is settled by `test_an_operator_settles_a_match`, and a browser
+        # suite that shares one seeded database has to leave the statistics
+        # tests something no other test consumes.
+        HistoricalMatchCandidate.objects.create(
+            source_page=candidate_page,
+            matter=matter,
+            excel_reference="2019_45",
+            excel_title="Alkoholiaktsiisi eelnõu, teine rida",
+            candidate_class=CandidateClass.CONFLICT,
+            score=0.51,
+            match_signals="kaks rida osutavad samale lehele",
+            conflicts="2019_44 vs 2019_45",
+            explanation="conflicts.csv:2019_45",
         )

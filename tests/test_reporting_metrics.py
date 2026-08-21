@@ -220,9 +220,15 @@ def test_the_trend_draws_no_bar_for_a_year_that_was_never_measured(world, report
 
 
 def test_no_submission_records_at_all_is_insufficient_data_not_zero(world, reporting_context):
+    from app.search.indexing import suspend_indexing
     from app.submissions.models import Submission
 
-    Submission.objects.all().delete()
+    # Through `suspend_indexing`, like every other bulk writer. The per-row
+    # signals reindex the Matter as each Submission goes, and the projection
+    # then tries to insert a row pointing at a Submission the cascade is in the
+    # middle of deleting (app/search/indexing.py).
+    with suspend_indexing():
+        Submission.objects.all().delete()
     result = compute(keys.SUBMISSIONS_SENT, reporting_context(world.martin))
     assert result.status == MetricStatus.INSUFFICIENT_DATA
     assert not result.has_value

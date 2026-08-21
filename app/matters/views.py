@@ -342,7 +342,15 @@ def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
 
 
 def _filter_display(request: HttpRequest, name: str, value: str) -> str:
-    """Show the reader a name, not a primary key."""
+    """Show the reader a name, not a primary key.
+
+    The `puudub` sentinel is resolved *first*. Every branch below looks a value
+    up by primary key, and `pk="puudub"` is not a failed lookup — it is a
+    ValidationError that takes the whole register page down with it. Found by
+    the first CI round, on `?vastutaja=puudub`.
+    """
+    if value == selectors.MISSING:
+        return "Määramata"
     if name == "vastutaja":
         person = User.objects.filter(pk=value).first()
         return person.display_name if person else value
@@ -372,8 +380,6 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     if name in {"saatja", "adressaat"}:
         organisation = Organisation.objects.filter(pk=value).first()
         return organisation.name if organisation else value
-    if value == selectors.MISSING:
-        return "Määramata"
     return value
 
 

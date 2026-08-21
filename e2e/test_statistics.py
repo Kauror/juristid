@@ -49,8 +49,12 @@ def test_statistika_is_a_destination_of_its_own(page, base_url, screenshots):
     page.wait_for_url(f"{base_url}/statistika/")
 
     expect(page.get_by_role("heading", name="Statistika")).to_be_visible()
+    # Scoped to the tab strip. `Teemad` is also a main-navigation item, and an
+    # unscoped lookup matches both — which is Playwright telling us the two
+    # surfaces really are distinct, exactly as intended.
+    tabs = page.get_by_label("Statistika vaated")
     for tab in ("Üldpilt", "Teemad", "Koja tegevus", "Ajalooline materjal", "Andmekvaliteet"):
-        expect(page.get_by_role("link", name=tab, exact=True)).to_be_visible()
+        expect(tabs.get_by_role("link", name=tab, exact=True)).to_be_visible()
 
     screenshots(page, "statistika-ulevaade")
 
@@ -143,29 +147,45 @@ def test_the_reconciliation_count_links_to_the_review_queue(page, base_url):
     sign_in(page, base_url, ADMIN)
     open_statistics(page, base_url, "andmekvaliteet/")
 
-    row = page.locator(".queuerow").filter(has_text="Ajaloo sidumine vajab ülevaatust").first
+    # The conflict candidate, because it is the one no other browser test
+    # decides. This suite shares a single seeded database.
+    row = page.locator(".queuerow").filter(has_text="Ajaloo sidumise vastuolud").first
     row.get_by_role("link").first.click()
     page.wait_for_load_state("networkidle")
     assert "/haldus/ajaloo-ulevaatus/" in page.url
 
 
-def test_a_restricted_matter_is_invisible_to_everyone_who_does_not_own_it(page, base_url):
-    """The same page, two personas, two totals.
+def test_the_headline_agrees_with_the_register_for_each_persona(page, base_url):
+    """Two views, one population, per reader.
 
-    Martin owns none of the restricted file, so it must contribute nothing to
-    the number he reads. Sandra owns it, so hers is exactly one higher — and
-    Martin never sees the title.
+    The Statistika card and the Teemad register compute their totals through
+    entirely different code. If either forgot to scope, they would disagree —
+    and Sandra, who owns the restricted file, must see strictly more than Martin,
+    who does not.
+
+    Deliberately *not* an assertion on absolute numbers: this suite shares one
+    seeded database with tests that create Matters. The exact arithmetic of
+    "exactly one more" is proved against a controlled world in
+    `tests/test_reporting_authorization.py`; what a browser adds is that the two
+    surfaces agree and that the title never leaks.
     """
-    sign_in(page, base_url, MARTIN)
-    open_statistics(page, base_url, "teemad/")
-    martins_total = headline(page)
-    assert RESTRICTED_TITLE not in page.content()
+    totals = {}
+    for persona in (MARTIN, SANDRA):
+        sign_in(page, base_url, persona)
+        open_statistics(page, base_url, "teemad/")
+        totals[persona.upn] = headline(page)
+        if persona is MARTIN:
+            assert RESTRICTED_TITLE not in page.content()
 
-    sign_out(page, base_url)
-    sign_in(page, base_url, SANDRA)
-    open_statistics(page, base_url, "teemad/")
+        page.goto(f"{base_url}/teemad/?olek=koik")
+        page.wait_for_load_state("networkidle")
+        register = page.locator(".pagehead__context").inner_text()
+        assert register.startswith(f"{totals[persona.upn]} "), (
+            f"{persona.upn}: Statistika says {totals[persona.upn]}, register says {register}"
+        )
+        sign_out(page, base_url)
 
-    assert headline(page) == martins_total + 1
+    assert totals[SANDRA.upn] > totals[MARTIN.upn]
 
 
 def test_a_csv_export_respects_the_filter_that_was_on_screen(page, base_url):
@@ -199,10 +219,15 @@ def test_a_chart_can_be_read_as_a_table(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_statistics(page, base_url, "teemad/")
 
-    page.get_by_text("Vaata tabelina").first.click()
-    table = page.locator("table.data-table").first
+    # A *composition* chart: the trend's fallback table is period and count,
+    # with no share column, and it is the first one on the page.
+    chart = page.locator("section.chart").filter(has_text="Teemad kirje liigi järgi").first
+    chart.get_by_text("Vaata tabelina").click()
+
+    table = chart.locator("table.data-table")
     expect(table).to_be_visible()
     expect(table.locator("th", has_text="Osakaal")).to_be_visible()
+    expect(table.locator("th", has_text="Täielik")).to_be_visible()
 
 
 def test_the_charts_carry_a_name_and_a_description_for_a_screen_reader(page, base_url):

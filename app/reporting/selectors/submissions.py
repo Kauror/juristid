@@ -160,9 +160,18 @@ def submissions_sent_by_period(context: ReportingContext) -> MetricResult:
     else:
         years = [year for year in context.period.years if first_year <= year <= last_year]
 
+    # `.order_by()` clears the model's default ordering, and it is load-bearing.
+    # `Submission.Meta.ordering` is `["-sent_at", "-created_at"]`, and Django
+    # adds ordering fields to the GROUP BY — so without this the query groups by
+    # (year, sent_at, created_at) and every submission becomes its own group of
+    # one. The trend then showed 1 where the list showed 2. Caught by the
+    # drill-through equality test on the first CI round.
     counted = {
         row["sent_at__year"]: row["total"]
-        for row in all_sent(context).values("sent_at__year").annotate(total=grouped_count())
+        for row in all_sent(context)
+        .order_by()
+        .values("sent_at__year")
+        .annotate(total=grouped_count())
     }
     segments = tuple(
         Segment(
