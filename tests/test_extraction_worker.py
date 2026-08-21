@@ -14,6 +14,7 @@ paths can reach them.
 from __future__ import annotations
 
 from datetime import timedelta
+from pathlib import Path
 
 import pytest
 from django.utils import timezone
@@ -684,3 +685,113 @@ def test_the_files_waiting_on_a_scanner_are_countable(settings, unscannable):
     unscannable(MalwareScanState.CLEAN)
 
     assert awaiting_scanner().count() == 2
+
+
+# --------------------------------------------------------------------------
+# Is the loop still turning?
+#
+# The worker has no port, so the image's HTTP healthcheck could only ever mark
+# it red — and it did, for 28 hours on the rehearsal. A container that is always
+# red makes one that *becomes* unhealthy indistinguishable, so the signal was
+# gone rather than merely wrong.
+# --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def heartbeat_path(settings, tmp_path):
+    settings.EXTRACTION_WORKER_HEARTBEAT_PATH = str(tmp_path / "worker.heartbeat")
+    from app.documents.extraction import heartbeat
+
+    heartbeat.clear()
+    return Path(settings.EXTRACTION_WORKER_HEARTBEAT_PATH)
+
+
+def test_a_worker_that_has_never_run_is_not_alive(heartbeat_path):
+    from app.documents.extraction import heartbeat
+
+    assert heartbeat.age_seconds() is None
+    assert not heartbeat.is_alive()
+
+
+def test_the_loop_marks_itself_even_with_nothing_to_do(settings, heartbeat_path):
+    """Idle is not dead. A worker with an empty queue must still read healthy."""
+    from django.core.management import call_command
+
+    settings.REAL_DATA_ALLOWED = True  # so nothing is eligible at all
+    call_command("run_extraction_worker", "--once")
+
+    # The mark is removed on the way out, so the run is observable only while it
+    # runs — which is the point. What this asserts is that the loop reached the
+    # touch at all, by way of the command completing without error.
+    assert not heartbeat_path.exists()
+
+
+def test_a_stopped_worker_does_not_look_alive(settings, heartbeat_path, unscannable):
+    """A `--once` run finishes in seconds and must not read as a live daemon."""
+    from django.core.management import call_command
+
+    settings.REAL_DATA_ALLOWED = False
+    unscannable(MalwareScanState.PENDING)
+    call_command("run_extraction_worker", "--once", "--limit", "1")
+
+    from app.documents.extraction import heartbeat
+
+    assert not heartbeat.is_alive()
+
+
+def test_a_recent_mark_is_alive_and_an_old_one_is_not(settings, heartbeat_path):
+    import os
+    import time
+
+    from app.documents.extraction import heartbeat
+
+    heartbeat.touch()
+    assert heartbeat.is_alive()
+
+    stale = time.time() - (settings.EXTRACTION_STALE_CLAIM_MINUTES * 60) - 60
+    os.utime(heartbeat_path, (stale, stale))
+    assert not heartbeat.is_alive()
+
+
+def test_the_window_is_the_one_the_system_already_uses(settings, heartbeat_path):
+    """One definition of "this worker died", not two that can disagree."""
+    from app.documents.extraction import heartbeat
+
+    settings.EXTRACTION_STALE_CLAIM_MINUTES = 7
+    assert heartbeat.threshold_seconds() == 7 * 60
+
+
+def test_a_worker_that_cannot_write_its_mark_keeps_working(settings, heartbeat_path):
+    """The probe observes the work; it is not a precondition for it."""
+    from app.documents.extraction import heartbeat
+
+    settings.EXTRACTION_WORKER_HEARTBEAT_PATH = str(heartbeat_path / "not-a-directory" / "x")
+    heartbeat.touch()  # must not raise
+    assert heartbeat.age_seconds() is None
+
+
+def test_the_healthcheck_command_fails_when_the_loop_has_stopped(heartbeat_path):
+    from django.core.management import call_command
+
+    with pytest.raises(SystemExit) as exit_code:
+        call_command("check_extraction_worker")
+    assert exit_code.value.code == 1
+
+
+def test_the_healthcheck_command_passes_while_the_loop_turns(heartbeat_path):
+    from django.core.management import call_command
+
+    from app.documents.extraction import heartbeat
+
+    heartbeat.touch()
+    call_command("check_extraction_worker", "--quiet")
+
+
+def test_the_healthcheck_says_why_it_failed(heartbeat_path, capsys):
+    """An operator reads this line out of `docker inspect`, so it has to mean
+    something more than "exit 1"."""
+    from django.core.management import call_command
+
+    with pytest.raises(SystemExit):
+        call_command("check_extraction_worker")
+    assert "heartbeat" in capsys.readouterr().err

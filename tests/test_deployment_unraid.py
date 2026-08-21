@@ -161,6 +161,26 @@ def test_the_container_names_do_not_collide_with_anything_on_the_host(
     }
 
 
+def test_the_worker_is_not_judged_by_a_healthcheck_it_cannot_pass(
+    compose: dict[str, Any],
+) -> None:
+    """The worker has no HTTP port, so the image's probe could only be red.
+
+    A container that is always red makes one that *becomes* unhealthy
+    indistinguishable — the signal is gone rather than merely wrong. The
+    rehearsal ran that way for 28 hours.
+    """
+    check = compose["services"]["extractor"].get("healthcheck")
+    assert check is not None, "the extractor inherits the web healthcheck"
+    assert "check_extraction_worker" in " ".join(check["test"])
+    assert "healthz" not in " ".join(check["test"])
+
+
+def test_the_web_service_keeps_the_image_healthcheck(compose: dict[str, Any]) -> None:
+    """It does serve HTTP, so the inherited probe is the right one."""
+    assert "healthcheck" not in compose["services"]["web"]
+
+
 def test_containers_restart_unless_stopped(compose: dict[str, Any]) -> None:
     for service in compose["services"].values():
         assert service["restart"] == "unless-stopped"

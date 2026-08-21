@@ -124,6 +124,24 @@ services:
     image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
     container_name: juristid-main-extractor
     restart: unless-stopped
+    # The image's HEALTHCHECK asks an HTTP port this container does not have, so
+    # inherited it can only ever be red — and a container that is always red
+    # makes a container that *becomes* unhealthy indistinguishable. The rehearsal
+    # ran that way for 28 hours.
+    #
+    # The worker leaves a mark each time round its loop; this reads it. That
+    # says more than "the process exists": a parser wedged on a malformed file
+    # leaves the process alive and the queue stopped, and this catches it.
+    #
+    # The window is EXTRACTION_STALE_CLAIM_MINUTES, which already means "a claim
+    # this old belongs to a worker that died" — so a slow file cannot raise a
+    # false alarm, because nothing may hold a claim longer than that anyway.
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check_extraction_worker", "--quiet"]
+      interval: 60s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
     command:
       - python
       - manage.py
