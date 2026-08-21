@@ -119,7 +119,7 @@ def _rendered_blocks(page: LegacySourcePage, resources: dict, documents: dict) -
                     # A file the importer has not reached yet is shown as
                     # itself, waiting. Hiding it would make the page look like
                     # it had fewer materials than it does.
-                    "pending": record is None,
+                    "state": _file_state(resource, record),
                 }
             )
         else:
@@ -135,6 +135,29 @@ def _rendered_blocks(page: LegacySourcePage, resources: dict, documents: dict) -
                     }
                 )
     return out
+
+
+def _file_state(resource: Any, record: Any) -> str:
+    """What actually happened to one attachment, said in one word.
+
+    The first real import found this: six attachments in the corpus are zero
+    bytes in OneNote itself, `add_evidence_version` refuses to store an empty
+    evidence file — correctly, an empty file is not evidence — and the page then
+    showed them as "Kopeerimisel" for ever. A file that will never arrive must
+    not read as one that is on its way.
+
+    `empty` and `unavailable` are separated because they are different facts
+    about the source. An empty attachment is exactly what the lawyer's OneNote
+    page contained; an unavailable one means the copy failed and is worth an
+    operator's attention.
+    """
+    if record is None:
+        return "pending"
+    if record.document is not None:
+        return "imported"
+    if resource is not None and resource.size_bytes == 0:
+        return "empty"
+    return "unavailable"
 
 
 @login_required

@@ -40,6 +40,7 @@ from app.legacy_import.source_pages import (
     CandidateState,
     HistoricalMatchCandidate,
     LegacySourcePage,
+    LegacySourceResource,
     LegacySourceResourceImport,
     MatterSourcePage,
     ResourceImportState,
@@ -526,3 +527,71 @@ def test_a_dry_run_exercises_apply_and_keeps_nothing(corpus, settings, register)
     assert "source pages" in out.getvalue()
     assert LegacySourcePage.objects.count() == 0
     assert not Matter.objects.filter(origin=MatterOrigin.LEGACY_ONENOTE).exists()
+
+
+# -- what happened to one attachment ---------------------------------------
+
+
+def test_an_attachment_says_which_of_four_things_happened_to_it(applied, archive, corpus):
+    """Found by the first real import, and it was a page lying about itself.
+
+    Six attachments in the real corpus are zero bytes in OneNote itself.
+    `add_evidence_version` refuses to store an empty evidence file — correctly —
+    and the page then showed them as "Kopeerimisel" for ever. A file that will
+    never arrive must not read as one that is on its way.
+    """
+    from app.legacy_import.historical_views import _rendered_blocks
+
+    # One attachment emptied at the source, exactly as OneNote left them.
+    empty = corpus["archive_root"] / "pages/p-exact/resources/r-exact-1/original/ettepanek.pdf"
+    empty.write_bytes(b"")
+    LegacySourceResource.objects.filter(resource_key="r-exact-1").update(size_bytes=0)
+
+    report = materialise_resources(archive=archive, batch=applied[1])
+    assert any("r-exact-1" in failure for failure in report.failures)
+
+    link = MatterSourcePage.objects.get(source_page__page_key="p-exact")
+    page = link.source_page
+    records = {
+        record.resource.resource_key: record
+        for record in link.resource_imports.select_related("resource", "document")
+    }
+    resources = {resource.resource_key: resource for resource in page.resources.all()}
+    blocks = _rendered_blocks(page, resources, records)
+
+    attachment = next(block for block in blocks if block["kind"] == "file")
+    assert attachment["state"] == "empty"
+    assert attachment["document"] is None
+
+
+def test_a_materialised_attachment_reads_as_imported(applied, archive):
+    from app.legacy_import.historical_views import _rendered_blocks
+
+    materialise_resources(archive=archive, batch=applied[1])
+    link = MatterSourcePage.objects.get(source_page__page_key="p-onenote-only")
+    page = link.source_page
+    records = {
+        record.resource.resource_key: record
+        for record in link.resource_imports.select_related("resource", "document")
+    }
+    resources = {resource.resource_key: resource for resource in page.resources.all()}
+
+    attachment = next(
+        block for block in _rendered_blocks(page, resources, records) if block["kind"] == "file"
+    )
+    assert attachment["state"] == "imported"
+    assert attachment["document"] is not None
+
+
+def test_an_attachment_nobody_has_copied_yet_reads_as_pending(applied):
+    """Not hidden. A page must not look like it had fewer materials than it does."""
+    from app.legacy_import.historical_views import _rendered_blocks
+
+    link = MatterSourcePage.objects.get(source_page__page_key="p-onenote-only")
+    page = link.source_page
+    resources = {resource.resource_key: resource for resource in page.resources.all()}
+
+    attachment = next(
+        block for block in _rendered_blocks(page, resources, {}) if block["kind"] == "file"
+    )
+    assert attachment["state"] == "pending"
