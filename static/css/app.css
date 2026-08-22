@@ -37,11 +37,16 @@
   z-index: 30;
 }
 
+/* The bar carries more destinations than the Stage-1 design did, so what may
+   shrink and what may not is stated rather than left to flexbox. Brand, action
+   and identity keep their size; the search field gives way first, then the
+   secondary navigation folds into its disclosure. */
 .topbar__brand {
   display: flex;
   align-items: center;
   gap: var(--spacing-3);
   text-decoration: none;
+  flex: none;
 }
 
 .topbar__logo {
@@ -61,8 +66,10 @@
 
 .topnav {
   display: flex;
-  gap: 22px;
+  align-items: center;
+  gap: var(--spacing-45);
   height: 48px;
+  flex: none;
 }
 
 .topnav__link {
@@ -85,12 +92,93 @@
   box-shadow: inset 0 -2px 0 0 var(--accent-primary);
 }
 
-.topbar__spacer {
-  flex: 1;
+/* -- secondary destinations ------------------------------------------------
+ *
+ * One set of links in one place in the DOM. Below the wide breakpoint they sit
+ * in a disclosure menu; at and above it the same element lays them out inline
+ * and the trigger goes away. The `:not([open])` selector is there to out-weigh
+ * the user-agent rule that hides a closed disclosure's contents — without it
+ * the inline row would only appear once somebody had opened the menu.
+ */
+.topnav__more {
+  position: relative;
+  height: 48px;
+  display: flex;
+  align-items: center;
 }
 
+.topnav__trigger {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  height: 48px;
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  list-style: none;
+}
+
+.topnav__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.topnav__trigger::after {
+  content: "▾";
+  font-size: var(--typography-size-chip);
+  color: var(--text-muted);
+}
+
+.topnav__trigger:hover {
+  color: var(--text-primary);
+}
+
+.topnav__more[open] .topnav__trigger {
+  color: var(--text-primary);
+}
+
+.topnav__menu {
+  position: absolute;
+  top: 44px;
+  left: 0;
+  z-index: 40;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+}
+
+.topnav__menu .topnav__link {
+  height: 26px;
+  padding: 0 var(--spacing-2);
+  border-radius: var(--radius-sm);
+}
+
+.topnav__menu .topnav__link:hover {
+  background: var(--surface-hover);
+}
+
+.topnav__menu .topnav__link.is-active {
+  box-shadow: inset 2px 0 0 0 var(--accent-primary);
+  background: var(--surface-selected);
+}
+
+.topbar__spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Gives way before anything else does, and never below the width at which the
+   placeholder stops being readable. */
 .searchfield {
-  width: 320px;
+  flex: 0 1 320px;
+  min-width: 168px;
   position: relative;
 }
 
@@ -121,6 +209,20 @@
   border-radius: var(--radius-sm);
   padding: 1px 5px;
   pointer-events: none;
+}
+
+.topbar__cta,
+.topbar__env,
+.topbar__signout {
+  flex: none;
+}
+
+/* The environment warning is a warning, not a headline: it keeps its full
+   wording while there is room and abbreviates before it starts pushing the
+   persona off the bar. Both spellings are in the DOM; `title` carries the long
+   one either way. */
+.topbar__envshort {
+  display: none;
 }
 
 .avatar {
@@ -306,16 +408,49 @@
   border-color: var(--border-subtle);
 }
 
+/* A card that holds a form: the padding belongs to the variant rather than to
+   a style attribute repeated in five templates. */
+.card--form {
+  padding: var(--spacing-4);
+  overflow: visible;
+}
+
+/* A card that holds its own dense list and provides only the frame. */
+.card--tight {
+  padding: var(--spacing-15);
+}
+
 .cardnote {
   padding: var(--spacing-1) var(--spacing-35);
   font-size: var(--typography-size-label);
   color: var(--text-muted);
+  max-width: 96ch;
+}
+
+/* The one paragraph on the sign-in page. It is body copy, so it keeps a
+   reading measure. Tag-qualified because the reset in base.css that strips
+   prose margins from component paragraphs is `p[class]`, and a bare class
+   would lose to it. */
+p.lead {
+  font-size: var(--typography-size-lg);
+  color: var(--text-body);
+  max-width: 62ch;
+  margin: 0 0 var(--spacing-4);
+}
+
+/* A quiet footnote under a form: what the reader should know, said once,
+   without competing with the control above it. */
+p.formnote {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+  max-width: 76ch;
+  margin: var(--spacing-4) 0 0;
 }
 
 .stack {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-45, 18px);
+  gap: var(--spacing-45);
 }
 
 .reference {
@@ -583,7 +718,11 @@
   font-weight: var(--typography-weight-bold);
 }
 
+/* `overflow: hidden` does nothing to an inline box, so these were declaring a
+   truncation they could not perform: a long Estonian title ran straight under
+   the stage chip beside it. They are the row's two lines, so they are blocks. */
 .workrow__action {
+  display: block;
   font-size: var(--typography-size-row);
   font-weight: var(--typography-weight-medium);
   white-space: nowrap;
@@ -592,6 +731,7 @@
 }
 
 .workrow__matter {
+  display: block;
   font-size: var(--typography-size-meta);
   color: var(--text-secondary);
   white-space: nowrap;
@@ -600,6 +740,7 @@
 }
 
 .workrow__body {
+  display: block;
   min-width: 0;
 }
 
@@ -614,7 +755,11 @@
   min-width: 0;
 }
 
-.workrow__date {
+/* Scoped to the group. Unscoped, this rule sat after `.workrow__date--today`
+   and `--overdue` at equal specificity and quietly won, so every date on Minu
+   töö rendered in the same neutral colour and "täna" and "üle tähtaja" carried
+   no colour signal at all. */
+.workgroup--later .workrow__date {
   font-weight: var(--typography-weight-medium);
   color: var(--text-secondary);
 }
@@ -645,13 +790,21 @@
 }
 
 .waitrow__text {
+  display: block;
   font-size: var(--typography-size-base);
   font-weight: var(--typography-weight-medium);
+  min-width: 0;
 }
 
+/* Two lines, both clipped: the wait column is narrow and a wrapped title costs
+   the reader a row they would otherwise have skimmed past. */
 .waitrow__matter {
+  display: block;
   font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .attentionrow {
@@ -751,6 +904,85 @@
   align-items: center;
   gap: var(--spacing-2);
   flex-wrap: wrap;
+  /* The anchor for the filter panel below: the panel opens under the whole
+     row, at the row's left edge, whatever the trigger's position in it. */
+  position: relative;
+}
+
+/* -- the filter disclosure -------------------------------------------------
+ *
+ * A trigger in the row and a panel underneath it, as an overlay. This started
+ * as a plain <details class="disclosure"> sitting directly inside .filterbar,
+ * which is a flex row: the panel was therefore a flex item, shrank to its
+ * content, and the auto-fit grid inside it resolved to a single ~240px column.
+ * Seventeen fields then stacked vertically and pushed the register itself off
+ * the first screen. Taking the panel out of the flow fixes the cause rather
+ * than widening the grid against a container that was never going to give it
+ * the room.
+ */
+.filterpanel {
+  position: static;
+}
+
+.filterpanel__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  background: var(--surface-raised);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 3px var(--spacing-2);
+  cursor: pointer;
+  white-space: nowrap;
+  list-style: none;
+}
+
+.filterpanel__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.filterpanel__trigger:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.filterpanel[open] > .filterpanel__trigger {
+  color: var(--text-primary);
+  border-style: solid;
+  border-color: var(--accent-border);
+  background: var(--surface-selected);
+}
+
+.filterpanel__body {
+  position: absolute;
+  top: calc(100% + var(--spacing-2));
+  left: 0;
+  z-index: 25;
+  width: 100%;
+  max-width: 62rem;
+  max-height: min(70vh, 40rem);
+  overflow-y: auto;
+  padding: var(--spacing-4);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-menu);
+}
+
+.filterpanel__body .formgrid {
+  align-items: start;
+}
+
+/* The panel's own actions sit across the full grid, not in a column of it. */
+.filterpanel__actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: center;
+  margin-top: var(--spacing-1);
 }
 
 .filterchip {
@@ -784,8 +1016,15 @@
   background: var(--surface-panel);
 }
 
+/* Fixed layout, because a register's columns are a design decision and not a
+   consequence of whichever title happens to be longest on page 3. With auto
+   layout every cell's max-content width pulled at the table and the whole
+   thing overflowed its own container by a hundred pixels; the widths below are
+   the design's, and Pealkiri takes whatever is left. */
 .table {
   width: 100%;
+  min-width: 58rem;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--typography-size-base);
 }
@@ -805,12 +1044,24 @@
   white-space: nowrap;
 }
 
+/* 32–34px rows. Every cell that can hold a long value clips it rather than
+   wrapping: one wrapped owner name in one row re-rhythms the whole table, and
+   the register's job is to be scannable at a glance. */
 .table tbody td {
-  padding: var(--spacing-2) var(--spacing-35);
+  padding: var(--spacing-15) var(--spacing-35);
   border-bottom: 1px solid var(--border-subtle);
   vertical-align: middle;
   height: 34px;
 }
+
+.table__clip {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+
 
 .table tbody tr:last-child td {
   border-bottom: none;
@@ -826,45 +1077,82 @@
 }
 
 .table__ref {
-  width: 78px;
+  width: 84px;
 }
 
+/* No width: in a fixed layout the unsized column absorbs the remainder, and
+   the title is the column that should have it. */
 .table__title {
-  min-width: 22rem;
-  max-width: 34rem;
+  min-width: 0;
 }
 
-.table__title a {
-  color: var(--text-primary);
-  text-decoration: none;
-  font-weight: var(--typography-weight-medium);
-  display: block;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.table__stage {
+  width: 150px;
 }
 
-.table__title a:hover {
-  text-decoration: underline;
+.table__owner {
+  width: 140px;
+}
+
+.table__action {
+  width: 260px;
 }
 
 .table__date {
+  width: 190px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-.table__action {
-  max-width: 22rem;
+.table__lastactivity {
+  width: 110px;
+}
+
+/* A flex wrapper inside the cell, not on the cell: a <td> that stops being a
+   table-cell drops out of its column. The state flags keep their intrinsic
+   width and the title absorbs whatever is left instead of pushing them onto a
+   second line. */
+.table__titlecell,
+.table__actioncell {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+.table__titlelink {
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: var(--typography-weight-medium);
+  min-width: 0;
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.table__titlelink:hover {
+  text-decoration: underline;
+}
+
+.table__flags {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  flex: none;
 }
 
 .table__actiontext {
-  display: inline-block;
-  max-width: 17rem;
+  min-width: 0;
+  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: bottom;
   color: var(--text-secondary);
+}
+
+.table__date .datemeaning {
+  margin-right: var(--spacing-1);
 }
 
 /* Missing data is stated, not left blank to be guessed at. */
@@ -876,10 +1164,62 @@
 .pagination {
   display: flex;
   align-items: center;
-  gap: var(--spacing-3);
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-1);
 }
 
+.pagination__pages {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pagination__page,
+.pagination__step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 var(--spacing-15);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+}
+
+.pagination__page:hover,
+.pagination__step:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.pagination__page.is-active {
+  background: var(--surface-selected);
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.pagination__gap {
+  padding: 0 var(--spacing-1);
+  color: var(--text-muted);
+}
+
+.pagination__step.is-disabled {
+  opacity: 0.4;
+}
+
+/* The count keeps its place at the end of the row: it answers "how much is
+   there", which is a different question from "where am I". */
 .pagination__status {
+  margin-left: auto;
   font-size: var(--typography-size-meta);
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
@@ -942,6 +1282,14 @@
   flex-direction: column;
   gap: var(--spacing-05);
   margin: 0;
+  min-width: 0;
+  /* The anchor for the field's own edit control, which opens over the page
+     rather than growing the band. */
+  position: relative;
+}
+
+.metafield__missing {
+  color: var(--status-warning);
 }
 
 .metafield__label {
@@ -964,26 +1312,63 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Inline edit affordance: a dashed underline, strengthening on hover. */
+/* Inline edit affordance: a dashed underline, strengthening on hover, over a
+   disclosure that opens the real control above the page. A <details> rather
+   than script, so the affordance is keyboard-reachable, announces its own
+   expanded state, and works with JavaScript off. */
 .inlineedit {
-  background: none;
-  border: none;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.inlineedit__trigger {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-05);
+  max-width: 22ch;
   border-bottom: 1px dashed var(--border-strong);
   padding: 0 0 1px;
   font: inherit;
   color: inherit;
   cursor: pointer;
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  list-style: none;
 }
 
-.inlineedit:hover {
+.inlineedit__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.inlineedit__trigger:hover {
   border-bottom-color: var(--text-secondary);
+  border-bottom-style: solid;
+}
+
+.inlineedit[open] .inlineedit__trigger {
+  border-bottom-color: var(--accent-primary);
   border-bottom-style: solid;
 }
 
 .inlineedit__caret {
   color: var(--text-muted);
-  margin-left: var(--spacing-05);
+  font-size: var(--typography-size-chip);
+  flex: none;
+}
+
+.inlineedit__form {
+  position: absolute;
+  top: calc(100% + var(--spacing-1));
+  left: 0;
+  z-index: 20;
+  padding: var(--spacing-2);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+  white-space: nowrap;
 }
 
 .inlineform {
@@ -1084,6 +1469,18 @@
   color: var(--text-body);
 }
 
+.banner__text {
+  margin: 0;
+  max-width: 96ch;
+}
+
+.banner__actions {
+  margin-left: auto;
+  display: flex;
+  gap: var(--spacing-2);
+  flex: none;
+}
+
 .banner--restricted {
   border-left-color: var(--status-warning);
   background: var(--status-warning-soft);
@@ -1182,7 +1579,7 @@
 
 .composer:focus-within {
   border-color: var(--accent-border);
-  box-shadow: 0 0 0 3px rgba(0, 159, 218, 0.12);
+  box-shadow: 0 0 0 3px var(--accent-halo);
 }
 
 .composer__top {
@@ -1191,9 +1588,19 @@
   gap: var(--spacing-3);
 }
 
+/* Collapsed, the composer is one line. It grows when somebody reaches for it,
+   which is the whole adoption argument: a routine update has to be cheaper
+   than editing a spreadsheet row. Nothing is hidden — the type, the
+   attachment and the Järgmiseks toggle stay reachable and stay in the tab
+   order — only the field's resting height changes. */
 .composer__body {
   flex: 1;
-  min-height: 44px;
+  /* `rows="4"` on the element makes the resting height four lines, which the
+     old `min-height` could not shrink. An explicit height can, and the field
+     grows the moment anybody focuses it. */
+  height: 40px;
+  min-height: 40px;
+  transition: height var(--motion-duration-base) var(--motion-easing-standard);
   background: transparent;
   border: none;
   resize: vertical;
@@ -1206,7 +1613,7 @@
 
 .composer__body:focus {
   outline: none;
-  min-height: 88px;
+  height: 108px;
 }
 
 .composer__body::placeholder {
@@ -1630,27 +2037,33 @@
  * Search overlay
  * ==================================================================== */
 
+/* Separated rows. Results carry three lines each — title, source, excerpt —
+   and with only a gap between them a reader cannot tell where one answer ends
+   and the next begins. */
 .searchresults {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-1);
+}
+
+.searchresults > .result + .result {
+  border-top: 1px solid var(--border-subtle);
 }
 
 .result {
-  padding: 9px var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
   border-radius: var(--radius-md);
   display: flex;
   flex-direction: column;
   gap: 3px;
   text-decoration: none;
   color: inherit;
-  border: 1px solid transparent;
+  border-left: 2px solid transparent;
 }
 
 .result:hover,
 .result:focus-visible {
-  background: var(--surface-selected);
-  border-color: var(--accent-border);
+  background: var(--surface-hover);
+  border-left-color: var(--accent-primary);
 }
 
 .result__head {
@@ -1778,6 +2191,21 @@
   flex-direction: column;
   gap: var(--spacing-1);
   min-width: 0;
+}
+
+/* A field group is a fieldset, and a fieldset carries a user-agent border in
+   `groove` — a bevel from 1998 that renders on this canvas as an accidental
+   grey line. Stated deliberately instead: a grouped field looks like the panel
+   it is, and its legend reads as a field label like any other. */
+fieldset.field {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-2) var(--spacing-3) var(--spacing-3);
+  margin: 0;
+}
+
+fieldset.field > legend {
+  padding: 0 var(--spacing-1);
 }
 
 .field--inline {
@@ -1952,6 +2380,12 @@
   color: var(--text-primary);
 }
 
+/* What a disclosure reveals, when it is not a whole form already carrying its
+   own spacing. */
+.disclosure__body {
+  margin-top: var(--spacing-2);
+}
+
 .empty {
   border: 1px dashed var(--border-default);
   border-radius: var(--radius-card);
@@ -1990,10 +2424,59 @@
 /* ====================================================================
  * Narrower viewports
  *
- * Desktop-first by design. Below 1280 the right rails narrow, then fold under
- * the main column; the register drops its least load-bearing columns rather
- * than shrinking every column into illegibility.
+ * Desktop-first by design, and the order in which things give way is a
+ * decision rather than an accident:
+ *
+ *   ≥1560  every destination is on the bar; nothing is behind a disclosure
+ *   1440   secondary destinations fold into "Veel"; search is 320
+ *   1366   search narrows to 280; the register drops "viimane tegevus"
+ *   1280   rails narrow; the persona label goes, the name stays
+ *   1100   rails fold under the main column; the register drops "hetkeseis"
+ *    860   the bar becomes a deliberate two-row layout, not a wrapped one
  * ==================================================================== */
+
+/* Wide desktop: the disclosure stops being one. The specificity here is
+   deliberate — it has to out-weigh the user-agent rule that hides a closed
+   <details> element's contents. */
+@media (min-width: 1560px) {
+  .topnav__more:not([open]) > .topnav__menu,
+  .topnav__more[open] > .topnav__menu {
+    position: static;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: var(--spacing-45);
+    min-width: 0;
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+  }
+
+  .topnav__more:not([open]) > .topnav__menu .topnav__link,
+  .topnav__more[open] > .topnav__menu .topnav__link {
+    height: 48px;
+    padding: 0;
+    border-radius: 0;
+    background: none;
+  }
+
+  .topnav__more:not([open]) > .topnav__menu .topnav__link.is-active,
+  .topnav__more[open] > .topnav__menu .topnav__link.is-active {
+    box-shadow: inset 0 -2px 0 0 var(--accent-primary);
+    background: none;
+  }
+
+  .topnav__trigger {
+    display: none;
+  }
+}
+
+@media (max-width: 1400px) {
+  .searchfield {
+    flex-basis: 280px;
+  }
+}
 
 @media (max-width: 1320px) {
   .worklayout {
@@ -2005,7 +2488,39 @@
   }
 
   .searchfield {
-    width: 280px;
+    flex-basis: 240px;
+  }
+
+  /* The word "Kasutaja" is the first thing to go: the name beside it already
+     says what the control is about. */
+  .actingas__label {
+    display: none;
+  }
+
+  .topbar__envlong {
+    display: none;
+  }
+
+  .topbar__envshort {
+    display: inline;
+  }
+
+  .topnav {
+    gap: var(--spacing-4);
+  }
+}
+
+@media (max-width: 1160px) {
+  .topbar__ctatext {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 }
 
@@ -2014,8 +2529,19 @@
   .matterlayout {
     grid-template-columns: minmax(0, 1fr);
   }
+}
 
+/* The register gives up its columns in the order the design names: "viimane
+   tegevus" first, then "hetkeseis" — rather than shrinking every column into
+   illegibility (UI_DESIGN_SPEC §viewports). */
+@media (max-width: 1200px) {
   .table__lastactivity {
+    display: none;
+  }
+}
+
+@media (max-width: 1000px) {
+  .table__stage {
     display: none;
   }
 }
@@ -2535,10 +3061,12 @@
 
 .actingas {
   display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2);
+  align-items: baseline;
+  gap: var(--spacing-15);
   padding-left: var(--spacing-3);
   border-left: 1px solid var(--border-subtle);
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .actingas__label {
@@ -2546,11 +3074,27 @@
   font-size: var(--typography-size-label);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+  flex: none;
 }
 
+/* The selected persona is the one thing on this control that must stay
+   readable, so it truncates rather than wrapping the bar onto a second line. */
 .actingas__name {
   font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-semibold);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 15ch;
+  min-width: 0;
+}
+
+/* Past the shared door, nobody chosen. Said in words: an empty control here
+   would read as "you", which is exactly the confusion this mode has to avoid. */
+.actingas__name--none {
+  color: var(--status-warning);
+  font-weight: var(--typography-weight-regular);
+  font-style: italic;
 }
 
 /* -- picking one --------------------------------------------------------- */
@@ -3132,29 +3676,56 @@ a.barchart__row:hover {
  * sideways on a narrow window (brief 27, 28).
  */
 
+/* A grid rather than a flex row, because a <legend> inside a flex fieldset is
+   a flex item like any other: it took the first slot, pushed the two ends
+   sideways and then wrapped them under each other, so a range stopped reading
+   as a range. In a grid the legend can be told to span the row. */
 .daterange,
 .orgchooser {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--spacing-2);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-1) var(--spacing-2);
   align-items: end;
   border: 0;
   margin: 0;
   padding: 0;
+  min-width: 0;
+}
+
+.daterange > .field__label,
+.orgchooser > .field__label {
+  grid-column: 1 / -1;
 }
 
 .daterange__end {
   display: grid;
   gap: var(--spacing-1);
-  flex: 1 1 9rem;
   min-width: 0;
+}
+
+/* Two-ended controls need two columns' worth of the grid. Left in one, the
+   ends wrap under each other and a range stops reading as a range. */
+.formgrid > .daterange,
+.formgrid > .orgchooser {
+  grid-column: span 2;
+}
+
+@media (max-width: 900px) {
+  .formgrid > .daterange,
+  .formgrid > .orgchooser {
+    grid-column: auto;
+  }
 }
 
 .orgchooser__search,
 .orgchooser__select {
-  flex: 1 1 12rem;
   min-width: 0;
+}
 
+/* The "nothing found" note belongs under both controls, not beside one. */
+.orgchooser > .field__help {
+  grid-column: 1 / -1;
+}
 
 /* ---------------------------------------------------------------------------
    Stage 2G — structured Matter facts
@@ -3169,9 +3740,22 @@ a.barchart__row:hover {
 .factsection__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--spacing-2);
   flex-wrap: wrap;
+}
+
+/* An empty fact section is one line, beside its own heading. Three of them
+   stacked as boxes took a third of the first screen of a Matter to say that
+   nothing had been recorded yet. */
+p.factsection__none {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  margin-right: auto;
+  padding-bottom: var(--spacing-2);
+}
+
+.factsection__head > .sectionlabel + .button {
+  margin-left: auto;
 }
 
 .factlist {
@@ -3385,10 +3969,192 @@ a.barchart__row:hover {
   display: none;
 }
 
-.empty--inline {
-  margin: var(--spacing-2) 0 0;
-  padding: var(--spacing-2) 0;
-  border: none;
-  background: none;
 
+/* ====================================================================
+ * Components the templates were already asking for
+ *
+ * Every rule below was reachable from a class in a template that had no CSS at
+ * all, so the element fell back to whatever its tag happened to do. They are
+ * gathered here rather than invented as new vocabulary: each one is the
+ * smallest definition that makes the existing markup mean what it says.
+ * ==================================================================== */
+
+/* -- Uus teema ------------------------------------------------------------- */
+
+/* The create form is a single reading column even inside the narrow page, and
+   its groups are further apart than the fields inside a group. */
+.createform {
+  gap: var(--spacing-5);
+}
+
+/* The label text inside a choice card. The selected and focused states of the
+   card itself are defined once, with the card. */
+.choicecard__name,
+.checkitem__name {
+  color: var(--text-body);
+}
+
+.choicecard:has(input:checked) .choicecard__name,
+.checkitem:has(input:checked) .checkitem__name {
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-medium);
+}
+
+/* The file control fills its dropzone; the zone is the affordance, not the
+   button inside it. */
+.dropzone__input {
+  width: 100%;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+/* -- structured facts ------------------------------------------------------ */
+
+.factform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  max-width: 46rem;
+}
+
+/* On a Matter page the same list has to be quieter than on its own screen:
+   it is supporting information there, not the subject. */
+.factlist--compact .factrow {
+  padding-top: var(--spacing-15);
+  padding-bottom: var(--spacing-15);
+}
+
+/* -- files ----------------------------------------------------------------- */
+
+.filelist__meta {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+/* -- page heads that carry a line of facts --------------------------------- */
+
+.pagehead__meta {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* -- department work ------------------------------------------------------- */
+
+.lawyer__name {
+  font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+/* -- reconciliation queues ------------------------------------------------- */
+
+.reviewcard {
+  padding: var(--spacing-3) var(--spacing-35);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+/* Two candidate readings of the same record, side by side and equally
+   weighted: the whole decision is which one the reader believes. */
+.reviewcard__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-width: 0;
+}
+
+/* -- submissions ----------------------------------------------------------- */
+
+.submission__provenance {
+  font-size: var(--typography-size-meta-sm);
+  max-width: 88ch;
+}
+
+/* -- small placements ------------------------------------------------------ */
+
+.notyet__text {
+  margin: 0;
+  max-width: 76ch;
+}
+
+.railcard__row--tags {
+  flex-wrap: wrap;
+  gap: var(--spacing-1);
+}
+
+/* The sent-submission summary is prose inside a card, so it wraps; the work-row
+   class it used to borrow is a single-line ellipsised cell. */
+.submissionevent__summary {
+  font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-medium);
+  color: var(--text-primary);
+}
+
+.composer__error {
+  padding: 0 var(--spacing-4);
+}
+
+.composer__optional--flush {
+  padding: 0;
+}
+
+.filterbar--spaced {
+  margin-bottom: var(--spacing-3);
+}
+
+.metricgrid--spaced {
+  margin-top: var(--spacing-4);
+}
+
+.token-swatch__preview--text {
+  background: var(--surface-raised);
+}
+
+.token-swatch__sample {
+  display: block;
+  padding: var(--spacing-2);
+}
+
+/* -- Seisukoht ------------------------------------------------------------- */
+
+.positionpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+/* The position itself is the largest thing on the surface. It is what the whole
+   file exists to produce, and it should read as a statement rather than as the
+   contents of a field. */
+.positionpanel__summary {
+  font-size: var(--typography-size-lg);
+  line-height: var(--typography-line-body);
+  color: var(--text-primary);
+  max-width: 78ch;
+}
+
+.positionpanel__label {
+  padding-left: 0;
+  padding-bottom: 0;
+  margin-top: var(--spacing-2);
+}
+
+/* The reasoning is secondary to the position and distinct from it: a reader
+   scanning for what Koda thinks must not have to separate the two. */
+.positionpanel__rationale {
+  font-size: var(--typography-size-base);
+  line-height: var(--typography-line-body);
+  color: var(--accent-link);
+  max-width: 80ch;
+}
+
+.positionpanel__empty {
+  font-size: var(--typography-size-base);
+  color: var(--text-muted);
+  max-width: 72ch;
 }
