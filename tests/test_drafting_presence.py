@@ -21,7 +21,7 @@ from __future__ import annotations
 import pytest
 
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
-from app.legacy_import.final_cutover import apply_cutover_plan, build_cutover_plan
+from app.legacy_import.final_cutover import Action, apply_cutover_plan, build_cutover_plan
 from app.legacy_import.register_semantics import has_send_date
 from app.matters import dashboard
 from tests.synthetic_cutover import (
@@ -29,6 +29,7 @@ from tests.synthetic_cutover import (
     CURRENT_SENT,
     CURRENT_SENT_UNPARSEABLE,
     FINAL_SNAPSHOT,
+    REAL_CLOSURE,
     RETIRING_IN_FORCE,
     UNPARSEABLE_SEND_CELL,
     approve_snapshot,
@@ -36,6 +37,10 @@ from tests.synthetic_cutover import (
 )
 
 pytestmark = pytest.mark.django_db
+
+#: The actions that make a Matter current work. `plan.current_after` is built
+#: from these, and every other action leaves the plan with nothing to say.
+ACTED_ON = {Action.ACTIVATE, Action.KEEP_CURRENT}
 
 
 @pytest.fixture
@@ -139,16 +144,53 @@ def test_the_cutover_the_derived_table_and_the_dashboard_agree(applied):
 
     This is the assertion the production defect would have failed: the plan said
     15, the table said 29 and the dashboard repeated the table.
+
+    Compared over the Matters the plan actually acts on. A row the plan held
+    back for review is a fourth thing — see the test below, which is where that
+    row is pinned down rather than quietly excused.
     """
     plan = build_cutover_plan(snapshot_sha256=FINAL_SNAPSHOT)
+    managed = {c.matter.pk for c in plan.candidates if c.action in ACTED_ON}
+
     from_plan = {c.matter.pk for c in plan.drafting_after}
-    from_state = set(CurrentRegisterState.objects.drafting().values_list("matter_id", flat=True))
-    from_dashboard = set(
-        dashboard.drafting_matters(applied.people.head).values_list("pk", flat=True)
-    )
+    from_state = {
+        pk
+        for pk in CurrentRegisterState.objects.drafting().values_list("matter_id", flat=True)
+        if pk in managed
+    }
+    from_dashboard = {
+        pk
+        for pk in dashboard.drafting_matters(applied.people.head).values_list("pk", flat=True)
+        if pk in managed
+    }
 
     assert from_plan == from_state == from_dashboard
-    assert from_plan, "the world must contain at least one drafting Matter"
+    assert len(from_plan) > 1, "one row agreeing by luck would prove nothing"
+
+
+def test_a_row_held_back_for_review_is_not_the_dashboards_business(applied):
+    """A pre-existing wrinkle, pinned so the suite above cannot hide it.
+
+    `REAL_CLOSURE` is live in the register and closed by a person here, so the
+    plan refuses to reopen it and holds it for review. `rebuild_current_state`
+    still writes the source's verdict — `currency=CURRENT` — beside the review
+    reason, so the derived row reads as current work the cutover never made
+    current, and its blank VÄLJA puts it in `drafting()`.
+
+    The dashboard does not repeat that, because `active_matters` sees a closed
+    Matter. So the card is right today for a reason unrelated to this fix, and
+    the divergence is recorded here rather than resolved: what `currency` should
+    say for a held-back row is a decision about the review queue, not about
+    VÄLJA.
+    """
+    row = state(applied, REAL_CLOSURE)
+    assert row.review_reason, "this row is held back, not reconciled"
+    assert row.currency == RegisterCurrency.CURRENT
+    assert row.opinion_sent_recorded is False
+
+    plan = build_cutover_plan(snapshot_sha256=FINAL_SNAPSHOT)
+    assert applied.matters[REAL_CLOSURE].pk not in {c.matter.pk for c in plan.drafting_after}
+    assert REAL_CLOSURE not in titles(dashboard.drafting_matters(applied.people.head))
 
 
 def test_the_parsed_date_would_have_disagreed(applied):
