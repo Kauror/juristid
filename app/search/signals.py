@@ -145,12 +145,51 @@ def refresh_on_recipient_change(
     and removing one are different write paths, and a submission that stays
     findable under a ministry it is no longer addressed to is wrong in the
     direction people notice least.
+
+    **Not when the submission is going too.** Deleting a Submission cascades to
+    its recipients, and Django deletes in two phases: rows with no receivers are
+    raw-deleted first — `SearchDocument` among them — and only then does the
+    per-model loop delete the recipients and fire this handler. At that moment
+    the Submission row still exists, because it is deleted later in the same
+    loop, so re-projecting here inserts a search row the cascade has already
+    swept up. Nothing collects it afterwards. The FK is deferred, so the failure
+    lands at COMMIT as an integrity error naming a submission that is no longer
+    there, and the delete the operator asked for does not happen at all.
+
+    `origin` is what tells the two apart, and here it is exact rather than
+    approximate, because only two things can reach a recipient row at all.
+    `SubmissionRecipient.organisation` is PROTECT, so deleting an Organisation
+    cannot cascade here; and `Document.matter`, `ChangeEvent.matter` and
+    `MatterSourceReference.matter` are PROTECT too, so a Matter carrying an
+    opinion cannot be deleted either. That leaves deleting the recipients —
+    which is `set_recipients` replacing them, so the submission survives and
+    must be reindexed — and deleting the Submission, after which there is
+    nothing left to keep findable.
     """
     if indexing_is_suspended():
+        return
+    if kwargs.get("signal") is post_delete and not _deletion_started_at_the_recipients(
+        kwargs.get("origin")
+    ):
         return
     submission = Submission.objects.filter(pk=instance.submission_id).first()
     if submission is not None:
         refresh_submission(submission)
+
+
+def _deletion_started_at_the_recipients(origin: Any) -> bool:
+    """Was `delete()` called on recipients, or on something above them?
+
+    ``origin`` is an instance for ``obj.delete()`` and a queryset for
+    ``qs.delete()``, so the model is read from whichever it is. A missing
+    ``origin`` is treated as "started here": that is the direction that keeps
+    the index correct, and the wrong guess costs one redundant refresh rather
+    than a row nothing will ever collect.
+    """
+    if origin is None:
+        return True
+    model = getattr(origin, "model", None) or type(origin)
+    return model is SubmissionRecipient
 
 
 @receiver(post_save, sender=MatterSourcePage, dispatch_uid="search_refresh_source_link")

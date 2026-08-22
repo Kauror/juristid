@@ -43,6 +43,7 @@ from io import StringIO
 
 import pytest
 from django.core.management import call_command
+from django.db import connection
 from django.utils import timezone
 
 from app.documents.enums import DerivativeKind, DerivativeStatus, ExtractionState
@@ -234,7 +235,7 @@ def test_an_archived_opinion_is_findable_under_the_ministry_it_was_sent_to(
 
     submission = Submission.objects.get(matter=matter)
     assert submission.status == SubmissionStatus.SENT
-    assert submission.recipients.filter(organisation=ministry).exists()
+    assert submission.recipients.filter(pk=ministry.pk).exists()
     assert any(
         result.submission_id == submission.pk for result in submission_hits(MINISTRY, specialist)
     ), "a canonical SENT opinion that no search for its addressee can find"
@@ -263,6 +264,67 @@ def test_a_failed_evidence_write_leaves_no_record_in_either_store(
     assert not OpinionSubmissionImport.objects.exists()
     assert OpinionMatchCandidate.objects.get(matter=matter).state == OpinionCandidateState.PENDING
     assert not submission_hits(MINISTRY, specialist)
+
+
+def test_deleting_an_opinion_that_has_a_recipient_actually_deletes_it(
+    archive_path, ministry, specialist
+) -> None:
+    """The operator flow the review queue is built around, with a real ministry.
+
+    Deleting a wrong Submission is what a reviewer does before recording why in
+    the queue, and it used to fail — but only once the recipient resolved to an
+    Organisation, which is every real ministry and no synthetic one. The
+    cascade deletes the search rows first, then fires the recipient handler
+    while the Submission row is still there, and the refresh reinserts a row
+    nothing will collect. The foreign key is deferred, so the error arrives at
+    COMMIT and takes the delete with it.
+
+    Both halves are asserted: the delete succeeds, and it leaves no row behind
+    for the constraint to trip over at the end of the transaction.
+    """
+    matter, item = strict_pair(304)
+    plan = build_plan(archive_path=archive_path([item]), kodadash_path=None)
+    apply_plan(plan, batch=open_batch(plan))
+    submission = Submission.objects.get(matter=matter)
+    assert submission.recipients.filter(pk=ministry.pk).exists(), "no recipient, no regression"
+
+    Submission.objects.filter(pk=submission.pk).delete()
+
+    assert not Submission.objects.filter(pk=submission.pk).exists()
+    assert not SearchDocument.objects.filter(submission_id=submission.pk).exists()
+    assert not submission_hits(MINISTRY, specialist)
+    # The deferred constraint is only checked at COMMIT, and a test transaction
+    # never commits. Asking PostgreSQL to check now is what makes this test
+    # detect the failure a request would have hit rather than a tidier symptom.
+    with connection.cursor() as cursor:
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+
+
+def test_replacing_recipients_still_reindexes(archive_path, ministry, specialist) -> None:
+    """The direction the guard must not break.
+
+    `set_recipients` deletes the recipient rows and bulk-creates the new ones,
+    and that deletion *does* originate at the recipients, so the submission
+    survives and has to be reprojected. A guard written one step too wide would
+    make an opinion unfindable under the ministry it was just addressed to, and
+    nothing would say so.
+    """
+    from app.submissions.services import set_recipients
+
+    matter, item = strict_pair(306)
+    plan = build_plan(archive_path=archive_path([item]), kodadash_path=None)
+    apply_plan(plan, batch=open_batch(plan))
+    submission = Submission.objects.get(matter=matter)
+    other = Organisation.objects.create(
+        name="Näidiskliimaministeerium", organisation_type=OrganisationType.MINISTRY
+    )
+
+    set_recipients(submission=submission, addressees=[other], audit=False)
+
+    assert submission_hits("Näidiskliimaministeerium", specialist), (
+        "the new recipient did not reach the index"
+    )
+    assert not submission_hits(MINISTRY, specialist), "the old recipient stayed findable"
 
 
 @pytest.mark.parametrize(
