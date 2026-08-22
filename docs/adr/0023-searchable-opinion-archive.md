@@ -161,6 +161,44 @@ Recorded here so the next person has a test rather than a judgement call:
 Until then the queue is the answer, and the queue is not a hardship: these
 proposals arrive with their signals named and their register row linked.
 
+## Measured against the real sources, read-only
+
+Both sources were read on 2026-08-22 without being modified, moved or copied,
+and the register workbook's SHA-256 was checked against the approved snapshot
+before a cell was read. **No PDF was opened and no body was parsed**: the
+extraction rule is a property of the deployment, and a developer machine with
+the flag turned off is not the place to decide that real correspondence may go
+through a parser. Row-level output stayed under the ignored `.local/`.
+
+Aggregates only, and each one changed or confirmed something above.
+
+**The archive snapshot holds 759 letters, every one a distinct SHA-256, and no
+letter appears at two paths within it.** The binary/occurrence split therefore
+costs nothing today and its duplicate-collapsing benefit is, inside one
+snapshot, currently hypothetical. It is not hypothetical across snapshots: the
+second archive on the same host holds 34 letters and **all 34 are byte-identical
+to letters already in the main one**. Materialising it reuses 34 binaries and
+writes no bytes, where a path-keyed design would have stored 34 more copies of
+real correspondence.
+
+**271 of 759 entries carry UTF-8 names without the UTF-8 flag** — the
+mis-decoding case the reader already handles, and a larger share of this
+snapshot than the 91 measured for ADR 0019. Worth knowing before anybody
+concludes the encoding problem is marginal.
+
+**The register's modern half is 1373 rows, of which 1357 have a dispatch date
+and 1370 a counterparty.** For the second pass that is the good news: 1280 of
+those counterparties are at least eight characters, so the addressee signal has
+reach across nearly the whole register.
+
+**Only 161 of the 1373 titles — 11.7% — name a Riigikogu proceeding number.**
+That is the ceiling on `CONTENT_EXACT_LAW_REFERENCE`, and it is low. For the
+other 88% the second pass has at most date and addressee to work with, which is
+two signals and therefore a proposal — and precisely the combination ADR 0019
+measured as *not* identity, since two matters can share a day and a ministry.
+It is another reason `CONTENT_MULTI_SIGNAL` waits for a person rather than
+filing itself.
+
 ## Consequences
 
 - The whole archive is reachable and searchable for an administrator, including

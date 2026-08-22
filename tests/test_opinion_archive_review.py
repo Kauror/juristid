@@ -26,6 +26,7 @@ from app.legacy_import.opinion_archive import (
     OpinionMatchCandidate,
 )
 from app.legacy_import.opinion_binary import OpinionArchiveBinary, OpinionArchiveMatterLink
+from app.legacy_import.opinion_content_match import MATCHER_VERSION
 from app.legacy_import.opinion_enums import (
     AUTOMATIC_MATCH_CLASSES,
     ArchiveLinkBasis,
@@ -94,11 +95,17 @@ def item(batch, binary):
     )
 
 
-def candidate(item, *, matter=None, klass=OpinionMatchClass.UNMATCHED, state=None, batch=None):
+def candidate(item, *, matter=None, klass=OpinionMatchClass.UNMATCHED, state=None):
+    """A proposal, always naming the run that produced it.
+
+    `batch` is not nullable, and that is the point: a queue row a reader cannot
+    trace back to a reconciliation run is a row nobody can audit a year later.
+    The item's own batch is the honest answer in a fixture.
+    """
     return OpinionMatchCandidate.objects.create(
         item=item,
         matter=matter,
-        batch=batch,
+        batch=item.batch,
         match_class=klass,
         state=state or OpinionCandidateState.PENDING,
     )
@@ -456,6 +463,8 @@ def test_two_content_signals_propose_a_matter_for_review(item, binary):
     proposal = OpinionMatchCandidate.objects.get(match_class=OpinionMatchClass.CONTENT_MULTI_SIGNAL)
     assert proposal.matter_id == row.pk
     assert proposal.state == OpinionCandidateState.PENDING
+    # Traceable to the run that produced it, like every other queue row.
+    assert proposal.batch.importer_version == MATCHER_VERSION
     assert set(proposal.signals) >= {
         OpinionSignal.CONTENT_EXACT_DATE,
         OpinionSignal.CONTENT_EXACT_LAW_REFERENCE,

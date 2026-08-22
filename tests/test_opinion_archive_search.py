@@ -182,7 +182,11 @@ def test_an_old_index_version_is_a_finding_and_a_rebuild_fixes_it(held):
 
 
 def test_a_letter_is_found_by_its_title(held, administrator):
-    rows = search_archive(user=administrator, filters=ArchiveFilters(query="ehitusseadustik"))
+    # The word as the title writes it. The Estonian configuration stems both
+    # sides the same way; it does not turn a compound's genitive into its
+    # nominative, and a test that assumed otherwise was testing the stemmer
+    # rather than the projection.
+    rows = search_archive(user=administrator, filters=ArchiveFilters(query="ehitusseadustiku"))
     assert rows.count() == 1
 
 

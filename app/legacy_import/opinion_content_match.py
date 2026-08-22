@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from django.db import transaction
+from django.utils import timezone
 
 from app.legacy_import.opinion_binary import OpinionArchiveBinary
 from app.legacy_import.opinion_enums import (
@@ -64,6 +65,10 @@ HEADER_CHARACTERS = 1500
 #: routinely coincidental: a ministry is named in half the corpus, and a single
 #: date matches whatever else was sent that day.
 MINIMUM_SIGNALS = 2
+
+#: Recorded on the batch this pass opens, so a candidate can always name the
+#: run that produced it and the version of the rules it ran under.
+MATCHER_VERSION = "opinion-content-match/1"
 
 MONTHS = {
     "jaanuar": 1,
@@ -205,11 +210,11 @@ def _run(*, commit: bool) -> ContentMatchReport:
         report.findings.append("registri ridu ei ole — teine läbimine ei tee midagi")
         return report
 
-    binaries = (
-        OpinionArchiveBinary.objects.select_related("text")
-        .prefetch_related("occurrences")
-        .order_by("pk")
-    )
+    # No `prefetch_related` here: `_write` reads the occurrences of the few
+    # binaries that actually produce a proposal, and prefetching them for all
+    # 759 would load the whole catalogue to answer a question about a handful.
+    binaries = OpinionArchiveBinary.objects.select_related("text").order_by("pk")
+    batch: Any = None
     for binary in binaries.iterator():
         report.considered += 1
         text = getattr(binary, "text", None)
@@ -236,14 +241,42 @@ def _run(*, commit: bool) -> ContentMatchReport:
             # importer should resolve.
             report.conflicted += 1
             if commit:
-                _write(binary, None, [], [OpinionConflict.MULTIPLE_SOURCE_ROWS], len(by_row))
+                batch = batch or _open_batch()
+                _write(binary, batch, None, [], [OpinionConflict.MULTIPLE_SOURCE_ROWS], len(by_row))
             continue
 
         row, signals = next(iter(by_row.items()))
         report.proposed += 1
         if commit:
-            _write(binary, row, signals, [], 1)
+            batch = batch or _open_batch()
+            _write(binary, batch, row, signals, [], 1)
     return report
+
+
+def _open_batch() -> Any:
+    """One batch per pass that writes something, opened only if it does.
+
+    A candidate has to be able to name the run that produced it — that is what
+    makes a queue row auditable a year later — and this pass is a run like any
+    other. It is opened lazily so a pass that proposes nothing leaves nothing
+    behind.
+
+    The archive hash is the binaries' own provenance when they all came from
+    one snapshot, and left empty when they did not: this pass reads held bytes
+    rather than an archive, and naming one of several snapshots would be a
+    guess dressed as provenance.
+    """
+    from app.legacy_import.opinion_archive import OpinionArchiveBatch
+
+    sources = set(
+        OpinionArchiveBinary.objects.values_list("source_archive_sha256", flat=True).distinct()
+    )
+    return OpinionArchiveBatch.objects.create(
+        archive_sha256=sources.pop() if len(sources) == 1 else "",
+        importer_version=MATCHER_VERSION,
+        started_at=timezone.now(),
+        notes=("Teine läbimine: ettepanekud kirjade endi tekstist. Ükski neist ei ole automaatne."),
+    )
 
 
 def _score_free_grouping(
@@ -278,6 +311,7 @@ def _already_matched(binary: OpinionArchiveBinary) -> bool:
 @transaction.atomic
 def _write(
     binary: OpinionArchiveBinary,
+    batch: Any,
     row: RegisterRow | None,
     signals: list[str],
     conflicts: list[str],
@@ -309,6 +343,7 @@ def _write(
             matter_id=matter_id,
             match_class=match_class,
             defaults={
+                "batch": batch,
                 "signals": list(signals),
                 "conflicts": list(conflicts),
                 "excel_reference": (row.reference if row is not None else "")[:40],
