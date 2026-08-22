@@ -23,16 +23,25 @@ from e2e.conftest import ADMIN, MARTIN, sign_in
 
 pytestmark = pytest.mark.e2e
 
-#: Every route in the seeded world that renders a table, and who may read it.
-#: Kept as data so a new list surface is one line rather than a new test.
-TABLE_PAGES: list[tuple[str, str]] = [
-    ("martin", "/teemad/?olek=koik"),
-    ("martin", "/minu-too/"),
-    ("martin", "/saabunud/"),
-    ("martin", "/statistika/arvamused/"),
-    ("martin", "/statistika/materjalid/"),
-    ("admin", "/haldus/arvamuste-arhiiv/"),
+#: Every route in the seeded world that renders a table, who may read it, and
+#: whether its first row carries a link. Kept as data so a new list surface is
+#: one line rather than a new test.
+#:
+#: The flag is not a convenience. `/statistika/materjalid/` lists material the
+#: reader cannot open — counts and file types, no destination — so requiring a
+#: link there would either fail honestly or be silenced by a `continue` that
+#: made the whole test vacuous for every other route too.
+TABLE_PAGES: list[tuple[str, str, bool]] = [
+    ("martin", "/teemad/?olek=koik", True),
+    ("martin", "/minu-too/", True),
+    ("martin", "/saabunud/", True),
+    ("martin", "/statistika/arvamused/", True),
+    ("martin", "/statistika/materjalid/", False),
+    ("admin", "/haldus/arvamuste-arhiiv/", True),
 ]
+
+LINKED_TABLE_PAGES = [(persona, route) for persona, route, linked in TABLE_PAGES if linked]
+ALL_TABLE_PAGES = [(persona, route) for persona, route, _ in TABLE_PAGES]
 
 OVERLAP_TOLERANCE = 0.5
 
@@ -43,7 +52,7 @@ def _box(locator):
     return box
 
 
-@pytest.mark.parametrize(("persona", "route"), TABLE_PAGES, ids=lambda value: str(value))
+@pytest.mark.parametrize(("persona", "route"), ALL_TABLE_PAGES, ids=lambda value: str(value))
 def test_no_sticky_header_covers_its_own_first_row(page, base_url, persona, route):
     sign_in(page, base_url, ADMIN if persona == "admin" else MARTIN)
     page.goto(f"{base_url}{route}")
@@ -74,7 +83,7 @@ def test_no_sticky_header_covers_its_own_first_row(page, base_url, persona, rout
     assert examined, f"{route}: no populated table was found, so nothing was checked"
 
 
-@pytest.mark.parametrize(("persona", "route"), TABLE_PAGES, ids=lambda value: str(value))
+@pytest.mark.parametrize(("persona", "route"), LINKED_TABLE_PAGES, ids=lambda value: str(value))
 def test_the_first_rows_own_links_receive_the_pointer(page, base_url, persona, route):
     """Geometry is not the only way to cover a control.
 
