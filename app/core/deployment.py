@@ -253,6 +253,14 @@ REBUILDABLE_MODELS = frozenset(
     {
         "search.SearchDocument",
         "documents.DocumentDerivative",
+        # The archive's own search projection, rebuilt by
+        # `opinion_archive_search rebuild` from rows a restore does bring back.
+        "legacy_import.OpinionArchiveSearchDocument",
+        # Extracted archive text. Rebuildable in the strict sense: it is a pure
+        # function of the stored bytes and the parser version, and re-running
+        # the extraction in an environment that forbids it writes back the same
+        # BLOCKED rows rather than a different answer.
+        "legacy_import.OpinionArchiveText",
     }
 )
 

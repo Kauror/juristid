@@ -13,8 +13,11 @@ Three properties make it useful rather than decorative:
   runs, so comparing those would fail every correct restore. Rebuildable counts
   are reported and never compared (docs/adr/0014).
 * **Evidence is verified against its own recorded hash**, not merely counted.
-  A DocumentVersion row whose bytes did not come back is exactly the failure a
-  count cannot see.
+  A row whose bytes did not come back is exactly the failure a count cannot
+  see. Every canonical holder of evidence is walked, not only
+  `DocumentVersion`: the opinion archive keeps bytes in the same store, and a
+  restore check that knew about one holder would report a clean restore over a
+  missing archive (app/documents/references.py).
 * **It contains no content.** Filenames, titles and bytes stay where they are;
   what travels is digests, counts and schema state. A fingerprint is safe to
   keep beside a backup, which is the only reason it is worth writing one.
@@ -132,8 +135,15 @@ class Command(BaseCommand):
         The digest is over `storage_key sha256` lines in key order, so it changes
         if an object is missing, renamed or replaced, and does not change merely
         because rows were counted in a different order.
+
+        One rollup over every holder rather than one per model: the question a
+        restore asks is "did the evidence come back", and an answer split by
+        which table happens to hold a row would let a whole missing holder look
+        like a smaller number somewhere else. Per-holder counts are reported
+        beside it, so the digest stays comparable while the detail stays
+        readable.
         """
-        from app.documents.models import DocumentVersion
+        from app.documents.references import EVIDENCE_REFERENCES
         from app.documents.services import evidence_storage
 
         storage = evidence_storage()
@@ -142,30 +152,31 @@ class Command(BaseCommand):
         total_bytes = 0
         count = 0
         verified = 0
+        by_holder: dict[str, int] = {}
 
-        rows = DocumentVersion.objects.order_by("storage_key").values_list(
-            "storage_key", "sha256", "size_bytes"
-        )
-        for storage_key, recorded, size_bytes in rows.iterator(chunk_size=500):
-            count += 1
-            total_bytes += size_bytes or 0
-            rollup.update(f"{storage_key} {recorded}\n".encode())
+        for reference in EVIDENCE_REFERENCES:
+            for storage_key, recorded, size_bytes in reference.rows():
+                count += 1
+                by_holder[reference.label] = by_holder.get(reference.label, 0) + 1
+                total_bytes += size_bytes or 0
+                rollup.update(f"{storage_key} {recorded}\n".encode())
 
-            if skip_bytes or (sample and verified >= sample):
-                continue
+                if skip_bytes or (sample and verified >= sample):
+                    continue
 
-            actual = self._stored_digest(storage, storage_key)
-            if actual is None:
-                mismatches.append(f"missing evidence object for {storage_key}")
-            elif actual != recorded:
-                # Never the bytes and never the filename: an operator needs to
-                # know which row, not what is in it.
-                mismatches.append(f"hash mismatch for {storage_key}")
-            verified += 1
+                actual = self._stored_digest(storage, storage_key)
+                if actual is None:
+                    mismatches.append(f"missing evidence object for {storage_key}")
+                elif actual != recorded:
+                    # Never the bytes and never the filename: an operator needs
+                    # to know which row, not what is in it.
+                    mismatches.append(f"hash mismatch for {storage_key}")
+                verified += 1
 
         return (
             {
                 "version_count": count,
+                "counts_by_holder": by_holder,
                 "total_bytes": total_bytes,
                 "rollup_sha256": rollup.hexdigest(),
                 "objects_verified": verified,

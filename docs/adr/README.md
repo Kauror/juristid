@@ -31,6 +31,7 @@ consequences and reversibility.
 | [0020](0020-historical-cutover-current-state.md) | The historical cutover, and what a closed archive row may claim | Accepted, on a feature branch |
 | [0021](0021-final-register-cutover.md) | The final register cutover, and the two columns that mean different things | Accepted, on a feature branch |
 | [0022](0022-deployment-backup-and-recovery.md) | Deployment, backup and recovery on the Unraid host | Accepted |
+| [0023](0023-searchable-opinion-archive.md) | Making the whole opinions archive searchable evidence | Accepted, on a feature branch |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -47,3 +48,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0020 — Stage 2I historical cutover state
 - 0021 — the final register cutover
 - 0022 — deployment, backup and recovery on the host the system actually runs on
+- 0023 — Stage 2H.2, the searchable opinion archive

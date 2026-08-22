@@ -106,6 +106,28 @@ FORMER_UPN = "endine@example.invalid"
 FORMER_NAME = "Kadri Endine"
 
 
+#: The archive's synthetic snapshot, and the letters inside it. Invented, like
+#: everything else here: no Koda opinion, ministry or filename may appear in a
+#: fixture.
+ARCHIVE_SNAPSHOT_SHA = "e2e" + "0" * 61
+ARCHIVE_LETTERS = [
+    (
+        "e2e1" + "1" * 60,
+        "Näidisseaduse muutmise arvamus",
+        "Näidisministeerium",
+        "2024-04-10",
+        "Käesolevaga esitab näidiskoda arvamuse näidisseaduse eelnõu kohta.",
+    ),
+    (
+        "e2e2" + "2" * 60,
+        "Sidumata näidiskiri",
+        "Teine näidisamet",
+        "2023-09-01",
+        "",
+    ),
+]
+
+
 class Command(BaseCommand):
     help = "Create the deterministic synthetic world the Playwright suite asserts against."
 
@@ -201,10 +223,90 @@ class Command(BaseCommand):
         )
 
         self._historical_world(visible)
+        self._opinion_archive_world(visible)
         self._statistics_world(visible, martin, ministry)
         self._department_world(sandra, martin, ministry, stage)
         self._intelligence_world(visible, restricted, martin, sandra)
         self.stdout.write(self.style.SUCCESS("E2E world ready."))
+
+    def _opinion_archive_world(self, matter: Matter) -> None:
+        """Two held archive letters, one of them findable by its contents.
+
+        Built through the ORM and the storage API rather than by running the
+        importer, for the reason `_historical_world` gives: the importer has its
+        own suite against a synthetic ZIP, and what the browser suite proves is
+        that an administrator can find and read a letter while a specialist
+        cannot. Neither needs a 105 MB archive mounted.
+
+        Two letters, not one, because the interesting states are a pair: one
+        with extracted text and a Matter it is linked to, and one with neither.
+        The coverage strip on the browse screen is only meaningful when the two
+        differ.
+        """
+        from django.core.files.base import ContentFile
+
+        from app.documents.services import evidence_storage
+        from app.legacy_import.opinion_archive import OpinionArchiveBatch, OpinionArchiveItem
+        from app.legacy_import.opinion_binary import OpinionArchiveBinary, OpinionArchiveText
+        from app.legacy_import.opinion_enums import ArchiveLinkBasis, ArchiveTextState
+        from app.legacy_import.opinion_links import link_matter
+        from app.legacy_import.opinion_search import rebuild_archive_index
+
+        if OpinionArchiveBinary.objects.exists():
+            return
+
+        batch = OpinionArchiveBatch.objects.create(
+            archive_sha256=ARCHIVE_SNAPSHOT_SHA,
+            archive_file_name="Opinions-e2e.zip",
+            importer_version="e2e/0",
+            started_at=timezone.now(),
+        )
+        storage = evidence_storage()
+
+        for index, (digest, title, recipient, when, body) in enumerate(ARCHIVE_LETTERS):
+            content = b"%PDF-1.4\n% synthetic e2e opinion " + str(index).encode() + b"\n%%EOF\n"
+            key = f"opinion-archive/{digest[:2]}/{digest[2:4]}/{digest}"
+            if not storage.exists(key):
+                storage.save(key, ContentFile(content))
+            binary = OpinionArchiveBinary.objects.create(
+                sha256=digest,
+                size_bytes=len(content),
+                mime_type="application/pdf",
+                storage_key=key,
+                source_archive_sha256=ARCHIVE_SNAPSHOT_SHA,
+                materialized_at=timezone.now(),
+            )
+            OpinionArchiveItem.objects.create(
+                batch=batch,
+                archive_sha256=ARCHIVE_SNAPSHOT_SHA,
+                archive_relative_path=f"Opinions/{when} - {recipient} - {title}.pdf",
+                original_filename=f"{when} - {recipient} - {title}.pdf",
+                sha256=digest,
+                size_bytes=len(content),
+                detected_type="application/pdf",
+                filename_date=date.fromisoformat(when),
+                filename_recipient=recipient,
+                filename_title=title,
+                binary=binary,
+            )
+            if body:
+                OpinionArchiveText.objects.create(
+                    binary=binary,
+                    state=ArchiveTextState.DONE,
+                    body=body,
+                    page_count=1,
+                    characters=len(body),
+                    parser="e2e",
+                    parser_version="1",
+                )
+                link_matter(
+                    binary=binary,
+                    matter=matter,
+                    basis=ArchiveLinkBasis.EXACT_BINARY,
+                    note="Sünteetiline e2e seos.",
+                )
+
+        rebuild_archive_index()
 
     def _intelligence_world(
         self, visible: Matter, restricted: Matter, martin: Any, sandra: Any

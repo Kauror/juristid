@@ -37,6 +37,12 @@ class EvidenceReference:
     #: `legacy_import` at module scope — that app already imports documents.
     model_path: str
     field: str = "storage_key"
+    #: The recorded digest and size of the stored object. Both holders happen
+    #: to name these fields alike; they are parameters anyway, because the next
+    #: one will not, and a restore check that silently skipped a holder whose
+    #: column was called something else would be worse than one that failed.
+    digest_field: str = "sha256"
+    size_field: str = "size_bytes"
 
     def model(self) -> Any:
         from django.apps import apps
@@ -46,6 +52,20 @@ class EvidenceReference:
 
     def keys(self) -> Iterator[str]:
         yield from self.model().objects.values_list(self.field, flat=True).iterator()
+
+    def rows(self) -> Iterator[tuple[str, str, int]]:
+        """(storage key, recorded digest, recorded size), in key order.
+
+        Ordered so that a rolled-up digest over the result depends on what is
+        stored and not on how the planner felt about the query.
+        """
+        queryset = (
+            self.model()
+            .objects.order_by(self.field)
+            .values_list(self.field, self.digest_field, self.size_field)
+        )
+        for key, digest, size in queryset.iterator(chunk_size=500):
+            yield key, digest, size or 0
 
 
 #: Every canonical holder of evidence bytes. Order is only for readable output.

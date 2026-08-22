@@ -30,9 +30,19 @@
   <div class="card card--tight">
     <form class="form" method="get" role="search">
       <div class="formgrid">
-        <label class="field field--wide">
-          <span class="field__label">Otsi</span>
-          <input class="field__input" type="search" name="q" value="{{ filters.query }}"
+        <label class="field field--wide" for="archive-search">
+          <span class="field__label">Otsi arhiivist</span>
+          {% comment %}
+            Named apart from the global search in the top bar, which is a
+            different question over a different corpus. Two boxes both called
+            "Otsi" on one page is a box nobody can name.
+
+            `maxlength` mirrors the bound the service enforces, so the ordinary
+            path cannot submit a query the service will refuse. The service
+            still checks: this is a keyboard, not a boundary.
+          {% endcomment %}
+          <input class="field__input" type="search" name="q" id="archive-search"
+                 value="{{ filters.query }}" maxlength="500"
                  placeholder="Pealkiri, saaja, viide, SHA-256 või sisu">
         </label>
         <label class="field">
@@ -71,7 +81,7 @@
         </label>
       </div>
       <div class="form__actions">
-        <button type="submit" class="button button--primary">Otsi</button>
+        <button type="submit" class="button button--primary">Otsi arhiivist</button>
         <a class="button button--quiet" href="{% url 'legacy_import:opinion_archive_browse' %}">Lähtesta</a>
       </div>
     </form>
