@@ -1030,17 +1030,24 @@ p.formnote {
   background: var(--surface-panel);
 }
 
-/* Fixed layout, because a register's columns are a design decision and not a
-   consequence of whichever title happens to be longest on page 3. With auto
-   layout every cell's max-content width pulled at the table and the whole
-   thing overflowed its own container by a hundred pixels; the widths below are
-   the design's, and Pealkiri takes whatever is left. */
 .table {
   width: 100%;
-  min-width: 58rem;
-  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--typography-size-base);
+}
+
+/* Fixed layout for the register, because its columns are a design decision and
+   not a consequence of whichever title happens to be longest on page 3. With
+   auto layout every cell's max-content width pulled at the table and the whole
+   thing overflowed its own container by a hundred pixels.
+ *
+ * Scoped to the register rather than to `.table`, because the widths below
+ * describe the register's seven columns. Applied to every table they sized the
+ * evidence table's columns by name collision — its filenames ran straight
+ * through the size beside them. */
+.table--register {
+  min-width: 58rem;
+  table-layout: fixed;
 }
 
 .table thead th {
@@ -1090,7 +1097,7 @@ p.formnote {
   outline-offset: calc(var(--focus-ring-offset-width) * -1);
 }
 
-.table__ref {
+.table--register .table__ref {
   width: 84px;
 }
 
@@ -1100,25 +1107,28 @@ p.formnote {
   min-width: 0;
 }
 
-.table__stage {
+.table--register .table__stage {
   width: 150px;
 }
 
-.table__owner {
+.table--register .table__owner {
   width: 140px;
 }
 
-.table__action {
+.table--register .table__action {
   width: 260px;
 }
 
 .table__date {
-  width: 190px;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
 
-.table__lastactivity {
+.table--register .table__date {
+  width: 190px;
+}
+
+.table--register .table__lastactivity {
   width: 110px;
 }
 
