@@ -130,13 +130,25 @@ def unlink_matter(*, binary: OpinionArchiveBinary, matter: Any, actor: Any = Non
     link = OpinionArchiveMatterLink.objects.filter(binary=binary, matter=matter).first()
     if link is None:
         return
-    if link.basis in PROTECTED_BASES:
+    # Asked of the register, not of the link's recorded basis. A reviewed link
+    # that a canonical Submission was later built on keeps its REVIEWED basis —
+    # `link_matter` never downgrades a person's decision to a derived one — so
+    # the basis alone would let exactly the relationship the Submission rests on
+    # be withdrawn, while the derived rows beside it are protected.
+    if _submission_stands_on(binary=binary, matter=matter) or link.basis in PROTECTED_BASES:
         raise LinkRefused(
             "Seos tugineb kanoonilisele arvamusele. Eemalda see arvamuse juurest, mitte arhiivist."
         )
     if not _is_person(actor):
         raise LinkRefused("Seose eemaldamine vajab kasutajat.")
     link.delete()
+
+
+def _submission_stands_on(*, binary: OpinionArchiveBinary, matter: Any) -> bool:
+    """Whether a canonical Submission on this Matter was filed from these bytes."""
+    return OpinionSubmissionImport.objects.filter(
+        item__binary=binary, submission__matter=matter
+    ).exists()
 
 
 def derive_links() -> LinkReport:

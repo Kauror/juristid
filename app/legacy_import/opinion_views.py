@@ -32,7 +32,11 @@ from django.views.decorators.http import require_http_methods
 
 from app.accounts.enums import UserRole
 from app.legacy_import.opinion_archive import OpinionMatchCandidate
-from app.legacy_import.opinion_enums import OpinionCandidateState, OpinionMatchClass
+from app.legacy_import.opinion_enums import (
+    IRREVERSIBLE_CANDIDATE_STATES,
+    OpinionCandidateState,
+    OpinionMatchClass,
+)
 
 
 def _require_administrator(request: HttpRequest) -> None:
@@ -115,6 +119,19 @@ def opinion_decide(request: HttpRequest, pk: Any) -> HttpResponse:
     candidate = get_object_or_404(
         OpinionMatchCandidate.objects.select_related("item", "matter"), pk=pk
     )
+    if candidate.state in IRREVERSIBLE_CANDIDATE_STATES:
+        # The queue only renders decision controls on a PENDING row, so this is
+        # a crafted or stale post rather than a click — and "not offered in the
+        # interface" is not a guard. An APPLIED row is named by a canonical
+        # Submission as its justification and a SUPERSEDED one is the record of
+        # a belief that was replaced; a decision written over either leaves the
+        # provenance chain describing something that is no longer true.
+        messages.error(
+            request,
+            f"Kandidaat on olekus „{candidate.get_state_display()}“ ja seda ei saa uuesti "
+            "otsustada. Vajadusel tuleb kanooniline kirje eraldi tagasi võtta.",
+        )
+        return redirect("legacy_import:opinion_queue")
 
     handlers = {
         "link": _link_to_matter,

@@ -87,7 +87,13 @@ def _expected_populations() -> list[tuple[str, str, int]]:
     ]
 
 
-def build_report() -> IntegrityReport:
+#: How many Matter rows the text-drift check recomputes. A rename invalidates
+#: the whole corpus at once, so a sample answers "is a rebuild owed" as reliably
+#: as a full pass and keeps a read-only report cheap enough to run often.
+DRIFT_SAMPLE = 250
+
+
+def build_report(*, sample: int = DRIFT_SAMPLE) -> IntegrityReport:
     report = IntegrityReport()
     report.total_rows = SearchDocument.objects.count()
 
@@ -173,7 +179,67 @@ def build_report() -> IntegrityReport:
         )
 
     report.findings.extend(_crossed_matters())
+    report.findings.extend(_stale_matter_text(sample=sample))
     return report
+
+
+def _stale_matter_text(*, sample: int) -> list[Finding]:
+    """Rows whose indexed text is no longer what the canonical side would produce.
+
+    Every other check here is structural: is the row there, does it carry a
+    vector, does it name the right Matter. All of them pass on a row whose text
+    is simply out of date, which is the one defect this projection can hold that
+    a reader experiences directly — they search for a name and do not find the
+    file.
+
+    It is reachable by design, not by accident. `app/search/signals.py` refreshes
+    what a write invalidates and deliberately stops where the fanout becomes
+    unbounded: renaming an Organisation, editing its aliases, renaming a Tag or a
+    PolicyArea changes the indexed text of every Matter pointing at it, and
+    reindexing thousands of rows inside somebody's form submission is a worse
+    failure than staleness. The documented answer is `rebuild_search_index` — but
+    until now nothing told an operator the rebuild was owed, so the gap was not
+    merely deferred, it was silent.
+
+    Recomputing is what `refresh_matters` would write, compared against what is
+    stored. Bounded by `sample` because the recomputation is the expensive half:
+    a drift this reports is nearly always corpus-wide, so a few hundred rows
+    answer the question that matters — *is a rebuild owed* — without reading
+    every Matter to say so.
+    """
+    from app.search.indexing import indexable_matters, indexed_text_for
+
+    rows = (
+        SearchDocument.objects.filter(source_kind=SearchSourceKind.MATTER)
+        .select_related("matter")
+        .order_by("pk")[:sample]
+    )
+    indexed = {row.matter_id: row for row in rows}
+    if not indexed:
+        return []
+
+    drifted = 0
+    # `indexable_matters` is the indexer's own queryset, so the organisations,
+    # aliases, areas and tags `indexed_text_for` reads arrive with the rows.
+    # Spelling the prefetches out again here would be a second copy of the same
+    # knowledge, free to drift, in the tool whose job is to notice drift.
+    for matter in indexable_matters().filter(pk__in=indexed):
+        row = indexed[matter.pk]
+        expected = indexed_text_for(matter)
+        if any(getattr(row, field) != value for field, value in expected.items()):
+            drifted += 1
+
+    if not drifted:
+        return []
+    return [
+        Finding(
+            label="Vananenud tekst",
+            detail=(
+                f"{drifted} kontrollitud {len(indexed)} reast kannab teksti, mida allikas "
+                "enam ei ütle (nt asutuse või sildi ümbernimetamine). Vajalik on täisindeks."
+            ),
+        )
+    ]
 
 
 def _crossed_matters() -> list[Finding]:
@@ -230,9 +296,18 @@ class Command(BaseCommand):
             action="store_true",
             help="Print only problems. The exit status is unchanged.",
         )
+        parser.add_argument(
+            "--drift-sample",
+            type=int,
+            default=DRIFT_SAMPLE,
+            help=(
+                "How many indexed Matters to recompute when looking for text that has "
+                f"gone stale (default {DRIFT_SAMPLE}; 0 skips the check)."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        report = build_report()
+        report = build_report(sample=max(0, options["drift_sample"]))
 
         if not options["quiet"]:
             self.stdout.write(f"Otsinguindeksis on {report.total_rows} rida.")

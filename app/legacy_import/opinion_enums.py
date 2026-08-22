@@ -231,12 +231,21 @@ HUMAN_DECIDED_STATES: frozenset[str] = frozenset(
 SUPERSEDABLE_STATES: frozenset[str] = frozenset({OpinionCandidateState.PENDING})
 
 
-#: States that are finished, one way or another, and are not waiting for anybody.
+#: States a review decision may not move a candidate out of.
 #:
-#: The default review queue is the complement of this: a superseded row is
-#: history and would otherwise sit in the queue forever, being re-read by every
-#: operator who scrolls past it.
-CLOSED_CANDIDATE_STATES: frozenset[str] = HUMAN_DECIDED_STATES | {
-    OpinionCandidateState.APPLIED,
-    OpinionCandidateState.SUPERSEDED,
-}
+#: Narrower than "finished", and the two members are here for different
+#: reasons. ``APPLIED`` means a canonical Submission exists and names this row
+#: as its justification, so re-deciding it would leave the register pointing at
+#: an explanation that now says something else. ``SUPERSEDED`` is the record of
+#: what the reconciliation believed before newer evidence replaced it; a
+#: decision written over it destroys the history the state was introduced to
+#: keep (docs/adr/0023).
+#:
+#: The five human states are deliberately absent. A reviewer correcting their
+#: own earlier answer is the queue working, not a regression.
+IRREVERSIBLE_CANDIDATE_STATES: frozenset[str] = frozenset(
+    {
+        OpinionCandidateState.APPLIED,
+        OpinionCandidateState.SUPERSEDED,
+    }
+)

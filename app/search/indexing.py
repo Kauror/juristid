@@ -204,11 +204,16 @@ def _title_text_for(matter: Matter) -> str:
     return " ".join(title for title in titles if title)
 
 
-def _document_values(matter: Matter, now: object) -> dict[str, object]:
+def indexed_text_for(matter: Matter) -> dict[str, str]:
+    """The four searchable columns a Matter projects, and nothing else.
+
+    Separated from the rest of the row so there is one owner of *what text
+    represents a Matter*. The refresh writes it; `check_search_integrity`
+    recomputes it to find rows whose text has gone stale behind a rename. Two
+    copies of this composition would drift, and the check would then report on
+    a rule the indexer no longer follows.
+    """
     return {
-        "matter": matter,
-        "source_kind": SearchSourceKind.MATTER,
-        "source_object_id": matter.pk,
         "title": _title_text_for(matter),
         "identifiers": _identifiers_for(matter),
         "alias_text": _alias_text_for(matter),
@@ -219,6 +224,15 @@ def _document_values(matter: Matter, now: object) -> dict[str, object]:
         "body_text": " ".join(
             part for part in (matter.position_summary, matter.rationale_summary) if part
         ),
+    }
+
+
+def _document_values(matter: Matter, now: object) -> dict[str, object]:
+    return {
+        "matter": matter,
+        "source_kind": SearchSourceKind.MATTER,
+        "source_object_id": matter.pk,
+        **indexed_text_for(matter),
         "source_locator": "",
         "index_version": INDEX_VERSION,
         "indexed_at": now,

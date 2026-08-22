@@ -16,7 +16,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 
 from app.core.errors import DomainError
-from app.documents.models import DocumentVersion
+from app.documents.models import Document, DocumentVersion
 from app.documents.uploads import UploadRejected, read_upload
 from app.matters.views import get_visible_matter
 from app.submissions.forms import FinalEvidenceForm, MarkSentForm, SubmissionCreateForm
@@ -73,8 +73,23 @@ def attach_evidence(request: HttpRequest, pk: Any) -> HttpResponse:
 
     try:
         if version_id := form.cleaned_data.get("existing_version"):
+            # Through the authorization chokepoint, not `document__matter=`.
+            # A Matter this reader can open may still hold a document they may
+            # not — a child override only ever restricts further — and the
+            # Matter-only filter let a crafted post bind one as a submission's
+            # final evidence, after which the card printed its filename, size
+            # and SHA-256 to everybody who could see the submission.
+            #
+            # `check_evidence_is_usable` does not close this: it refuses
+            # evidence *less* restricted than the submission, which is the
+            # other direction (app/core/authorization.py).
             version = get_object_or_404(
-                DocumentVersion.objects.filter(document__matter=submission.matter), pk=version_id
+                DocumentVersion.objects.filter(
+                    document__in=Document.objects.visible_to(request.user).filter(
+                        matter=submission.matter
+                    )
+                ),
+                pk=version_id,
             )
             select_final_evidence(submission=submission, version=version, actor=request.user)
         else:
