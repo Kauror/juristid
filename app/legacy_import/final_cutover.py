@@ -63,6 +63,7 @@ from app.legacy_import.models import MatterSourceReference
 from app.legacy_import.parser import SOURCE_SYSTEM
 from app.legacy_import.register_semantics import (
     detect_continuation,
+    has_send_date,
     is_real_row,
     is_terminal_status,
 )
@@ -306,8 +307,14 @@ class CutoverPlan:
 
     @property
     def drafting_after(self) -> list[Candidate]:
-        """Current work with no recorded send date — ``Arvamusi koostamisel``."""
-        return [c for c in self.current_after if not c.observation.opinion_sent_raw.strip()]
+        """Current work with no ``VÄLJA`` mark — ``Arvamusi koostamisel``.
+
+        Through `has_send_date`, which is the one place the rule is written.
+        This used to restate it as `not raw.strip()` — the same answer, but a
+        second copy, and the derived table and the dashboard had each grown
+        their own third version that answered a different question.
+        """
+        return [c for c in self.current_after if not has_send_date(c.observation.opinion_sent_raw)]
 
     @property
     def source_responsibility(self) -> dict[str, int]:
@@ -800,6 +807,10 @@ def rebuild_current_state(plan: CutoverPlan) -> int:
                 source_row_number=observation.row_number,
                 currency=candidate.currency,
                 status_label=observation.status_label[:200],
+                # Presence and parse, recorded separately and from different
+                # things: the first from the raw cell, the second from what the
+                # parser could make of it.
+                opinion_sent_recorded=has_send_date(observation.opinion_sent_raw),
                 opinion_sent_date=sent.value,
                 next_action_text=observation.next_action_text,
                 owner_raw=observation.owner_raw[:200],
