@@ -26,7 +26,7 @@ from app.core.management.commands.seed_e2e_data import (
     REVIEW_DUE_TITLE,
     UNASSIGNED_TITLE,
 )
-from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, sign_in, sign_out
+from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, go_to, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -47,6 +47,13 @@ def lawyer_row(page, name: str):
     return page.locator("table.table tbody tr").filter(has_text=name).first
 
 
+def reveal_secondary_navigation(page) -> None:
+    """Open the "Veel" disclosure if this viewport has one."""
+    trigger = page.locator(".topnav__trigger")
+    if trigger.count() and trigger.is_visible():
+        trigger.click()
+
+
 # =========================================================================
 # The gate
 # =========================================================================
@@ -54,6 +61,10 @@ def lawyer_row(page, name: str):
 
 def test_a_specialist_is_not_offered_the_page(page, base_url):
     sign_in(page, base_url, SANDRA)
+    # Opened first, because the secondary destinations live behind it below
+    # 1560px: asserting an absence against a closed disclosure would pass for
+    # the department head too, and prove nothing.
+    reveal_secondary_navigation(page)
     expect(page.get_by_role("link", name=NAV_NAME, exact=True)).to_have_count(0)
 
 
@@ -69,6 +80,10 @@ def test_a_specialist_who_types_the_url_does_not_reach_it(page, base_url):
 def test_the_technical_administrator_does_not_inherit_the_page(page, base_url):
     """Administering the system is not reading the department's work."""
     sign_in(page, base_url, ADMIN)
+    # Opened first, because the secondary destinations live behind it below
+    # 1560px: asserting an absence against a closed disclosure would pass for
+    # the department head too, and prove nothing.
+    reveal_secondary_navigation(page)
     expect(page.get_by_role("link", name=NAV_NAME, exact=True)).to_have_count(0)
 
     response = page.goto(f"{base_url}{WORK_PATH}")
@@ -92,7 +107,7 @@ def test_nobody_signed_in_does_not_reach_the_page(page, base_url):
 
 def test_the_head_is_offered_the_page_and_opens_it(page, base_url, screenshots):
     sign_in(page, base_url, HEAD)
-    page.get_by_role("link", name=NAV_NAME, exact=True).click()
+    go_to(page, NAV_NAME)
     page.wait_for_url(f"{base_url}{WORK_PATH}")
 
     expect(page.get_by_role("heading", name=NAV_NAME, exact=True)).to_be_visible()

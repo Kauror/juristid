@@ -126,17 +126,37 @@
     }
   }
 
+  /* HTMX swaps whole surfaces and `htmx:afterSwap` fires for every one of them,
+     so a listener attached without a guard is attached again for any element
+     that survives a swap of its container — and then a single click toggles a
+     disclosure twice and it looks like nothing happened. The flag is on the
+     element, so it travels with it and dies with it. */
+  function once(element, name) {
+    var key = "bound" + name;
+    if (element.dataset[key]) {
+      return false;
+    }
+    element.dataset[key] = "1";
+    return true;
+  }
+
   function bind(root) {
     var scope = root || document;
 
     scope.querySelectorAll("[data-toggles]").forEach(function (toggle) {
       syncCheckbox(toggle);
+      if (!once(toggle, "Toggle")) {
+        return;
+      }
       toggle.addEventListener("change", function () {
         syncCheckbox(toggle);
       });
     });
 
     scope.querySelectorAll("[data-reveals]").forEach(function (trigger) {
+      if (!once(trigger, "Reveal")) {
+        return;
+      }
       trigger.addEventListener("click", function () {
         var target = document.getElementById(trigger.getAttribute("data-reveals"));
         if (!target) {
@@ -156,6 +176,9 @@
     /* An inline header edit commits on change; the visible Salvesta button
        remains for keyboard users and for anyone with JS disabled. */
     scope.querySelectorAll("[data-autosubmit]").forEach(function (control) {
+      if (!once(control, "Autosubmit")) {
+        return;
+      }
       control.addEventListener("change", function () {
         if (control.form) {
           control.form.requestSubmit();
@@ -164,6 +187,33 @@
     });
   }
 
+  /* ---- Menus close the way people expect --------------------------------
+   * A <details> menu stays open until its own summary is clicked again, which
+   * is right for a disclosure inside a page and wrong for one that floats over
+   * it. Delegated, so it costs nothing per menu and survives every swap.
+   */
+  document.addEventListener("click", function (event) {
+    document.querySelectorAll("details.topnav__more[open]").forEach(function (menu) {
+      if (!menu.contains(event.target)) {
+        menu.open = false;
+      }
+    });
+  });
+
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") {
+      return;
+    }
+    var open = document.querySelector("details.topnav__more[open]");
+    if (open) {
+      open.open = false;
+      var trigger = open.querySelector("summary");
+      if (trigger) {
+        trigger.focus();
+      }
+    }
+  });
+
   /* ---- The period control: show only the fields the precision needs -------
    * Progressive enhancement only. With scripting off every group is visible,
    * every one is optional, and the server decides which of them it needs — so
@@ -171,6 +221,9 @@
    * (app/intelligence/forms.py, Stage-2G brief 7, 49).
    */
   function bindPeriodFields(scope) {
+    if (!scope || !scope.querySelector) {
+      return;
+    }
     var fields = scope.querySelector("#perioodi-valjad");
     var chooser = scope.querySelector("#tapsuse-valik");
     if (!fields || !chooser) {
@@ -208,11 +261,15 @@
       });
     };
     chooser.querySelectorAll("input[type=radio]").forEach(function (radio) {
-      radio.addEventListener("change", sync);
+      if (once(radio, "Precision")) {
+        radio.addEventListener("change", sync);
+      }
     });
     if (kindChooser) {
       kindChooser.querySelectorAll("input[type=radio]").forEach(function (radio) {
-        radio.addEventListener("change", sync);
+        if (once(radio, "Kind")) {
+          radio.addEventListener("change", sync);
+        }
       });
     }
     sync();
@@ -233,8 +290,11 @@
     }
   });
 
-  /* HTMX replaces whole surfaces, so re-bind inside whatever just arrived. */
+  /* HTMX replaces whole surfaces, so re-bind inside whatever just arrived.
+     Binding is idempotent, so a swap that returns elements which were already
+     bound costs nothing and duplicates nothing. */
   document.body.addEventListener("htmx:afterSwap", function (event) {
     bind(event.target);
+    bindPeriodFields(event.target.querySelector ? event.target : document);
   });
 })();

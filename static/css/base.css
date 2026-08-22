@@ -58,6 +58,17 @@ p {
   max-width: 76ch;
 }
 
+/* A class on a paragraph means it is part of a component, not body copy, and
+   the prose rules above are wrong for it. They were leaking: the Matter
+   breadcrumb, the timeline's system events, the register count and the facts
+   rail are all built on <p>, and a 76ch ceiling on a flex row wraps its
+   children and strands anything aligned to the right. Components that do want
+   a reading measure state their own. */
+p[class] {
+  margin: 0;
+  max-width: none;
+}
+
 a {
   color: var(--accent-link);
   text-decoration-thickness: 1px;
@@ -79,6 +90,14 @@ pre,
 kbd {
   font-family: var(--typography-font-mono);
   font-size: var(--typography-size-meta);
+}
+
+/* A <time> always renders a date or a clock time, and those want tabular
+   figures: proportional digits make a column of timestamps ragged, and they
+   make one timestamp a different width from the next — which moves everything
+   after it on the line. The timeline is a column of them. */
+time {
+  font-variant-numeric: tabular-nums;
 }
 
 table {

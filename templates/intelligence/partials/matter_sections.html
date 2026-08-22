@@ -17,6 +17,9 @@ because a plan that changed is part of the file's history.
 <section class="factsection" id="olulised-tahtajad" aria-labelledby="teema-tahtajad-heading">
   <div class="factsection__head">
     <h2 class="sectionlabel" id="teema-tahtajad-heading">Olulised tähtajad</h2>
+    {% if not intelligence.has_dates %}
+      <p class="factsection__none">Olulisi tähtaegu pole lisatud.</p>
+    {% endif %}
     {% if can_write %}
       <a class="button button--quiet button--tiny"
          href="{% url 'intelligence:add_important_date' matter_id=matter.pk %}">+ Lisa oluline tähtaeg</a>
@@ -32,14 +35,15 @@ because a plan that changed is part of the file's history.
         {% include "intelligence/partials/important_date_row.html" with record=record matter=matter can_write=can_write past=True %}
       {% endfor %}
     </ul>
-  {% else %}
-    <p class="empty empty--inline">Olulisi tähtaegu pole lisatud.</p>
   {% endif %}
 </section>
 
 <section class="factsection" id="joustumine" aria-labelledby="teema-joustumine-heading">
   <div class="factsection__head">
     <h2 class="sectionlabel" id="teema-joustumine-heading">Jõustumine</h2>
+    {% if not intelligence.has_effective_dates %}
+      <p class="factsection__none">Jõustumise infot pole lisatud.</p>
+    {% endif %}
     {% if can_write %}
       <a class="button button--quiet button--tiny"
          href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}">+ Lisa jõustumine</a>
@@ -78,14 +82,15 @@ because a plan that changed is part of the file's history.
         </li>
       {% endfor %}
     </ul>
-  {% else %}
-    <p class="empty empty--inline">Jõustumise infot pole lisatud.</p>
   {% endif %}
 </section>
 
 <section class="factsection" id="toovoidud" aria-labelledby="teema-toovoidud-heading">
   <div class="factsection__head">
     <h2 class="sectionlabel" id="teema-toovoidud-heading">Töövõidud</h2>
+    {% if not intelligence.has_work_victories %}
+      <p class="factsection__none">Töövõite ega kandidaate pole lisatud.</p>
+    {% endif %}
     {% if can_write %}
       <a class="button button--quiet button--tiny"
          href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}">+ Lisa töövõidu kandidaat</a>
@@ -133,7 +138,5 @@ because a plan that changed is part of the file's history.
         </li>
       {% endfor %}
     </ul>
-  {% else %}
-    <p class="empty empty--inline">Töövõite ega kandidaate pole lisatud.</p>
   {% endif %}
 </section>

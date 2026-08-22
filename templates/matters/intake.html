@@ -25,8 +25,8 @@ arriving says something was received, not where the external process stands.
     </div>
   {% endif %}
 
-  <form class="form card" method="post" enctype="multipart/form-data"
-        action="{% url 'matters:intake' %}" style="padding:var(--spacing-4)">
+  <form class="form card card--form" method="post" enctype="multipart/form-data"
+        action="{% url 'matters:intake' %}">
     {% csrf_token %}
 
     <label class="field">

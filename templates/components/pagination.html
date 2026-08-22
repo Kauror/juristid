@@ -1,30 +1,55 @@
-{% comment %}
+{% load pagination %}{% comment %}
 Server-side pagination. The register has to stay usable at years of scale, so no
 screen ever renders the whole set (master specification 13.3).
+
+Numbered, with prev/next either side. A register of four hundred pages is one
+somebody navigates by number — "back to where I was" is a page, not a count of
+Järgmine presses. The elision comes from Django's own paginator, so the widget
+stays a fixed width whether there are three pages or four hundred.
 {% endcomment %}
 {% if page.paginator.num_pages > 1 %}
   <nav class="pagination" aria-label="Lehed">
     {% if page.has_previous %}
-      <a class="button button--quiet"
+      <a class="pagination__step"
+         rel="prev"
          href="?{% if query_string %}{{ query_string }}&amp;{% endif %}leht={{ page.previous_page_number }}">
-        Eelmine
+        <span aria-hidden="true">‹</span>
+        <span class="visually-hidden">Eelmine leht</span>
       </a>
     {% else %}
-      <span class="button button--quiet is-disabled" aria-disabled="true">Eelmine</span>
+      <span class="pagination__step is-disabled" aria-disabled="true" aria-hidden="true">‹</span>
+    {% endif %}
+
+    {% elided_page_range page as page_numbers %}
+    <ol class="pagination__pages">
+      {% for number in page_numbers %}
+        <li>
+          {% if number == page.paginator.ELLIPSIS %}
+            <span class="pagination__gap" aria-hidden="true">{{ number }}</span>
+          {% elif number == page.number %}
+            <span class="pagination__page is-active" aria-current="page">{{ number }}</span>
+          {% else %}
+            <a class="pagination__page"
+               href="?{% if query_string %}{{ query_string }}&amp;{% endif %}leht={{ number }}">{{ number }}</a>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+
+    {% if page.has_next %}
+      <a class="pagination__step"
+         rel="next"
+         href="?{% if query_string %}{{ query_string }}&amp;{% endif %}leht={{ page.next_page_number }}">
+        <span aria-hidden="true">›</span>
+        <span class="visually-hidden">Järgmine leht</span>
+      </a>
+    {% else %}
+      <span class="pagination__step is-disabled" aria-disabled="true" aria-hidden="true">›</span>
     {% endif %}
 
     <span class="pagination__status">
       Leht {{ page.number }} / {{ page.paginator.num_pages }}
       <span class="muted">({{ page.paginator.count }} kirjet)</span>
     </span>
-
-    {% if page.has_next %}
-      <a class="button button--quiet"
-         href="?{% if query_string %}{{ query_string }}&amp;{% endif %}leht={{ page.next_page_number }}">
-        Järgmine
-      </a>
-    {% else %}
-      <span class="button button--quiet is-disabled" aria-disabled="true">Järgmine</span>
-    {% endif %}
   </nav>
 {% endif %}

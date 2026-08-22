@@ -29,7 +29,7 @@ stays behind the tabs (master specification 8.7).
   {% if matter.policy_areas.all or matter.tags.all or matter.policy_area_other %}
     <div class="railcard">
       <span class="railcard__label">Valdkonnad ja sildid</span>
-      <p class="railcard__row" style="flex-wrap:wrap;gap:var(--spacing-1)">
+      <p class="railcard__row railcard__row--tags">
         {% for area in matter.policy_areas.all %}<span class="tag">{{ area.name_et }}</span>{% endfor %}
         {% for tag in matter.tags.all %}<span class="tag">{{ tag.name_et }}</span>{% endfor %}
       </p>
@@ -55,10 +55,9 @@ stays behind the tabs (master specification 8.7).
         <summary class="disclosure__summary">
           {% if matter.policy_area_other %}Muuda muud valdkonda{% else %}Lisa muu valdkond{% endif %}
         </summary>
-        <form class="inlineform"
+        <form class="inlineform disclosure__body"
               hx-post="{% url 'matters:update_field' pk=matter.pk field='policy_area_other' %}"
-              hx-target="#teema-andmed" hx-swap="outerHTML"
-              style="margin-top:var(--spacing-2)">
+              hx-target="#teema-andmed" hx-swap="outerHTML">
           {% csrf_token %}
           <label class="field">
             <span class="visually-hidden">Muu valdkond</span>
@@ -77,10 +76,9 @@ stays behind the tabs (master specification 8.7).
       <p class="railcard__row"><span class="muted">Valdkondi ei ole määratud.</span></p>
       <details class="disclosure disclosure--inline">
         <summary class="disclosure__summary">Lisa muu valdkond</summary>
-        <form class="inlineform"
+        <form class="inlineform disclosure__body"
               hx-post="{% url 'matters:update_field' pk=matter.pk field='policy_area_other' %}"
-              hx-target="#teema-andmed" hx-swap="outerHTML"
-              style="margin-top:var(--spacing-2)">
+              hx-target="#teema-andmed" hx-swap="outerHTML">
           {% csrf_token %}
           <label class="field">
             <span class="visually-hidden">Muu valdkond</span>
