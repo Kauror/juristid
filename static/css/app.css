@@ -1168,6 +1168,28 @@ p.formnote {
   margin-right: var(--spacing-1);
 }
 
+/* The register's own instruction, where no structured one exists. Muted and
+ * labelled, so a carried-over Excel sentence never reads like a decision made
+ * here (ADR 0021).
+ *
+ * `flex: none` because the cell became a flex row in this branch: the label is
+ * a chip like the mode chip beside it and must keep its width, so the sentence
+ * is what truncates. Nothing else about it is changed. */
+.table__sourcelabel {
+  display: inline-block;
+  flex: none;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--spacing-1);
+}
+
+.table__actiontext--source {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* Missing data is stated, not left blank to be guessed at. */
 .table__missing {
   color: var(--status-warning);
@@ -1584,6 +1606,21 @@ p.formnote {
   font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
   margin: 0;
+}
+
+/* Same rule on the Matter page: shown only in the absence of a structured
+ * action, and visibly the register's words rather than the department's. */
+.nextaction__source {
+  margin: var(--spacing-2) 0 0;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.nextaction__source-label {
+  font-style: normal;
+  font-weight: var(--typography-weight-medium);
+  color: var(--text-muted);
+  margin-right: var(--spacing-1);
 }
 
 /* ====================================================================
