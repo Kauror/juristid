@@ -152,9 +152,21 @@
               <button type="submit" class="button button--quiet" name="decision" value="reject">Lükka tagasi</button>
             </form>
           {% else %}
+            {% comment %}
+              A decided card leads with its state as a chip — word plus tone,
+              never colour alone — and the provenance line under it says who
+              decided and when. LINKED does not borrow the confirmed-sent
+              green: "this file belongs to this matter" and "Koda sent this on
+              a date" are different claims, and only `review_approves_submission`
+              carries the second one.
+            {% endcomment %}
             <p class="reviewcard__decided">
-              {{ candidate.get_state_display }}
-              {% if candidate.review_approves_submission %}· saatmine kinnitatud{% endif %}
+              <span class="reviewstate reviewstate--{{ candidate.state|lower }}">
+                {{ candidate.get_state_display }}
+              </span>
+              {% if candidate.review_approves_submission %}
+                <span class="reviewstate reviewstate--applied">Saatmine kinnitatud</span>
+              {% endif %}
               {% if candidate.decided_by %}· {{ candidate.decided_by.display_name }}{% endif %}
               {% if candidate.decided_at %}· {{ candidate.decided_at|date:"d.m.Y H:i" }}{% endif %}
               {% if candidate.decision_note %}· {{ candidate.decision_note|truncatechars:80 }}{% endif %}

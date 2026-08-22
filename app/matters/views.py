@@ -146,6 +146,9 @@ def my_work(request: HttpRequest) -> HttpResponse:
     waiting = selectors.my_waiting_actions(request.user, today)
     attention = selectors.my_attention_items(request.user, today)
     active = selectors.my_active_matters(request.user)[:PAGE_SIZE]
+    without_action = list(
+        selectors.matters_without_next_action(request.user).filter(owner_id=request.user.pk)[:20]
+    )
 
     return render(
         request,
@@ -157,17 +160,15 @@ def my_work(request: HttpRequest) -> HttpResponse:
             "waiting": waiting,
             "waiting_due": [action for action in waiting if action.is_due_for_review(today)],
             "attention": attention,
-            "without_next_action": list(
-                selectors.matters_without_next_action(request.user).filter(
-                    owner_id=request.user.pk
-                )[:20]
-            ),
+            "without_next_action": without_action,
             "active_matters": active,
             "active_count": selectors.my_active_matters(request.user).count(),
-            # One query for the whole table, not one per row. The shared row
+            # One query for the whole page, not one per row. The shared table
             # partial shows the register's own instruction where no structured
-            # one exists (ADR 0021).
-            "source_instructions": source_instructions_for(active),
+            # one exists, and the "Järgmine samm puudub" rows show the same
+            # sentence as context — those Matters are, by definition, exactly
+            # the ones where only the register has anything to say (ADR 0021).
+            "source_instructions": source_instructions_for([*active, *without_action]),
             "nav_active": "minu_too",
         },
     )

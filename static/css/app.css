@@ -4222,3 +4222,154 @@ p.factsection__none {
   color: var(--text-muted);
   max-width: 72ch;
 }
+
+/* ====================================================================
+ * Ülevaade — the current-register dashboard
+ *
+ * Completed at integration, after the final-register cutover landed. The
+ * tables borrow the register's discipline — fixed layout, named columns that
+ * hold their width, a title that takes the remainder and clips — because a
+ * morning read is a read: one line per row, whatever the title's length.
+ * ==================================================================== */
+
+.table--dash {
+  min-width: 52rem;
+  table-layout: fixed;
+}
+
+.table--dash .table__ref {
+  width: 84px;
+}
+
+.table--dash .table__owner {
+  width: 140px;
+}
+
+.table--dash .table__stage {
+  width: 150px;
+}
+
+/* Why a Matter needs attention, in words. */
+.table--dash .table__reason {
+  width: 210px;
+}
+
+.table--dash .table__org {
+  width: 170px;
+}
+
+/* "Tähendus" carries the date-meaning label on its own where the column
+   layout already separates it from the date. */
+.table--dash .table__meaning {
+  width: 150px;
+}
+
+.table--dash .table__date {
+  width: 180px;
+}
+
+/* A date column that carries only the number, no inline meaning label. */
+.table--dash .table__date--tight {
+  width: 120px;
+}
+
+/* -- responsibility rows ---------------------------------------------------
+ *
+ * Inventory that deliberately does not link: the rail counts the register's
+ * own VASTUTAJA text while the register filters on the resolved owner, so a
+ * link would open a list disagreeing with the number beside it (ADR 0021).
+ * A span with no hover affordance, so it does not promise a destination.
+ */
+.countrow--plain:hover .countrow__label {
+  color: inherit;
+}
+
+/* ====================================================================
+ * Opinion review — decided states
+ *
+ * A human decision must look authoritative and stable, and seven states must
+ * not flatten into done/not-done. Each carries its word plus a tone; LINKED is
+ * deliberately not the confirmed-sent green, because "this file belongs to
+ * this matter" and "Koda sent this on a date" are different claims and the
+ * queue exists to keep them apart (app/legacy_import/opinion_views.py).
+ * ==================================================================== */
+
+.reviewstate {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-chip);
+  text-transform: uppercase;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border-strong);
+  padding: 1px 7px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* The importer filed it as a canonical sent Submission on its own evidence. */
+.reviewstate--applied {
+  color: var(--status-success);
+  background: var(--status-success-soft);
+  border-color: var(--status-success-border);
+}
+
+/* A person confirmed the Matter — and only the Matter. */
+.reviewstate--linked {
+  color: var(--accent-link);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.reviewstate--rejected {
+  color: var(--status-danger);
+  border-color: var(--status-danger-border);
+  background: transparent;
+}
+
+.reviewstate--deferred {
+  color: var(--status-warning);
+  border-color: var(--status-warning-border);
+  background: transparent;
+}
+
+.reviewstate--duplicate,
+.reviewstate--not_an_opinion {
+  color: var(--text-muted);
+  border-color: var(--border-default);
+  background: transparent;
+}
+
+/* ====================================================================
+ * Evidence framing
+ *
+ * The same statement the document-detail page makes with `card--evidence`,
+ * made where the files are listed: the evidence table is the authoritative
+ * surface on the tab, and it carries the evidence tone on its frame.
+ * ==================================================================== */
+
+.tablewrap--evidence {
+  border-left: 2px solid var(--status-success-border);
+}
+
+/* The register's own sentence on a Matter that has no structured step: the
+   context for setting one, labelled as Excel's, one clipped line. It reuses
+   the register's source label so the provenance reads the same everywhere. */
+.attentionrow__source {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-15);
+  min-width: 0;
+}
+
+.attentionrow__sourcetext {
+  font-size: var(--typography-size-meta);
+  font-style: italic;
+  color: var(--text-muted);
+  min-width: 0;
+  flex: 0 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

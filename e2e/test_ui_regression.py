@@ -77,6 +77,11 @@ CLOCK_DEPENDENT = [
     ".factrow__date",
     ".table__lastactivity .muted",
     ".metafield--date .inlineedit__trigger",
+    # The dashboard's bare-date columns: seeded deadlines and received dates
+    # are computed relative to today, so the digits move daily while the
+    # geometry — fixed columns, tabular figures — does not.
+    ".table__date--tight",
+    ".statcard__value",
     "time",
 ]
 
@@ -260,3 +265,23 @@ def test_watchlist(page, base_url):
     """Jälgimine: a newer surface, built from the same components."""
     signed_in(page, base_url, "/olulised-tahtajad/")
     compare("jalgimine", capture(page, "jalgimine"))
+
+
+def test_dashboard(page, base_url):
+    """Ülevaade after the final-register integration.
+
+    The composition this locks is the one the cutover asked for: headline
+    cards that count rows, dense fixed-column tables, and a responsibility
+    rail whose rows are deliberately not links (ADR 0021). Statcard values
+    are masked — several count seeded rows whose dates are computed relative
+    to today, so the digits may move while the composition may not.
+    """
+    signed_in(page, base_url, "/ulevaade/")
+    compare("ulevaade", capture(page, "ulevaade"))
+
+
+def test_my_work(page, base_url):
+    """Minu töö: the DO bands, the wait column, and the Excelist context line
+    on a Matter that has no structured next step."""
+    signed_in(page, base_url, "/minu-too/")
+    compare("minu-too", capture(page, "minu-too"))

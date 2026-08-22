@@ -26,7 +26,15 @@ evidence until a specific version has been captured
         <p class="cardnote">Muutumatud originaalid. Baidid ei muutu kunagi — parandus on uus versioon.</p>
 
         {% if evidence_documents %}
-          <div class="tablewrap">
+          {% comment %}
+            The evidence frame carries the same tone the detail page's
+            `card--evidence` does, and every row with a stored file leads with
+            the Tõend chip: canonical evidence must read as materially
+            different from the living SharePoint files below, and the
+            difference must not depend on which section the reader noticed
+            (master specification 8.6, 15.3).
+          {% endcomment %}
+          <div class="tablewrap tablewrap--evidence">
             <table class="table">
               <thead>
                 <tr>
@@ -51,6 +59,7 @@ evidence until a specific version has been captured
                     <td>{{ document.get_role_display }}</td>
                     <td>
                       {% if document.current_version %}
+                        <span class="badge badge--evidence">Tõend</span>
                         <a href="{% url 'documents:download' pk=document.current_version.pk %}">
                           {{ document.current_version.original_filename }}
                         </a>

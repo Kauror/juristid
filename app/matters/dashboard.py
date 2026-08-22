@@ -591,7 +591,8 @@ class Dashboard:
     cards: list[SummaryCard] = field(default_factory=list)
     attention: list[AttentionRow] = field(default_factory=list)
     upcoming: list[UpcomingRow] = field(default_factory=list)
-    owners: list[CountRow] = field(default_factory=list)
+    responsibility: list[CountRow] = field(default_factory=list)
+    drafting_responsibility: list[CountRow] = field(default_factory=list)
     stages: list[CountRow] = field(default_factory=list)
     incoming: list[Matter] = field(default_factory=list)
 
@@ -601,12 +602,24 @@ class Dashboard:
 
 
 def build_dashboard(user: Any, today: date | None = None) -> Dashboard:
+    """Assemble the page.
+
+    The responsibility rail reads :func:`source_responsibility`, not
+    :func:`owner_inventory`. The dashboard's responsibility breakdown groups by
+    the register's own name rather than by the resolved account, because the
+    register names a colleague who has no account here and the resolved grouping
+    would file that work under *Määramata* — discarding the one thing the
+    register is certain about (docs/adr/0021). The resolved inventory remains
+    available and tested; the register's own filters are where it drills
+    through, so it is not duplicated here beside numbers it would disagree with.
+    """
     today = today or timezone.localdate()
     return Dashboard(
         cards=summary_cards(user, today),
         attention=attention_rows(user, today),
         upcoming=upcoming_rows(user, today),
-        owners=owner_inventory(user),
+        responsibility=source_responsibility(user),
+        drafting_responsibility=drafting_by_responsibility(user),
         stages=stage_distribution(user),
         incoming=list(recent_incoming(user)),
     )
