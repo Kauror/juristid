@@ -317,21 +317,11 @@ def _plan_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]:
 
     seen: set[tuple[Any, str]] = set()
     planned: list[SubmissionPlan] = []
-    decided = _occurrences_a_person_has_decided()
-    withheld_by_review = 0
 
     for proposal in plan.proposals:
         if proposal.match_class not in AUTOMATIC_MATCH_CLASSES:
             continue
         if proposal.matter_id is None or proposal.conflicts:
-            continue
-        if proposal.sha256 in decided:
-            withheld_by_review += 1
-            proposal.explanation += (
-                " Ülevaataja on selle faili kohta juba otsuse teinud, seega automaatne "
-                "import kanoonilist kirjet ei loo. Kui saatmine tuleb kinnitada, tehke "
-                "seda ülevaatuses („Kinnita saatmine“)."
-            )
             continue
         key = (proposal.matter_id, proposal.sha256)
         if key in seen:
@@ -379,29 +369,61 @@ def _plan_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]:
                 existing_submission_id=existing,
             )
         )
-    if withheld_by_review:
-        plan.warnings.append(
-            f"{withheld_by_review} faili jäi automaatsest impordist välja, sest ülevaataja "
-            "on nende kohta juba otsuse teinud."
+    return _withhold_decided_occurrences(plan, _withhold_same_day_bundles(plan, planned))
+
+
+def _withhold_decided_occurrences(
+    plan: OpinionArchivePlan, planned: list[SubmissionPlan]
+) -> list[SubmissionPlan]:
+    """Drop what a person in the review queue has already answered for.
+
+    Runs **last**, after every classification pass. That ordering is the whole
+    subtlety: filtering these occurrences out at the top of the loop would also
+    remove them from ``_withhold_same_day_bundles``, so rejecting one file of a
+    letter-plus-annex bundle would release the others — quietly converting a
+    reviewer's "this one is the annex" into a canonical SENT record for a file
+    they never approved. The same-day rule is not weakened by a decision taken
+    beside it; a reviewer who wants the letter filed says so with *Kinnita
+    saatmine*, which is the route ``_plan_reviewed_submissions`` executes
+    (brief 26, 41, 70; this task, 21, 22).
+
+    Matched by SHA-256 rather than by candidate row, and that is deliberate. A
+    reviewer pressing *Ei ole arvamus* is making a statement about the **file**,
+    not about one of the several proposals the reconciliation happened to raise
+    for it; keying on the exact ``(occurrence, Matter, class)`` row would let the
+    next run re-file the same file under a neighbouring class and call it new
+    work.
+    """
+    decided = _occurrences_a_person_has_decided()
+    if not decided:
+        return planned
+
+    withheld = {entry.sha256 for entry in planned if entry.sha256 in decided}
+    if not withheld:
+        return planned
+
+    for proposal in plan.proposals:
+        if proposal.sha256 not in withheld:
+            continue
+        proposal.explanation += (
+            " Ülevaataja on selle faili kohta juba otsuse teinud, seega automaatne import "
+            "kanoonilist kirjet ei loo. Kui saatmine tuleb siiski kinnitada, tehke seda "
+            "ülevaatuses („Kinnita saatmine“)."
         )
-    return _withhold_same_day_bundles(plan, planned)
+    plan.warnings.append(
+        f"{len(withheld)} faili jäi automaatsest impordist välja, sest ülevaataja on "
+        "nende kohta juba otsuse teinud."
+    )
+    return [entry for entry in planned if entry.sha256 not in withheld]
 
 
 def _occurrences_a_person_has_decided() -> set[str]:
     """The binaries somebody in the review queue has already answered for.
 
-    Keyed by SHA-256 rather than by candidate row, and that is the point. A
-    reviewer looking at ``2024-04-10 - Ministeerium - Lisa 1.pdf`` and pressing
-    *Ei ole arvamus* is making a statement about the **file**, not about one of
-    the several proposals the reconciliation happened to raise for it. Matching
-    only the exact ``(occurrence, Matter, class)`` row would let the next run
-    re-file the same file under a neighbouring class and call it new work.
-
-    That breadth has one deliberate consequence worth naming: a decision on one
-    file of a same-day bundle takes that file out of the bundle, which releases
-    the others. It is the only lever the queue gives a reviewer to say "this one
-    is the annex" — and rejecting the annex is exactly how the letter beside it
-    is supposed to become filable (brief 41, 70; this task, 21, 22).
+    ``PENDING`` and ``APPLIED`` are the importer's own bookkeeping; the five
+    states in ``HUMAN_DECIDED_STATES`` have exactly one writer, and it is a
+    person in ``/haldus/arvamuste-ulevaatus/``. That split is what lets an
+    automatic rerun recognise a decision without having to ask who made it.
     """
     from app.legacy_import.opinion_archive import OpinionMatchCandidate
 

@@ -572,13 +572,14 @@ def test_the_plan_says_out_loud_that_a_decision_withheld_the_file(archive_path, 
     assert any("ülevaataja" in warning.lower() for warning in second.warnings)
 
 
-def test_deciding_one_file_of_a_bundle_releases_the_letter_beside_it(archive_path, administrator):
-    """The only lever the queue gives a reviewer for a letter-plus-annex.
+def test_a_decision_on_one_bundle_file_does_not_release_the_others(archive_path, administrator):
+    """Withholding a letter-plus-annex bundle does not soften beside a decision.
 
-    Both files are withheld while nobody has judged them, which is the whole
-    point of the same-day rule. Once a person says which one is the annex, the
-    ambiguity that justified withholding the other is gone — and if this did
-    *not* release it, the bundle would not be resolvable from the queue at all.
+    Tempting shortcut, and wrong: if the decided file simply dropped out of the
+    automatic pass before the same-day rule ran, rejecting the annex would file
+    the letter — turning "this one is the annex" into a canonical SENT record
+    for a file nobody approved. Which of the two is the letter is still a
+    judgement, and one rejection does not make it (brief 41, 70).
     """
     matter, letter = strict_pair(number=205)
     annex = syn.opinion(
@@ -590,7 +591,7 @@ def test_deciding_one_file_of_a_bundle_releases_the_letter_beside_it(archive_pat
     archive = archive_path([letter, annex])
     first = plan_for(archive)
     apply_plan(first, batch=open_batch(first))
-    assert Submission.objects.filter(matter=matter).count() == 0, "withheld while nobody has judged"
+    assert Submission.objects.filter(matter=matter).count() == 0
 
     OpinionMatchCandidate.objects.filter(item__sha256=annex.sha256).update(
         state=OpinionCandidateState.NOT_AN_OPINION,
@@ -601,13 +602,51 @@ def test_deciding_one_file_of_a_bundle_releases_the_letter_beside_it(archive_pat
     second = plan_for(archive)
     apply_plan(second, batch=open_batch(second))
 
-    assert Submission.objects.filter(matter=matter).count() == 1
-    record = OpinionSubmissionImport.objects.get()
-    assert record.item.sha256 == letter.sha256, "the letter is filed, not the annex"
-    assert (
-        OpinionMatchCandidate.objects.get(item__sha256=annex.sha256).state
-        == OpinionCandidateState.NOT_AN_OPINION
+    assert Submission.objects.filter(matter=matter).count() == 0
+    assert OpinionSubmissionImport.objects.count() == 0
+    assert OpinionCandidateState.APPLIED not in states()
+
+
+def test_confirming_the_sending_is_what_resolves_a_bundle(archive_path, administrator):
+    """The route that does file it, and the one file it files.
+
+    The counterpart to the test above: the queue is not a dead end for a
+    bundle. A reviewer naming the letter and approving its sending gets exactly
+    one canonical record, and the annex stays evidence.
+    """
+    _matter, letter = strict_pair(number=208)
+    annex = syn.opinion(
+        date="2024-04-10",
+        recipient="Näidisministeerium",
+        title="Arvamus näidisregistri seaduse muutmise kohta Lisa 1",
+        marker="bundle-208b",
     )
+    archive = archive_path([letter, annex])
+    first = plan_for(archive)
+    apply_plan(first, batch=open_batch(first))
+
+    OpinionMatchCandidate.objects.filter(item__sha256=letter.sha256).update(
+        state=OpinionCandidateState.LINKED,
+        review_approves_submission=True,
+        decided_by=administrator,
+        decided_at=timezone.now(),
+    )
+
+    second = plan_for(archive)
+    apply_plan(second, batch=open_batch(second))
+
+    record = OpinionSubmissionImport.objects.get()
+    assert record.item.sha256 == letter.sha256
+    assert record.sent_date_basis == SentDateBasis.REVIEWED_DECISION
+    assert (
+        OpinionMatchCandidate.objects.get(pk=record.candidate_id).state
+        == OpinionCandidateState.APPLIED
+    )
+    assert OpinionCandidateState.APPLIED not in list(
+        OpinionMatchCandidate.objects.filter(item__sha256=annex.sha256).values_list(
+            "state", flat=True
+        )
+    ), "the annex is evidence, not a second sent action"
 
 
 def test_a_reviewers_date_wins_over_the_automatic_one_for_the_same_file(
@@ -680,19 +719,27 @@ def test_the_applied_transition_itself_refuses_a_decided_row(archive_path, decis
 
 
 def test_status_counts_pending_applied_and_decided_separately(archive_path, administrator):
-    """`ülevaatust ootel` must mean work, not everything ever catalogued."""
-    _matter, applied = strict_pair(number=211)
-    rejected_matter, rejected = strict_pair(number=212)
-    unmatched = syn.opinion(
-        date="2024-07-02", recipient="Tundmatu asutus", title="Arvamus", marker="status-213"
-    )
-    archive = archive_path([applied, rejected, unmatched])
-    first = plan_for(archive)
-    apply_plan(first, batch=open_batch(first))
+    """`ülevaatust ootel` must mean work, not everything ever catalogued.
 
-    Submission.objects.filter(matter=rejected_matter).delete()
-    OpinionMatchCandidate.objects.filter(item__sha256=rejected.sha256).update(
-        state=OpinionCandidateState.REJECTED, decided_by=administrator, decided_at=timezone.now()
+    Three files, three outcomes: one filed automatically, one still unmatched
+    and genuinely waiting, one a person has answered. Before the split, all
+    three sat in the same number and the operator could not tell a backlog from
+    a finished import.
+    """
+    _matter, applied = strict_pair(number=211)
+    waiting = syn.opinion(
+        date="2024-07-02", recipient="Tundmatu asutus", title="Arvamus", marker="status-212"
+    )
+    answered = syn.opinion(
+        date="2024-07-03", recipient="Teadmata asutus", title="Arvamus", marker="status-213"
+    )
+    plan = plan_for(archive_path([applied, waiting, answered]))
+    apply_plan(plan, batch=open_batch(plan))
+
+    OpinionMatchCandidate.objects.filter(item__sha256=answered.sha256).update(
+        state=OpinionCandidateState.NOT_AN_OPINION,
+        decided_by=administrator,
+        decided_at=timezone.now(),
     )
 
     output = io.StringIO()
@@ -704,7 +751,8 @@ def test_status_counts_pending_applied_and_decided_separately(archive_path, admi
         )
     }
 
-    assert tally["ülevaatust ootel"] == 1, "only the unmatched file is work"
+    assert tally["sidumiskandidaate"] == 3
+    assert tally["ülevaatust ootel"] == 1, "only the unmatched file is still work"
     assert tally["rakendatud"] == 1
     assert tally["ülevaataja otsustatud"] == 1
 
