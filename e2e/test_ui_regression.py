@@ -75,7 +75,7 @@ CLOCK_DEPENDENT = [
     ".dateline",
     ".workrow__date",
     ".factrow__date",
-    ".table__lastactivity",
+    ".table__lastactivity .muted",
     ".metafield--date .inlineedit__trigger",
     "time",
 ]
