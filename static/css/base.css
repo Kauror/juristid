@@ -92,6 +92,14 @@ kbd {
   font-size: var(--typography-size-meta);
 }
 
+/* A <time> always renders a date or a clock time, and those want tabular
+   figures: proportional digits make a column of timestamps ragged, and they
+   make one timestamp a different width from the next — which moves everything
+   after it on the line. The timeline is a column of them. */
+time {
+  font-variant-numeric: tabular-nums;
+}
+
 table {
   border-collapse: collapse;
 }

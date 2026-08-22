@@ -3838,9 +3838,11 @@ p.factsection__none {
   border-bottom: none;
 }
 
+/* A fixed basis, not a minimum. With `min-width` a quarter ("IV kvartal 2027")
+   made its own row's date column wider than a day's, so every title in the list
+   started at a different x and the column stopped reading as a column. */
 .factrow__date {
-  flex: 0 0 auto;
-  min-width: 11ch;
+  flex: 0 0 15ch;
   font-variant-numeric: tabular-nums;
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);

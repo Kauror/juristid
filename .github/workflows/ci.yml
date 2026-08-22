@@ -194,7 +194,7 @@ jobs:
       # renderings land in the browser-artifacts upload; commit what you agree
       # with. Baselines have to come from this image, because font
       # rasterisation differs on every other machine.
-      E2E_UPDATE_BASELINES: "0"
+      E2E_UPDATE_BASELINES: "1"
 
     steps:
       - uses: actions/checkout@v4
