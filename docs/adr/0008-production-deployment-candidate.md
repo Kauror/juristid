@@ -2,6 +2,12 @@
 
 - **Status:** Proposed, deliberately reversible (Stage 0)
 - **Date:** 2026-08-18
+- **Scope note (2026-08-22):** this ADR is about the eventual *hosting platform*
+  and that question is still open. It does not describe how the system is
+  deployed today. The real-data instance runs on an Unraid host, and how it is
+  deployed, backed up and restored is
+  [ADR 0022](0022-deployment-backup-and-recovery.md) with
+  `deploy/unraid-main/README.md` and `deploy/unraid-main/RECOVERY.md`.
 
 ## Context
 

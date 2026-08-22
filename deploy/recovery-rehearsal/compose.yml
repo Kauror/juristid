@@ -1,0 +1,54 @@
+# Juristid — the disposable stack the backup and restore scripts are rehearsed
+# against.
+#
+# NOT A DEPLOYMENT. Nothing runs here for anybody's benefit: this exists so that
+# `scripts/deploy/juristid-backup.sh` and `scripts/deploy/juristid-restore.sh`
+# can be executed for real — the same scripts, the same arguments, the same
+# `docker compose -p ... -f ...` shape — against a database that may be
+# destroyed. CI runs it on every pull request (`.github/workflows/ci.yml`, job
+# `recovery`), and it can be run by hand on a laptop that has Docker.
+#
+# The whole point is that the rehearsal proves the production scripts rather
+# than a copy of them. A rehearsal with its own special-cased code path proves
+# only that the special case works.
+#
+# SYNTHETIC DATA ONLY. Nothing real may be pointed at this file, ever. It has no
+# authenticator, no tunnel and a published host port; it is a database on a
+# throwaway host, and everything that makes `deploy/unraid-main` safe to hold
+# the register is deliberately absent here.
+#
+# Its own project name, so it can never be confused with `juristid-main` or with
+# `juristid-test`:
+#
+#   docker compose -p juristid-recovery-rehearsal -f compose.yml up -d --wait
+#   docker compose -p juristid-recovery-rehearsal -f compose.yml down -v
+#
+# `down -v` is fine here and forbidden in production, which is the difference
+# between a rehearsal and a deployment.
+
+name: juristid-recovery-rehearsal
+
+services:
+  db:
+    # The same major as production, and it has to be: a dump taken from
+    # PostgreSQL 18 is restored by PostgreSQL 18. A rehearsal on an older major
+    # would prove the procedure against a server that could not run it
+    # (docs/adr/0022).
+    image: postgres:18
+    container_name: juristid-recovery-rehearsal-db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-juristid}
+      POSTGRES_USER: ${POSTGRES_USER:-juristid}
+      # Synthetic, and in the file on purpose: there is no secret here to keep,
+      # and a rehearsal that needs a secrets file is a rehearsal nobody runs.
+      POSTGRES_PASSWORD: rehearsal-only-not-a-secret
+    ports:
+      # Published because the application under rehearsal runs on the host
+      # rather than in a container. Acceptable only because this stack is
+      # disposable and synthetic; the real-data stack publishes nothing.
+      - "${JURISTID_REHEARSAL_DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-juristid} -d ${POSTGRES_DB:-juristid}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20

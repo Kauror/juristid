@@ -66,6 +66,25 @@ COPY --from=builder /src /app
 # keeps the old stamp, which is correct: it is the same image.
 RUN date -u +"%Y-%m-%dT%H:%M:%SZ" > /app/BUILD_STAMP
 
+# The exact commit this image was built from.
+#
+# Three different facts get called "the version" and only one of them answers
+# "what code is this": the source revision. BUILD_STAMP above says *when*, an
+# image tag says which name somebody gave it, and neither survives being wrong.
+#
+# Passed in because `.git` is excluded from the build context on purpose — the
+# production Compose file builds from a checkout on the server, and copying the
+# repository history into the image would be both large and pointless. The
+# deployment script supplies it from the reviewed target SHA it already
+# verified, so the value cannot drift from the code beside it; supply it by
+# hand and it is exactly as reliable as the hand.
+#
+# Empty when nobody passed one. `manage.py deployment_readiness` refuses a
+# real-data deployment that does not know its own commit, which is what stops
+# an unset build arg from turning into an image nobody can identify later.
+ARG GIT_SHA=""
+RUN printf '%s' "$GIT_SHA" > /app/GIT_SHA
+
 # Evidence and derivatives are separate directories because they are separate
 # storage classes: one must survive and be backed up, the other may be deleted
 # and rebuilt. Both must exist and belong to the application user, because a
@@ -81,4 +100,13 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
 
 # Migrations are applied as a controlled deployment step, not on container
 # start (master specification 24.2).
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60"]
+#
+# Three workers and a 120-second timeout for six users. Not tuned for
+# throughput: the longest request this application serves is an evidence upload
+# of up to MAX_EVIDENCE_UPLOAD_BYTES over a tunnel, and a worker killed
+# mid-upload loses the file rather than the second it was short by. The
+# production Compose command repeats these values instead of inheriting them
+# because it also turns access logging on, and a command that overrides one
+# thing overrides all of them — a test keeps the two from drifting apart
+# (tests/test_deployment_image.py).
+CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "120"]

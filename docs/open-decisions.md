@@ -33,9 +33,30 @@ and named here.
 | Submission/opinion approval and the role of juhatus | Department leadership | Before any structured approval feature |
 | `Töövõit` threshold, evidence and approver | Management + communications/legal | Phase 2 |
 | Independent backup destination and key custodians | Management/IT | Before production go-live |
+| Backup schedule, retention period and what is allowed to delete a set | Management/IT | Before production go-live |
+| RPO — how much work the Chamber is willing to lose | Department head + management | Before production go-live |
+| RTO — how long the system may take to come back | Department head + management | Before production go-live |
+| Whether `/mnt/user/juristid-main/source` is the only copy of the import corpus | IT | Cheap to fix now, expensive later |
 | Support/absence cover and second administrator | Management | Before production go-live |
 | Metric catalogue owner and coverage thresholds | Department head + reporting owner | Stage 4 |
 | Whether multi-year objectives justify a PolicyThread UI | Department + pilot evidence | Phase 2 |
+
+### Why these five are not decided in the repository
+
+The backups that exist today are a **local recovery copy**: they protect against
+a bad deployment, a mistaken command and a failed migration, and they sit on the
+same physical disk as the data they protect, so they protect against nothing
+that happens to that disk. `deploy/unraid-main/RECOVERY.md` states the contract
+an off-host copy has to satisfy and deliberately does not pick a destination.
+
+The same applies to the schedule and the retention period. A retention rule
+invented by an engineer and written into a script becomes policy the day
+somebody reads it as one, and this one decides how far back the Chamber can go
+after discovering a problem late. Nothing in the repository deletes a backup.
+
+RPO and RTO are the same decision asked twice: how much work may be lost, and
+how long recovery may take. Both are business answers. What the repository can
+say is what is technically achievable, and that is written in RECOVERY.md.
 
 ## Decisions taken by the development agent in Stage 0
 
