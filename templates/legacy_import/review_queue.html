@@ -22,7 +22,7 @@
     </span>
   </div>
 
-  <div class="card" style="padding:var(--spacing-15)">
+  <div class="card card--tight">
     <form class="form" method="get">
       <div class="formgrid">
         <label class="field">
@@ -100,18 +100,19 @@
                   action="{% url 'legacy_import:review_decide' pk=candidate.pk %}">
               {% csrf_token %}
               <input class="field__input reviewcard__note" type="text" name="note"
+                     aria-label="Otsuse märkus"
                      placeholder="Märkus (valikuline)" maxlength="2000">
-              <button class="button button--primary" name="decision" value="link"
+              <button type="submit" class="button button--primary" name="decision" value="link"
                       {% if not candidate.matter or not candidate.source_page %}disabled{% endif %}>
                 Seo teemaga
               </button>
-              <button class="button" name="decision" value="create"
+              <button type="submit" class="button" name="decision" value="create"
                       {% if not candidate.source_page %}disabled{% endif %}>
                 Loo uus teema
               </button>
-              <button class="button button--quiet" name="decision" value="background">Taust</button>
-              <button class="button button--quiet" name="decision" value="container">Kategooria</button>
-              <button class="button button--quiet" name="decision" value="reject">Lükka tagasi</button>
+              <button type="submit" class="button button--quiet" name="decision" value="background">Taust</button>
+              <button type="submit" class="button button--quiet" name="decision" value="container">Kategooria</button>
+              <button type="submit" class="button button--quiet" name="decision" value="reject">Lükka tagasi</button>
             </form>
           {% else %}
             <p class="reviewcard__decided">

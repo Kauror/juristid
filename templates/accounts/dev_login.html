@@ -18,7 +18,7 @@
   {% endif %}
 
   {% if users %}
-    <form method="post" class="card" style="padding:var(--spacing-4)">
+    <form method="post" class="card card--form">
       {% csrf_token %}
       {% if pin_required %}
         {% comment %}
