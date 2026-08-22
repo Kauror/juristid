@@ -13,6 +13,16 @@ rewritten, and no source row is touched: the snapshot is catalogued by the
 ordinary Stage-2A importer first, which writes immutable
 ``MatterSourceReference`` rows, and this reads them back.
 
+**Row by row, within the years the snapshot was approved for.** The workbook
+holds every sheet back to 2011, and the department stopped recording
+``HETKESEIS`` before 2025 — the column is not in those era contracts at all. A
+blank status reads as *not terminal*, which is the right default for live work
+and the wrong question to ask of a 2014 row, so run over the whole workbook the
+operation proposed activating two thousand historical Matters. Each approved
+snapshot therefore carries the years it speaks for, and outside them the
+historical cutover's answer stands. That is retirement **by scope**, recorded as
+such: nothing here invents a terminal status the register never wrote.
+
 Six outcomes, one per Matter, and the order they are decided in is the safety
 story
 --------------------------------------------------------------------------
@@ -76,20 +86,60 @@ from app.search.indexing import indexable_matters, refresh_matters
 from app.workflow.enums import ActionStatus
 
 #: Bumped when this operation's rules change. Recorded on every row it touches.
-CUTOVER_VERSION = "2J.1.0"
+CUTOVER_VERSION = "2J.2.0"
 
-#: The snapshots a person has approved as authoritative for current state.
+
+@dataclass(frozen=True)
+class ReviewedSnapshot:
+    """One approved workbook, and the current scope approved *with* it.
+
+    The two halves travel together on purpose. A digest says which bytes were
+    reviewed; the scope says which of that workbook's sheets the reviewer was
+    speaking for. Recording only the digest is what let a snapshot approved for
+    the maintained years be applied to sixteen years of history.
+    """
+
+    sha256: str
+    #: The workbook a person actually looked at. Operator output only.
+    label: str
+    #: The sheet years this snapshot may make current. Every other real row it
+    #: contains is still classified, and classified as history.
+    current_years: frozenset[int]
+
+
+#: The snapshots a person has approved as authoritative for current state, each
+#: with the years they approved it for.
 #:
 #: A byte-exact identity rather than a filename or a date, and a reviewed code
 #: change rather than a flag, for the reason `REVIEWED_CURRENT_YEARS` and
 #: `REVIEWED_HISTORICAL_CUTOVER_YEARS` are both lists in source: retiring or
 #: activating the department's whole portfolio from whatever workbook happened
 #: to be on somebody's desktop is not something a command-line argument should
-#: be able to do.
-REVIEWED_SNAPSHOT_SHA256: tuple[str, ...] = (
-    # Tööd eelnõudega 21.08.26.xlsx — the final maintained Excel-era snapshot.
-    "f38906c255f5ad6a58711ce833dd61da5fad7ce7ffd74fb8d2b057c6e8a58df2",
+#: be able to do. The scope is here for the same reason and not on the command
+#: line: turning 2014 back into current work must take a reviewed change.
+REVIEWED_SNAPSHOTS: tuple[ReviewedSnapshot, ...] = (
+    ReviewedSnapshot(
+        sha256="f38906c255f5ad6a58711ce833dd61da5fad7ce7ffd74fb8d2b057c6e8a58df2",
+        label="Tööd eelnõudega 21.08.26.xlsx",
+        # The maintained half of the register. 2024 and earlier are historical:
+        # the department stopped recording HETKESEIS for them, and a column the
+        # source never had cannot be read as "still live" (docs/adr/0021).
+        current_years=frozenset({2025, 2026}),
+    ),
 )
+
+
+def reviewed_snapshot(sha256: str) -> ReviewedSnapshot | None:
+    """The approved policy for this digest, or ``None`` if nobody approved it."""
+    digest = (sha256 or "").strip().lower()
+    for snapshot in REVIEWED_SNAPSHOTS:
+        if snapshot.sha256 == digest:
+            return snapshot
+    return None
+
+
+#: Derived, so the digest list and the scope policy cannot drift apart.
+REVIEWED_SNAPSHOT_SHA256: tuple[str, ...] = tuple(item.sha256 for item in REVIEWED_SNAPSHOTS)
 
 
 class UnreviewedSnapshot(Exception):
@@ -115,6 +165,24 @@ ACTIONS: tuple[str, ...] = (
     Action.NATIVE_SKIP,
     Action.REVIEW_REQUIRED,
 )
+
+
+class Rule:
+    """Which rule decided a row's currency, as a stable identifier.
+
+    Separate from the Estonian sentence beside it because the sentence is for a
+    person reading a report and this is for a person reading an audit row two
+    years later. Retirement in particular has two entirely different causes —
+    the register said the work ended, or the row is outside the years this
+    snapshot was approved for — and a provenance payload that spelled both
+    "retired" would lose the distinction that matters.
+    """
+
+    CURRENT = "CURRENT_BY_SOURCE"
+    RETIRED_BY_TERMINAL_STATUS = "RETIRED_BY_TERMINAL_STATUS"
+    RETIRED_BY_SCOPE = "RETIRED_BY_SCOPE"
+    SUPERSEDED_BY_CONTINUATION = "SUPERSEDED_BY_CONTINUATION"
+    REVIEW_AMBIGUOUS_CONTINUATION = "REVIEW_AMBIGUOUS_CONTINUATION"
 
 
 class ReviewReason:
@@ -157,6 +225,8 @@ class Candidate:
     currency: str
     action: str
     reason: str
+    #: Which rule decided the currency, as a stable identifier (see `Rule`).
+    rule: str = ""
     review_reason: str = ""
     continues_under: str = ""
 
@@ -175,7 +245,11 @@ class Candidate:
             "source_sheet": self.observation.sheet,
             "source_reference": str(self.observation.reference.pk),
             "currency": self.currency,
-            "rule": self.reason,
+            # The identifier, not the sentence. `reason` is Estonian prose for a
+            # person reading a report today; this is what an audit query two
+            # years from now can group by.
+            "rule": self.rule,
+            "reason": self.reason,
         }
 
 
@@ -188,8 +262,27 @@ class CutoverPlan:
     unmatched_rows: int = 0
 
     @property
+    def policy(self) -> ReviewedSnapshot | None:
+        """The approved policy behind this plan, or ``None`` if unapproved."""
+        return reviewed_snapshot(self.snapshot_sha256)
+
+    @property
     def is_reviewed(self) -> bool:
-        return self.snapshot_sha256 in REVIEWED_SNAPSHOT_SHA256
+        return self.policy is not None
+
+    @property
+    def current_years(self) -> frozenset[int]:
+        """The years this snapshot may make current.
+
+        Empty for a snapshot nobody approved, and that is the whole answer
+        rather than a missing one: an unreviewed workbook carries no approved
+        scope, so it cannot make anything current. The analysis still runs and
+        still classifies every row — it simply reports that this snapshot
+        activates nothing, which is true — and `apply_cutover` refuses it
+        regardless.
+        """
+        policy = self.policy
+        return policy.current_years if policy else frozenset()
 
     @property
     def counts(self) -> dict[str, int]:
@@ -351,35 +444,95 @@ def native_activity(matter_ids: list[Any]) -> NativeActivity:
 # ---------------------------------------------------------------------------
 
 
-def currency_of(observation: Observation) -> tuple[str, str, str]:
-    """``(currency, reason, continues_under)`` for one observed row.
+@dataclass(frozen=True)
+class CurrencyVerdict:
+    """What the snapshot says about one row, and which rule said it."""
 
-    Status before continuation, and the measured snapshot is why: twenty-four
-    rows carry continuation wording and twenty-two of them are already terminal,
-    so evaluating continuation first would answer a question that has already
-    been answered and would report the wrong reason for twenty-two Matters.
+    currency: str
+    rule: str
+    reason: str
+    continues_under: str = ""
+
+
+def sheet_year(sheet: str) -> int | None:
+    """The year a source sheet names, or ``None`` if it does not name one.
+
+    A sheet that cannot be read as a year is outside every reviewed scope,
+    which is the safe direction: it means the row cannot become current work
+    rather than that it silently does.
     """
-    if is_terminal_status(observation.status_label):
-        return (
+    text = (sheet or "").strip()
+    return int(text) if text.isdigit() else None
+
+
+def currency_of(observation: Observation, *, current_years: frozenset[int]) -> CurrencyVerdict:
+    """What the approved snapshot says about one observed row.
+
+    **Scope first, and it is not a shortcut.** A snapshot is approved for the
+    years its reviewer was speaking for, and this workbook carries sixteen
+    sheets. For 2024 and earlier the register recorded no ``HETKESEIS`` at all —
+    the column does not exist in those era contracts — so asking "is this status
+    terminal" asks the source a question it never answered, and the answer
+    defaults to *not terminal*, which is deliberately the open direction. Run
+    over history that turns 2019 into current work. The scope check is what
+    stops the open default from being asked outside the years it was designed
+    for; it does not change what a blank status means inside them (ADR 0021).
+
+    Within scope, status before continuation, and the measured snapshot is why:
+    twenty-four rows carry continuation wording and twenty-two of them are
+    already terminal, so evaluating continuation first would answer a question
+    that has already been answered and would report the wrong reason for
+    twenty-two Matters.
+    """
+    year = sheet_year(observation.sheet)
+    if year is None or year not in current_years:
+        # Retired by scope, and the reason says so. It is emphatically not a
+        # terminal HETKESEIS: the source recorded no closure here and this
+        # invents none. What it records is that the reviewed snapshot does not
+        # speak for this year, so the earlier historical cutover's answer stands.
+        return CurrencyVerdict(
             RegisterCurrency.RETIRED,
+            Rule.RETIRED_BY_SCOPE,
+            "Väljaspool lõpliku hetktõmmise ülevaadatud jooksva töö ulatust.",
+        )
+
+    if is_terminal_status(observation.status_label):
+        return CurrencyVerdict(
+            RegisterCurrency.RETIRED,
+            Rule.RETIRED_BY_TERMINAL_STATUS,
             "Lõppenud HETKESEIS lõpliku registri järgi.",
-            "",
         )
 
     continuation = detect_continuation(observation.next_action_text)
     if continuation.needs_review:
-        return (RegisterCurrency.REVIEW_REQUIRED, continuation.reason, "")
+        return CurrencyVerdict(
+            RegisterCurrency.REVIEW_REQUIRED,
+            Rule.REVIEW_AMBIGUOUS_CONTINUATION,
+            continuation.reason,
+        )
     if continuation.supersedes:
-        return (
+        return CurrencyVerdict(
             RegisterCurrency.SUPERSEDED,
+            Rule.SUPERSEDED_BY_CONTINUATION,
             f"Töö jätkub teema {continuation.reference} all.",
             continuation.reference,
         )
-    return (RegisterCurrency.CURRENT, "Lõpliku registri järgi jooksev töö.", "")
+    return CurrencyVerdict(
+        RegisterCurrency.CURRENT,
+        Rule.CURRENT,
+        "Lõpliku registri järgi jooksev töö.",
+    )
 
 
-def _classify(matter: Matter, observation: Observation, activity: NativeActivity) -> Candidate:
-    currency, reason, continues = currency_of(observation)
+def _classify(
+    matter: Matter,
+    observation: Observation,
+    activity: NativeActivity,
+    *,
+    current_years: frozenset[int],
+) -> Candidate:
+    verdict = currency_of(observation, current_years=current_years)
+    currency, continues = verdict.currency, verdict.continues_under
 
     def candidate(action: str, why: str, review: str = "") -> Candidate:
         return Candidate(
@@ -388,6 +541,7 @@ def _classify(matter: Matter, observation: Observation, activity: NativeActivity
             currency=currency,
             action=action,
             reason=why,
+            rule=verdict.rule,
             review_reason=review,
             continues_under=continues,
         )
@@ -398,7 +552,9 @@ def _classify(matter: Matter, observation: Observation, activity: NativeActivity
         return candidate(Action.NATIVE_SKIP, "Kohapeal loodud teema; registrit ei rakendata.")
 
     if currency == RegisterCurrency.REVIEW_REQUIRED:
-        return candidate(Action.REVIEW_REQUIRED, reason, ReviewReason.AMBIGUOUS_CONTINUATION)
+        return candidate(
+            Action.REVIEW_REQUIRED, verdict.reason, ReviewReason.AMBIGUOUS_CONTINUATION
+        )
 
     wants_current = currency == RegisterCurrency.CURRENT
     is_current = matter.record_mode == RecordMode.FULL and matter.is_open
@@ -433,7 +589,7 @@ def _classify(matter: Matter, observation: Observation, activity: NativeActivity
             "Teemal on hilisem kohapealne töö; registri põhjal ei arhiveerita.",
             conflict,
         )
-    return candidate(Action.RETIRE, reason)
+    return candidate(Action.RETIRE, verdict.reason)
 
 
 def build_cutover_plan(*, snapshot_sha256: str) -> CutoverPlan:
@@ -442,6 +598,12 @@ def build_cutover_plan(*, snapshot_sha256: str) -> CutoverPlan:
     observations = latest_observations(snapshot_sha256)
     if not observations:
         return plan
+
+    # Resolved once. Every real row in the snapshot is still classified against
+    # it — history included — because a reconciliation that quietly dropped the
+    # rows it had nothing to say about would leave `CurrentRegisterState`
+    # describing a fraction of the workbook and call it complete.
+    current_years = plan.current_years
 
     matters = {
         matter.pk: matter
@@ -460,7 +622,9 @@ def build_cutover_plan(*, snapshot_sha256: str) -> CutoverPlan:
             # A pre-numbered row that never became work. The importer already
             # refuses to create one; this refuses to act on one.
             continue
-        plan.candidates.append(_classify(matter, observation, activity))
+        plan.candidates.append(
+            _classify(matter, observation, activity, current_years=current_years)
+        )
 
     plan.candidates.sort(key=lambda c: (c.observation.sheet, c.observation.row_number or 0))
     return plan
@@ -656,6 +820,10 @@ def summary(plan: CutoverPlan) -> dict[str, Any]:
         "operation_version": CUTOVER_VERSION,
         "snapshot_sha256": plan.snapshot_sha256,
         "reviewed_snapshot": plan.is_reviewed,
+        # The years this snapshot may make current. Reported because it is the
+        # decision an operator most needs to see beside the counts: it explains
+        # why a sixteen-sheet workbook produced a two-year portfolio.
+        "current_scope_years": sorted(plan.current_years),
         "examined": len(plan.candidates),
         "actions": plan.counts,
         "review_reasons": plan.review_reasons,
@@ -670,18 +838,24 @@ def summary(plan: CutoverPlan) -> dict[str, Any]:
 __all__ = [
     "ACTIONS",
     "CUTOVER_VERSION",
+    "REVIEWED_SNAPSHOTS",
     "REVIEWED_SNAPSHOT_SHA256",
     "Action",
     "Candidate",
+    "CurrencyVerdict",
     "CutoverPlan",
     "CutoverResult",
     "Observation",
     "ReviewReason",
+    "ReviewedSnapshot",
+    "Rule",
     "UnreviewedSnapshot",
     "apply_cutover_plan",
     "build_cutover_plan",
     "currency_of",
     "native_activity",
     "rebuild_current_state",
+    "reviewed_snapshot",
+    "sheet_year",
     "summary",
 ]

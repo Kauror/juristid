@@ -30,6 +30,7 @@ from tests.synthetic_cutover import (
     FINAL_SNAPSHOT,
     OWNER_KNOWN,
     RETIRING_IN_FORCE,
+    approve_snapshot,
     build_world,
 )
 
@@ -38,9 +39,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def applied(monkeypatch: pytest.MonkeyPatch):
-    monkeypatch.setattr(
-        "app.legacy_import.final_cutover.REVIEWED_SNAPSHOT_SHA256", (FINAL_SNAPSHOT,)
-    )
+    approve_snapshot(monkeypatch, sha256=FINAL_SNAPSHOT)
     world = build_world()
     apply_cutover_plan(build_cutover_plan(snapshot_sha256=FINAL_SNAPSHOT))
     return world

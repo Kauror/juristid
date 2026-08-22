@@ -127,6 +127,14 @@ class Command(BaseCommand):
             f"  reviewed snapshot   {'yes' if figures['reviewed_snapshot'] else 'no'}"
         )
         self.stdout.write(f"  reviewed digests    {len(REVIEWED_SNAPSHOT_SHA256)}")
+        scope = figures["current_scope_years"]
+        # The scope is authority, not a filter, so it is printed beside the
+        # digest rather than buried: a reader comparing this run with the last
+        # one needs to see which years the approved snapshot speaks for.
+        self.stdout.write(
+            "  jooksva töö ulatus  "
+            + (", ".join(str(year) for year in scope) if scope else "puudub (üle vaatamata)")
+        )
         self.stdout.write(f"  rows examined       {figures['examined']}")
         if figures["unmatched_rows"]:
             self.stdout.write(

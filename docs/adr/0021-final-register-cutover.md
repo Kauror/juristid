@@ -4,6 +4,7 @@
 - **Date:** 2026-08-22
 - **Builds on** ADR 0011 (next actions and submissions), ADR 0012 (register import), ADR 0020 (historical cutover state).
 - **Refines** ADR 0020. It does not replace it: the historical default still governs every year the maintained register does not describe.
+- **Amended 2026-08-22** after a production dry-run — see *The reviewed current scope* below. The amendment states an assumption this ADR relied on without recording; it changes no decision here.
 
 ## What changed since ADR 0020
 
@@ -72,6 +73,51 @@ and never to a closure — an act commencing is not Koda closing a file, and no
 terminal: once the act is in force there is no drafting step left to schedule.
 Two different questions; this ADR answers only the second, and produces no
 disposition and no timestamp in doing so.
+
+### The reviewed current scope
+
+*Added 2026-08-22, after the production dry-run this ADR's implementation failed.*
+
+Everything above describes how a row is judged. It says nothing about **which
+rows are judged**, because when it was written that seemed obvious: the
+maintained register is the maintained register. The implementation therefore
+reconciled every real row the approved snapshot contained, and the approved
+snapshot contains every sheet back to 2011.
+
+Run against production it proposed making **2219** Matters current instead of
+200 — activating a little over two thousand rows from 2011 to 2024. The gate
+caught it and nothing was applied.
+
+The cause is the rule two paragraphs up, applied where it does not belong. *An
+unknown label leaves the Matter current* is correct, and it is correct for the
+reason given: dropping live work is the harm. But the 2011–2022 era contracts
+have **no `HETKESEIS` column at all**, so those rows carry no label to be
+unknown — the question is not answered, it is unasked. 2023 and 2024 have the
+column and the department had stopped maintaining it. Reading that silence as
+"still running" turns the entire archive into current work.
+
+So an approved snapshot now carries **the years it was approved for**, beside
+its digest, in `REVIEWED_SNAPSHOTS`. For `f38906c2…` those years are **2025 and
+2026**: 415 of its 2458 real rows, producing 60 + 140 = 200 current Matters,
+which is the portfolio this ADR always described.
+
+Three things this is *not*:
+
+* **It is not "a blank status means retired."** Inside the reviewed years a
+  blank or unknown status still leaves the Matter current, unchanged. The scope
+  decides which years the question is asked in; it does not change the answer.
+* **It is not a filter.** All 2458 real rows are still classified and still get
+  a `CurrentRegisterState` row. An out-of-scope row is retired *by scope*, with
+  a reason and a rule identifier that say exactly that — never a terminal
+  `HETKESEIS` the register never wrote, and never a disposition or a closure
+  date.
+* **It is not an operator option.** There is no `--years`. Turning 2014 back
+  into current work takes a reviewed code change, for the same reason the digest
+  list does.
+
+Outside the reviewed years, ADR 0020's historical default stands — which is what
+the *Refines* line above already said, and what the implementation had quietly
+stopped honouring.
 
 ### `VÄLJA` decides whether the opinion is still being drafted — nothing else
 
