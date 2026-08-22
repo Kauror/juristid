@@ -18,7 +18,15 @@ tags. They are deliberately narrow, and two things are **not** covered:
   text of every Matter pointing at it. That is a taxonomy-administration event,
   it is rare, and fanning out from it would mean reindexing thousands of rows
   inside somebody's form submission. ``rebuild_search_index`` is the answer and
-  is documented as such.
+  is documented as such. The same applies to renaming a Tag or a PolicyArea.
+
+The line between the two lists is fanout, not importance. A handler exists here
+when the number of search rows a write invalidates is bounded by that write —
+one Matter, one entry, one submission, one document's pages, one Matter's claim
+on a OneNote page, the handful of Matters that accepted one such page. It does
+not when a single edit can invalidate the whole corpus, because a synchronous
+reindex of thousands of rows inside a form submission is a worse failure than
+staleness an operator can fix.
 
 Both gaps are recoverable by a rebuild, which is the property the projection was
 designed around.
@@ -33,6 +41,7 @@ from django.dispatch import receiver
 
 from app.documents.enums import DerivativeStatus
 from app.documents.models import Document, DocumentVersion
+from app.legacy_import.source_pages import LegacySourcePage, MatterSourcePage
 from app.matters.models import Entry, Matter, TagAssignment
 from app.search.indexing import (
     indexable_matters,
@@ -40,6 +49,7 @@ from app.search.indexing import (
     refresh_document_version,
     refresh_entry,
     refresh_matters,
+    refresh_source_link,
     refresh_submission,
 )
 from app.search.models import SearchDocument, SearchSourceKind
@@ -141,6 +151,53 @@ def refresh_on_recipient_change(
     submission = Submission.objects.filter(pk=instance.submission_id).first()
     if submission is not None:
         refresh_submission(submission)
+
+
+@receiver(post_save, sender=MatterSourcePage, dispatch_uid="search_refresh_source_link")
+def refresh_on_source_link_change(
+    sender: type[MatterSourcePage], instance: MatterSourcePage, **kwargs: Any
+) -> None:
+    """Attaching a page to a Matter makes it findable under that Matter.
+
+    Five call sites create these rows — two in the historical importer, two in
+    the review queue, one in the seed command — and every one of them
+    remembered to call `index_source_link` afterwards. That is the defect: the
+    projection was correct only for as long as the next person to write a sixth
+    call site also remembered, and a page that is attached and unfindable
+    reports itself as a page that was never attached.
+
+    So it is a signal, and the explicit calls become redundant rather than
+    load-bearing. Refreshing twice is one extra delete-and-insert of a single
+    row; missing it once is a historical file that silently is not in the
+    corpus (compare `refresh_on_tag_assignment`, for the same reason).
+    """
+    if indexing_is_suspended():
+        return
+    refresh_source_link(instance)
+
+
+@receiver(post_save, sender=LegacySourcePage, dispatch_uid="search_refresh_source_page")
+def refresh_on_source_page_change(
+    sender: type[LegacySourcePage], instance: LegacySourcePage, **kwargs: Any
+) -> None:
+    """A re-captured OneNote page changes what its search rows say.
+
+    The historical importer upserts pages: a second capture of the same page
+    overwrites ``title``, ``derived_text`` and ``reference_tokens`` in place, and
+    that is a normal operation — the export archive is known to have produced
+    stale and duplicated page HTML at least once, so re-capturing is the fix
+    rather than the exception. The Matter↔page rows are indexed when the *link*
+    is created and never again, so without this the corpus keeps answering with
+    the text of a capture the archive has already replaced.
+
+    Bounded fanout: a page belongs to the handful of Matters that accepted it,
+    normally one. On a first import there are no links yet and this is a single
+    lookup that finds nothing.
+    """
+    if indexing_is_suspended():
+        return
+    for link in MatterSourcePage.objects.filter(source_page=instance):
+        refresh_source_link(link)
 
 
 @receiver(post_save, sender=Document, dispatch_uid="search_refresh_document_title")
