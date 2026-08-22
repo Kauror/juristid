@@ -685,7 +685,11 @@ def test_a_reviewers_date_wins_over_the_automatic_one_for_the_same_file(
     apply_plan(second, batch=open_batch(second))
 
     submission = Submission.objects.get(matter=matter)
-    assert submission.sent_at.date() == datetime.date(2024, 3, 1), "the reviewer's date"
+    # Read in local time, as the rest of the suite does: a date-only historical
+    # value is anchored at *Tallinn* midnight, so the UTC date is the day before.
+    assert timezone.localtime(submission.sent_at).date() == datetime.date(2024, 3, 1), (
+        "the reviewer's date, not the register's"
+    )
     record = OpinionSubmissionImport.objects.get()
     assert record.sent_date_basis == SentDateBasis.REVIEWED_DECISION
     candidate = OpinionMatchCandidate.objects.get(pk=record.candidate_id)
