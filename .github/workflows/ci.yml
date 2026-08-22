@@ -190,6 +190,11 @@ jobs:
       EVIDENCE_ROOT: /tmp/juristid-evidence
       E2E_BASE_URL: http://127.0.0.1:8000
       E2E_SCREENSHOT_DIR: artifacts/screenshots
+      # Set to "1" on a manual run to (re)generate the visual baselines. The
+      # renderings land in the browser-artifacts upload; commit what you agree
+      # with. Baselines have to come from this image, because font
+      # rasterisation differs on every other machine.
+      E2E_UPDATE_BASELINES: "0"
 
     steps:
       - uses: actions/checkout@v4
@@ -235,7 +240,18 @@ jobs:
 
       - name: Browser workflow
         run: >-
-          uv run pytest e2e
+          uv run pytest e2e --ignore=e2e/test_ui_regression.py
+          --browser chromium
+          --tracing retain-on-failure
+          --output artifacts/playwright
+
+      # Kept as its own step so a visual difference reads as a visual
+      # difference in the job summary rather than as "the browser suite failed",
+      # and so the renderings are uploaded either way.
+      - name: Visual regression
+        if: always()
+        run: >-
+          uv run pytest e2e/test_ui_regression.py
           --browser chromium
           --tracing retain-on-failure
           --output artifacts/playwright

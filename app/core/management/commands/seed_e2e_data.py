@@ -41,7 +41,16 @@ PERSONAS = [
 
 MINISTRY = "Näidisministeerium"
 RESTRICTED_TITLE = "Konfidentsiaalne liikmete tagasiside"
-OPEN_TITLE = "Tavaline avatud teema kõigile nähtav"
+#: Deliberately as long as a real one. Short fixture titles hide the defects
+#: that only appear at realistic length — a register row that wraps and loses
+#: its rhythm, a work row whose title runs under the chip beside it, a Matter
+#: header whose heading takes three lines — and every one of those shipped
+#: because the world the browser suite looked at was tidier than the register.
+#: The tests that use this find the Matter by this constant, so it may grow.
+OPEN_TITLE = (
+    "Tavaline avatud teema kõigile nähtav — pakendiseaduse ja sellega seonduvalt "
+    "teiste seaduste muutmise seaduse eelnõu väljatöötamiskavatsus"
+)
 ARCHIVE_TITLE = "Arhiiviteema 2014 sünteetiline registrikirje"
 
 #: The historical world. One page attached to a normal Matter, so the case-file
