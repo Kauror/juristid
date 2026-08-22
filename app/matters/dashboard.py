@@ -35,6 +35,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.authorization import scoped_count
+from app.legacy_import.current_state import RegisterCurrency
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.submissions.enums import SubmissionStatus
@@ -161,6 +162,13 @@ def summary_cards(user: Any, today: date | None = None) -> list[SummaryCard]:
             count=overdue_actions(user, today).count(),
             url=reverse("matters:my_work"),
             note="Ainult tähtajaga tegevused",
+        ),
+        SummaryCard(
+            key="drafting",
+            label="Arvamusi koostamisel",
+            count=drafting_matters(user).count(),
+            url=_teemad(olek="avatud", liik=RecordMode.FULL),
+            note="Registris puudub väljasaatmise kuupäev",
         ),
         SummaryCard(
             key="no_action",
@@ -440,6 +448,93 @@ def owner_inventory(user: Any) -> list[CountRow]:
     if unassigned:
         rows.append(CountRow(label="Vastutajata", count=unassigned, url=reverse("matters:inbox")))
     return rows
+
+
+def drafting_matters(user: Any) -> QuerySet[Matter]:
+    """Current work whose opinion has not been recorded as sent.
+
+    ``Arvamusi koostamisel``. Both halves are required and they come from
+    different places on purpose.
+
+    The lifecycle half is canonical: ``active_matters`` — open FULL records this
+    reader may see. The source half is the register's ``VÄLJA`` column, held on
+    the derived ``CurrentRegisterState`` row. Leading with the canonical half is
+    what makes the number self-correcting: a lawyer who closes a Matter today
+    drops out of this count on the next page load, without anybody re-running
+    the cutover, because the derived table is only ever consulted about the one
+    fact it is authoritative for.
+
+    ``VÄLJA`` is not ``Submission.sent_at`` and this is not a count of
+    submissions. It answers a narrower question — has the drafting step been
+    recorded as finished — and a Matter can legitimately have a send date while
+    its proceeding runs on for months (ADR 0021).
+    """
+    return active_matters(user).filter(
+        current_register_state__currency=RegisterCurrency.CURRENT,
+        current_register_state__opinion_sent_date__isnull=True,
+    )
+
+
+def drafting_by_responsibility(user: Any) -> list[CountRow]:
+    """Who the register names on each Matter still being drafted.
+
+    Grouped by the register's own ``VASTUTAJA`` text rather than by the resolved
+    account, for the reason :func:`source_responsibility` gives.
+    """
+    return _by_source_responsibility(drafting_matters(user), unassigned_label="Vastutajata")
+
+
+def source_responsibility(user: Any) -> list[CountRow]:
+    """Named responsibility across current work, as the register states it.
+
+    **Source responsibility, not workload and not a ranking.** The same refusal
+    as :func:`owner_inventory`, which this sits beside: a count of files says
+    nothing about effort, and the specification forbids presenting one as if it
+    did (18.8).
+
+    Grouped by the raw register name rather than by ``Matter.owner``, and that
+    is the whole reason this function exists separately. Two current Matters
+    name a colleague who has no account here. Grouping by the resolved owner
+    would file them under *Määramata*, which discards the one thing the register
+    is certain about; inventing an account to hold them would be worse. So the
+    register's own word is what is counted, and whether it resolves to a login
+    is a separate question this page does not ask (Stage-2F owner resolver).
+    """
+    return _by_source_responsibility(active_matters(user), unassigned_label="Vastutajata")
+
+
+def _by_source_responsibility(queryset: Any, *, unassigned_label: str) -> list[CountRow]:
+    """One row per name the register gives, largest first, blanks last.
+
+    ``scoped_count`` because the queryset has been through the visibility
+    predicate and its collaborators join (app/core/authorization.py).
+    """
+    grouped = (
+        queryset.values("current_register_state__owner_raw")
+        .annotate(total=scoped_count())
+        .order_by("-total", "current_register_state__owner_raw")
+    )
+    named: list[CountRow] = []
+    unassigned = 0
+    for entry in grouped:
+        name = (entry["current_register_state__owner_raw"] or "").strip()
+        if not name:
+            unassigned += entry["total"]
+            continue
+        named.append(
+            CountRow(
+                label=name,
+                count=entry["total"],
+                # No drill-through. The register filters on the *resolved* owner
+                # and this counts the source name, so a link would open a list
+                # that disagrees with the number above it — the one thing every
+                # other link on this page is built to avoid.
+                url="",
+            )
+        )
+    if unassigned:
+        named.append(CountRow(label=unassigned_label, count=unassigned, url=""))
+    return named
 
 
 def stage_distribution(user: Any) -> list[CountRow]:

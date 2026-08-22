@@ -39,6 +39,10 @@ from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.uploads import UploadRejected
 from app.intelligence.selectors import matter_intelligence
+from app.legacy_import.register_display import (
+    source_instruction_for,
+    source_instructions_for,
+)
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters import selectors
 from app.matters.dashboard import build_dashboard
@@ -160,6 +164,10 @@ def my_work(request: HttpRequest) -> HttpResponse:
             ),
             "active_matters": active,
             "active_count": selectors.my_active_matters(request.user).count(),
+            # One query for the whole table, not one per row. The shared row
+            # partial shows the register's own instruction where no structured
+            # one exists (ADR 0021).
+            "source_instructions": source_instructions_for(active),
             "nav_active": "minu_too",
         },
     )
@@ -190,6 +198,7 @@ def inbox(request: HttpRequest) -> HttpResponse:
             "unassigned": unassigned,
             "recent": recent,
             "intake_form": IncomingIntakeForm(),
+            "source_instructions": source_instructions_for([*unassigned, *recent]),
             "nav_active": "saabunud",
         },
     )
@@ -695,6 +704,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "query_string": query_without_page.urlencode(),
         "cleared_query": cleared.urlencode(),
         "has_any_filter": bool(chips or query),
+        "source_instructions": source_instructions_for(page.object_list),
         # What the search box submits alongside `q`, so typing narrows the
         # chosen filters rather than silently widening the population.
         "carried_params": [
@@ -1000,6 +1010,10 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     return {
         "matter": matter,
         "current_action": current_next_action(matter),
+        # The register's own `JÄRGMISEKS`, shown only where no structured action
+        # exists. Read here rather than in the template so the page cannot start
+        # asking the database a question of its own (ADR 0021).
+        "source_instruction": source_instruction_for(matter),
         "timeline_items": items,
         "timeline_has_more": has_more,
         "composer_form": ComposerForm(),
