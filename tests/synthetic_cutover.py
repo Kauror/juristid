@@ -78,6 +78,12 @@ EARLIER_SNAPSHOT = snapshot_for("earlier-snapshot")
 
 CURRENT_DRAFTING = "Sünteetiline pakendieelnõu, arvamus koostamisel"
 CURRENT_SENT = "Sünteetiline energiaeelnõu, arvamus saadetud"
+#: Sent, and the register said so in words rather than as a date. Fourteen
+#: current rows in the approved snapshot look like this, and every one of them
+#: was being counted as unfinished work.
+CURRENT_SENT_UNPARSEABLE = "Sünteetiline kaubanduseelnõu, VÄLJA kuupäevata"
+#: What such a cell holds. Invented; no production text appears in a fixture.
+UNPARSEABLE_SEND_CELL = "saadetud e-postiga"
 CURRENT_OTHER_STATUS = "Sünteetiline määrus staatusega muu"
 CARRY_OVER_LIVE = "Sünteetiline eelmise aasta elav menetlus"
 CARRY_OVER_REOPENABLE = "Sünteetiline ülemineku käigus arhiveeritud"
@@ -193,6 +199,18 @@ def build_world() -> World:
     # Live work whose responsible person has no account here. Two current rows
     # in the approved snapshot have exactly this shape, and the owner must stay
     # unresolved rather than being guessed at or dropped.
+    # Sent, recorded in prose. `has_send_date` says yes; the date parser says
+    # nothing, and the two answers are not the same question.
+    _imported(world, CURRENT_SENT_UNPARSEABLE, year=2026, number=16, record_mode=RecordMode.FULL)
+    _row(
+        world,
+        CURRENT_SENT_UNPARSEABLE,
+        year=CURRENT_SHEET,
+        status=LIVE_CONSULTATION,
+        opinion_sent=UNPARSEABLE_SEND_CELL,
+        owner=OWNER_UNKNOWN,
+    )
+
     _imported(world, CURRENT_OTHER_STATUS, year=2026, number=3, record_mode=RecordMode.FULL)
     _row(
         world,

@@ -70,11 +70,17 @@ class CurrentRegisterStateQuerySet(models.QuerySet):
         """Current work whose opinion has not been recorded as sent.
 
         The ``Arvamusi koostamisel`` population. Both halves are required: a
-        Matter with no send date whose proceeding has ended is not a drafting
-        task, and a current Matter that already sent its opinion is not one
-        either (``app.legacy_import.register_semantics``).
+        Matter with no ``VÄLJA`` mark whose proceeding has ended is not a
+        drafting task, and a current Matter that already sent its opinion is not
+        one either (``app.legacy_import.register_semantics``).
+
+        Asked of ``opinion_sent_recorded`` — did the register write anything in
+        ``VÄLJA`` — and never of ``opinion_sent_date``. Fourteen current rows in
+        the approved snapshot hold a ``VÄLJA`` value that is not a parseable
+        date, and reading a null parse as "not sent" reported every one of them
+        as unfinished work.
         """
-        return self.current().filter(opinion_sent_date__isnull=True)
+        return self.current().filter(opinion_sent_recorded=False)
 
 
 class CurrentRegisterState(BaseModel):
@@ -117,15 +123,36 @@ class CurrentRegisterState(BaseModel):
         verbose_name="HETKESEIS",
         help_text="Allika sõnastuses, tõlgendamata.",
     )
-    #: ``VÄLJA``. Preserved as the date it is, and read only for its presence:
-    #: this is not ``Submission.sent_at`` and must never be rendered as one. A
+    #: Whether ``VÄLJA`` holds anything at all — the fact the portfolio reads.
+    #:
+    #: Separate from the parsed date below, and that separation is the whole
+    #: point. ``VÄLJA`` answers *has the drafting step been recorded as
+    #: finished*, which is a question about presence; the value in the cell is
+    #: source metadata. Collapsing the two into "is the parsed date null"
+    #: silently reclassified fourteen finished Matters in the approved snapshot
+    #: as still being drafted, because their cell holds something a date parser
+    #: cannot read (ADR 0021).
+    opinion_sent_recorded = models.BooleanField(
+        default=False,
+        verbose_name="VÄLJA märgitud",
+        help_text="Kas registris on VÄLJA lahtris märge. Ei sõltu sellest, kas see on kuupäev.",
+    )
+    #: ``VÄLJA`` as a date, when it is one. Best effort, and legitimately null
+    #: while ``opinion_sent_recorded`` is true: the register wrote something the
+    #: parser could not turn into a date, which is a data-quality observation
+    #: and not a statement that the opinion is unsent.
+    #:
+    #: This is not ``Submission.sent_at`` and must never be rendered as one. A
     #: sent opinion's canonical record is a Submission with immutable final
     #: evidence, and a date is not evidence (ADR 0011).
     opinion_sent_date = models.DateField(
         null=True,
         blank=True,
-        verbose_name="VÄLJA",
-        help_text="Registri märge arvamuse väljasaatmise kohta. Ei ole Submission.",
+        verbose_name="VÄLJA kuupäevana",
+        help_text=(
+            "Parsitud kuupäev, kui lahter on kuupäev. Võib puududa ka siis, "
+            "kui VÄLJA on märgitud. Ei ole Submission."
+        ),
     )
     #: ``JÄRGMISEKS``, verbatim. Displayed as a source instruction and never
     #: converted into a ``NextAction``: the same sentence carries a deadline, a
@@ -160,8 +187,11 @@ class CurrentRegisterState(BaseModel):
         verbose_name_plural = "registri hetkeseisud"
         ordering = ["-source_sheet", "matter"]
         indexes = [
+            # The predicate the drafting queryset actually runs. It used to
+            # index the parsed date, which is no longer what decides the
+            # population.
             models.Index(
-                fields=["currency", "opinion_sent_date"],
+                fields=["currency", "opinion_sent_recorded"],
                 name="legacy_register_drafting",
             ),
         ]
@@ -195,8 +225,11 @@ class CurrentRegisterState(BaseModel):
 
     @property
     def is_drafting(self) -> bool:
-        """Current, and no send date recorded. The ``Arvamusi koostamisel`` test."""
-        return self.is_current and self.opinion_sent_date is None
+        """Current, and nothing written in ``VÄLJA``.
+
+        Presence, not parseability — see :attr:`opinion_sent_recorded`.
+        """
+        return self.is_current and not self.opinion_sent_recorded
 
     @property
     def has_source_instruction(self) -> bool:

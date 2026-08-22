@@ -73,6 +73,30 @@ implied by a deployment.
 applying decides whose letter it is. Tying them together is what left two thirds
 of the corpus visible only as catalogue rows.
 
+### A schema change to a derived table
+
+Adding a column to `CurrentRegisterState` is a schema change whose *correct
+values* come from a rebuild, not from a default. `opinion_sent_recorded`
+(migration `legacy_import.0011`) is the worked example: it defaults to `False`,
+and until the derived state is rebuilt from the approved snapshot every current
+Matter reads as still being drafted.
+
+The ordering that follows from that, and from the same rule for any future
+derived column:
+
+| | Step |
+| --- | --- |
+| 3.9.1 | Back up |
+| 3.9.2 | Build the target image |
+| 3.9.3 | Apply the migration with the target image |
+| 3.9.4 | **Rebuild the derived state before the new web container serves traffic** — `final_register_cutover --snapshot <approved> --apply`, which is idempotent and, on an already-reconciled portfolio, performs ACTIVATE 0 / RETIRE 0 and only rewrites derived rows |
+| 3.9.5 | Verify the derived table before exposing it: row count, CURRENT count, drafting count |
+| 3.9.6 | Replace web and extractor |
+| 3.9.7 | Verify the dashboard reads what the cutover reads |
+
+Doing 3.9.6 before 3.9.4 shows every reader a wrong number for as long as it
+takes to notice.
+
 ## 4. Verify — after every data operation
 
 | | Check | Command |

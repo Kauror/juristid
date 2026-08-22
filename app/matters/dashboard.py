@@ -168,7 +168,7 @@ def summary_cards(user: Any, today: date | None = None) -> list[SummaryCard]:
             label="Arvamusi koostamisel",
             count=drafting_matters(user).count(),
             url=_teemad(olek="avatud", liik=RecordMode.FULL),
-            note="Registris puudub väljasaatmise kuupäev",
+            note="Registris puudub VÄLJA märge",
         ),
         SummaryCard(
             key="no_action",
@@ -468,10 +468,15 @@ def drafting_matters(user: Any) -> QuerySet[Matter]:
     submissions. It answers a narrower question — has the drafting step been
     recorded as finished — and a Matter can legitimately have a send date while
     its proceeding runs on for months (ADR 0021).
+
+    The source half asks whether the register *wrote* anything in ``VÄLJA``, not
+    whether what it wrote parses as a date. Those differ on fourteen current
+    Matters in the approved snapshot, and reading the parsed date's nullability
+    reported all fourteen as unfinished work.
     """
     return active_matters(user).filter(
         current_register_state__currency=RegisterCurrency.CURRENT,
-        current_register_state__opinion_sent_date__isnull=True,
+        current_register_state__opinion_sent_recorded=False,
     )
 
 

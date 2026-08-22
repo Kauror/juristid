@@ -5,6 +5,7 @@
 - **Builds on** ADR 0011 (next actions and submissions), ADR 0012 (register import), ADR 0020 (historical cutover state).
 - **Refines** ADR 0020. It does not replace it: the historical default still governs every year the maintained register does not describe.
 - **Amended 2026-08-22** after a production dry-run — see *The reviewed current scope* below. The amendment states an assumption this ADR relied on without recording; it changes no decision here.
+- **Clarified 2026-08-22** after production verification — see *Presence is stored, not inferred from the parsed date* below. The rule is unchanged; what changed is where the derived table keeps the answer.
 
 ## What changed since ADR 0020
 
@@ -136,6 +137,36 @@ It also never becomes a `Submission`. A SENT submission needs a defensible date
 opinion nobody can produce. Where a canonical SENT Submission exists, that
 Submission remains the outbound record and `VÄLJA` remains source metadata
 beside it.
+
+### Presence is stored, not inferred from the parsed date
+
+*Added 2026-08-22, after production verification of the applied cutover.*
+
+The rule above — `VÄLJA` is read for presence, never for its value — was
+implemented three times. The cutover asked the raw cell and was right. The
+derived `CurrentRegisterState` and the Ülevaade card each asked whether the
+*parsed* date was null, which is a different question that agrees on most rows.
+
+On the approved snapshot it disagrees on fourteen. Of 200 current Matters, 15
+have a blank `VÄLJA`, 171 hold a parseable date, and **14 hold something the
+date parser cannot read** — a note, a phrase, a marking somebody typed. The
+register says those fourteen went out; the parser has nothing to offer about
+them. Reading the null parse as "not sent" put all fourteen back into
+*Arvamusi koostamisel*, which read 29 where the cutover said 15.
+
+So the derived table now stores the two facts separately:
+
+* `opinion_sent_recorded` — a boolean, straight from `has_send_date`. This is
+  what the portfolio reads, and what the drafting index covers.
+* `opinion_sent_date` — the same cell parsed, when it parses. Legitimately null
+  while `opinion_sent_recorded` is true, and that combination is a
+  data-quality observation about the source rather than a contradiction to be
+  repaired.
+
+`has_send_date` is now the only place the rule is written, and the cutover, the
+derived table and the dashboard all reach it. Nothing about the meaning of
+`VÄLJA` changed; it is still presence, still not `Submission.sent_at`, and still
+incapable of creating a Submission.
 
 ### Explicit continuation prevents double-counting
 
