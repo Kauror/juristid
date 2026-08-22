@@ -21,6 +21,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
+from app.core.management.commands.seed_e2e_data import OPEN_TITLE
 from e2e.conftest import SANDRA, sign_in
 
 pytestmark = pytest.mark.e2e
@@ -51,16 +52,20 @@ def open_register(page, base_url: str) -> None:
 
 
 def open_first_matter(page, base_url: str) -> None:
-    """Follow the first row's link rather than clicking it.
+    """Open the seeded world's ordinary open Matter.
 
-    The table head is sticky at the top of the scroll container, so the first
-    row can sit under it — which is right for reading and unhelpful for a test
-    whose subject is somewhere else entirely.
+    Named rather than "the first row", because the register's default ordering
+    puts the archive record first — and an archive Matter has no composer, no
+    Järgmiseks and a different header, which is not what these tests are about.
+
+    The link is followed rather than clicked because the table head is sticky
+    and can sit over the row.
     """
-    open_register(page, base_url)
-    href = page.locator(".table__titlelink").first.get_attribute("href")
-    assert href, "the register rendered no Matter link"
-    page.goto(f"{base_url}{href}")
+    page.goto(f"{base_url}/teemad/?olek=koik&q=Tavaline")
+    page.wait_for_load_state("networkidle")
+    link = page.get_by_role("link", name=OPEN_TITLE, exact=False).first
+    assert link.count(), "the register does not hold the seeded open Matter"
+    page.goto(f"{base_url}{link.get_attribute('href')}")
     page.wait_for_load_state("networkidle")
 
 

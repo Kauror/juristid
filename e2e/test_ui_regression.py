@@ -45,6 +45,7 @@ import pathlib
 
 import pytest
 
+from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, OPEN_TITLE
 from e2e.conftest import SANDRA, sign_in
 
 pytestmark = pytest.mark.e2e
@@ -97,7 +98,10 @@ def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = No
     masks = [page.locator(selector) for selector in CLOCK_DEPENDENT]
     target = page.locator(clip_to) if clip_to else page
     image = target.screenshot(
-        path=str(CANDIDATE_DIR / f"{name}.png"),
+        # Prefixed, because the rest of the browser suite writes its own
+        # screenshots into the same artifact directory and two of the names
+        # collide.
+        path=str(CANDIDATE_DIR / f"visual-{name}.png"),
         mask=masks,
         mask_color="#101418",
         **({"full_page": full_page} if clip_to is None else {}),
@@ -154,17 +158,21 @@ def signed_in(page, base_url: str, path: str, width: int = 1440, height: int = 9
     return page
 
 
-def first_matter(page, base_url: str, tab: str = ""):
-    """Follow the first row's link rather than clicking it.
+def open_matter(page, base_url: str, title: str, tab: str = ""):
+    """Open a named Matter from the register.
 
-    The table head is sticky, so the first row can sit under it — which is
-    right for reading and unhelpful for a capture whose subject is the page
-    after it.
+    Named rather than "the first row": the register's default ordering put the
+    archive record first, so the overview scenario and the special-state
+    scenario captured byte-identical pages and one of them proved nothing.
+
+    The link is followed rather than clicked because the table head is sticky
+    and can sit over the first row — right for reading, unhelpful for a capture
+    whose subject is the page after it.
     """
-    signed_in(page, base_url, "/teemad/")
-    href = page.locator(".table__titlelink").first.get_attribute("href")
-    assert href, "the register rendered no Matter link"
-    page.goto(f"{base_url}{href}")
+    signed_in(page, base_url, f"/teemad/?olek=koik&q={title.split()[0]}")
+    link = page.get_by_role("link", name=title, exact=False).first
+    assert link.count(), f"the register does not hold {title!r}"
+    page.goto(f"{base_url}{link.get_attribute('href')}")
     page.wait_for_load_state("networkidle")
     if tab:
         page.get_by_role("link", name=tab).click()
@@ -204,34 +212,29 @@ def test_register_with_the_narrowing_panel_open(page, base_url):
 
 
 def test_matter_overview(page, base_url):
-    first_matter(page, base_url)
+    open_matter(page, base_url, OPEN_TITLE)
     compare("teema-ulevaade", capture(page, "teema-ulevaade"))
 
 
 def test_matter_header_only(page, base_url):
     """The band on its own: identity, state, facts and tabs, and how tall."""
-    first_matter(page, base_url)
+    open_matter(page, base_url, OPEN_TITLE)
     compare("teema-pais", capture(page, "teema-pais", clip_to=".matterhead"))
 
 
 def test_matter_in_a_special_state(page, base_url):
     """Archive: an imported record whose known uncertainty is kept."""
-    signed_in(page, base_url, "/teemad/?olek=arhiiv")
-    link = page.locator(".table__titlelink").first
-    if not link.count():
-        pytest.skip("the seeded world holds no archive Matter")
-    page.goto(f"{base_url}{link.get_attribute('href')}")
-    page.wait_for_load_state("networkidle")
+    open_matter(page, base_url, ARCHIVE_TITLE)
     compare("teema-arhiiv", capture(page, "teema-arhiiv"))
 
 
 def test_matter_position(page, base_url):
-    first_matter(page, base_url, tab="Seisukoht ja kaasamine")
+    open_matter(page, base_url, OPEN_TITLE, tab="Seisukoht ja kaasamine")
     compare("teema-seisukoht", capture(page, "teema-seisukoht"))
 
 
 def test_matter_documents(page, base_url):
-    first_matter(page, base_url, tab="Dokumendid")
+    open_matter(page, base_url, OPEN_TITLE, tab="Dokumendid")
     compare("teema-dokumendid", capture(page, "teema-dokumendid"))
 
 
