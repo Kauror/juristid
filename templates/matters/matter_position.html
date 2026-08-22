@@ -41,8 +41,14 @@ keep it.
           </p>
         {% endif %}
 
+        {% comment %}
+          Open while there is nothing to read. A collapsed disclosure over an
+          empty panel asks somebody to click before they can start writing the
+          one thing this surface exists for; once a position is written, reading
+          it is the common case and the form gets out of the way.
+        {% endcomment %}
         <details class="disclosure disclosure--inline"
-                 {% if position_form.errors %}open{% endif %}>
+                 {% if position_form.errors or not matter.position_summary %}open{% endif %}>
           <summary class="disclosure__summary">
             {% if matter.position_summary %}Muuda seisukohta{% else %}Sõnasta Koja seisukoht{% endif %}
           </summary>

@@ -22,7 +22,7 @@ from app.core.management.commands.seed_e2e_data import (
     RESTRICTED_TITLE,
     SUBMISSION_TITLE,
 )
-from e2e.conftest import ADMIN, MARTIN, SANDRA, sign_in, sign_out
+from e2e.conftest import ADMIN, MARTIN, SANDRA, go_to, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -45,7 +45,7 @@ def test_statistika_is_a_destination_of_its_own(page, base_url, screenshots):
     page with both makes neither readable (Stage-2E brief 6).
     """
     sign_in(page, base_url, MARTIN)
-    page.get_by_role("link", name="Statistika", exact=True).click()
+    go_to(page, "Statistika")
     page.wait_for_url(f"{base_url}/statistika/")
 
     expect(page.get_by_role("heading", name="Statistika")).to_be_visible()

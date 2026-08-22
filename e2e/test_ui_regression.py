@@ -148,8 +148,16 @@ def signed_in(page, base_url: str, path: str, width: int = 1440, height: int = 9
 
 
 def first_matter(page, base_url: str, tab: str = ""):
+    """Follow the first row's link rather than clicking it.
+
+    The table head is sticky, so the first row can sit under it — which is
+    right for reading and unhelpful for a capture whose subject is the page
+    after it.
+    """
     signed_in(page, base_url, "/teemad/")
-    page.locator(".table__titlelink").first.click()
+    href = page.locator(".table__titlelink").first.get_attribute("href")
+    assert href, "the register rendered no Matter link"
+    page.goto(f"{base_url}{href}")
     page.wait_for_load_state("networkidle")
     if tab:
         page.get_by_role("link", name=tab).click()
@@ -205,7 +213,7 @@ def test_matter_in_a_special_state(page, base_url):
     link = page.locator(".table__titlelink").first
     if not link.count():
         pytest.skip("the seeded world holds no archive Matter")
-    link.click()
+    page.goto(f"{base_url}{link.get_attribute('href')}")
     page.wait_for_load_state("networkidle")
     compare("teema-arhiiv", capture(page, "teema-arhiiv"))
 

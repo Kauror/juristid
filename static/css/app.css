@@ -604,7 +604,8 @@ p.formnote {
   background: currentColor;
 }
 
-.badge--restricted {
+.badge--restricted,
+.badge--environment {
   color: var(--status-warning);
   background: var(--status-warning-soft);
   border-color: var(--status-warning-border);
@@ -933,8 +934,14 @@ p.formnote {
  * than widening the grid against a container that was never going to give it
  * the room.
  */
+/* A full-width row of its own inside the filter bar, and in normal flow.
+   Anchoring it as an overlay solved the width problem and created a worse one:
+   it covered the count, the active-filter chips and the first rows underneath —
+   and the panel stays open after a filter is applied, so it covered exactly the
+   chips somebody had just created. */
 .filterpanel {
-  position: static;
+  flex: 1 0 100%;
+  min-width: 0;
 }
 
 .filterpanel__trigger {
@@ -970,19 +977,13 @@ p.formnote {
 }
 
 .filterpanel__body {
-  position: absolute;
-  top: calc(100% + var(--spacing-2));
-  left: 0;
-  z-index: 25;
+  margin-top: var(--spacing-2);
   width: 100%;
   max-width: 62rem;
-  max-height: min(70vh, 40rem);
-  overflow-y: auto;
   padding: var(--spacing-4);
-  background: var(--surface-elevated);
+  background: var(--surface-raised);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-menu);
 }
 
 .filterpanel__body .formgrid {
@@ -1671,6 +1672,14 @@ p.formnote {
 
 .composer__body:focus {
   outline: none;
+}
+
+/* `:focus-within` on the card, not `:focus` on the field. Keyed to the field,
+   the composer collapsed the moment focus moved to the type select or the
+   Järgmiseks toggle beside it — so the page reflowed under the pointer while
+   somebody was still working in it. It closes when focus leaves the composer,
+   which is when it should. */
+.composer:focus-within .composer__body {
   height: 108px;
 }
 

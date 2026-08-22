@@ -50,6 +50,20 @@ def open_register(page, base_url: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
+def open_first_matter(page, base_url: str) -> None:
+    """Follow the first row's link rather than clicking it.
+
+    The table head is sticky at the top of the scroll container, so the first
+    row can sit under it — which is right for reading and unhelpful for a test
+    whose subject is somewhere else entirely.
+    """
+    open_register(page, base_url)
+    href = page.locator(".table__titlelink").first.get_attribute("href")
+    assert href, "the register rendered no Matter link"
+    page.goto(f"{base_url}{href}")
+    page.wait_for_load_state("networkidle")
+
+
 # ---------------------------------------------------------------------------
 # The shell
 # ---------------------------------------------------------------------------
@@ -123,7 +137,13 @@ def test_the_things_a_lawyer_reaches_for_are_on_the_bar(page, base_url, width, h
             f"{selector} is outside the viewport at {width}px"
         )
 
-    expect(page.locator(".actingas__name")).to_contain_text(SANDRA.display_name.split()[0])
+    # Shared-gate deployments name the selected persona; the others show an
+    # avatar. Whichever this deployment is, it has to be on the bar and legible.
+    persona = page.locator(".actingas__name")
+    if persona.count():
+        expect(persona).to_contain_text(SANDRA.display_name.split()[0])
+    else:
+        expect(page.locator(".avatar").first).to_be_visible()
 
 
 def test_the_secondary_navigation_disclosure_is_keyboard_operable(page, base_url):
@@ -312,7 +332,7 @@ def test_a_restricted_matter_says_so_in_words(page, base_url):
     """The badge is a word plus a tint, never a tint alone."""
     sign_in(page, base_url, SANDRA)
     open_register(page, base_url)
-    expect(page.locator(".badge--restricted").first).to_contain_text("Piiratud")
+    expect(page.locator(".table .badge--restricted").first).to_contain_text("Piiratud")
 
 
 # ---------------------------------------------------------------------------
@@ -329,14 +349,15 @@ def test_the_matter_header_is_a_band_of_facts_not_a_form(page, base_url):
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": 1440, "height": 900})
-    open_register(page, base_url)
-    page.locator(".table__titlelink").first.click()
-    page.wait_for_load_state("networkidle")
+    open_first_matter(page, base_url)
 
     strip = page.locator(".metastrip")
     expect(strip).to_be_visible()
     assert strip.bounding_box()["height"] <= 64, "the facts strip is taller than two lines"
-    expect(page.locator(".metastrip select")).to_have_count(0)
+    # Visible, not present: the controls are in the DOM behind their
+    # disclosures, which is the point — they are reachable without being what
+    # the band shows.
+    expect(page.locator(".metastrip select:visible")).to_have_count(0)
 
     header = page.locator(".matterhead").bounding_box()
     assert header["height"] <= 260, "the Matter header takes a quarter of the viewport"
@@ -345,9 +366,7 @@ def test_the_matter_header_is_a_band_of_facts_not_a_form(page, base_url):
 def test_an_inline_edit_opens_the_real_control_without_moving_the_page(page, base_url):
     """The affordance is a disclosure, so it is keyboard-reachable and cheap."""
     sign_in(page, base_url, SANDRA)
-    open_register(page, base_url)
-    page.locator(".table__titlelink").first.click()
-    page.wait_for_load_state("networkidle")
+    open_first_matter(page, base_url)
 
     before = page.locator(".matterhead").bounding_box()["height"]
     trigger = page.locator(".inlineedit__trigger").first
@@ -370,7 +389,7 @@ def test_the_reopen_action_stays_inside_the_closed_banner(page, base_url):
     link = page.locator(".table__titlelink").first
     if not link.count():
         pytest.skip("the seeded world holds no closed Matter")
-    link.click()
+    page.goto(f"{base_url}{link.get_attribute('href')}")
     page.wait_for_load_state("networkidle")
 
     banner = page.locator(".banner--closed")
@@ -387,9 +406,7 @@ def test_the_matter_rail_sits_beside_or_below_but_never_over(page, base_url, wid
     """At 1440–1280 the rail is a column; below 1100 it folds under."""
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": width, "height": height})
-    open_register(page, base_url)
-    page.locator(".table__titlelink").first.click()
-    page.wait_for_load_state("networkidle")
+    open_first_matter(page, base_url)
 
     main = page.locator(".mattermain").bounding_box()
     rail = page.locator(".rail").bounding_box()
@@ -406,9 +423,7 @@ def test_the_composer_starts_as_one_field(page, base_url):
     "fill in this form", and the adoption argument is the former.
     """
     sign_in(page, base_url, SANDRA)
-    open_register(page, base_url)
-    page.locator(".table__titlelink").first.click()
-    page.wait_for_load_state("networkidle")
+    open_first_matter(page, base_url)
 
     field = page.locator(".composer__body")
     expect(field).to_be_visible()
@@ -423,9 +438,7 @@ def test_the_composer_starts_as_one_field(page, base_url):
 def test_the_intelligence_sections_do_not_shout_when_they_are_empty(page, base_url):
     """Three empty sections are three lines, not three boxes."""
     sign_in(page, base_url, SANDRA)
-    open_register(page, base_url)
-    page.locator(".table__titlelink").first.click()
-    page.wait_for_load_state("networkidle")
+    open_first_matter(page, base_url)
 
     for section in page.locator(".factsection").all():
         if section.locator(".factsection__none").count():
@@ -443,6 +456,9 @@ def test_a_refused_save_keeps_what_was_typed_and_says_why_beside_the_field(page,
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
 
+    # Past the browser's own required-field check, because the server's refusal
+    # is what has to render beside the field.
+    page.locator("form.createform").evaluate("form => form.noValidate = true")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
@@ -456,20 +472,27 @@ def test_focus_is_visible_on_everything_a_keyboard_reaches(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_register(page, base_url)
 
-    invisible = page.evaluate(
-        """() => {
-            const bad = [];
-            const selectors = 'a[href], button, input, select, textarea, summary';
-            for (const el of [...document.querySelectorAll(selectors)].slice(0, 60)) {
-              el.focus();
-              const s = getComputedStyle(el);
-              const ring = s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0;
-              const boxed = s.boxShadow !== 'none';
-              if (!ring && !boxed) bad.push(el.className || el.tagName);
-            }
-            return bad;
-        }"""
-    )
+    # Tabbed, not focused programmatically: `:focus-visible` is a heuristic
+    # about how focus arrived, and `element.focus()` does not satisfy it. A test
+    # that calls focus() is testing the wrong thing and reports every control as
+    # a failure.
+    invisible = []
+    for _ in range(25):
+        page.keyboard.press("Tab")
+        state = page.evaluate(
+            """() => {
+                const el = document.activeElement;
+                if (!el || el === document.body) return null;
+                const s = getComputedStyle(el);
+                return {
+                  name: el.className || el.tagName,
+                  ring: s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0,
+                  boxed: s.boxShadow !== 'none',
+                };
+            }"""
+        )
+        if state and not (state["ring"] or state["boxed"]):
+            invisible.append(state["name"])
     assert not invisible, f"no visible focus on: {invisible[:8]}"
 
 

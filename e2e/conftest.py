@@ -92,3 +92,21 @@ def sign_in(page, base_url: str, persona: Persona) -> None:
 def sign_out(page, base_url: str) -> None:
     page.get_by_role("button", name="Välju").click()
     page.wait_for_load_state("networkidle")
+
+
+def go_to(page, name: str) -> None:
+    """Follow a top-bar destination by name, wherever the bar is keeping it.
+
+    Navigation is priority-based: the four destinations a lawyer moves between
+    all day are always on the bar, and the reading surfaces — Jälgimine,
+    Statistika, Osakonna töö — are inline only above 1560px and behind the
+    "Veel" disclosure below it. A test that clicks the link directly is
+    asserting a layout decision it does not care about, so it asks for the
+    destination and lets this open whatever is in the way.
+    """
+    navigation = page.get_by_role("navigation", name="Peamine")
+    link = navigation.get_by_role("link", name=name, exact=True)
+    if not link.count():
+        page.locator(".topnav__trigger").click()
+    link.click()
+    page.wait_for_load_state("networkidle")
