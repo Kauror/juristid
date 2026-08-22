@@ -27,7 +27,17 @@ reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
     {% endif %}
   </div>
 
-  {% if query and not rows %}
+  {% if query_was_refused %}
+    {% comment %}
+      Deliberately not "vasteid ei leitud". The query was never run, and saying
+      it found nothing would let a reader conclude the corpus holds nothing —
+      the one wrong conclusion this search exists to prevent.
+    {% endcomment %}
+    <p class="empty">
+      Otsingusõna on liiga pikk või sisaldab märke, mida otsing ei kasuta.
+      Päringut ei tehtud. Proovi kuni {{ max_query_characters }} tähemärgiga otsingut.
+    </p>
+  {% elif query and not rows %}
     <p class="empty">
       Vasteid ei leitud. Proovi lühemat sõna või teistsugust kirjapilti.
     </p>
