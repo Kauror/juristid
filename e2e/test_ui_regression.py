@@ -83,10 +83,13 @@ CLOCK_DEPENDENT = [
     ".table__date--tight",
     ".statcard__value",
     # A date control's value renders in the control, and the create form's
-    # Saabus defaults to today. The unmasked control put today's date into two
-    # committed baselines, which held only because every run so far happened on
-    # the same day.
-    'input[type="date"]',
+    # Saabus defaults to today. Scoped to that form: unscoped, the selector also
+    # matched the register's filter inputs, which sit inside a *closed*
+    # disclosure — a closed <details> child still has a box, so Playwright
+    # painted mask rectangles across the rows underneath and three register
+    # baselines came back with obscured rows. Masks can damage a page, so a mask
+    # selector is as much a thing to review as the page itself.
+    '.createform input[type="date"]',
     "time",
 ]
 
