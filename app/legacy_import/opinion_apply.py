@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from app.documents.enums import DocumentRole
@@ -313,11 +313,20 @@ def _mark_candidate_applied(candidate_id: Any) -> None:
     Called only after the ``OpinionSubmissionImport`` row exists, so APPLIED
     always describes something that happened rather than something the plan
     expected to happen.
+
+    Two states may become APPLIED and no others. ``PENDING`` is the row the
+    importer wrote and still owns. ``LINKED`` **with** an approved sending is a
+    reviewer handing the row back to be executed. A row somebody rejected,
+    called a duplicate, said was not an opinion, deferred, or linked *without*
+    approving the sending is a decision, and a rerun that quietly flipped it to
+    APPLIED would overturn a person from a cron job — the one thing this
+    pipeline exists not to do (this task, 21).
     """
     if candidate_id is None:
         return
-    OpinionMatchCandidate.objects.filter(pk=candidate_id).exclude(
-        state=OpinionCandidateState.APPLIED
+    OpinionMatchCandidate.objects.filter(pk=candidate_id).filter(
+        models.Q(state=OpinionCandidateState.PENDING)
+        | models.Q(state=OpinionCandidateState.LINKED, review_approves_submission=True)
     ).update(state=OpinionCandidateState.APPLIED)
 
 

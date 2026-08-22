@@ -170,8 +170,15 @@ class Command(BaseCommand):
             OpinionMatchCandidate,
             OpinionSubmissionImport,
         )
-        from app.legacy_import.opinion_enums import OpinionCandidateState
+        from app.legacy_import.opinion_enums import (
+            HUMAN_DECIDED_STATES,
+            OpinionCandidateState,
+        )
 
+        # Three disjoint numbers that together account for every candidate:
+        # what the importer still owns, what it finished, and what a person
+        # answered. Printing only "ülevaatust ootel" made a finished row and a
+        # rejected one indistinguishable from a queue nobody had started.
         rows = [
             ("arhiivikirjeid", OpinionArchiveItem.objects.count()),
             ("erinevaid baite", OpinionArchiveItem.objects.values("sha256").distinct().count()),
@@ -180,6 +187,14 @@ class Command(BaseCommand):
             (
                 "ülevaatust ootel",
                 OpinionMatchCandidate.objects.filter(state=OpinionCandidateState.PENDING).count(),
+            ),
+            (
+                "rakendatud",
+                OpinionMatchCandidate.objects.filter(state=OpinionCandidateState.APPLIED).count(),
+            ),
+            (
+                "ülevaataja otsustatud",
+                OpinionMatchCandidate.objects.filter(state__in=HUMAN_DECIDED_STATES).count(),
             ),
             ("arhiivist arvamusi", OpinionSubmissionImport.objects.count()),
             (
@@ -192,12 +207,15 @@ class Command(BaseCommand):
 
     def _verify(self) -> None:
         """Check what the import claims against what the database holds."""
+        from django.db import models
         from django.db.models import Count
 
         from app.legacy_import.opinion_archive import (
             OpinionArchiveItem,
+            OpinionMatchCandidate,
             OpinionSubmissionImport,
         )
+        from app.legacy_import.opinion_enums import OpinionCandidateState
         from app.submissions.enums import SentAtPrecision, SubmissionStatus
 
         problems: list[str] = []
@@ -237,6 +255,39 @@ class Command(BaseCommand):
         ).count()
         if unevidenced:
             problems.append(f"{unevidenced} saadetud arvamust ilma lõpliku tõendita")
+
+        # The provenance chain has to describe one decision end to end: this
+        # file → this candidate → this Matter → this Submission. A row that
+        # names candidate A while its Submission sits on candidate A's *other*
+        # Matter is not a small inconsistency, it is an explanation that would
+        # mislead the next person who trusts it (brief 46; this task, 19).
+        crossed_item = (
+            OpinionSubmissionImport.objects.filter(candidate__isnull=False)
+            .exclude(candidate__item_id=models.F("item_id"))
+            .count()
+        )
+        if crossed_item:
+            problems.append(f"{crossed_item} arhiiviimpordil viitab kandidaat teisele failile")
+
+        crossed_matter = (
+            OpinionSubmissionImport.objects.filter(candidate__matter__isnull=False)
+            .exclude(candidate__matter_id=models.F("submission__matter_id"))
+            .count()
+        )
+        if crossed_matter:
+            problems.append(f"{crossed_matter} arhiiviimpordil on kandidaadil teine teema")
+
+        # APPLIED means "this produced a canonical Submission". A row claiming
+        # it without an import naming it is a candidate that left the queue
+        # without leaving a record — the failure mode the state exists to make
+        # impossible.
+        unbacked = (
+            OpinionMatchCandidate.objects.filter(state=OpinionCandidateState.APPLIED)
+            .filter(submission_imports__isnull=True)
+            .count()
+        )
+        if unbacked:
+            problems.append(f"{unbacked} rakendatud kandidaadil ei ole ühtegi arhiiviimporti")
 
         doubled = (
             OpinionSubmissionImport.objects.values("submission_id")

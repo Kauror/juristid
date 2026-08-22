@@ -136,3 +136,30 @@ class OpinionCandidateState(models.TextChoices):
     DUPLICATE = "DUPLICATE", "Duplikaat"
     NOT_AN_OPINION = "NOT_AN_OPINION", "Ei ole arvamus"
     DEFERRED = "DEFERRED", "Edasi lükatud"
+
+
+#: The states only a person ever puts a row into. ``opinion_decide`` is the sole
+#: writer of every one of them; ``PENDING`` and ``APPLIED`` are the importer's
+#: own bookkeeping and nobody else's. That split is what lets an automatic rerun
+#: recognise a decision without asking who made it.
+#:
+#: An occurrence carrying one of these is not eligible for automatic
+#: application. A reviewer who rejected a file, called it a duplicate, said it
+#: is not an opinion, deferred it, or linked it to a Matter *without* asserting
+#: it was sent has answered the question the automatic path was about to answer
+#: again — and answering it again from the same evidence that was already on the
+#: screen would make the queue a suggestion box (Stage-2H brief 25, 63).
+#:
+#: ``LINKED`` appears here even though it is the one state that may still
+#: produce a Submission: that path runs through ``_plan_reviewed_submissions``,
+#: which requires ``review_approves_submission`` and files the result as a
+#: reviewed decision rather than a register value.
+HUMAN_DECIDED_STATES: frozenset[str] = frozenset(
+    {
+        OpinionCandidateState.LINKED,
+        OpinionCandidateState.REJECTED,
+        OpinionCandidateState.DUPLICATE,
+        OpinionCandidateState.NOT_AN_OPINION,
+        OpinionCandidateState.DEFERRED,
+    }
+)

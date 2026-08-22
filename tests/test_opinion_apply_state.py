@@ -17,8 +17,11 @@ All data is synthetic. No real archive file, register row or name appears.
 from __future__ import annotations
 
 import datetime
+import io
 
 import pytest
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.urls import reverse
 from django.utils import timezone
 
@@ -31,7 +34,7 @@ from app.legacy_import.opinion_archive import (
     OpinionMatchCandidate,
     OpinionSubmissionImport,
 )
-from app.legacy_import.opinion_enums import OpinionCandidateState
+from app.legacy_import.opinion_enums import OpinionCandidateState, SentDateBasis
 from app.legacy_import.opinion_plan import build_plan
 from app.legacy_import.parser import SOURCE_SYSTEM
 from app.legacy_import.source_pages import (
@@ -434,3 +437,312 @@ def test_no_matter_is_reopened_or_promoted_by_the_apply(archive_path):
     matter.refresh_from_db()
     assert matter.is_open is False
     assert matter.record_mode == "ARCHIVE"
+
+
+# =========================================================================
+# A person's decision outranks the next automatic run
+# =========================================================================
+#
+# The automatic pass rebuilds its proposals from the sources every time and
+# knows nothing, by construction, about who has looked at the queue since. So a
+# reviewer who rejected a file, called it a duplicate, said it was not an
+# opinion, deferred it, or linked it to a Matter without asserting it was sent
+# had their answer overwritten by the next `opinion_archive apply` — either by
+# creating the canonical SENT Submission they had refused, or by flipping the
+# row itself back to APPLIED.
+#
+# Both directions are covered below, because they fail independently: the
+# planner decides whether a Submission is written, and the apply decides what
+# the candidate row ends up saying.
+
+
+def decided_states():
+    """Every terminal state a reviewer can put a row into from `/haldus/`."""
+    return [
+        OpinionCandidateState.REJECTED,
+        OpinionCandidateState.DUPLICATE,
+        OpinionCandidateState.NOT_AN_OPINION,
+        OpinionCandidateState.DEFERRED,
+    ]
+
+
+@pytest.mark.parametrize("decision", decided_states())
+def test_a_decided_candidate_is_never_applied_by_a_later_run(archive_path, administrator, decision):
+    """The shape that loses a decision: the Submission is gone, the row is not.
+
+    Somebody applied the archive, saw the result was wrong, deleted the
+    Submission — which takes the import row with it — and recorded why in the
+    queue. Nothing in the sources changed, so the next run proposes exactly the
+    same automatic match, and before this fix it filed it again.
+    """
+    matter, item = strict_pair(number=201)
+    archive = archive_path([item])
+    first = plan_for(archive)
+    apply_plan(first, batch=open_batch(first))
+
+    Submission.objects.filter(matter=matter).delete()
+    assert OpinionSubmissionImport.objects.count() == 0, "deleting the Submission clears the import"
+    OpinionMatchCandidate.objects.filter(matter=matter).update(
+        state=decision,
+        decided_by=administrator,
+        decided_at=timezone.now(),
+        decision_note="Vaadatud üle ja tagasi lükatud.",
+    )
+
+    second = plan_for(archive)
+    report = apply_plan(second, batch=open_batch(second))
+
+    assert report.submissions_created == 0
+    assert Submission.objects.filter(matter=matter).count() == 0
+    assert OpinionSubmissionImport.objects.count() == 0
+    candidate = OpinionMatchCandidate.objects.get(matter=matter)
+    assert candidate.state == decision
+    assert candidate.decided_by == administrator
+    assert candidate.decision_note == "Vaadatud üle ja tagasi lükatud."
+
+
+@pytest.mark.parametrize("decision", decided_states())
+def test_a_decision_taken_after_the_apply_is_not_flipped_back(
+    archive_path, administrator, decision
+):
+    """The other shape: the Submission survives, so the rerun stops early.
+
+    It still reached `_mark_candidate_applied` with the import row's candidate,
+    which is how a REJECTED row silently became APPLIED again without anything
+    else in the database moving.
+    """
+    matter, item = strict_pair(number=202)
+    archive = archive_path([item])
+    first = plan_for(archive)
+    apply_plan(first, batch=open_batch(first))
+
+    OpinionMatchCandidate.objects.filter(matter=matter).update(
+        state=decision, decided_by=administrator, decided_at=timezone.now()
+    )
+    before = counts()
+
+    second = plan_for(archive)
+    apply_plan(second, batch=open_batch(second))
+
+    assert counts() == before
+    assert OpinionMatchCandidate.objects.get(matter=matter).state == decision
+
+
+def test_a_matter_linked_without_approving_the_sending_is_not_applied(archive_path, administrator):
+    """Seo teemaga is deliberately the answer that stops short of SENT.
+
+    A reviewer who can say which Matter a letter belongs to should not have to
+    claim it went out in order to record that. An automatic run that then claims
+    it for them makes the distinction the queue offers meaningless (brief 26).
+    """
+    matter, item = strict_pair(number=203)
+    archive = archive_path([item])
+    first = plan_for(archive)
+    apply_plan(first, batch=open_batch(first))
+    Submission.objects.filter(matter=matter).delete()
+
+    OpinionMatchCandidate.objects.filter(matter=matter).update(
+        state=OpinionCandidateState.LINKED,
+        review_approves_submission=False,
+        decided_by=administrator,
+        decided_at=timezone.now(),
+    )
+
+    second = plan_for(archive)
+    apply_plan(second, batch=open_batch(second))
+
+    assert Submission.objects.filter(matter=matter).count() == 0
+    assert OpinionMatchCandidate.objects.get(matter=matter).state == OpinionCandidateState.LINKED
+
+
+def test_the_plan_says_out_loud_that_a_decision_withheld_the_file(archive_path, administrator):
+    """A file that silently stops appearing reads as a file that stopped matching."""
+    matter, item = strict_pair(number=204)
+    archive = archive_path([item])
+    first = plan_for(archive)
+    apply_plan(first, batch=open_batch(first))
+    Submission.objects.filter(matter=matter).delete()
+    OpinionMatchCandidate.objects.filter(matter=matter).update(
+        state=OpinionCandidateState.REJECTED, decided_by=administrator, decided_at=timezone.now()
+    )
+
+    second = plan_for(archive)
+
+    assert second.submissions == []
+    assert any("ülevaataja" in warning.lower() for warning in second.warnings)
+
+
+def test_deciding_one_file_of_a_bundle_releases_the_letter_beside_it(archive_path, administrator):
+    """The only lever the queue gives a reviewer for a letter-plus-annex.
+
+    Both files are withheld while nobody has judged them, which is the whole
+    point of the same-day rule. Once a person says which one is the annex, the
+    ambiguity that justified withholding the other is gone — and if this did
+    *not* release it, the bundle would not be resolvable from the queue at all.
+    """
+    matter, letter = strict_pair(number=205)
+    annex = syn.opinion(
+        date="2024-04-10",
+        recipient="Näidisministeerium",
+        title="Arvamus näidisregistri seaduse muutmise kohta Lisa 1",
+        marker="bundle-205b",
+    )
+    archive = archive_path([letter, annex])
+    first = plan_for(archive)
+    apply_plan(first, batch=open_batch(first))
+    assert Submission.objects.filter(matter=matter).count() == 0, "withheld while nobody has judged"
+
+    OpinionMatchCandidate.objects.filter(item__sha256=annex.sha256).update(
+        state=OpinionCandidateState.NOT_AN_OPINION,
+        decided_by=administrator,
+        decided_at=timezone.now(),
+    )
+
+    second = plan_for(archive)
+    apply_plan(second, batch=open_batch(second))
+
+    assert Submission.objects.filter(matter=matter).count() == 1
+    record = OpinionSubmissionImport.objects.get()
+    assert record.item.sha256 == letter.sha256, "the letter is filed, not the annex"
+    assert (
+        OpinionMatchCandidate.objects.get(item__sha256=annex.sha256).state
+        == OpinionCandidateState.NOT_AN_OPINION
+    )
+
+
+def test_a_reviewers_date_wins_over_the_automatic_one_for_the_same_file(
+    archive_path, administrator
+):
+    """Both routes can propose the same occurrence; the person's must be written.
+
+    A file waits in review because the register had no VÄLJA. A reviewer
+    confirms the sending with a date they can defend. The register is then
+    re-imported with a date of its own — so the automatic route now proposes the
+    same file too. Planning the automatic one first wrote the register's date
+    and left the reviewer's row LINKED for ever.
+    """
+    matter, item = strict_pair(number=206, sent=None)
+    attach_to_onenote([matter], item.data)
+    archive = archive_path([item])
+    first = plan_for(archive)
+    apply_plan(first, batch=open_batch(first))
+    assert OpinionSubmissionImport.objects.count() == 0
+
+    OpinionMatchCandidate.objects.filter(matter=matter).update(
+        state=OpinionCandidateState.LINKED,
+        review_approves_submission=True,
+        reviewed_sent_date=datetime.date(2024, 3, 1),
+        decided_by=administrator,
+        decided_at=timezone.now(),
+    )
+    # The register catches up and now carries a VÄLJA of its own.
+    reference = matter.source_references.get()
+    reference.source_row_raw = dict(reference.source_row_raw, F="2024-04-10")
+    reference.save(update_fields=["source_row_raw"])
+
+    second = plan_for(archive)
+    apply_plan(second, batch=open_batch(second))
+
+    submission = Submission.objects.get(matter=matter)
+    assert submission.sent_at.date() == datetime.date(2024, 3, 1), "the reviewer's date"
+    record = OpinionSubmissionImport.objects.get()
+    assert record.sent_date_basis == SentDateBasis.REVIEWED_DECISION
+    candidate = OpinionMatchCandidate.objects.get(pk=record.candidate_id)
+    assert candidate.state == OpinionCandidateState.APPLIED
+    assert candidate.review_approves_submission is True
+
+
+@pytest.mark.parametrize("decision", decided_states())
+def test_the_applied_transition_itself_refuses_a_decided_row(archive_path, decision):
+    """Belt and braces, and worth having separately.
+
+    The planner now keeps a decided row from ever reaching the writer, so the
+    end-to-end tests above would still pass if this guard were removed. It is
+    the guard that has to hold when a future caller reaches
+    `_mark_candidate_applied` by a route the planner does not police.
+    """
+    from app.legacy_import import opinion_apply
+
+    matter, item = strict_pair(number=207)
+    plan = plan_for(archive_path([item]))
+    apply_plan(plan, batch=open_batch(plan))
+    candidate = OpinionMatchCandidate.objects.get(matter=matter)
+    OpinionMatchCandidate.objects.filter(pk=candidate.pk).update(state=decision)
+
+    opinion_apply._mark_candidate_applied(candidate.pk)
+
+    assert OpinionMatchCandidate.objects.get(pk=candidate.pk).state == decision
+
+
+# =========================================================================
+# What the operator surfaces say
+# =========================================================================
+
+
+def test_status_counts_pending_applied_and_decided_separately(archive_path, administrator):
+    """`ülevaatust ootel` must mean work, not everything ever catalogued."""
+    _matter, applied = strict_pair(number=211)
+    rejected_matter, rejected = strict_pair(number=212)
+    unmatched = syn.opinion(
+        date="2024-07-02", recipient="Tundmatu asutus", title="Arvamus", marker="status-213"
+    )
+    archive = archive_path([applied, rejected, unmatched])
+    first = plan_for(archive)
+    apply_plan(first, batch=open_batch(first))
+
+    Submission.objects.filter(matter=rejected_matter).delete()
+    OpinionMatchCandidate.objects.filter(item__sha256=rejected.sha256).update(
+        state=OpinionCandidateState.REJECTED, decided_by=administrator, decided_at=timezone.now()
+    )
+
+    output = io.StringIO()
+    call_command("opinion_archive", "status", stdout=output)
+    tally = {
+        label.strip(): int(value.replace(",", ""))
+        for label, value in (
+            line.rsplit(None, 1) for line in output.getvalue().strip().splitlines()
+        )
+    }
+
+    assert tally["ülevaatust ootel"] == 1, "only the unmatched file is work"
+    assert tally["rakendatud"] == 1
+    assert tally["ülevaataja otsustatud"] == 1
+
+
+def test_verify_accepts_a_consistent_provenance_chain(archive_path):
+    _matter, item = strict_pair(number=221)
+    plan = plan_for(archive_path([item]))
+    apply_plan(plan, batch=open_batch(plan))
+
+    output = io.StringIO()
+    call_command("opinion_archive", "verify", stdout=output)
+
+    assert "kõik kontrollid läbitud" in output.getvalue()
+
+
+def test_verify_reports_an_import_naming_a_candidate_from_another_matter(archive_path):
+    """One row must not say candidate A, Submission for Matter B."""
+    _matter, item = strict_pair(number=222)
+    other = register_matter(
+        year=2024, number=223, title="Muu teema", sent="2024-09-09", counterparty="Muu asutus"
+    )
+    plan = plan_for(archive_path([item]))
+    apply_plan(plan, batch=open_batch(plan))
+
+    record = OpinionSubmissionImport.objects.get()
+    OpinionMatchCandidate.objects.filter(pk=record.candidate_id).update(matter=other)
+
+    with pytest.raises(CommandError):
+        call_command("opinion_archive", "verify", stdout=io.StringIO())
+
+
+def test_verify_reports_an_applied_candidate_that_produced_nothing(archive_path):
+    """APPLIED is a claim about a Submission, so an unbacked one is a defect."""
+    _matter, item = strict_pair(number=224)
+    plan = plan_for(archive_path([item]))
+    apply_plan(plan, batch=open_batch(plan))
+
+    OpinionSubmissionImport.objects.update(candidate=None)
+
+    with pytest.raises(CommandError):
+        call_command("opinion_archive", "verify", stdout=io.StringIO())

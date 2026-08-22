@@ -28,6 +28,7 @@ from typing import Any
 
 from app.legacy_import.opinion_enums import (
     AUTOMATIC_MATCH_CLASSES,
+    HUMAN_DECIDED_STATES,
     OpinionConflict,
     OpinionMatchClass,
     RecipientBasis,
@@ -258,7 +259,13 @@ def build_plan(
         )
     )
     _record_inventory_findings(plan)
-    plan.submissions = _plan_submissions(plan) + _plan_reviewed_submissions(plan)
+    # Reviewed decisions are planned first, and the automatic pass then skips
+    # every occurrence a person has already answered for. Both orderings
+    # produce one Submission per occurrence — `_write_one_submission` stops at
+    # the existing import row — but only this one lets the *reviewer's* Matter
+    # and date be the ones that get written (brief 63; this task, 21).
+    reviewed = _plan_reviewed_submissions(plan)
+    plan.submissions = reviewed + _plan_submissions(plan)
     return plan
 
 
@@ -310,11 +317,21 @@ def _plan_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]:
 
     seen: set[tuple[Any, str]] = set()
     planned: list[SubmissionPlan] = []
+    decided = _occurrences_a_person_has_decided()
+    withheld_by_review = 0
 
     for proposal in plan.proposals:
         if proposal.match_class not in AUTOMATIC_MATCH_CLASSES:
             continue
         if proposal.matter_id is None or proposal.conflicts:
+            continue
+        if proposal.sha256 in decided:
+            withheld_by_review += 1
+            proposal.explanation += (
+                " Ülevaataja on selle faili kohta juba otsuse teinud, seega automaatne "
+                "import kanoonilist kirjet ei loo. Kui saatmine tuleb kinnitada, tehke "
+                "seda ülevaatuses („Kinnita saatmine“)."
+            )
             continue
         key = (proposal.matter_id, proposal.sha256)
         if key in seen:
@@ -362,7 +379,41 @@ def _plan_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]:
                 existing_submission_id=existing,
             )
         )
+    if withheld_by_review:
+        plan.warnings.append(
+            f"{withheld_by_review} faili jäi automaatsest impordist välja, sest ülevaataja "
+            "on nende kohta juba otsuse teinud."
+        )
     return _withhold_same_day_bundles(plan, planned)
+
+
+def _occurrences_a_person_has_decided() -> set[str]:
+    """The binaries somebody in the review queue has already answered for.
+
+    Keyed by SHA-256 rather than by candidate row, and that is the point. A
+    reviewer looking at ``2024-04-10 - Ministeerium - Lisa 1.pdf`` and pressing
+    *Ei ole arvamus* is making a statement about the **file**, not about one of
+    the several proposals the reconciliation happened to raise for it. Matching
+    only the exact ``(occurrence, Matter, class)`` row would let the next run
+    re-file the same file under a neighbouring class and call it new work.
+
+    That breadth has one deliberate consequence worth naming: a decision on one
+    file of a same-day bundle takes that file out of the bundle, which releases
+    the others. It is the only lever the queue gives a reviewer to say "this one
+    is the annex" — and rejecting the annex is exactly how the letter beside it
+    is supposed to become filable (brief 41, 70; this task, 21, 22).
+    """
+    from app.legacy_import.opinion_archive import OpinionMatchCandidate
+
+    return set(
+        OpinionMatchCandidate.objects.filter(state__in=HUMAN_DECIDED_STATES)
+        # `.order_by()` before `.distinct()`, not decoration: `Meta.ordering`
+        # puts `match_class` and two `item` columns into the SELECT, and a
+        # DISTINCT over those returns one row per class rather than per file.
+        .order_by()
+        .values_list("item__sha256", flat=True)
+        .distinct()
+    )
 
 
 def _withhold_same_day_bundles(
