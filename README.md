@@ -306,6 +306,19 @@ engine missing a language falls back to English and returns confident nonsense:
 uv run python manage.py check_ocr_runtime
 ```
 
+The evidence itself is the half PostgreSQL cannot check on its own — the bytes
+live outside it, so "this row points at an object that is not there" is
+invisible to every constraint in the schema. This asks, read-only, and exits
+non-zero if anything is wrong:
+
+```bash
+uv run python manage.py check_evidence_integrity
+```
+
+Add `--verify-sha` to read every stored object and check it against its recorded
+checksum. That is a maintenance window on a large store rather than a health
+check, which is why it is never implied.
+
 ## Statistics
 
 `Statistika` is the fifth main-navigation item and five tabs: Üldpilt, Teemad,

@@ -3,16 +3,32 @@
 The download route is the authorization boundary. Storage URLs are never handed
 to the browser: a signed blob link would outlive the permission that produced it
 and would bypass the audit record entirely (master specification 15.6, 5.2).
+
+**The bytes are opened before the audit event is written.** A DOCUMENT_DOWNLOADED
+row is a claim that somebody received a file, and it is the row an investigation
+would later rely on. Writing it and only then discovering the stored object is
+gone produces a security log that records a delivery which never happened, on
+top of a traceback for the reader. Both routes therefore open the handle first
+and, if the object is missing, record the attempt as *failed* and answer 404 —
+the integrity problem goes to the log and to `check_evidence_integrity`, which
+is where an operator can act on it.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import FileResponse, HttpRequest, HttpResponse, HttpResponseBase
+from django.http import (
+    FileResponse,
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    HttpResponseBase,
+)
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_http_methods
 
@@ -31,6 +47,49 @@ from app.documents.preview import build_preview
 from app.documents.services import add_evidence_version, create_document, evidence_storage
 from app.documents.uploads import UploadRejected, read_upload
 from app.matters.views import get_visible_matter
+
+logger = logging.getLogger(__name__)
+
+
+def _open_evidence(request: HttpRequest, version: DocumentVersion, *, disposition: str) -> Any:
+    """The stored bytes, or a 404 and an honest audit row.
+
+    A committed DocumentVersion whose object is missing is the integrity failure
+    this whole subsystem is built to prevent, so it is logged at error level with
+    the identifiers an operator needs — version id and storage key, never the
+    filename, which in this corpus is frequently the confidential part.
+
+    The reader gets 404. It is the same answer this route already gives for a
+    document they may not see, which is deliberate: the alternatives are a 500
+    with a traceback, or a page that distinguishes "missing from storage" from
+    "not yours" for anybody probing UUIDs.
+    """
+    try:
+        return evidence_storage().open(version.storage_key, "rb")
+    except FileNotFoundError:
+        logger.error(
+            "evidence object missing version=%s storage_key=%s sha256=%s",
+            version.pk,
+            version.storage_key,
+            version.sha256,
+        )
+        record_security_event(
+            event_type=SecurityEventType.DOCUMENT_DOWNLOADED,
+            actor=request.user if request.user.is_authenticated else None,
+            subject=version,
+            ip_address=request.META.get("REMOTE_ADDR"),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            succeeded=False,
+            detail=shared_gate.audit_detail(
+                request,
+                document=str(version.document_id),
+                matter=str(version.document.matter_id),
+                sha256=version.sha256,
+                disposition=disposition,
+                outcome="evidence_object_missing",
+            ),
+        )
+        raise Http404("Selle versiooni faili ei leitud hoidlast.") from None
 
 
 class DocumentUploadForm(forms.Form):
@@ -119,6 +178,8 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
         pk=pk,
     )
 
+    handle = _open_evidence(request, version, disposition="attachment")
+
     record_security_event(
         event_type=SecurityEventType.DOCUMENT_DOWNLOADED,
         # The persona if one was selected, and nobody otherwise. `audit_detail`
@@ -136,9 +197,6 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
             disposition="attachment",
         ),
     )
-
-    storage = evidence_storage()
-    handle = storage.open(version.storage_key, "rb")
 
     response = FileResponse(
         handle,
@@ -182,6 +240,8 @@ def open_inline(request: HttpRequest, pk: Any) -> HttpResponseBase:
     if not inline.may_open_inline(filename=version.original_filename, mime_type=version.mime_type):
         return redirect("documents:download", pk=version.pk)
 
+    handle = _open_evidence(request, version, disposition="inline")
+
     record_security_event(
         event_type=SecurityEventType.DOCUMENT_DOWNLOADED,
         actor=request.user if request.user.is_authenticated else None,
@@ -197,7 +257,6 @@ def open_inline(request: HttpRequest, pk: Any) -> HttpResponseBase:
         ),
     )
 
-    handle = evidence_storage().open(version.storage_key, "rb")
     response = FileResponse(handle, content_type=inline.inline_mime_for(version.original_filename))
     return inline.apply_inline_headers(response, filename=version.original_filename)
 
@@ -225,7 +284,16 @@ def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
         pk=pk,
     )
 
-    handle = derivative_storage().open(derivative.storage_key, "rb")
+    try:
+        handle = derivative_storage().open(derivative.storage_key, "rb")
+    except FileNotFoundError:
+        # A derivative is rebuildable, so a missing thumbnail is a gap rather
+        # than an incident: it is logged for `rebuild_document_derivatives` to
+        # fix and the page loses a tile. No security event — nothing was
+        # delivered and nothing was meant to be.
+        logger.warning("derivative object missing derivative=%s", derivative.pk)
+        raise Http404("Pisipilti ei leitud.") from None
+
     response = FileResponse(handle, content_type="image/png")
     response["X-Content-Type-Options"] = "nosniff"
     # Belt and braces: even a generated PNG is served under a policy that
