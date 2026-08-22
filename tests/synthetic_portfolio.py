@@ -189,7 +189,7 @@ def add_source_reference(
     owner_cell: str = "",
     status_cell: str = "",
     next_action_cell: str = "",
-    title_cell: str = "",
+    title_cell: str | None = None,
     opinion_sent_cell: str = "",
     received_cell: str = "",
     deadline_cell: str = "",
@@ -218,7 +218,10 @@ def add_source_reference(
         values["legacy_status"] = status_cell
     if contract is not None and contract.column_for("next_action_text") is not None:
         values["next_action_text"] = next_action_cell
-    values["title"] = title_cell or matter.title
+    # `None` means "the fixture did not care"; `""` means "the cell is blank",
+    # which is what a pre-numbered padding row looks like and is a shape the
+    # cutover has to recognise (ADR 0021).
+    values["title"] = matter.title if title_cell is None else title_cell
     values["matter_reference"] = matter.display_reference
 
     return MatterSourceReference.objects.create(

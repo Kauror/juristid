@@ -254,11 +254,21 @@ def _observation(reference: MatterSourceReference, contracts: Any) -> Observatio
     def cell(name: str) -> str:
         return (source_cell(reference, contracts, name) or "").strip()
 
+    # `None` and `""` are different answers and collapsing them would break the
+    # padding rule in one direction or the other. `None` means the row cannot be
+    # asked — no contract for the sheet, or an era with no such column — and the
+    # importer's stored title is the best available answer. `""` means the
+    # contract found column B and the cell was blank, which is exactly what a
+    # pre-numbered row is, and must not fall back to anything
+    # (app/legacy_import/source_cells.py).
+    raw_title = source_cell(reference, contracts, "title")
+    title = reference.source_title if raw_title is None else raw_title.strip()
+
     return Observation(
         reference=reference,
         sheet=reference.source_sheet,
         row_number=reference.source_row_number,
-        title=cell("title") or reference.source_title,
+        title=title,
         status_label=cell("legacy_status"),
         opinion_sent_raw=cell("opinion_sent_date"),
         next_action_text=cell("next_action_text"),
