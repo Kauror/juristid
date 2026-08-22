@@ -308,6 +308,18 @@ def test_replacing_recipients_still_reindexes(archive_path, ministry, specialist
     survives and has to be reprojected. A guard written one step too wide would
     make an opinion unfindable under the ministry it was just addressed to, and
     nothing would say so.
+
+    On an archive-created submission specifically, which is the case
+    `test_search_reliability.py` cannot cover: it builds its submission by hand,
+    and this one comes out of the importer with a provenance note attached.
+
+    **The old ministry stays findable, and that is correct.** The importer
+    writes the raw recipient it read into `notes` — "Saaja alus:
+    EXCEL_ADDRESSEE — …" — and that sentence is evidence of what the archive
+    said, not an index artefact. Replacing the addressee today does not
+    un-address the letter that was sent in 2024. So the assertion here is about
+    the recipient relation and about the new ministry arriving, not about the
+    old name disappearing from the full text.
     """
     from app.submissions.services import set_recipients
 
@@ -315,6 +327,7 @@ def test_replacing_recipients_still_reindexes(archive_path, ministry, specialist
     plan = build_plan(archive_path=archive_path([item]), kodadash_path=None)
     apply_plan(plan, batch=open_batch(plan))
     submission = Submission.objects.get(matter=matter)
+    assert submission.recipients.filter(pk=ministry.pk).exists()
     other = Organisation.objects.create(
         name="Näidiskliimaministeerium", organisation_type=OrganisationType.MINISTRY
     )
@@ -322,9 +335,10 @@ def test_replacing_recipients_still_reindexes(archive_path, ministry, specialist
     set_recipients(submission=submission, addressees=[other], audit=False)
 
     assert submission_hits("Näidiskliimaministeerium", specialist), (
-        "the new recipient did not reach the index"
+        "the new recipient did not reach the index: the guard suppressed the refresh"
     )
-    assert not submission_hits(MINISTRY, specialist), "the old recipient stayed findable"
+    assert not submission.recipients.filter(pk=ministry.pk).exists()
+    assert list(submission.recipients.all()) == [other]
 
 
 @pytest.mark.parametrize(

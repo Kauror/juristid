@@ -121,6 +121,13 @@ A failed run leaves a directory named `…​.partial` and exits non-zero. That 
 is deliberate: a crash produces something obviously incomplete rather than
 something plausible.
 
+Sets are named to the second, so two backups started inside the same second ask
+for the same directory and the second one refuses rather than writing into a set
+it did not create. That is the safe direction and it is left as it is — but it
+is worth recognising the message, because "a backup set already exists" from a
+run you started by hand a moment after the scheduled one is about the clock, not
+about anything being wrong. Wait a second and run it again.
+
 ## Checking a backup
 
 Three levels, because "the backup is verified" gets said about all three and
