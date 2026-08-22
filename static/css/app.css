@@ -100,6 +100,13 @@
  * the user-agent rule that hides a closed disclosure's contents — without it
  * the inline row would only appear once somebody had opened the menu.
  */
+.topnav__wide {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-45);
+  height: 48px;
+}
+
 .topnav__more {
   position: relative;
   height: 48px;
@@ -134,8 +141,14 @@
   color: var(--text-primary);
 }
 
-.topnav__more[open] .topnav__trigger {
+.topnav__more[open] .topnav__trigger,
+.topnav__trigger.is-active {
   color: var(--text-primary);
+}
+
+/* Same signal the bar uses for a destination you are on. */
+.topnav__trigger.is-active {
+  box-shadow: inset 0 -2px 0 0 var(--accent-primary);
 }
 
 .topnav__menu {
@@ -1352,6 +1365,13 @@ p.formnote {
   border-bottom-style: solid;
 }
 
+/* The rightmost facts open leftwards, so a popover under the last field in the
+   strip cannot hang off a 1024px screen. */
+.metastrip .metafield:nth-last-child(-n + 2) .inlineedit__form {
+  left: auto;
+  right: 0;
+}
+
 .inlineedit__caret {
   color: var(--text-muted);
   font-size: var(--typography-size-chip);
@@ -1362,6 +1382,7 @@ p.formnote {
   position: absolute;
   top: calc(100% + var(--spacing-1));
   left: 0;
+  max-width: min(20rem, calc(100vw - var(--spacing-8)));
   z-index: 20;
   padding: var(--spacing-2);
   background: var(--surface-elevated);
@@ -2435,39 +2456,17 @@ fieldset.field > legend {
  *    860   the bar becomes a deliberate two-row layout, not a wrapped one
  * ==================================================================== */
 
-/* Wide desktop: the disclosure stops being one. The specificity here is
-   deliberate — it has to out-weigh the user-agent rule that hides a closed
-   <details> element's contents. */
+/* Wide desktop: everything is on the bar and the disclosure is not rendered.
+   Below it, the reverse. Exactly one branch exists at any width, so no
+   destination is announced twice. */
 @media (min-width: 1560px) {
-  .topnav__more:not([open]) > .topnav__menu,
-  .topnav__more[open] > .topnav__menu {
-    position: static;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: var(--spacing-45);
-    min-width: 0;
-    padding: 0;
-    background: none;
-    border: 0;
-    box-shadow: none;
+  .topnav__more {
+    display: none;
   }
+}
 
-  .topnav__more:not([open]) > .topnav__menu .topnav__link,
-  .topnav__more[open] > .topnav__menu .topnav__link {
-    height: 48px;
-    padding: 0;
-    border-radius: 0;
-    background: none;
-  }
-
-  .topnav__more:not([open]) > .topnav__menu .topnav__link.is-active,
-  .topnav__more[open] > .topnav__menu .topnav__link.is-active {
-    box-shadow: inset 0 -2px 0 0 var(--accent-primary);
-    background: none;
-  }
-
-  .topnav__trigger {
+@media (max-width: 1559px) {
+  .topnav__wide {
     display: none;
   }
 }

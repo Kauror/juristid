@@ -29,10 +29,14 @@ pytestmark = pytest.mark.e2e
 #: three below it are the machines the department actually has.
 VIEWPORTS = [(1440, 900), (1366, 768), (1280, 800), (1024, 768)]
 
-#: Every destination the shell offers a signed-in specialist. Osakonna töö is
-#: deliberately absent: it is offered by role, and the route 404s for anybody
-#: else rather than relying on the link being hidden.
-DESTINATIONS = ["Ülevaade", "Minu töö", "Saabunud", "Teemad", "Jälgimine", "Statistika"]
+#: The four destinations a lawyer moves between all day. They are on the bar at
+#: every width.
+PRIMARY = ["Ülevaade", "Minu töö", "Saabunud", "Teemad"]
+
+#: The reading surfaces. Inline above 1560, behind "Veel" below it. Osakonna töö
+#: is deliberately absent from both lists: it is offered by role, and the route
+#: 404s for anybody else rather than relying on the link being hidden.
+SECONDARY = ["Jälgimine", "Statistika"]
 
 
 def document_overflows(page) -> bool:
@@ -71,20 +75,30 @@ def test_the_shell_is_one_row_and_never_scrolls_sideways(page, base_url, width, 
     assert not document_overflows(page), "the document scrolls sideways"
 
 
-@pytest.mark.parametrize("width,height", VIEWPORTS, ids=lambda v: str(v))
+@pytest.mark.parametrize("width,height", [*VIEWPORTS, (1600, 900)], ids=lambda v: str(v))
 def test_every_destination_stays_reachable_at_every_width(page, base_url, width, height):
     """Priority navigation hides nothing; it only moves what is secondary.
 
-    Reachability is asserted through the accessibility tree rather than through
-    visibility, because at narrower widths the secondary destinations are inside
-    a disclosure — present, focusable and announced, one interaction away.
+    Reachability is asserted through the accessibility tree, and each
+    destination must appear in it exactly once. The two branches — the wide row
+    and the "Veel" disclosure — are never both rendered, so nothing is
+    announced twice; below the wide breakpoint the secondary destinations are
+    one activation away, which is what a disclosure is for.
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": width, "height": height})
     open_register(page, base_url)
 
     navigation = page.get_by_role("navigation", name="Peamine")
-    for destination in DESTINATIONS:
+    for destination in PRIMARY:
+        expect(navigation.get_by_role("link", name=destination, exact=True)).to_have_count(1)
+
+    if width < 1560:
+        trigger = page.locator(".topnav__trigger")
+        expect(trigger).to_be_visible()
+        trigger.click()
+
+    for destination in SECONDARY:
         expect(navigation.get_by_role("link", name=destination, exact=True)).to_have_count(1)
 
 

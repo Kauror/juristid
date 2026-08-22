@@ -1,0 +1,26 @@
+{% comment %}
+The reading destinations, written once and rendered in two places.
+
+At generous widths they sit on the bar; below that they sit in the "Veel"
+disclosure. Only one branch is ever rendered — the other is `display: none`, so
+it is not in the accessibility tree and a screen reader hears each destination
+exactly once.
+
+Two branches rather than one element moved by CSS because a closed <details>
+hides its contents inside the user agent's own shadow tree, which author CSS
+cannot reach: the row simply never appeared. Measured, not assumed.
+
+Nothing here decides anything. Osakonna töö is offered by role, the value comes
+from the server, and the route enforces the same check again.
+{% endcomment %}
+<a class="topnav__link {% if nav_active == 'jalgimine' %}is-active{% endif %}"
+   {% if nav_active == 'jalgimine' %}aria-current="page"{% endif %}
+   href="{% url 'intelligence:important_dates' %}">Jälgimine</a>
+<a class="topnav__link {% if nav_active == 'statistika' %}is-active{% endif %}"
+   {% if nav_active == 'statistika' %}aria-current="page"{% endif %}
+   href="{% url 'reporting:overview' %}">Statistika</a>
+{% if is_department_head %}
+  <a class="topnav__link {% if nav_active == 'osakonna_too' %}is-active{% endif %}"
+     {% if nav_active == 'osakonna_too' %}aria-current="page"{% endif %}
+     href="{% url 'matters:department_work' %}">Osakonna töö</a>
+{% endif %}
