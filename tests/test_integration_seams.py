@@ -71,7 +71,13 @@ from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from tests import synthetic_corpus as corpus
 from tests import synthetic_opinions as syn
-from tests.synthetic_cutover import CURRENT_DRAFTING, CURRENT_SENT, FINAL_SNAPSHOT, build_world
+from tests.synthetic_cutover import (
+    CURRENT_DRAFTING,
+    CURRENT_SENT,
+    FINAL_SNAPSHOT,
+    approve_snapshot,
+    build_world,
+)
 from tests.test_opinion_apply_state import register_matter
 
 pytestmark = pytest.mark.django_db
@@ -467,9 +473,7 @@ def test_a_rebuild_after_a_restore_brings_the_projection_back(pdf_version, extra
 
 @pytest.fixture
 def reviewed(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "app.legacy_import.final_cutover.REVIEWED_SNAPSHOT_SHA256", (FINAL_SNAPSHOT,)
-    )
+    approve_snapshot(monkeypatch, sha256=FINAL_SNAPSHOT)
 
 
 def test_a_current_matter_is_still_current_after_a_search_rebuild(reviewed) -> None:

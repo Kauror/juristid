@@ -35,6 +35,32 @@ from tests.synthetic_portfolio import (
 CURRENT_SHEET = 2026
 CARRY_SHEET = 2025
 
+#: The years the synthetic snapshot is approved for — the two its rows live on.
+#: A reviewed snapshot carries a scope as well as a digest, so a test that
+#: approves one has to approve both halves or it is not modelling the real
+#: thing (app/legacy_import/final_cutover.py).
+REVIEWED_YEARS = frozenset({CARRY_SHEET, CURRENT_SHEET})
+
+
+def approve_snapshot(
+    monkeypatch: Any,
+    *,
+    sha256: str,
+    years: frozenset[int] = REVIEWED_YEARS,
+) -> None:
+    """Approve a snapshot the way a reviewed code change approves a real one.
+
+    One helper rather than three copies of the same monkeypatch, so that the
+    day the policy grows a third field the tests learn about it in one place.
+    """
+    from app.legacy_import.final_cutover import ReviewedSnapshot
+
+    monkeypatch.setattr(
+        "app.legacy_import.final_cutover.REVIEWED_SNAPSHOTS",
+        (ReviewedSnapshot(sha256=sha256, label="sünteetiline", current_years=years),),
+    )
+
+
 #: The two labels that end current work, and three that do not. Spelled here as
 #: the register spells them, because the vocabulary is the thing under test.
 TERMINAL_IN_FORCE = "jõustunud"
@@ -253,6 +279,73 @@ def build_world() -> World:
         owner=OWNER_UNKNOWN,
         snapshot=EARLIER_SNAPSHOT,
     )
+
+    return world
+
+
+# ---------------------------------------------------------------------------
+# The sixteen-sheet shape, which is what production actually holds
+# ---------------------------------------------------------------------------
+
+OUT_2018_BLANK = "Sünteetiline 2018 staatuseta rida"
+OUT_2023_LIVE = "Sünteetiline 2023 lõpetamata staatusega rida"
+OUT_2024_LIVE = "Sünteetiline 2024 lõpetamata staatusega rida"
+OUT_2019_STILL_OPEN = "Sünteetiline 2019 ekslikult jooksev rida"
+OUT_2014_WITH_ENTRY = "Sünteetiline 2014 hilisema sissekandega rida"
+OUT_2016_REAL_CLOSURE = "Sünteetiline 2016 tegelikult suletud rida"
+IN_2025_LIVE = "Sünteetiline 2025 jooksev rida"
+IN_2026_LIVE = "Sünteetiline 2026 jooksev rida"
+
+
+def build_historical_world() -> World:
+    """A snapshot spanning years the register stopped maintaining.
+
+    The production defect in one fixture. `add_source_reference` writes
+    ``legacy_status`` only where the year's era contract has the column, so the
+    2018, 2019, 2014 and 2016 rows below genuinely carry no status — exactly
+    what the real workbook's older sheets look like, rather than a blank string
+    standing in for one. That is the whole point: the row cannot answer "did
+    this work end", and the operation must not read the silence as "no".
+    """
+    people = build_people()
+    register = build_register(people)
+    register.snapshot = FINAL_SNAPSHOT
+    world = World(people, register)
+
+    # Outside the reviewed scope, and already historical. The regression: every
+    # one of these was proposed for ACTIVATE in production.
+    _imported(world, OUT_2018_BLANK, year=2018, number=1, is_open=False)
+    _row(world, OUT_2018_BLANK, year=2018, status="")
+
+    # Outside the scope even though the column exists and says "not finished".
+    # This is what makes the rule *scope* rather than "years lacking HETKESEIS".
+    _imported(world, OUT_2023_LIVE, year=2023, number=2, is_open=False)
+    _row(world, OUT_2023_LIVE, year=2023, status=LIVE_CONSULTATION)
+
+    _imported(world, OUT_2024_LIVE, year=2024, number=3, is_open=False)
+    _row(world, OUT_2024_LIVE, year=2024, status=LIVE_PARLIAMENT)
+
+    # Out of scope and somehow still current: the register retires it.
+    _imported(world, OUT_2019_STILL_OPEN, year=2019, number=4, record_mode=RecordMode.FULL)
+    _row(world, OUT_2019_STILL_OPEN, year=2019, status="")
+
+    # Out of scope, still current, and somebody has worked on it since.
+    _imported(world, OUT_2014_WITH_ENTRY, year=2014, number=5, record_mode=RecordMode.FULL)
+    _row(world, OUT_2014_WITH_ENTRY, year=2014, status="")
+
+    # Out of scope with a real recorded closure, which nothing may overwrite.
+    closed = _imported(world, OUT_2016_REAL_CLOSURE, year=2016, number=6, is_open=False)
+    closed.disposition = Disposition.MONITORING_STOPPED
+    closed.closed_at = timezone.now()
+    closed.save(update_fields=["disposition", "closed_at", "updated_at"])
+    _row(world, OUT_2016_REAL_CLOSURE, year=2016, status="")
+
+    # Inside the scope, so the ordinary rules decide.
+    _imported(world, IN_2025_LIVE, year=2025, number=7, is_open=False)
+    _row(world, IN_2025_LIVE, year=CARRY_SHEET, status=LIVE_CONSULTATION)
+
+    _imported(world, IN_2026_LIVE, year=2026, number=8, record_mode=RecordMode.FULL)
+    _row(world, IN_2026_LIVE, year=CURRENT_SHEET, status=LIVE_CONSULTATION)
 
     return world
 

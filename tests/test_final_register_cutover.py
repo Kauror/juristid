@@ -49,6 +49,7 @@ from tests.synthetic_cutover import (
     RETIRING_IN_FORCE,
     RETIRING_NO_PLANS,
     SUPERSEDED_ROW,
+    approve_snapshot,
     build_world,
 )
 
@@ -58,10 +59,7 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def reviewed(monkeypatch: pytest.MonkeyPatch) -> None:
     """Approve the synthetic snapshot, the way a code change approves a real one."""
-    monkeypatch.setattr(
-        "app.legacy_import.final_cutover.REVIEWED_SNAPSHOT_SHA256",
-        (FINAL_SNAPSHOT,),
-    )
+    approve_snapshot(monkeypatch, sha256=FINAL_SNAPSHOT)
 
 
 @pytest.fixture
