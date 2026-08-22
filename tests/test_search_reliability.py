@@ -581,16 +581,34 @@ def test_no_module_outside_search_reads_the_projection() -> None:
     rebuild — which empties the table — a business-state change, and the whole
     argument for the projection being disposable would collapse
     (master specification 11.3).
+
+    Parsed rather than grepped, because the two are different assertions and
+    only one of them is true. `app/legacy_import/current_state.py` names
+    `SearchDocument` three times in its module docstring, to say that
+    `CurrentRegisterState` is derived data in exactly the same sense — which is
+    the architecture being documented, not violated. What must not exist is a
+    *reference*: an import, a name, an attribute. So this walks the syntax tree
+    and ignores everything that is only prose.
     """
+    import ast
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent / "app"
-    offenders = [
-        relative
-        for path in root.rglob("*.py")
-        if not (relative := path.relative_to(root).as_posix()).startswith("search/")
-        and "SearchDocument" in path.read_text(encoding="utf-8")
-    ]
+    offenders: list[str] = []
+    for path in root.rglob("*.py"):
+        relative = path.relative_to(root).as_posix()
+        if relative.startswith("search/"):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            names = (
+                [alias.name for alias in node.names]
+                if isinstance(node, ast.ImportFrom | ast.Import)
+                else [getattr(node, "id", None) or getattr(node, "attr", None)]
+            )
+            if "SearchDocument" in names:
+                offenders.append(relative)
+                break
     assert offenders == []
 
 
