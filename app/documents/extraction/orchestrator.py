@@ -19,6 +19,16 @@ The order of operations, and why each step is where it is:
 Step 3 is why a parser upgrade cannot empty somebody's search results. The old
 representation keeps serving until the new one is complete, and a failure at any
 point leaves the old one exactly where it was (Stage-2B brief 8, 10).
+
+**The claim is a fence, not a lock.** Step 2 runs outside any transaction and
+takes as long as the file takes, so nothing stops a parse from outliving
+``EXTRACTION_STALE_CLAIM_MINUTES`` and having its claim reclaimed by a second
+worker that is behaving perfectly correctly. The claim timestamp is therefore
+carried through the run and re-asserted at the moment of writing: every terminal
+write is conditional on the claim still being the one this pass took. A pass
+that lost its claim writes nothing at all — no derivative, no attachment
+Document, no state — instead of racing the worker that now owns the row and
+leaving the two of them to disagree about whether the file succeeded.
 """
 
 from __future__ import annotations
@@ -68,6 +78,24 @@ class ExtractionReport:
     error_code: str = ""
 
 
+#: Reported instead of an ``ExtractionState`` when a pass finds its claim gone.
+#: Deliberately not a member of that enum: it is not something the row *is*, it
+#: is something that happened to this attempt. The row's own state belongs to
+#: whoever holds the claim now.
+CLAIM_LOST = "CLAIM_LOST"
+
+
+class ClaimLost(RuntimeError):
+    """This pass no longer owns the version, so it must not write.
+
+    Raised by :func:`_settle` when the conditional update matches no row, which
+    means the claim this pass took has been replaced — by a reclaim after the
+    stale window, or by an operator's ``--force``. Raised rather than returned
+    so it unwinds the publish transaction with it: the derivatives and the
+    attachment Documents of a pass that lost its claim must not survive either.
+    """
+
+
 def derivative_storage() -> Any:
     return storages[settings.DERIVATIVE_STORAGE_ALIAS]
 
@@ -103,6 +131,11 @@ def claim_version(version_id: Any, *, force: bool = False) -> DocumentVersion | 
     The lock is held for one statement. ``skip_locked`` means a second worker
     moves on to the next row instead of queueing behind this one, which is what
     makes running two workers useful rather than merely safe.
+
+    The stamped ``extraction_claimed_at`` is this pass's fence token. It is read
+    back off the returned object by :func:`extract_document_version` and quoted
+    at every write, so a claim that gets reclaimed while the parse is still
+    running costs the wasted work and nothing else.
     """
     stale_before = timezone.now() - timedelta(minutes=settings.EXTRACTION_STALE_CLAIM_MINUTES)
     with transaction.atomic():
@@ -192,25 +225,51 @@ def awaiting_scanner() -> Any:
     )
 
 
-def extract_document_version(version: DocumentVersion, *, force: bool = False) -> ExtractionReport:
+def extract_document_version(version: DocumentVersion) -> ExtractionReport:
     """Parse one binary and publish what came out of it.
 
-    Assumes the caller has claimed the row (or passes ``force``). No exit path
-    leaves the row PROCESSING — it ends DONE, FAILED, NOT_APPLICABLE, or back at
+    Assumes the caller has claimed the row. No exit path leaves the row
+    PROCESSING for this pass — it ends DONE, FAILED, NOT_APPLICABLE, or back at
     PENDING when the file is waiting on a scanner that has not run.
 
     That last one is *not* terminal, deliberately: the file becomes extractable
     the day a scanner marks it CLEAN. It is `pending_versions` that must not
     keep offering it in the meantime, or the two of them spin.
+
+    The one exit that changes nothing is a lost claim. The row is then somebody
+    else's to finish and this pass reports what happened without touching it.
     """
     started = time.monotonic()
+    # Read before any parsing, because the parse is what takes long enough for
+    # the claim to be reclaimed underneath it.
+    fence = version.extraction_claimed_at
+    try:
+        return _run(version, fence=fence, started=started)
+    except ClaimLost:
+        logger.warning(
+            "extraction claim lost version=%s; another worker owns the row now",
+            version.pk,
+        )
+        return ExtractionReport(
+            version_id=version.pk,
+            state=CLAIM_LOST,
+            derivatives=0,
+            fragments=0,
+            attachments=0,
+            seconds=time.monotonic() - started,
+            note="Töötlemisõigus läks üle teisele töötajale; midagi ei kirjutatud.",
+            error_code="claim_lost",
+        )
 
+
+def _run(version: DocumentVersion, *, fence: Any, started: float) -> ExtractionReport:
     if not is_eligible_for_extraction(version):
         return _finish_without_derivatives(
             version,
             state=ExtractionState.PENDING,
             note="Ootab pahavarakontrolli tulemust.",
             started=started,
+            fence=fence,
         )
 
     parser = registry.for_mime_type(version.mime_type)
@@ -220,6 +279,7 @@ def extract_document_version(version: DocumentVersion, *, force: bool = False) -
             state=ExtractionState.NOT_APPLICABLE,
             note=_unsupported_note(version.mime_type),
             started=started,
+            fence=fence,
         )
 
     try:
@@ -230,6 +290,7 @@ def extract_document_version(version: DocumentVersion, *, force: bool = False) -
             code="evidence_missing",
             detail="Tõendi baite ei leitud hoidlast.",
             started=started,
+            fence=fence,
         )
 
     source = SourceFile(
@@ -239,11 +300,20 @@ def extract_document_version(version: DocumentVersion, *, force: bool = False) -
         result = parser.parse(source)
     except ExtractionNotApplicable as error:
         return _finish_without_derivatives(
-            version, state=ExtractionState.NOT_APPLICABLE, note=error.detail, started=started
+            version,
+            state=ExtractionState.NOT_APPLICABLE,
+            note=error.detail,
+            started=started,
+            fence=fence,
         )
     except ExtractionFailed as error:
         return _record_failure(
-            version, code=error.code, detail=error.detail, parser=parser, started=started
+            version,
+            code=error.code,
+            detail=error.detail,
+            parser=parser,
+            started=started,
+            fence=fence,
         )
     except Exception as error:
         # A parser that raises something unforeseen is a bug, not a valid file
@@ -257,10 +327,16 @@ def extract_document_version(version: DocumentVersion, *, force: bool = False) -
             detail=f"Parser {parser.name} andis ootamatu vea ({type(error).__name__}).",
             parser=parser,
             started=started,
+            fence=fence,
         )
 
     try:
-        return _publish(version, parser=parser, result=result, started=started)
+        return _publish(version, parser=parser, result=result, started=started, fence=fence)
+    except ClaimLost:
+        # Not a failure of this file. Somebody else owns the row and will write
+        # its outcome; the publish transaction has already rolled back, so this
+        # pass leaves nothing behind but the wasted work.
+        raise
     except Exception as error:
         # Publishing failed after the parse succeeded — a full disk, a
         # read-only mount, a database that went away. The transaction rolled
@@ -278,6 +354,7 @@ def extract_document_version(version: DocumentVersion, *, force: bool = False) -
             detail=f"Tulemuse salvestamine ebaõnnestus ({type(error).__name__}).",
             parser=parser,
             started=started,
+            fence=fence,
         )
 
 
@@ -301,21 +378,39 @@ def _unsupported_note(mime_type: str) -> str:
     }.get(mime_type, f"Vormingu {mime_type} sisu ei eraldata.")
 
 
-@transaction.atomic
-def _finish_without_derivatives(
-    version: DocumentVersion, *, state: str, note: str, started: float
-) -> ExtractionReport:
+def _settle(version: DocumentVersion, *, state: str, note: str, fence: Any) -> None:
+    """Write the terminal state, but only while this pass still holds the claim.
+
+    One conditional UPDATE. ``extraction_claimed_at`` is both the fence token
+    and the field being cleared, so matching on it is the same statement that
+    releases it — there is no window between checking and writing for a third
+    party to slip into.
+
+    A fence of ``None`` is not a special case. It means this pass ran on a row
+    nobody had claimed, and the condition then reads "nobody has claimed it
+    since", which is exactly the right question.
+    """
+    detail = note[:300]
+    updated = DocumentVersion.objects.filter(pk=version.pk, extraction_claimed_at=fence).update(
+        extraction_state=state,
+        extraction_claimed_at=None,
+        extraction_note=detail,
+        # `update()` bypasses `auto_now`, and a row whose state moved without
+        # its timestamp moving is a row that lies to every operator query.
+        updated_at=timezone.now(),
+    )
+    if not updated:
+        raise ClaimLost(f"Version {version.pk} is no longer claimed by this pass.")
     version.extraction_state = state
     version.extraction_claimed_at = None
-    version.extraction_note = note[:300]
-    version.save(
-        update_fields=[
-            "extraction_state",
-            "extraction_claimed_at",
-            "extraction_note",
-            "updated_at",
-        ]
-    )
+    version.extraction_note = detail
+
+
+@transaction.atomic
+def _finish_without_derivatives(
+    version: DocumentVersion, *, state: str, note: str, started: float, fence: Any
+) -> ExtractionReport:
+    _settle(version, state=state, note=note, fence=fence)
     return ExtractionReport(
         version_id=version.pk,
         state=state,
@@ -334,6 +429,7 @@ def _record_failure(
     code: str,
     detail: str,
     started: float,
+    fence: Any,
     parser: Any = None,
 ) -> ExtractionReport:
     """Mark the version failed, keeping whatever already worked.
@@ -342,7 +438,12 @@ def _record_failure(
     that fails on a file it used to handle must not take that file's search
     representation with it — degraded is recoverable, empty is not
     (Stage-2B brief 8).
+
+    The claim is re-asserted first, before the FAILED derivative row is written.
+    A pass that lost its claim must not leave an operator-facing failure on a
+    file another worker is in the middle of extracting successfully.
     """
+    _settle(version, state=ExtractionState.FAILED, note=detail, fence=fence)
     DocumentDerivative.objects.create(
         version=version,
         kind=DerivativeKind.EXTRACTED_TEXT,
@@ -352,17 +453,6 @@ def _record_failure(
         error_code=code,
         error_detail=detail[:2000],
         built_at=timezone.now(),
-    )
-    version.extraction_state = ExtractionState.FAILED
-    version.extraction_claimed_at = None
-    version.extraction_note = detail[:300]
-    version.save(
-        update_fields=[
-            "extraction_state",
-            "extraction_claimed_at",
-            "extraction_note",
-            "updated_at",
-        ]
     )
     logger.warning(
         "extraction failed version=%s parser=%s mime=%s code=%s",
@@ -384,15 +474,30 @@ def _record_failure(
 
 
 def _publish(
-    version: DocumentVersion, *, parser: Any, result: ParseResult, started: float
+    version: DocumentVersion, *, parser: Any, result: ParseResult, started: float, fence: Any
 ) -> ExtractionReport:
-    """Write the parse, swap it in, and reindex — all in one transaction."""
+    """Write the parse, swap it in, and reindex — all in one transaction.
+
+    The claim is re-asserted inside that transaction, so losing it takes the
+    derivatives, the attachment Documents and the search rows down with it
+    rather than publishing a second opinion over a row somebody else owns.
+    """
     from app.documents.email_intake import register_email_attachments
 
     fragment_total = 0
     attachment_total = 0
 
     with transaction.atomic():
+        # First, not last. Two things follow from re-asserting the claim before
+        # any of the writing rather than after it. A pass that already lost its
+        # claim does none of the work — which matters because
+        # `register_email_attachments` writes evidence bytes to storage, and
+        # bytes written inside a transaction that rolls back are orphans the
+        # pruner has to find later. And the conditional UPDATE takes the row
+        # lock, so a genuinely concurrent second publish queues on it and then
+        # finds its own fence gone, instead of the two of them interleaving.
+        _settle(version, state=ExtractionState.DONE, note=result.note, fence=fence)
+
         for payload in result.derivatives:
             fragment_total += _write_derivative(version, parser=parser, payload=payload)
 
@@ -400,18 +505,6 @@ def _publish(
             attachment_total = register_email_attachments(
                 parent_version=version, attachments=result.attachments
             )
-
-        version.extraction_state = ExtractionState.DONE
-        version.extraction_claimed_at = None
-        version.extraction_note = result.note[:300]
-        version.save(
-            update_fields=[
-                "extraction_state",
-                "extraction_claimed_at",
-                "extraction_note",
-                "updated_at",
-            ]
-        )
 
         # Inside the transaction on purpose. A committed derivative with no
         # search row is a document whose content exists and cannot be found,
@@ -509,18 +602,45 @@ def _store_binary(
 def discard_derivatives(version: DocumentVersion) -> int:
     """Delete every derivative of one version, and its stored binaries.
 
-    Used by the rebuild path. `EmailAttachmentLink` rows are untouched: they
-    record which message a stored binary arrived in, which is provenance rather
-    than derived content and cannot be recovered by parsing again once the
-    parser has changed (see `derivatives.py`).
+    `EmailAttachmentLink` rows are untouched: they record which message a stored
+    binary arrived in, which is provenance rather than derived content and
+    cannot be recovered by parsing again once the parser has changed (see
+    `derivatives.py`).
+
+    Note what this does *not* belong in front of. Deleting the live
+    representation and then re-extracting is the destroy-first order the whole
+    publish design exists to avoid: a parser that has regressed then leaves the
+    file with nothing, and on a corpus-wide run it leaves the archive with
+    nothing. `rebuild_document_derivatives` extracts first and calls
+    :func:`discard_inactive_derivatives` afterwards.
+    """
+    return _delete_derivatives(DocumentDerivative.objects.filter(version=version))
+
+
+def discard_inactive_derivatives(version: DocumentVersion) -> int:
+    """Delete everything but the live representation of one version.
+
+    What a completed rebuild leaves behind: the derivative it has just
+    superseded, the FAILED rows earlier attempts recorded, and any BUILDING row
+    a killed worker abandoned. The ACTIVE one is what search reads and is the
+    reason this is a separate function rather than an argument.
+    """
+    return _delete_derivatives(
+        DocumentDerivative.objects.filter(version=version).exclude(status=DerivativeStatus.ACTIVE)
+    )
+
+
+def _delete_derivatives(queryset: Any) -> int:
+    """Remove derivative rows, then the binaries they addressed.
+
+    Rows first. A row that survives while its bytes are gone is a broken
+    thumbnail on a page; bytes that survive while the row is gone are a few
+    kilobytes nobody addresses, and the derivative store is the one place where
+    that is genuinely only wasted space.
     """
     storage = derivative_storage()
-    keys = list(
-        DocumentDerivative.objects.filter(version=version)
-        .exclude(storage_key="")
-        .values_list("storage_key", flat=True)
-    )
-    count, _ = DocumentDerivative.objects.filter(version=version).delete()
+    keys = list(queryset.exclude(storage_key="").values_list("storage_key", flat=True))
+    count, _ = queryset.delete()
     for key in keys:
         try:
             storage.delete(key)

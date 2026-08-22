@@ -34,11 +34,21 @@ DocumentVersion (evidence, immutable)
 ```
 
 Each layer is rebuildable from the one below and the bottom layer is bytes.
-`rebuild_document_derivatives` deletes the top three for a selected scope and
-regenerates them, and a test asserts the regenerated corpus is identical —
-same content hashes, same fragment count, same locators, same text. That test
-is the whole justification for backing up only PostgreSQL and the evidence
-directory (Stage-2B brief 68, 81).
+`rebuild_document_derivatives` regenerates the top three for a selected scope,
+and a test asserts the regenerated corpus is identical — same content hashes,
+same fragment count, same locators, same text. That test is the whole
+justification for backing up only PostgreSQL and the evidence directory
+(Stage-2B brief 68, 81).
+
+**It extracts before it deletes.** The command originally deleted the existing
+derivatives and then re-parsed, which put a window between the two in which the
+file had no searchable text at all — and a parser regression, a missing OCR
+language or a full disk turned that window into a permanent state for every
+version the run had reached. On `--all` that is the archive. The order is now
+the same one the publish path already used and for the same reason: the new
+representation is built and promoted, and only then is what it replaced dropped.
+A version whose rebuild did not reach `DONE` keeps exactly what it had, and the
+run says how many did.
 
 **`EmailAttachmentLink` is deliberately not in that layer**, despite being
 created by a parser. It records that one exact binary arrived inside another
@@ -133,6 +143,39 @@ a timestamp; a claim older than `EXTRACTION_STALE_CLAIM_MINUTES` is reclaimed. A
 worker that dies leaves evidence of what it was doing rather than a lock nobody
 can clear, and its work is picked up without an operator running anything.
 
+**The claim is a fence, not a lock.** The lock is held for one statement, and
+parsing happens outside any transaction — deliberately, because holding a
+connection open through a multi-minute OCR job would idle it for nothing. The
+consequence went unstated for too long: nothing enforces a ceiling on how long a
+parse may take, so a large scanned PDF can legitimately outlive its own claim
+and be reclaimed by a second worker that is following the stale-claim rule
+correctly. Both then finish, and both write. The observed shape of that is a
+version marked `FAILED` by the loser of a race it did not know it was in, while
+the winner's derivatives sit beside it perfectly intact, plus the attachment
+Documents of a rolled-back publish left as orphaned evidence blobs.
+
+The claim timestamp is therefore carried through the run and re-asserted at the
+moment of writing: every terminal state change is one conditional `UPDATE …
+WHERE extraction_claimed_at = <the value this pass took>`, and a pass that
+matches no row writes nothing at all. In the publish path the re-assertion is
+the *first* statement in the transaction, so it takes the row lock before any
+derivative or attachment is created — a concurrent second publish queues on it
+and then discovers its own fence is gone, rather than the two interleaving.
+
+Preventing the reclaim was considered and rejected. A renewed lease would need
+either a heartbeat from inside the parsers, which are pure functions of bytes by
+design and may not touch the database, or a hard parse deadline, which would
+turn a slow-but-succeeding OCR job into a failure. Making theft *safe* costs one
+`WHERE` clause and the duplicated work; making it impossible costs the
+architecture.
+
+**OCR is bounded in time.** Tesseract is a subprocess and the parse that waits
+for it is synchronous, so a page it cannot make progress on holds the worker
+open indefinitely — no transaction, no error, just a queue that stopped, with
+the heartbeat as the only symptom and a second worker reclaiming the row and
+wedging on the same page. `EXTRACTION_OCR_TIMEOUT_SECONDS` bounds one engine
+run, and exceeding it is an ordinary named extraction failure on one file.
+
 **Rejected: Celery with Redis.** At six lawyers and a few files a day it is a
 second piece of infrastructure to run, back up, monitor and explain, in exchange
 for capabilities none of the work needs (AGENTS.md forbids introducing either
@@ -212,6 +255,21 @@ attacker-controlled in exactly the way a browser's `Content-Type` is, and the
 upload path already refuses to believe that one. Its malware-scan state starts at
 `PENDING` and is never inherited — the message having been scanned says nothing
 about what was inside it.
+
+**Nesting is bounded across passes, not within one.** A message attached to a
+message is preserved whole rather than expanded, which is the right call — but
+the Document it becomes is itself a message, so the worker opens *it* on a later
+pass and finds the message inside that one. `EXTRACTION_MAX_EMAIL_DEPTH` was
+enforced by the EML parser, where it could never bind: each pass is a fresh
+parse that starts counting at zero. The nesting exists only in the chain of
+`EmailAttachmentLink` rows, so that is where it is counted, at the point where
+an attachment becomes a Document. A file of nothing but envelopes could
+otherwise manufacture a Document and an evidence blob per level, one entirely
+reasonable-looking worker pass at a time.
+
+The limit refuses *messages* and not their annexes. A PDF three envelopes deep
+is still somebody's annex and cannot extend the chain, because nothing opens a
+PDF looking for more messages.
 
 ### The malware gate is explicit about the environment
 

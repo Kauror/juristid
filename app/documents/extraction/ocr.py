@@ -122,14 +122,38 @@ def recognise_pil_image(image: object) -> str:
 
     Used directly by the PDF parser, which rasterises pages itself rather than
     round-tripping them through PNG bytes.
+
+    **Bounded in time.** Tesseract is a subprocess, and a page it cannot make
+    progress on keeps that subprocess — and therefore this worker, because the
+    parse is synchronous — occupied indefinitely. A wedged worker holds no
+    database transaction and raises no error, so the queue simply stops with the
+    heartbeat as the only evidence, and the row it was working on gets reclaimed
+    by a second worker that wedges on the same page. The ceiling turns that into
+    one recorded failure on one file.
     """
     import pytesseract
 
     ocr_engine_version()
     try:
-        text = pytesseract.image_to_string(image, lang=settings.EXTRACTION_OCR_LANGUAGES)
+        text = pytesseract.image_to_string(
+            image,
+            lang=settings.EXTRACTION_OCR_LANGUAGES,
+            timeout=settings.EXTRACTION_OCR_TIMEOUT_SECONDS,
+        )
     except pytesseract.TesseractError as error:
         # The engine ran and refused. Distinct from it being absent, and worth a
         # different message: one is a deployment problem, the other is this file.
         raise ExtractionFailed("ocr_failed", "OCR ei suutnud seda pilti lugeda.") from error
+    except RuntimeError as error:
+        # What `pytesseract` raises when it kills the subprocess on timeout. It
+        # is a plain RuntimeError with no distinguishing type, so the message is
+        # all there is to match on — and matching loosely is safer than letting
+        # an unrelated RuntimeError be reported as a timeout.
+        if "timeout" not in str(error).lower():
+            raise
+        raise ExtractionFailed(
+            "ocr_timeout",
+            f"OCR ei jõudnud selle lehega {settings.EXTRACTION_OCR_TIMEOUT_SECONDS} "
+            "sekundi jooksul valmis. Originaal on alles ja avatav.",
+        ) from error
     return text or ""
