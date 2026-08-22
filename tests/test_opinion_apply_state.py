@@ -29,7 +29,6 @@ from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
 from app.documents.services import add_evidence_version, create_document
-from app.legacy_import.models import MatterSourceReference
 from app.legacy_import.opinion_apply import apply_plan, open_batch
 from app.legacy_import.opinion_archive import (
     OpinionMatchCandidate,
@@ -652,22 +651,27 @@ def test_confirming_the_sending_is_what_resolves_a_bundle(archive_path, administ
 
 
 def test_a_reviewers_date_wins_over_the_automatic_one_for_the_same_file(
-    archive_path, administrator
+    archive_path, administrator, monkeypatch
 ):
-    """Both routes can propose the same occurrence; the person's must be written.
+    """Both routes propose the same occurrence; the person's must be written.
 
-    A file waits in review because the register had no VÄLJA. A reviewer
-    confirms the sending with a date they can defend. The register is then
-    re-imported with a date of its own — so the automatic route now proposes the
-    same file too. Planning the automatic one first wrote the register's date
-    and left the reviewer's row LINKED for ever.
+    The register has a `VÄLJA` all along, so this file is automatic material —
+    but the first import cannot store the evidence, so nothing is filed and the
+    row lands in the queue. A reviewer confirms the sending with a date they can
+    defend. The storage comes back, and now *both* routes propose the same file.
+    Planning the automatic one first wrote the register's date over the
+    reviewer's and left their row LINKED for ever.
     """
-    matter, item = strict_pair(number=206, sent=None)
-    attach_to_onenote([matter], item.data)
+    from app.legacy_import import opinion_apply
+
+    matter, item = strict_pair(number=206)
     archive = archive_path([item])
+
+    monkeypatch.setattr(opinion_apply, "_final_version_for", lambda *a, **k: (None, False))
     first = plan_for(archive)
     apply_plan(first, batch=open_batch(first))
     assert OpinionSubmissionImport.objects.count() == 0
+    monkeypatch.undo()
 
     OpinionMatchCandidate.objects.filter(matter=matter).update(
         state=OpinionCandidateState.LINKED,
@@ -675,19 +679,6 @@ def test_a_reviewers_date_wins_over_the_automatic_one_for_the_same_file(
         reviewed_sent_date=datetime.date(2024, 3, 1),
         decided_by=administrator,
         decided_at=timezone.now(),
-    )
-    # The register catches up and now carries a VÄLJA of its own. Written with
-    # a queryset update because `MatterSourceReference.save` refuses to change
-    # an imported raw row — the Stage-2A guarantee that a snapshot is what it
-    # was. A real re-import replaces the row; this only has to arrive at the
-    # same state without re-running the register importer.
-    MatterSourceReference.objects.filter(matter=matter).update(
-        source_row_raw={
-            "A": "2024_206",
-            "B": "Näidisregistri seaduse muutmise seadus",
-            "F": "2024-04-10",
-            "G": "Näidisministeerium",
-        }
     )
 
     second = plan_for(archive)
