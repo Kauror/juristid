@@ -6,6 +6,9 @@
     manage.py opinion_archive apply    --opinions … [--kodadash …]
     manage.py opinion_archive materialize-plan --opinions … --expect-archive-sha256 …
     manage.py opinion_archive materialize      --opinions … --expect-archive-sha256 …
+    manage.py opinion_archive supersede-plan
+    manage.py opinion_archive supersede
+    manage.py opinion_archive derive-links
     manage.py opinion_archive status
     manage.py opinion_archive verify
 
@@ -54,6 +57,9 @@ class Command(BaseCommand):
                 "apply",
                 "materialize-plan",
                 "materialize",
+                "supersede-plan",
+                "supersede",
+                "derive-links",
                 "status",
                 "verify",
             ],
@@ -72,6 +78,10 @@ class Command(BaseCommand):
             return self._verify()
         if phase in {"materialize-plan", "materialize"}:
             return self._materialize(phase, options)
+        if phase in {"supersede-plan", "supersede"}:
+            return self._supersede(phase)
+        if phase == "derive-links":
+            return self._derive_links()
 
         plan = self._build(options)
         if phase in {"audit", "plan"}:
@@ -227,6 +237,32 @@ class Command(BaseCommand):
                 )
             )
 
+    def _supersede(self, phase: str) -> None:
+        """Retire pending proposals a later run has already answered.
+
+        No source and no SHA: this reads the database and nothing else. The
+        plan phase rolls its own work back, so its counts are the counts the
+        real phase would produce rather than an estimate of them.
+        """
+        from app.legacy_import.opinion_supersede import sweep_superseded
+
+        report = sweep_superseded(dry_run=phase == "supersede-plan")
+        self.stdout.write(report.as_text())
+        if phase == "supersede-plan":
+            self.stdout.write("\nMidagi ei salvestatud.")
+
+    def _derive_links(self) -> None:
+        """Record the archive-to-Matter relationships that already follow.
+
+        Only from exact identity — the automatic match classes and existing
+        Submissions. Nothing here is a resemblance, nothing is removed, and
+        running it twice changes nothing.
+        """
+        from app.legacy_import.opinion_links import derive_links
+
+        report = derive_links()
+        self.stdout.write(report.as_text())
+
     def _status(self) -> None:
         from app.legacy_import.opinion_archive import (
             OpinionArchiveItem,
@@ -234,6 +270,7 @@ class Command(BaseCommand):
             OpinionMatchCandidate,
             OpinionSubmissionImport,
         )
+        from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
         from app.legacy_import.opinion_enums import (
             HUMAN_DECIDED_STATES,
             OpinionCandidateState,
@@ -260,6 +297,13 @@ class Command(BaseCommand):
                 "ülevaataja otsustatud",
                 OpinionMatchCandidate.objects.filter(state__in=HUMAN_DECIDED_STATES).count(),
             ),
+            (
+                "asendatud",
+                OpinionMatchCandidate.objects.filter(
+                    state=OpinionCandidateState.SUPERSEDED
+                ).count(),
+            ),
+            ("teemaseoseid", OpinionArchiveMatterLink.objects.count()),
             ("arhiivist arvamusi", OpinionSubmissionImport.objects.count()),
             (
                 "neist siin loodud",
@@ -364,6 +408,15 @@ class Command(BaseCommand):
                 f"  {doubled} arvamusel on mitu arhiivi esinemist — see on lubatud: "
                 "sama kiri võib arhiivis olla mitu korda."
             )
+
+        # Supersession and multi-Matter links are checked here rather than in
+        # their own command, because an operator who runs one verify and reads
+        # "all checks passed" has been told something about the whole import.
+        from app.legacy_import.opinion_links import link_findings
+        from app.legacy_import.opinion_supersede import superseded_findings
+
+        problems.extend(superseded_findings())
+        problems.extend(link_findings())
 
         if problems:
             for problem in problems:

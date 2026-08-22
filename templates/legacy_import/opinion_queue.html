@@ -26,6 +26,12 @@
       {{ counts.REVIEW_REQUIRED }} ülevaatust, {{ counts.CONFLICT }} vastuolu,
       {{ counts.UNMATCHED }} sidumata
     </span>
+    {% comment %}
+      The queue decides; the archive is where the letters can be read. Two
+      surfaces over the same corpus, and the only way to find the second one
+      was to know its URL.
+    {% endcomment %}
+    <a class="button button--quiet" href="{% url 'legacy_import:opinion_archive_browse' %}">Ava arhiiv</a>
   </div>
 
   <div class="card card--tight">

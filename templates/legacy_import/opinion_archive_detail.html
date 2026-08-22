@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+{% block title %}{{ row.title|default:"Arhiivi kiri" }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+  One archive letter.
+
+  The order is the order the questions get asked: what is this, where did we
+  find it, what is it tied to, what did the reconciliation think. The retired
+  proposals are last and are shown rather than hidden — an audit of the
+  migration needs "we used to believe this, and here is what replaced it" far
+  more than it needs a tidy page.
+
+  The link form says what it does not do, in the form itself. Tying a file to a
+  matter is a weaker claim than a canonical opinion, and a reviewer who thinks
+  they have just recorded a sent opinion has been misled by the interface.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">{{ row.title|default:"Pealkirjata kiri" }}</h1>
+    <span class="pagehead__context">
+      {% if row.document_date %}<time datetime="{{ row.document_date|date:'Y-m-d' }}">{{ row.document_date|date:"d.m.Y" }}</time> · {% endif %}
+      {{ row.recipient|default:"saajata" }} · {{ binary.size_bytes|filesizeformat }}
+      · SHA-256 {{ binary.sha256|slice:":16" }}…
+    </span>
+  </div>
+
+  <div class="card">
+    <div class="countrow countrow--plain">
+      <a class="button button--primary" href="{% url 'legacy_import:opinion_archive_file' pk=binary.pk %}">Ava kiri</a>
+      <a class="button" href="{% url 'legacy_import:opinion_archive_file' pk=binary.pk %}?laadi=alla">Laadi alla</a>
+    </div>
+    <p class="cardnote">
+      {% if text %}
+        Sisu: {{ text.get_state_display }}
+        {% if text.page_count %}· {{ text.page_count }} lk{% endif %}
+        {% if text.characters %}· {{ text.characters }} tähemärki otsingus{% endif %}
+        {% if text.note %}· {{ text.note }}{% endif %}
+      {% else %}
+        Sisu ei ole veel loetud.
+      {% endif %}
+    </p>
+  </div>
+
+  <section class="card">
+    <h2 class="sectionlabel">Esinemised arhiivis</h2>
+    {% comment %}
+      Plural on purpose. Identical bytes at several paths are one letter, and
+      the paths are provenance: which folder, which batch, what the file was
+      called there.
+    {% endcomment %}
+    <div class="tablewrap tablewrap--evidence">
+      <table class="table table--register">
+        <caption class="visually-hidden">Kohad arhiivis, kus need baidid on</caption>
+        <thead>
+          <tr>
+            <th scope="col">Tee arhiivis</th>
+            <th scope="col">Failinimi</th>
+            <th scope="col">Kuupäev</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for occurrence in occurrences %}
+            <tr>
+              <td>{{ occurrence.archive_relative_path }}</td>
+              <td>{{ occurrence.original_filename }}</td>
+              <td>
+                {% if occurrence.filename_date %}
+                  <time datetime="{{ occurrence.filename_date|date:'Y-m-d' }}">{{ occurrence.filename_date|date:"d.m.Y" }}</time>
+                {% else %}—{% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2 class="sectionlabel">Seotud teemad</h2>
+    {% if links %}
+      <ul class="linklist">
+        {% for link in links %}
+          <li class="linklist__item">
+            <a href="{% url 'matters:matter_detail' pk=link.matter_id %}">
+              {{ link.matter.display_reference|default:"—" }} {{ link.matter.title|truncatechars:90 }}
+            </a>
+            <span class="badge">{{ link.get_basis_display }}</span>
+            {% if link.linked_by %}<span class="linklist__meta">{{ link.linked_by.display_name }}</span>{% endif %}
+            {% if link.linked_at %}<span class="linklist__meta">{{ link.linked_at|date:"d.m.Y" }}</span>{% endif %}
+            {% if link.basis == "REVIEWED" %}
+              <form class="linklist__action" method="post"
+                    action="{% url 'legacy_import:opinion_archive_link' pk=binary.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="viide" value="{{ link.matter.display_reference }}">
+                <button type="submit" class="button button--quiet" name="action" value="unlink">Eemalda</button>
+              </form>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="empty">Ükski teema ei ole selle kirjaga seotud.</p>
+    {% endif %}
+
+    <form class="form" method="post" action="{% url 'legacy_import:opinion_archive_link' pk=binary.pk %}">
+      {% csrf_token %}
+      <div class="formgrid">
+        <label class="field">
+          <span class="field__label">Teema viide</span>
+          <input class="field__input" type="text" name="viide" placeholder="2025_44" maxlength="20" required>
+        </label>
+        <label class="field field--wide">
+          <span class="field__label">Märkus</span>
+          <input class="field__input" type="text" name="markus" maxlength="2000"
+                 placeholder="Miks see kiri sellesse teemasse kuulub">
+        </label>
+      </div>
+      <div class="form__actions">
+        <button type="submit" class="button" name="action" value="link">Seo teemaga</button>
+        <span class="form__hint">
+          Seos ütleb, et see tõend puudutab teemat. See ei loo arvamust ega väida, et Koda selle välja saatis.
+        </span>
+      </div>
+    </form>
+  </section>
+
+  {% if live_candidates %}
+    <section class="card">
+      <h2 class="sectionlabel">Võrdluse ettepanekud</h2>
+      <ul class="linklist">
+        {% for candidate in live_candidates %}
+          <li class="linklist__item">
+            <span class="reviewstate reviewstate--{{ candidate.state|lower }}">{{ candidate.get_state_display }}</span>
+            <span class="badge">{{ candidate.get_match_class_display }}</span>
+            {% if candidate.matter %}
+              <a href="{% url 'matters:matter_detail' pk=candidate.matter_id %}">
+                {{ candidate.matter.display_reference|default:"—" }} {{ candidate.matter.title|truncatechars:80 }}
+              </a>
+            {% else %}
+              <span class="linklist__meta">Teemat ei ole pakutud</span>
+            {% endif %}
+            {% if candidate.explanation %}<span class="linklist__meta">{{ candidate.explanation|truncatechars:120 }}</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if superseded %}
+    <section class="card">
+      <h2 class="sectionlabel">Asendatud ettepanekud</h2>
+      <p class="cardnote">
+        Need ettepanekud jäid alles, kuid hilisem võrdlusjooks liigitas sama kirje ümber.
+        Ükski neist ei loonud arvamust.
+      </p>
+      <ul class="linklist">
+        {% for candidate in superseded %}
+          <li class="linklist__item">
+            <span class="reviewstate reviewstate--superseded">{{ candidate.get_state_display }}</span>
+            <span class="badge">{{ candidate.get_match_class_display }}</span>
+            {% if candidate.superseded_by %}
+              <span class="linklist__meta">
+                asendas: {{ candidate.superseded_by.get_match_class_display }}
+              </span>
+            {% endif %}
+            {% if candidate.supersession_reason %}
+              <span class="linklist__meta">{{ candidate.supersession_reason|truncatechars:140 }}</span>
+            {% endif %}
+            {% if candidate.superseded_at %}
+              <span class="linklist__meta">{{ candidate.superseded_at|date:"d.m.Y" }}</span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

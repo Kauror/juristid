@@ -4373,3 +4373,98 @@ p.factsection__none {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ====================================================================
+ * The opinion archive
+ *
+ * A browse surface over evidence, not over the register. Everything here is
+ * shared with the reconciliation queue where the meaning is the same — the
+ * state chips, the evidence frame — and separate only where it is not: a
+ * letter that no Matter claims has a state the queue never shows, and a
+ * relationship weaker than a Submission needs a row that does not look like
+ * one (app/legacy_import/archive_views.py).
+ * ==================================================================== */
+
+/* Two states the queue has no reason to render. PENDING is the archive's
+   commonest condition rather than an exception, so it is quiet: two thirds of
+   the corpus wearing a warning tone would make the page unreadable and would
+   misdescribe the situation, which is unfinished migration and not a fault. */
+.reviewstate--pending {
+  color: var(--text-muted);
+  border-color: var(--border-default);
+  background: transparent;
+}
+
+/* Retired by later evidence. Muted and struck, because it is history rather
+   than a decision — and never the rejected red, which would claim a person
+   turned it down. */
+.reviewstate--superseded {
+  color: var(--text-muted);
+  border-color: var(--border-default);
+  background: transparent;
+  text-decoration: line-through;
+}
+
+/* A refused query, not an empty result. Tone plus the word in the message
+   itself, so the distinction survives without colour. */
+.notice--warning {
+  border-left-color: var(--status-warning);
+}
+
+.linklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.linklist__item {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  padding-bottom: var(--spacing-2);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.linklist__item:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.linklist__meta {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* The remove control sits inside the row it removes. A bare form would add a
+   block box and break the baseline the row is aligned on. */
+.linklist__action {
+  display: inline;
+  margin-left: auto;
+}
+
+/* Wide enough for a search term or a sentence, and still a grid cell. */
+.field--wide {
+  grid-column: span 2;
+}
+
+.form__hint {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-4);
+}
+
+.pager__status {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
