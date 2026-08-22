@@ -341,3 +341,29 @@ architecture reasoning is in ADR 0023.
 | Whether to promote the second pass to an automatic class | Department head + whoever works the queue | After the first real run | The measurement that would justify it is written down in ADR 0023. Until somebody has that number the proposals go in front of a person, carrying their named signals. |
 | Who may record an archive-to-Matter link | Department head | Before the archive is opened beyond migration work | Today it is an administrator, because the archive is migration work. If lawyers are to use the archive as a reference, the boundary and the audit story both need revisiting. |
 | What the archive screen should become once the queue is worked through | Department head | When the backlog is finished | It is under `/haldus/` because several hundred unfiled letters do not belong in a lawyer's navigation. When they are filed, the useful surface may be a lawyer-facing one — that is a product decision. |
+
+## Decisions taken by the development agent in the final quality pass
+
+Recorded so they can be challenged rather than inherited silently. No ADR: these
+are bug fixes and one operator-facing document, not architecture.
+
+| Decision | Why | Reversibility |
+| --- | --- | --- |
+| Evidence selection asks the authorization chokepoint, not the Matter | A child override may restrict further than its Matter, so "can open the Matter" never implies "can open everything in it". The submission's evidence picker filtered by Matter alone; `check_evidence_is_usable` does not cover the gap because it refuses evidence *less* restricted than the submission, the other direction. | Low — one queryset |
+| APPLIED and SUPERSEDED candidates are not re-decided | A canonical Submission names an APPLIED row as its justification, and SUPERSEDED is the record of a belief newer evidence replaced. The queue never offered the control, which is not the same as refusing it. Correcting one's own earlier answer stays possible. | Low |
+| Withdrawing an archive link asks the register, not the link's basis | A reviewed link that a Submission is later filed from keeps its REVIEWED basis, because a person's decision is never downgraded to a derived one — so the basis check protected the derived links and missed the one the register actually rests on. | Low |
+| Stale indexed text is reported rather than merely deferred | The signal layer deliberately does not fan out from an Organisation or Tag rename, and documents `rebuild_search_index` as the answer. Nothing told an operator the rebuild was owed, so a deferred cost was a silent one. The check recomputes a bounded sample through the indexer's own composition. | High — one command, one flag to skip |
+| `docs/production-readiness.md` is a checklist, never a script | The sequence was assembleable only from four ADRs and a deployment README. Each gate stays a place a human decides; a single command that deployed, migrated, imported and applied would remove exactly the review points that make the operation safe. | — |
+
+## Confirmed still open after the final quality pass
+
+Checked against merged code rather than assumed. Everything else in the
+sections above stands as written.
+
+| Item | Status |
+| --- | --- |
+| Off-host disaster-recovery destination, retention, RPO and RTO | Genuinely open; `deploy/unraid-main/RECOVERY.md` states the contract and picks nothing |
+| Trusted-extraction policy for the real opinions archive | Genuinely open; blocked on the Secure Pilot Gate scanner, and the archive is metadata-searchable meanwhile (ADR 0023) |
+| Promotion criteria for `CONTENT_MULTI_SIGNAL` | Genuinely open; the measurement that would justify it is written down in ADR 0023 and has not been taken |
+| Global-search behaviour at real corpus scale | Genuinely open; cannot be answered without EXPLAIN on a realistic corpus, and no index has been added on intuition |
+| Whether final evidence may be more restricted than its submission | Newly surfaced, and a product question rather than a bug. `check_evidence_is_usable` permits it; a restricted document bound to a normal submission puts its filename on a card everyone can see. Nothing in this pass changed the rule |

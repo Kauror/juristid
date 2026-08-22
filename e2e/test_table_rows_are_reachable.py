@@ -50,6 +50,7 @@ def test_no_sticky_header_covers_its_own_first_row(page, base_url, persona, rout
     page.wait_for_load_state("networkidle")
 
     tables = page.locator(".tablewrap table")
+    examined = 0
     for index in range(tables.count()):
         table = tables.nth(index)
         first_row = table.locator("tbody tr").first
@@ -57,6 +58,7 @@ def test_no_sticky_header_covers_its_own_first_row(page, base_url, persona, rout
             continue
         header = table.locator("thead th").first
         expect(first_row).to_be_visible()
+        examined += 1
 
         header_box = _box(header)
         row_box = _box(first_row)
@@ -65,6 +67,11 @@ def test_no_sticky_header_covers_its_own_first_row(page, base_url, persona, rout
             f"{header_box['y'] + header_box['height'] - row_box['y']:.1f}px — "
             "a link in that row cannot be clicked"
         )
+
+    # Guards the guard. Every assertion above is inside a loop, so a route that
+    # stopped rendering a populated table — a renamed wrapper class, a seed that
+    # no longer fills it — would turn this test green by examining nothing.
+    assert examined, f"{route}: no populated table was found, so nothing was checked"
 
 
 @pytest.mark.parametrize(("persona", "route"), TABLE_PAGES, ids=lambda value: str(value))
@@ -81,6 +88,7 @@ def test_the_first_rows_own_links_receive_the_pointer(page, base_url, persona, r
     page.wait_for_load_state("networkidle")
 
     links = page.locator(".tablewrap table tbody tr:first-child a")
+    assert links.count(), f"{route}: no first-row link was found, so nothing was checked"
     for index in range(links.count()):
         link = links.nth(index)
         if not link.is_visible():
