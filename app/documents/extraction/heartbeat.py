@@ -14,8 +14,19 @@ and the queue stopped, and that is the failure this catches.
 The staleness threshold is `EXTRACTION_STALE_CLAIM_MINUTES`, reused rather than
 reinvented. That setting already means "a claim this old belongs to a worker
 that died", so a second number for the same judgement could only disagree with
-the first. It is also why a slow file cannot raise a false alarm: nothing is
-allowed to hold a claim longer than that in the first place.
+the first.
+
+**What this probe cannot distinguish, and by construction never will.** Nothing
+bounds how long one parse may take, so a file that legitimately needs longer
+than the threshold — a 500-page scan, which is 500 separate OCR runs — looks
+from here exactly like a worker wedged on a malformed one. That is not an
+oversight to be engineered away: "the loop has not turned for half an hour" is
+the whole signal, and a worker that kept marking itself alive from inside a
+parse would be reporting health it cannot observe, which is the failure this
+module was written to replace. The probe therefore errs towards a false alarm on
+a very slow file rather than towards silence on a stuck one, and an operator
+seeing the container go red while `check_evidence_integrity` reports a fresh
+claim on a large document is looking at the former.
 """
 
 from __future__ import annotations

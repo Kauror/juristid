@@ -42,8 +42,11 @@ opinion-archive/
 *.xlsm
 *.xls
 
-# Written into the image at build time; never a source file.
+# Written into the image at build time; never source files. GIT_SHA carries the
+# commit the image was built from, so a stale copy in a checkout would describe
+# the wrong build (docs/adr/0021).
 BUILD_STAMP
+GIT_SHA
 
 # The Stage-2D historical corpus and everything derived from it. The archive is
 # 4.14 GiB of members' legal work; a page's own XML and its derived text are the

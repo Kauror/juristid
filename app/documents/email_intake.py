@@ -22,6 +22,13 @@ Three things this module refuses to do:
 * **Store an attachment twice.** Re-running extraction on the same message must
   not double the Matter's document count, so an attachment already linked to
   this exact parent version at this exact ordinal is left alone.
+* **Follow a message inside a message forever.** A nested `.eml` is preserved
+  whole as its own evidence rather than expanded, which is right — but the
+  Document it becomes is itself a message, so the worker extracts *it* next and
+  finds the message inside that one. The parser's own depth limit cannot see
+  this, because each of those passes is a fresh parse that starts at depth zero;
+  the nesting only exists in the chain of `EmailAttachmentLink` rows, and that
+  is where it has to be counted (`_nesting_depth`).
 """
 
 from __future__ import annotations
@@ -29,6 +36,8 @@ from __future__ import annotations
 import logging
 import posixpath
 from typing import Any
+
+from django.conf import settings
 
 from app.documents.derivatives import AttachmentDisposition, EmailAttachmentLink
 from app.documents.enums import DocumentRole, MalwareScanState
@@ -38,6 +47,16 @@ from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import EXTENSION_MIME_TYPES
 
 logger = logging.getLogger(__name__)
+
+#: Attachment types that are themselves messages, and therefore the ones whose
+#: chain has to be bounded. A PDF is a leaf: it becomes one Document and stops.
+#: A message becomes a Document the worker will open, find another message in,
+#: and repeat — so a 100 MB file of nothing but envelopes could otherwise
+#: manufacture hundreds of thousands of Documents and evidence blobs, one worker
+#: pass at a time, with every individual pass looking entirely reasonable.
+NESTED_MESSAGE_MIME_TYPES: frozenset[str] = frozenset(
+    {"message/rfc822", "application/vnd.ms-outlook"}
+)
 
 
 def register_email_attachments(
@@ -54,6 +73,8 @@ def register_email_attachments(
         )
     )
     matter = parent_version.document.matter
+    depth = _nesting_depth(parent_version)
+    at_depth_limit = depth >= settings.EXTRACTION_MAX_EMAIL_DEPTH
     created = 0
 
     for ordinal, attachment in enumerate(attachments, start=1):
@@ -74,6 +95,21 @@ def register_email_attachments(
                 "attachment skipped version=%s ordinal=%d reason=unsupported_type",
                 parent_version.pk,
                 ordinal,
+            )
+            continue
+
+        if at_depth_limit and mime_type in NESTED_MESSAGE_MIME_TYPES:
+            # The chain stops here. Only messages are refused: a PDF three
+            # envelopes deep is still somebody's annex and still worth having,
+            # and it cannot extend the chain because nothing opens it looking
+            # for more messages. Said out loud so the ceiling is visible to an
+            # operator rather than being a silently shorter thread.
+            logger.warning(
+                "nested message not stored version=%s ordinal=%d depth=%d limit=%d",
+                parent_version.pk,
+                ordinal,
+                depth,
+                settings.EXTRACTION_MAX_EMAIL_DEPTH,
             )
             continue
 
@@ -110,6 +146,33 @@ def register_email_attachments(
         created += 1
 
     return created
+
+
+def _nesting_depth(version: DocumentVersion) -> int:
+    """How many messages this binary already arrived inside.
+
+    Walks the `EmailAttachmentLink` chain upward. Bounded by the limit itself
+    plus one — the walk stops as soon as it has counted enough to refuse, so a
+    corpus that somehow already contains a deep chain cannot make this query
+    expensive.
+
+    Zero for a message somebody uploaded directly, which is the ordinary case
+    and costs one indexed lookup that misses.
+    """
+    limit = settings.EXTRACTION_MAX_EMAIL_DEPTH
+    depth = 0
+    current = version.pk
+    while depth <= limit:
+        parent = (
+            EmailAttachmentLink.objects.filter(attachment_version_id=current)
+            .values_list("parent_version_id", flat=True)
+            .first()
+        )
+        if parent is None:
+            return depth
+        depth += 1
+        current = parent
+    return depth
 
 
 def _storable_mime_type(attachment: ParsedAttachment) -> str | None:

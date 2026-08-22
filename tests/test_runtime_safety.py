@@ -42,7 +42,7 @@ def test_a_clean_production_configuration_passes(settings):
     """What "clean" means now includes an authenticator in front.
 
     Stage 2D added juristid.E006: real data with nothing authenticating the
-    request is not a configuration this system will start in (docs/adr/0015).
+    request is not a configuration this system will start in (docs/adr/0016).
     """
     settings.DEBUG = False
     settings.SECRET_KEY = "a-real-secret"  # noqa: S105

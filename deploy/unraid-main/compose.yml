@@ -10,23 +10,36 @@
 # defensible, and each one is enforced somewhere a mistake would show:
 #
 #   1. No host port. There is no `ports:` on any service. The only way in is
-#      through the Cloudflare tunnel, which means the only way in is through
-#      Cloudflare Access — you cannot reach this by typing the server's LAN
-#      address (Stage-2D brief 58).
-#   2. The application verifies Access itself. The tunnel forwards a signed
-#      assertion and `app/accounts/middleware.py` checks the signature against
-#      Cloudflare's published keys before believing the email in it. A header
-#      alone proves nothing (Stage-2D brief 57, docs/adr/0015).
+#      through the Cloudflare tunnel, so you cannot reach this by typing the
+#      server's LAN address (Stage-2D brief 58).
+#   2. The application authenticates its own requests. `AUTH_MODE` decides how,
+#      and both supported answers are real authenticators: `shared_gate`, which
+#      is what this stack runs today, and `cloudflare_access`, which verifies a
+#      signed Cloudflare assertion against the team's published keys and is the
+#      hardening step after it. `AUTH_MODE=none` with real data refuses to
+#      start (juristid.E006). What the two modes differ in is how much the
+#      deployment may claim about *who* is behind a request, and every audit row
+#      records which one it was — see deploy/unraid-main/README.md and
+#      docs/adr/0016.
 #   3. `DJANGO_DEBUG=0`, `DEV_LOGIN_ENABLED=0`, `REAL_DATA_ALLOWED=1`. A system
 #      check refuses to start a process that mixes those wrongly
 #      (juristid.E002/E003/E004/E006/E008).
 #
-# The rehearsal's shared PIN does not exist here and must never be added.
+# The rehearsal's shared PIN does not exist here and must never be added. The
+# shared gate is not that PIN: a different mode, a long host-side secret, and
+# its own checks (juristid.E010-E013).
 #
 # Always name both the file and the project explicitly, so a stray command can
-# never reach another stack on this host:
+# never reach another stack on this host — `juristid-test` most of all:
 #
 #   docker compose -p juristid-main -f compose.yml <command>
+#
+# Deploying, backing up and restoring this stack have runbooks and scripts of
+# their own. Do not improvise from these comments:
+#
+#   deploy/unraid-main/README.md     day-to-day operation and deployment
+#   deploy/unraid-main/RECOVERY.md   backup, restore and disaster recovery
+#   scripts/deploy/                  the scripts both of those call
 
 name: juristid-main
 
@@ -62,6 +75,17 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      args:
+        # The commit this image is built from, baked in so the running
+        # container can be asked what code it is rather than an operator being
+        # asked to remember. `scripts/deploy/juristid-deploy-preflight.sh`
+        # prints the value to pass; leaving it unset produces an image that
+        # `manage.py deployment_readiness` refuses to call ready.
+        GIT_SHA: ${JURISTID_GIT_SHA:-}
+    # Tag by commit where one is known, so a previous build is still on the
+    # host under its own name and a rollback is a tag rather than a rebuild.
+    # `local` is the fallback for a hand-built image and is deliberately the
+    # one tag that gets overwritten.
     image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
     container_name: juristid-main-web
     restart: unless-stopped
@@ -92,8 +116,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    # Deliberately no `ports:`. See the header. Reaching this stack means going
-    # through Cloudflare Access.
+    # Deliberately no `ports:`, and a test fails if one appears. See the
+    # header: the tunnel is the only route in, and whichever authenticator
+    # `AUTH_MODE` names is in front of everything behind it.
     volumes:
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/evidence:/app/evidence
       # A separate directory, not a subdirectory of evidence. One of these must
@@ -184,7 +209,14 @@ services:
   # removed Access policy fails closed: requests arrive without a valid
   # assertion and are refused rather than served.
   tunnel:
-    image: cloudflare/cloudflared:latest
+    # Pinned, not `latest`. This container is the only route in, and `latest`
+    # means an unrelated `docker pull` on this host can change the ingress of a
+    # real-data system without anyone deciding to. Update it deliberately:
+    # read the release notes at https://github.com/cloudflare/cloudflared/releases,
+    # change the tag here, redeploy, and confirm the hostname still answers.
+    # A version tag rather than a digest, so the next person can see what they
+    # are moving from and to.
+    image: cloudflare/cloudflared:2026.8.2
     container_name: juristid-main-tunnel
     restart: unless-stopped
     command:
@@ -195,7 +227,11 @@ services:
     volumes:
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/cloudflared:/home/nonroot/.cloudflared
     depends_on:
-      - web
+      # Healthy, not merely started. A tunnel that connects before gunicorn is
+      # accepting sends the public hostname 502s that look like an outage, and
+      # during a deployment that is precisely the moment somebody is watching.
+      web:
+        condition: service_healthy
     networks:
       - internal
 

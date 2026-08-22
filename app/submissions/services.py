@@ -20,6 +20,7 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
 from app.documents.services import add_evidence_version, create_document
+from app.search.indexing import reindex_submission
 from app.submissions.enums import RecipientRole, SubmissionKind, SubmissionStatus
 from app.submissions.models import (
     Submission,
@@ -314,6 +315,14 @@ def set_recipients(
         for organisation in for_information
     ]
     SubmissionRecipient.objects.bulk_create(rows)
+    # `bulk_create` sends no `post_save`, so the search handler that keeps
+    # recipient names in the index never fires for the write that adds them —
+    # while the `delete()` above does fire, and reindexes the submission with no
+    # recipients at all. Refreshed explicitly here rather than by saving the
+    # submission, because recipients are not a field on it and bumping its
+    # `updated_at` to reach a signal would be a lie in the audit trail
+    # (app/search/indexing.py).
+    reindex_submission(submission)
 
     if audit and rows:
         record_change_event(

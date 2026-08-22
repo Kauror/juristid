@@ -17,6 +17,7 @@ to it, in one system. This is the environment that holds the real thing.
 | Page XML | `…/legacy-source` — **back this up**; source evidence |
 | Source corpus | `/mnt/user/juristid-main/source/` — **read-only**, mounted `:ro` |
 | Secrets | `/mnt/user/appdata/juristid-main/config/juristid.env`, mode 600, never in Git |
+| Backup and recovery | [`RECOVERY.md`](RECOVERY.md) — how to back up, verify, restore and roll back |
 
 The synthetic rehearsal at `juristid-test` keeps running, on its own project,
 network, database and appdata tree. Nothing here touches it, and it must not be
@@ -145,9 +146,19 @@ cp .env.example /mnt/user/appdata/juristid-main/config/juristid.env
 chmod 600 /mnt/user/appdata/juristid-main/config/juristid.env
 ```
 
-Fill in `DJANGO_SECRET_KEY`, `POSTGRES_PASSWORD`, the hostname, and the three
-Cloudflare Access values. The audience tag comes from Cloudflare One → Access →
-Applications → this application → Overview → *Application Audience (AUD) Tag*.
+Fill in `DJANGO_SECRET_KEY`, `POSTGRES_PASSWORD`,
+`JURISTID_SHARED_GATE_PASSWORD` and the hostname.
+
+Leave `CF_ACCESS_TEAM_DOMAIN` and `CF_ACCESS_AUDIENCE` empty for now: they are
+the two values `AUTH_MODE=cloudflare_access` needs, and this stack runs
+`shared_gate`. When the Access application exists, the audience tag comes from
+Cloudflare One → Access → Applications → this application → Overview →
+*Application Audience (AUD) Tag*.
+
+There is deliberately no `APPLICATION_REVISION` and no `APPLICATION_STAGE` in
+the template. Both used to be copied here and both went stale where nobody
+looked; the stage now comes from the code and the revision from the image. See
+the template's own comments.
 
 ### 3. Cloudflare
 
@@ -222,10 +233,12 @@ asking the database what is still missing, so interrupting it costs nothing:
 re-run the same command. `--limit N` stops after N files, which is the right way
 to watch the first few before committing to the rest.
 
-Back the database up before `apply` and after `verify`:
+Back up before `apply` and after `verify`. Not with a `pg_dump` pipeline — see
+[`RECOVERY.md`](RECOVERY.md) for why that line could produce a truncated dump
+and report success:
 
 ```bash
-docker exec juristid-main-db pg_dump -U juristid juristid | gzip > /mnt/user/backups/juristid-main-$(date +%F-%H%M).sql.gz
+scripts/deploy/juristid-backup.sh --project juristid-main --compose-file deploy/unraid-main/compose.yml --data-root /mnt/user/appdata/juristid-main --backup-root /mnt/user/backups/juristid-main
 ```
 
 ## The register import
@@ -244,14 +257,146 @@ docker compose -p juristid-main -f compose.yml logs -f extractor
 docker compose -p juristid-main -f compose.yml restart web
 ```
 
-Deploying a new build:
+## Deploying a new build
+
+Deploy a **commit**, never a branch. `git pull` deploys whatever `main` has
+become since somebody decided to deploy, and on a repository several people and
+several agents push to, that is routinely not the thing that was reviewed. The
+difference is invisible until something unreviewed is serving members' material.
+
+So the target is a full 40-character SHA, and the preflight refuses an
+abbreviation — two commits can share a prefix and the resolution is silent.
+
+### 1. Preflight
+
+Read-only. It changes nothing, moves nothing, and prints the commands to run.
 
 ```bash
-git -C /mnt/user/appdata/juristid-main/repo pull
+scripts/deploy/juristid-deploy-preflight.sh --repo /mnt/user/appdata/juristid-main/repo --target <full-40-char-sha> --compose-file deploy/unraid-main/compose.yml --env-file /mnt/user/appdata/juristid-main/config/juristid.env --data-root /mnt/user/appdata/juristid-main --backup-root /mnt/user/backups/juristid-main
+```
+
+It verifies that the commit exists, that it is ahead of what is running, that
+the checkout is clean, that the Compose file resolves with no host port and a
+read-only corpus, that the environment file exists and is mode 600, and that
+there is room to write a backup.
+
+**If it says the checkout is dirty, stop.** Somebody changed something on the
+server, and finding out what matters more than this release. Do not
+`git reset --hard`, do not `git clean`, do not check out over it: whatever those
+changes are, deleting them destroys the only record that they existed. Nothing
+in a deployment is urgent enough to be worth that.
+
+### 2. Move the checkout to the reviewed commit
+
+```bash
+git -C /mnt/user/appdata/juristid-main/repo checkout --detach <full-40-char-sha>
+```
+
+Detached on purpose. The deployment is at a commit, not on a branch that can
+move underneath it.
+
+### 3. Read the migration plan before applying it
+
+```bash
+docker compose -p juristid-main -f compose.yml exec -T web python manage.py migration_plan
+```
+
+Run against the release still serving, so it says what the *new* code would ask
+the database to do — pending migrations, and which of them remove or rewrite
+something rather than only adding.
+
+If everything is additive, the old web process keeps working against the new
+schema while it is replaced, which is what makes the sequence below safe.
+
+If anything is not additive, this is not a rolling deployment. Decide first
+whether the release now serving survives the new schema; if it does not, tell
+the department, take the application down, migrate, and bring it back. Six users
+and an announced ten minutes is better than a silent compatibility gamble.
+
+### 4. Back up
+
+Always, and immediately before the migration rather than that morning:
+
+```bash
+scripts/deploy/juristid-backup.sh --project juristid-main --compose-file deploy/unraid-main/compose.yml --data-root /mnt/user/appdata/juristid-main --backup-root /mnt/user/backups/juristid-main
+```
+
+This is the copy a failed migration is rolled back to. Everything written
+between it and the failure is lost in that rollback, which is why it is taken
+now and not earlier.
+
+### 5. Build, migrate, replace
+
+The SHA is passed into the build so the image can say what code it is, and used
+as the image tag so the previous build stays on the host under its own name.
+
+```bash
+export JURISTID_GIT_SHA=<full-40-char-sha>
+```
+
+```bash
+export JURISTID_IMAGE_TAG=${JURISTID_GIT_SHA:0:12}
+```
+
+```bash
 docker compose -p juristid-main -f compose.yml build
+```
+
+```bash
 docker compose -p juristid-main -f compose.yml run --rm web python manage.py migrate
+```
+
+```bash
 docker compose -p juristid-main -f compose.yml up -d
 ```
+
+Migrations are a deliberate step, never container start-up work: on boot they
+would run on every restart, including the restart that happens at three in the
+morning because the host rebooted.
+
+### 6. Post-flight
+
+```bash
+docker compose -p juristid-main -f compose.yml exec -T web python manage.py deployment_readiness
+```
+
+Fails closed on an unapplied migration, a migration the database has that this
+build does not, a missing or wrongly-mounted storage root, a PostgreSQL major
+that is too old, or a build that cannot say which commit it came from. It reads
+and reports; it never migrates.
+
+Then confirm the running revision is the one that was deployed:
+
+```bash
+curl -s https://juristid.orgusaar.ee/healthz
+```
+
+`revision` should be the SHA that was built. The footer's build time moves with
+the image on its own, so a revision that changed beside a build time that did
+not is a build that did not actually replace anything.
+
+### Rolling back
+
+Code-only rollback is the same sequence with the previous reviewed SHA. Rolling
+back *across* a migration is not, and it is not a command —
+[`RECOVERY.md`](RECOVERY.md) has the decision tree.
+
+### What a deployment must never do
+
+A deployment carries code and schema migrations. It does **not** import the
+register, promote the current register, apply an opinion archive, backfill
+owners or run a historical cutover. Those write the Chamber's record, they each
+have their own review gate, and none of them may happen because somebody
+restarted a container. A test asserts that no service's start-up command can
+reach one.
+
+## Backup, restore, disaster recovery
+
+All of it is in [`RECOVERY.md`](RECOVERY.md): what is canonical and what is
+rebuildable, how a set is produced and verified, the restore order for a fresh
+host, the rollback decision tree, and — stated plainly there — the fact that the
+current backups are a local recovery copy rather than off-host disaster
+recovery.
 
 ## What must not happen here
 

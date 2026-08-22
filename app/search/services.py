@@ -31,6 +31,7 @@ that hides the neglected ones.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -174,6 +175,53 @@ CHILD_KINDS = (
     SearchSourceKind.LEGACY_SOURCE_PAGE,
 )
 
+#: The kinds that actually populate ``alias_text``. A document fragment does not
+#: — `fragment_values` writes ``""`` — so restricting the alias tier to these
+#: costs nothing in matching and keeps an unindexable ``ILIKE '%…%'`` away from
+#: the one population whose design headroom is millions of rows
+#: (app/search/child_indexing.py, Stage-2B brief 40).
+ALIAS_KINDS = (
+    SearchSourceKind.MATTER,
+    SearchSourceKind.ENTRY,
+    SearchSourceKind.SUBMISSION,
+    SearchSourceKind.LEGACY_SOURCE_PAGE,
+)
+
+#: The longest query this module will act on.
+#:
+#: Generous — no real legal phrase approaches it — and a *refusal* rather than a
+#: truncation. Cutting a query silently changes what was asked and then answers
+#: the shortened question confidently, which is the one failure mode a search
+#: over a legal record must not have. Above this the caller gets an empty
+#: result and the page says why.
+MAX_QUERY_CHARACTERS = 500
+
+#: Control characters, which reach here from a hand-built URL rather than from a
+#: keyboard. NUL is the one that matters: psycopg refuses to send it and the
+#: request becomes a 500 — an unhandled exception where "no results" was the
+#: honest answer. The rest are stripped with it because none of them can
+#: contribute a lexeme.
+#:
+#: Tab, newline and carriage return are deliberately absent: they are whitespace,
+#: and `clean_query` collapses whitespace a line below.
+_CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def clean_query(query: str | None) -> str:
+    """The term this module will act on, or ``""`` for one it refuses.
+
+    Every public entry point goes through here, so there is no path by which a
+    hand-built query string reaches PostgreSQL unexamined. It does three things
+    and nothing else: strips characters that cannot be part of a word, collapses
+    whitespace so ``2026   184`` and ``2026 184`` are the same lookup, and
+    refuses anything longer than :data:`MAX_QUERY_CHARACTERS`.
+    """
+    term = _CONTROL_CHARACTERS.sub(" ", query or "")
+    term = " ".join(term.split())
+    if len(term) > MAX_QUERY_CHARACTERS:
+        return ""
+    return term
+
 
 @dataclass(frozen=True)
 class SnippetRun:
@@ -295,7 +343,9 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
     # identifiers and aliases, so a phrase query against it would report an
     # organisation-name hit as a title match.
     title_phrase = is_matter & Q(search_title=phrase)
-    alias = Q(alias_text__icontains=term) | Q(alias_text__icontains=normalized)
+    alias = Q(source_kind__in=ALIAS_KINDS) & (
+        Q(alias_text__icontains=term) | Q(alias_text__icontains=normalized)
+    )
     child_title = Q(source_kind__in=CHILD_KINDS) & (
         Q(title__icontains=term) | Q(identifiers__iexact=term)
     )
@@ -345,7 +395,7 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
 
 def search_documents(*, query: str, user: Any) -> QuerySet[SearchDocument]:
     """The ranked, authorized queryset. Countable and sliceable as it stands."""
-    term = (query or "").strip()
+    term = clean_query(query)
     if not term:
         return visible_documents(user).none()
 
@@ -377,6 +427,15 @@ def search_documents(*, query: str, user: Any) -> QuerySet[SearchDocument]:
             "-matter__reference_number",
             "source_kind",
             "source_locator",
+            # The last tie-break, and the only one guaranteed to break the tie.
+            # Everything above it can repeat: an archive Matter has no
+            # reference at all, and two fragments of two different files
+            # attached to the same Matter are both "lk 3". Without a unique
+            # final key PostgreSQL is free to return those rows in a different
+            # order on every request, which moves results between the fifty
+            # shown and the ones cut off — a row that vanishes on reload for no
+            # reason a reader can see.
+            "pk",
         )
     )
 
@@ -414,7 +473,7 @@ def matching_matter_ids(*, query: str, user: Any) -> QuerySet[SearchDocument, An
 
 def search(*, query: str, user: Any, limit: int = MAX_RESULTS) -> list[SearchResult]:
     """Find things. Authorization first, deterministic tiers, then relevance."""
-    term = (query or "").strip()
+    term = clean_query(query)
     documents = list(search_documents(query=term, user=user)[:limit])
     if not documents:
         return []

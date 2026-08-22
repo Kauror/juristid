@@ -371,9 +371,26 @@ EXTRACTION_OCR_LANGUAGES = env("EXTRACTION_OCR_LANGUAGES", "est+eng")
 EXTRACTION_OCR_DPI = env_int("EXTRACTION_OCR_DPI", 200)
 EXTRACTION_OCR_ENABLED = env_bool("EXTRACTION_OCR_ENABLED", default=True)
 
+# How long one Tesseract run may take before the worker abandons it. Tesseract
+# is a separate process reading a bitmap this one rendered, and a bitmap it
+# cannot make progress on holds that process open for as long as it likes —
+# which holds the worker open with it, because the parse is synchronous. Without
+# a ceiling the queue stops on one page and the only visible symptom is a
+# heartbeat that went quiet. Per image, not per document: a 400-page scan is
+# 400 separate runs and is supposed to take a long time in total.
+EXTRACTION_OCR_TIMEOUT_SECONDS = env_int("EXTRACTION_OCR_TIMEOUT_SECONDS", 120)
+
 # How long a PROCESSING claim may stand before another worker may take it. Long
-# enough that a slow OCR job is never stolen mid-run; short enough that a killed
-# worker's queue drains the same day.
+# enough that an ordinary parse finishes well inside it; short enough that a
+# killed worker's queue drains the same day.
+#
+# It is a heuristic and not a guarantee, which is worth saying plainly because
+# the code used to assume otherwise. Nothing bounds how long a parse may take —
+# a 500-page scan is 500 OCR runs — so a genuinely slow file *can* outlive its
+# claim and be reclaimed by a worker doing exactly what it should. That is
+# survivable rather than prevented: the claim is re-asserted at the moment of
+# writing, so the pass that lost it writes nothing at all
+# (app/documents/extraction/orchestrator.py).
 EXTRACTION_STALE_CLAIM_MINUTES = env_int("EXTRACTION_STALE_CLAIM_MINUTES", 30)
 EXTRACTION_WORKER_IDLE_SECONDS = env_int("EXTRACTION_WORKER_IDLE_SECONDS", 10)
 
@@ -445,7 +462,35 @@ APPLICATION_NAME = "Koda Õigusloome"
 # footer that the build was six months older than it was.
 APPLICATION_STAGE = env("APPLICATION_STAGE", "Stage 2I")
 APPLICATION_ENVIRONMENT = env("APPLICATION_ENVIRONMENT", "local")
-APPLICATION_REVISION = env("APPLICATION_REVISION", "unknown")
+
+
+def _revision() -> str:
+    """Which commit this build came from.
+
+    The environment variable wins, for a deployment that builds some other way
+    or wants to say something more specific. Behind it is `GIT_SHA`, written
+    into the image by the Dockerfile from a build argument, so the answer
+    travels with the code it describes.
+
+    The fallback matters more than it looks. `APPLICATION_REVISION` used to be
+    the one field of the running build's identity that a human had to remember
+    to update, and a field somebody has to remember is a field that eventually
+    describes a different build than the one serving — the same failure the
+    build stamp above exists to avoid. An image built without a SHA still says
+    "unknown" rather than inventing one; `manage.py deployment_readiness`
+    refuses a real-data deployment in that state.
+    """
+    explicit = env("APPLICATION_REVISION", "").strip()
+    if explicit:
+        return explicit
+    try:
+        baked = (BASE_DIR / "GIT_SHA").read_text(encoding="utf-8").strip()
+    except OSError:
+        return "unknown"
+    return baked or "unknown"
+
+
+APPLICATION_REVISION = _revision()
 
 
 def _build_stamp() -> str:
@@ -479,7 +524,11 @@ REAL_DATA_ALLOWED = env_bool("REAL_DATA_ALLOWED", default=False)
 # Chamber's identity provider and forwards a signed assertion; this application
 # verifies that signature against the team's published keys before believing a
 # word of it. A request header on its own is attacker-controlled and proves
-# nothing (docs/adr/0015, app/accounts/cloudflare_access.py).
+# nothing (docs/adr/0016, app/accounts/cloudflare_access.py).
+#
+# Not the mode the real-data stack runs in today: it runs `shared_gate`, and
+# this is the hardening step after it. Both are supported modes, and which one
+# a deployment uses is `AUTH_MODE` and nothing else (docs/adr/0016).
 #
 # The audience tag identifies *this* application inside the Cloudflare account.
 # Without it, a token minted for any other application on the same team would

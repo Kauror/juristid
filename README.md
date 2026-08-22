@@ -55,8 +55,14 @@ is deployed yet. See
 invented data only, for the class of defect CI structurally cannot reach. See
 [`deploy/unraid-test/`](deploy/unraid-test/).
 
-**Real-data instance — deployed.** A separate stack, behind Cloudflare Access,
-with no host port at all. See [`deploy/unraid-main/`](deploy/unraid-main/).
+**Real-data instance — deployed.** A separate stack with no host port at all,
+reachable only through a Cloudflare tunnel and only behind an authenticator: the
+shared gate today, Cloudflare Access as the next hardening step
+([ADR 0016](docs/adr/0016-authentication-modes-and-the-shared-gate.md)). How it
+is deployed is [`deploy/unraid-main/README.md`](deploy/unraid-main/README.md);
+how it is backed up and restored is
+[`deploy/unraid-main/RECOVERY.md`](deploy/unraid-main/RECOVERY.md) and
+[ADR 0022](docs/adr/0022-deployment-backup-and-recovery.md).
 
 **No real data in this repository.** The repository is public. Only code and
 generated synthetic fixtures enter Git: every fixture the tests read is built at
@@ -305,6 +311,19 @@ engine missing a language falls back to English and returns confident nonsense:
 ```bash
 uv run python manage.py check_ocr_runtime
 ```
+
+The evidence itself is the half PostgreSQL cannot check on its own — the bytes
+live outside it, so "this row points at an object that is not there" is
+invisible to every constraint in the schema. This asks, read-only, and exits
+non-zero if anything is wrong:
+
+```bash
+uv run python manage.py check_evidence_integrity
+```
+
+Add `--verify-sha` to read every stored object and check it against its recorded
+checksum. That is a maintenance window on a large store rather than a health
+check, which is why it is never implied.
 
 ## Statistics
 

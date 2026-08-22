@@ -74,6 +74,38 @@ an object's age, the object is reported and left alone. Reclaiming a stray blob
 is worth far less than never destroying evidence a committing transaction is
 about to point at.
 
+Three later corrections follow from the same priority, and all three concern
+what the command is allowed to *claim* rather than what it deletes.
+
+- The grace period is the only protection there is, so `--grace-hours 0` with
+  `--delete` silently reinstated the exact race the design prevents. Deletion
+  now requires at least `MINIMUM_DELETE_GRACE_HOURS`; reporting under any window
+  stays available.
+- A listing that raised used to come back as an empty result, so an unreadable
+  prefix — an unmounted evidence root, a permission problem on one Matter's
+  directory — printed *no unreferenced evidence objects found*, which is the
+  sentence an operator reads as "the store is healthy". Unreadable prefixes are
+  now named and the command exits non-zero.
+- A deletion that failed used to be counted among the deleted and to abandon the
+  rest of the run. Each deletion now stands alone, only completed ones are
+  counted, and the command exits non-zero if any failed.
+
+**Detecting the failure the schema cannot see.** Every constraint PostgreSQL can
+enforce about evidence is enforced there — unique version numbers, a unique
+storage key, lowercase-hex checksums, non-negative sizes. The one failure this
+whole design is arranged around, a committed row whose object is not there, is
+by construction invisible to all of them, because the bytes are not in the
+database. `manage.py check_evidence_integrity` is how an operator asks: it
+compares every `DocumentVersion` against the object it claims, reports objects
+nothing references, and checks the invariants the schema does not hold —
+notably that a `Document.current_version` belongs to that same document, which
+only `add_evidence_version` guarantees. `--verify-sha` reads every stored byte
+and is never implied, because on a multi-gigabyte store it is a maintenance
+window rather than a health check. It is read-only in every mode: a missing
+object is a restore decision and a mismatched checksum is a question about which
+copy is real, and correcting a row to match whatever the store currently holds
+would turn a detected loss into an undetectable one.
+
 **Storage seam**
 
 - Django's `STORAGES` setting with a named `evidence` alias. Development uses
