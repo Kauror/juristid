@@ -34,7 +34,7 @@ together or not at all.
     </div>
 
     {% if composer_form.body.errors %}
-      <p class="field__error" style="padding:0 var(--spacing-4)">{{ composer_form.body.errors|first }}</p>
+      <p class="field__error composer__error">{{ composer_form.body.errors|first }}</p>
     {% endif %}
 
     <div class="composer__meta">
@@ -102,7 +102,7 @@ together or not at all.
         <p class="field__error">{{ composer_form.next_text.errors|first }}</p>
       {% endif %}
 
-      <div class="composer__optional" style="padding:0">
+      <div class="composer__optional composer__optional--flush">
         <label class="field field--inline">
           <span class="field__label field__label--plain">Kuupäeva tähendus:</span>
           {{ composer_form.next_date_semantics }}

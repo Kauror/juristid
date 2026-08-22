@@ -61,22 +61,26 @@ localStorage (Stage-2E.1 brief 12).
       <span class="registersearch__spinner" aria-hidden="true">…</span>
     </form>
 
-    <nav class="segmented" aria-label="Kirje seis">
-      {% for option in status_options %}
-        <a class="segmented__option {% if option.active %}is-active{% endif %}"
-           {% if option.active %}aria-current="true"{% endif %}
-           href="?{{ option.query }}">
-          {{ option.label }}
-          <span class="segmented__count">· {{ option.count }}</span>
-        </a>
-      {% endfor %}
-    </nav>
-
     <div class="filterbar">
-      <details class="disclosure" id="tapsem-otsing"
-               style="padding:var(--spacing-15) var(--spacing-25)"
-               {% if active_filters %}open{% endif %}>
-        <summary class="disclosure__summary">Täpsem otsing</summary>
+      <nav class="segmented" aria-label="Kirje seis">
+        {% for option in status_options %}
+          <a class="segmented__option {% if option.active %}is-active{% endif %}"
+             {% if option.active %}aria-current="true"{% endif %}
+             href="?{{ option.query }}">
+            {{ option.label }}
+            <span class="segmented__count">· {{ option.count }}</span>
+          </a>
+        {% endfor %}
+      </nav>
+
+      {% comment %}
+        The narrowing panel is an overlay anchored under this row rather than a
+        block in it, so its grid gets the register's full width instead of the
+        width one flex item happens to shrink to.
+      {% endcomment %}
+      <details class="filterpanel" id="tapsem-otsing" {% if active_filters %}open{% endif %}>
+        <summary class="filterpanel__trigger">Täpsem otsing</summary>
+        <div class="filterpanel__body">
         {% comment %}
           A plain GET form. Submitting it navigates, which is exactly right for
           a deliberate multi-field narrowing — the live behaviour belongs to the
@@ -85,7 +89,7 @@ localStorage (Stage-2E.1 brief 12).
           `q` rides along hidden so applying a filter keeps the search rather
           than resetting to the whole register.
         {% endcomment %}
-        <form class="formgrid" method="get" style="margin-top:var(--spacing-3)">
+        <form class="formgrid" method="get">
           <input type="hidden" name="q" value="{{ query }}">
           <input type="hidden" name="olek" value="{{ filters.olek }}">
 
@@ -264,11 +268,12 @@ localStorage (Stage-2E.1 brief 12).
             </select>
           </label>
 
-          <div class="form__actions">
+          <div class="filterpanel__actions">
             <button class="button button--primary" type="submit">Filtreeri</button>
             <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Tühjenda kõik</a>
           </div>
         </form>
+        </div>
       </details>
     </div>
   </div>

@@ -64,6 +64,7 @@
   --spacing-3: 0.75rem;
   --spacing-35: 0.875rem;
   --spacing-4: 1rem;
+  --spacing-45: 1.125rem;
   --spacing-5: 1.25rem;
   --spacing-6: 1.5rem;
   --spacing-7: 1.75rem;
@@ -154,6 +155,10 @@
   --accent-border: var(--primitive-brand-700);
 
   --focus-ring: var(--primitive-brand-300);
+  /* The soft halo a focused capture surface carries. Not a shadow in the
+     design's sense — no elevation is implied — which is why it is named for
+     the accent rather than for a shadow role. */
+  --accent-halo: rgba(0, 159, 218, 0.12);
   --focus-ring-width: 2px;
   --focus-ring-offset-width: 2px;
 
@@ -217,6 +222,7 @@
   --accent-border: #9fd4ec;
 
   --focus-ring: #0079a6;
+  --accent-halo: rgba(0, 121, 166, 0.14);
 
   --status-danger: #b23c2c;
   --status-danger-soft: #fbecea;

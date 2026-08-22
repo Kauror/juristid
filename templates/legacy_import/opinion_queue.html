@@ -28,7 +28,7 @@
     </span>
   </div>
 
-  <div class="card" style="padding:var(--spacing-15)">
+  <div class="card card--tight">
     <form class="form" method="get">
       <div class="formgrid">
         <label class="field">
@@ -136,24 +136,37 @@
                        value="{{ candidate.excel_sent_date|date:'Y-m-d' }}">
               </label>
               <input class="field__input reviewcard__note" type="text" name="note"
+                     aria-label="Otsuse märkus"
                      placeholder="Märkus (valikuline)" maxlength="2000">
-              <button class="button button--primary" name="decision" value="confirm-sent"
+              <button type="submit" class="button button--primary" name="decision" value="confirm-sent"
                       {% if not candidate.matter %}disabled{% endif %}>
                 Kinnita saadetuks
               </button>
-              <button class="button" name="decision" value="link"
+              <button type="submit" class="button" name="decision" value="link"
                       {% if not candidate.matter %}disabled{% endif %}>
                 Seo teemaga
               </button>
-              <button class="button button--quiet" name="decision" value="duplicate">Duplikaat</button>
-              <button class="button button--quiet" name="decision" value="not-opinion">Ei ole arvamus</button>
-              <button class="button button--quiet" name="decision" value="defer">Lükka edasi</button>
-              <button class="button button--quiet" name="decision" value="reject">Lükka tagasi</button>
+              <button type="submit" class="button button--quiet" name="decision" value="duplicate">Duplikaat</button>
+              <button type="submit" class="button button--quiet" name="decision" value="not-opinion">Ei ole arvamus</button>
+              <button type="submit" class="button button--quiet" name="decision" value="defer">Lükka edasi</button>
+              <button type="submit" class="button button--quiet" name="decision" value="reject">Lükka tagasi</button>
             </form>
           {% else %}
+            {% comment %}
+              A decided card leads with its state as a chip — word plus tone,
+              never colour alone — and the provenance line under it says who
+              decided and when. LINKED does not borrow the confirmed-sent
+              green: "this file belongs to this matter" and "Koda sent this on
+              a date" are different claims, and only `review_approves_submission`
+              carries the second one.
+            {% endcomment %}
             <p class="reviewcard__decided">
-              {{ candidate.get_state_display }}
-              {% if candidate.review_approves_submission %}· saatmine kinnitatud{% endif %}
+              <span class="reviewstate reviewstate--{{ candidate.state|lower }}">
+                {{ candidate.get_state_display }}
+              </span>
+              {% if candidate.review_approves_submission %}
+                <span class="reviewstate reviewstate--applied">Saatmine kinnitatud</span>
+              {% endif %}
               {% if candidate.decided_by %}· {{ candidate.decided_by.display_name }}{% endif %}
               {% if candidate.decided_at %}· {{ candidate.decided_at|date:"d.m.Y H:i" }}{% endif %}
               {% if candidate.decision_note %}· {{ candidate.decision_note|truncatechars:80 }}{% endif %}

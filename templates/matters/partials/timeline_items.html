@@ -54,7 +54,7 @@ record, not professional chronology (master specification 16.5).
           <span class="entrycard__author">{{ item.event.actor.display_name }}</span>
         {% endif %}
       </p>
-      <p class="workrow__action" style="white-space:normal">{{ item.event.summary }}</p>
+      <p class="submissionevent__summary">{{ item.event.summary }}</p>
       {% if item.event.payload.addressees %}
         <p class="entrycard__meta">
           Saaja: {{ item.event.payload.addressees|join:", " }}
@@ -78,7 +78,7 @@ record, not professional chronology (master specification 16.5).
 {% endfor %}
 
 {% if timeline_has_more %}
-  <button class="button button--quiet"
+  <button type="button" class="button button--quiet"
           hx-get="{% url 'matters:timeline_page' pk=matter.pk %}?nihe={{ next_offset }}"
           hx-target="this"
           hx-swap="outerHTML">

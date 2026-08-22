@@ -21,7 +21,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import OPEN_TITLE, RESTRICTED_TITLE
-from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, sign_in
+from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, go_to, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -248,7 +248,7 @@ def test_the_department_head_confirms_a_candidate(page, base_url, screenshots):
 
 def test_jalgimine_is_one_navigation_item_with_three_views(page, base_url, screenshots):
     sign_in(page, base_url, MARTIN)
-    page.get_by_role("link", name="Jälgimine", exact=True).click()
+    go_to(page, "Jälgimine")
     page.wait_for_url(f"{base_url}/olulised-tahtajad/")
 
     tabs = page.get_by_label("Jälgimise vaated")

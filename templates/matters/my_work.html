@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load register_source %}
 {% block title %}Minu töö · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -14,7 +15,7 @@ that have gone quiet because nothing was planned next.
 <div class="page">
   <div class="pagehead">
     <h1 class="pagehead__title">Minu töö</h1>
-    <span class="pagehead__context">{{ today|date:"l, j. F Y" }}</span>
+    <span class="pagehead__context"><time datetime="{{ today|date:'Y-m-d' }}">{{ today|date:"l, j. F Y" }}</time></span>
     <span class="pagehead__summary">
       {{ do_total }} tegemist · {{ waiting|length }} kontrollimist ·
       {{ active_count }} avatud teemat
@@ -100,11 +101,26 @@ that have gone quiet because nothing was planned next.
               <div class="attentionrow">
                 <a class="attentionrow__title"
                    href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
+                {% comment %}
+                  Where the register's own sentence exists, it is the context a
+                  lawyer needs in order to set the step — shown quietly and
+                  labelled as Excel's, never restyled as a structured action:
+                  these Matters are in this section precisely because no
+                  structured NextAction exists (ADR 0021).
+                {% endcomment %}
+                {% with instruction=source_instructions|get_item:matter.pk %}
+                  {% if instruction %}
+                    <span class="attentionrow__source">
+                      <span class="table__sourcelabel">Excelist</span>
+                      <span class="attentionrow__sourcetext" title="{{ instruction }}">{{ instruction }}</span>
+                    </span>
+                  {% endif %}
+                {% endwith %}
                 <span class="attentionrow__meta">
                   {% if matter.display_reference %}
                     <span class="reference">{{ matter.display_reference }}</span> ·
                   {% endif %}
-                  viimane tegevus {{ matter.updated_at|date:"d.m.Y" }}
+                  viimane tegevus <time datetime="{{ matter.updated_at|date:'c' }}">{{ matter.updated_at|date:"d.m.Y" }}</time>
                   <a class="attentionrow__cta"
                      href="{% url 'matters:matter_detail' pk=matter.pk %}">Määra järgmine samm →</a>
                 </span>

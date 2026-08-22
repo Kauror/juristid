@@ -9,13 +9,22 @@ nothing here is a figure you have to take on trust. There is deliberately no
 ranking, no productivity measure and no response rate: a count of open files
 says nothing about effort, and presenting it as if it did is what the
 specification forbids (18.8).
+
+The one exception to "every number links" is the responsibility rail. It counts
+the register's own VASTUTAJA text while the register filters on the resolved
+owner, so a link would open a list that disagrees with the number above it —
+those rows are deliberately plain (docs/adr/0021, app/matters/dashboard.py).
+
+The tables use the register's fixed-layout discipline: named columns hold their
+width, the title takes what is left and clips, and a long Estonian title costs
+one line, never three. Full titles are on the Matter pages they link to.
 {% endcomment %}
 
 {% block content %}
 <div class="page">
   <div class="pagehead">
     <h1 class="pagehead__title">Ülevaade</h1>
-    <span class="pagehead__context">{{ today|date:"l, j. F Y" }}</span>
+    <span class="pagehead__context"><time datetime="{{ today|date:'Y-m-d' }}">{{ today|date:"l, j. F Y" }}</time></span>
   </div>
 
   <section class="cardrow" aria-label="Koondnäitajad">
@@ -39,31 +48,40 @@ specification forbids (18.8).
         </h2>
         {% if dashboard.attention %}
           <div class="tablewrap">
-            <table class="table">
+            <table class="table table--dash">
               <thead>
                 <tr>
-                  <th scope="col">Viide</th>
-                  <th scope="col">Teema</th>
-                  <th scope="col">Vastutaja</th>
-                  <th scope="col">Põhjus</th>
-                  <th scope="col">Kuupäev</th>
+                  <th scope="col" class="table__ref">Viide</th>
+                  <th scope="col" class="table__title">Teema</th>
+                  <th scope="col" class="table__owner">Vastutaja</th>
+                  <th scope="col" class="table__reason">Põhjus</th>
+                  <th scope="col" class="table__date">Kuupäev</th>
                 </tr>
               </thead>
               <tbody>
                 {% for row in dashboard.attention %}
                   <tr>
-                    <td><span class="reference">{{ row.matter.display_reference|default:"—" }}</span></td>
-                    <td class="table__title"><a href="{{ row.url }}">{{ row.matter.title }}</a></td>
-                    <td>{{ row.owner_name }}</td>
-                    <td>{{ row.reason }}</td>
+                    <td class="table__ref"><span class="reference">{{ row.matter.display_reference|default:"—" }}</span></td>
+                    <td class="table__title">
+                      <span class="table__titlecell">
+                        <a class="table__titlelink" href="{{ row.url }}"
+                           title="{{ row.matter.title }}">{{ row.matter.title }}</a>
+                      </span>
+                    </td>
+                    <td class="table__owner">
+                      <span class="table__clip" title="{{ row.owner_name }}">{{ row.owner_name }}</span>
+                    </td>
+                    <td class="table__reason">
+                      <span class="table__clip" title="{{ row.reason }}">{{ row.reason }}</span>
+                    </td>
                     <td class="table__date">
                       {% if row.when %}
                         {% comment %}
                           The label travels with the date: four different kinds
                           of date share this column and must not read alike.
                         {% endcomment %}
-                        <span class="muted">{{ row.date_label }}</span><br>
-                        {{ row.when|date:"d.m.Y" }}
+                        <span class="datemeaning">{{ row.date_label }}</span>
+                        <span class="dateline"><time datetime="{{ row.when|date:'Y-m-d' }}">{{ row.when|date:"d.m.Y" }}</time></span>
                       {% else %}—{% endif %}
                     </td>
                   </tr>
@@ -83,26 +101,39 @@ specification forbids (18.8).
         </h2>
         {% if dashboard.upcoming %}
           <div class="tablewrap">
-            <table class="table">
+            <table class="table table--dash">
               <thead>
                 <tr>
-                  <th scope="col">Kuupäev</th>
-                  <th scope="col">Tähendus</th>
-                  <th scope="col">Viide</th>
-                  <th scope="col">Teema</th>
-                  <th scope="col">Vastutaja</th>
-                  <th scope="col">Hetkeseis</th>
+                  <th scope="col" class="table__date table__date--tight">Kuupäev</th>
+                  <th scope="col" class="table__meaning">Tähendus</th>
+                  <th scope="col" class="table__ref">Viide</th>
+                  <th scope="col" class="table__title">Teema</th>
+                  <th scope="col" class="table__owner">Vastutaja</th>
+                  <th scope="col" class="table__stage">Hetkeseis</th>
                 </tr>
               </thead>
               <tbody>
                 {% for row in dashboard.upcoming %}
                   <tr>
-                    <td class="table__date">{{ row.when|date:"d.m.Y" }}</td>
-                    <td><span class="muted">{{ row.meaning }}</span></td>
-                    <td><span class="reference">{{ row.matter.display_reference|default:"—" }}</span></td>
-                    <td class="table__title"><a href="{{ row.url }}">{{ row.matter.title }}</a></td>
-                    <td>{{ row.owner_name }}</td>
-                    <td>{{ row.stage_label }}</td>
+                    <td class="table__date table__date--tight">
+                      <time datetime="{{ row.when|date:'Y-m-d' }}">{{ row.when|date:"d.m.Y" }}</time>
+                    </td>
+                    <td class="table__meaning">
+                      <span class="datemeaning">{{ row.meaning }}</span>
+                    </td>
+                    <td class="table__ref"><span class="reference">{{ row.matter.display_reference|default:"—" }}</span></td>
+                    <td class="table__title">
+                      <span class="table__titlecell">
+                        <a class="table__titlelink" href="{{ row.url }}"
+                           title="{{ row.matter.title }}">{{ row.matter.title }}</a>
+                      </span>
+                    </td>
+                    <td class="table__owner">
+                      <span class="table__clip" title="{{ row.owner_name }}">{{ row.owner_name }}</span>
+                    </td>
+                    <td class="table__stage">
+                      <span class="table__clip" title="{{ row.stage_label }}">{{ row.stage_label }}</span>
+                    </td>
                   </tr>
                 {% endfor %}
               </tbody>
@@ -117,32 +148,43 @@ specification forbids (18.8).
         <h2 class="sectionlabel" id="saabunud-heading">Hiljuti saabunud</h2>
         {% if dashboard.incoming %}
           <div class="tablewrap">
-            <table class="table">
+            <table class="table table--dash">
               <thead>
                 <tr>
-                  <th scope="col">Saabus</th>
-                  <th scope="col">Viide</th>
-                  <th scope="col">Teema</th>
-                  <th scope="col">Saatja</th>
-                  <th scope="col">Vastutaja</th>
-                  <th scope="col">Arvamuse tähtaeg</th>
+                  <th scope="col" class="table__date table__date--tight">Saabus</th>
+                  <th scope="col" class="table__ref">Viide</th>
+                  <th scope="col" class="table__title">Teema</th>
+                  <th scope="col" class="table__org">Saatja</th>
+                  <th scope="col" class="table__owner">Vastutaja</th>
+                  <th scope="col" class="table__date table__date--tight">Arvamuse tähtaeg</th>
                 </tr>
               </thead>
               <tbody>
                 {% for matter in dashboard.incoming %}
                   <tr>
-                    <td class="table__date">
-                      {% if matter.received_date %}{{ matter.received_date|date:"d.m.Y" }}
+                    <td class="table__date table__date--tight">
+                      {% if matter.received_date %}
+                        <time datetime="{{ matter.received_date|date:'Y-m-d' }}">{{ matter.received_date|date:"d.m.Y" }}</time>
                       {% else %}<span class="table__missing">—</span>{% endif %}
                     </td>
-                    <td><span class="reference">{{ matter.display_reference|default:"—" }}</span></td>
+                    <td class="table__ref"><span class="reference">{{ matter.display_reference|default:"—" }}</span></td>
                     <td class="table__title">
-                      <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
+                      <span class="table__titlecell">
+                        <a class="table__titlelink" href="{% url 'matters:matter_detail' pk=matter.pk %}"
+                           title="{{ matter.title }}">{{ matter.title }}</a>
+                      </span>
                     </td>
-                    <td>{{ matter.source_organisation.name|default:"—" }}</td>
-                    <td>{{ matter.owner.display_name|default:"Vastutajata" }}</td>
-                    <td class="table__date">
-                      {% if matter.response_deadline %}{{ matter.response_deadline|date:"d.m.Y" }}
+                    <td class="table__org">
+                      <span class="table__clip" title="{{ matter.source_organisation.name|default:'—' }}">
+                        {{ matter.source_organisation.name|default:"—" }}
+                      </span>
+                    </td>
+                    <td class="table__owner">
+                      <span class="table__clip">{{ matter.owner.display_name|default:"Vastutajata" }}</span>
+                    </td>
+                    <td class="table__date table__date--tight">
+                      {% if matter.response_deadline %}
+                        <time datetime="{{ matter.response_deadline|date:'Y-m-d' }}">{{ matter.response_deadline|date:"d.m.Y" }}</time>
                       {% else %}—{% endif %}
                     </td>
                   </tr>
@@ -161,20 +203,37 @@ specification forbids (18.8).
 
     <aside class="dashgrid__rail" aria-label="Jaotused">
       <div class="railcard">
-        <span class="railcard__label">Meeskonna aktiivsed teemad</span>
+        <span class="railcard__label">Vastutaja registri järgi</span>
         {% comment %}
-          Inventory: how many open files sit with whom. Never a workload or a
-          performance measure — one file can be a monitoring note and the next
-          a year of consultation.
+          Source responsibility: the register's own VASTUTAJA text, inventory
+          and never workload. Plain rows, not links — the register filters on
+          the *resolved* owner, so a link would open a list disagreeing with the
+          number beside it (docs/adr/0021, specification 18.8).
         {% endcomment %}
-        <p class="field__help">Avatud teemade arv vastutaja kohta.</p>
-        {% for row in dashboard.owners %}
-          <a class="countrow" href="{{ row.url }}">
+        <p class="field__help">
+          Aktiivsed teemad registri VASTUTAJA järgi. Registri enda nimi, mitte
+          rakenduse konto.
+        </p>
+        {% for row in dashboard.responsibility %}
+          <span class="countrow countrow--plain">
             <span class="countrow__label">{{ row.label }}</span>
             <span class="countrow__value">{{ row.count }}</span>
-          </a>
+          </span>
         {% empty %}
-          <p class="empty">Avatud teemasid ei ole.</p>
+          <p class="empty">Registri vastutuse andmeid ei ole.</p>
+        {% endfor %}
+      </div>
+
+      <div class="railcard">
+        <span class="railcard__label">Arvamusi koostamisel</span>
+        <p class="field__help">Koostamisel olevad arvamused registri VASTUTAJA järgi.</p>
+        {% for row in dashboard.drafting_responsibility %}
+          <span class="countrow countrow--plain">
+            <span class="countrow__label">{{ row.label }}</span>
+            <span class="countrow__value">{{ row.count }}</span>
+          </span>
+        {% empty %}
+          <p class="empty">Ühtegi arvamust ei ole koostamisel.</p>
         {% endfor %}
       </div>
 

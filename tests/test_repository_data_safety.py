@@ -251,3 +251,76 @@ def test_a_database_dump_cannot_be_committed() -> None:
     for candidate in ("juristid.sql", "backup.sql.gz", "juristid-main.dump"):
         result = _git("check-ignore", "-q", candidate)
         assert result.returncode == 0, f"{candidate} is not ignored"
+
+
+# ---------------------------------------------------------------------------
+# The visual-regression baselines
+#
+# `*.png` is excluded for a stated reason: a screenshot of the real deployment
+# is real data in an image, and no reviewer of a diff would think to look at
+# it. `e2e/baselines/` is the one exception, and it is safe only for as long as
+# those files can come from nowhere but the browser job — which runs against
+# the synthetic seed with REAL_DATA_ALLOWED off, on a command that refuses to
+# run anywhere real data is permitted.
+#
+# The exception is therefore fenced here rather than trusted: the directory
+# must stay the only one, it must hold nothing but the suite's own scenarios,
+# and the command that fills it must keep its refusal.
+# ---------------------------------------------------------------------------
+
+BASELINE_DIRECTORY = REPOSITORY / "e2e" / "baselines"
+
+
+@requires_git
+def test_the_png_exception_is_scoped_to_the_baseline_directory() -> None:
+    """No blanket `!*.png`, now or later.
+
+    A repository-wide exception would put every screenshot anybody ever drops
+    into the tree one `git add` away from being committed.
+    """
+    ignore = (REPOSITORY / ".gitignore").read_text(encoding="utf-8").splitlines()
+    negations = [line.strip() for line in ignore if line.strip().startswith("!")]
+    png_negations = [line for line in negations if line.endswith(".png")]
+    assert sorted(png_negations) == ["!e2e/baselines/*.png", "!static/**/*.png"], png_negations
+
+
+@requires_git
+def test_a_screenshot_outside_the_baseline_directory_cannot_be_committed() -> None:
+    """The rule the exception must not have widened."""
+    stray = REPOSITORY / "artifacts" / "stray-screenshot.png"
+    assert _git("check-ignore", "-q", str(stray)).returncode == 0
+
+
+@requires_git
+def test_every_committed_baseline_belongs_to_a_scenario_in_the_suite() -> None:
+    """The directory is a suite's baselines, not a screenshot dumping ground.
+
+    A file nothing compares against is a file nobody reviews, which is exactly
+    where an unreviewed screenshot would come to rest.
+    """
+    tracked = _git("ls-files", "e2e/baselines").stdout.split()
+    assert tracked, "the visual suite has no committed baselines"
+
+    suite = (REPOSITORY / "e2e" / "test_ui_regression.py").read_text(encoding="utf-8")
+    for path in tracked:
+        assert path.endswith(".png"), path
+        name = Path(path).stem
+        # `shell-1440` and friends are produced by one parametrised scenario.
+        stem = name.rsplit("-", 1)[0] if name.rsplit("-", 1)[-1].isdigit() else name
+        assert f'"{stem}' in suite or f"'{stem}" in suite, (
+            f"{path} matches no scenario in the visual suite"
+        )
+
+
+def test_the_seed_the_baselines_come_from_refuses_real_data() -> None:
+    """The whole exception rests on this refusal, so it is asserted here too.
+
+    `tests/test_seed_data.py` owns the command's behaviour; this states the
+    dependency, so that removing the guard breaks the test that explains why
+    the baselines are allowed in the repository at all.
+    """
+    source = (
+        REPOSITORY / "app" / "core" / "management" / "commands" / "seed_e2e_data.py"
+    ).read_text(encoding="utf-8")
+    assert "if settings.REAL_DATA_ALLOWED:" in source
+    assert "CommandError" in source

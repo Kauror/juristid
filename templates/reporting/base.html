@@ -70,9 +70,10 @@ item rather than another tab on the dashboard (Stage-2E brief 6).
         </a>
       {% endfor %}
 
-      <details class="disclosure" style="padding:var(--spacing-15) var(--spacing-25)">
-        <summary class="disclosure__summary">+ Filter</summary>
-        <form class="formgrid" method="get" style="margin-top:var(--spacing-3)">
+      <details class="filterpanel">
+        <summary class="filterpanel__trigger">+ Filter</summary>
+        <div class="filterpanel__body">
+        <form class="formgrid" method="get">
           <input type="hidden" name="periood" value="{{ reporting.period.key }}">
 
           <label class="field">
@@ -179,10 +180,11 @@ item rather than another tab on the dashboard (Stage-2E brief 6).
             </label>
           {% endif %}
 
-          <div class="form__actions">
+          <div class="filterpanel__actions">
             <button class="button button--primary" type="submit">Rakenda</button>
           </div>
         </form>
+        </div>
       </details>
     </div>
 
