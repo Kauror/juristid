@@ -165,6 +165,29 @@ to `--compare`.
 Drop `--skip-evidence-bytes` to re-hash every stored object. That reads the
 whole evidence tree, so it is a deliberate exercise rather than a routine one.
 
+### `recovery_fingerprint` and `check_evidence_integrity` are not the same check
+
+They both read evidence, they both hash bytes when asked to, and they are not
+interchangeable. Reaching for one when the question calls for the other is the
+mistake worth naming, because both exit zero and neither says it answered a
+different question.
+
+| | Asks | Needs | Finds |
+| --- | --- | --- | --- |
+| `recovery_fingerprint --compare` | is this the same canonical state as before? | an earlier fingerprint | a row, an evidence object or a migration leaf that did not come back |
+| `check_evidence_integrity` | do the store and the database still describe each other? | nothing but the deployment | a row whose object is gone, an object nothing refers to, a size or checksum that disagrees, a document whose current version belongs to another document, an extraction stuck mid-flight |
+
+So a fingerprint comparison proves a *restore*. It cannot notice an orphaned
+object, because an orphan was never in the fingerprint and never will be. The
+integrity check proves the *live system* at one moment. It cannot notice that
+forty Matters are missing, because it has nothing to compare against. A restore
+wants both, in that order, and the runbook above runs both.
+
+Neither is scheduled. `check_evidence_integrity` is cheap enough to be, and if
+that is ever wanted it is the structural pass — never `--verify-sha`, which
+reads the whole store. Nothing in this repository installs a cron entry; the
+host's scheduling is an operations decision that has not been taken.
+
 ## Restoring
 
 ### Order
@@ -243,6 +266,19 @@ Any difference in canonical counts, evidence digests, page-XML digests or
 migration leaves exits non-zero and names what moved. Rebuildable counts are
 reported and deliberately not compared: a restored database is *supposed* to
 have an empty search projection.
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py check_evidence_integrity
+```
+
+That is the structural pass and it is cheap: a handful of queries plus an
+existence and size check per version, plus a walk of the store looking for
+objects nothing refers to. It is what catches a restore that brought the
+database back and the evidence tree back *separately* — an object with no row,
+a row with no object, a document whose current version now belongs to another
+document. Do **not** add `--verify-sha` here: it reads every stored byte, which
+on this corpus is a maintenance window rather than a verification step, and the
+fingerprint comparison above has already hashed the objects it compares.
 
 ```bash
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py rebuild_document_derivatives --all
@@ -461,7 +497,7 @@ manual copy to a different disk, once — recorded in `docs/open-decisions.md`.
 | --- | --- | --- |
 | A | A bad application deploy. Database and evidence are fine. | Redeploy the previous reviewed commit. Minutes. |
 | B | Database corruption or loss. | Restore the newest set. Everything since that dump is gone. |
-| C | The evidence directory is lost. | Restore the evidence mirror, then `recovery_fingerprint` to prove every row's bytes came back. |
+| C | The evidence directory is lost. | Restore the evidence mirror, then `recovery_fingerprint` to prove every row's bytes came back and `check_evidence_integrity` to prove nothing came back that no row refers to. |
 | D | The whole disk or host is lost. | Needs an off-host copy. **There is not one yet.** |
 | E | The Cloudflare credential is lost. | Reissue the tunnel and move the DNS route. No host port, ever, as a workaround. |
 | F | Derivatives are lost. | `rebuild_document_derivatives --all`. Slow, complete, no decision needed. |

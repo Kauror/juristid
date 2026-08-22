@@ -441,6 +441,14 @@ jobs:
             --compare /tmp/juristid-rehearsal/before.json \
             --out /tmp/juristid-rehearsal/after.json
 
+      # The fingerprint above proves the restored set is the set that was backed
+      # up. This proves the two halves it restored still describe each other —
+      # no row whose object is missing, no object no row refers to. Structural
+      # only: `--verify-sha` reads every stored byte and is a maintenance
+      # window, not a verification step (docs/adr/0022).
+      - name: The restored evidence store and database still describe each other
+        run: uv run python manage.py check_evidence_integrity
+
       - name: Rebuildable data is rebuilt rather than restored
         run: |
           uv run python manage.py rebuild_search_index

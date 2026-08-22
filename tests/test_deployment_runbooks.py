@@ -305,3 +305,74 @@ def test_no_script_pipes_into_a_quiet_grep(script: Path) -> None:
             f"{script.name}: piping into `grep -q` returns failure when the pattern "
             f"matches\n  {line}"
         )
+
+
+# ---------------------------------------------------------------------------
+# The evidence integrity check, once it exists beside the recovery tooling
+#
+# `check_evidence_integrity` arrived on the evidence branch and the recovery
+# tooling arrived on the deployment branch, so nothing until integration made
+# them agree. Two things have to stay true, and both are cheap to assert.
+# ---------------------------------------------------------------------------
+
+
+def test_the_recovery_runbook_verifies_the_restored_evidence_store() -> None:
+    """A fingerprint comparison cannot see an object no row refers to.
+
+    It compares what was recorded, and an orphan was never recorded. A restore
+    that reassembled the database and the evidence tree from different points
+    in time is exactly the failure that leaves one, so the runbook has to run
+    the check that looks for it.
+    """
+    text = (DEPLOY / "unraid-main" / "RECOVERY.md").read_text(encoding="utf-8")
+    assert "check_evidence_integrity" in text
+    assert any(
+        "check_evidence_integrity" in line
+        for block in shell_blocks(text)
+        for line in block.splitlines()
+    ), "named in prose but not in a block an operator can copy"
+
+
+def test_nothing_schedules_a_full_checksum_pass() -> None:
+    """`--verify-sha` reads every stored byte.
+
+    On this corpus that is a maintenance window, not a health check, and a
+    health check that takes a maintenance window is a health check somebody
+    switches off. It stays an explicit, deliberate operation: no runbook block,
+    no script, no CI step may imply it.
+
+    Prose is exempt, and so are the heredocs the scripts print instructions
+    from, for the same reason the destructive-command scan exempts them: the
+    documentation has to be able to say "not this flag, and here is why".
+    """
+
+    def runnable(path: Path) -> list[str]:
+        text = path.read_text(encoding="utf-8")
+        if path.suffix == ".md":
+            return [line for block in shell_blocks(text) for line in block.splitlines()]
+        if path.suffix == ".sh":
+            return executable_lines(text)
+        # YAML and the Dockerfile: everything a comment marker does not disown.
+        return [
+            line.strip()
+            for line in text.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+
+    candidates = [
+        *RUNBOOKS,
+        *SHELL_SCRIPTS,
+        ROOT / ".github" / "workflows" / "ci.yml",
+        DEPLOY / "unraid-main" / "compose.yml",
+        DEPLOY / "unraid-test" / "compose.yml",
+        DEPLOY / "recovery-rehearsal" / "compose.yml",
+        ROOT / "docker-compose.yml",
+        ROOT / "Dockerfile",
+    ]
+    for path in candidates:
+        if not path.exists():
+            continue
+        for line in runnable(path):
+            assert "--verify-sha" not in line, (
+                f"{path.name}: a full checksum pass must be asked for by hand\n  {line}"
+            )

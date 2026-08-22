@@ -195,11 +195,16 @@ The data is back. Nothing has been verified and nothing is published yet.
        docker compose ... exec -T web python manage.py recovery_fingerprint \
          --compare /path/to/fingerprint.json
 
-  3. rebuild what was deliberately not backed up:
+  3. prove the restored store and database still describe each other. This is
+     the different question: a fingerprint cannot see an object no row refers
+     to. Structural only — --verify-sha reads the whole store:
+       docker compose ... exec -T web python manage.py check_evidence_integrity
+
+  4. rebuild what was deliberately not backed up:
        docker compose ... exec -T web python manage.py rebuild_document_derivatives --all
        docker compose ... exec -T web python manage.py rebuild_search_index
 
-  4. only then start the tunnel and let anybody in.
+  5. only then start the tunnel and let anybody in.
 
 deploy/unraid-main/RECOVERY.md has the full sequence, including the parts this
 script deliberately does not automate.

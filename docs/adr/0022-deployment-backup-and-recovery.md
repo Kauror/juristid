@@ -88,13 +88,29 @@ Rather than assume additivity, the plan says which it is, before it is applied.
 Six users and an announced ten minutes is better than a silent compatibility
 gamble, and this system has no architecture that would make zero downtime true.
 
-### Three health questions, kept apart
+### Four health questions, kept apart
 
 | | Proves | Where |
 | --- | --- | --- |
 | Liveness | the process is up and its database answers | `/healthz`, the image HEALTHCHECK |
 | Readiness | schema applied, mounts correct, configuration coherent | `manage.py deployment_readiness` |
-| Data integrity | the canonical state is what it should be | `manage.py recovery_fingerprint` |
+| Restore fidelity | the canonical state is the one that was backed up | `manage.py recovery_fingerprint --compare` |
+| Evidence integrity | the store and the database still describe each other | `manage.py check_evidence_integrity` |
+
+The last two are the pair most likely to be treated as one, so the distinction
+is written down here as well as in `RECOVERY.md`. A fingerprint comparison needs
+an earlier fingerprint and answers "did everything come back"; it cannot see an
+orphaned object, because an orphan was never in the fingerprint. The integrity
+check needs nothing but the deployment and answers "is the live pair consistent
+right now"; it cannot see that forty Matters are missing, because it has nothing
+to compare against. A restore runs both, in that order.
+
+Neither is scheduled by anything in this repository. The integrity check's
+structural pass is cheap enough to be scheduled if the host ever gains a
+decided scheduling mechanism; its `--verify-sha` pass reads every stored byte
+and is a maintenance window, so it is asked for explicitly, never implied, and
+must not appear in a healthcheck or a startup path
+(`app/documents/integrity.py`).
 
 Readiness is a command, not an endpoint, for two reasons: it loads the migration
 graph and probes every mount, which has no business on a request path; and it
