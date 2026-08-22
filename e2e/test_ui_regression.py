@@ -82,6 +82,11 @@ CLOCK_DEPENDENT = [
     # geometry — fixed columns, tabular figures — does not.
     ".table__date--tight",
     ".statcard__value",
+    # A date control's value renders in the control, and the create form's
+    # Saabus defaults to today. The unmasked control put today's date into two
+    # committed baselines, which held only because every run so far happened on
+    # the same day.
+    'input[type="date"]',
     "time",
 ]
 
@@ -249,8 +254,16 @@ def test_create_matter_form(page, base_url):
 
 
 def test_create_matter_refused(page, base_url):
-    """A refused save: the error beside the field, the layout intact."""
+    """A refused save: the error beside the field, the layout intact.
+
+    Past the browser's own required-field check, because the server's refusal
+    is the state this scenario exists to lock. Without `noValidate` the click
+    never left the page and the "refused" baseline was a pristine form wearing
+    the wrong name — found in the integration content review, not by the suite,
+    which is exactly why baselines get read before they get committed.
+    """
     signed_in(page, base_url, "/teemad/uus/")
+    page.locator("form.createform").evaluate("form => form.noValidate = true")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
     compare("uus-teema-viga", capture(page, "uus-teema-viga"))
