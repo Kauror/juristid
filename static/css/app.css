@@ -1338,6 +1338,13 @@ p.formnote {
   color: var(--status-warning);
 }
 
+/* A fact whose value is a date. Tabular figures so the two date fields line up
+   with each other, and a hook the screenshot suite masks: these are the only
+   values in the band that change with the calendar. */
+.metafield--date .metafield__value {
+  font-variant-numeric: tabular-nums;
+}
+
 .metafield__label {
   font-size: 10.5px;
   font-weight: var(--typography-weight-bold);

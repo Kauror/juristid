@@ -62,14 +62,21 @@ CHANNEL_TOLERANCE = 24
 MAX_DIFFERING_FRACTION = 0.002
 
 #: Everything whose text is derived from the clock. Masked as narrowly as
-#: possible: the date's digits, not the cell, the label or the row.
+#: possible: the date's digits, not the cell, the label or the row — so the
+#: register still proves it renders a date meaning beside every date, and the
+#: Matter header still proves its facts strip is one line of values.
+#:
+#: Every one of these renders a fixed-width `dd.mm.yyyy`, so masking the pixels
+#: is enough: the boxes do not change size from one day to the next and the
+#: layout around them does not move.
 CLOCK_DEPENDENT = [
     ".app__footer",
     ".dateline",
     ".workrow__date",
     ".factrow__date",
+    ".table__lastactivity",
+    ".metafield--date .inlineedit__trigger",
     "time",
-    ".pagehead__context time",
 ]
 
 STYLE_FIXTURE = """

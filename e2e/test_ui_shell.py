@@ -372,7 +372,9 @@ def test_an_inline_edit_opens_the_real_control_without_moving_the_page(page, bas
     trigger = page.locator(".inlineedit__trigger").first
     trigger.focus()
     page.keyboard.press("Enter")
-    expect(page.locator(".inlineedit[open] select, .inlineedit[open] input").first).to_be_visible()
+    # The visible control, not the first input in the form: `{% csrf_token %}`
+    # renders a hidden input ahead of it, and a hidden input is never visible.
+    expect(page.locator(".inlineedit[open] .field__input").first).to_be_visible()
     after = page.locator(".matterhead").bounding_box()["height"]
     assert after == before, "opening an inline edit reflowed the header"
 
