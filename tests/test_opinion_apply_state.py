@@ -628,6 +628,7 @@ def test_confirming_the_sending_is_what_resolves_a_bundle(archive_path, administ
     OpinionMatchCandidate.objects.filter(item__sha256=letter.sha256).update(
         state=OpinionCandidateState.LINKED,
         review_approves_submission=True,
+        reviewed_sent_date=datetime.date(2024, 4, 10),
         decided_by=administrator,
         decided_at=timezone.now(),
     )
