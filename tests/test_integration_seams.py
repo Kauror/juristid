@@ -297,7 +297,15 @@ def test_a_rerun_resurrects_neither_the_submission_nor_its_search_row(
         decided_at=timezone.now(),
     )
     assert not submission_hits(MINISTRY, specialist), "the deleted submission is out of the index"
-    before = set(SearchDocument.objects.values_list("pk", flat=True))
+    # The submission rows specifically, rather than every row in the table. The
+    # claim is about resurrection, and a projection that legitimately refreshes
+    # a Matter row would change primary keys without changing what is findable.
+    before = set(
+        SearchDocument.objects.filter(source_kind=SearchSourceKind.SUBMISSION).values_list(
+            "source_object_id", flat=True
+        )
+    )
+    assert before == set(), "the deleted submission left a search row behind"
 
     second = build_plan(archive_path=archive, kodadash_path=None)
     apply_plan(second, batch=open_batch(second))
@@ -307,7 +315,14 @@ def test_a_rerun_resurrects_neither_the_submission_nor_its_search_row(
     )
     assert not OpinionSubmissionImport.objects.exists()
     assert OpinionMatchCandidate.objects.get(matter=matter).state == decision
-    assert set(SearchDocument.objects.values_list("pk", flat=True)) == before
+    assert (
+        set(
+            SearchDocument.objects.filter(source_kind=SearchSourceKind.SUBMISSION).values_list(
+                "source_object_id", flat=True
+            )
+        )
+        == before
+    )
     assert not submission_hits(MINISTRY, specialist)
 
 
