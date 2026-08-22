@@ -186,12 +186,16 @@ def test_a_decision_reaches_the_projection_on_the_next_rebuild(held):
     row = OpinionArchiveSearchDocument.objects.get(binary=first)
     assert row.is_linked is False
 
-    from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
     from app.legacy_import.opinion_enums import ArchiveLinkBasis
+    from app.legacy_import.opinion_links import link_matter
     from tests import factories
 
-    OpinionArchiveMatterLink.objects.create(
-        binary=first, matter=factories.ArchiveMatterFactory(), basis=ArchiveLinkBasis.EXACT_BINARY
+    # Through the service, not the model: it is what stamps `linked_at`, and a
+    # link with no time on it is not a link anybody can audit.
+    link_matter(
+        binary=first,
+        matter=factories.ArchiveMatterFactory(),
+        basis=ArchiveLinkBasis.EXACT_BINARY,
     )
     rebuild_archive_index()
     row.refresh_from_db()
