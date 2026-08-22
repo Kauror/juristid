@@ -339,6 +339,11 @@ from app.legacy_import.opinion_archive import (  # noqa: E402
     OpinionMatchCandidate,
     OpinionSubmissionImport,
 )
+from app.legacy_import.opinion_binary import (  # noqa: E402
+    OpinionArchiveBinary,
+    OpinionArchiveMatterLink,
+    OpinionArchiveText,
+)
 from app.legacy_import.source_pages import (  # noqa: E402
     CandidateClass,
     CandidateState,
@@ -371,8 +376,11 @@ __all__ = [
     "MatterSourcePage",
     "MatterSourceReference",
     "OpinionArchiveBatch",
+    "OpinionArchiveBinary",
     "OpinionArchiveItem",
+    "OpinionArchiveMatterLink",
     "OpinionArchiveMetadata",
+    "OpinionArchiveText",
     "OpinionMatchCandidate",
     "OpinionSubmissionImport",
     "ReconciliationStatus",

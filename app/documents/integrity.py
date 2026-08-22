@@ -52,6 +52,7 @@ from django.utils import timezone
 
 from app.documents.enums import ExtractionState
 from app.documents.models import Document, DocumentVersion
+from app.documents.references import referenced_storage_keys
 from app.documents.services import evidence_storage
 
 #: Bytes per read when verifying a checksum. Large enough that the syscall
@@ -326,7 +327,11 @@ def _check_orphans(storage: Any, report: IntegrityReport) -> None:
         # Nothing could be listed, so "no orphans" would be a conclusion drawn
         # from an absence of evidence rather than from evidence of absence.
         return
-    referenced = set(DocumentVersion.objects.values_list("storage_key", flat=True))
+    # Every canonical holder of evidence bytes, asked in one place. The opinion
+    # archive keeps its binaries here too, and a checker that only knew about
+    # `DocumentVersion` would report every one of them as an orphan — which is
+    # the report an operator acts on with the pruner (app/documents/references.py).
+    referenced = referenced_storage_keys()
     for key in keys:
         if key not in referenced:
-            report.findings.append(Finding(ORPHAN_OBJECT, key, "no DocumentVersion refers to it"))
+            report.findings.append(Finding(ORPHAN_OBJECT, key, "no canonical row refers to it"))
