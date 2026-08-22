@@ -64,6 +64,14 @@ jobs:
           DJANGO_SECURE_SSL_REDIRECT: "1"
         run: uv run python manage.py check --deploy
 
+      # The deployment and recovery scripts are the tooling an operator reaches
+      # for on the worst day of the system's life, and shell is where an unquoted
+      # path or an unset variable turns into a command that runs against the
+      # wrong thing. `ruff` never sees them; this does. Pre-installed on the
+      # runner, so it costs nothing.
+      - name: Shell scripts
+        run: shellcheck --shell=bash scripts/*.sh scripts/deploy/*.sh
+
   tests:
     name: PostgreSQL 18 test suite
     runs-on: ubuntu-latest
@@ -251,6 +259,195 @@ jobs:
             artifacts/server.log
           if-no-files-found: warn
           retention-days: 14
+
+  recovery:
+    name: Backup and restore rehearsal
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    # The strongest claim this repository can make about its backups without
+    # touching production: a set is created by the production script, verified,
+    # the state it came from is destroyed, and the same production restore
+    # script brings it back — after which the canonical fingerprint has to
+    # match, byte digests and all.
+    #
+    # Synthetic data throughout. Nothing real ever enters CI.
+    env:
+      DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+      DJANGO_DEBUG: "0"
+      DJANGO_STATIC_MANIFEST: "0"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,[::1]"
+      DJANGO_SECURE_SSL_REDIRECT: "0"
+      DEV_LOGIN_ENABLED: "0"
+      REAL_DATA_ALLOWED: "0"
+      APPLICATION_ENVIRONMENT: recovery-rehearsal
+      POSTGRES_DB: juristid
+      POSTGRES_USER: juristid
+      POSTGRES_PASSWORD: rehearsal-only-not-a-secret
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      COMPOSE_FILE_PATH: deploy/recovery-rehearsal/compose.yml
+      PROJECT: juristid-recovery-rehearsal
+      DATA_ROOT: /tmp/juristid-rehearsal/data
+      BACKUP_ROOT: /tmp/juristid-rehearsal/backups
+      EVIDENCE_ROOT: /tmp/juristid-rehearsal/data/evidence
+      DERIVATIVE_ROOT: /tmp/juristid-rehearsal/data/derivatives
+      LEGACY_SOURCE_ROOT: /tmp/juristid-rehearsal/data/legacy-source
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: Provision the storage classes
+        run: |
+          mkdir -p "$EVIDENCE_ROOT" "$DERIVATIVE_ROOT" "$LEGACY_SOURCE_ROOT" "$BACKUP_ROOT"
+
+      - name: Start the disposable database
+        run: docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" up -d --wait
+
+      - name: Migrate and seed a synthetic register
+        run: |
+          uv run python manage.py migrate --noinput
+          uv run python manage.py seed_e2e_data
+
+      # Source evidence is its own storage class and its own backup question.
+      # A rehearsal that only covers the database would prove half a procedure.
+      - name: Synthetic page XML in the legacy-source tree
+        run: |
+          printf '<page id="rehearsal">synthetic</page>' > "$LEGACY_SOURCE_ROOT/rehearsal-page.xml"
+
+      - name: Fingerprint the state that is about to be destroyed
+        run: uv run python manage.py recovery_fingerprint --out /tmp/juristid-rehearsal/before.json
+
+      - name: Back up
+        run: |
+          scripts/deploy/juristid-backup.sh \
+            --project "$PROJECT" \
+            --compose-file "$COMPOSE_FILE_PATH" \
+            --data-root "$DATA_ROOT" \
+            --backup-root "$BACKUP_ROOT" \
+            --minimum-free-mib 64
+
+      - name: Name the set that was produced
+        run: |
+          set_dir="$(find "$BACKUP_ROOT/sets" -mindepth 1 -maxdepth 1 -type d | sort | tail -1)"
+          test -n "$set_dir" || { echo "the backup produced no set"; exit 1; }
+          echo "SET_DIR=$set_dir" >> "$GITHUB_ENV"
+
+      # -- failure injection ------------------------------------------------
+      #
+      # A backup script is only worth having if it fails loudly, so the failures
+      # are exercised rather than assumed. Each of these must exit non-zero, and
+      # none of them may leave behind something a reader would mistake for a
+      # complete backup.
+
+      - name: A missing evidence mount is refused, not recorded as an empty backup
+        run: |
+          empty=/tmp/juristid-rehearsal/empty-mount
+          mkdir -p "$empty/evidence" "$empty/legacy-source"
+          before="$(find "$BACKUP_ROOT/sets" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          if scripts/deploy/juristid-backup.sh \
+               --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+               --data-root "$empty" --backup-root "$BACKUP_ROOT" --minimum-free-mib 64; then
+            echo "the backup succeeded against an empty evidence tree"; exit 1
+          fi
+          after="$(find "$BACKUP_ROOT/sets" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          test "$before" = "$after" || { echo "a failed backup left a finished-looking set behind"; exit 1; }
+
+      - name: A backup root that does not exist is refused
+        run: |
+          if scripts/deploy/juristid-backup.sh \
+               --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+               --data-root "$DATA_ROOT" --backup-root /tmp/juristid-rehearsal/nowhere; then
+            echo "the backup succeeded with no destination"; exit 1
+          fi
+
+      - name: A corrupted archive fails verification
+        run: |
+          cp -a "$SET_DIR" /tmp/juristid-rehearsal/corrupt-set
+          printf 'this is not a dump' > /tmp/juristid-rehearsal/corrupt-set/database.dump
+          if scripts/deploy/juristid-verify-backup.sh \
+               --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+               --set /tmp/juristid-rehearsal/corrupt-set; then
+            echo "verification passed a corrupted archive"; exit 1
+          fi
+
+      - name: A truncated archive fails verification
+        run: |
+          cp -a "$SET_DIR" /tmp/juristid-rehearsal/truncated-set
+          head -c 512 "$SET_DIR/database.dump" > /tmp/juristid-rehearsal/truncated-set/database.dump
+          if scripts/deploy/juristid-verify-backup.sh \
+               --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+               --set /tmp/juristid-rehearsal/truncated-set; then
+            echo "verification passed a truncated archive"; exit 1
+          fi
+
+      # -- the destructive part --------------------------------------------
+
+      - name: Destroy the database and the storage trees
+        run: |
+          docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" exec -T db \
+            psql --no-password -U juristid -d juristid \
+            -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'
+          rm -rf "$EVIDENCE_ROOT" "$LEGACY_SOURCE_ROOT" "$DERIVATIVE_ROOT"
+
+      - name: The application now refuses to call itself ready
+        run: |
+          if uv run python manage.py deployment_readiness --quiet; then
+            echo "readiness passed against a destroyed deployment"; exit 1
+          fi
+
+      - name: Restore
+        run: |
+          scripts/deploy/juristid-restore.sh \
+            --project "$PROJECT" \
+            --compose-file "$COMPOSE_FILE_PATH" \
+            --set "$SET_DIR" \
+            --backup-root "$BACKUP_ROOT" \
+            --data-root "$DATA_ROOT"
+
+      - name: A restore over a populated database is refused
+        run: |
+          if scripts/deploy/juristid-restore.sh \
+               --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
+               --set "$SET_DIR" --database-only; then
+            echo "the restore overwrote a populated database"; exit 1
+          fi
+
+      # -- what the restore has to prove ------------------------------------
+
+      - name: The canonical state came back, evidence bytes included
+        run: |
+          uv run python manage.py recovery_fingerprint \
+            --compare /tmp/juristid-rehearsal/before.json \
+            --out /tmp/juristid-rehearsal/after.json
+
+      - name: Rebuildable data is rebuilt rather than restored
+        run: |
+          uv run python manage.py rebuild_search_index
+          uv run python manage.py shell -c "
+          from app.search.models import SearchDocument
+          count = SearchDocument.objects.count()
+          assert count > 0, 'the search projection did not rebuild'
+          print(f'{count} search documents rebuilt')
+          "
+
+      - name: The restored deployment reports itself ready
+        run: uv run python manage.py deployment_readiness
+
+      - name: Rehearsal logs on failure
+        if: failure()
+        run: docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" logs
+
+      - name: Tear down
+        if: always()
+        run: docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" down -v
 
   container:
     name: Container and compose smoke test

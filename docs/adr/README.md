@@ -29,6 +29,7 @@ consequences and reversibility.
 | [0018](0018-structured-matter-facts.md) | Structured Matter facts, and the generated department views | Accepted, on a feature branch |
 | [0019](0019-opinion-archive-reconciliation.md) | Reconstructing historical submissions from the opinions archive | Accepted, on a feature branch |
 | [0020](0020-historical-cutover-current-state.md) | The historical cutover, and what a closed archive row may claim | Accepted, on a feature branch |
+| [0021](0021-deployment-backup-and-recovery.md) | Deployment, backup and recovery on the Unraid host | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -43,3 +44,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0018 — Stage 2G structured Matter facts
 - 0019 — Stage 2H opinion archive and historical submissions
 - 0020 — Stage 2I historical cutover state
+- 0021 — deployment, backup and recovery on the host the system actually runs on
