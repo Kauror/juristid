@@ -17,6 +17,7 @@ import datetime
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from app.core.errors import DomainError
 from app.legacy_import.opinion_archive import (
@@ -72,6 +73,7 @@ def binary(db):
         mime_type="application/pdf",
         storage_key="opinion-archive/bb/bb/" + "b" * 64,
         source_archive_sha256="a" * 64,
+        materialized_at=timezone.now(),
     )
 
 

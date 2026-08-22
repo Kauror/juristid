@@ -18,6 +18,7 @@ import datetime
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from app.legacy_import.opinion_archive import OpinionArchiveBatch, OpinionArchiveItem
 from app.legacy_import.opinion_binary import OpinionArchiveBinary, OpinionArchiveText
@@ -65,6 +66,10 @@ def hold(
         mime_type="application/pdf",
         storage_key=f"opinion-archive/{sha[:2]}/{sha[2:4]}/{sha}",
         source_archive_sha256="a" * 64,
+        # Not nullable, and the fixture should not pretend otherwise: a binary
+        # row exists because materialisation put bytes in the store, and when
+        # it did so is part of the record.
+        materialized_at=timezone.now(),
     )
     for path in paths or ["Opinions/naidis.pdf"]:
         OpinionArchiveItem.objects.create(

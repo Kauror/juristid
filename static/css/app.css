@@ -1065,6 +1065,21 @@ p.formnote {
   white-space: nowrap;
 }
 
+/* The 48px above is clearance for the sticky top bar, and it is only correct
+   when the header sticks to the *viewport*.
+ *
+ * `.tablewrap` scrolls horizontally, which makes it a scroll container in both
+ * axes — browsers will not give one axis `auto` and the other `visible`. A
+ * sticky header inside it therefore sticks to the wrapper, where "stay 48px
+ * from the top" means "sit 48px down, on top of the first row", from the
+ * moment the page loads. It is invisible in a full-page screenshot, because
+ * that capture renders sticky elements unshifted; Playwright found it by
+ * trying to click a link in the first row and hitting the column header
+ * instead. */
+.tablewrap .table thead th {
+  top: 0;
+}
+
 /* 32–34px rows. Every cell that can hold a long value clips it rather than
    wrapping: one wrapped owner name in one row re-rhythms the whole table, and
    the register's job is to be scannable at a glance. */

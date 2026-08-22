@@ -111,11 +111,13 @@ def test_materialising_twice_changes_nothing(catalogued):
     assert second.occurrences_already_linked == 3
 
 
-def test_a_row_whose_object_vanished_is_a_failure_not_a_reuse(catalogued, settings):
+def test_a_row_whose_object_vanished_is_reported_rather_than_papered_over(catalogued, settings):
     """The one case a naive "already have it" check gets wrong.
 
-    A row saying the bytes are held, with nothing behind it, is worse than no
-    row at all: it makes the archive report full coverage over an empty store.
+    A row saying the bytes are held, with nothing behind it, makes the archive
+    report full coverage over an empty store. The run says so and exits
+    non-zero rather than quietly re-writing: the object may have been deleted,
+    the storage class may be mounted wrong, and re-writing would hide which.
     """
     path, digest, letters = catalogued
     materialize(archive_path=path, expected_archive_sha256=digest)
@@ -123,9 +125,9 @@ def test_a_row_whose_object_vanished_is_a_failure_not_a_reuse(catalogued, settin
     (settings.EVIDENCE_ROOT / binary.storage_key).unlink()
 
     report = materialize(archive_path=path, expected_archive_sha256=digest)
-    # Re-written, not silently counted as present.
-    assert report.bytes_written > 0
-    assert (settings.EVIDENCE_ROOT / binary.storage_key).exists()
+    assert report.missing_stored_object == 1
+    assert not report.ok
+    assert report.binaries_reused == 1, "the intact letter is still reused"
 
 
 # ---------------------------------------------------------------------------

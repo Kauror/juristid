@@ -109,23 +109,37 @@ FORMER_NAME = "Kadri Endine"
 #: The archive's synthetic snapshot, and the letters inside it. Invented, like
 #: everything else here: no Koda opinion, ministry or filename may appear in a
 #: fixture.
-ARCHIVE_SNAPSHOT_SHA = "e2e" + "0" * 61
+#:
+#: The digests are **derived from the bytes**, never written down. An archive
+#: binary is identified by the hash of what it holds, and the recovery
+#: fingerprint verifies stored objects against that recorded hash — so a fixture
+#: carrying a decorative SHA would fail the restore rehearsal, which is exactly
+#: what it did the first time this was written.
+ARCHIVE_SNAPSHOT_SHA = hashlib.sha256(b"juristid-e2e-opinions-archive").hexdigest()
 ARCHIVE_LETTERS = [
     (
-        "e2e1" + "1" * 60,
         "Näidisseaduse muutmise arvamus",
         "Näidisministeerium",
         "2024-04-10",
         "Käesolevaga esitab näidiskoda arvamuse näidisseaduse eelnõu kohta.",
     ),
     (
-        "e2e2" + "2" * 60,
         "Sidumata näidiskiri",
         "Teine näidisamet",
         "2023-09-01",
         "",
     ),
 ]
+
+
+def archive_letter_bytes(index: int) -> bytes:
+    """The deterministic content of one seeded archive letter."""
+    return b"%PDF-1.4\n% synthetic e2e opinion " + str(index).encode() + b"\n%%EOF\n"
+
+
+def archive_letter_sha(index: int) -> str:
+    """What that letter is identified by, computed the way the importer does."""
+    return hashlib.sha256(archive_letter_bytes(index)).hexdigest()
 
 
 class Command(BaseCommand):
@@ -263,8 +277,9 @@ class Command(BaseCommand):
         )
         storage = evidence_storage()
 
-        for index, (digest, title, recipient, when, body) in enumerate(ARCHIVE_LETTERS):
-            content = b"%PDF-1.4\n% synthetic e2e opinion " + str(index).encode() + b"\n%%EOF\n"
+        for index, (title, recipient, when, body) in enumerate(ARCHIVE_LETTERS):
+            content = archive_letter_bytes(index)
+            digest = archive_letter_sha(index)
             key = f"opinion-archive/{digest[:2]}/{digest[2:4]}/{digest}"
             if not storage.exists(key):
                 storage.save(key, ContentFile(content))

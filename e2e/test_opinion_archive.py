@@ -18,14 +18,14 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from app.core.management.commands.seed_e2e_data import ARCHIVE_LETTERS
+from app.core.management.commands.seed_e2e_data import ARCHIVE_LETTERS, archive_letter_sha
 from e2e.conftest import ADMIN, MARTIN, sign_in
 
 pytestmark = pytest.mark.e2e
 
-LINKED_TITLE = ARCHIVE_LETTERS[0][1]
-UNLINKED_TITLE = ARCHIVE_LETTERS[1][1]
-LINKED_SHA = ARCHIVE_LETTERS[0][0]
+LINKED_TITLE = ARCHIVE_LETTERS[0][0]
+UNLINKED_TITLE = ARCHIVE_LETTERS[1][0]
+LINKED_SHA = archive_letter_sha(0)
 
 ARCHIVE_PATH = "/haldus/arvamuste-arhiiv/"
 
