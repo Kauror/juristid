@@ -16,23 +16,59 @@ keep it.
     <div class="mattermain">
       {% include "matters/partials/matter_banner.html" %}
 
-      <section class="card" style="padding:var(--spacing-4)" aria-labelledby="seisukoht-heading">
-        <h2 class="nextaction__label" id="seisukoht-heading">Koja seisukoht</h2>
-        <form class="form" method="post" action="{% url 'matters:update_position' pk=matter.pk %}">
-          {% csrf_token %}
-          <label class="field">
-            <span class="field__label">Seisukoht</span>
-            {{ position_form.position_summary }}
-          </label>
-          <label class="field">
-            <span class="field__label">Põhjendus</span>
-            {{ position_form.rationale_summary }}
-            <span class="field__help">Millistel tõenditel ja kaalutlustel seisukoht põhineb.</span>
-          </label>
-          <div class="form__actions">
-            <button class="button button--primary" type="submit">Salvesta seisukoht</button>
-          </div>
-        </form>
+      {% comment %}
+        What the Chamber's position *is*, before how to change it.
+
+        This surface used to be a permanently open pair of textareas, so the
+        answer to "what does Koda think about this" was a form field somebody
+        had to read out of an input. The position is prose now, the reasoning
+        under it, and the same POST sits one disclosure below — unchanged in
+        route, field names and validation.
+      {% endcomment %}
+      <section class="card card--form positionpanel" aria-labelledby="seisukoht-heading">
+        <h2 class="sectionlabel" id="seisukoht-heading">Koja seisukoht</h2>
+
+        {% if matter.position_summary %}
+          <p class="positionpanel__summary">{{ matter.position_summary|linebreaksbr }}</p>
+          {% if matter.rationale_summary %}
+            <p class="sectionlabel positionpanel__label">Põhjendus</p>
+            <p class="positionpanel__rationale">{{ matter.rationale_summary|linebreaksbr }}</p>
+          {% endif %}
+        {% else %}
+          <p class="positionpanel__empty">
+            Koja seisukohta ei ole veel sõnastatud. Kuni see on kirjutamata, ei saa
+            arvamust sellele viidata.
+          </p>
+        {% endif %}
+
+        <details class="disclosure disclosure--inline"
+                 {% if position_form.errors %}open{% endif %}>
+          <summary class="disclosure__summary">
+            {% if matter.position_summary %}Muuda seisukohta{% else %}Sõnasta Koja seisukoht{% endif %}
+          </summary>
+          <form class="form disclosure__body" method="post"
+                action="{% url 'matters:update_position' pk=matter.pk %}">
+            {% csrf_token %}
+            <label class="field">
+              <span class="field__label">Seisukoht</span>
+              {{ position_form.position_summary }}
+              {% if position_form.position_summary.errors %}
+                <span class="field__error">{{ position_form.position_summary.errors|first }}</span>
+              {% endif %}
+            </label>
+            <label class="field">
+              <span class="field__label">Põhjendus</span>
+              {{ position_form.rationale_summary }}
+              <span class="field__help">Millistel tõenditel ja kaalutlustel seisukoht põhineb.</span>
+              {% if position_form.rationale_summary.errors %}
+                <span class="field__error">{{ position_form.rationale_summary.errors|first }}</span>
+              {% endif %}
+            </label>
+            <div class="form__actions">
+              <button class="button button--primary" type="submit">Salvesta seisukoht</button>
+            </div>
+          </form>
+        </details>
       </section>
 
       <section aria-labelledby="arvamused-heading">

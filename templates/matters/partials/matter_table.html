@@ -10,12 +10,12 @@ and a Matter with no next step says so in words rather than showing a blank.
     <thead>
       <tr>
         <th scope="col" class="table__ref">Viide</th>
-        <th scope="col">Pealkiri</th>
+        <th scope="col" class="table__title">Pealkiri</th>
         <th scope="col" class="table__stage">Hetkeseis</th>
-        <th scope="col">Vastutaja</th>
-        <th scope="col">Järgmiseks</th>
-        <th scope="col">Kuupäev</th>
-        <th scope="col" class="table__lastactivity">Viimane tegevus</th>
+        <th scope="col" class="table__owner">Vastutaja</th>
+        <th scope="col" class="table__action">Järgmiseks</th>
+        <th scope="col" class="table__date">Kuupäev</th>
+        <th scope="col" class="table__date table__lastactivity">Viimane tegevus</th>
       </tr>
     </thead>
     <tbody>
@@ -30,42 +30,66 @@ and a Matter with no next step says so in words rather than showing a blank.
             {% endif %}
           </td>
 
+          {% comment %}
+            The title truncates; the state badges beside it never do. A row that
+            drops "Piiratud" to fit a long title has hidden the one thing about
+            it a reader must not miss, so the flags keep their width and the
+            title takes what is left. Full text is on the Matter page and in the
+            title attribute.
+          {% endcomment %}
           <td class="table__title">
-            <a href="{% url 'matters:matter_detail' pk=matter.pk %}" title="{{ matter.title }}">
-              {{ matter.title }}
-            </a>
-            {% if matter.record_mode == "ARCHIVE" %}
-              <span class="badge badge--archive">Arhiiv</span>
-            {% endif %}
-            {% if matter.is_restricted %}
-              <span class="badge badge--restricted">Piiratud</span>
-            {% endif %}
-            {% if not matter.is_open %}
-              <span class="badge badge--closed">Suletud</span>
-            {% endif %}
+            <span class="table__titlecell">
+              <a class="table__titlelink"
+                 href="{% url 'matters:matter_detail' pk=matter.pk %}" title="{{ matter.title }}">
+                {{ matter.title }}
+              </a>
+              {% if matter.record_mode == "ARCHIVE" or matter.is_restricted or not matter.is_open %}
+                <span class="table__flags">
+                  {% if matter.record_mode == "ARCHIVE" %}
+                    <span class="badge badge--archive">Arhiiv</span>
+                  {% endif %}
+                  {% if matter.is_restricted %}
+                    <span class="badge badge--restricted">Piiratud</span>
+                  {% endif %}
+                  {% if not matter.is_open %}
+                    <span class="badge badge--closed">Suletud</span>
+                  {% endif %}
+                </span>
+              {% endif %}
+            </span>
           </td>
 
           <td class="table__stage">
-            {% if matter.stage %}{{ matter.stage.label_et }}{% else %}<span class="muted">—</span>{% endif %}
+            {% if matter.stage %}
+              <span class="table__clip" title="{{ matter.stage.label_et }}">{{ matter.stage.label_et }}</span>
+            {% else %}<span class="muted">—</span>{% endif %}
           </td>
 
-          <td>
-            {% if matter.owner %}{{ matter.owner.display_name }}
+          <td class="table__owner">
+            {% if matter.owner %}
+              <span class="table__clip" title="{{ matter.owner.display_name }}">{{ matter.owner.display_name }}</span>
             {% else %}<span class="table__missing">Vastutajata</span>{% endif %}
           </td>
 
           <td class="table__action">
-            {% if action %}
-              <span class="mode mode--{{ action.kind|lower }}">{{ action.get_kind_display }}</span>
-              <span class="table__actiontext" title="{{ action.text }}">{{ action.text }}</span>
-            {% else %}
-              <span class="table__missing">Järgmine samm puudub</span>
-            {% endif %}
+            <span class="table__actioncell">
+              {% if action %}
+                <span class="mode mode--{{ action.kind|lower }}">{{ action.get_kind_display }}</span>
+                <span class="table__actiontext" title="{{ action.text }}">{{ action.text }}</span>
+              {% else %}
+                <span class="table__missing">Järgmine samm puudub</span>
+              {% endif %}
+            </span>
           </td>
 
+          {% comment %}
+            Meaning and value on one line. What kind of date this is stays
+            written out — a bare "15.08" does not say whether missing it
+            matters — but it does not cost the row a second line to say so.
+          {% endcomment %}
           <td class="table__date">
             {% if action and action.target_date %}
-              <span class="datemeaning">{{ action.date_label }}</span><br>
+              <span class="datemeaning">{{ action.date_label }}</span>
               <span class="dateline
                            {% if action.is_overdue %}dateline--overdue
                            {% elif action.date_semantics == 'DEADLINE' %}dateline--deadline{% endif %}
@@ -73,7 +97,7 @@ and a Matter with no next step says so in words rather than showing a blank.
                 {{ action.display_date }}
               </span>
             {% elif matter.response_deadline %}
-              <span class="datemeaning">Arvamuse tähtaeg</span><br>
+              <span class="datemeaning">Arvamuse tähtaeg</span>
               <span class="dateline dateline--deadline">{{ matter.response_deadline|date:"d.m.Y" }}</span>
             {% else %}
               <span class="muted">—</span>

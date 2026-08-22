@@ -1,30 +1,40 @@
 {% comment %}
 Special-state banners. A restricted, closed or archive Matter should say so
 before anything else on the page, in words rather than only a tinted badge.
+
+Divs, not paragraphs. The closed banner carries a form, and a <form> start tag
+inside an open <p> makes the parser close the paragraph: the "Ava uuesti…"
+button was landing outside the banner box it belongs to, followed by an empty
+paragraph. The banner's own action slot keeps it inside and at the right.
 {% endcomment %}
 {% if matter.is_restricted %}
-  <p class="banner banner--restricted">
-    <strong>Piiratud nähtavus.</strong>
-    Seda teemat näevad ainult vastutaja, kaastöötajad ja osakonnajuht. Sissekanded,
-    arvamused ja tõendid pärivad sama piirangu.
-  </p>
+  <div class="banner banner--restricted">
+    <p class="banner__text">
+      <strong>Piiratud nähtavus.</strong>
+      Seda teemat näevad ainult vastutaja, kaastöötajad ja osakonnajuht. Sissekanded,
+      arvamused ja tõendid pärivad sama piirangu.
+    </p>
+  </div>
 {% endif %}
 {% if not matter.is_open %}
-  <p class="banner banner--closed">
-    <strong>Teema on suletud.</strong>
-    {{ matter.get_disposition_display }}{% if matter.disposition_reason %} — {{ matter.disposition_reason }}{% endif %}
-    {% if matter.closed_at %}<span class="muted">({{ matter.closed_at|date:"d.m.Y" }})</span>{% endif %}
-    <span class="topbar__spacer"></span>
-    <form method="post" action="{% url 'matters:reopen' pk=matter.pk %}">
+  <div class="banner banner--closed">
+    <p class="banner__text">
+      <strong>Teema on suletud.</strong>
+      {{ matter.get_disposition_display }}{% if matter.disposition_reason %} — {{ matter.disposition_reason }}{% endif %}
+      {% if matter.closed_at %}<span class="muted">({{ matter.closed_at|date:"d.m.Y" }})</span>{% endif %}
+    </p>
+    <form class="banner__actions" method="post" action="{% url 'matters:reopen' pk=matter.pk %}">
       {% csrf_token %}
       <button class="button button--quiet" type="submit">Ava uuesti…</button>
     </form>
-  </p>
+  </div>
 {% endif %}
 {% if matter.record_mode == "ARCHIVE" %}
-  <p class="banner banner--archive">
-    <strong>Arhiivikirje.</strong>
-    Imporditud registrist{% if matter.source_era %} ({{ matter.source_era }}){% endif %}.
-    Kaasaegsed väljad võivad puududa — neid ei ole tagantjärele juurde mõeldud.
-  </p>
+  <div class="banner banner--archive">
+    <p class="banner__text">
+      <strong>Arhiivikirje.</strong>
+      Imporditud registrist{% if matter.source_era %} ({{ matter.source_era }}){% endif %}.
+      Kaasaegsed väljad võivad puududa — neid ei ole tagantjärele juurde mõeldud.
+    </p>
+  </div>
 {% endif %}
