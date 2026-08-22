@@ -30,10 +30,11 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Any
 
-from django.db.models import Count, Exists, F, OuterRef, QuerySet
+from django.db.models import Exists, F, OuterRef, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
+from app.core.authorization import scoped_count
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.submissions.enums import SubmissionStatus
@@ -411,7 +412,12 @@ def owner_inventory(user: Any) -> list[CountRow]:
     grouped = (
         active_matters(user)
         .values("owner_id", "owner__display_name")
-        .annotate(total=Count("id"))
+        # `scoped_count`, not `Count("id")`. `active_matters` has been through
+        # the visibility predicate, which joins the collaborators many-to-many
+        # for everybody except the department head — so a plain count here gives
+        # a shared file one tally per collaborator, and these bars stop summing
+        # to the *Aktiivsed teemad* card beside them (app/core/authorization.py).
+        .annotate(total=scoped_count())
         .order_by("-total", "owner__display_name")
     )
 
@@ -419,7 +425,12 @@ def owner_inventory(user: Any) -> list[CountRow]:
         CountRow(
             label=entry["owner__display_name"],
             count=entry["total"],
-            url=_teemad(olek="avatud", vastutaja=entry["owner_id"]),
+            # `liik` as well, exactly as the summary cards carry it. Every
+            # number on this page counts `active_matters`, which is open *FULL*
+            # records — so a link without the record-mode filter opens a list
+            # that also holds open archive rows, and is longer than the bar it
+            # came from (the one thing `_teemad` exists to prevent).
+            url=_teemad(olek="avatud", liik=RecordMode.FULL, vastutaja=entry["owner_id"]),
         )
         for entry in grouped
         if entry["owner_id"] is not None
@@ -442,14 +453,14 @@ def stage_distribution(user: Any) -> list[CountRow]:
         active_matters(user)
         .filter(stage__isnull=False)
         .values("stage__key", "stage__label_et", "stage__sort_order")
-        .annotate(total=Count("id"))
+        .annotate(total=scoped_count())
         .order_by("stage__sort_order")
     )
     return [
         CountRow(
             label=entry["stage__label_et"],
             count=entry["total"],
-            url=_teemad(olek="avatud", hetkeseis=entry["stage__key"]),
+            url=_teemad(olek="avatud", liik=RecordMode.FULL, hetkeseis=entry["stage__key"]),
         )
         for entry in grouped
     ]

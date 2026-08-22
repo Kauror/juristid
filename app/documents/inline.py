@@ -27,6 +27,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.core.http import content_disposition
+
 #: Extension → the one MIME type it may be served as. A mapping rather than two
 #: sets, so agreement is checkable rather than assumed.
 INLINE_SAFE: dict[str, str] = {
@@ -75,7 +77,7 @@ def inline_mime_for(filename: str) -> str:
 
 def apply_inline_headers(response: Any, *, filename: str) -> Any:
     """Mark a response as safe-to-display, and nothing more than displayed."""
-    response["Content-Disposition"] = f'inline; filename="{Path(filename).name}"'
+    response["Content-Disposition"] = content_disposition("inline", filename)
     response["X-Content-Type-Options"] = "nosniff"
     response["Content-Security-Policy"] = INLINE_CONTENT_SECURITY_POLICY
     response["Referrer-Policy"] = "no-referrer"

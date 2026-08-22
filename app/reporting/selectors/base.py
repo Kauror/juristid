@@ -33,6 +33,7 @@ from urllib.parse import urlencode
 from django.db.models import Count, Q, QuerySet
 from django.urls import reverse
 
+from app.core.authorization import scoped_count
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.matters.selectors import UNKNOWN_YEAR, register_year_q, unknown_register_year_q
@@ -60,8 +61,14 @@ def count(queryset: QuerySet[Any]) -> int:
 
 
 def grouped_count() -> Count:
-    """``Count("id", distinct=True)`` — the only counter used for grouping."""
-    return Count("id", distinct=True)
+    """``Count("id", distinct=True)`` — the only counter used for grouping.
+
+    Re-exported from ``app.core.authorization`` rather than spelled out again.
+    The rule belongs beside ``apply``, which is what creates the fan-out this
+    guards against; this package was the first to learn it and was for a while
+    the only one that had.
+    """
+    return scoped_count()
 
 
 def grouped_count_over(path: str) -> Count:

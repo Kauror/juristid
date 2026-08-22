@@ -395,8 +395,23 @@ EXTRACTION_WORKER_HEARTBEAT_PATH = env(
 
 SECURE_HSTS_SECONDS = env_int("DJANGO_SECURE_HSTS_SECONDS", 0 if DEBUG else 31536000)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+# Deliberately off, and `security.W021` silenced below rather than left to
+# accumulate as noise nobody reads.
+#
+# Preloading is submitted to a list browsers ship, and with
+# `includeSubDomains` it commits *every* host under the registered domain to
+# HTTPS — including ones this application knows nothing about and does not
+# operate. Removal takes months. HSTS itself is on, which is what protects this
+# application's own readers; preloading is a decision about somebody else's
+# domain and belongs to whoever owns it, not to a default in this file.
 SECURE_HSTS_PRELOAD = False
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", default=not DEBUG)
+
+# The one deployment check this project answers "no" to on purpose. Silenced so
+# that `check --deploy` is a list of things to fix rather than a list with one
+# permanent entry at the top — a warning nobody may act on trains people to skim
+# the whole output. See SECURE_HSTS_PRELOAD above for why the answer is no.
+SILENCED_SYSTEM_CHECKS = ["security.W021"]
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 SECURE_CROSS_ORIGIN_OPENER_POLICY = "same-origin"
@@ -424,7 +439,11 @@ if env_bool("DJANGO_BEHIND_TLS_PROXY", default=False):
 # --------------------------------------------------------------------------
 
 APPLICATION_NAME = "Koda Õigusloome"
-APPLICATION_STAGE = env("APPLICATION_STAGE", "Stage 2A")
+# Shown in the footer and returned by /healthz. The default is what an
+# unconfigured process claims about itself, so it has to be the truth: it sat at
+# "Stage 2A" through five merged stages, telling every reader of the rehearsal
+# footer that the build was six months older than it was.
+APPLICATION_STAGE = env("APPLICATION_STAGE", "Stage 2I")
 APPLICATION_ENVIRONMENT = env("APPLICATION_ENVIRONMENT", "local")
 APPLICATION_REVISION = env("APPLICATION_REVISION", "unknown")
 

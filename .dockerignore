@@ -12,7 +12,15 @@ htmlcov/
 coverage.xml
 staticfiles/
 media/
+# The three local storage roots. `evidence/` was already here; the other two
+# are the defaults for DERIVATIVE_ROOT and LEGACY_SOURCE_ROOT (config/settings)
+# and hold extracted document text and OneNote page XML respectively. The
+# production Compose file builds from this repository *on the server*, so a
+# checkout that has ever run the importer would otherwise bake real source
+# material into the image.
 evidence/
+derivatives/
+legacy-source/
 .env
 .env.*
 !.env.example

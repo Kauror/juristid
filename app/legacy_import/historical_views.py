@@ -18,6 +18,7 @@ from typing import Any
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count
 from django.http import FileResponse, Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -26,6 +27,7 @@ from django.views.decorators.http import require_http_methods
 from app.accounts.enums import UserRole
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import matter_visibility_q, scope_for_user
+from app.core.http import content_disposition
 from app.documents.inline import may_open_inline
 from app.documents.models import Document
 from app.legacy_import.historical_apply import index_source_link
@@ -190,7 +192,7 @@ def source_xml(request: HttpRequest, pk: Any) -> FileResponse:
 
     handle = legacy_source_storage().open(page.source_xml_storage_key, "rb")
     response = FileResponse(handle, content_type="application/xml", as_attachment=True)
-    response["Content-Disposition"] = f'attachment; filename="{page.page_key}.xml"'
+    response["Content-Disposition"] = content_disposition("attachment", f"{page.page_key}.xml")
     response["X-Content-Type-Options"] = "nosniff"
     return response
 
@@ -227,20 +229,19 @@ def review_queue(request: HttpRequest) -> HttpResponse:
     state = request.GET.get("olek") or CandidateState.PENDING
     candidate_class = request.GET.get("klass") or ""
 
-    candidates = HistoricalMatchCandidate.objects.select_related("source_page", "matter").order_by(
-        "candidate_class", "-score"
-    )
+    candidates = HistoricalMatchCandidate.objects.select_related(
+        # `decided_by` for the same reason the opinion queue needs it: it is
+        # rendered on every decided row, and without it each one costs a query.
+        "source_page",
+        "matter",
+        "decided_by",
+    ).order_by("candidate_class", "-score")
     if state:
         candidates = candidates.filter(state=state)
     if candidate_class:
         candidates = candidates.filter(candidate_class=candidate_class)
 
-    counts = {
-        klass.value: HistoricalMatchCandidate.objects.filter(
-            candidate_class=klass, state=CandidateState.PENDING
-        ).count()
-        for klass in CandidateClass
-    }
+    counts = _pending_counts_by_class()
 
     return render(
         request,
@@ -256,6 +257,26 @@ def review_queue(request: HttpRequest) -> HttpResponse:
             "nav_active": "haldus",
         },
     )
+
+
+def _pending_counts_by_class() -> dict[str, int]:
+    """Unreviewed work per class, in one query rather than one query per class.
+
+    Every class appears whether or not it has rows: the filter strip reads
+    this, and a class missing from it reads as "no such class" rather than
+    "nothing left to do".
+    """
+    tally: dict[str, int] = dict.fromkeys(CandidateClass.values, 0)
+    rows = (
+        HistoricalMatchCandidate.objects.filter(state=CandidateState.PENDING)
+        .order_by()
+        .values("candidate_class")
+        .annotate(total=Count("id"))
+    )
+    for row in rows:
+        if row["candidate_class"] in tally:
+            tally[row["candidate_class"]] = row["total"]
+    return tally
 
 
 @login_required

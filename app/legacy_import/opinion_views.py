@@ -24,6 +24,7 @@ from typing import Any
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db.models import Count
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -54,20 +55,21 @@ def opinion_queue(request: HttpRequest) -> HttpResponse:
     state = request.GET.get("olek") or OpinionCandidateState.PENDING
     match_class = request.GET.get("klass") or ""
 
-    candidates = OpinionMatchCandidate.objects.select_related("item", "matter").prefetch_related(
-        "item__metadata_rows"
-    )
+    candidates = OpinionMatchCandidate.objects.select_related(
+        # `decided_by` is rendered beside every decided row. Without it here the
+        # page issues one query per row the moment anything but PENDING is
+        # selected — 200 of them, on a surface whose whole point is working
+        # through a backlog.
+        "item",
+        "matter",
+        "decided_by",
+    ).prefetch_related("item__metadata_rows")
     if state:
         candidates = candidates.filter(state=state)
     if match_class:
         candidates = candidates.filter(match_class=match_class)
 
-    counts = {
-        value: OpinionMatchCandidate.objects.filter(
-            match_class=value, state=OpinionCandidateState.PENDING
-        ).count()
-        for value in OpinionMatchClass.values
-    }
+    counts = _pending_counts_by_class()
     return render(
         request,
         "legacy_import/opinion_queue.html",
@@ -82,6 +84,27 @@ def opinion_queue(request: HttpRequest) -> HttpResponse:
             "nav_active": "haldus",
         },
     )
+
+
+def _pending_counts_by_class() -> dict[str, int]:
+    """How much unreviewed work each class still holds. One query, not seven.
+
+    Every class is present in the result whether or not it has rows, because
+    the filter row above reads these counts and a class that vanished from the
+    strip would look like a class that does not exist rather than one that is
+    finished.
+    """
+    tally: dict[str, int] = dict.fromkeys(OpinionMatchClass.values, 0)
+    rows = (
+        OpinionMatchCandidate.objects.filter(state=OpinionCandidateState.PENDING)
+        .order_by()
+        .values("match_class")
+        .annotate(total=Count("id"))
+    )
+    for row in rows:
+        if row["match_class"] in tally:
+            tally[row["match_class"]] = row["total"]
+    return tally
 
 
 @login_required
