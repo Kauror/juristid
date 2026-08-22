@@ -55,6 +55,7 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
         )
 
     problems.extend(_authentication_problems())
+    problems.extend(_environment_hygiene_problems())
 
     engine = settings.DATABASES["default"]["ENGINE"]
     if engine != "django.db.backends.postgresql":
@@ -66,6 +67,37 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
         )
 
     return problems
+
+
+def _environment_hygiene_problems() -> list[Error | Warning]:
+    """A boolean nobody spelled the way `config/env.py` reads booleans.
+
+    Anything unrecognised is read as false. That is the safe direction — every
+    flag here is dangerous only when true — and it is a silent one:
+    `REAL_DATA_ALLOWED=enabled` and `REAL_DATA_ALLOWED=0` behave identically and
+    look nothing alike to the person who typed one of them.
+
+    A warning rather than an error, because the fallback is safe and refusing to
+    start over a typo in a flag that is already off would be worse than saying
+    so. The values are flags, never secrets, so naming them is safe.
+    """
+    from app.core.deployment import unparseable_boolean_variables
+
+    unparseable = unparseable_boolean_variables()
+    if not unparseable:
+        return []
+
+    named = ", ".join(f"{name}={value!r}" for name, value in sorted(unparseable.items()))
+    return [
+        Warning(
+            f"Environment variables that are neither true nor false: {named}.",
+            hint=(
+                "They are being read as false. Use 1/0, true/false, yes/no or on/off "
+                "(config/env.py)."
+            ),
+            id="juristid.W015",
+        )
+    ]
 
 
 def _authentication_problems() -> list[Error | Warning]:

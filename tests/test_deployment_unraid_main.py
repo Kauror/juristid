@@ -344,7 +344,6 @@ def test_the_template_declares_what_the_application_needs(
         "DJANGO_SECURE_SSL_REDIRECT",
         "DJANGO_BEHIND_TLS_PROXY",
         "APPLICATION_ENVIRONMENT",
-        "APPLICATION_REVISION",
         "POSTGRES_DB",
         "POSTGRES_USER",
         "POSTGRES_PASSWORD",
@@ -370,3 +369,185 @@ def test_the_database_host_is_the_compose_service_not_a_shared_one(
 ) -> None:
     assert env_example["POSTGRES_HOST"] == "db"
     assert "db" in compose["services"]
+
+
+def test_the_template_pins_neither_the_revision_nor_the_stage(
+    env_example: dict[str, str],
+) -> None:
+    """Both used to be copied here, and both went stale where nobody looked.
+
+    `APPLICATION_STAGE` sat at an old value through five merged stages, telling
+    every reader of the footer that the build was six months older than it was.
+    `APPLICATION_REVISION` was worse: it is the field that answers "what code is
+    running", and it was the one thing about the running build that a human had
+    to remember to retype.
+
+    Both now come from the code and the image — `settings.APPLICATION_STAGE` and
+    `/app/GIT_SHA`, written from the build argument the deployment script
+    supplies. A value here would override them, which is the right escape hatch
+    and the wrong default (docs/adr/0022).
+    """
+    assert "APPLICATION_STAGE" not in env_example
+    assert "APPLICATION_REVISION" not in env_example
+
+
+# -- the image the stack runs ---------------------------------------------
+
+
+def test_the_web_build_receives_the_commit_it_is_built_from(
+    compose: dict[str, Any],
+) -> None:
+    """So the running container can be asked, rather than an operator."""
+    args = compose["services"]["web"]["build"]["args"]
+    assert "GIT_SHA" in args
+
+
+def test_the_tunnel_image_is_pinned(compose: dict[str, Any]) -> None:
+    """`latest` on the only route in is an upgrade nobody decided to make.
+
+    An unrelated `docker pull` on this host, or a `compose pull` aimed at
+    something else, replaces the ingress of a real-data system with whatever
+    Cloudflare released that week — including the releases whose own notes say
+    not to use them.
+    """
+    image = compose["services"]["tunnel"]["image"]
+    repository, _, tag = image.partition(":")
+    assert repository == "cloudflare/cloudflared"
+    assert tag and tag != "latest", "the tunnel image floats"
+
+
+def test_the_database_image_pins_its_major(compose: dict[str, Any]) -> None:
+    """The major is the one thing a restore cannot work around.
+
+    A dump taken from PostgreSQL 18 needs an 18 server to read it, and a
+    silently newer major would be discovered on the day a backup is needed.
+    Minor versions inside 18 are welcome; the tag stops the major from moving.
+    """
+    assert compose["services"]["db"]["image"] == "postgres:18"
+
+
+def test_the_tunnel_waits_for_a_web_process_that_answers(
+    compose: dict[str, Any],
+) -> None:
+    """Started is not serving.
+
+    A tunnel that connects while gunicorn is still booting sends the public
+    hostname 502s — during a deployment, which is exactly when somebody is
+    watching and about to conclude the release broke something.
+    """
+    assert compose["services"]["tunnel"]["depends_on"]["web"]["condition"] == "service_healthy"
+
+
+# -- how the containers run ------------------------------------------------
+
+
+def test_no_service_asks_for_root_or_extra_privilege(compose: dict[str, Any]) -> None:
+    """The image drops to uid 10001; a Compose override could undo that quietly."""
+    for name, service in compose["services"].items():
+        assert service.get("user") not in {"root", "0", "0:0"}, name
+        assert service.get("privileged") is not True, name
+        assert not service.get("cap_add"), name
+
+
+def test_nothing_starts_through_the_development_entrypoint() -> None:
+    """`scripts/start-dev.sh` migrates, seeds and runs `runserver`.
+
+    Every one of those is forbidden here, and the file is one `command:` away.
+    """
+    assert "start-dev" not in COMPOSE.read_text(encoding="utf-8")
+
+
+#: Commands that write the register rather than the schema. A deployment carries
+#: code and migrations; importing twenty years of material, promoting a register
+#: or applying an opinion archive are separate reviewed operations with their own
+#: gates, and none of them may be reachable from a container start.
+DATA_APPLY_COMMANDS = (
+    "historical_import",
+    "import_legacy_register",
+    "promote_current_register",
+    "backfill_legacy_owners",
+    "opinion_archive",
+    "seed_dev_data",
+    "seed_e2e_data",
+    "capture_operational_snapshot",
+)
+
+
+def test_no_service_starts_by_applying_business_data(compose: dict[str, Any]) -> None:
+    for name, service in compose["services"].items():
+        rendered = str(service.get("command", "")) + str(service.get("entrypoint", ""))
+        for command in DATA_APPLY_COMMANDS:
+            assert command not in rendered, f"{name} would run {command} on start"
+
+
+# -- persistence -----------------------------------------------------------
+
+
+def test_every_storage_class_has_a_mount(compose: dict[str, Any]) -> None:
+    """Named one by one, because a count alone cannot say which one is missing.
+
+    A container gets an empty directory where a mount should be and works
+    perfectly until it is restarted, at which point whatever it wrote is gone.
+    """
+    targets = {
+        name: {_resolved(volume).split(":")[1] for volume in service.get("volumes", [])}
+        for name, service in compose["services"].items()
+    }
+    assert "/var/lib/postgresql" in targets["db"]
+    assert "/home/nonroot/.cloudflared" in targets["tunnel"]
+    for name in ("web", "extractor"):
+        assert {"/app/evidence", "/app/derivatives", "/app/legacy-source"} <= targets[name]
+
+
+def test_the_source_corpus_is_read_only_on_every_service_that_sees_it(
+    compose: dict[str, Any],
+) -> None:
+    """Not only on the two that mount it today.
+
+    Defence in depth is the point: the importer is also written never to write
+    there, and one of the two is allowed to be wrong.
+    """
+    seen = 0
+    for name, service in compose["services"].items():
+        for volume in service.get("volumes", []):
+            resolved = _resolved(volume)
+            if "/srv/historical-source" in resolved:
+                seen += 1
+                assert resolved.endswith(":ro"), f"{name}: {volume}"
+    assert seen == 2
+
+
+# -- isolation from the recovery rehearsal ---------------------------------
+
+RECOVERY_REHEARSAL = Path(settings.BASE_DIR) / "deploy" / "recovery-rehearsal" / "compose.yml"
+
+
+@pytest.fixture(scope="module")
+def recovery_rehearsal() -> dict[str, Any]:
+    return yaml.safe_load(RECOVERY_REHEARSAL.read_text(encoding="utf-8"))
+
+
+def test_the_recovery_rehearsal_is_a_separate_stack(
+    compose: dict[str, Any], recovery_rehearsal: dict[str, Any]
+) -> None:
+    """The disposable stack the backup scripts are exercised against.
+
+    It has a published port and no authenticator, so the only thing keeping it
+    from being a liability is that it can never be confused with this one.
+    """
+    assert recovery_rehearsal["name"] != compose["name"]
+    mine = {service["container_name"] for service in compose["services"].values()}
+    theirs = {service["container_name"] for service in recovery_rehearsal["services"].values()}
+    assert mine.isdisjoint(theirs)
+
+
+def test_the_recovery_rehearsal_is_a_database_and_nothing_else(
+    compose: dict[str, Any], recovery_rehearsal: dict[str, Any]
+) -> None:
+    """No web process to reach, and the same PostgreSQL major as production.
+
+    The major matters: rehearsing a restore on a different one would prove the
+    procedure against a server that could not run it.
+    """
+    assert list(recovery_rehearsal["services"]) == ["db"]
+    assert recovery_rehearsal["services"]["db"]["image"] == compose["services"]["db"]["image"]

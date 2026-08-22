@@ -263,6 +263,14 @@ curl -s http://192.168.1.133:3020/healthz
 Synthetic, but usability-test history is worth keeping. Backups live under their
 own path and touch no existing backup system.
 
+The hardened tooling in `scripts/deploy/` deliberately refuses this project by
+name — it exists for the real-data stack, and a script that can be pointed at
+the rehearsal is a script that can stop it. The commands below are the informal
+equivalent, and they carry the flaw the real one removes: `pg_dump | gzip` hides
+an upstream failure behind gzip's exit status, so a truncated dump looks like a
+good one. That is an acceptable trade for invented data and is not acceptable
+for the register — see `deploy/unraid-main/RECOVERY.md`.
+
 ```bash
 install -d -m 755 /mnt/user/backups/juristid-test
 ```

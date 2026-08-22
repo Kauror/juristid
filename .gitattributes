@@ -1,5 +1,10 @@
 * text=auto eol=lf
 
+# The deployment scripts run on Linux and are edited on Windows. A CRLF after
+# the shebang makes the kernel look for an interpreter called `bash`, and the
+# error names a file that plainly exists.
+*.sh text eol=lf
+
 *.png binary
 *.jpg binary
 *.ico binary
