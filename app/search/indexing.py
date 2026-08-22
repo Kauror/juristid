@@ -19,11 +19,12 @@ faithfully reproducing what the application thought last year.
 from __future__ import annotations
 
 import contextlib
+import contextvars
 from collections.abc import Iterator
 from dataclasses import dataclass
 
 from django.contrib.postgres.search import SearchVector
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 
@@ -42,11 +43,32 @@ BATCH_SIZE = 500
 #: Set while a bulk operation is running. The signal handlers check it and do
 #: nothing, so an import of 2,455 rows does not perform 2,455 separate index
 #: refreshes; the caller refreshes once at the end instead.
-_suspended = False
+#:
+#: A :class:`~contextvars.ContextVar` rather than a module global, and the
+#: difference is not stylistic. A module global is one flag for the whole
+#: process, so a bulk operation running in one request thread suppresses
+#: indexing in *every* other thread for its duration — and the writes that lose
+#: their refresh belong to somebody else, who never suspended anything and has
+#: no obligation to reindex. The result is a Matter that saved successfully and
+#: cannot be found, with nothing anywhere recording that it happened.
+#:
+#: Today's only caller is a management command, so the process is its own. That
+#: is a property of the current caller, not of this function, and
+#: `suspend_indexing` is a public context manager that any future service can
+#: reach for. A ContextVar is per-thread and per-async-task for free, so the
+#: guarantee stops depending on who happens to call it.
+_suspended: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "search_indexing_suspended", default=False
+)
+
+#: Advisory-lock keys. The namespace is arbitrary but fixed, so this subsystem
+#: cannot collide with another one that also reaches for advisory locks.
+_LOCK_NAMESPACE = 24601
+_REBUILD_LOCK = 1
 
 
 def indexing_is_suspended() -> bool:
-    return _suspended
+    return _suspended.get()
 
 
 @contextlib.contextmanager
@@ -57,13 +79,48 @@ def suspend_indexing() -> Iterator[None]:
     importer, which knows exactly which Matters it wrote and can do it in one
     pass.
     """
-    global _suspended
-    previous = _suspended
-    _suspended = True
+    token = _suspended.set(True)
     try:
         yield
     finally:
-        _suspended = previous
+        _suspended.reset(token)
+
+
+def _hold_off_a_rebuild() -> None:
+    """Take the shared side of the rebuild gate for the rest of this transaction.
+
+    Every targeted refresh calls this, and the reason is a race that costs a
+    user their save. A full rebuild empties the table and refills it in one
+    transaction. A Matter save that lands in the middle deletes the row it is
+    about to replace — blocks on the rebuild's lock, waits for it to commit,
+    then finds its delete matched nothing, because the row it could see is gone
+    and the row the rebuild inserted is not in its statement's snapshot. The
+    insert that follows hits ``search_one_document_per_source_object`` and
+    raises, and since the refresh runs inside the user's business transaction,
+    the *business write* is what rolls back. Rebuilding the index is the
+    documented recovery tool; it must not make ordinary work fail.
+
+    Shared, so concurrent writers never wait for each other — only for a
+    rebuild, which is rare and takes seconds. Held to the end of the
+    transaction by PostgreSQL, so there is nothing to release.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_advisory_xact_lock_shared(%s, %s)", [_LOCK_NAMESPACE, _REBUILD_LOCK]
+        )
+
+
+def _hold_off_refreshes() -> None:
+    """Take the exclusive side of the same gate, for the whole rebuild.
+
+    Waits for the targeted refreshes already in flight and makes the ones that
+    arrive during the rebuild wait for it. A refresh that took the shared lock
+    inside this transaction — every one the rebuild performs itself — is granted
+    it immediately, because a transaction never blocks on a lock it already
+    holds.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [_LOCK_NAMESPACE, _REBUILD_LOCK])
 
 
 @dataclass(frozen=True)
@@ -176,6 +233,7 @@ def refresh_matters(matters: QuerySet[Matter]) -> int:
     if not rows:
         return 0
 
+    _hold_off_a_rebuild()
     matter_ids = [matter.pk for matter in rows]
     # Delete-then-insert rather than update: it is one shape of statement
     # regardless of whether a Matter was indexed before, so a half-built index
@@ -225,10 +283,30 @@ def refresh_matter(matter: Matter) -> int:
     return refresh_matters(indexable_matters().filter(pk=matter.pk))
 
 
+def reindex_submission(submission: Submission) -> None:
+    """Refresh one submission from a service that bulk-writes its children.
+
+    The signal handlers in :mod:`app.search.signals` cannot cover this. Django
+    sends ``post_save`` per instance, and ``bulk_create`` sends none — so
+    ``set_recipients``, which deletes the old recipient rows and bulk-creates
+    the new ones, fires the *removal* handler and not the *addition* one. The
+    submission is reindexed with an empty recipient list and then left there:
+    findable under no ministry at all, which is the exact shape of the question
+    the product exists to answer ("where is the opinion we sent to MKM").
+
+    Suspension-aware like the handlers, so a bulk importer that suspended
+    indexing still owns its own refresh.
+    """
+    if indexing_is_suspended():
+        return
+    refresh_submission(submission)
+
+
 @transaction.atomic
 def refresh_entry(entry: Entry) -> int:
     from app.search.child_indexing import indexable_entries, refresh_entries
 
+    _hold_off_a_rebuild()
     count = refresh_entries(indexable_entries().filter(pk=entry.pk))
     _recompute_vectors(
         SearchDocument.objects.filter(source_kind=SearchSourceKind.ENTRY, source_object_id=entry.pk)
@@ -240,6 +318,7 @@ def refresh_entry(entry: Entry) -> int:
 def refresh_submission(submission: Submission) -> int:
     from app.search.child_indexing import indexable_submissions, refresh_submissions
 
+    _hold_off_a_rebuild()
     count = refresh_submissions(indexable_submissions().filter(pk=submission.pk))
     _recompute_vectors(
         SearchDocument.objects.filter(
@@ -254,6 +333,7 @@ def refresh_source_link(link: MatterSourcePage) -> int:
     """Reproject one Matter↔page relationship."""
     from app.search.child_indexing import indexable_source_links, refresh_source_links
 
+    _hold_off_a_rebuild()
     count = refresh_source_links(indexable_source_links().filter(pk=link.pk))
     _recompute_vectors(
         SearchDocument.objects.filter(
@@ -283,6 +363,7 @@ def refresh_document_version(version: DocumentVersion) -> int:
     """
     from app.search.child_indexing import refresh_version_fragments
 
+    _hold_off_a_rebuild()
     count = refresh_version_fragments(version)
     _recompute_vectors(
         SearchDocument.objects.filter(
@@ -328,6 +409,11 @@ def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildR
     started = timezone.now()
 
     with transaction.atomic():
+        # Before the first statement that touches the table, so an in-flight
+        # targeted refresh finishes and the next one waits rather than
+        # colliding with the refill (:func:`_hold_off_a_rebuild`).
+        _hold_off_refreshes()
+
         if clear:
             SearchDocument.objects.all().delete()
 
@@ -367,15 +453,15 @@ def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int]:
         indexable_fragments,
         indexable_source_links,
         indexable_submissions,
-        project_fragments,
         refresh_entries,
+        refresh_fragments,
         refresh_source_links,
         refresh_submissions,
     )
 
     entries = _in_batches(indexable_entries(), refresh_entries, batch_size)
     submissions = _in_batches(indexable_submissions(), refresh_submissions, batch_size)
-    fragments = _in_batches(indexable_fragments(), project_fragments, batch_size)
+    fragments = _in_batches(indexable_fragments(), refresh_fragments, batch_size)
     source_pages = _in_batches(indexable_source_links(), refresh_source_links, batch_size)
 
     # One statement for every child row, rather than one per batch. The vectors

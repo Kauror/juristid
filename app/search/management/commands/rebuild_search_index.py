@@ -47,8 +47,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--keep-existing",
             action="store_true",
-            help="Refresh in place instead of emptying first. Still atomic, but "
-            "documents for Matters that no longer exist survive.",
+            help="Refresh in place instead of emptying first. Still atomic, and "
+            "every source that currently exists converges — but rows whose "
+            "source no longer qualifies survive: a deleted Matter, a deleted "
+            "entry, a page of a derivative that has since been superseded. "
+            "Use it to refresh without a gap; use the default to clean up.",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:

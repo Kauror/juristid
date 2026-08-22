@@ -230,17 +230,31 @@ def refresh_submissions(submissions: QuerySet[Submission]) -> int:
     return len(rows)
 
 
-def project_fragments(fragments: QuerySet[DocumentTextFragment]) -> int:
-    """Insert projection rows for fragments that are known to have none.
+def refresh_fragments(fragments: QuerySet[DocumentTextFragment]) -> int:
+    """Rewrite the projection for a set of fragments. Idempotent.
 
-    Used only by the full rebuild, which has just emptied the table, so it does
-    not delete first. The targeted path below does, because there the previous
-    rows are exactly what has to go.
+    Deletes before it inserts, like every other function in this module. An
+    earlier version did not: it was called only by the full rebuild, which had
+    just emptied the table, so there was nothing to delete. That reasoning held
+    for exactly one of the rebuild's two modes. ``rebuild_all(clear=False)`` —
+    the operator's ``--keep-existing`` — refills a table that still has rows in
+    it, and every fragment that was already indexed then hit
+    ``search_one_document_per_source_object``: one ``IntegrityError``, the whole
+    rebuild transaction gone, and a recovery flag that could not be used on any
+    corpus that had ever been indexed.
+
+    The delete costs one statement per batch against a partial unique index, on
+    a table the caller is rewriting anyway. That is a smaller price than a mode
+    whose only working case is the one where it had nothing to do.
     """
     rows = list(fragments)
     if not rows:
         return 0
     now = timezone.now()
+    SearchDocument.objects.filter(
+        source_kind=SearchSourceKind.DOCUMENT_FRAGMENT,
+        source_object_id__in=[fragment.pk for fragment in rows],
+    ).delete()
     SearchDocument.objects.bulk_create(
         [SearchDocument(**fragment_values(fragment, now)) for fragment in rows]
     )
