@@ -13,6 +13,7 @@ them. The questions are ordinary; getting them wrong is not:
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -197,8 +198,14 @@ def test_readiness_fails_closed_on_a_broken_mount(settings, tmp_path: Path) -> N
 
 def test_readiness_reports_the_postgresql_major(capsys) -> None:
     """Which is what a restore has to match: a dump is read by a server."""
+    # Imported here rather than at module scope: several tests in this file take
+    # pytest-django's `settings` fixture, and a module-level import of the same
+    # name would read as the fixture to anybody skimming.
+    from django.conf import settings
+
     call_command("deployment_readiness")
-    assert "PostgreSQL 18" in capsys.readouterr().out
+    major = settings.MINIMUM_POSTGRESQL_VERSION[0]
+    assert re.search(rf"PostgreSQL\s+{major}\.", capsys.readouterr().out)
 
 
 # --------------------------------------------------------------------------

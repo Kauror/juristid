@@ -87,8 +87,12 @@ looks_like_custom_dump "$SET_DIR/database.dump" ||
 
 (
   cd "$SET_DIR"
+  # `--status` is GNU coreutils and `-s` is the Perl `shasum`; neither accepts
+  # the other's spelling, and the wrong one fails the check by failing to parse
+  # its own arguments — which reads, from the outside, exactly like a corrupt
+  # backup.
   if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum -c -s SHA256SUMS
+    sha256sum --check --status SHA256SUMS
   else
     shasum -a 256 -c -s SHA256SUMS
   fi
