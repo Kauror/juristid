@@ -434,12 +434,14 @@ def test_the_composer_starts_as_one_field(page, base_url):
 
     field = page.locator(".composer__body")
     expect(field).to_be_visible()
-    collapsed = field.bounding_box()["height"]
-    assert collapsed <= 48, f"the composer rests at {collapsed}px"
+    collapsed = field.evaluate("element => getComputedStyle(element).height")
+    assert float(collapsed.removesuffix("px")) <= 48, f"the composer rests at {collapsed}"
 
     field.click()
     expect(page.locator(".composer:focus-within")).to_have_count(1)
-    assert field.bounding_box()["height"] > collapsed, "focusing the composer did not open it"
+    # Retried rather than measured once: the field grows over 150ms, and a box
+    # read the instant after the click is a reading of the animation.
+    expect(field).not_to_have_css("height", collapsed)
 
 
 def test_the_intelligence_sections_do_not_shout_when_they_are_empty(page, base_url):

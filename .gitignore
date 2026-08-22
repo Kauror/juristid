@@ -75,3 +75,9 @@ cert.pem
 artifacts/
 *.png
 !static/**/*.png
+# The visual-regression baselines are the exception, and the reason the rule
+# exists does not reach them: they can only be produced by the browser job,
+# which runs with REAL_DATA_ALLOWED=0 against `seed_e2e_data` — a command that
+# refuses to run anywhere real data is permitted. Every pixel in them is
+# synthetic, and a baseline that is not in the repository is not a baseline.
+!e2e/baselines/*.png
