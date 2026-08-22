@@ -84,28 +84,28 @@ def currencies(plan) -> dict[str, str]:
 # =========================================================================
 
 
-def test_a_pre_numbered_blank_row_is_not_a_candidate(world) -> None:
+def test_a_pre_numbered_blank_row_is_not_a_candidate(world, reviewed) -> None:
     """105 such rows exist in the approved snapshot. None is work."""
     assert PADDING_ROW not in actions(plan_for())
 
 
-def test_a_terminal_status_leaves_the_current_set(world) -> None:
+def test_a_terminal_status_leaves_the_current_set(world, reviewed) -> None:
     outcome = actions(plan_for())
     assert outcome[RETIRING_IN_FORCE] == Action.RETIRE
     assert outcome[RETIRING_NO_PLANS] == Action.RETIRE
 
 
-def test_a_live_status_stays_current(world) -> None:
+def test_a_live_status_stays_current(world, reviewed) -> None:
     outcome = actions(plan_for())
     assert outcome[CURRENT_DRAFTING] == Action.KEEP_CURRENT
     assert outcome[CURRENT_SENT] == Action.KEEP_CURRENT
 
 
-def test_the_status_muu_stays_current(world) -> None:
+def test_the_status_muu_stays_current(world, reviewed) -> None:
     assert actions(plan_for())[CURRENT_OTHER_STATUS] == Action.KEEP_CURRENT
 
 
-def test_a_sent_opinion_does_not_leave_the_current_set(world) -> None:
+def test_a_sent_opinion_does_not_leave_the_current_set(world, reviewed) -> None:
     """`VÄLJA` says the opinion went out, never that the Matter finished.
 
     This Matter is before the Riigikogu with its opinion already sent, which is
@@ -122,17 +122,17 @@ def test_a_sent_opinion_does_not_leave_the_current_set(world) -> None:
 # =========================================================================
 
 
-def test_an_explicit_continuation_leaves_the_current_set(world) -> None:
+def test_an_explicit_continuation_leaves_the_current_set(world, reviewed) -> None:
     plan = plan_for()
     assert currencies(plan)[SUPERSEDED_ROW] == RegisterCurrency.SUPERSEDED
     assert actions(plan)[SUPERSEDED_ROW] == Action.RETIRE
 
 
-def test_a_bare_cross_reference_does_not_supersede(world) -> None:
+def test_a_bare_cross_reference_does_not_supersede(world, reviewed) -> None:
     assert actions(plan_for())[BARE_REFERENCE_ROW] == Action.KEEP_CURRENT
 
 
-def test_an_ambiguous_continuation_goes_to_review(world) -> None:
+def test_an_ambiguous_continuation_goes_to_review(world, reviewed) -> None:
     plan = plan_for()
     candidate = next(c for c in plan.candidates if c.matter.title == AMBIGUOUS_ROW)
     assert candidate.action == Action.REVIEW_REQUIRED
@@ -340,7 +340,7 @@ def test_an_earlier_snapshot_survives_untouched(world, reviewed) -> None:
     assert after == earlier
 
 
-def test_only_the_named_snapshot_is_reconciled(world) -> None:
+def test_only_the_named_snapshot_is_reconciled(world, reviewed) -> None:
     """The earlier workbook's rows are not silently folded into the answer."""
     titles = set(actions(plan_for(EARLIER_SNAPSHOT)))
     assert titles == {CURRENT_DRAFTING}
@@ -481,11 +481,21 @@ def test_an_unreviewed_snapshot_cannot_be_applied(world) -> None:
         apply_cutover_plan(plan_for())
 
 
-def test_an_unreviewed_snapshot_can_still_be_analysed(world) -> None:
+def test_an_unreviewed_snapshot_is_analysed_but_makes_nothing_current(world) -> None:
+    """An operator may look at an unknown workbook. It cannot promote anything.
+
+    The scope a snapshot is approved for is part of the approval, so an
+    unapproved digest has no scope — not a default one, and emphatically not the
+    approved snapshot's. Every row is still classified, which is what makes the
+    analysis worth reading; none of them becomes current, which is the honest
+    answer to "what would this unreviewed workbook do".
+    """
     plan = plan_for()
     assert not plan.is_reviewed
-    assert plan.candidates
-    assert summary(plan)["current_total"] > 0
+    assert plan.current_years == frozenset()
+    assert plan.candidates, "an unreviewed snapshot is still analysed row by row"
+    assert summary(plan)["current_total"] == 0
+    assert summary(plan)["current_scope_years"] == []
 
 
 # =========================================================================

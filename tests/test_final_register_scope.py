@@ -135,11 +135,19 @@ def test_out_of_scope_retirement_does_not_claim_a_terminal_status(reviewed, worl
     An audit row saying a 2018 Matter ended because its HETKESEIS was terminal
     would be describing a column the workbook does not have.
     """
-    candidate = candidate_for(world, OUT_2018_BLANK)
-    assert candidate.rule != Rule.RETIRED_BY_TERMINAL_STATUS
-    assert "HETKESEIS" not in candidate.reason
-    assert "ulatus" in candidate.reason
-    assert candidate.provenance(FINAL_SNAPSHOT)["rule"] == Rule.RETIRED_BY_SCOPE
+    already = candidate_for(world, OUT_2018_BLANK)
+    assert already.rule == Rule.RETIRED_BY_SCOPE
+    assert already.rule != Rule.RETIRED_BY_TERMINAL_STATUS
+    assert "HETKESEIS" not in already.reason
+    assert already.provenance(FINAL_SNAPSHOT)["rule"] == Rule.RETIRED_BY_SCOPE
+
+    # The row the operation actually changes carries the scope sentence too, so
+    # the report an operator reads says why rather than only what.
+    retiring = candidate_for(world, OUT_2019_STILL_OPEN)
+    assert retiring.action == Action.RETIRE
+    assert retiring.rule == Rule.RETIRED_BY_SCOPE
+    assert "ulatus" in retiring.reason
+    assert "HETKESEIS" not in retiring.reason
 
 
 # ---------------------------------------------------------------------------
