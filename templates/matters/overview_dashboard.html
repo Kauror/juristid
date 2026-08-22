@@ -81,7 +81,7 @@ one line, never three. Full titles are on the Matter pages they link to.
                           of date share this column and must not read alike.
                         {% endcomment %}
                         <span class="datemeaning">{{ row.date_label }}</span>
-                        <span class="dateline">{{ row.when|date:"d.m.Y" }}</span>
+                        <span class="dateline"><time datetime="{{ row.when|date:'Y-m-d' }}">{{ row.when|date:"d.m.Y" }}</time></span>
                       {% else %}—{% endif %}
                     </td>
                   </tr>
@@ -115,7 +115,9 @@ one line, never three. Full titles are on the Matter pages they link to.
               <tbody>
                 {% for row in dashboard.upcoming %}
                   <tr>
-                    <td class="table__date table__date--tight">{{ row.when|date:"d.m.Y" }}</td>
+                    <td class="table__date table__date--tight">
+                      <time datetime="{{ row.when|date:'Y-m-d' }}">{{ row.when|date:"d.m.Y" }}</time>
+                    </td>
                     <td class="table__meaning">
                       <span class="datemeaning">{{ row.meaning }}</span>
                     </td>
@@ -161,7 +163,8 @@ one line, never three. Full titles are on the Matter pages they link to.
                 {% for matter in dashboard.incoming %}
                   <tr>
                     <td class="table__date table__date--tight">
-                      {% if matter.received_date %}{{ matter.received_date|date:"d.m.Y" }}
+                      {% if matter.received_date %}
+                        <time datetime="{{ matter.received_date|date:'Y-m-d' }}">{{ matter.received_date|date:"d.m.Y" }}</time>
                       {% else %}<span class="table__missing">—</span>{% endif %}
                     </td>
                     <td class="table__ref"><span class="reference">{{ matter.display_reference|default:"—" }}</span></td>
@@ -180,7 +183,8 @@ one line, never three. Full titles are on the Matter pages they link to.
                       <span class="table__clip">{{ matter.owner.display_name|default:"Vastutajata" }}</span>
                     </td>
                     <td class="table__date table__date--tight">
-                      {% if matter.response_deadline %}{{ matter.response_deadline|date:"d.m.Y" }}
+                      {% if matter.response_deadline %}
+                        <time datetime="{{ matter.response_deadline|date:'Y-m-d' }}">{{ matter.response_deadline|date:"d.m.Y" }}</time>
                       {% else %}—{% endif %}
                     </td>
                   </tr>

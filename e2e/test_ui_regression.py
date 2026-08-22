@@ -70,6 +70,13 @@ MAX_DIFFERING_FRACTION = 0.002
 #: Every one of these renders a fixed-width `dd.mm.yyyy`, so masking the pixels
 #: is enough: the boxes do not change size from one day to the next and the
 #: layout around them does not move.
+#:
+#: Nothing here names a whole cell or column. A mask paints over the element it
+#: matches, so naming a `<td>` class takes the `<th>` with it and the baseline
+#: stops showing that the column exists at all — which is why the dashboard's
+#: date cells are `<time>` elements instead. Counts are not masked either: the
+#: seeded world computes its dates from the same `today` the page renders on, so
+#: the figures are stable even where the strings beside them are not.
 CLOCK_DEPENDENT = [
     ".app__footer",
     ".dateline",
@@ -77,11 +84,6 @@ CLOCK_DEPENDENT = [
     ".factrow__date",
     ".table__lastactivity .muted",
     ".metafield--date .inlineedit__trigger",
-    # The dashboard's bare-date columns: seeded deadlines and received dates
-    # are computed relative to today, so the digits move daily while the
-    # geometry — fixed columns, tabular figures — does not.
-    ".table__date--tight",
-    ".statcard__value",
     # A date control's value renders in the control, and the create form's
     # Saabus defaults to today. Scoped to that form: unscoped, the selector also
     # matched the register's filter inputs, which sit inside a *closed*
