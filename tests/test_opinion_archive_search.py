@@ -155,6 +155,49 @@ def test_a_rebuild_is_idempotent(held):
     assert before == after
 
 
+def test_extracting_text_and_rebuilding_puts_the_body_in_the_index(held, administrator):
+    """The one sequence the runbook actually performs.
+
+    A rebuild that skipped rows already at the current index version would do
+    nothing here and report a clean run, leaving every freshly extracted body
+    out of the search.
+    """
+    _, second = held
+    OpinionArchiveText.objects.create(
+        binary=second,
+        state=ArchiveTextState.DONE,
+        body="Riigilõivuseaduse muutmise kohta.",
+        characters=33,
+        parser="test",
+        parser_version="1",
+    )
+
+    report = rebuild_archive_index()
+    assert report.written == 1
+    assert report.unchanged == 1
+
+    rows = search_archive(user=administrator, filters=ArchiveFilters(query="riigilõivuseaduse"))
+    assert [row.binary_id for row in rows] == [second.pk]
+
+
+def test_a_decision_reaches_the_projection_on_the_next_rebuild(held):
+    """The projection also moves when nothing about the binary changed."""
+    first, _ = held
+    row = OpinionArchiveSearchDocument.objects.get(binary=first)
+    assert row.is_linked is False
+
+    from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
+    from app.legacy_import.opinion_enums import ArchiveLinkBasis
+    from tests import factories
+
+    OpinionArchiveMatterLink.objects.create(
+        binary=first, matter=factories.ArchiveMatterFactory(), basis=ArchiveLinkBasis.EXACT_BINARY
+    )
+    rebuild_archive_index()
+    row.refresh_from_db()
+    assert row.is_linked is True
+
+
 def test_a_new_binary_is_reported_as_unindexed_until_it_is_rebuilt(held):
     hold(sha="d" * 64, title="Kolmas")
     assert unindexed_binaries().count() == 1

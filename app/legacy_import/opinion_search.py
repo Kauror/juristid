@@ -84,6 +84,18 @@ def rebuild_archive_index(*, force: bool = False) -> ArchiveIndexReport:
     rows, and a binary whose row is missing or stale is simply written again.
     Canonical bytes are never touched, which is what makes "rebuild the index"
     an unremarkable operation rather than one that needs a backup first.
+
+    **Every row is recomputed, and only differing rows are written.** The
+    obvious cheaper rule — skip anything already at the current index version —
+    is wrong in the one case the runbook actually performs: `extract-text`
+    followed by `rebuild` would skip every row and leave the newly extracted
+    bodies out of the index, while reporting a clean run. The projection also
+    moves when a candidate is decided or a Matter linked, neither of which
+    touches the binary. Recomputing a few hundred rows is cheap; a rebuild that
+    silently does nothing is not.
+
+    `force` therefore only forces the *write*, for the case where the stored
+    values are right and the vectors are suspect.
     """
     # No purge step, and none is missing: a projection row cannot outlive its
     # binary. The FK is CASCADE, so removing a binary removes its row in the
@@ -92,17 +104,29 @@ def rebuild_archive_index(*, force: bool = False) -> ArchiveIndexReport:
     binaries = OpinionArchiveBinary.objects.select_related("text", "search_document").order_by("pk")
     for binary in binaries.iterator():
         report.binaries += 1
+        values = _row_values(binary)
         existing = getattr(binary, "search_document", None)
-        if existing is not None and not force and existing.index_version == ARCHIVE_INDEX_VERSION:
+        if existing is not None and not force and _matches_row(existing, values):
             report.unchanged += 1
             continue
-        _write_row(binary)
+        _write_row(binary, values)
         report.written += 1
     return report
 
 
-@transaction.atomic
-def _write_row(binary: OpinionArchiveBinary) -> OpinionArchiveSearchDocument:
+def _matches_row(row: OpinionArchiveSearchDocument, values: dict[str, Any]) -> bool:
+    """Whether the stored row already says exactly this.
+
+    `indexed_at` is excluded: it records when the projection last looked, not
+    what it found, and comparing it would make every row differ from itself.
+    """
+    if row.index_version != ARCHIVE_INDEX_VERSION or row.search_estonian is None:
+        return False
+    return all(getattr(row, field) == value for field, value in values.items())
+
+
+def _row_values(binary: OpinionArchiveBinary) -> dict[str, Any]:
+    """Everything the projection says about one letter, computed from canon."""
     occurrences = list(
         OpinionArchiveItem.objects.filter(binary=binary).values(
             "archive_relative_path",
@@ -149,25 +173,30 @@ def _write_row(binary: OpinionArchiveBinary) -> OpinionArchiveSearchDocument:
     linked = OpinionArchiveMatterLink.objects.filter(binary=binary)
     has_submission = OpinionSubmissionImport.objects.filter(item__binary=binary).exists()
 
+    return {
+        "title": title or "",
+        "recipient": recipient or "",
+        "occurrence_paths": "\n".join(paths),
+        "identifiers": "\n".join(identifiers),
+        "body_text": text.body if text is not None and text.has_body else "",
+        "document_date": document_date,
+        "source_year": document_date.year if document_date else None,
+        "match_class": _first([candidate["match_class"] for candidate in candidates]) or "",
+        "review_state": _review_state(candidates),
+        "has_body_text": bool(text is not None and text.has_body),
+        "is_linked": linked.exists(),
+        "has_submission": has_submission,
+        "occurrence_count": len(occurrences),
+        "index_version": ARCHIVE_INDEX_VERSION,
+    }
+
+
+@transaction.atomic
+def _write_row(
+    binary: OpinionArchiveBinary, values: dict[str, Any]
+) -> OpinionArchiveSearchDocument:
     row, _ = OpinionArchiveSearchDocument.objects.update_or_create(
-        binary=binary,
-        defaults={
-            "title": title or "",
-            "recipient": recipient or "",
-            "occurrence_paths": "\n".join(paths),
-            "identifiers": "\n".join(identifiers),
-            "body_text": text.body if text is not None and text.has_body else "",
-            "document_date": document_date,
-            "source_year": document_date.year if document_date else None,
-            "match_class": _first([candidate["match_class"] for candidate in candidates]) or "",
-            "review_state": _review_state(candidates),
-            "has_body_text": bool(text is not None and text.has_body),
-            "is_linked": linked.exists(),
-            "has_submission": has_submission,
-            "occurrence_count": len(occurrences),
-            "index_version": ARCHIVE_INDEX_VERSION,
-            "indexed_at": timezone.now(),
-        },
+        binary=binary, defaults={**values, "indexed_at": timezone.now()}
     )
     # Vectors in the database rather than in Python, so the text search
     # configuration is the one PostgreSQL will use to answer the query.
