@@ -4,6 +4,8 @@
     manage.py opinion_archive plan     --opinions … [--kodadash …] [--report …]
     manage.py opinion_archive dry-run  --opinions … [--kodadash …]
     manage.py opinion_archive apply    --opinions … [--kodadash …]
+    manage.py opinion_archive materialize-plan --opinions … --expect-archive-sha256 …
+    manage.py opinion_archive materialize      --opinions … --expect-archive-sha256 …
     manage.py opinion_archive status
     manage.py opinion_archive verify
 
@@ -13,6 +15,12 @@ easy to mistype. ``audit`` and ``plan`` write nothing and touch no database
 rows. ``dry-run`` executes the real plan against the real schema and rolls the
 *database* back. Only ``apply`` commits, and it refuses unless the sources still
 hash to what the plan was reviewed against (Stage-2H brief 47, 48, 49).
+
+``materialize`` is deliberately not part of ``apply``. Holding a letter's bytes
+and deciding whose letter it is are different acts with different bars, and
+tying them together is what left two thirds of the corpus visible only as
+catalogue rows. It creates no Submission and links no Matter
+(app/legacy_import/opinion_materialize.py).
 
 **The rollback is database-only.** ``add_evidence_version`` writes bytes to the
 evidence store, and the filesystem does not join the transaction: a dry-run that
@@ -38,7 +46,17 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
-            "phase", choices=["audit", "plan", "dry-run", "apply", "status", "verify"]
+            "phase",
+            choices=[
+                "audit",
+                "plan",
+                "dry-run",
+                "apply",
+                "materialize-plan",
+                "materialize",
+                "status",
+                "verify",
+            ],
         )
         parser.add_argument("--opinions", type=Path, help="Opinions.zip or an opinions/ folder")
         parser.add_argument("--kodadash", type=Path, help="KodaDash opinion workbook")
@@ -52,6 +70,8 @@ class Command(BaseCommand):
             return self._status()
         if phase == "verify":
             return self._verify()
+        if phase in {"materialize-plan", "materialize"}:
+            return self._materialize(phase, options)
 
         plan = self._build(options)
         if phase in {"audit", "plan"}:
@@ -162,6 +182,50 @@ class Command(BaseCommand):
         )
         if options.get("report"):
             self._write_report(options["report"], report.__dict__ | {"batch_id": str(batch.pk)})
+
+    def _materialize(self, phase: str, options: dict) -> None:
+        """Copy the archive's bytes into evidence storage, or say what that would do.
+
+        Both phases pin the archive by SHA-256. `materialize-plan` writes
+        nothing at all — not even a batch row — so an operator can look at the
+        arithmetic, and at anything already broken, before deciding.
+        """
+        from app.legacy_import.opinion_materialize import (
+            OpinionMaterializeError,
+            materialize,
+            plan_materialization,
+        )
+
+        archive = options.get("opinions")
+        if archive is None:
+            raise CommandError("No opinions archive. Pass --opinions.")
+        if phase == "materialize":
+            self._require_gate()
+
+        run = plan_materialization if phase == "materialize-plan" else materialize
+        try:
+            report = run(
+                archive_path=Path(archive),
+                expected_archive_sha256=options["expect_archive_sha256"],
+            )
+        except OpinionMaterializeError as error:
+            raise CommandError(str(error)) from error
+
+        self.stdout.write(report.as_text())
+        if options.get("report"):
+            self._write_report(options["report"], report.__dict__)
+        if not report.ok:
+            # A non-zero exit, because "some bytes are missing" is the one
+            # outcome an operator must not scroll past on the way to the next
+            # step in the runbook.
+            raise CommandError("Materialiseerimine leidis puuduvaid või mittevastavaid baite.")
+        if phase == "materialize":
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "\nArhiivi baidid on hoiul. Otsinguprojektsiooni uuendamiseks kasuta "
+                    "`opinion_archive_search rebuild`."
+                )
+            )
 
     def _status(self) -> None:
         from app.legacy_import.opinion_archive import (

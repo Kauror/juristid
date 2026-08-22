@@ -27,9 +27,7 @@ scanner. No parallel store, no hand-set CLEAN (brief 32).
 from __future__ import annotations
 
 import datetime
-import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from django.db import models, transaction
@@ -49,6 +47,7 @@ from app.legacy_import.opinion_enums import (
     RecipientBasis,
 )
 from app.legacy_import.opinion_plan import OpinionArchivePlan, SubmissionPlan
+from app.legacy_import.opinion_sources import ArchiveReader
 from app.submissions.enums import RecipientRole, SentAtPrecision, SubmissionStatus
 
 IMPORTER_VERSION = "opinion-archive/1.0.0"
@@ -337,7 +336,7 @@ def _write_submissions(
     report: ApplyReport,
     actor: Any,
 ) -> None:
-    reader = _ArchiveReader(plan.archive_path)
+    reader = ArchiveReader(plan.archive_path)
     by_key = _candidate_ids_by_key(plan)
     for submission_plan in plan.submissions:
         item = items.get(submission_plan.sha256)
@@ -353,7 +352,7 @@ def _write_one_submission(
     batch: OpinionArchiveBatch,
     report: ApplyReport,
     actor: Any,
-    reader: _ArchiveReader,
+    reader: ArchiveReader,
     by_key: dict[tuple[str, str, Any], Any],
 ) -> None:
     from app.matters.models import Matter
@@ -445,7 +444,7 @@ def _final_version_for(
     submission_plan: SubmissionPlan,
     item: OpinionArchiveItem,
     actor: Any,
-    reader: _ArchiveReader,
+    reader: ArchiveReader,
     report: ApplyReport,
 ) -> tuple[Any, bool]:
     """The exact binary, stored once.
@@ -524,36 +523,3 @@ def _attach_recipient(
         defaults={"role": RecipientRole.ADDRESSEE, "note": raw[:200]},
     )
     report.recipients_created += int(created)
-
-
-class _ArchiveReader:
-    """Reads one occurrence's bytes, from a ZIP or a directory.
-
-    Opened once for the whole apply rather than per file: 767 separate opens of
-    a 105 MB ZIP is the kind of thing that looks fine on a laptop and takes
-    minutes on a server.
-    """
-
-    def __init__(self, path: Path) -> None:
-        self._path = path
-        self._zip: zipfile.ZipFile | None = None
-        self._names: dict[str, str] = {}
-        if path.is_file():
-            from app.legacy_import.opinion_sources import _decode_entry_name
-
-            self._zip = zipfile.ZipFile(path)
-            for info in self._zip.infolist():
-                if not info.is_dir():
-                    decoded, _ = _decode_entry_name(info)
-                    self._names[decoded] = info.filename
-
-    def read(self, relative_path: str) -> bytes | None:
-        if self._zip is not None:
-            name = self._names.get(relative_path)
-            if name is None:
-                return None
-            return self._zip.read(name)
-        candidate = self._path / relative_path
-        if not candidate.is_file():
-            return None
-        return candidate.read_bytes()
