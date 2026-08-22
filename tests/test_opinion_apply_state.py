@@ -29,6 +29,7 @@ from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
 from app.documents.services import add_evidence_version, create_document
+from app.legacy_import.models import MatterSourceReference
 from app.legacy_import.opinion_apply import apply_plan, open_batch
 from app.legacy_import.opinion_archive import (
     OpinionMatchCandidate,
@@ -675,10 +676,19 @@ def test_a_reviewers_date_wins_over_the_automatic_one_for_the_same_file(
         decided_by=administrator,
         decided_at=timezone.now(),
     )
-    # The register catches up and now carries a VÄLJA of its own.
-    reference = matter.source_references.get()
-    reference.source_row_raw = dict(reference.source_row_raw, F="2024-04-10")
-    reference.save(update_fields=["source_row_raw"])
+    # The register catches up and now carries a VÄLJA of its own. Written with
+    # a queryset update because `MatterSourceReference.save` refuses to change
+    # an imported raw row — the Stage-2A guarantee that a snapshot is what it
+    # was. A real re-import replaces the row; this only has to arrive at the
+    # same state without re-running the register importer.
+    MatterSourceReference.objects.filter(matter=matter).update(
+        source_row_raw={
+            "A": "2024_206",
+            "B": "Näidisregistri seaduse muutmise seadus",
+            "F": "2024-04-10",
+            "G": "Näidisministeerium",
+        }
+    )
 
     second = plan_for(archive)
     apply_plan(second, batch=open_batch(second))
