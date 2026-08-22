@@ -53,7 +53,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=scripts/deploy/lib.sh
+# shellcheck source=lib.sh
 . "$SCRIPT_DIR/lib.sh"
 
 JURISTID_PROJECT="$JURISTID_PRODUCTION_PROJECT"

@@ -69,8 +69,15 @@ jobs:
       # path or an unset variable turns into a command that runs against the
       # wrong thing. `ruff` never sees them; this does. Pre-installed on the
       # runner, so it costs nothing.
+      #
+      # `--severity=warning` rather than the default: the style and info levels
+      # include advice about sourced files a static checker cannot resolve, and
+      # a gate that fails on that gets switched off within a month. Warnings and
+      # errors are the levels that catch the failures worth catching here.
       - name: Shell scripts
-        run: shellcheck --shell=bash scripts/*.sh scripts/deploy/*.sh
+        run: >-
+          shellcheck --severity=warning --external-sources --source-path=SCRIPTDIR
+          scripts/*.sh scripts/deploy/*.sh
 
   tests:
     name: PostgreSQL 18 test suite

@@ -16,6 +16,13 @@
 readonly JURISTID_PRODUCTION_PROJECT="juristid-main"
 readonly JURISTID_REHEARSAL_PROJECT="juristid-recovery-rehearsal"
 
+# Declared here, set by whichever script sourced this. Every Compose invocation
+# below reads them, so naming them in one place is what makes "the project and
+# the file are never implicit" a property of the library rather than a habit of
+# four separate scripts.
+JURISTID_PROJECT="${JURISTID_PROJECT:-}"
+JURISTID_COMPOSE_FILE="${JURISTID_COMPOSE_FILE:-}"
+
 die() {
   printf 'ERROR: %s\n' "$*" >&2
   exit 1
