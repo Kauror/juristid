@@ -93,7 +93,20 @@ def test_a_specialist_cannot_bind_evidence_they_may_not_read(
     — and the submission card then printed its filename, size and SHA-256 to
     everybody who could see the submission.
     """
+    from app.documents.models import Document, DocumentVersion
+
     submission = create_submission(matter=normal_matter, title="Arvamus", actor=other_specialist)
+
+    # The two halves of the difference, pinned rather than assumed. The rule
+    # this view used to apply would have found the version; the rule it applies
+    # now does not. Without both assertions the test below could pass because
+    # the version was unreachable for some unrelated reason.
+    assert DocumentVersion.objects.filter(document__matter=normal_matter).contains(
+        restricted_evidence
+    )
+    assert not DocumentVersion.objects.filter(
+        document__in=Document.objects.visible_to(other_specialist).filter(matter=normal_matter)
+    ).contains(restricted_evidence)
 
     client.force_login(other_specialist)
     response = client.post(
@@ -331,7 +344,15 @@ def test_a_link_a_submission_stands_on_cannot_be_withdrawn(
     filed_letter, normal_matter, department_head
 ):
     from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
-    from app.legacy_import.opinion_links import LinkRefused, unlink_matter
+    from app.legacy_import.opinion_enums import ArchiveLinkBasis
+    from app.legacy_import.opinion_links import PROTECTED_BASES, LinkRefused, unlink_matter
+
+    # The reason the basis check missed this one, pinned: a person's decision is
+    # never downgraded to a derived basis, so the link that the Submission rests
+    # on is precisely the link the old guard would have let go.
+    link = OpinionArchiveMatterLink.objects.get()
+    assert link.basis == ArchiveLinkBasis.REVIEWED
+    assert link.basis not in PROTECTED_BASES
 
     with pytest.raises(LinkRefused):
         unlink_matter(binary=filed_letter, matter=normal_matter, actor=department_head)
