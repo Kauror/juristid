@@ -62,7 +62,7 @@ shared gate today, Cloudflare Access as the next hardening step
 is deployed is [`deploy/unraid-main/README.md`](deploy/unraid-main/README.md);
 how it is backed up and restored is
 [`deploy/unraid-main/RECOVERY.md`](deploy/unraid-main/RECOVERY.md) and
-[ADR 0021](docs/adr/0021-deployment-backup-and-recovery.md).
+[ADR 0022](docs/adr/0022-deployment-backup-and-recovery.md).
 
 **No real data in this repository.** The repository is public. Only code and
 generated synthetic fixtures enter Git: every fixture the tests read is built at

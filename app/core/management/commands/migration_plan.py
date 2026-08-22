@@ -11,7 +11,7 @@ the plan is safe — that judgement is the operator's, which is the point.
 `--fail-on-consequential` turns it into a gate for a script: non-zero when the
 plan contains an operation that removes or rewrites something, so an unattended
 deployment stops and asks rather than proceeding on the assumption that every
-migration is additive (docs/adr/0021).
+migration is additive (docs/adr/0022).
 """
 
 from __future__ import annotations

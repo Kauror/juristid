@@ -111,7 +111,7 @@ def test_every_storage_class_is_reported_with_its_recovery_class() -> None:
 
     The distinction is the backup plan: one must survive, one may be deleted and
     rebuilt from the first, and one is authoritative input that must not be
-    writable (docs/adr/0014, docs/adr/0021).
+    writable (docs/adr/0014, docs/adr/0022).
     """
     roots = {root.name: root for root in deployment.storage_roots()}
     assert roots["EVIDENCE_ROOT"].kind == deployment.CANONICAL

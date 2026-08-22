@@ -867,6 +867,24 @@
   color: var(--text-secondary);
 }
 
+/* The register's own instruction, where no structured one exists. Muted and
+ * labelled, so a carried-over Excel sentence never reads like a decision made
+ * here (ADR 0021). */
+.table__sourcelabel {
+  display: inline-block;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--spacing-1);
+  margin-right: var(--spacing-1);
+}
+
+.table__actiontext--source {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 /* Missing data is stated, not left blank to be guessed at. */
 .table__missing {
   color: var(--status-warning);
@@ -1166,6 +1184,21 @@
   font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
   margin: 0;
+}
+
+/* Same rule on the Matter page: shown only in the absence of a structured
+ * action, and visibly the register's words rather than the department's. */
+.nextaction__source {
+  margin: var(--spacing-2) 0 0;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.nextaction__source-label {
+  font-style: normal;
+  font-weight: var(--typography-weight-medium);
+  color: var(--text-muted);
+  margin-right: var(--spacing-1);
 }
 
 /* ====================================================================

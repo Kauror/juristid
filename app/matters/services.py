@@ -618,6 +618,147 @@ def reactivate_historical_matter(*, matter: Matter, actor: Any = None, attestati
     )
 
 
+#: Origins this operation may touch. A natively created Matter is somebody's own
+#: work and the register has no authority over it, however confidently a
+#: spreadsheet row appears to describe the same subject.
+REGISTER_MANAGED_ORIGINS: frozenset[str] = frozenset(
+    {MatterOrigin.LEGACY_IMPORT, MatterOrigin.PROMOTED_LEGACY}
+)
+
+
+@transaction.atomic
+def retire_from_current_register(
+    *, matter: Matter, actor: Any = None, provenance: dict[str, Any] | None = None
+) -> Matter:
+    """The final snapshot says this imported Matter is no longer current work.
+
+    A third kind of "not current", narrower and better evidenced than the two
+    that exist. :func:`close_matter` means a person is closing live work now and
+    rightly demands a disposition and a timestamp. Stage 2I's
+    :func:`mark_historical_archive_inactive` means a pre-cutover row the
+    register said nothing about. This one means the final maintained snapshot
+    carries a terminal ``HETKESEIS`` for *this* Matter, or says its work
+    continues under a named other one.
+
+    It still invents nothing. The register records no closure date, no reason
+    and no closing person for any of these rows, so none is written — and that
+    is why the Matter is moved to ARCHIVE rather than left FULL. The closure
+    constraint permits ``is_open=False`` with an empty disposition only for an
+    archive record, and it is right to: a closed FULL Matter is a professional
+    decision and carries the evidence of one. The resulting shape
+
+        record_mode=ARCHIVE, is_open=False, disposition="", closed_at=None
+
+    reads as *the final register no longer lists this as current; the exact
+    closure fact is unknown*, which is the honest statement and the same one
+    Stage 2I settled on (ADR 0020, ADR 0021).
+
+    Refuses a native Matter, and refuses one carrying a real recorded closure —
+    reversing or restating a professional decision is that person's call. The
+    caller classifies both as REVIEW_REQUIRED rather than catching an exception.
+    """
+    if matter.origin not in REGISTER_MANAGED_ORIGINS:
+        raise DomainError("Registri operatsioon ei muuda kohapeal loodud teemat.")
+    if matter.disposition or matter.closed_at is not None:
+        raise DomainError("Teemal on tegelik salvestatud sulgemine; seda ei kirjutata üle.")
+
+    if matter.record_mode == RecordMode.ARCHIVE and not matter.is_open:
+        # Already where this operation would put it. Returning unchanged is what
+        # makes a second run a no-op rather than a second audit event.
+        return matter
+
+    previous_mode = matter.record_mode
+    previous_open = matter.is_open
+
+    matter.record_mode = RecordMode.ARCHIVE
+    matter.is_open = False
+    matter.save(update_fields=["record_mode", "is_open", "updated_at"])
+
+    record_change_event(
+        event_type=ChangeEventType.MATTER_REGISTER_CUTOVER_RETIRED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary="Lõpliku registri järgi enam mitte jooksev töö.",
+        payload={
+            **(provenance or {}),
+            "from_record_mode": previous_mode,
+            "to_record_mode": matter.record_mode,
+            "from_is_open": previous_open,
+            "to_is_open": False,
+        },
+    )
+    return matter
+
+
+@transaction.atomic
+def refresh_matter_from_register(
+    *,
+    matter: Matter,
+    owner: Any = _UNSET,
+    stage: Any = _UNSET,
+    received_date: Any = _UNSET,
+    response_deadline: Any = _UNSET,
+    source_organisation: Any = _UNSET,
+    addressee_organisation: Any = _UNSET,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
+) -> tuple[Matter, dict[str, Any]]:
+    """Bring one imported Matter's fields up to the approved snapshot.
+
+    Every argument defaults to ``_UNSET``, which means *the source could not
+    settle this* and is not the same as ``None``, which means *the source says
+    empty*. The caller resolves each field before calling; nothing is guessed
+    here.
+
+    Only fields the register is authoritative for, and only on a
+    register-managed Matter. Returns the Matter and a map of what actually
+    moved, so a run that changes nothing records nothing — which is what makes
+    the operation idempotent in the audit trail as well as in the data.
+
+    Deliberately absent: ``title``. The register's wording and the department's
+    may both be right, later native editing is real work, and overwriting a
+    title people navigate by would be the change nobody asked for.
+    """
+    if matter.origin not in REGISTER_MANAGED_ORIGINS:
+        raise DomainError("Registri operatsioon ei muuda kohapeal loodud teemat.")
+
+    proposed = {
+        "owner": owner,
+        "stage": stage,
+        "received_date": received_date,
+        "response_deadline": response_deadline,
+        "source_organisation": source_organisation,
+        "addressee_organisation": addressee_organisation,
+    }
+
+    changed: dict[str, Any] = {}
+    for field, value in proposed.items():
+        if value is _UNSET:
+            continue
+        current = getattr(matter, field)
+        current_id = getattr(current, "pk", current)
+        new_id = getattr(value, "pk", value)
+        if current_id == new_id:
+            continue
+        setattr(matter, field, value)
+        changed[field] = {"from": str(current_id or ""), "to": str(new_id or "")}
+
+    if not changed:
+        return matter, {}
+
+    matter.save(update_fields=[*changed.keys(), "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.MATTER_SOURCE_FIELDS_REFRESHED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary="Väljad uuendatud lõpliku registri hetktõmmise põhjal.",
+        payload={**(provenance or {}), "fields": changed},
+    )
+    return matter, changed
+
+
 @transaction.atomic
 def promote_matter_to_full(
     *, matter: Matter, actor: Any = None, reason: str = "", provenance: dict[str, Any] | None = None

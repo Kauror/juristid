@@ -6,7 +6,7 @@
   and that question is still open. It does not describe how the system is
   deployed today. The real-data instance runs on an Unraid host, and how it is
   deployed, backed up and restored is
-  [ADR 0021](0021-deployment-backup-and-recovery.md) with
+  [ADR 0022](0022-deployment-backup-and-recovery.md) with
   `deploy/unraid-main/README.md` and `deploy/unraid-main/RECOVERY.md`.
 
 ## Context

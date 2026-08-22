@@ -136,6 +136,27 @@ about the save that just happened.
           {% if matter.is_open %}Kirjuta see allolevas kastis.{% endif %}
         </p>
       {% endif %}
+
+      {% comment %}
+        The register's own instruction, shown only when there is no structured
+        one. It is labelled as coming from Excel and rendered as plain text with
+        no kind, no date and no overdue state, because the source sentence
+        carries all three meanings at once and the importer refuses to guess
+        between them (ADR 0021).
+
+        Below the structured block rather than instead of it: once a lawyer has
+        written a `Järgmiseks` here, the native workflow is the operational
+        authority and this would be the older of two answers.
+      {% endcomment %}
+      {% if not current_action and source_instruction %}
+        <p class="nextaction__source">
+          <span class="nextaction__source-label">Järgmiseks (Excelist):</span>
+          {{ source_instruction }}
+        </p>
+        <p class="nextaction__note muted">
+          Registri tekst, mitte struktuurne tegevus — tähtaega ega liiki sellest ei tuletata.
+        </p>
+      {% endif %}
     </section>
 
     {% if matter.is_open %}

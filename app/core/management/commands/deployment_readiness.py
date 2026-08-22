@@ -19,7 +19,7 @@ without authentication because a container has to be able to ask it.
 
 Exits non-zero when the deployment is not ready. It never migrates: a health
 check that repairs the thing it is checking cannot report on it
-(docs/adr/0021, master specification 24.2).
+(docs/adr/0022, master specification 24.2).
 """
 
 from __future__ import annotations

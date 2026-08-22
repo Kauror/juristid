@@ -385,7 +385,7 @@ def test_the_template_pins_neither_the_revision_nor_the_stage(
     Both now come from the code and the image — `settings.APPLICATION_STAGE` and
     `/app/GIT_SHA`, written from the build argument the deployment script
     supplies. A value here would override them, which is the right escape hatch
-    and the wrong default (docs/adr/0021).
+    and the wrong default (docs/adr/0022).
     """
     assert "APPLICATION_STAGE" not in env_example
     assert "APPLICATION_REVISION" not in env_example

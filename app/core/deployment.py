@@ -14,7 +14,7 @@ have to answer after a restore:
 Everything here is read-only. Nothing in this module migrates, writes evidence
 or applies business data: a deployment carries code and schema, and every
 consequential write to the register stays a separate reviewed command
-(docs/adr/0021).
+(docs/adr/0022).
 
 Django's own migration APIs answer the migration questions. Grepping migration
 files for `RemoveField` would be a guess about something the loader already
@@ -304,7 +304,7 @@ class RuntimeIdentity:
 
     A build time is not a version and an image tag is not a commit. Only the
     source revision answers "what code is this", and it used to be the one
-    field somebody had to remember to set (docs/adr/0021).
+    field somebody had to remember to set (docs/adr/0022).
     """
 
     revision: str
@@ -329,7 +329,7 @@ def postgresql_version() -> tuple[int, int]:
     """The server's major and minor, for a restore that has to match it.
 
     Asked of the server rather than read off the client: a dump is restored by
-    a *server*, and the major it was taken from is the constraint (docs/adr/0021).
+    a *server*, and the major it was taken from is the constraint (docs/adr/0022).
     """
     with connection.cursor() as cursor:
         cursor.execute("SHOW server_version_num")

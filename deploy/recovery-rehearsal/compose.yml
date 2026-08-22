@@ -33,7 +33,7 @@ services:
     # The same major as production, and it has to be: a dump taken from
     # PostgreSQL 18 is restored by PostgreSQL 18. A rehearsal on an older major
     # would prove the procedure against a server that could not run it
-    # (docs/adr/0021).
+    # (docs/adr/0022).
     image: postgres:18
     container_name: juristid-recovery-rehearsal-db
     environment:
