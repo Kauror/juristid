@@ -19,7 +19,11 @@ from app.core.enums import Visibility
 from app.documents.services import add_evidence_version, create_document
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
-from app.submissions.services import create_submission
+from app.submissions.services import (
+    attach_final_evidence,
+    create_submission,
+    mark_submission_sent,
+)
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -35,11 +39,16 @@ PLAIN = "application/pdf"
 
 @pytest.fixture
 def restricted_evidence(normal_matter, department_head, evidence_root):
-    """A document inside an ordinary Matter that only a head may read.
+    """A document inside an ordinary Matter that not everyone may read.
 
     The interesting shape, and a legitimate one: a child override may restrict
     further than its Matter, so "can open the Matter" never implies "can open
     everything in it".
+
+    The reader who must not see it is `other_specialist`, not `specialist`:
+    `normal_matter` is owned by the latter, and participation in a Matter
+    unlocks its restricted children by design. Writing the test the other way
+    round asserted nothing — which the premise test below caught.
     """
     document = create_document(
         matter=normal_matter,
@@ -56,22 +65,26 @@ def restricted_evidence(normal_matter, department_head, evidence_root):
     )
 
 
-def test_the_restricted_document_really_is_invisible_to_the_specialist(
-    restricted_evidence, specialist
+def test_the_restricted_document_really_is_invisible_to_the_reader(
+    restricted_evidence, specialist, other_specialist, department_head
 ):
     """The fixture's premise, asserted rather than assumed.
 
     Without this the interesting test could pass because the document was
-    readable all along.
+    readable all along — which is exactly what happened the first time this was
+    written against the Matter's own owner.
     """
     from app.documents.models import Document
 
-    assert Document.objects.visible_to(specialist).count() == 0
-    assert Document.objects.visible_to(restricted_evidence.uploaded_by).count() == 1
+    assert Document.objects.visible_to(other_specialist).count() == 0
+    # The owner participates, so they do see it. Stated here so the next reader
+    # does not "simplify" the test back to the specialist who owns the Matter.
+    assert Document.objects.visible_to(specialist).count() == 1
+    assert Document.objects.visible_to(department_head).count() == 1
 
 
 def test_a_specialist_cannot_bind_evidence_they_may_not_read(
-    client, specialist, normal_matter, restricted_evidence
+    client, other_specialist, normal_matter, restricted_evidence
 ):
     """The post the interface never offers, which is not the same as refused.
 
@@ -80,9 +93,9 @@ def test_a_specialist_cannot_bind_evidence_they_may_not_read(
     — and the submission card then printed its filename, size and SHA-256 to
     everybody who could see the submission.
     """
-    submission = create_submission(matter=normal_matter, title="Arvamus", actor=specialist)
+    submission = create_submission(matter=normal_matter, title="Arvamus", actor=other_specialist)
 
-    client.force_login(specialist)
+    client.force_login(other_specialist)
     response = client.post(
         reverse("submissions:attach_evidence", kwargs={"pk": submission.pk}),
         {"existing_version": str(restricted_evidence.pk)},
@@ -292,13 +305,25 @@ def filed_letter(db, normal_matter, department_head, evidence_root):
         basis=ArchiveLinkBasis.REVIEWED,
         actor=department_head,
     )
+    # Sent the way the application sends: a SENT row requires a timestamp and
+    # final evidence, and the database says so. Forcing the status with an
+    # `update()` produced a fixture the constraint rejected — the test would
+    # then have "passed" on an error raised before the guard it was written for.
     submission = create_submission(
         matter=normal_matter, title="Taastatud arvamus", actor=department_head
     )
-    Submission.objects.filter(pk=submission.pk).update(status=SubmissionStatus.SENT)
+    attach_final_evidence(
+        submission=submission,
+        content=PDF,
+        original_filename="taastatud.pdf",
+        mime_type=PLAIN,
+        actor=department_head,
+    )
+    mark_submission_sent(submission=submission, actor=department_head)
     OpinionSubmissionImport.objects.create(
         item=item, submission=submission, batch=batch, created_submission=True
     )
+    assert Submission.objects.get(pk=submission.pk).status == SubmissionStatus.SENT
     return binary
 
 
