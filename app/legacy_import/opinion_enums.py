@@ -42,6 +42,13 @@ class OpinionMatchClass(models.TextChoices):
     EXACT_BINARY_MULTI_MATTER = "EXACT_BINARY_MULTI_MATTER", "Täpne bait mitmel teemal"
     EXCEL_ONENOTE_EXACT = "EXCEL_ONENOTE_EXACT", "Exceli ja OneNote'i täpne ühilduvus"
     STRICT_MULTI_SIGNAL = "STRICT_MULTI_SIGNAL", "Mitu sõltumatut täpset signaali"
+    #: Produced only by the second pass, from the letter's own text. It is
+    #: deliberately absent from ``AUTOMATIC_MATCH_CLASSES``, and the reason is
+    #: measurement rather than caution: extraction is blocked where the real
+    #: archive lives, so nothing in this class has ever been produced from the
+    #: real corpus. Promoting a class on unmeasured evidence is the move every
+    #: other class here was written to avoid (docs/adr/0023).
+    CONTENT_MULTI_SIGNAL = "CONTENT_MULTI_SIGNAL", "Sisust mitu täpset signaali"
     REVIEW_REQUIRED = "REVIEW_REQUIRED", "Vajab ülevaatust"
     CONFLICT = "CONFLICT", "Vastuolu"
     UNMATCHED = "UNMATCHED", "Sidumata"
@@ -75,6 +82,17 @@ class OpinionSignal(models.TextChoices):
     SENT_DATE_WITHIN_ONE_DAY = "SENT_DATE_WITHIN_ONE_DAY", "Kuupäev erineb ühe päeva"
     RELATED_KODA_NEWS_SUPPORT = "RELATED_KODA_NEWS_SUPPORT", "KodaDashi uudiselink toetab"
     POLICY_THREAD_SUPPORT = "POLICY_THREAD_SUPPORT", "KodaDashi teemalõng toetab"
+    # -- read from the letter itself ---------------------------------------
+    #
+    # The first pass sees a filename, a register row and a OneNote page. These
+    # three come from the document's own text, which is a genuinely independent
+    # source: a filename is what somebody typed when saving a copy, while the
+    # letter's dateline is what Koda wrote. They are named separately from
+    # their filename equivalents for exactly that reason — collapsing them
+    # would let one source corroborate itself.
+    CONTENT_EXACT_LAW_REFERENCE = "CONTENT_EXACT_LAW_REFERENCE", "Sisus sama õigusakti viide"
+    CONTENT_EXACT_ADDRESSEE = "CONTENT_EXACT_ADDRESSEE", "Sisus sama adressaat"
+    CONTENT_EXACT_DATE = "CONTENT_EXACT_DATE", "Sisus sama kuupäev"
 
 
 class OpinionConflict(models.TextChoices):

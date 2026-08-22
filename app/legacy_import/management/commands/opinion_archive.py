@@ -6,6 +6,8 @@
     manage.py opinion_archive apply    --opinions … [--kodadash …]
     manage.py opinion_archive materialize-plan --opinions … --expect-archive-sha256 …
     manage.py opinion_archive materialize      --opinions … --expect-archive-sha256 …
+    manage.py opinion_archive content-plan
+    manage.py opinion_archive content-apply
     manage.py opinion_archive supersede-plan
     manage.py opinion_archive supersede
     manage.py opinion_archive derive-links
@@ -57,6 +59,8 @@ class Command(BaseCommand):
                 "apply",
                 "materialize-plan",
                 "materialize",
+                "content-plan",
+                "content-apply",
                 "supersede-plan",
                 "supersede",
                 "derive-links",
@@ -78,6 +82,8 @@ class Command(BaseCommand):
             return self._verify()
         if phase in {"materialize-plan", "materialize"}:
             return self._materialize(phase, options)
+        if phase in {"content-plan", "content-apply"}:
+            return self._content(phase)
         if phase in {"supersede-plan", "supersede"}:
             return self._supersede(phase)
         if phase == "derive-links":
@@ -235,6 +241,34 @@ class Command(BaseCommand):
                     "\nArhiivi baidid on hoiul. Otsinguprojektsiooni uuendamiseks kasuta "
                     "`opinion_archive_search rebuild`."
                 )
+            )
+
+    def _content(self, phase: str) -> None:
+        """The second pass: read the letters and propose from their own text.
+
+        Reads the database and the extracted text already held; takes no source
+        path and no SHA. `content-plan` writes nothing at all rather than
+        writing and rolling back, because there is nothing to exercise — the
+        pass only ever inserts queue rows.
+
+        Nothing it proposes is automatic. Every row lands in the queue in
+        `CONTENT_MULTI_SIGNAL`, which is deliberately outside
+        ``AUTOMATIC_MATCH_CLASSES`` until somebody has measured this pass
+        against the real corpus (docs/adr/0023).
+        """
+        from app.legacy_import.opinion_content_match import (
+            apply_content_matches,
+            plan_content_matches,
+        )
+
+        run = plan_content_matches if phase == "content-plan" else apply_content_matches
+        report = run()
+        self.stdout.write(report.as_text())
+        if phase == "content-plan":
+            self.stdout.write("\nMidagi ei salvestatud.")
+        else:
+            self.stdout.write(
+                "\nEttepanekud on ülevaatuse järjekorras. Ükski neist ei loonud arvamust."
             )
 
     def _supersede(self, phase: str) -> None:
