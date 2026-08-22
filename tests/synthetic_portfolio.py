@@ -190,11 +190,29 @@ def add_source_reference(
     status_cell: str = "",
     next_action_cell: str = "",
     title_cell: str = "",
+    opinion_sent_cell: str = "",
+    received_cell: str = "",
+    deadline_cell: str = "",
+    addressee_cell: str = "",
     snapshot: str | None = None,
     conflict_state: str = "NONE",
 ) -> MatterSourceReference:
-    """Attach one verbatim register row to a Matter."""
+    """Attach one verbatim register row to a Matter.
+
+    The four optional cells below arrived with the final cutover (ADR 0021),
+    which reads columns Stage 2F had no use for. Written through the same
+    contract lookup as the rest, so a fixture still cannot disagree with the
+    parser about which letter holds what.
+    """
     values = {"owner_name": owner_cell}
+    for canonical, cell in (
+        ("opinion_sent_date", opinion_sent_cell),
+        ("received_date", received_cell),
+        ("response_deadline", deadline_cell),
+        ("addressee_organisation", addressee_cell),
+    ):
+        if cell:
+            values[canonical] = cell
     contract = contract_for_year(year)
     if contract is not None and contract.column_for("legacy_status") is not None:
         values["legacy_status"] = status_cell

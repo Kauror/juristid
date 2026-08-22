@@ -81,6 +81,34 @@ class ChangeEventType(models.TextChoices):
         "MATTER_HISTORICAL_CUTOVER_CLOSED",
         "Ajalooline kirje: enam mitte jooksev töö",
     )
+    # -- the final register cutover ------------------------------------------
+    #
+    # A third kind of "no longer current", and it needs its own name for the
+    # same reason the second one did. `MATTER_CLOSED` is a person closing live
+    # work with a disposition and a timestamp. `MATTER_HISTORICAL_CUTOVER_CLOSED`
+    # is the year-only interim rule retiring a pre-2026 row about which the
+    # register said nothing. This one is narrower and better evidenced: the
+    # final maintained snapshot carries a terminal `HETKESEIS` for this exact
+    # Matter, or says its work continues under a named other one.
+    #
+    # It still claims no closure date, no disposition and no closing person,
+    # because the register records none — so it stays out of the timeline
+    # alongside its predecessor, for the reason given there.
+    MATTER_REGISTER_CUTOVER_RETIRED = (
+        "MATTER_REGISTER_CUTOVER_RETIRED",
+        "Lõpliku registri järgi enam mitte jooksev töö",
+    )
+    MATTER_REGISTER_CUTOVER_ACTIVATED = (
+        "MATTER_REGISTER_CUTOVER_ACTIVATED",
+        "Lõpliku registri järgi jooksev töö",
+    )
+    # The source refresh. Its payload names which fields moved and to what, so
+    # the change is auditable without the register's own text being copied into
+    # an audit row — that text stays on the immutable source reference.
+    MATTER_SOURCE_FIELDS_REFRESHED = (
+        "MATTER_SOURCE_FIELDS_REFRESHED",
+        "Väljad uuendatud registri põhjal",
+    )
 
 
 class SecurityEventType(models.TextChoices):
