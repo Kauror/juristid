@@ -388,6 +388,31 @@ def test_linking_from_the_screen_records_a_reviewed_link(
     assert link.note == "Kuulub siia."
 
 
+def test_a_link_to_a_matter_without_a_reference_can_still_be_withdrawn(
+    client, administrator, binary
+):
+    """The register holds archive rows with no reference at all.
+
+    The withdraw button used to post the reference, so those links could be
+    added and never removed — the interface offering a control that could not
+    work.
+    """
+    unreferenced = factories.ArchiveMatterFactory(
+        title="Viiteta arhiivikirje", reference_year=None, reference_number=None
+    )
+    link_matter(
+        binary=binary, matter=unreferenced, basis=ArchiveLinkBasis.REVIEWED, actor=administrator
+    )
+
+    client.force_login(administrator)
+    client.post(
+        reverse("legacy_import:opinion_archive_link", kwargs={"pk": binary.pk}),
+        {"action": "unlink", "teema": str(unreferenced.pk)},
+        follow=True,
+    )
+    assert OpinionArchiveMatterLink.objects.count() == 0
+
+
 def test_linking_creates_no_submission(client, administrator, binary, normal_matter):
     from app.submissions.models import Submission
 

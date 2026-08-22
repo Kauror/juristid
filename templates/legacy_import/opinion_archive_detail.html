@@ -93,7 +93,11 @@
               <form class="linklist__action" method="post"
                     action="{% url 'legacy_import:opinion_archive_link' pk=binary.pk %}">
                 {% csrf_token %}
-                <input type="hidden" name="viide" value="{{ link.matter.display_reference }}">
+                {% comment %}
+                  The id rather than the reference: an archive Matter may have
+                  no reference, and its link must still be removable.
+                {% endcomment %}
+                <input type="hidden" name="teema" value="{{ link.matter_id }}">
                 <button type="submit" class="button button--quiet" name="action" value="unlink">Eemalda</button>
               </form>
             {% endif %}

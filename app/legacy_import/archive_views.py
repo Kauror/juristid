@@ -160,22 +160,27 @@ def archive_link(request: HttpRequest, pk: Any) -> HttpResponse:
     binary = get_object_or_404(OpinionArchiveBinary, pk=pk)
     action = request.POST.get("action", "")
     reference = request.POST.get("viide", "").strip()
+    identifier = request.POST.get("teema", "").strip()
 
-    matter = _matter_by_reference(reference)
+    # Two ways in, for two different callers. A person types a reference; the
+    # withdraw button beside an existing link posts the Matter's id, because a
+    # register archive row may legitimately have no reference at all and a link
+    # to one must still be removable.
+    matter = _matter_by_id(identifier) if identifier else _matter_by_reference(reference)
     if matter is None:
         # Never created here, and the message says so. An archive file naming
         # something is not authority to open a register entry for it.
         messages.error(
             request,
-            f"Teemat viitega „{reference}“ ei leitud. Seos saab osutada ainult "
-            "olemasolevale teemale.",
+            f"Teemat viitega „{reference or identifier}“ ei leitud. Seos saab osutada "
+            "ainult olemasolevale teemale.",
         )
         return redirect("legacy_import:opinion_archive_detail", pk=binary.pk)
 
     try:
         if action == "unlink":
             opinion_links.unlink_matter(binary=binary, matter=matter, actor=request.user)
-            messages.success(request, f"Seos teemaga {matter.display_reference} on eemaldatud.")
+            messages.success(request, _named(matter) + " seos on eemaldatud.")
         else:
             _, created = opinion_links.link_matter(
                 binary=binary,
@@ -186,14 +191,37 @@ def archive_link(request: HttpRequest, pk: Any) -> HttpResponse:
             )
             messages.success(
                 request,
-                f"Seos teemaga {matter.display_reference} on "
-                + ("lisatud." if created else "juba olemas.")
+                _named(matter)
+                + (" seos on lisatud." if created else " seos oli juba olemas.")
                 + " See ei loo arvamust.",
             )
     except DomainError as error:
         messages.error(request, str(error))
 
     return redirect("legacy_import:opinion_archive_detail", pk=binary.pk)
+
+
+def _named(matter: Any) -> str:
+    """How a Matter is named back to the reviewer.
+
+    Its reference when it has one, and its title when it does not: archive rows
+    imported without a register reference are exactly the ones a message saying
+    "Teemaga  seos on lisatud" would leave unidentifiable.
+    """
+    return f"Teemaga {matter.display_reference or matter.title[:60]}"
+
+
+def _matter_by_id(identifier: str) -> Any:
+    """Resolve a Matter id posted by the interface itself. Never creates."""
+    import uuid
+
+    from app.matters.models import Matter
+
+    try:
+        parsed = uuid.UUID(identifier)
+    except ValueError:
+        return None
+    return Matter.objects.filter(pk=parsed).first()
 
 
 def _matter_by_reference(reference: str) -> Any:
