@@ -1,4 +1,4 @@
-"""Find stored evidence objects that no DocumentVersion refers to.
+"""Find stored evidence objects that no canonical row refers to.
 
 ``add_evidence_version`` removes the object it wrote whenever the record
 describing it does not survive. Two residual cases it cannot cover on its own:
@@ -46,7 +46,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from app.documents.integrity import walk_storage
-from app.documents.models import DocumentVersion
+from app.documents.references import referenced_storage_keys
 from app.documents.services import evidence_storage
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ class Candidate:
 
 class Command(BaseCommand):
     help = (
-        "List (or delete) stored evidence objects that no DocumentVersion references "
+        "List (or delete) stored evidence objects that no canonical row references "
         "and that are older than the grace period."
     )
 
@@ -118,7 +118,11 @@ class Command(BaseCommand):
 
         cutoff = timezone.now() - timedelta(hours=grace_hours)
         storage = evidence_storage()
-        referenced = set(DocumentVersion.objects.values_list("storage_key", flat=True))
+        # Every canonical holder, not only DocumentVersion: the opinion archive
+        # stores its binaries in this same class, and a pruner that did not know
+        # that would delete evidence a row is holding
+        # (app/documents/references.py).
+        referenced = referenced_storage_keys()
 
         keys, unreadable = walk_storage(storage)
         candidates = [self._classify(storage, key, cutoff) for key in keys if key not in referenced]

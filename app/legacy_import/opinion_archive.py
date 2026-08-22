@@ -125,6 +125,25 @@ class OpinionArchiveItem(BaseModel):
     size_bytes = models.BigIntegerField(default=0, verbose_name="suurus baitides")
     detected_type = models.CharField(max_length=100, blank=True, verbose_name="tuvastatud tüüp")
 
+    #: The stored bytes, once somebody has materialised them (Stage 2H.2).
+    #:
+    #: Nullable because cataloguing and holding are different acts: an
+    #: occurrence is recorded the moment the archive is read, and the bytes are
+    #: copied into evidence storage later, by an explicit operator command. A
+    #: row with no binary is an honest statement that the catalogue knows about
+    #: a file the application cannot yet open.
+    #:
+    #: PROTECT, because deleting bytes that occurrences point at is not a
+    #: cascade — it is the loss of the evidence itself.
+    binary = models.ForeignKey(
+        "legacy_import.OpinionArchiveBinary",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="occurrences",
+        verbose_name="bait",
+    )
+
     # -- what the archive's own naming convention says --------------------
     #
     # Metadata, never truth. The corpus names every file
@@ -344,6 +363,25 @@ class OpinionMatchCandidate(BaseModel):
         null=True, blank=True, verbose_name="ülevaatusel kinnitatud kuupäev"
     )
 
+    # -- supersession -----------------------------------------------------
+    #
+    # A candidate's identity includes its match class, so newer evidence that
+    # reclassifies the same occurrence produces a *different* row rather than
+    # updating this one. Without somewhere to say so, the old proposal sits in
+    # the queue forever: not APPLIED, because it produced nothing; not
+    # REJECTED, because nobody rejected it; and not deletable, because it is
+    # the record of what the reconciliation believed (Stage-2H.1 finding).
+    superseded_by = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="supersedes",
+        verbose_name="asendatud kandidaadiga",
+    )
+    superseded_at = models.DateTimeField(null=True, blank=True, verbose_name="asendatud")
+    supersession_reason = models.TextField(blank=True, verbose_name="asendamise põhjus")
+
     class Meta:
         verbose_name = "arvamuse sidumiskandidaat"
         verbose_name_plural = "arvamuste sidumiskandidaadid"
@@ -361,6 +399,12 @@ class OpinionMatchCandidate(BaseModel):
                 fields=["item", "match_class"],
                 condition=models.Q(matter__isnull=True),
                 name="opinion_one_matterless_candidate_per_item_class",
+            ),
+            # A row cannot replace itself. Cheap to state, and the alternative
+            # is a "what replaced this?" link on the detail page that loops.
+            models.CheckConstraint(
+                condition=~models.Q(superseded_by=models.F("id")),
+                name="opinion_candidate_does_not_supersede_itself",
             ),
         ]
         indexes = [

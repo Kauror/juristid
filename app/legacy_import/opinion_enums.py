@@ -42,6 +42,13 @@ class OpinionMatchClass(models.TextChoices):
     EXACT_BINARY_MULTI_MATTER = "EXACT_BINARY_MULTI_MATTER", "Täpne bait mitmel teemal"
     EXCEL_ONENOTE_EXACT = "EXCEL_ONENOTE_EXACT", "Exceli ja OneNote'i täpne ühilduvus"
     STRICT_MULTI_SIGNAL = "STRICT_MULTI_SIGNAL", "Mitu sõltumatut täpset signaali"
+    #: Produced only by the second pass, from the letter's own text. It is
+    #: deliberately absent from ``AUTOMATIC_MATCH_CLASSES``, and the reason is
+    #: measurement rather than caution: extraction is blocked where the real
+    #: archive lives, so nothing in this class has ever been produced from the
+    #: real corpus. Promoting a class on unmeasured evidence is the move every
+    #: other class here was written to avoid (docs/adr/0023).
+    CONTENT_MULTI_SIGNAL = "CONTENT_MULTI_SIGNAL", "Sisust mitu täpset signaali"
     REVIEW_REQUIRED = "REVIEW_REQUIRED", "Vajab ülevaatust"
     CONFLICT = "CONFLICT", "Vastuolu"
     UNMATCHED = "UNMATCHED", "Sidumata"
@@ -75,6 +82,17 @@ class OpinionSignal(models.TextChoices):
     SENT_DATE_WITHIN_ONE_DAY = "SENT_DATE_WITHIN_ONE_DAY", "Kuupäev erineb ühe päeva"
     RELATED_KODA_NEWS_SUPPORT = "RELATED_KODA_NEWS_SUPPORT", "KodaDashi uudiselink toetab"
     POLICY_THREAD_SUPPORT = "POLICY_THREAD_SUPPORT", "KodaDashi teemalõng toetab"
+    # -- read from the letter itself ---------------------------------------
+    #
+    # The first pass sees a filename, a register row and a OneNote page. These
+    # three come from the document's own text, which is a genuinely independent
+    # source: a filename is what somebody typed when saving a copy, while the
+    # letter's dateline is what Koda wrote. They are named separately from
+    # their filename equivalents for exactly that reason — collapsing them
+    # would let one source corroborate itself.
+    CONTENT_EXACT_LAW_REFERENCE = "CONTENT_EXACT_LAW_REFERENCE", "Sisus sama õigusakti viide"
+    CONTENT_EXACT_ADDRESSEE = "CONTENT_EXACT_ADDRESSEE", "Sisus sama adressaat"
+    CONTENT_EXACT_DATE = "CONTENT_EXACT_DATE", "Sisus sama kuupäev"
 
 
 class OpinionConflict(models.TextChoices):
@@ -128,6 +146,35 @@ class RecipientBasis(models.TextChoices):
     UNRESOLVED = "UNRESOLVED", "Lahendamata"
 
 
+class ArchiveTextState(models.TextChoices):
+    """What happened when a parser was pointed at an archive binary.
+
+    The distinction between the last three is the one that matters. A scanned
+    letter with no text layer, a file the safety policy declined to open, and a
+    parser that broke are three different facts about the corpus, and a reader
+    who sees only "no text" will read all three as the same gap in coverage.
+    """
+
+    PENDING = "PENDING", "Ootel"
+    DONE = "DONE", "Tekst olemas"
+    NO_TEXT_LAYER = "NO_TEXT_LAYER", "Tekstikihti ei ole"
+    BLOCKED = "BLOCKED", "Turvapoliitika ei luba eraldamist"
+    FAILED = "FAILED", "Eraldamine ebaõnnestus"
+
+
+class ArchiveLinkBasis(models.TextChoices):
+    """How an archive-to-Matter relationship came to be believed.
+
+    A reviewed link and a link the reconciliation derived from exact evidence
+    are both legitimate and are not the same thing, and the archive detail page
+    says which it is looking at.
+    """
+
+    REVIEWED = "REVIEWED", "Ülevaatusel kinnitatud"
+    EXACT_BINARY = "EXACT_BINARY", "Täpne bait teema juures"
+    APPLIED_SUBMISSION = "APPLIED_SUBMISSION", "Kanoonilise arvamuse kaudu"
+
+
 class OpinionCandidateState(models.TextChoices):
     PENDING = "PENDING", "Ootel"
     APPLIED = "APPLIED", "Rakendatud"
@@ -136,6 +183,15 @@ class OpinionCandidateState(models.TextChoices):
     DUPLICATE = "DUPLICATE", "Duplikaat"
     NOT_AN_OPINION = "NOT_AN_OPINION", "Ei ole arvamus"
     DEFERRED = "DEFERRED", "Edasi lükatud"
+    #: An automatic proposal that newer reconciliation evidence replaced.
+    #:
+    #: Stage 2H.1 found the gap this fills. A candidate's identity includes its
+    #: match class, so when fresh evidence reclassifies the same occurrence the
+    #: old row is stranded: it cannot honestly be APPLIED, because it produced
+    #: nothing; it must not be REJECTED, because no person rejected it; and it
+    #: must not be deleted, because it is the record of what the reconciliation
+    #: believed at the time. It is superseded, and it says so.
+    SUPERSEDED = "SUPERSEDED", "Asendatud uuema tõendiga"
 
 
 #: The states only a person ever puts a row into. ``opinion_decide`` is the sole
@@ -163,3 +219,24 @@ HUMAN_DECIDED_STATES: frozenset[str] = frozenset(
         OpinionCandidateState.DEFERRED,
     }
 )
+
+
+#: The only state an automatic run may move a candidate out of.
+#:
+#: Everything a person decided is untouchable, and so is APPLIED — a candidate
+#: that produced a canonical Submission describes something that happened, and
+#: newer evidence about the archive does not un-happen it. New evidence that
+#: contradicts either surfaces as a conflict for a reviewer; it never rewrites
+#: the answer already on the record (brief 35).
+SUPERSEDABLE_STATES: frozenset[str] = frozenset({OpinionCandidateState.PENDING})
+
+
+#: States that are finished, one way or another, and are not waiting for anybody.
+#:
+#: The default review queue is the complement of this: a superseded row is
+#: history and would otherwise sit in the queue forever, being re-read by every
+#: operator who scrolls past it.
+CLOSED_CANDIDATE_STATES: frozenset[str] = HUMAN_DECIDED_STATES | {
+    OpinionCandidateState.APPLIED,
+    OpinionCandidateState.SUPERSEDED,
+}

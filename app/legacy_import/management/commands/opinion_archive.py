@@ -4,6 +4,13 @@
     manage.py opinion_archive plan     --opinions … [--kodadash …] [--report …]
     manage.py opinion_archive dry-run  --opinions … [--kodadash …]
     manage.py opinion_archive apply    --opinions … [--kodadash …]
+    manage.py opinion_archive materialize-plan --opinions … --expect-archive-sha256 …
+    manage.py opinion_archive materialize      --opinions … --expect-archive-sha256 …
+    manage.py opinion_archive content-plan
+    manage.py opinion_archive content-apply
+    manage.py opinion_archive supersede-plan
+    manage.py opinion_archive supersede
+    manage.py opinion_archive derive-links
     manage.py opinion_archive status
     manage.py opinion_archive verify
 
@@ -13,6 +20,12 @@ easy to mistype. ``audit`` and ``plan`` write nothing and touch no database
 rows. ``dry-run`` executes the real plan against the real schema and rolls the
 *database* back. Only ``apply`` commits, and it refuses unless the sources still
 hash to what the plan was reviewed against (Stage-2H brief 47, 48, 49).
+
+``materialize`` is deliberately not part of ``apply``. Holding a letter's bytes
+and deciding whose letter it is are different acts with different bars, and
+tying them together is what left two thirds of the corpus visible only as
+catalogue rows. It creates no Submission and links no Matter
+(app/legacy_import/opinion_materialize.py).
 
 **The rollback is database-only.** ``add_evidence_version`` writes bytes to the
 evidence store, and the filesystem does not join the transaction: a dry-run that
@@ -38,7 +51,22 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
-            "phase", choices=["audit", "plan", "dry-run", "apply", "status", "verify"]
+            "phase",
+            choices=[
+                "audit",
+                "plan",
+                "dry-run",
+                "apply",
+                "materialize-plan",
+                "materialize",
+                "content-plan",
+                "content-apply",
+                "supersede-plan",
+                "supersede",
+                "derive-links",
+                "status",
+                "verify",
+            ],
         )
         parser.add_argument("--opinions", type=Path, help="Opinions.zip or an opinions/ folder")
         parser.add_argument("--kodadash", type=Path, help="KodaDash opinion workbook")
@@ -52,6 +80,14 @@ class Command(BaseCommand):
             return self._status()
         if phase == "verify":
             return self._verify()
+        if phase in {"materialize-plan", "materialize"}:
+            return self._materialize(phase, options)
+        if phase in {"content-plan", "content-apply"}:
+            return self._content(phase)
+        if phase in {"supersede-plan", "supersede"}:
+            return self._supersede(phase)
+        if phase == "derive-links":
+            return self._derive_links()
 
         plan = self._build(options)
         if phase in {"audit", "plan"}:
@@ -163,6 +199,104 @@ class Command(BaseCommand):
         if options.get("report"):
             self._write_report(options["report"], report.__dict__ | {"batch_id": str(batch.pk)})
 
+    def _materialize(self, phase: str, options: dict) -> None:
+        """Copy the archive's bytes into evidence storage, or say what that would do.
+
+        Both phases pin the archive by SHA-256. `materialize-plan` writes
+        nothing at all — not even a batch row — so an operator can look at the
+        arithmetic, and at anything already broken, before deciding.
+        """
+        from app.legacy_import.opinion_materialize import (
+            OpinionMaterializeError,
+            materialize,
+            plan_materialization,
+        )
+
+        archive = options.get("opinions")
+        if archive is None:
+            raise CommandError("No opinions archive. Pass --opinions.")
+        if phase == "materialize":
+            self._require_gate()
+
+        run = plan_materialization if phase == "materialize-plan" else materialize
+        try:
+            report = run(
+                archive_path=Path(archive),
+                expected_archive_sha256=options["expect_archive_sha256"],
+            )
+        except OpinionMaterializeError as error:
+            raise CommandError(str(error)) from error
+
+        self.stdout.write(report.as_text())
+        if options.get("report"):
+            self._write_report(options["report"], report.__dict__)
+        if not report.ok:
+            # A non-zero exit, because "some bytes are missing" is the one
+            # outcome an operator must not scroll past on the way to the next
+            # step in the runbook.
+            raise CommandError("Materialiseerimine leidis puuduvaid või mittevastavaid baite.")
+        if phase == "materialize":
+            self.stdout.write(
+                self.style.SUCCESS(
+                    "\nArhiivi baidid on hoiul. Otsinguprojektsiooni uuendamiseks kasuta "
+                    "`opinion_archive_search rebuild`."
+                )
+            )
+
+    def _content(self, phase: str) -> None:
+        """The second pass: read the letters and propose from their own text.
+
+        Reads the database and the extracted text already held; takes no source
+        path and no SHA. `content-plan` writes nothing at all rather than
+        writing and rolling back, because there is nothing to exercise — the
+        pass only ever inserts queue rows.
+
+        Nothing it proposes is automatic. Every row lands in the queue in
+        `CONTENT_MULTI_SIGNAL`, which is deliberately outside
+        ``AUTOMATIC_MATCH_CLASSES`` until somebody has measured this pass
+        against the real corpus (docs/adr/0023).
+        """
+        from app.legacy_import.opinion_content_match import (
+            apply_content_matches,
+            plan_content_matches,
+        )
+
+        run = plan_content_matches if phase == "content-plan" else apply_content_matches
+        report = run()
+        self.stdout.write(report.as_text())
+        if phase == "content-plan":
+            self.stdout.write("\nMidagi ei salvestatud.")
+        else:
+            self.stdout.write(
+                "\nEttepanekud on ülevaatuse järjekorras. Ükski neist ei loonud arvamust."
+            )
+
+    def _supersede(self, phase: str) -> None:
+        """Retire pending proposals a later run has already answered.
+
+        No source and no SHA: this reads the database and nothing else. The
+        plan phase rolls its own work back, so its counts are the counts the
+        real phase would produce rather than an estimate of them.
+        """
+        from app.legacy_import.opinion_supersede import sweep_superseded
+
+        report = sweep_superseded(dry_run=phase == "supersede-plan")
+        self.stdout.write(report.as_text())
+        if phase == "supersede-plan":
+            self.stdout.write("\nMidagi ei salvestatud.")
+
+    def _derive_links(self) -> None:
+        """Record the archive-to-Matter relationships that already follow.
+
+        Only from exact identity — the automatic match classes and existing
+        Submissions. Nothing here is a resemblance, nothing is removed, and
+        running it twice changes nothing.
+        """
+        from app.legacy_import.opinion_links import derive_links
+
+        report = derive_links()
+        self.stdout.write(report.as_text())
+
     def _status(self) -> None:
         from app.legacy_import.opinion_archive import (
             OpinionArchiveItem,
@@ -170,6 +304,7 @@ class Command(BaseCommand):
             OpinionMatchCandidate,
             OpinionSubmissionImport,
         )
+        from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
         from app.legacy_import.opinion_enums import (
             HUMAN_DECIDED_STATES,
             OpinionCandidateState,
@@ -196,6 +331,13 @@ class Command(BaseCommand):
                 "ülevaataja otsustatud",
                 OpinionMatchCandidate.objects.filter(state__in=HUMAN_DECIDED_STATES).count(),
             ),
+            (
+                "asendatud",
+                OpinionMatchCandidate.objects.filter(
+                    state=OpinionCandidateState.SUPERSEDED
+                ).count(),
+            ),
+            ("teemaseoseid", OpinionArchiveMatterLink.objects.count()),
             ("arhiivist arvamusi", OpinionSubmissionImport.objects.count()),
             (
                 "neist siin loodud",
@@ -300,6 +442,15 @@ class Command(BaseCommand):
                 f"  {doubled} arvamusel on mitu arhiivi esinemist — see on lubatud: "
                 "sama kiri võib arhiivis olla mitu korda."
             )
+
+        # Supersession and multi-Matter links are checked here rather than in
+        # their own command, because an operator who runs one verify and reads
+        # "all checks passed" has been told something about the whole import.
+        from app.legacy_import.opinion_links import link_findings
+        from app.legacy_import.opinion_supersede import superseded_findings
+
+        problems.extend(superseded_findings())
+        problems.extend(link_findings())
 
         if problems:
             for problem in problems:

@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+{% block title %}Arvamuste arhiiv · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The held archive, searchable.
+
+  The coverage strip is first and is not decoration. Two thirds of this corpus
+  has no Matter, and a page that opened with a search box would imply the
+  archive is a filed collection with a lookup on top. It is not: it is evidence
+  we hold, some of it filed, some of it readable, and the strip says how much
+  of each before anybody searches anything.
+
+  Every row links to the letter, not to a queue decision. This surface answers
+  "what did we write about X"; deciding whose letter it is stays in
+  /haldus/arvamuste-ulevaatus/.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Arvamuste arhiiv</h1>
+    <span class="pagehead__context">
+      {{ counts.total }} kirja · {{ counts.linked }} teemaga seotud ·
+      {{ counts.with_submission }} kanoonilise arvamusena ·
+      {{ counts.with_body }} sisu järgi otsitavat
+    </span>
+    <a class="button button--quiet" href="{% url 'legacy_import:opinion_queue' %}">Ava ülevaatus</a>
+  </div>
+
+  <div class="card card--tight">
+    <form class="form" method="get" role="search">
+      <div class="formgrid">
+        <label class="field field--wide" for="archive-search">
+          <span class="field__label">Otsi arhiivist</span>
+          {% comment %}
+            Named apart from the global search in the top bar, which is a
+            different question over a different corpus. Two boxes both called
+            "Otsi" on one page is a box nobody can name.
+
+            `maxlength` mirrors the bound the service enforces, so the ordinary
+            path cannot submit a query the service will refuse. The service
+            still checks: this is a keyboard, not a boundary.
+          {% endcomment %}
+          <input class="field__input" type="search" name="q" id="archive-search"
+                 value="{{ filters.query }}" maxlength="500"
+                 placeholder="Pealkiri, saaja, viide, SHA-256 või sisu">
+        </label>
+        <label class="field">
+          <span class="field__label">Aasta</span>
+          <select class="field__input" name="aasta">
+            <option value="">Kõik</option>
+            {% for year in years %}
+              <option value="{{ year }}" {% if filters.year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field__label">Ülevaatus</span>
+          <select class="field__input" name="olek">
+            <option value="">Kõik</option>
+            {% for value, label in states %}
+              <option value="{{ value }}" {% if filters.review_state == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field__label">Teemaga seotud</span>
+          <select class="field__input" name="seotud">
+            <option value="">Kõik</option>
+            <option value="jah" {% if filters.linked == "jah" %}selected{% endif %}>Jah</option>
+            <option value="ei" {% if filters.linked == "ei" %}selected{% endif %}>Ei</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field__label">Sisu olemas</span>
+          <select class="field__input" name="sisu">
+            <option value="">Kõik</option>
+            <option value="jah" {% if filters.body == "jah" %}selected{% endif %}>Jah</option>
+            <option value="ei" {% if filters.body == "ei" %}selected{% endif %}>Ei</option>
+          </select>
+        </label>
+      </div>
+      <div class="form__actions">
+        <button type="submit" class="button button--primary">Otsi arhiivist</button>
+        <a class="button button--quiet" href="{% url 'legacy_import:opinion_archive_browse' %}">Lähtesta</a>
+      </div>
+    </form>
+  </div>
+
+  {% if refusal %}
+    {% comment %}
+      A refusal, never an empty list. "Nothing matched" and "we did not run
+      your query" look the same on a page and say opposite things about what
+      the archive holds.
+    {% endcomment %}
+    <p class="notice notice--warning">{{ refusal }}</p>
+  {% elif rows %}
+    <p class="cardnote">{{ total }} vastet.</p>
+    <div class="tablewrap tablewrap--evidence">
+      <table class="table">
+        <caption class="visually-hidden">Arhiivi kirjad otsingu tulemusena</caption>
+        <thead>
+          <tr>
+            <th scope="col">Kuupäev</th>
+            <th scope="col">Pealkiri</th>
+            <th scope="col">Saaja</th>
+            <th scope="col">Seosed</th>
+            <th scope="col">Sisu</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr>
+              <td>
+                {% if row.document_date %}
+                  <time datetime="{{ row.document_date|date:'Y-m-d' }}">{{ row.document_date|date:"d.m.Y" }}</time>
+                {% else %}—{% endif %}
+              </td>
+              <td>
+                <a href="{% url 'legacy_import:opinion_archive_detail' pk=row.binary_id %}">
+                  {{ row.title|default:"Pealkirjata kiri"|truncatechars:110 }}
+                </a>
+                {% if row.occurrence_count > 1 %}
+                  <span class="badge">{{ row.occurrence_count }} esinemist</span>
+                {% endif %}
+              </td>
+              <td>{{ row.recipient|default:"—"|truncatechars:60 }}</td>
+              <td>
+                {% if row.has_submission %}
+                  <span class="reviewstate reviewstate--applied">Arvamus</span>
+                {% elif row.is_linked %}
+                  <span class="reviewstate reviewstate--linked">Teemaga</span>
+                {% else %}
+                  <span class="reviewstate reviewstate--pending">Sidumata</span>
+                {% endif %}
+              </td>
+              <td>{% if row.has_body_text %}Otsitav{% else %}Metaandmete järgi{% endif %}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if page.has_other_pages %}
+      {% comment %}
+        `querystring` rather than re-encoding request.GET: appending to the
+        existing query string would carry the old `leht` along and grow the URL
+        by one parameter per click, which works and looks broken.
+      {% endcomment %}
+      <nav class="pager" aria-label="Lehekülgede vahel liikumine">
+        {% if page.has_previous %}
+          <a class="button button--quiet" href="{% querystring leht=page.previous_page_number %}">Eelmine</a>
+        {% endif %}
+        <span class="pager__status">Lehekülg {{ page.number }} / {{ page.paginator.num_pages }}</span>
+        {% if page.has_next %}
+          <a class="button button--quiet" href="{% querystring leht=page.next_page_number %}">Järgmine</a>
+        {% endif %}
+      </nav>
+    {% endif %}
+  {% else %}
+    <p class="empty">Ükski arhiivi kiri ei vasta nendele tingimustele.</p>
+  {% endif %}
+</div>
+{% endblock %}

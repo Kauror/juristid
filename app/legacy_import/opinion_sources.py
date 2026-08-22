@@ -473,3 +473,38 @@ def read_kodadash_artifact(path: Path) -> tuple[str, list[KodaDashRow]]:
             )
         )
     return digest, rows
+
+
+class ArchiveReader:
+    """Reads one occurrence's bytes, from a ZIP or a directory.
+
+    Opened once for a whole run rather than per file: 767 separate opens of a
+    105 MB ZIP is the kind of thing that looks fine on a laptop and takes
+    minutes on a server.
+
+    Lives here rather than beside one of its callers because both the canonical
+    apply and the archive materialisation need to read the same bytes the same
+    way, and two readers would eventually decode a ZIP entry name differently.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+        self._zip: zipfile.ZipFile | None = None
+        self._names: dict[str, str] = {}
+        if path.is_file():
+            self._zip = zipfile.ZipFile(path)
+            for info in self._zip.infolist():
+                if not info.is_dir():
+                    decoded, _ = _decode_entry_name(info)
+                    self._names[decoded] = info.filename
+
+    def read(self, relative_path: str) -> bytes | None:
+        if self._zip is not None:
+            name = self._names.get(relative_path)
+            if name is None:
+                return None
+            return self._zip.read(name)
+        candidate = self._path / relative_path
+        if not candidate.is_file():
+            return None
+        return candidate.read_bytes()

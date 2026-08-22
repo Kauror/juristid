@@ -316,3 +316,28 @@ architecture reasoning is in ADR 0020.
 | Who may record a carry-over attestation, and where the reason is kept | Department head | Before the first reactivation | `reactivate_historical_matter` requires a written reason and stores it on the reopen and promotion events. Whether any specialist may do this or only the head is a role decision, not a technical one. |
 | What the 2027 rollover does | Department head | Before January 2027 | Nothing happens automatically, deliberately. Moving the cutover means editing two reviewed constants and re-running both operations, each with its own dry-run. A calendar-driven rule was rejected. |
 | Whether the ~2228 retired rows should ever get a real closure reason | Department head | If anyone asks | They cannot be derived. If the department wants dispositions on historical work, that is a manual pass over the archive, and the current state honestly records that the reason is unknown rather than guessing one. |
+
+## Decisions taken by the development agent in Stage 2H.2
+
+Recorded so they can be challenged rather than inherited silently. The
+architecture reasoning is in ADR 0023.
+
+| Decision | Why | Reversibility |
+| --- | --- | --- |
+| The archive gets its **own** search projection rather than a nullable `matter` on `SearchDocument` | Every authorization decision in the global search rests on each row naming the Matter that authorizes it. Making the column nullable to fit unfiled letters would remove that invariant from every other row at the same time. A fake holding Matter was refused for the same reason in reverse: it would put a row in the register nobody opened. | Low — the new table is derived and rebuildable |
+| Reading the archive is administrator-only, and refused behind the shared gate | There is no Matter to inherit a restriction from, so the boundary is a property of the corpus. It is the reconciliation queue's rule, one step stricter: the queue shows filenames, this serves the letters, and an audit row naming a persona is not a record of who read real correspondence. | Moderate — one predicate, `may_read_archive` |
+| All-or-nothing, including the coverage figures | A reader who may see the totals can infer the corpus, and one who may see titles but not text can already read a subject and a recipient. A partial view would look like protection without being any. | Low |
+| Extraction is `BLOCKED` where real data lives, rather than excepted | ADR 0014 says an unscanned file is not opened, and the scanner that would clear these is a Secure Pilot Gate deliverable. The archive stays fully searchable by metadata either way, which is what makes obeying the rule affordable rather than merely principled. | High — one setting, and a re-run reconsiders every BLOCKED row |
+| Native PDF text only; no OCR | 767 files through a shared OCR engine is a real cost, and a scanned letter with no text layer is a fact worth recording rather than a gap worth filling at that price. `NO_TEXT_LAYER` is counted separately from failure and from refusal. | High |
+| A reclassified proposal becomes `SUPERSEDED`, and only from `PENDING` | The stranded row cannot be APPLIED (it produced nothing), must not be REJECTED (nobody rejected it) and must not be deleted (it records what was believed). Restricting it to PENDING is what stops an importer rerun from overwriting a person's answer. | Low |
+| An archive-to-Matter link is weaker than a Submission, and cannot unmake one | One letter can concern several Matters — the corpus has bundles of four resent opinions — and a candidate names only one. The link says the evidence concerns the Matter and nothing more. Withdrawing a link a Submission stands on is a different act with a different bar. | Moderate |
+| The second pass's `CONTENT_MULTI_SIGNAL` is **not** an automatic class | ADR 0019 set the bar for a new automatic class as measured precision on the real corpus. Extraction is blocked wherever the real archive lives, so this pass has never run against it: its precision is unmeasured, not merely unproven. | High — one line, once somebody has the number |
+
+## New decisions Stage 2H.2 raises for Koda
+
+| Decision | Owner | When | Notes |
+| --- | --- | --- | --- |
+| Whether the opinions archive may be extracted under a narrow trusted-source exception | Whoever owns the Secure Pilot Gate + department head | Before the archive's bodies can be searched in production | These are the Chamber's own outgoing letters, pinned by SHA-256, parsed by a PDF-only parser with no network and no execution. That is a real argument for an exception and it is a policy decision, not an implementation detail. Without it the production archive is searchable by metadata only. |
+| Whether to promote the second pass to an automatic class | Department head + whoever works the queue | After the first real run | The measurement that would justify it is written down in ADR 0023. Until somebody has that number the proposals go in front of a person, carrying their named signals. |
+| Who may record an archive-to-Matter link | Department head | Before the archive is opened beyond migration work | Today it is an administrator, because the archive is migration work. If lawyers are to use the archive as a reference, the boundary and the audit story both need revisiting. |
+| What the archive screen should become once the queue is worked through | Department head | When the backlog is finished | It is under `/haldus/` because several hundred unfiled letters do not belong in a lawyer's navigation. When they are filed, the useful surface may be a lawyer-facing one — that is a product decision. |
