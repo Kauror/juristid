@@ -1,3 +1,4 @@
+{% load register_source %}
 {% comment %}
 The dense register row, shared by Teemad, Minu töö and Saabunud so a row means
 the same thing everywhere.
@@ -58,6 +59,19 @@ and a Matter with no next step says so in words rather than showing a blank.
             {% if action %}
               <span class="mode mode--{{ action.kind|lower }}">{{ action.get_kind_display }}</span>
               <span class="table__actiontext" title="{{ action.text }}">{{ action.text }}</span>
+            {% elif source_instructions|get_item:matter.pk %}
+              {% comment %}
+                The register's own instruction, where no structured one exists.
+                Labelled as Excel's so a reader can tell a decision made here
+                from a sentence carried over, and carrying no kind, no date and
+                no overdue state — the source says all three at once and the
+                importer refuses to choose (ADR 0021).
+              {% endcomment %}
+              <span class="table__sourcelabel">Excelist</span>
+              <span class="table__actiontext table__actiontext--source"
+                    title="{{ source_instructions|get_item:matter.pk }}">
+                {{ source_instructions|get_item:matter.pk }}
+              </span>
             {% else %}
               <span class="table__missing">Järgmine samm puudub</span>
             {% endif %}

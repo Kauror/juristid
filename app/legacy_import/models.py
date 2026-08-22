@@ -328,6 +328,10 @@ class ImportRowLedger(AppendOnlyModel):
 # different rule to everything above: these are product data a lawyer reads,
 # not importer bookkeeping. Imported here so Django's app registry finds them
 # (docs/adr/0015).
+from app.legacy_import.current_state import (  # noqa: E402
+    CurrentRegisterState,
+    RegisterCurrency,
+)
 from app.legacy_import.opinion_archive import (  # noqa: E402
     OpinionArchiveBatch,
     OpinionArchiveItem,
@@ -356,6 +360,7 @@ __all__ = [
     "CandidateClass",
     "CandidateState",
     "ConflictState",
+    "CurrentRegisterState",
     "HistoricalMatchCandidate",
     "ImportBatch",
     "ImportRowLedger",
@@ -371,6 +376,7 @@ __all__ = [
     "OpinionMatchCandidate",
     "OpinionSubmissionImport",
     "ReconciliationStatus",
+    "RegisterCurrency",
     "ResourceImportState",
     "ResourceKind",
     "SourceMatchClass",
