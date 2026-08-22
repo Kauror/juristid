@@ -130,13 +130,17 @@ juristid_compose cp "$SET_DIR/database.dump" "db:$CONTAINER_PATH"
 TOC="$(juristid_compose exec -T db pg_restore --list "$CONTAINER_PATH")" ||
   die "pg_restore could not read the archive. It is not restorable, whatever its checksum says."
 
+# A here-string, not a pipe into `grep -q`. `grep -q` exits as soon as it
+# matches, the writer upstream then dies on SIGPIPE, and `pipefail` reports the
+# pipeline as failed — so the piped form returns failure exactly when the table
+# is present, and this check declared every well-formed dump unrecognisable.
 missing=""
 for table in $REQUIRED_TABLES; do
-  printf '%s\n' "$TOC" | grep -q -- "$table" || missing="$missing $table"
+  grep -q -- "$table" <<<"$TOC" || missing="$missing $table"
 done
 [ -z "$missing" ] || die "the archive's table of contents does not mention:$missing. This dump was not taken from a Juristid database, or it was taken before the schema existed."
 
-entries="$(printf '%s\n' "$TOC" | grep -c -v '^;' || true)"
+entries="$(grep -c -v '^;' <<<"$TOC" || true)"
 note "  pg_restore read $entries archive entries"
 note "  every required table is present"
 

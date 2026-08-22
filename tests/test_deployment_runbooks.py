@@ -16,6 +16,8 @@ warning unwritable.
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -27,6 +29,10 @@ SCRIPTS = ROOT / "scripts" / "deploy"
 
 RUNBOOKS = sorted(DEPLOY.glob("*/*.md"))
 SHELL_SCRIPTS = sorted(SCRIPTS.glob("*.sh"))
+
+#: Not skipped when absent: bash is present on the Linux runner and in the Git
+#: for Windows toolchain, so a missing one is a broken environment.
+BASH = shutil.which("bash") or "bash"
 
 #: Commands that must never appear in a runbook's copyable blocks, and why.
 #:
@@ -248,3 +254,54 @@ def test_the_backup_script_does_not_pipe_the_dump_through_anything() -> None:
     # quotation is the explanation.
     for line in executable_lines(text):
         assert "gzip" not in line
+
+
+# -- the shell trap that inverts a safety check ----------------------------
+
+
+def test_the_pipefail_grep_inversion_is_real() -> None:
+    """The mechanism these scripts must avoid, demonstrated rather than asserted.
+
+    `grep -q` exits the instant it matches. Whatever is writing into it then dies
+    on SIGPIPE, and `set -o pipefail` reports the *pipeline* by its worst member —
+    so `writer | grep -q pattern` returns **failure when the pattern is present**,
+    provided the input is long enough that the writer is still writing.
+
+    Which makes it a bug that hides: it needs a match near the start of an input
+    big enough to fill a pipe buffer, so every small example works perfectly.
+    The deployment preflight had it on its most important check, where the
+    inverted answer was the reassuring one — "no service publishes a host port",
+    said precisely when a service did.
+    """
+    early_match = (
+        "big=$(echo needle; for i in $(seq 1 50000); do echo padding padding padding; done)"
+    )
+    script = f"""
+        set -euo pipefail
+        {early_match}
+        printf '%s\n' "$big" | grep -q needle && echo PIPED_FOUND || echo PIPED_MISSED
+        grep -q needle <<<"$big" && echo STRING_FOUND || echo STRING_MISSED
+    """
+    result = subprocess.run(  # noqa: S603 - a fixed interpreter and a literal script
+        [BASH, "-c", script], capture_output=True, text=True, timeout=120
+    )
+    assert "PIPED_MISSED" in result.stdout, (
+        "the pipeline no longer inverts; if this shell has changed, the rule below "
+        "may be able to relax"
+    )
+    assert "STRING_FOUND" in result.stdout
+
+
+@pytest.mark.parametrize("script", SHELL_SCRIPTS, ids=lambda path: path.name)
+def test_no_script_pipes_into_a_quiet_grep(script: Path) -> None:
+    """Because the answer would be wrong in the direction nobody checks.
+
+    A here-string has no upstream process to kill, so the exit status is grep's
+    own. Comments are exempt: the scripts explain this trap where they used to
+    fall into it.
+    """
+    for line in executable_lines(script.read_text(encoding="utf-8")):
+        assert not re.search(r"\|\s*grep\s+(-\w*q|--quiet)", line), (
+            f"{script.name}: piping into `grep -q` returns failure when the pattern "
+            f"matches\n  {line}"
+        )

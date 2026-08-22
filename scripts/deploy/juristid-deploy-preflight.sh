@@ -151,21 +151,30 @@ else
   config=""
 fi
 
+# Here-strings rather than piping into `grep -q`, and the difference is
+# not style. `grep -q` exits the moment it matches, the writer upstream then dies
+# on SIGPIPE, and `set -o pipefail` reports the *pipeline* as failed — so a piped
+# `grep -q` returns failure exactly when the pattern is present. Every check below
+# would have been inverted, and the first one is the one that matters: it would
+# have announced "no service publishes a host port" precisely when one did.
 if [ -n "$config" ]; then
-  if printf '%s\n' "$config" | grep -qE '^[[:space:]]*published:'; then
+  if grep -qE '^[[:space:]]*published:' <<<"$config"; then
     fail "a service publishes a host port. This stack is reachable only through the tunnel; a published port is a way around the authenticator."
   else
     pass "no service publishes a host port"
   fi
 
-  if printf '%s\n' "$config" | grep -q 'network_mode: host'; then
+  if grep -q 'network_mode: host' <<<"$config"; then
     fail "a service uses host networking, which publishes every socket it listens on"
   else
     pass "no service uses host networking"
   fi
 
-  if printf '%s\n' "$config" | grep -q '/srv/historical-source'; then
-    if printf '%s\n' "$config" | grep -A4 '/srv/historical-source' | grep -q 'read_only: true'; then
+  if grep -q '/srv/historical-source' <<<"$config"; then
+    # Captured first: piping one grep into another has the same problem, with
+    # the first grep in the role of the writer that gets killed.
+    corpus_mount="$(grep -A4 '/srv/historical-source' <<<"$config" || true)"
+    if grep -q 'read_only: true' <<<"$corpus_mount"; then
       pass "the historical corpus is mounted read-only"
     else
       fail "the historical corpus is mounted writable. The importer must not be able to rewrite its own source."

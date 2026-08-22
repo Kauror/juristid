@@ -343,7 +343,7 @@ jobs:
 
       - name: Name the set that was produced
         run: |
-          set_dir="$(find "$BACKUP_ROOT/sets" -mindepth 1 -maxdepth 1 -type d | sort | tail -1)"
+          set_dir="$(find "$BACKUP_ROOT/sets" -mindepth 1 -maxdepth 1 -type d -not -name '*.partial' | sort | tail -1)"
           test -n "$set_dir" || { echo "the backup produced no set"; exit 1; }
           echo "SET_DIR=$set_dir" >> "$GITHUB_ENV"
 
@@ -358,14 +358,20 @@ jobs:
         run: |
           empty=/tmp/juristid-rehearsal/empty-mount
           mkdir -p "$empty/evidence" "$empty/legacy-source"
-          before="$(find "$BACKUP_ROOT/sets" -mindepth 1 -maxdepth 1 -type d | wc -l)"
+          # Finished sets only. A failed run is *supposed* to leave a directory
+          # named `.partial` behind — that is how a crash produces something
+          # obviously incomplete rather than something plausible — so counting
+          # it here would fail the very behaviour this step exists to prove.
+          finished() { find "$BACKUP_ROOT/sets" -mindepth 1 -maxdepth 1 -type d -not -name '*.partial' | wc -l; }
+          before="$(finished)"
           if scripts/deploy/juristid-backup.sh \
                --project "$PROJECT" --compose-file "$COMPOSE_FILE_PATH" \
                --data-root "$empty" --backup-root "$BACKUP_ROOT" --minimum-free-mib 64; then
             echo "the backup succeeded against an empty evidence tree"; exit 1
           fi
-          after="$(find "$BACKUP_ROOT/sets" -mindepth 1 -maxdepth 1 -type d | wc -l)"
-          test "$before" = "$after" || { echo "a failed backup left a finished-looking set behind"; exit 1; }
+          test "$before" = "$(finished)" || { echo "a failed backup left a finished-looking set behind"; exit 1; }
+          test -n "$(find "$BACKUP_ROOT/sets" -mindepth 1 -maxdepth 1 -name '*.partial' -print -quit)" \
+            || { echo "a failed backup left nothing to investigate"; exit 1; }
 
       - name: A backup root that does not exist is refused
         run: |
