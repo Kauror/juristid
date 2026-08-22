@@ -34,11 +34,11 @@ from app.search.services import (
 @login_required
 def search_view(request: HttpRequest) -> HttpResponse:
     raw = request.GET.get("q") or ""
-    # What the box shows is what was typed; what the search runs is what the
-    # service is willing to act on. They differ for a hand-built URL — control
-    # characters, or a query longer than the service will accept — and the page
-    # has to be able to say which happened rather than showing "no results" for
-    # a query that was never run.
+    # The service decides what it is willing to act on, and for a hand-built URL
+    # — control characters, or a query longer than it accepts — that is nothing.
+    # The page has to be able to say *that* happened, because "vasteid ei
+    # leitud" for a query which was never run is the exact false negative this
+    # search exists to prevent.
     query = clean_query(raw)
     refused = bool(raw.strip()) and not query
 

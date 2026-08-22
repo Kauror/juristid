@@ -164,6 +164,13 @@ def linked_page(specialist):
 
 
 def test_a_linked_page_is_searchable_by_its_text(linked_page, specialist) -> None:
+    """The fixture creates the link and calls nothing else, on purpose.
+
+    Five production call sites create these rows and all five remembered to
+    call `index_source_link` — which is precisely the fragility: the projection
+    was correct only until somebody wrote a sixth. A page attached to a Matter
+    and absent from search looks exactly like a page that was never attached.
+    """
     _, _, link = linked_page
     results = search(query="koosolekul", user=specialist)
     assert any(result.source_page_id == link.pk for result in results)
@@ -689,6 +696,32 @@ def test_a_refresh_that_fails_after_deleting_restores_the_previous_rows(
 
     monkeypatch.undo()
     assert _fingerprint() == before
+
+
+def test_a_rolled_back_business_write_takes_its_index_row_with_it(specialist) -> None:
+    """Canonical and derived must not disagree in the direction that lies.
+
+    The refresh runs inside the caller's transaction, so a business write that
+    aborts leaves the projection where it was. The failure this rules out is
+    canonical-old plus search-new: a title in the index that no record anywhere
+    ever had, which is worse than staleness because there is nothing to compare
+    it against.
+    """
+    matter = factories.MatterFactory(
+        owner=specialist, title="Kinnitatud pealkiri", reference_year=2026, reference_number=808
+    )
+    rebuild_all()
+
+    with pytest.raises(RuntimeError), transaction.atomic():
+        matter.title = "Pealkiri, mida ei salvestatud"
+        matter.save()
+        raise RuntimeError("the rest of the business write failed")
+
+    matter.refresh_from_db()
+    assert matter.title == "Kinnitatud pealkiri"
+    row = SearchDocument.objects.get(matter=matter, source_kind=SearchSourceKind.MATTER)
+    assert row.title == "Kinnitatud pealkiri"
+    assert search(query="mida ei salvestatud", user=specialist) == []
 
 
 # ---------------------------------------------------------------------------

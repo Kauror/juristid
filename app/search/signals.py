@@ -22,10 +22,11 @@ tags. They are deliberately narrow, and two things are **not** covered:
 
 The line between the two lists is fanout, not importance. A handler exists here
 when the number of search rows a write invalidates is bounded by that write —
-one Matter, one entry, one submission, one document's pages, the handful of
-Matters that accepted one OneNote page. It does not when a single edit can
-invalidate the whole corpus, because a synchronous reindex of thousands of rows
-inside a form submission is a worse failure than staleness an operator can fix.
+one Matter, one entry, one submission, one document's pages, one Matter's claim
+on a OneNote page, the handful of Matters that accepted one such page. It does
+not when a single edit can invalidate the whole corpus, because a synchronous
+reindex of thousands of rows inside a form submission is a worse failure than
+staleness an operator can fix.
 
 Both gaps are recoverable by a rebuild, which is the property the projection was
 designed around.
@@ -150,6 +151,29 @@ def refresh_on_recipient_change(
     submission = Submission.objects.filter(pk=instance.submission_id).first()
     if submission is not None:
         refresh_submission(submission)
+
+
+@receiver(post_save, sender=MatterSourcePage, dispatch_uid="search_refresh_source_link")
+def refresh_on_source_link_change(
+    sender: type[MatterSourcePage], instance: MatterSourcePage, **kwargs: Any
+) -> None:
+    """Attaching a page to a Matter makes it findable under that Matter.
+
+    Five call sites create these rows — two in the historical importer, two in
+    the review queue, one in the seed command — and every one of them
+    remembered to call `index_source_link` afterwards. That is the defect: the
+    projection was correct only for as long as the next person to write a sixth
+    call site also remembered, and a page that is attached and unfindable
+    reports itself as a page that was never attached.
+
+    So it is a signal, and the explicit calls become redundant rather than
+    load-bearing. Refreshing twice is one extra delete-and-insert of a single
+    row; missing it once is a historical file that silently is not in the
+    corpus (compare `refresh_on_tag_assignment`, for the same reason).
+    """
+    if indexing_is_suspended():
+        return
+    refresh_source_link(instance)
 
 
 @receiver(post_save, sender=LegacySourcePage, dispatch_uid="search_refresh_source_page")
