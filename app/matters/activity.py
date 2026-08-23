@@ -17,15 +17,17 @@ facts that are about the work.
 What counts as activity
 -----------------------
 A recorded closure. An authored entry. A submission that went out. A next action
-a person set or ended. The date the matter arrived. And, for imported records,
-the OneNote page's own created and modified timestamps, which are source
-metadata captured from the archive rather than anything this system did.
+a person set or ended. A dated `Kaasamine` engagement. The date the matter
+arrived. And, for imported records, the OneNote page's own created and modified
+timestamps, which are source metadata captured from the archive rather than
+anything this system did.
 
 What does not
 -------------
 ``ImportBatch.started_at``, ``CurrentRegisterState.observed_at``, search-index
-refreshes, and — for anything imported — ``Matter.updated_at``. Those are
-processing times. Calling one of them activity is the exact mistake this module
+refreshes, ``MatterEngagement.created_at`` on an engagement whose own date is
+unknown, and — for anything imported — ``Matter.updated_at``. Those are
+processing and data-entry times. Calling one of them activity is the exact mistake this module
 exists to correct, and there is a regression test for the 2026-import case.
 
 Two rules that look similar and are not
@@ -84,7 +86,7 @@ from django.utils import timezone
 
 from app.legacy_import.source_pages import MatterSourcePage, SourceRelationshipKind
 from app.matters.enums import MatterOrigin
-from app.matters.models import Entry, Matter
+from app.matters.models import Entry, Matter, MatterEngagement
 from app.submissions.models import Submission
 from app.workflow.models import NextAction
 
@@ -97,6 +99,7 @@ class ActivityBasis:
     SUBMISSION = "SUBMISSION"
     ENTRY = "ENTRY"
     NEXT_ACTION = "NEXT_ACTION"
+    ENGAGEMENT = "ENGAGEMENT"
     RECEIVED = "RECEIVED"
     ONENOTE_MODIFIED = "ONENOTE_MODIFIED"
     ONENOTE_CREATED = "ONENOTE_CREATED"
@@ -109,6 +112,7 @@ BASIS_LABELS: dict[str, str] = {
     ActivityBasis.SUBMISSION: "Arvamus saadetud",
     ActivityBasis.ENTRY: "Sissekanne",
     ActivityBasis.NEXT_ACTION: "Järgmiseks muudetud",
+    ActivityBasis.ENGAGEMENT: "Kaasamine",
     ActivityBasis.RECEIVED: "Saabus",
     ActivityBasis.ONENOTE_MODIFIED: "OneNote'i lehte muudetud",
     ActivityBasis.ONENOTE_CREATED: "OneNote'i leht loodud",
@@ -122,6 +126,7 @@ BASIS_PRECEDENCE: tuple[str, ...] = (
     ActivityBasis.SUBMISSION,
     ActivityBasis.ENTRY,
     ActivityBasis.NEXT_ACTION,
+    ActivityBasis.ENGAGEMENT,
     ActivityBasis.RECEIVED,
     ActivityBasis.ONENOTE_MODIFIED,
     ActivityBasis.ONENOTE_CREATED,
@@ -146,6 +151,7 @@ ANNOTATIONS: tuple[str, ...] = (
     "activity_action_ended_at",
     "activity_page_modified_at",
     "activity_page_created_at",
+    "activity_engagement_on",
 )
 
 
@@ -216,6 +222,15 @@ def annotate_last_activity(queryset: QuerySet[Matter], user: Any) -> QuerySet[Ma
         activity_action_ended_at=_latest(people_actions.filter(ended_by__isnull=False), "ended_at"),
         activity_page_modified_at=_latest(pages, "source_page__source_modified_at"),
         activity_page_created_at=_latest(pages, "source_page__source_created_at"),
+        # Only a *dated* engagement. `created_at` is deliberately not offered:
+        # somebody recording a 2019 consultation today would otherwise move the
+        # file's last activity to today, which is the import-timestamp mistake
+        # this module exists to remove, arriving by a different door
+        # (Agent-F brief 29).
+        activity_engagement_on=_latest(
+            MatterEngagement.objects.visible_to(user).filter(occurred_on__isnull=False),
+            "occurred_on",
+        ),
     )
 
 
@@ -260,6 +275,10 @@ def activity_of(matter: Matter) -> MatterActivityFact | None:
     offer(matter.activity_entry_at, ActivityBasis.ENTRY)  # type: ignore[attr-defined]
     offer(matter.activity_action_created_at, ActivityBasis.NEXT_ACTION)  # type: ignore[attr-defined]
     offer(matter.activity_action_ended_at, ActivityBasis.NEXT_ACTION)  # type: ignore[attr-defined]
+    # Asking members what they think is real work on the file, so a dated
+    # engagement competes on its date like everything else here. It gets no
+    # priority: an Entry written after it still wins (brief 30).
+    offer(matter.activity_engagement_on, ActivityBasis.ENGAGEMENT)  # type: ignore[attr-defined]
     # A real business date, and a legitimate fallback — but never the answer
     # when something later is known, which the maximum below guarantees
     # (brief 61).

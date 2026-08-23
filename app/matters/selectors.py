@@ -257,6 +257,21 @@ def matter_list_queryset(user: Any) -> QuerySet[Matter]:
     )
 
 
+def matter_engagements(matter: Matter, user: Any) -> list[Any]:
+    """The `Kaasamine` records of one Matter, scoped to this reader.
+
+    Ordered by the model, evaluated once, and `select_related` on the author so
+    a section with five rows costs one query rather than six. The template
+    iterates this list and never asks the database a question of its own
+    (Agent-F brief 55).
+    """
+    from app.matters.models import MatterEngagement
+
+    return list(
+        MatterEngagement.objects.filter(matter=matter).visible_to(user).select_related("created_by")
+    )
+
+
 def current_action_of(matter: Matter) -> NextAction | None:
     """Read the prefetched open action, falling back to a query if absent."""
     prefetched = getattr(matter, "open_actions", None)

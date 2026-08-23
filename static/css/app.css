@@ -3960,6 +3960,30 @@ p.factsection__none {
   color: var(--text-primary);
 }
 
+/* The channel a Kaasamine used, ahead of its title in the row. Quiet, because
+ * it is one of four fixed words and the title is what a reader is scanning for
+ * (Agent-F brief 34). */
+.factrow__kind {
+  flex: none;
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-chip);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* A form of stacked fields inside a disclosure. The row forms are five labelled
+ * inputs one under another, which is what fits in the width a factsection has;
+ * the horizontal `inlineform` used in the header band does not. */
+.stackform {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  max-width: 34rem;
+  margin-top: var(--spacing-2);
+}
+
 .factrow__matter {
   color: var(--accent-link);
   text-decoration: none;

@@ -143,6 +143,7 @@ def indexable_matters() -> QuerySet[Matter]:
     see would silently differ between operators.
     """
     return Matter.objects.select_related("addressee_organisation").prefetch_related(
+        "engagements",
         "source_organisations",
         "source_organisations__aliases",
         "addressee_organisation__aliases",
@@ -211,6 +212,31 @@ def _alias_text_for(matter: Matter) -> str:
     return " ".join(dict.fromkeys([*parts, *normalized]))
 
 
+def _engagement_text_for(matter: Matter) -> str:
+    """What a `Kaasamine` record makes a Matter findable by.
+
+    The title, the note, and the link's **host** rather than the link. A
+    campaign URL is mostly tracking parameters, and indexing those adds
+    thousands of meaningless tokens per Matter while making "Alchemer" no
+    easier to find than the host already does (Agent-F brief 47).
+
+    Sorted before joining, so two rebuilds of an unchanged Matter produce
+    identical text. The projection is compared to decide whether a row changed;
+    text whose word order came from the join would make every rebuild look like
+    an edit (brief 48).
+    """
+    parts: list[str] = []
+    for engagement in sorted(
+        matter.engagements.all(), key=lambda record: (record.title, str(record.pk))
+    ):
+        parts.append(engagement.title)
+        if engagement.note:
+            parts.append(engagement.note)
+        if engagement.link_label:
+            parts.append(engagement.link_label)
+    return " ".join(parts)
+
+
 def _title_text_for(matter: Matter) -> str:
     titles = [matter.title, *(matter.alternate_titles or [])]
     return " ".join(title for title in titles if title)
@@ -233,8 +259,18 @@ def indexed_text_for(matter: Matter) -> dict[str, str]:
         # text live in their own rows, so a result can say which of them
         # matched — folding them in here would make every hit read "the matter
         # matched" and lose the locator entirely (docs/adr/0014).
+        # The Matter's own authored summaries, plus what `Kaasamine` says. An
+        # engagement has no row of its own in the projection — it is a pointer,
+        # not a document — so its text belongs on the Matter, which is the
+        # thing a reader is looking for when they type a campaign's name.
         "body_text": " ".join(
-            part for part in (matter.position_summary, matter.rationale_summary) if part
+            part
+            for part in (
+                matter.position_summary,
+                matter.rationale_summary,
+                _engagement_text_for(matter),
+            )
+            if part
         ),
     }
 

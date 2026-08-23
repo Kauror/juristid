@@ -35,6 +35,7 @@ consequences and reversibility.
 | [0024](0024-test-data-classification.md) | Test data is a stored class on the Matter, and purging it is a later decision | Accepted, on a feature branch |
 | [0025](0025-multiple-matter-senders.md) | A Matter has zero, one or several senders; the addressee stays singular | Accepted |
 | [0026](0026-source-data-enrichment.md) | Source facts are never rewritten; interpretation is added on top of them | Accepted, on a feature branch |
+| [0027](0027-matter-engagement.md) | `Kaasamine` is a pointer to outreach, not an engagement system | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -55,3 +56,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0024 — real/test data classification and the purge plan that precedes a purge
 - 0025 — multiple Matter senders, and the addressee that stays singular
 - 0026 — Wave 2 source-data enrichment: JÄRGMISEKS, OneNote filing structure and historical activity
+- 0027 — Wave 2 Kaasamine: how members and stakeholders were asked

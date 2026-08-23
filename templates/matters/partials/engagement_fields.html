@@ -1,0 +1,52 @@
+{% comment %}
+The five `Kaasamine` fields, shared by the add form and every edit form.
+
+One partial rather than two copies, because the add and edit forms are the same
+five fields and a copy is where they would drift. `record` supplies the current
+values when editing and is absent when adding.
+
+Rendered by hand rather than through `{{ form }}`: an edit form has to show
+what is stored, and Django's bound-form machinery would need one form instance
+per row built in the view for that. Five inputs is cheaper than that plumbing.
+{% endcomment %}
+<label class="field field--narrow">
+  <span class="field__label">Liik</span>
+  <select class="field__input" name="kind">
+    {% for value, label in form.fields.kind.choices %}
+      <option value="{{ value }}"
+              {% if record %}{% if record.kind == value %}selected{% endif %}
+              {% elif form.fields.kind.initial == value %}selected{% endif %}>{{ label }}</option>
+    {% endfor %}
+  </select>
+</label>
+
+<label class="field">
+  <span class="field__label">Pealkiri</span>
+  <input class="field__input" type="text" name="title" maxlength="500" required
+         placeholder="Näiteks: Liikmete tagasiside küsimine"
+         value="{% if record %}{{ record.title }}{% endif %}">
+  {% if form.title.errors %}<span class="field__error">{{ form.title.errors|first }}</span>{% endif %}
+</label>
+
+<label class="field">
+  <span class="field__label">Link</span>
+  <input class="field__input" type="text" name="url" maxlength="1000" placeholder="https://…"
+         value="{% if record %}{{ record.url }}{% endif %}">
+  <span class="field__help">Vabatahtlik. Kampaanial ei pruugi püsivat avalikku aadressi olla.</span>
+  {% if form.url.errors %}<span class="field__error">{{ form.url.errors|first }}</span>{% endif %}
+</label>
+
+{% comment %}
+  No `value` when adding. The record may be about a consultation from years ago,
+  and a box pre-filled with today is answered by pressing save (brief 38).
+{% endcomment %}
+<label class="field field--narrow">
+  <span class="field__label">Kuupäev</span>
+  <input class="field__input" type="date" name="occurred_on"
+         value="{% if record.occurred_on %}{{ record.occurred_on|date:'Y-m-d' }}{% endif %}">
+</label>
+
+<label class="field">
+  <span class="field__label">Märkus</span>
+  <textarea class="field__input" name="note" rows="2">{% if record %}{{ record.note }}{% endif %}</textarea>
+</label>

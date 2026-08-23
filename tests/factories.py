@@ -50,6 +50,13 @@ class DepartmentHeadFactory(UserFactory):
     display_name = factory.Sequence(lambda n: f"Testosakonnajuht {n}")
 
 
+class ReaderFactory(UserFactory):
+    """A colleague who may read the register and change nothing in it."""
+
+    role = UserRole.READER
+    display_name = factory.Sequence(lambda n: f"Testlugeja {n}")
+
+
 class AdministratorFactory(UserFactory):
     role = UserRole.ADMINISTRATOR
     is_staff = True
