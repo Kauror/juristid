@@ -612,13 +612,14 @@ def test_a_legal_hold_blocks_the_plan(specialist, evidence_root):
     assert purge.BLOCKED_BY_LEGAL_HOLD in _plan_output()
 
 
-def test_a_real_submission_standing_on_test_evidence_blocks_the_plan(specialist, evidence_root):
-    """The cross-boundary check, in the shape it actually takes.
+def test_a_submission_cannot_stand_on_another_matters_evidence_at_all(specialist, evidence_root):
+    """The obvious cross-boundary case is already structurally impossible.
 
-    A real Matter's submission is finalised on a version that lives under a
-    test Matter. Deleting that version would abort against the PROTECT — and if
-    it did not, it would take the real record's evidence with it
-    (Agent-C brief 36, 56).
+    Pinned rather than assumed. A database trigger refuses a `final_version`
+    from a different Matter, which is why the cross-boundary tests below use
+    relations the schema actually permits — and why the planner must look at
+    those rather than at the one everybody thinks of first
+    (app/submissions/migrations/0002_final_evidence_integrity.py).
     """
     test_matter = _test_matter(owner=specialist)
     document = create_document(matter=test_matter, title="Fail", role=DocumentRole.OTHER)
@@ -629,6 +630,28 @@ def test_a_real_submission_standing_on_test_evidence_blocks_the_plan(specialist,
         mime_type=PLAIN_TEXT,
         uploaded_by=specialist,
     )
+    real_matter = factories.MatterFactory(owner=specialist)
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        Submission.objects.create(
+            matter=real_matter,
+            title="Päris arvamus",
+            kind=SubmissionKind.FORMAL_OPINION,
+            status=SubmissionStatus.DRAFT,
+            final_version=version,
+        )
+
+
+def test_a_real_submission_pointing_at_a_test_document_blocks_the_plan(specialist, evidence_root):
+    """A real record depends on a test-owned row, so the plan refuses.
+
+    `working_document` is nullable and carries no cross-Matter trigger, so this
+    is a state the system can genuinely reach. Deleting the document would
+    silently clear a pointer on a real submission — the quiet failure, which is
+    the worse of the two (Agent-C brief 36, 56).
+    """
+    test_matter = _test_matter(owner=specialist)
+    document = create_document(matter=test_matter, title="Tööversioon", role=DocumentRole.OTHER)
 
     real_matter = factories.MatterFactory(owner=specialist)
     Submission.objects.create(
@@ -636,30 +659,86 @@ def test_a_real_submission_standing_on_test_evidence_blocks_the_plan(specialist,
         title="Päris arvamus",
         kind=SubmissionKind.FORMAL_OPINION,
         status=SubmissionStatus.DRAFT,
-        final_version=version,
+        working_document=document,
     )
 
     plan = purge.build_purge_plan()
     assert plan.is_blocked
-    blockers = [
-        blocker for blocker in plan.blockers if blocker.category == purge.BLOCKED_BY_REAL_REFERENCE
-    ]
-    assert any(blocker.label == "submissions.Submission.final_version" for blocker in blockers)
+    assert any(
+        blocker.label == "submissions.Submission.working_document"
+        and blocker.category == purge.BLOCKED_BY_REAL_REFERENCE
+        for blocker in plan.blockers
+    )
 
-    # And the key is never presented as safe to delete.
     output = _plan_output()
     assert purge.BLOCKED_BY_REAL_REFERENCE in output
     assert "SAFE CANDIDATE SET" not in output
-    assert version.storage_key not in output
+
+
+def test_evidence_a_real_email_stands_on_blocks_the_plan(specialist, evidence_root):
+    """The harder case: a row that is owned *and* anchors real data.
+
+    `EmailAttachmentLink` records that one exact binary arrived inside another.
+    With the attachment under a test Matter and the message under a real one,
+    the link is reached from the test side and looks owned — and deleting it
+    would destroy provenance for the real email that no parser can recompute.
+
+    A planner that only asked "does anything outside point in" would call this
+    safe (Agent-C brief 36, 58).
+    """
+    from app.documents.derivatives import EmailAttachmentLink
+
+    test_matter = _test_matter(owner=specialist)
+    attachment = add_evidence_version(
+        document=create_document(matter=test_matter, title="Manus", role=DocumentRole.OTHER),
+        content=b"Sunteetiline manus.",
+        original_filename="manus.txt",
+        mime_type=PLAIN_TEXT,
+        uploaded_by=specialist,
+    )
+
+    real_matter = factories.MatterFactory(owner=specialist)
+    email = add_evidence_version(
+        document=create_document(matter=real_matter, title="Kiri", role=DocumentRole.OTHER),
+        content=b"Sunteetiline kiri.",
+        original_filename="kiri.txt",
+        mime_type=PLAIN_TEXT,
+        uploaded_by=specialist,
+    )
+
+    EmailAttachmentLink.objects.create(
+        parent_version=email,
+        attachment_version=attachment,
+        ordinal=1,
+        declared_filename="manus.txt",
+    )
+
+    plan = purge.build_purge_plan()
+    assert plan.is_blocked
+    assert any(
+        blocker.label == "documents.EmailAttachmentLink.parent_version"
+        and blocker.category == purge.BLOCKED_BY_REAL_REFERENCE
+        for blocker in plan.blockers
+    )
+    # And the real matter's own evidence is never counted as test-owned.
+    summary = next(item for item in plan.evidence if item.label == "DocumentVersion")
+    assert summary.objects == 1
+    assert summary.total_bytes == attachment.size_bytes
 
 
 def test_an_invalid_classification_blocks_the_plan(specialist):
     """The database constraint should make this unreachable. Check anyway."""
-    archive = factories.ArchiveMatterFactory(owner=specialist)
-    # Dropped inside the test transaction, which the test runner rolls back —
-    # the constraint is not removed from anything but this one test's view.
+    # Dropped inside the test transaction, which the runner rolls back — the
+    # constraint is not removed from anything but this one test's view.
+    #
+    # `SET CONSTRAINTS ALL IMMEDIATE` first, and the DDL before any insert:
+    # PostgreSQL refuses to ALTER a table that has pending deferred trigger
+    # events, and the fixtures above this line leave some.
     with connection.cursor() as cursor:
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
         cursor.execute("ALTER TABLE matters_matter DROP CONSTRAINT matters_test_data_is_native")
+
+    archive = factories.ArchiveMatterFactory(owner=specialist)
     Matter.objects.filter(pk=archive.pk).update(data_class=MatterDataClass.TEST)
 
     plan = purge.build_purge_plan()

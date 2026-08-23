@@ -32,7 +32,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from django.db import models
 
@@ -274,6 +274,64 @@ def _outside_references(collected: _Collected) -> list[Blocker]:
     return blockers
 
 
+def _straddling_rows(collected: _Collected) -> list[Blocker]:
+    """Owned rows that also anchor something outside the test set.
+
+    The reverse-relation pass above finds real rows pointing *in*. This finds
+    the harder case: a row that is legitimately owned by a test Matter and is
+    at the same time the only record of a fact about real data.
+
+    ``EmailAttachmentLink`` is the concrete one. It says "this exact binary
+    arrived inside that exact message", and it holds two versions under
+    ``PROTECT``. If the attachment sits under a test Matter and the email it
+    came in sits under a real one, the link is reached from the test side and
+    looks owned — but deleting it destroys provenance for the real email that
+    no parser can recompute once it has moved on.
+
+    So a row is only owned if every forward key it holds *into a model this plan
+    already owns* lands inside the set. One that straddles the boundary blocks.
+    Keys to shared vocabulary — a user, an organisation, a tag, an archive
+    binary — are not considered, because those models never enter the owned
+    inventory in the first place (Agent-C brief 36).
+    """
+    blockers: list[Blocker] = []
+    for label in sorted(collected.ids):
+        model = collected.models[label]
+        ids = sorted(collected.ids[label], key=str)
+        if not ids:
+            continue
+        for key in model._meta.get_fields():
+            if not (key.is_relation and getattr(key, "concrete", False)):
+                continue
+            if not (key.many_to_one or key.one_to_one):
+                continue
+            related = key.related_model
+            if related is None or related._meta.label not in collected.ids:
+                continue
+            # Narrowed for the type checker: `get_fields` is typed as returning
+            # the union with reverse relations, and the two guards above have
+            # already excluded those.
+            column = cast(Any, key).attname
+            inside = collected.ids[related._meta.label]
+            outside = 0
+            for chunk in _chunked(ids):
+                targets = model._base_manager.filter(pk__in=chunk).values_list(column, flat=True)
+                outside += sum(1 for target in targets if target and target not in inside)
+            if not outside:
+                continue
+            blockers.append(
+                Blocker(
+                    category=BLOCKED_BY_REAL_REFERENCE,
+                    label=f"{label}.{key.name}",
+                    count=outside,
+                    detail=(
+                        f"test-owned row also holds a {related._meta.label} outside the test set"
+                    ),
+                )
+            )
+    return blockers
+
+
 def _legal_holds(collected: _Collected) -> list[Blocker]:
     """A legal hold outlives a data class.
 
@@ -441,6 +499,7 @@ def build_purge_plan(references: Iterable[str] | None = None) -> PurgePlan:
         _invalid_classification(matters)
         + _legal_holds(collected)
         + (_outside_references(collected) if matter_ids else [])
+        + (_straddling_rows(collected) if matter_ids else [])
     )
 
     return PurgePlan(
