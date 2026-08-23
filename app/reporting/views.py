@@ -107,11 +107,14 @@ def _matrices(results: list[MetricResult]) -> list[dict[str, Any]]:
     The matrix itself was assembled in the selector, totals and all. Nothing is
     computed here — a view that added up a column would be a second arithmetic
     for a number the selector already produced (brief 54).
+
+    A result whose matrix is ``None`` is kept rather than filtered out. It
+    declined, and the partial renders that refusal in words; dropping it would
+    leave a section heading with nothing beneath it and no explanation of why.
     """
     return [
         {"result": result, "matrix": result.matrix, "summary": charts.describe_matrix(result)}
         for result in results
-        if result.matrix is not None
     ]
 
 

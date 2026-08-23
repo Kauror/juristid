@@ -79,7 +79,7 @@ def month_label(year: int, month: int, *, single_year: bool) -> str:
     return MONTH_LABELS[month] if single_year else f"{year}-{month:02d}"
 
 
-def _months_between(start: date, end: date) -> list[tuple[int, int]]:
+def months_between(start: date, end: date) -> list[tuple[int, int]]:
     """Every (year, month) from ``start`` to ``end`` inclusive.
 
     Continuous rather than only the months that carry records: inside a window
@@ -385,7 +385,7 @@ def new_native_full_matters_by_month(context: ReportingContext) -> MetricResult:
         )
 
     start, end = window
-    months = _months_between(start, end)
+    months = months_between(start, end)
     single_year = start.year == end.year
     counted = {
         (row["received_date__year"], row["received_date__month"]): row["total"]
@@ -474,7 +474,7 @@ def new_native_matters_by_responsibility_month(context: ReportingContext) -> Met
 
     row_pairs: list[tuple[object, str]] = [
         ((year, month), month_label(year, month, single_year=single_year))
-        for year, month in _months_between(start, end)
+        for year, month in months_between(start, end)
     ]
     matrix = responsibility.matrix(row_header="Kuu", rows=row_pairs, counts=counts)
 

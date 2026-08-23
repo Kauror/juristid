@@ -59,7 +59,7 @@ from app.reporting.metric_types import (
 )
 from app.reporting.selectors import responsibility
 from app.reporting.selectors.base import simple_result, visible_matters
-from app.reporting.selectors.portfolio import month_label, same_day_last_year
+from app.reporting.selectors.portfolio import month_label, months_between, same_day_last_year
 
 #: What the archive metrics are counting, in the words used on every card.
 DISTINCT_NOTE = (
@@ -253,18 +253,12 @@ def opinion_archive_by_month(context: ReportingContext) -> MetricResult:
         counted[key] = counted.get(key, 0) + 1
 
     single_year = first.year == last.year
-    months: list[tuple[int, int]] = []
-    year, month = first.year, first.month
-    while (year, month) <= (last.year, last.month):
-        months.append((year, month))
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-
     segments = tuple(
         Segment(
             label=month_label(year, month, single_year=single_year),
             value=counted.get((year, month), 0),
         )
-        for year, month in months
+        for year, month in months_between(first, last)
     )
 
     total, dated = _population_counts()
