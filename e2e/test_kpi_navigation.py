@@ -36,6 +36,10 @@ CARDS = {
     "active": "Aktiivsed teemad",
     "deadlines": "Arvamuse tähtaeg",
     "drafting": "Arvamusi koostamisel",
+    # The seeded world carries one genuinely late DO + DEADLINE, which is what
+    # makes this card worth driving rather than asserting 0 == 0
+    # (app/core/management/commands/seed_e2e_data.py, OVERDUE_TITLE).
+    "overdue": "Tähtaeg möödas",
     "unassigned": "Vastutajata",
 }
 
@@ -129,6 +133,23 @@ def test_drafting_opens_the_unsent_opinion_and_not_the_sent_one(page, base_url, 
     rows = page.locator(".table--register tbody tr")
     expect(rows.filter(has_text=DRAFTING_TITLE)).to_have_count(1)
     expect(rows.filter(has_text=DRAFTING_SENT_TITLE)).to_have_count(0)
+
+
+def test_overdue_opens_the_late_matter_and_not_a_passed_review(page, base_url):
+    """A WAIT past its review date is due for a look, never late.
+
+    Both rows exist in the seeded world, so a filter that collected reviews as
+    well as deadlines would fail here rather than merely be too generous
+    (master specification 18.8).
+    """
+    from app.core.management.commands.seed_e2e_data import OVERDUE_TITLE, REVIEW_DUE_TITLE
+
+    sign_in(page, base_url, HEAD)
+    open_card(page, base_url, CARDS["overdue"])
+
+    rows = page.locator(".table--register tbody tr")
+    expect(rows.filter(has_text=OVERDUE_TITLE)).to_have_count(1)
+    expect(rows.filter(has_text=REVIEW_DUE_TITLE)).to_have_count(0)
 
 
 def test_unassigned_opens_the_matter_with_no_owner(page, base_url):
