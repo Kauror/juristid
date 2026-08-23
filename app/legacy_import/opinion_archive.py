@@ -477,6 +477,24 @@ class OpinionSubmissionImport(BaseModel):
         default=RecipientBasis.UNRESOLVED,
         verbose_name="saaja alus",
     )
+    #: The recipient exactly as the historical source wrote it, resolved or not.
+    #:
+    #: It exists because the unresolved case is the common one and used to leave
+    #: nothing behind: `_attach_recipient` returned early, the Submission got no
+    #: SubmissionRecipient, and the only surviving trace of *who Koda actually
+    #: wrote to* was a sentence in a notes field. That is the one fact the
+    #: archive is certain about, and it was the one being discarded.
+    #:
+    #: Keeping it structurally is also what makes resolution retryable. When the
+    #: reference data later learns that a former ministry is today's
+    #: Organisation, `resolve_archive_recipients` reads this column and attaches
+    #: the recipient to the Submission that already exists — no new Submission,
+    #: no rewritten history, and this value never changes.
+    recipient_raw = models.CharField(
+        max_length=400,
+        blank=True,
+        verbose_name="saaja allikas",
+    )
     matter_match_signals = ArrayField(
         models.CharField(max_length=40),
         default=list,

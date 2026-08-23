@@ -551,6 +551,9 @@ def _write_one_submission(
         match_class=submission_plan.match_class,
         sent_date_basis=submission_plan.sent_date_basis,
         recipient_basis=submission_plan.recipient_basis,
+        # Recorded whether or not it resolved. The unresolved case is the common
+        # one, and it used to leave nothing structural behind at all.
+        recipient_raw=submission_plan.recipient_raw.strip()[:400],
         matter_match_signals=list(submission_plan.signals),
         document_version=version,
     )
