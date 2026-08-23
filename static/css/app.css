@@ -3749,6 +3749,18 @@ a.barchart__row:hover {
   border: 0;
 }
 
+/* The add and edit controls inside a fact section.
+ *
+ * `disclosure--inline` drops the border and the padding but keeps the raised
+ * background it inherits from `.disclosure`, which under a list of quiet rows
+ * reads as a full-width bar — heavier than the "+ Lisa …" links the sibling
+ * sections use, and directly below three of them. Scoped here rather than
+ * changed on the modifier itself, which `Uus teema` also uses and where the
+ * background is doing no harm (Agent-F brief 34, 37). */
+.factsection .disclosure--inline {
+  background: none;
+}
+
 /* -- the file area --------------------------------------------------------- */
 
 .dropzone {
@@ -3958,6 +3970,30 @@ p.factsection__none {
 
 .factrow__title {
   color: var(--text-primary);
+}
+
+/* The channel a Kaasamine used, ahead of its title in the row. Quiet, because
+ * it is one of four fixed words and the title is what a reader is scanning for
+ * (Agent-F brief 34). */
+.factrow__kind {
+  flex: none;
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-chip);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* A form of stacked fields inside a disclosure. The row forms are five labelled
+ * inputs one under another, which is what fits in the width a factsection has;
+ * the horizontal `inlineform` used in the header band does not. */
+.stackform {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  max-width: 34rem;
+  margin-top: var(--spacing-2);
 }
 
 .factrow__matter {

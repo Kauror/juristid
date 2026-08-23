@@ -1,0 +1,105 @@
+{% comment %}
+`Kaasamine` — how Koda asked members and stakeholders about this Matter.
+
+A pointer, not a system. Each row says when, what kind, what it was called and
+where to look; the recipient list, the responses and the analytics stay with
+whatever service actually sent it (Agent-F brief 5).
+
+Placed with the structured facts, below the composer: substantive information
+about the file, but never in front of `Järgmiseks` and the capture box the page
+exists for (brief 33). The row vocabulary is the one Olulised tähtajad already
+uses, so a fact reads the same wherever it appears.
+
+Add and edit are `<details>` disclosures rather than always-open forms, so a
+section that is usually read costs the height of its rows and nothing more.
+There is no delete: a wrong row is corrected (brief 16).
+{% endcomment %}
+<section class="factsection" id="kaasamine" aria-labelledby="teema-kaasamine-heading">
+  <div class="factsection__head">
+    <h2 class="sectionlabel" id="teema-kaasamine-heading">
+      Kaasamine
+      {% if engagements %}<span class="sectionlabel__count">{{ engagements|length }}</span>{% endif %}
+    </h2>
+    {% if not engagements %}
+      <p class="factsection__none">Kaasamist ei ole kirja pandud.</p>
+    {% endif %}
+  </div>
+
+  {% if engagement_error %}
+    <p class="formerror" role="alert">{{ engagement_error }}</p>
+  {% endif %}
+
+  {% if engagements %}
+    <ul class="factlist factlist--compact">
+      {% for record in engagements %}
+        <li class="factrow">
+          {% comment %}
+            An undated engagement says so in words. A record entered years after
+            the consultation it describes may genuinely have no date, and an
+            empty cell reads as a missing field rather than as an honest answer.
+          {% endcomment %}
+          <span class="factrow__date {% if not record.occurred_on %}factrow__date--undated{% endif %}">
+            {% if record.occurred_on %}{{ record.occurred_on|date:"d.m.Y" }}
+            {% else %}Kuupäev teadmata{% endif %}
+          </span>
+          <span class="factrow__body">
+            <span class="factrow__kind">{{ record.get_kind_display }}</span>
+            {% comment %}
+              The title is the link when there is one, and the address itself is
+              never printed: a campaign URL is mostly tracking parameters and
+              would push the title off the row. The host is shown beside it so a
+              reader can see where the link goes before following it (brief 35).
+            {% endcomment %}
+            {% if record.url %}
+              <a class="factrow__title factrow__matter" href="{{ record.url }}"
+                 target="_blank" rel="noopener noreferrer">{{ record.title }}</a>
+              <span class="factrow__source">{{ record.link_label }}</span>
+            {% else %}
+              <span class="factrow__title">{{ record.title }}</span>
+            {% endif %}
+            {% if record.note %}<span class="muted">{{ record.note }}</span>{% endif %}
+          </span>
+
+          {% if can_write %}
+            <span class="factrow__actions">
+              <details class="disclosure disclosure--inline"
+                       {% if engagement_editing == record.pk %}open{% endif %}>
+                <summary class="disclosure__summary">Muuda</summary>
+                <div class="disclosure__body">
+                  <form class="stackform"
+                        hx-post="{% url 'matters:update_engagement' pk=matter.pk engagement_id=record.pk %}"
+                        hx-target="#ulevaade" hx-swap="outerHTML">
+                    {% csrf_token %}
+                    {% include "matters/partials/engagement_fields.html" with form=engagement_form record=record %}
+                    <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
+                  </form>
+                </div>
+              </details>
+            </span>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if can_write %}
+    <details class="disclosure disclosure--inline"
+             {% if engagement_error and not engagement_editing %}open{% endif %}>
+      <summary class="disclosure__summary">+ Lisa kaasamine</summary>
+      <div class="disclosure__body">
+        {% comment %}
+          `data-engagement-add` distinguishes this from a row's edit form: both
+          carry the same five field names, and a browser test that located
+          `input[name="title"]` without it would match every row on the page.
+        {% endcomment %}
+        <form class="stackform" data-engagement-add
+              hx-post="{% url 'matters:add_engagement' pk=matter.pk %}"
+              hx-target="#ulevaade" hx-swap="outerHTML">
+          {% csrf_token %}
+          {% include "matters/partials/engagement_fields.html" with form=engagement_form record=None %}
+          <button class="button button--quiet button--tiny" type="submit">Lisa kaasamine</button>
+        </form>
+      </div>
+    </details>
+  {% endif %}
+</section>

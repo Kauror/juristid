@@ -23,9 +23,9 @@ from app.accounts.models import User
 from app.accounts.services import create_synthetic_user
 from app.core.enums import Visibility
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import DataQualityTier, MatterOrigin, RecordMode
+from app.matters.enums import DataQualityTier, EngagementKind, MatterOrigin, RecordMode
 from app.matters.models import Matter
-from app.matters.services import add_entry, create_matter
+from app.matters.services import add_engagement, add_entry, create_matter
 from app.organisations.models import Organisation, OrganisationType
 from app.taxonomy.models import PolicyArea
 from app.workflow.enums import ActionKind, DateSemantics, Track
@@ -234,6 +234,20 @@ class Command(BaseCommand):
             source_organisations=[ministry, partner],
         )
         visible.policy_areas.add(area)
+        # One `Kaasamine`, so the visual baseline shows a populated section
+        # rather than only its empty state. Deterministic and dated, and on the
+        # Matter the screenshot suite opens — the interactive engagement tests
+        # deliberately write to a different one, because a section that grows
+        # during the run would make this baseline depend on test order.
+        add_engagement(
+            matter=visible,
+            kind=EngagementKind.WEB_CALL,
+            title="Liikmete kaasamiskutse pakendiseaduse eelnõule",
+            url="https://www.koda.ee/kaasamine/naidis",
+            note="Sünteetiline näidiskirje.",
+            occurred_on=date(2026, 5, 12),
+            actor=martin,
+        )
         add_entry(
             matter=visible,
             body="<p>Avalik sissekanne, mida kõik näevad.</p>",

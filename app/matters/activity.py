@@ -17,15 +17,17 @@ facts that are about the work.
 What counts as activity
 -----------------------
 A recorded closure. An authored entry. A submission that went out. A next action
-a person set or ended. The date the matter arrived. And, for imported records,
-the OneNote page's own created and modified timestamps, which are source
-metadata captured from the archive rather than anything this system did.
+a person set or ended. A dated `Kaasamine` engagement. The date the matter
+arrived. And, for imported records, the OneNote page's own created and modified
+timestamps, which are source metadata captured from the archive rather than
+anything this system did.
 
 What does not
 -------------
 ``ImportBatch.started_at``, ``CurrentRegisterState.observed_at``, search-index
-refreshes, and — for anything imported — ``Matter.updated_at``. Those are
-processing times. Calling one of them activity is the exact mistake this module
+refreshes, ``MatterEngagement.created_at`` on an engagement whose own date is
+unknown, and — for anything imported — ``Matter.updated_at``. Those are
+processing and data-entry times. Calling one of them activity is the exact mistake this module
 exists to correct, and there is a regression test for the 2026-import case.
 
 Two rules that look similar and are not
@@ -82,9 +84,11 @@ from typing import Any
 from django.db.models import Max, OuterRef, QuerySet, Subquery
 from django.utils import timezone
 
+from app.core.authorization import apply as apply_scope
+from app.core.authorization import child_visibility_q, scope_for_user
 from app.legacy_import.source_pages import MatterSourcePage, SourceRelationshipKind
 from app.matters.enums import MatterOrigin
-from app.matters.models import Entry, Matter
+from app.matters.models import Entry, Matter, MatterEngagement
 from app.submissions.models import Submission
 from app.workflow.models import NextAction
 
@@ -97,6 +101,7 @@ class ActivityBasis:
     SUBMISSION = "SUBMISSION"
     ENTRY = "ENTRY"
     NEXT_ACTION = "NEXT_ACTION"
+    ENGAGEMENT = "ENGAGEMENT"
     RECEIVED = "RECEIVED"
     ONENOTE_MODIFIED = "ONENOTE_MODIFIED"
     ONENOTE_CREATED = "ONENOTE_CREATED"
@@ -109,6 +114,7 @@ BASIS_LABELS: dict[str, str] = {
     ActivityBasis.SUBMISSION: "Arvamus saadetud",
     ActivityBasis.ENTRY: "Sissekanne",
     ActivityBasis.NEXT_ACTION: "Järgmiseks muudetud",
+    ActivityBasis.ENGAGEMENT: "Kaasamine",
     ActivityBasis.RECEIVED: "Saabus",
     ActivityBasis.ONENOTE_MODIFIED: "OneNote'i lehte muudetud",
     ActivityBasis.ONENOTE_CREATED: "OneNote'i leht loodud",
@@ -122,6 +128,7 @@ BASIS_PRECEDENCE: tuple[str, ...] = (
     ActivityBasis.SUBMISSION,
     ActivityBasis.ENTRY,
     ActivityBasis.NEXT_ACTION,
+    ActivityBasis.ENGAGEMENT,
     ActivityBasis.RECEIVED,
     ActivityBasis.ONENOTE_MODIFIED,
     ActivityBasis.ONENOTE_CREATED,
@@ -146,6 +153,7 @@ ANNOTATIONS: tuple[str, ...] = (
     "activity_action_ended_at",
     "activity_page_modified_at",
     "activity_page_created_at",
+    "activity_engagement_on",
 )
 
 
@@ -199,23 +207,41 @@ def annotate_last_activity(queryset: QuerySet[Matter], user: Any) -> QuerySet[Ma
 
     Source pages have no visibility of their own and are reached through the
     Matter, which the reader already sees, so they need no scope.
+
+    The scope is resolved **once**. ``visible_to`` calls ``scope_for_user``,
+    which asks the database whether this person holds a break-glass grant, so
+    four calls to it here meant four identical lookups for one page — and this
+    function runs several times on a surface that builds more than one
+    population. Same predicate, same rule, computed once (Agent-F brief 31).
     """
-    people_actions = NextAction.objects.visible_to(user)
+    scope = scope_for_user(user)
+
+    def scoped(model: Any) -> QuerySet[Any]:
+        return apply_scope(model._default_manager.all(), child_visibility_q(scope))
+
+    people_actions = scoped(NextAction)
     pages = MatterSourcePage.objects.filter(relationship_kind__in=CHRONOLOGY_RELATIONSHIPS)
     return queryset.annotate(
-        activity_entry_at=_latest(Entry.objects.visible_to(user), "occurred_at"),
+        activity_entry_at=_latest(scoped(Entry), "occurred_at"),
         # Any submission that carries a send date. A submission later withdrawn
         # or superseded was still genuinely sent on that day, and the withdrawal
         # does not un-happen the work.
-        activity_submission_at=_latest(
-            Submission.objects.visible_to(user).filter(sent_at__isnull=False), "sent_at"
-        ),
+        activity_submission_at=_latest(scoped(Submission).filter(sent_at__isnull=False), "sent_at"),
         activity_action_created_at=_latest(
             people_actions.filter(created_by__isnull=False), "created_at"
         ),
         activity_action_ended_at=_latest(people_actions.filter(ended_by__isnull=False), "ended_at"),
         activity_page_modified_at=_latest(pages, "source_page__source_modified_at"),
         activity_page_created_at=_latest(pages, "source_page__source_created_at"),
+        # Only a *dated* engagement. `created_at` is deliberately not offered:
+        # somebody recording a 2019 consultation today would otherwise move the
+        # file's last activity to today, which is the import-timestamp mistake
+        # this module exists to remove, arriving by a different door
+        # (Agent-F brief 29).
+        activity_engagement_on=_latest(
+            scoped(MatterEngagement).filter(occurred_on__isnull=False),
+            "occurred_on",
+        ),
     )
 
 
@@ -260,6 +286,10 @@ def activity_of(matter: Matter) -> MatterActivityFact | None:
     offer(matter.activity_entry_at, ActivityBasis.ENTRY)  # type: ignore[attr-defined]
     offer(matter.activity_action_created_at, ActivityBasis.NEXT_ACTION)  # type: ignore[attr-defined]
     offer(matter.activity_action_ended_at, ActivityBasis.NEXT_ACTION)  # type: ignore[attr-defined]
+    # Asking members what they think is real work on the file, so a dated
+    # engagement competes on its date like everything else here. It gets no
+    # priority: an Entry written after it still wins (brief 30).
+    offer(matter.activity_engagement_on, ActivityBasis.ENGAGEMENT)  # type: ignore[attr-defined]
     # A real business date, and a legitimate fallback — but never the answer
     # when something later is known, which the maximum below guarantees
     # (brief 61).

@@ -20,6 +20,12 @@ urlpatterns = [
     # HTMX surfaces
     path("teemad/<uuid:pk>/sissekanne/", views.compose, name="compose"),
     path("teemad/<uuid:pk>/jargmiseks/", views.set_action, name="set_action"),
+    path("teemad/<uuid:pk>/kaasamine/", views.add_engagement_view, name="add_engagement"),
+    path(
+        "teemad/<uuid:pk>/kaasamine/<uuid:engagement_id>/",
+        views.update_engagement_view,
+        name="update_engagement",
+    ),
     path(
         "teemad/<uuid:pk>/jargmiseks/<uuid:action_id>/valmis/",
         views.complete_action,

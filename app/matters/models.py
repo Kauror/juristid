@@ -22,6 +22,7 @@ from app.core.models import AppendOnlyModel, BaseModel, VisibilityInheritingMode
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
     DataQualityTier,
+    EngagementKind,
     MatterDataClass,
     MatterOrigin,
     RecordMode,
@@ -644,3 +645,139 @@ class EntryRevision(AppendOnlyModel):
 
     def __str__(self) -> str:
         return f"{self.entry_id} v{self.revision_number}"
+
+
+class MatterEngagementQuerySet(models.QuerySet):
+    def visible_to(self, user: object | None) -> MatterEngagementQuerySet:
+        """The only supported entry point for reading engagements."""
+        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+
+
+class MatterEngagement(VisibilityInheritingModel):
+    """`Kaasamine` — how Koda asked members and stakeholders for input.
+
+    A consultation request published on koda.ee, a mailing sent through whatever
+    campaign tool is current, a questionnaire, a link to something else. Today
+    those live in people's memory and in mail folders, so the question "did we
+    ask anybody about this, and where did we ask" has no answer on the file.
+    This records the pointer.
+
+    **It is a pointer, not a system.** There is no recipient list, no response
+    store, no click tracking and no integration with any provider. Those are
+    the vendors' job and they do it better; what the file needs is a dated,
+    attributable statement that the outreach happened and where to look
+    (Agent-F brief 5).
+
+    What it is not
+    --------------
+    Not a `Document`: supporting evidence keeps going to the immutable evidence
+    store, and a second place to attach bytes is a second place to lose them.
+    Not an `Entry`: narrative belongs in the chronology, and adding an
+    engagement deliberately writes no entry — one action must not become two
+    records that can disagree. Not a `Submission`: asking members what they
+    think is not Koda's formal outbound opinion, and folding it into that
+    vocabulary would corrupt every submission statistic (brief 44, 45, 46).
+
+    No deletion
+    -----------
+    v1 has create and edit and nothing else. A mistaken row is corrected, not
+    removed, and a soft-delete state machine for a five-field record would be
+    more machinery than the fact deserves (brief 16).
+    """
+
+    matter = models.ForeignKey(
+        Matter, on_delete=models.CASCADE, related_name="engagements", verbose_name="teema"
+    )
+    kind = models.CharField(
+        max_length=32,
+        choices=EngagementKind.choices,
+        default=EngagementKind.OTHER,
+        db_index=True,
+        verbose_name="liik",
+    )
+    title = models.CharField(max_length=500, verbose_name="pealkiri")
+    #: Optional, and that is the point. An e-mail campaign frequently has no
+    #: durable address a colleague could open later; requiring one would make
+    #: the commonest kind of engagement unrecordable (brief 12).
+    url = models.URLField(max_length=1000, blank=True, verbose_name="link")
+    note = models.TextField(blank=True, verbose_name="märkus")
+    #: Neutral on purpose. One model carries a published call, a mailing and a
+    #: questionnaire, so `sent_at`, `published_at` and `survey_opened_at` would
+    #: each be wrong for two thirds of the rows. It means "the date this
+    #: engagement is about", and it is optional because somebody recording an
+    #: old consultation may genuinely not know it (brief 8).
+    occurred_on = models.DateField(null=True, blank=True, db_index=True, verbose_name="kuupäev")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="recorded_engagements",
+        verbose_name="lisas",
+    )
+
+    objects = MatterEngagementQuerySet.as_manager()
+
+    class Meta:
+        verbose_name = "kaasamine"
+        verbose_name_plural = "kaasamised"
+        # Newest relevant date first, and a row with no date sorts *last*
+        # rather than first: `NULLS LAST` is what stops an undated record
+        # reading as though it happened today (brief 18).
+        ordering = [models.F("occurred_on").desc(nulls_last=True), "-created_at", "-id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(title=""),
+                name="matters_engagement_title_required",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kind__in=EngagementKind.values),
+                name="matters_engagement_kind_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    visibility_override__in=["", Visibility.NORMAL, Visibility.RESTRICTED]
+                ),
+                name="matters_engagement_visibility_vocabulary",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["matter", "-occurred_on"], name="matters_engagement_matter_date"),
+        ]
+
+    def __str__(self) -> str:
+        return self.title[:120]
+
+    def parent_visibility(self) -> str:
+        return self.matter.visibility
+
+    @property
+    def link_label(self) -> str:
+        """A link's host, for a control that must not print a tracking URL.
+
+        Campaign and survey links routinely run to hundreds of characters of
+        query string. The host is what tells a reader where the link goes; the
+        rest is machinery (brief 35).
+        """
+        if not self.url:
+            return ""
+        from urllib.parse import urlsplit
+
+        return urlsplit(self.url).netloc or self.url[:60]
+
+    @property
+    def link_search_terms(self) -> list[str]:
+        """The host, and each of its labels, for the search projection.
+
+        The host alone is not enough. PostgreSQL tokenises
+        ``survey.alchemer.example`` as one ``host`` token, so somebody typing
+        the vendor's name finds nothing — which is precisely the search the
+        column exists to answer. The labels are indexed beside the whole host
+        so both work, and ``www`` and the public suffix are dropped because
+        they match everything (Agent-F brief 47).
+        """
+        host = self.link_label
+        if not host:
+            return []
+        labels = [part for part in host.split(".") if part and part != "www"]
+        return [host, *labels[:-1]] if len(labels) > 1 else [host]

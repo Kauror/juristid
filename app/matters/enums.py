@@ -83,3 +83,26 @@ class MatterDataClass(models.TextChoices):
 
     REAL = "REAL", "Pärisandmed"
     TEST = "TEST", "Testandmed"
+
+
+class EngagementKind(models.TextChoices):
+    """How Koda asked members and stakeholders for input on a Matter.
+
+    **Channels, not vendors.** ``SendSmaily``, ``Alchemer`` and ``koda.ee`` are
+    the tools the department happens to use this year; a stored value naming one
+    of them would become wrong the day a contract changes, and every historical
+    row would then describe a service nobody recognises. The channel — was this
+    a public call, a mailing, a questionnaire — survives that. Which concrete
+    service was used is answered by the title and the link, where a person can
+    read it and correct it (Agent-F brief 9).
+
+    There is deliberately no ``MEETING``. A meeting is authored chronology and
+    `Entry` already records it with a date, an author and a body; adding it here
+    would create two places to write down one fact and guarantee they disagree
+    (brief 10).
+    """
+
+    WEB_CALL = "WEB_CALL", "Kaasamiskutse veebis"
+    EMAIL_CAMPAIGN = "EMAIL_CAMPAIGN", "E-kiri või kampaania"
+    SURVEY = "SURVEY", "Küsitlus"
+    OTHER = "OTHER", "Muu"

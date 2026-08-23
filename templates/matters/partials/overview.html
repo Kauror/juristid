@@ -175,6 +175,14 @@ about the save that just happened.
     {% endcomment %}
     {% include "intelligence/partials/matter_sections.html" %}
 
+    {% comment %}
+      Kaasamine sits with the other structured facts, after Järgmiseks and the
+      composer and before the chronology. It is substantive information about
+      the file rather than technical metadata, and it must not push the capture
+      box the page exists for down the screen (Agent-F brief 32, 33).
+    {% endcomment %}
+    {% include "matters/partials/engagement.html" %}
+
     <section class="timeline" aria-labelledby="ajalugu-heading">
       <div class="timeline__head">
         <h2 class="timeline__label" id="ajalugu-heading">Ajajoon</h2>

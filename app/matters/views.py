@@ -51,6 +51,7 @@ from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.forms import (
     CloseMatterForm,
     ComposerForm,
+    EngagementForm,
     IncomingIntakeForm,
     MatterCreateForm,
     MatterFieldForm,
@@ -58,8 +59,9 @@ from app.matters.forms import (
     PositionForm,
 )
 from app.matters.intake import register_incoming, validate_uploads
-from app.matters.models import Matter
+from app.matters.models import Matter, MatterEngagement
 from app.matters.services import (
+    add_engagement,
     assign_matter,
     change_stage,
     change_track,
@@ -73,6 +75,7 @@ from app.matters.services import (
     set_organisations,
     set_policy_area_other,
     set_position,
+    update_engagement,
 )
 from app.matters.timeline import matter_timeline
 from app.organisations.models import Organisation
@@ -1084,6 +1087,12 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # routed to `app.intelligence` rather than rendered from here, so this
         # view knows nothing about how they are captured.
         "intelligence": matter_intelligence(matter, request.user),
+        # `Kaasamine`. Read here for the same reason as everything else on this
+        # dict: the template must not be able to start querying.
+        "engagements": selectors.matter_engagements(matter, request.user),
+        "engagement_form": EngagementForm(),
+        "engagement_error": "",
+        "engagement_editing": None,
         "can_write": may_write_business_content(request.user),
         "can_review_victory": may_review_work_victory(request.user),
         "today": timezone.localdate(),
@@ -1262,6 +1271,87 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
 
     matter.refresh_from_db()
     return _render_overview(request, matter)
+
+
+@login_required
+@require_http_methods(["POST"])
+def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
+    """Record one `Kaasamine` on this Matter."""
+    matter = get_visible_matter(request, pk)
+    if not may_write_business_content(request.user):
+        raise Http404("Kaasamist saab lisada ainult sisu muutmise õigusega.")
+
+    form = EngagementForm(request.POST)
+    if not form.is_valid():
+        return _overview_with_engagement_error(request, matter, form)
+
+    try:
+        add_engagement(
+            matter=matter,
+            kind=form.cleaned_data["kind"],
+            title=form.cleaned_data["title"],
+            url=form.cleaned_data.get("url") or "",
+            note=form.cleaned_data.get("note") or "",
+            occurred_on=form.cleaned_data.get("occurred_on"),
+            actor=request.user,
+        )
+    except DomainError as error:
+        return _overview_with_engagement_error(request, matter, form, str(error))
+
+    return _render_overview(request, matter)
+
+
+@login_required
+@require_http_methods(["POST"])
+def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) -> HttpResponse:
+    """Correct one `Kaasamine`. There is no delete; a wrong row is edited."""
+    matter = get_visible_matter(request, pk)
+    if not may_write_business_content(request.user):
+        raise Http404("Kaasamist saab muuta ainult sisu muutmise õigusega.")
+
+    # Scoped through the child's own `visible_to`, not fetched by id off the
+    # Matter: a record may carry a stricter visibility override than its parent,
+    # and reading it any other way would bypass that.
+    engagement = get_object_or_404(
+        MatterEngagement.objects.visible_to(request.user).filter(matter=matter), pk=engagement_id
+    )
+
+    form = EngagementForm(request.POST)
+    if not form.is_valid():
+        return _overview_with_engagement_error(request, matter, form, editing=engagement.pk)
+
+    try:
+        update_engagement(
+            engagement=engagement,
+            kind=form.cleaned_data["kind"],
+            title=form.cleaned_data["title"],
+            url=form.cleaned_data.get("url") or "",
+            note=form.cleaned_data.get("note") or "",
+            occurred_on=form.cleaned_data.get("occurred_on"),
+            actor=request.user,
+        )
+    except DomainError as error:
+        return _overview_with_engagement_error(
+            request, matter, form, str(error), editing=engagement.pk
+        )
+
+    return _render_overview(request, matter)
+
+
+def _overview_with_engagement_error(
+    request: HttpRequest,
+    matter: Matter,
+    form: EngagementForm,
+    error: str = "",
+    editing: Any = None,
+) -> HttpResponse:
+    """Re-render the column with the bound form, so nothing typed is lost."""
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    context["engagement_form"] = form
+    context["engagement_error"] = error
+    context["engagement_editing"] = editing
+    return render(request, "matters/partials/overview.html", context, status=400)
 
 
 @login_required

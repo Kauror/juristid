@@ -23,8 +23,20 @@ from app.documents.enums import DocumentRole
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import read_upload
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import DataQualityTier, MatterDataClass, MatterOrigin, RecordMode
-from app.matters.models import Entry, EntryRevision, Matter, MatterReferenceSequence
+from app.matters.enums import (
+    DataQualityTier,
+    EngagementKind,
+    MatterDataClass,
+    MatterOrigin,
+    RecordMode,
+)
+from app.matters.models import (
+    Entry,
+    EntryRevision,
+    Matter,
+    MatterEngagement,
+    MatterReferenceSequence,
+)
 from app.workflow.enums import Disposition, Track
 from app.workflow.services import end_open_action_for_closure, set_next_action
 
@@ -667,6 +679,147 @@ def add_source_derived_policy_areas(
         payload=payload,
     )
     return missing
+
+
+#: The only schemes an engagement link may use.
+#:
+#: Not a general URL policy — a narrow allow-list for one field that renders as
+#: a clickable control on a page a lawyer trusts. `javascript:` and `data:` are
+#: script delivery dressed as an address; `file:` and `ftp:` point somewhere the
+#: reader's browser cannot usefully follow. Nothing here fetches the link, and
+#: nothing checks whether the far end is alive: an engagement recorded in 2019
+#: whose campaign has since been archived is still a true record of what the
+#: Chamber did (Agent-F brief 12).
+ENGAGEMENT_URL_SCHEMES: frozenset[str] = frozenset({"http", "https"})
+
+
+def normalize_engagement_url(value: str | None) -> str:
+    """Trim it, allow it to be empty, and refuse anything not http(s)."""
+    from urllib.parse import urlsplit
+
+    url = (value or "").strip()
+    if not url:
+        return ""
+    parts = urlsplit(url)
+    if parts.scheme.lower() not in ENGAGEMENT_URL_SCHEMES:
+        raise DomainError("Link peab algama http:// või https:// aadressiga.")
+    if not parts.netloc:
+        raise DomainError("Link peab sisaldama veebiaadressi.")
+    return url
+
+
+def _engagement_kind(value: str) -> str:
+    if value not in EngagementKind.values:
+        raise DomainError(f"Tundmatu kaasamise liik {value!r}.")
+    return value
+
+
+@transaction.atomic
+def add_engagement(
+    *,
+    matter: Matter,
+    kind: str,
+    title: str,
+    url: str = "",
+    note: str = "",
+    occurred_on: Any = None,
+    actor: Any = None,
+) -> MatterEngagement:
+    """Record one act of asking members or stakeholders for input.
+
+    Writes no `Entry`. One action must not become two records — a structured
+    engagement and a narrative note saying the same thing — because the day they
+    disagree there is no way to tell which was meant (brief 45).
+    """
+    clean_title = title.strip()
+    if not clean_title:
+        raise DomainError("Kaasamisel peab olema pealkiri.")
+
+    engagement = MatterEngagement.objects.create(
+        matter=matter,
+        kind=_engagement_kind(kind),
+        title=clean_title[:500],
+        url=normalize_engagement_url(url),
+        note=note.strip(),
+        occurred_on=occurred_on,
+        created_by=actor,
+    )
+    record_change_event(
+        event_type=ChangeEventType.ENGAGEMENT_ADDED,
+        matter=matter,
+        actor=actor,
+        obj=engagement,
+        summary=engagement.title[:200],
+        payload={
+            "kind": engagement.kind,
+            "occurred_on": engagement.occurred_on.isoformat() if engagement.occurred_on else None,
+            "has_url": bool(engagement.url),
+        },
+    )
+    return engagement
+
+
+@transaction.atomic
+def update_engagement(
+    *,
+    engagement: MatterEngagement,
+    kind: str = _UNSET,
+    title: str = _UNSET,
+    url: Any = _UNSET,
+    note: Any = _UNSET,
+    occurred_on: Any = _UNSET,
+    actor: Any = None,
+) -> MatterEngagement:
+    """Correct an engagement, and say nothing when nothing changed.
+
+    The payload names the fields that moved and carries values only for the
+    small ones. A note can run to paragraphs, and copying every version of it
+    into the audit table would turn the history into a second, worse copy of
+    the notes themselves (brief 26).
+    """
+    proposed: dict[str, Any] = {}
+    if kind is not _UNSET:
+        proposed["kind"] = _engagement_kind(kind)
+    if title is not _UNSET:
+        clean_title = title.strip()
+        if not clean_title:
+            raise DomainError("Kaasamisel peab olema pealkiri.")
+        proposed["title"] = clean_title[:500]
+    if url is not _UNSET:
+        proposed["url"] = normalize_engagement_url(url)
+    if note is not _UNSET:
+        proposed["note"] = (note or "").strip()
+    if occurred_on is not _UNSET:
+        proposed["occurred_on"] = occurred_on
+
+    changed = [field for field, value in proposed.items() if getattr(engagement, field) != value]
+    if not changed:
+        return engagement
+
+    payload: dict[str, Any] = {"fields": sorted(changed)}
+    if "kind" in changed:
+        payload["kind_from"] = engagement.kind
+        payload["kind_to"] = proposed["kind"]
+    if "occurred_on" in changed:
+        payload["occurred_on_from"] = (
+            engagement.occurred_on.isoformat() if engagement.occurred_on else None
+        )
+        payload["occurred_on_to"] = (
+            proposed["occurred_on"].isoformat() if proposed["occurred_on"] else None
+        )
+
+    for field in changed:
+        setattr(engagement, field, proposed[field])
+    engagement.save(update_fields=[*changed, "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.ENGAGEMENT_CHANGED,
+        matter=engagement.matter,
+        actor=actor,
+        obj=engagement,
+        summary=engagement.title[:200],
+        payload=payload,
+    )
+    return engagement
 
 
 @transaction.atomic

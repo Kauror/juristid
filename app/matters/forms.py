@@ -17,8 +17,9 @@ from django.utils import timezone
 from app.accounts.models import User
 from app.core.authorization import scoped_count
 from app.core.enums import Visibility
+from app.core.errors import DomainError
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import MatterDataClass
+from app.matters.enums import EngagementKind, MatterDataClass
 from app.organisations.models import Organisation
 from app.taxonomy.models import PolicyArea, Tag
 from app.workflow.enums import (
@@ -567,6 +568,65 @@ class MatterFieldForm(forms.Form):
         set_choices(self, "stage", active_stages())
         set_choices(self, "source_organisations", Organisation.objects.order_by("name"))
         set_choices(self, "addressee_organisation", Organisation.objects.order_by("name"))
+
+
+class EngagementForm(forms.Form):
+    """`Kaasamine` — five fields, four of them optional.
+
+    Required: the channel and a human-readable title. Everything else is
+    optional because the commonest real record is incomplete: a mailing with no
+    durable link, a consultation somebody is entering months later without the
+    exact date to hand. A form that demanded them would simply not be used
+    (Agent-F brief 39).
+    """
+
+    kind = forms.ChoiceField(
+        label="Liik",
+        choices=EngagementKind.choices,
+        initial=EngagementKind.WEB_CALL,
+        widget=SELECT_WIDGET,
+    )
+    title = forms.CharField(
+        label="Pealkiri",
+        max_length=500,
+        widget=forms.TextInput(
+            attrs={"class": "field__input", "placeholder": "Näiteks: Liikmete tagasiside küsimine"}
+        ),
+    )
+    url = forms.CharField(
+        label="Link",
+        required=False,
+        widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "https://…"}),
+        help_text="Vabatahtlik. Kampaanial ei pruugi püsivat avalikku aadressi olla.",
+    )
+    #: No `initial`. The record may be about a consultation from 2019, and a
+    #: date box pre-filled with today is answered by pressing save (brief 38).
+    occurred_on = forms.DateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
+    note = forms.CharField(
+        label="Märkus",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "field__input", "rows": "2"}),
+    )
+
+    def clean_url(self) -> str:
+        """The same rule the service enforces, reported where somebody typed it.
+
+        Duplicated deliberately: the service is what guarantees the invariant
+        for an importer or a shell, and this is what turns a refusal into a
+        message beside the field instead of a 400 page.
+        """
+        from app.matters.services import normalize_engagement_url
+
+        try:
+            return normalize_engagement_url(self.cleaned_data.get("url"))
+        except DomainError as error:
+            raise forms.ValidationError(str(error)) from error
+
+    def clean_title(self) -> str:
+        title = (self.cleaned_data.get("title") or "").strip()
+        if not title:
+            raise forms.ValidationError("Kaasamisel peab olema pealkiri.")
+        return title
 
 
 class PositionForm(forms.Form):

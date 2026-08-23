@@ -118,6 +118,20 @@ class ChangeEventType(models.TextChoices):
         "MATTER_SOURCE_FIELDS_REFRESHED",
         "Väljad uuendatud registri põhjal",
     )
+    # -- Wave 2: Kaasamine --------------------------------------------------
+    #
+    # Their own event types. `ENTRY_ADDED` would claim somebody wrote a note,
+    # `MATTER_DATE_CHANGED` would claim a Matter field moved, and
+    # `IMPORT_APPLIED` would claim an importer did it — none of the three is
+    # true of a person recording that the Chamber asked its members something.
+    #
+    # Deliberately absent from `matters.timeline.TIMELINE_EVENT_TYPES`, like the
+    # Stage-2G structured facts above: the Kaasamine section already shows the
+    # fact in a form a reader can act on, and echoing each one into the
+    # professional narrative is exactly the noise that architecture avoids
+    # (Agent-F brief 20, 22).
+    ENGAGEMENT_ADDED = "ENGAGEMENT_ADDED", "Kaasamine lisatud"
+    ENGAGEMENT_CHANGED = "ENGAGEMENT_CHANGED", "Kaasamist muudetud"
 
 
 class SecurityEventType(models.TextChoices):
