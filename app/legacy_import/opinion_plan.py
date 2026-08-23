@@ -217,7 +217,13 @@ def build_plan(
     expected_archive_sha256: str = "",
     expected_kodadash_sha256: str = "",
 ) -> OpinionArchivePlan:
-    """Read every source, classify every occurrence, decide every Submission."""
+    """Read every source, classify every occurrence, decide every Submission.
+
+    ``excel_sha256`` pins the register snapshot to read, rather than decorating
+    the report with one while the matcher reads another. Empty selects the
+    current register (`select_register_snapshot`); a snapshot this database
+    never imported is an error, not a heading.
+    """
     archive_sha, occurrences = read_opinion_archive(archive_path)
     if expected_archive_sha256 and expected_archive_sha256 != archive_sha:
         raise OpinionPlanError(
@@ -235,14 +241,17 @@ def build_plan(
         for row in rows:
             kodadash_rows[row.file_sha256] = row
 
-    register_rows = load_register_rows()
+    # One snapshot, chosen once: the rows the matcher sees and the SHA the plan
+    # reports are the same register, which is the whole point of this call.
+    selected_snapshot = select_register_snapshot(excel_sha256)
+    register_rows = load_register_rows(snapshot_sha256=selected_snapshot)
     onenote = load_onenote_placements({occurrence.sha256 for occurrence in occurrences})
     capture_id = onenote_capture_id()
 
     plan = OpinionArchivePlan(
         archive_path=archive_path,
         archive_sha256=archive_sha,
-        excel_sha256=excel_sha256 or register_snapshot_sha256(),
+        excel_sha256=selected_snapshot,
         kodadash_path=kodadash_path,
         kodadash_sha256=kodadash_sha,
         onenote_capture_id=capture_id,
@@ -667,7 +676,92 @@ def _conflicting_submission(
 # ---------------------------------------------------------------------------
 
 
-def load_register_rows() -> list[RegisterRow]:
+def select_register_snapshot(explicit: str = "") -> str:
+    """The one register snapshot this reconciliation reads.
+
+    `MatterSourceReference` is write-once evidence, and re-importing a newer
+    Excel adds references rather than replacing them — that is the provenance
+    model working as designed. But a *reconciliation* has to read one register,
+    not the union of every register the Chamber has ever imported. With two
+    snapshots visible, a Matter appears twice under the same date and
+    addressee, the matcher's "exactly one register row" test sees two, and the
+    Matter competes with itself: 249 STRICT_MULTI_SIGNAL occurrences fell to
+    REVIEW_REQUIRED that way, and the plan still reported a single Excel SHA
+    while doing it.
+
+    So one snapshot is chosen here, and both the rows and the plan's
+    ``excel_sha256`` come from it. The chronology is `ImportBatch`'s, because
+    that is the only record of *when* a snapshot was read and whether the
+    reading finished; a file's timestamp, a SHA's lexical order and a row's
+    number all say nothing about which register is current.
+
+    Selection is per plan, never per Matter. Taking each Matter's newest
+    reference would silently blend two registers and then name one of them in
+    the report.
+
+    It fails closed. If several snapshots are present and no finished import
+    says which is current, that is a question about the Chamber's records and
+    not one this function may answer by picking.
+    """
+    from app.legacy_import.models import (
+        ImportBatch,
+        MatterSourceReference,
+        ReconciliationStatus,
+    )
+    from app.legacy_import.parser import SOURCE_SYSTEM
+
+    # An import that finished. ``COMPLETED_WITH_GAPS`` is one of these: the gap
+    # is source rows that did not become Matters, not doubt about the rows that
+    # did (`app.legacy_import.apply`), and the register importer's own tests
+    # treat the two as one successful outcome. ``RUNNING`` and ``FAILED`` are
+    # not eligible — a half-written snapshot is not a reading of the register.
+    finished = (ReconciliationStatus.COMPLETED, ReconciliationStatus.COMPLETED_WITH_GAPS)
+
+    present = set(
+        MatterSourceReference.objects.filter(source_system=SOURCE_SYSTEM)
+        .exclude(source_snapshot_sha256="")
+        .values_list("source_snapshot_sha256", flat=True)
+        .distinct()
+    )
+
+    if explicit:
+        if explicit not in present:
+            raise OpinionPlanError(
+                f"No register was imported from snapshot {explicit[:16]}…. "
+                "A plan may only be pinned to a snapshot this database holds."
+            )
+        return explicit
+
+    if not present:
+        # No register import at all. There are no rows to disagree about.
+        return ""
+
+    latest = (
+        ImportBatch.objects.filter(
+            source_system=SOURCE_SYSTEM,
+            reconciliation_status__in=finished,
+        )
+        .exclude(source_snapshot_sha256="")
+        .order_by("-started_at", "-pk")
+        .values_list("source_snapshot_sha256", flat=True)
+        .first()
+    )
+    if latest in present:
+        return latest
+
+    if len(present) == 1:
+        # One snapshot and no batch naming it — an older deployment, or a
+        # fixture. Unambiguous, so there is nothing to refuse.
+        return next(iter(present))
+
+    raise OpinionPlanError(
+        f"The register holds {len(present)} snapshots and no finished import says which is "
+        "current. Re-run the register import, or pin the plan to one snapshot explicitly; "
+        "reconciling against several registers at once makes every Matter compete with itself."
+    )
+
+
+def load_register_rows(*, snapshot_sha256: str = "") -> list[RegisterRow]:
     """Register Matters, read through their era contracts.
 
     ``VÄLJA`` has no canonical column — deliberately, because a date alone can
@@ -675,6 +769,11 @@ def load_register_rows() -> list[RegisterRow]:
     import preserved, using the contract for that year. Reading it any other
     way would mean hard-coding column F and inheriting every future column move
     (Stage-2A contract, brief 11, 43).
+
+    ``snapshot_sha256`` narrows the read to one imported register. Passing it
+    is what keeps a Matter from appearing twice; see `select_register_snapshot`
+    for why that matters and why the choice is made once per plan. Empty means
+    every reference, which is only correct where a single snapshot exists.
     """
     from app.legacy_import.contracts import contract_for_year
     from app.legacy_import.models import MatterSourceReference
@@ -682,7 +781,10 @@ def load_register_rows() -> list[RegisterRow]:
 
     rows: list[RegisterRow] = []
     contracts: dict[int, Any] = {}
-    references = MatterSourceReference.objects.filter(source_system=SOURCE_SYSTEM).values(
+    imported = MatterSourceReference.objects.filter(source_system=SOURCE_SYSTEM)
+    if snapshot_sha256:
+        imported = imported.filter(source_snapshot_sha256=snapshot_sha256)
+    references = imported.values(
         "matter_id",
         "matter__reference_year",
         "matter__reference_number",
@@ -724,17 +826,16 @@ def load_register_rows() -> list[RegisterRow]:
 
 
 def register_snapshot_sha256() -> str:
-    """The Excel snapshot the register Matters were imported from."""
-    from app.legacy_import.models import MatterSourceReference
-    from app.legacy_import.parser import SOURCE_SYSTEM
+    """The Excel snapshot the reconciliation currently reads.
 
-    value = (
-        MatterSourceReference.objects.filter(source_system=SOURCE_SYSTEM)
-        .exclude(source_snapshot_sha256="")
-        .values_list("source_snapshot_sha256", flat=True)
-        .first()
-    )
-    return value or ""
+    The same selection `build_plan` makes, deliberately: `require_unchanged_sources`
+    compares this against the snapshot a reviewed plan was built from, and two
+    independent answers to "which register is current" would let a plan pass a
+    gate it should have failed. This used to be an unordered ``.first()``,
+    which named whichever row PostgreSQL returned — in production, the *older*
+    of two snapshots, while the matcher read both.
+    """
+    return select_register_snapshot()
 
 
 def load_onenote_placements(sha_values: set[str]) -> dict[str, list[OneNotePlacement]]:
