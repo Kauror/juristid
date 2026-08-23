@@ -37,7 +37,7 @@
         <div><dt>Failinimi</dt><dd>{{ version.original_filename }}</dd></div>
         <div><dt>Tüüp</dt><dd>{{ version.mime_type }}</dd></div>
         <div><dt>Suurus</dt><dd>{{ version.size_bytes|filesizeformat }}</dd></div>
-        <div><dt>Saadi</dt><dd>{{ version.acquired_at|date:"d.m.Y H:i" }}</dd></div>
+        <div><dt>Saadi</dt><dd>{{ version.acquired_at|date:"j.n.Y H:i" }}</dd></div>
         <div><dt>Versioon</dt><dd>{{ version.version_number }}{% if versions|length > 1 %} / {{ versions|length }}{% endif %}</dd></div>
         <div><dt>Töötlemine</dt>
           <dd><span class="statechip statechip--{{ preview.state_tone }}">{{ preview.state_label }}</span></dd>
@@ -157,7 +157,7 @@
       {% if preview.generator %}
         <p class="cardnote">
           Eraldas {{ preview.generator }} {{ preview.generator_version }}{% if preview.built_at %},
-          {{ preview.built_at|date:"d.m.Y H:i" }}{% endif %}.
+          {{ preview.built_at|date:"j.n.Y H:i" }}{% endif %}.
         </p>
       {% endif %}
     </section>
@@ -182,7 +182,7 @@
                   <td>{{ row.version_number }}{% if row.pk == version.pk %} <span class="badge">kehtiv</span>{% endif %}</td>
                   <td><a href="{% url 'documents:download' pk=row.pk %}">{{ row.original_filename }}</a></td>
                   <td>{{ row.size_bytes|filesizeformat }}</td>
-                  <td class="table__date">{{ row.acquired_at|date:"d.m.Y" }}</td>
+                  <td class="table__date">{{ row.acquired_at|date:"j.n.Y" }}</td>
                   <td>
                     <span class="statechip statechip--{{ row.extraction_state|extraction_tone }}">
                       {{ row.extraction_state|extraction_label }}

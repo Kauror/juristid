@@ -91,7 +91,13 @@ CLOCK_DEPENDENT = [
     # painted mask rectangles across the rows underneath and three register
     # baselines came back with obscured rows. Masks can damage a page, so a mask
     # selector is as much a thing to review as the page itself.
-    '.createform input[type="date"]',
+    #
+    # `.dateinput` rather than `input[type=date]`: the native control is gone
+    # from the ordinary UI, because it renders in the browser's locale and put
+    # `mm/dd/yyyy` on an Estonian form (app/core/widgets.py). A mask selector
+    # that stopped matching would not fail — it would silently unmask a value
+    # that changes daily, and every baseline would go red the next morning.
+    ".createform .dateinput",
     "time",
 ]
 

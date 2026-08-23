@@ -145,7 +145,7 @@ attribute of a file, and two people sharing a first name must stay apart.
                           a review date reached is not a missed deadline.
                         {% endcomment %}
                         <span class="muted">{{ row.date_label }}</span><br>
-                        {{ row.when|date:"d.m.Y" }}
+                        {{ row.when|date:"j.n.Y" }}
                       {% else %}—{% endif %}
                     </td>
                   </tr>
@@ -178,7 +178,7 @@ attribute of a file, and two people sharing a first name must stay apart.
               <tbody>
                 {% for row in work.upcoming %}
                   <tr>
-                    <td class="table__date">{{ row.when|date:"d.m.Y" }}</td>
+                    <td class="table__date">{{ row.when|date:"j.n.Y" }}</td>
                     <td><span class="muted">{{ row.meaning }}</span></td>
                     <td class="table__title"><a href="{{ row.url }}">{{ row.matter.title }}</a></td>
                     <td>{{ row.owner_name }}</td>
@@ -218,7 +218,7 @@ attribute of a file, and two people sharing a first name must stay apart.
                     </td>
                     <td>{% include "matters/partials/senders.html" with matter=matter %}</td>
                     <td class="table__date">
-                      {% if matter.response_deadline %}{{ matter.response_deadline|date:"d.m.Y" }}
+                      {% if matter.response_deadline %}{{ matter.response_deadline|date:"j.n.Y" }}
                       {% else %}<span class="table__missing">—</span>{% endif %}
                     </td>
                     <td>{{ matter.stage.label_et|default:"—" }}</td>
@@ -254,7 +254,7 @@ attribute of a file, and two people sharing a first name must stay apart.
               <tbody>
                 {% for matter in work.incoming %}
                   <tr>
-                    <td class="table__date">{{ matter.received_date|date:"d.m.Y" }}</td>
+                    <td class="table__date">{{ matter.received_date|date:"j.n.Y" }}</td>
                     <td class="table__title">
                       <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
                     </td>

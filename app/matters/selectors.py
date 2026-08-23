@@ -15,6 +15,7 @@ from typing import Any
 from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
 from django.utils import timezone
 
+from app.core.dates import format_estonian_date
 from app.matters.activity import annotate_last_activity
 from app.matters.enums import REGISTER_YEAR_ORIGINS, MatterDataClass, RecordMode
 from app.matters.models import Matter
@@ -433,7 +434,7 @@ def my_attention_items(user: Any, today: date | None = None) -> list[AttentionIt
                 key="deadline_without_submission",
                 label="Tähtaeg möödas, arvamust ei ole saadetud",
                 matter=matter,
-                detail=f"Arvamuse tähtaeg oli {matter.response_deadline:%d.%m.%Y}.",
+                detail=(f"Arvamuse tähtaeg oli {format_estonian_date(matter.response_deadline)}."),
             )
         )
 

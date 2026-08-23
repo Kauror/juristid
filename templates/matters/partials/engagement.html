@@ -39,7 +39,7 @@ There is no delete: a wrong row is corrected (brief 16).
             empty cell reads as a missing field rather than as an honest answer.
           {% endcomment %}
           <span class="factrow__date {% if not record.occurred_on %}factrow__date--undated{% endif %}">
-            {% if record.occurred_on %}{{ record.occurred_on|date:"d.m.Y" }}
+            {% if record.occurred_on %}{{ record.occurred_on|date:"j.n.Y" }}
             {% else %}Kuupäev teadmata{% endif %}
           </span>
           <span class="factrow__body">

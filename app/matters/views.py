@@ -27,11 +27,11 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
 from app.core.authorization import may_review_work_victory, may_write_business_content
+from app.core.dates import format_estonian_date, parse_flexible_date
 from app.core.decorators import gate_required, viewer_for
 from app.core.enums import Visibility
 from app.core.errors import DomainError
@@ -480,10 +480,12 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     if name == "andmed":
         return DATA_CLASS_LABELS.get(value, value)
     if name in register_filters.DATE_FILTERS:
-        # The stored value is ISO because that is what `<input type=date>`
-        # submits; the chip reads it back the way Estonians write dates.
-        parsed = parse_date(value)
-        return f"{parsed:%d.%m.%Y}" if parsed else value
+        # The parameter may carry either form — the control submits Estonian and
+        # an older link carries ISO — and the chip reads back the one way this
+        # application writes a date. An unparseable value is shown as typed, so
+        # a chip above an empty register says what emptied it.
+        parsed = parse_flexible_date(value)
+        return format_estonian_date(parsed) if parsed else value
     return value
 
 
@@ -1247,8 +1249,11 @@ def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse
     action = get_object_or_404(
         NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
     )
+    # The box beside "Vaatasin üle" is the Estonian date control like every
+    # other one, so `7.9.2026` has to reach here as a date. ISO still parses:
+    # this route was posted to with ISO before the control changed.
     raw_date = request.POST.get("next_review_date", "").strip()
-    next_review_date = parse_date(raw_date) if raw_date else None
+    next_review_date = parse_flexible_date(raw_date) if raw_date else None
 
     try:
         acknowledge_review(action=action, actor=request.user, next_review_date=next_review_date)

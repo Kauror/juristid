@@ -20,13 +20,14 @@ from typing import Any, cast
 
 from django import forms
 
+from app.core.widgets import EstonianDateField, EstonianDateInput
 from app.intelligence.enums import EffectiveDateKind
 from app.workflow.dates import MAX_YEAR, MIN_YEAR, InvalidPeriod, bounds_for
 from app.workflow.enums import ESTONIAN_MONTHS, ROMAN_QUARTERS, DatePrecision
 
 TEXT_WIDGET = forms.TextInput(attrs={"class": "field__input"})
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input field__input--compact"})
-DATE_WIDGET = forms.DateInput(attrs={"type": "date", "class": "field__input"})
+DATE_WIDGET = EstonianDateInput()
 
 #: The precisions a person may choose. ``INFERRED`` is deliberately absent: it
 #: records that a value was derived from free text by an importer, which is not
@@ -85,7 +86,7 @@ class PeriodForm(forms.Form):
         initial=DatePrecision.EXACT,
         widget=forms.RadioSelect(attrs={"class": "precision__radio"}),
     )
-    exact_date = forms.DateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
+    exact_date = EstonianDateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
     month = forms.ChoiceField(
         label="Kuu", choices=(("", "—"), *MONTH_CHOICES), required=False, widget=SELECT_WIDGET
     )

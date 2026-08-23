@@ -275,9 +275,246 @@
     sync();
   }
 
+  /* ---- The Estonian date control ----------------------------------------
+   * Every date box in the application is a text input reading 7.9.2026,
+   * because a native date input renders in the *browser's* locale: a lawyer on
+   * a US-English Windows saw mm/dd/yyyy on an otherwise Estonian form, with no
+   * way to know it would read 7.9.2026 as the 9th of July (app/core/dates.py).
+   *
+   * This adds back the calendar that control gave up. Weeks start on Monday,
+   * the headings and month names are Estonian, and it is progressive
+   * enhancement throughout: with scripting off the box is still a text field
+   * the server parses, which is what a keyboard user was typing into anyway.
+   */
+  var WEEKDAYS = ["E", "T", "K", "N", "R", "L", "P"];
+  var WEEKDAY_NAMES = [
+    "esmaspäev",
+    "teisipäev",
+    "kolmapäev",
+    "neljapäev",
+    "reede",
+    "laupäev",
+    "pühapäev",
+  ];
+  var MONTHS = [
+    "jaanuar", "veebruar", "märts", "aprill", "mai", "juuni",
+    "juuli", "august", "september", "oktoober", "november", "detsember",
+  ];
+
+  function formatEstonian(date) {
+    return date.getDate() + "." + (date.getMonth() + 1) + "." + date.getFullYear();
+  }
+
+  /* Mirrors app/core/dates.parse_estonian_date, including its refusal to
+     approximate: 31.02 is somebody mistyping, and the 28th is not what they
+     meant. ISO is accepted for the same reason the server accepts it — links
+     written before this control carry it. */
+  function parseEstonian(text) {
+    var value = (text || "").trim();
+    var parts = /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/.exec(value);
+    var year, month, day;
+    if (parts) {
+      day = parseInt(parts[1], 10);
+      month = parseInt(parts[2], 10);
+      year = parseInt(parts[3], 10);
+      if (parts[3].length === 2) {
+        year += 2000;
+      }
+    } else {
+      var iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+      if (!iso) {
+        return null;
+      }
+      year = parseInt(iso[1], 10);
+      month = parseInt(iso[2], 10);
+      day = parseInt(iso[3], 10);
+    }
+    var candidate = new Date(year, month - 1, day);
+    if (
+      candidate.getFullYear() !== year ||
+      candidate.getMonth() !== month - 1 ||
+      candidate.getDate() !== day
+    ) {
+      return null;
+    }
+    return candidate;
+  }
+
+  function sameDay(a, b) {
+    return (
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+    );
+  }
+
+  /* Monday is 0 here. getDay() calls Sunday 0, which is the American week and
+     would put every date in the grid one column out. */
+  function mondayIndex(date) {
+    return (date.getDay() + 6) % 7;
+  }
+
+  function closePicker(panel) {
+    panel.hidden = true;
+    var trigger = panel.parentNode
+      ? panel.parentNode.querySelector(".datepicker__trigger")
+      : null;
+    if (trigger) {
+      trigger.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  function buildCalendar(panel, input, visible) {
+    panel.textContent = "";
+
+    var head = document.createElement("div");
+    head.className = "datepicker__head";
+
+    var previous = document.createElement("button");
+    previous.type = "button";
+    previous.className = "datepicker__nav";
+    previous.textContent = "‹";
+    previous.setAttribute("aria-label", "Eelmine kuu");
+
+    var title = document.createElement("span");
+    title.className = "datepicker__title";
+    title.setAttribute("aria-live", "polite");
+    title.textContent = MONTHS[visible.getMonth()] + " " + visible.getFullYear();
+
+    var next = document.createElement("button");
+    next.type = "button";
+    next.className = "datepicker__nav";
+    next.textContent = "›";
+    next.setAttribute("aria-label", "Järgmine kuu");
+
+    previous.addEventListener("click", function () {
+      buildCalendar(panel, input, new Date(visible.getFullYear(), visible.getMonth() - 1, 1));
+    });
+    next.addEventListener("click", function () {
+      buildCalendar(panel, input, new Date(visible.getFullYear(), visible.getMonth() + 1, 1));
+    });
+
+    head.appendChild(previous);
+    head.appendChild(title);
+    head.appendChild(next);
+    panel.appendChild(head);
+
+    var grid = document.createElement("div");
+    grid.className = "datepicker__grid";
+
+    WEEKDAYS.forEach(function (short, index) {
+      var cell = document.createElement("span");
+      cell.className = "datepicker__weekday";
+      /* The single letter is what fits a seven-column grid; the full weekday is
+         what a screen reader should say. Both, rather than one chosen for
+         everybody. */
+      cell.setAttribute("aria-label", WEEKDAY_NAMES[index]);
+      cell.title = WEEKDAY_NAMES[index];
+      cell.textContent = short;
+      grid.appendChild(cell);
+    });
+
+    var first = new Date(visible.getFullYear(), visible.getMonth(), 1);
+    var lead = mondayIndex(first);
+    var days = new Date(visible.getFullYear(), visible.getMonth() + 1, 0).getDate();
+    var selected = parseEstonian(input.value);
+    var today = new Date();
+
+    for (var blank = 0; blank < lead; blank += 1) {
+      var filler = document.createElement("span");
+      filler.className = "datepicker__blank";
+      grid.appendChild(filler);
+    }
+
+    var choose = function (chosen) {
+      return function () {
+        input.value = formatEstonian(chosen);
+        /* Both events, and in this order. `input` is what a live filter
+           listens for; `change` is what data-autosubmit commits on. A control
+           that set .value silently would look like it worked and save
+           nothing. */
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        closePicker(panel);
+        input.focus();
+      };
+    };
+
+    for (var day = 1; day <= days; day += 1) {
+      var date = new Date(visible.getFullYear(), visible.getMonth(), day);
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "datepicker__day";
+      button.textContent = String(day);
+      button.setAttribute("aria-label", formatEstonian(date));
+      if (sameDay(date, today)) {
+        button.classList.add("is-today");
+      }
+      if (selected && sameDay(date, selected)) {
+        button.classList.add("is-selected");
+        button.setAttribute("aria-current", "date");
+      }
+      button.addEventListener("click", choose(date));
+      grid.appendChild(button);
+    }
+
+    panel.appendChild(grid);
+  }
+
+  function bindDatePickers(scope) {
+    (scope || document).querySelectorAll("input[data-datepicker]").forEach(function (input) {
+      if (!once(input, "Datepicker")) {
+        return;
+      }
+      var wrap = document.createElement("span");
+      wrap.className = "datepicker";
+      input.parentNode.insertBefore(wrap, input);
+      wrap.appendChild(input);
+
+      var trigger = document.createElement("button");
+      trigger.type = "button";
+      trigger.className = "datepicker__trigger";
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.setAttribute("aria-label", "Ava kalender");
+      trigger.textContent = "📅";
+      wrap.appendChild(trigger);
+
+      var panel = document.createElement("div");
+      panel.className = "datepicker__panel";
+      panel.hidden = true;
+      wrap.appendChild(panel);
+
+      trigger.addEventListener("click", function () {
+        if (panel.hidden) {
+          buildCalendar(panel, input, parseEstonian(input.value) || new Date());
+          panel.hidden = false;
+          trigger.setAttribute("aria-expanded", "true");
+        } else {
+          closePicker(panel);
+        }
+      });
+
+      /* Escape closes it and returns focus to the box, and a click anywhere
+         else closes it too — a floating panel that stays open until its own
+         button is clicked again is the disclosure people report as stuck. */
+      wrap.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && !panel.hidden) {
+          closePicker(panel);
+          input.focus();
+        }
+      });
+      document.addEventListener("click", function (event) {
+        if (!panel.hidden && !wrap.contains(event.target)) {
+          closePicker(panel);
+        }
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     bind(document);
     bindPeriodFields(document);
+    bindDatePickers(document);
   });
 
   /* A rejected save returns 400 with the surface re-rendered and the errors in
@@ -296,5 +533,6 @@
   document.body.addEventListener("htmx:afterSwap", function (event) {
     bind(event.target);
     bindPeriodFields(event.target.querySelector ? event.target : document);
+    bindDatePickers(event.target.querySelector ? event.target : document);
   });
 })();

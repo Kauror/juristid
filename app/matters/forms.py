@@ -18,6 +18,7 @@ from app.accounts.models import User
 from app.core.authorization import scoped_count
 from app.core.enums import Visibility
 from app.core.errors import DomainError
+from app.core.widgets import EstonianDateField, EstonianDateInput
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, MatterDataClass
 from app.organisations.models import Organisation
@@ -62,7 +63,10 @@ def set_choices(form: forms.Form, name: str, queryset: QuerySet) -> None:
     field.queryset = queryset
 
 
-DATE_WIDGET = forms.DateInput(attrs={"type": "date", "class": "field__input"})
+#: One date control for the whole application. `type="text"`, because a native
+#: date input renders in the *browser's* locale and showed `mm/dd/yyyy` on an
+#: otherwise Estonian form (app/core/widgets.py).
+DATE_WIDGET = EstonianDateInput()
 TEXT_WIDGET = forms.TextInput(attrs={"class": "field__input"})
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input"})
 
@@ -222,7 +226,7 @@ class MatterCreateForm(forms.Form):
         widget=SELECT_WIDGET,
         help_text="Kellele Koda vastab. Eraldi fakt saatjast.",
     )
-    received_date = forms.DateField(
+    received_date = EstonianDateField(
         label="Saabus",
         required=False,
         widget=DATE_WIDGET,
@@ -231,7 +235,7 @@ class MatterCreateForm(forms.Form):
         # nothing here can overwrite what somebody typed (brief 18).
         initial=timezone.localdate,
     )
-    response_deadline = forms.DateField(
+    response_deadline = EstonianDateField(
         label="Arvamuse tähtaeg", required=False, widget=DATE_WIDGET
     )
     policy_areas = forms.ModelMultipleChoiceField(
@@ -386,7 +390,7 @@ class NextActionForm(forms.Form):
         initial=DateSemantics.DEADLINE,
         widget=SELECT_WIDGET,
     )
-    target_date = forms.DateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
+    target_date = EstonianDateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
     responsible = UserChoiceField(
         label="Vastutaja", queryset=User.objects.none(), required=False, widget=SELECT_WIDGET
     )
@@ -482,7 +486,7 @@ class ComposerForm(forms.Form):
         required=False,
         widget=SELECT_WIDGET,
     )
-    next_target_date = forms.DateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
+    next_target_date = EstonianDateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
     next_date_precision = forms.ChoiceField(
         label="Täpsus",
         choices=DatePrecision.choices,
@@ -547,8 +551,12 @@ class MatterFieldForm(forms.Form):
     addressee_organisation = forms.ModelChoiceField(
         queryset=Organisation.objects.none(), required=False
     )
-    received_date = forms.DateField(required=False)
-    response_deadline = forms.DateField(required=False)
+    # Estonian-reading, like every other date box. These post from the header's
+    # inline edits, which submitted ISO from a native control and now submit
+    # `7.9.2026` from a text one; ISO stays accepted so nothing that already
+    # posts it breaks (app/core/dates.py).
+    received_date = EstonianDateField(required=False)
+    response_deadline = EstonianDateField(required=False)
     visibility = forms.ChoiceField(choices=Visibility.choices, required=False)
     # Editable after creation like every other fact on the record. Blank is a
     # legitimate value here — it is how somebody clears a note that turned out
@@ -601,7 +609,7 @@ class EngagementForm(forms.Form):
     )
     #: No `initial`. The record may be about a consultation from 2019, and a
     #: date box pre-filled with today is answered by pressing save (brief 38).
-    occurred_on = forms.DateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
+    occurred_on = EstonianDateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
     note = forms.CharField(
         label="Märkus",
         required=False,
@@ -691,8 +699,8 @@ class IncomingIntakeForm(forms.Form):
         widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "6"}),
         help_text="Saatjaid võib olla mitu.",
     )
-    received_date = forms.DateField(label="Saabus", required=False, widget=DATE_WIDGET)
-    response_deadline = forms.DateField(
+    received_date = EstonianDateField(label="Saabus", required=False, widget=DATE_WIDGET)
+    response_deadline = EstonianDateField(
         label="Arvamuse tähtaeg", required=False, widget=DATE_WIDGET
     )
     owner = UserChoiceField(

@@ -45,6 +45,7 @@ from datetime import date
 
 from django.db.models import QuerySet
 
+from app.core.dates import format_estonian_date
 from app.legacy_import.opinion_archive import OpinionArchiveItem
 from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
 from app.matters.models import Matter
@@ -109,7 +110,7 @@ def coverage_cutoff() -> date | None:
 def cutoff_note(cutoff: date | None) -> str:
     if cutoff is None:
         return EMPTY_NOTE
-    return f"Arhiivis on andmeid kuni {cutoff.strftime('%d.%m.%Y')}."
+    return f"Arhiivis on andmeid kuni {format_estonian_date(cutoff)}."
 
 
 def _distinct_dates() -> list[tuple[str, date]]:
@@ -275,7 +276,7 @@ def opinion_archive_by_month(context: ReportingContext) -> MetricResult:
         notes=(
             DATE_BASIS_NOTE,
             DISTINCT_NOTE,
-            f"Telg lõpeb viimasel mõõdetud kuupäeval: {last.strftime('%d.%m.%Y')}.",
+            f"Telg lõpeb viimasel mõõdetud kuupäeval: {format_estonian_date(last)}.",
             MATTER_FILTER_NOTE,
         ),
     )
@@ -310,10 +311,10 @@ def opinion_archive_yoy_change(context: ReportingContext) -> MetricResult:
         current_value=current,
         previous_value=previous,
         current_period_label=(
-            f"{current_start.strftime('%d.%m.%Y')} – {cutoff.strftime('%d.%m.%Y')}"
+            f"{format_estonian_date(current_start)} – {format_estonian_date(cutoff)}"
         ),
         previous_period_label=(
-            f"{previous_start.strftime('%d.%m.%Y')} – {previous_cutoff.strftime('%d.%m.%Y')}"
+            f"{format_estonian_date(previous_start)} – {format_estonian_date(previous_cutoff)}"
         ),
         coverage_cutoff=cutoff,
         cutoff_note=(

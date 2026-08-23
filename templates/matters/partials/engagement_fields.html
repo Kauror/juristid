@@ -42,8 +42,9 @@ per row built in the view for that. Five inputs is cheaper than that plumbing.
 {% endcomment %}
 <label class="field field--narrow">
   <span class="field__label">Kuupäev</span>
-  <input class="field__input" type="date" name="occurred_on"
-         value="{% if record.occurred_on %}{{ record.occurred_on|date:'Y-m-d' }}{% endif %}">
+  <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off"
+         placeholder="pp.kk.aaaa" data-datepicker="true" name="occurred_on"
+         value="{% if record.occurred_on %}{{ record.occurred_on|date:'j.n.Y' }}{% endif %}">
 </label>
 
 <label class="field">

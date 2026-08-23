@@ -24,11 +24,11 @@ that goes through the authorization-checked download route.
           {% endcomment %}
           {% if submission.sent_at_precision == "DATE" %}
             <time datetime="{{ submission.sent_at|date:'Y-m-d' }}">
-              {{ submission.sent_at|date:"d.m.Y" }}
+              {{ submission.sent_at|date:"j.n.Y" }}
             </time>
           {% else %}
             <time datetime="{{ submission.sent_at|date:'c' }}">
-              {{ submission.sent_at|date:"d.m.Y H:i" }}
+              {{ submission.sent_at|date:"j.n.Y H:i" }}
             </time>
           {% endif %}
         </dd>

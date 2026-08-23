@@ -39,7 +39,7 @@ is the number the chart showed.
           <tbody>
             {% for submission in page.object_list %}
               <tr>
-                <td class="table__date">{{ submission.sent_at|date:"d.m.Y" }}</td>
+                <td class="table__date">{{ submission.sent_at|date:"j.n.Y" }}</td>
                 <td><span class="muted">{{ submission.get_kind_display }}</span></td>
                 <td>
                   <span class="reference">

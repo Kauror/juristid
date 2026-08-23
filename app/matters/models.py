@@ -17,6 +17,7 @@ from django.db import models
 
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
+from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.core.models import AppendOnlyModel, BaseModel, VisibilityInheritingModel
 from app.matters.entry_enums import EntryKind
@@ -600,7 +601,7 @@ class Entry(VisibilityInheritingModel):
         ]
 
     def __str__(self) -> str:
-        return f"{self.get_kind_display()} {self.occurred_at:%d.%m.%Y}"
+        return f"{self.get_kind_display()} {format_estonian_date(self.occurred_at.date())}"
 
     def parent_visibility(self) -> str:
         return self.matter.visibility
