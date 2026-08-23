@@ -190,4 +190,4 @@ def _archive_years(viewer: Any) -> list[int]:
         .values_list("source_year", flat=True)
         .distinct()
     )
-    return sorted(values, reverse=True)
+    return sorted((year for year in values if year is not None), reverse=True)

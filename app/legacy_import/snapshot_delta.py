@@ -746,6 +746,9 @@ def _collect_native_writes(report: DeltaReport, baseline: dict[str, BaselineRow]
     by_matter: dict[Any, list[NativeWrite]] = {}
     for event in events:
         matter = event.matter
+        if matter is None:  # pragma: no cover - excluded by the query above
+            continue
+        actor = event.actor
         write = NativeWrite(
             reference=f"{matter.reference_year}_{matter.reference_number}",
             event_type=event.event_type,
@@ -753,7 +756,7 @@ def _collect_native_writes(report: DeltaReport, baseline: dict[str, BaselineRow]
             # A persona name where there is one. Under the shared gate this is a
             # selected view rather than a verified person, which is what the
             # audit row itself records; nothing more is claimed here.
-            actor=(event.actor.get_full_name() if event.actor_id else ""),
+            actor=(actor.get_full_name() if actor is not None else ""),
         )
         report.native_writes.append(write)
         by_matter.setdefault(matter.pk, []).append(write)

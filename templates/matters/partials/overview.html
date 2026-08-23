@@ -156,7 +156,7 @@ about the save that just happened.
       {% endcomment %}
       {% if not current_action and source_instruction %}
         <p class="nextaction__source">
-          <span class="nextaction__source-label">Järgmiseks (Excelist):</span>
+          <span class="nextaction__source-label">Järgmiseks (Excelist{% if source_snapshot %}, {{ source_snapshot }}{% endif %}):</span>
           {{ source_instruction }}
         </p>
       {% endif %}

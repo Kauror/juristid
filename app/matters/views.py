@@ -40,6 +40,7 @@ from app.documents.models import Document
 from app.documents.uploads import UploadRejected
 from app.intelligence.selectors import matter_intelligence
 from app.legacy_import.register_display import (
+    snapshot_label,
     source_instruction_for,
     source_instructions_for,
 )
@@ -182,6 +183,10 @@ def my_work(request: HttpRequest) -> HttpResponse:
             # sentence as context — those Matters are, by definition, exactly
             # the ones where only the register has anything to say (ADR 0021).
             "source_instructions": source_instructions_for([*active, *without_action]),
+            # Which approved workbook that wording is a photograph of. Excel is
+            # still being edited, so an undated "Excelist" chip invites somebody
+            # to act on a sentence that has since moved (ADR 0021).
+            "source_snapshot": snapshot_label(),
             "nav_active": "minu_too",
         },
     )
@@ -213,6 +218,7 @@ def inbox(request: HttpRequest) -> HttpResponse:
             "recent": recent,
             "intake_form": IncomingIntakeForm(),
             "source_instructions": source_instructions_for([*unassigned, *recent]),
+            "source_snapshot": snapshot_label(),
             "nav_active": "saabunud",
         },
     )
@@ -759,6 +765,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "cleared_query": cleared.urlencode(),
         "has_any_filter": bool(chips or query),
         "source_instructions": source_instructions_for(page.object_list),
+        "source_snapshot": snapshot_label(),
         # What the search box submits alongside `q`, so typing narrows the
         # chosen filters rather than silently widening the population.
         "carried_params": [
@@ -1081,6 +1088,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # exists. Read here rather than in the template so the page cannot start
         # asking the database a question of its own (ADR 0021).
         "source_instruction": source_instruction_for(matter),
+        "source_snapshot": snapshot_label(),
         "timeline_items": items,
         "timeline_has_more": has_more,
         "composer_form": ComposerForm(),

@@ -145,10 +145,10 @@ class Command(BaseCommand):
         write(self.style.MIGRATE_HEADING("Jooksev töö"))
         impact = report.portfolio
         write(f"  töövihiku järgi     {impact.current}   (tootmises {impact.production_current})")
-        for sheet in sorted(set(impact.by_sheet) | set(impact.production_by_sheet)):
+        for sheet_name in sorted(set(impact.by_sheet) | set(impact.production_by_sheet)):
             write(
-                f"    {sheet:<6} töövihik {impact.by_sheet.get(sheet, 0):>4}"
-                f"   tootmine {impact.production_by_sheet.get(sheet, 0):>4}"
+                f"    {sheet_name:<6} töövihik {impact.by_sheet.get(sheet_name, 0):>4}"
+                f"   tootmine {impact.production_by_sheet.get(sheet_name, 0):>4}"
             )
         write(f"  koostamisel         {impact.drafting}   (tootmises {impact.production_drafting})")
         write(f"  lõppenuks           {impact.retire}")
@@ -191,8 +191,11 @@ class Command(BaseCommand):
         write("")
         write(self.style.MIGRATE_HEADING("Omakirjed pärast kataloogimist"))
         write(f"  sündmusi            {len(report.native_writes)}")
-        for item in report.native_writes[:20]:
-            write(f"    {item.occurred_at}  {item.event_type:<28} {item.reference}  {item.actor}")
+        for native in report.native_writes[:20]:
+            write(
+                f"    {native.occurred_at}  {native.event_type:<28} "
+                f"{native.reference}  {native.actor}"
+            )
 
         write("")
         write(self.style.MIGRATE_HEADING("Topeltkirjutuse konfliktid"))

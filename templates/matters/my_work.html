@@ -111,7 +111,7 @@ that have gone quiet because nothing was planned next.
                 {% with instruction=source_instructions|get_item:matter.pk %}
                   {% if instruction %}
                     <span class="attentionrow__source">
-                      <span class="table__sourcelabel">Excelist</span>
+                      <span class="table__sourcelabel">Excelist{% if source_snapshot %} · {{ source_snapshot }}{% endif %}</span>
                       <span class="attentionrow__sourcetext" title="{{ instruction }}">{{ instruction }}</span>
                     </span>
                   {% endif %}
