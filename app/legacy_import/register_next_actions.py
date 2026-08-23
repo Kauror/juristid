@@ -59,7 +59,7 @@ from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 #: plan digest, the operator report and the audit provenance, so two runs that
 #: read the same sentence differently can never be mistaken for each other
 #: (brief 70).
-REGISTER_NEXT_ACTION_PARSER_VERSION = "1.0"
+REGISTER_NEXT_ACTION_PARSER_VERSION = "1.1"
 
 
 class Verdict:
@@ -98,6 +98,11 @@ class ReviewReason:
     #: "II kvartal 2027" would be stored against 1 April and reported as missed
     #: from 2 April, which the source did not say.
     APPROXIMATE_DEADLINE = "APPROXIMATE_DEADLINE"
+    #: The only date in the sentence is governed by an entry-into-force
+    #: clause. "ootan RT linki, jõustub 1.01.2028" states when the *act*
+    #: takes effect, not when the awaited link arrives, and the two are
+    #: years apart.
+    DATE_GOVERNED_BY_ANOTHER_CLAUSE = "DATE_GOVERNED_BY_ANOTHER_CLAUSE"
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +153,25 @@ _DO = _forms_pattern(DO_FORMS)
 #: (``15.09.2026-ks``), which is the third way the register says it.
 _DEADLINE_WORD = re.compile(r"\b(?:tähta(?:eg|ja)\w*|hiljemalt)\b", re.IGNORECASE)
 _TRANSLATIVE_SUFFIX = re.compile(r"-?ks\b", re.IGNORECASE)
+
+#: Entry into force. The register states it constantly, beside instructions
+#: that have nothing to do with it, and it is the one clause whose date is
+#: reliably *not* the date the instruction is about: an act adopted this year
+#: is published in Riigi Teataja within days and takes effect years later.
+#: Explicit forms, on the same closed-allowlist discipline as the kind
+#: vocabulary — a `jõustu\w*` stem would also swallow `jõustamiseks` in a
+#: purpose clause, which governs nothing.
+ENTRY_INTO_FORCE_FORMS: tuple[str, ...] = (
+    "jõustub",
+    "jõustuvad",
+    "jõustus",
+    "jõustusid",
+    "jõustunud",
+    "jõustuma",
+    "jõustama",
+)
+
+_ENTRY_INTO_FORCE = _forms_pattern(ENTRY_INTO_FORCE_FORMS)
 
 
 # ---------------------------------------------------------------------------
@@ -227,8 +251,13 @@ _YEAR_ONLY = re.compile(rf"\b{_YEAR_WORD}", re.IGNORECASE)
 #: Malformed-period detectors. A written ``5. kvartal`` is not a date this
 #: parser may quietly ignore — ignoring it would let a sentence carrying an
 #: unreadable period fall through to a dateless verdict and be converted.
-_ANY_QUARTER = re.compile(r"\b(?P<ordinal>\d+)\s*\.?\s*kvartal", re.IGNORECASE)
-_ANY_HALF = re.compile(r"\b(?P<ordinal>\d+)\s*\.?\s*poolaasta", re.IGNORECASE)
+#:
+#: Roman numerals are matched here as well as Arabic ones. The register writes
+#: both — ``II kvartalis``, ``I poolaasta`` — so a guard that only understood
+#: ``5. kvartal`` would let ``V kvartalis`` through as though no period had
+#: been written at all, which is the exact failure the guard exists to prevent.
+_ANY_QUARTER = re.compile(r"\b(?P<ordinal>\d+|[ivx]+)\s*\.?\s*kvartal", re.IGNORECASE)
+_ANY_HALF = re.compile(r"\b(?P<ordinal>\d+|[ivx]+)\s*\.?\s*poolaasta", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -380,7 +409,8 @@ def _scan_dates(text: str) -> tuple[list[DateMention], bool]:
     for pattern in (_ANY_QUARTER, _ANY_HALF):
         limit = 4 if pattern is _ANY_QUARTER else 2
         for match in pattern.finditer(text):
-            if not 1 <= int(match.group("ordinal")) <= limit:
+            ordinal = _ordinal_value(match.group("ordinal"))
+            if ordinal is None or not 1 <= ordinal <= limit:
                 unreadable = True
 
     return kept, unreadable
@@ -482,6 +512,9 @@ def parse_instruction(text: str) -> ParsedInstruction:
         return _review(source, ReviewReason.AMBIGUOUS_DATE, forms=forms)
     mention = mentions[0] if mentions else None
 
+    if mention is not None and _governed_by_entry_into_force(source, mention):
+        return _review(source, ReviewReason.DATE_GOVERNED_BY_ANOTHER_CLAUSE, forms=forms)
+
     if wait:
         return _understood(source, ActionKind.WAIT, DateSemantics.EXPECTED_AROUND, mention, forms)
     if monitor:
@@ -544,6 +577,27 @@ def _do_reading(
     # second quarter". EXPECTED_AROUND is what that sentence says, and it can
     # never be reported as overdue.
     return _understood(source, ActionKind.DO, DateSemantics.EXPECTED_AROUND, mention, forms)
+def _governed_by_entry_into_force(source: str, mention: DateMention) -> bool:
+    """Whether an entry-into-force verb owns the only date in the sentence.
+
+    The register habitually records when an act takes effect beside an
+    instruction that has nothing to do with it: *ootan RT linki, jõustub
+    1.01.2028* is a lawyer waiting for a publication link within weeks and an
+    act taking effect in two years. Reading that date as the awaited event's
+    timing states something the sentence never said.
+
+    The test is deliberately the tightest one that catches it: the verb must
+    be the last thing written before the date, with only whitespace between.
+    *Jõustub üldises korras. Ootan eelnõud 2027. aasta 2. kvartalis* names
+    entry into force with no date of its own, and the quarter that follows
+    belongs to the wait — a bare precedence test would refuse it wrongly.
+    """
+    for match in _ENTRY_INTO_FORCE.finditer(source):
+        if match.end() <= mention.start and not source[match.end() : mention.start].strip():
+            return True
+    return False
+
+
 
 
 def _states_a_deadline(source: str, mention: DateMention) -> bool:
