@@ -62,6 +62,7 @@ _REASON_LABELS: dict[str, str] = {
     "DO_WITHOUT_DATE": "work to do, with no date and no honest date meaning",
     "DO_DATE_WITHOUT_DEADLINE_WORDING": "a day beside a verb, not stated to be a deadline",
     "APPROXIMATE_DEADLINE": "deadline wording attached to a period rather than a day",
+    "DATE_GOVERNED_BY_ANOTHER_CLAUSE": "the only date belongs to another clause",
 }
 
 
