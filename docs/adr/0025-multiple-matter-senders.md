@@ -121,6 +121,26 @@ two controls are **unioned** — nothing is privileged for having come from the
 frequent list — and both validate against the full Organisation queryset, so
 creating a Matter is never a way to create an institution.
 
+### The header band clips, and says so
+
+The Matter header's facts strip has a hard height budget — a browser test fails
+it above two lines — because a band that grew into a wall of always-open
+controls above the title is the regression that budget exists to prevent. A
+sender *list* does not fit there in general.
+
+So the band clips the sender list exactly as it clips every other long value,
+and the complete list is always on the field's tooltip and always one click
+away in the editor behind it; the register tables, the `Saabunud materjalid`
+note and the CSV export render it unclipped. This is a deliberate departure
+from "the detail page renders every sender in the band", and the alternative —
+growing the band — was tried and rejected against the existing contract.
+
+Fixing this exposed a latent bug the singular field had hidden: the trigger set
+`text-overflow: ellipsis` on an `inline-flex` element, where the property does
+nothing. Long values had always clipped mid-word and taken the disclosure caret
+with them; one short institution name simply never reached the edge. The cut now
+happens on an inner block, so truncation reads as truncation.
+
 ## Consequences
 
 - A sender change is a real Matter edit, so the service bumps `updated_at`
