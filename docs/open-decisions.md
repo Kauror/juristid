@@ -367,3 +367,57 @@ sections above stands as written.
 | Promotion criteria for `CONTENT_MULTI_SIGNAL` | Genuinely open; the measurement that would justify it is written down in ADR 0023 and has not been taken |
 | Global-search behaviour at real corpus scale | Genuinely open; cannot be answered without EXPLAIN on a realistic corpus, and no index has been added on intuition |
 | Whether final evidence may be more restricted than its submission | Newly surfaced, and a product question rather than a bug. `check_evidence_is_usable` permits it; a restricted document bound to a normal submission puts its filename on a card everyone can see. Nothing in this pass changed the rule |
+
+## Surfaced by the pre-QA UI round
+
+Two things the screenshots asked for that the domain model cannot currently
+hold. Both are recorded here rather than implemented, because each needs a
+schema decision and neither belongs in a parallel UI branch.
+
+### A sender or addressee that is not in the institution catalogue
+
+**The limitation, exactly.** `Matter.source_organisations` is a many-to-many
+through `MatterSourceOrganisation` to `organisations.Organisation`, and
+`Matter.addressee_organisation` is a `ForeignKey` to the same table. There is no
+free-text column on either side. A body that is not in the catalogue can
+therefore be recorded only by creating an `Organisation` row for it — which
+would mean a matter form minting reference data, and a second spelling of a
+ministry the first time somebody types one.
+
+**What the UI round did instead.** The duplicate selector is gone: the
+disclosure now lists only bodies that are not already offered as chips, and it
+says on the page that an institution has to be added under the institution
+surface first. Nothing is faked in front-end state, and nothing creates an
+`Organisation`.
+
+**Smallest follow-up that would work.** A nullable free-text column beside the
+relation, exactly as `Matter.policy_area_other` sits beside
+`Matter.policy_areas`: `source_organisation_other` and
+`addressee_organisation_other`, both `CharField(blank=True)`, both displayed as
+provenance and never matched, counted or reported as an institution. That keeps
+the catalogue governed while letting the register record what it was told. It
+needs one migration, one service argument and a decision from whoever owns the
+institution vocabulary about whether such rows are later reconciled by hand.
+
+| Decision | Owner | Needed by |
+| --- | --- | --- |
+| Whether an unlisted sender or addressee may be captured as free text, and who reconciles it | Department head + whoever owns the institution catalogue | Before the first real intake of a body outside the catalogue |
+
+### A second, finer topic level below `Valdkond`
+
+The marked-up screens list roughly eighteen working categories — Maksejõuetus,
+Raamatupidamine, Intellektuaalomand, Toetusmeetmed, Koalitsioonilepped,
+Tarbijakaitse, Digiteemad, Ehitus, Välistööjõud and the rest. Those are not the
+nine reviewed `PolicyArea` values, and they should not become them: ADR 0029
+settled that vocabulary and `taxonomy/0002` fails closed to protect it.
+
+`taxonomy.Tag` is the model this belongs in and it is already governed —
+aliases, deprecation, merge-into, a named owner. It ships empty on purpose, and
+the row already in the table above ("Controlled Tag seed, taxonomy owner")
+remains the decision. What is new is the evidence: the department is *already*
+using a second level informally, and the list above is the closest thing to a
+draft vocabulary anyone has produced.
+
+Nothing was seeded, and the UI exposes no tag control, because a checkbox row
+over an empty vocabulary teaches people the feature is broken. The follow-up is
+a reviewed seed migration plus a control on the Matter form, in that order.
