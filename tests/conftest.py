@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import zipfile
+
 import pytest
 
 from tests import factories
@@ -57,6 +59,23 @@ def signed_in(client, specialist):
     """A client signed in as an ordinary specialist."""
     client.force_login(specialist)
     return client
+
+
+@pytest.fixture
+def posix_zip_names(monkeypatch):
+    """Read ZIP member names the way Linux does, on whatever host is running.
+
+    ``zipfile`` rewrites the host's ``os.sep`` to ``/`` while parsing a member
+    name, so on Windows a stored backslash never reaches the reader and a test
+    written around one would hold whether or not the code handles it. The real
+    opinions archive stores every member with a backslash, which is why this
+    exists. Only the separator rewrite is removed; the null-byte truncation
+    done in the same place is a real defence and is kept. On Linux this changes
+    nothing, which is the point.
+    """
+    monkeypatch.setattr(
+        zipfile, "_sanitize_filename", lambda name: name.split(chr(0))[0], raising=False
+    )
 
 
 @pytest.fixture

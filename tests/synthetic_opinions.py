@@ -87,6 +87,27 @@ def write_archive(path: Path, opinions: list[SyntheticOpinion]) -> Path:
     return path
 
 
+def write_raw_archive(path: Path, entries: list[tuple[str, bytes]]) -> Path:
+    r"""A ZIP whose member names are stored exactly as given.
+
+    ``ZipInfo.__init__`` rewrites the OS separator to ``/``, so on Windows
+    ``writestr("Opinions\x.pdf", ...)`` silently produces a forward-slash
+    member and the defect under test disappears before it is written. Assigning
+    ``filename`` after construction skips that rewrite, which is the only way to
+    put a real backslash — or any other malformed name — into the container from
+    either platform.
+
+    The names here are deliberately hostile. Nothing in this helper validates
+    them; refusing them is the reader's job and the point of the tests.
+    """
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_STORED) as archive:
+        for name, data in entries:
+            info = zipfile.ZipInfo("placeholder", date_time=(2026, 1, 1, 0, 0, 0))
+            info.filename = name
+            archive.writestr(info, data)
+    return path
+
+
 def _clear_utf8_flag(path: Path, names: set[str]) -> None:
     """Clear bit 11 in each named entry's local header and directory record.
 

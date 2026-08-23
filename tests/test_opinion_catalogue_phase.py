@@ -276,6 +276,49 @@ def test_catalogue_then_materialize_holds_the_bytes_and_sends_nothing(automatic)
     assert OpinionSubmissionImport.objects.count() == 0
 
 
+def test_a_windows_separator_survives_catalogue_and_materialisation(
+    tmp_path, real_data, evidence_root, posix_zip_names
+):
+    r"""One canonical path, from reading the archive to opening the file.
+
+    Every member of the approved archive is stored as ``Opinions\<name>.pdf``,
+    and ``zipfile`` hands that name back differently on Windows and on Linux.
+    Reading, cataloguing and materialisation each turn a member name into a
+    path, and the operator only finds out they disagreed at the end: the
+    catalogue would hold rows and `materialize` would report every one of them
+    as missing from the archive it had just catalogued.
+
+    So this asserts the whole chain on one file rather than the reader alone,
+    and it is the only test here that would still pass if `ArchiveReader` kept a
+    normalisation of its own.
+    """
+    letter = syn.opinion(date="2026-07-07", recipient="Näidisamet", title="Seitsmes kiri")
+    filename = letter.name.split("/")[-1]
+    path = syn.write_raw_archive(
+        tmp_path / "Opinions.zip", [("Opinions\\" + filename, letter.data)]
+    )
+    sha = build_plan(archive_path=path).archive_sha256
+
+    run("catalogue", path)
+
+    item = OpinionArchiveItem.objects.get()
+    assert item.archive_relative_path == "Opinions/" + filename
+    assert item.binary_id is None
+
+    from app.legacy_import.opinion_materialize import plan_materialization
+
+    plan = plan_materialization(archive_path=path, expected_archive_sha256=sha)
+    assert (plan.occurrences, plan.missing_from_archive, plan.hash_mismatch) == (1, 0, 0)
+
+    run("materialize", path, expect_archive_sha256=sha)
+
+    item.refresh_from_db()
+    assert item.binary is not None
+    assert item.binary.sha256 == letter.sha256
+    assert OpinionArchiveBinary.objects.count() == 1
+    assert canonical_counts()[:5] == (0, 0, 0, 0, 0)
+
+
 # ---------------------------------------------------------------------------
 # Catalogue then the full apply — the compatibility that matters most
 # ---------------------------------------------------------------------------
