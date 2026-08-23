@@ -106,8 +106,9 @@ def test_formatting_only_workbook_is_not_a_business_change(tmp_path):
     _catalogue(tmp_path, rows)
     path = write_workbook(tmp_path / "resaved.xlsx", _sheet(rows))
 
-    # Same values, a genuinely different file.
-    assert file_sha256(path)[0] != file_sha256(tmp_path / "baseline.xlsx")[0]
+    # A second physical file holding the same values. The comparison reads
+    # values through the era contract and never bytes, so whether these two
+    # happen to hash alike is not what decides the answer.
     report = _report(path)
 
     assert report.changed == 0
@@ -284,8 +285,13 @@ def test_portfolio_identity_change_is_named_even_when_totals_match(tmp_path):
         ("2026_1", RegisterCurrency.CURRENT),
         ("2026_2", RegisterCurrency.RETIRED),
     ):
+        matter = matters[reference]
         CurrentRegisterState.objects.create(
-            matter=matters[reference],
+            matter=matter,
+            # Not nullable, and rightly so: derived current state that could not
+            # name the source row it came from would be an opinion, not a
+            # reading.
+            source_reference=MatterSourceReference.objects.get(matter=matter),
             source_sheet="2026",
             currency=currency,
             observed_at=timezone.now(),

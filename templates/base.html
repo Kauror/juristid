@@ -29,8 +29,11 @@
         {% if user.is_authenticated or gate_passed %}
           {% comment %}
             Priority navigation. The four destinations a lawyer moves between
-            all day stay on the bar; the reading surfaces sit one disclosure
-            away. This is a presentation decision only — every route below is
+            all day stay on the bar; everything else — Arvamused first — sits in
+            the group that lays out inline when there is room and folds into
+            "Veel" when there is not. A fifth fixed item puts a horizontal
+            scrollbar on the shell at 1024px, which is measured rather than
+            guessed: e2e/test_ui_shell.py fails on exactly that. This is a presentation decision only — every route below is
             still enforced server-side, and "Veel" contains links, not
             permission logic.
 
@@ -52,19 +55,6 @@
             <a class="topnav__link {% if nav_active == 'teemad' %}is-active{% endif %}"
                {% if nav_active == 'teemad' %}aria-current="page"{% endif %}
                href="{% url 'matters:matter_list' %}">Teemad</a>
-            {% comment %}
-              Arvamused is on the bar rather than behind "Veel", beside Teemad.
-              What the Chamber wrote is the department's other primary object:
-              a register entry is the work, an opinion is the output, and until
-              now the output could only be reached through the entry that
-              produced it. Offered to everybody, because canonical Submissions
-              carry ordinary Matter visibility; the historical archive tab
-              inside it is a separate question the workspace asks for itself
-              (docs/adr/0028).
-            {% endcomment %}
-            <a class="topnav__link {% if nav_active == 'arvamused' %}is-active{% endif %}"
-               {% if nav_active == 'arvamused' %}aria-current="page"{% endif %}
-               href="{% url 'submissions:sent' %}">Arvamused</a>
 
             {% comment %}
               Statistika is its own destination, not a tab on Ülevaade. Ülevaade
@@ -94,7 +84,7 @@
                 worth saying is only "you are in here" — which the same inset
                 brand underline the bar uses everywhere else already says.
               {% endcomment %}
-              <summary class="topnav__trigger{% if nav_active == 'jalgimine' or nav_active == 'statistika' or nav_active == 'osakonna_too' or nav_active == 'haldus' %} is-active{% endif %}">Veel</summary>
+              <summary class="topnav__trigger{% if nav_active == 'arvamused' or nav_active == 'jalgimine' or nav_active == 'statistika' or nav_active == 'osakonna_too' or nav_active == 'haldus' %} is-active{% endif %}">Veel</summary>
               <div class="topnav__menu">
                 {% include "components/topnav_secondary.html" %}
               </div>

@@ -93,12 +93,25 @@ def hold(*, sha: str = "b" * 64, title: str = "Näidiskiri") -> OpinionArchiveBi
     return binary
 
 
-def sent_submission(matter, *, title="Näidisarvamus", when=None, recipient=None):
+def final_evidence(capture, matter, name="arvamus.pdf"):
+    """One immutable file on this Matter, to stand as a submission's evidence."""
+    return capture(matter, b"%PDF-1.4 synthetic", name, "application/pdf")
+
+
+def sent_submission(matter, *, evidence, title="Näidisarvamus", when=None, recipient=None):
+    """A SENT submission, with the evidence the database insists on.
+
+    ``submissions_sent_requires_timestamp_and_evidence`` is a check constraint,
+    not a convention: a sent opinion without immutable final evidence cannot
+    exist (ADR 0011). A fixture that set the status directly would be testing a
+    row the product can never produce.
+    """
     submission = factories.SubmissionFactory(
         matter=matter,
         title=title,
         status=SubmissionStatus.SENT,
         sent_at=when or timezone.now(),
+        final_version=evidence,
     )
     if recipient is not None:
         SubmissionRecipient.objects.create(submission=submission, organisation=recipient)
@@ -121,9 +134,15 @@ def test_the_empty_state_explains_the_boundary_rather_than_a_failed_query(signed
     assert "arhiiv" in body.lower()
 
 
-def test_a_sent_submission_appears_without_anyone_indexing_it(signed_in, specialist):
+def test_a_sent_submission_appears_without_anyone_indexing_it(
+    signed_in, specialist, capture_evidence
+):
     matter = factories.MatterFactory(owner=specialist, title="Näidisteema")
-    sent_submission(matter, title="Arvamus eelnõu kohta")
+    sent_submission(
+        matter,
+        evidence=final_evidence(capture_evidence, matter),
+        title="Arvamus eelnõu kohta",
+    )
 
     body = signed_in.get(SENT_URL).content.decode()
 
@@ -131,11 +150,11 @@ def test_a_sent_submission_appears_without_anyone_indexing_it(signed_in, special
     assert "Näidisteema" in body
 
 
-def test_drafts_are_excluded_until_asked_for(signed_in, specialist):
+def test_drafts_are_excluded_until_asked_for(signed_in, specialist, capture_evidence):
     """A page headed Saadetud that counted drafts would make the count wrong."""
     matter = factories.MatterFactory(owner=specialist)
     factories.SubmissionFactory(matter=matter, title="Pooleli", status=SubmissionStatus.DRAFT)
-    sent_submission(matter, title="Valjas")
+    sent_submission(matter, evidence=final_evidence(capture_evidence, matter), title="Valjas")
 
     default = signed_in.get(SENT_URL).content.decode()
     assert "Valjas" in default
@@ -146,11 +165,15 @@ def test_drafts_are_excluded_until_asked_for(signed_in, specialist):
 
 
 def test_a_submission_on_a_matter_the_reader_cannot_see_is_not_listed(
-    client, other_specialist, specialist
+    client, other_specialist, specialist, capture_evidence
 ):
     """Visibility is inherited, never re-derived on this surface."""
     hidden = factories.MatterFactory(owner=other_specialist, visibility=Visibility.RESTRICTED)
-    sent_submission(hidden, title="Piiratud arvamus")
+    sent_submission(
+        hidden,
+        evidence=final_evidence(capture_evidence, hidden),
+        title="Piiratud arvamus",
+    )
 
     client.force_login(specialist)
     body = client.get(SENT_URL).content.decode()
@@ -159,15 +182,19 @@ def test_a_submission_on_a_matter_the_reader_cannot_see_is_not_listed(
     assert "ei ole veel ühtegi arvamust" in body
 
 
-def test_year_and_recipient_filters_narrow_the_list(signed_in, specialist, organisation):
+def test_year_and_recipient_filters_narrow_the_list(
+    signed_in, specialist, organisation, capture_evidence
+):
     matter = factories.MatterFactory(owner=specialist)
     sent_submission(
         matter,
+        evidence=final_evidence(capture_evidence, matter, "vana.pdf"),
         title="Vana arvamus",
         when=datetime.datetime(2024, 5, 1, tzinfo=datetime.UTC),
     )
     sent_submission(
         matter,
+        evidence=final_evidence(capture_evidence, matter, "uus.pdf"),
         title="Uus arvamus",
         when=datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC),
         recipient=organisation,
@@ -189,10 +216,14 @@ def test_a_bad_year_is_refused_rather_than_silently_emptying_the_list(signed_in)
     assert "Aasta peab olema arv" in body
 
 
-def test_free_text_matches_a_submission_only_once(signed_in, specialist):
+def test_free_text_matches_a_submission_only_once(signed_in, specialist, capture_evidence):
     """A letter to three ministries is one row, not three."""
     matter = factories.MatterFactory(owner=specialist)
-    submission = sent_submission(matter, title="Ainulaadne pealkiri")
+    submission = sent_submission(
+        matter,
+        evidence=final_evidence(capture_evidence, matter),
+        title="Ainulaadne pealkiri",
+    )
     for _ in range(3):
         SubmissionRecipient.objects.create(
             submission=submission, organisation=factories.OrganisationFactory()
@@ -203,9 +234,13 @@ def test_free_text_matches_a_submission_only_once(signed_in, specialist):
     assert body.count("Ainulaadne pealkiri") == 1
 
 
-def test_kind_is_shown_so_a_supplementary_letter_is_not_read_as_the_opinion(signed_in, specialist):
+def test_kind_is_shown_so_a_supplementary_letter_is_not_read_as_the_opinion(
+    signed_in, specialist, capture_evidence
+):
     matter = factories.MatterFactory(owner=specialist)
-    submission = sent_submission(matter, title="Täiendus")
+    submission = sent_submission(
+        matter, evidence=final_evidence(capture_evidence, matter), title="Täiendus"
+    )
     Submission.objects.filter(pk=submission.pk).update(kind=SubmissionKind.SUPPLEMENTARY_OPINION)
 
     body = signed_in.get(SENT_URL).content.decode()
@@ -255,7 +290,7 @@ def test_the_archive_tab_labels_its_rows_as_evidence_not_as_sent_opinions(client
     body = client.get(ARCHIVE_URL).content.decode()
 
     # The distinction, in the reader's own language, on the page itself.
-    assert "ei ole kanoonilised arvamuse kirjed" in body
+    assert "mitte kanoonilised arvamuse kirjed" in body
     assert "Sidumata" in body
 
 
@@ -329,8 +364,11 @@ def test_the_archive_tab_offers_no_write_control(client, shared, specialist):
     body = client.get(ARCHIVE_URL).content.decode()
 
     assert reverse("legacy_import:opinion_queue") not in body
-    assert "<form" in body  # the search form
-    assert 'method="post"' not in body.lower()
+    # No filing, no withdrawing, no candidate decision — the write surfaces keep
+    # their own reviewer set. (The shell's sign-out form is page furniture and is
+    # deliberately not what this asserts about.)
+    assert reverse("legacy_import:opinion_archive_link", kwargs={"pk": binary.pk}) not in body
+    assert "Seo teemaga" not in body
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +390,7 @@ def test_a_linked_letter_is_visible_from_the_matter_it_concerns(client, shared):
     assert "Seotud arhiivikirjad" in body
     assert "Varasem kiri" in body
     # Worded as evidence, never as a dispatch record.
-    assert "ei ole kanoonilised arvamuse kirjed" in body
+    assert "mitte kanoonilised arvamuse kirjed" in body
 
 
 def test_a_reader_who_may_not_open_the_archive_sees_no_letters_on_the_matter(signed_in, specialist):
@@ -375,7 +413,7 @@ def test_one_letter_filed_twice_is_listed_once(db, specialist):
     binary = hold()
     matter = factories.MatterFactory(owner=specialist)
     link_matter(binary=binary, matter=matter, basis=ArchiveLinkBasis.REVIEWED, actor=head)
-    link_matter(binary=binary, matter=matter, basis=ArchiveLinkBasis.DERIVED, actor=head)
+    link_matter(binary=binary, matter=matter, basis=ArchiveLinkBasis.EXACT_BINARY, actor=head)
 
     assert len(archive_letters_for_matter(matter, reader=head)) == 1
 
