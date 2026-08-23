@@ -283,8 +283,11 @@ def test_a_period_phrase_is_one_date_and_not_two():
     "source",
     [
         "Ootan Riigi Teataja linki, jõustub 1.01.2029",
-        "Vastu võetud, jõustuvad muudatused 01.11.2029, ootan linki",
+        "Vastu võetud, muudatused jõustuvad 01.11.2029, ootan linki",
         "Jälgin menetlust, määrus jõustub 2029. aasta 2. kvartalis",
+        # Verb before the noun it commences. Estonian allows the inversion and
+        # the clause is the same one, so adjacency alone would miss it.
+        "Ootan linki, jõustuvad muudatused 01.11.2029",
     ],
 )
 def test_an_entry_into_force_date_is_not_the_awaited_events_timing(source):
@@ -310,13 +313,21 @@ def test_an_entry_into_force_date_is_not_the_awaited_events_timing(source):
         ("Jõustub üldises korras. Ootan eelnõud 2029. aasta 2. kvartalis", dt.date(2029, 4, 1)),
         # The verb comes after the date it does not govern.
         ("Ootan eelnõud 2029. aasta 2. kvartalis, jõustub üldises korras", dt.date(2029, 4, 1)),
+        # No punctuation at all, and the waiting verb has taken the sentence
+        # over before the date arrives.
+        (
+            "Jõustub üldises korras ja ootan eelnõud 2029. aasta 2. kvartalis",
+            dt.date(2029, 4, 1),
+        ),
     ],
 )
 def test_entry_into_force_wording_alone_refuses_nothing(source, expected):
-    """The test is adjacency, not presence.
+    """The test is what the verb governs, not whether it appears.
 
-    A bare precedence test would refuse the first of these, where the register
-    simply noted the commencement rule before stating what it is waiting for.
+    A bare precedence test would refuse all of these, where the register simply
+    noted the commencement rule before stating what it is waiting for. What ends
+    the entry-into-force clause is punctuation, or the next instruction verb
+    where the writer left the punctuation out.
     """
     parsed = parse_instruction(source)
     assert parsed.verdict == Verdict.UNDERSTOOD

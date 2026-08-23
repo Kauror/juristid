@@ -173,6 +173,11 @@ ENTRY_INTO_FORCE_FORMS: tuple[str, ...] = (
 
 _ENTRY_INTO_FORCE = _forms_pattern(ENTRY_INTO_FORCE_FORMS)
 
+#: What ends the clause a verb governs. Estonian marks a new clause with
+#: punctuation far more reliably than with word order, and where the writer
+#: left it out, the next instruction verb marks it instead.
+_CLAUSE_BREAK = re.compile(r"[.,;:!?]")
+
 
 # ---------------------------------------------------------------------------
 # Date vocabulary
@@ -588,15 +593,26 @@ def _governed_by_entry_into_force(source: str, mention: DateMention) -> bool:
     act taking effect in two years. Reading that date as the awaited event's
     timing states something the sentence never said.
 
-    The test is deliberately the tightest one that catches it: the verb must
-    be the last thing written before the date, with only whitespace between.
-    *Jõustub üldises korras. Ootan eelnõud 2027. aasta 2. kvartalis* names
-    entry into force with no date of its own, and the quarter that follows
-    belongs to the wait — a bare precedence test would refuse it wrongly.
+    The question is what the verb still governs when the date arrives, and two
+    things end that: punctuation, and another instruction. *Jõustub üldises
+    korras. Ootan eelnõud 2027. aasta 2. kvartalis* names entry into force with
+    no date of its own, and the quarter after the full stop belongs to the wait;
+    so does the quarter in *jõustub üldises korras ja ootan eelnõud 2027. aasta
+    2. kvartalis*, where a waiting verb has taken the sentence over without any
+    punctuation to mark it. A bare precedence test would refuse both wrongly.
+
+    What is left in between is the clause the entry-into-force verb owns —
+    whether the date follows it immediately or after the noun it commences.
     """
     for match in _ENTRY_INTO_FORCE.finditer(source):
-        if match.end() <= mention.start and not source[match.end() : mention.start].strip():
-            return True
+        if match.end() > mention.start:
+            continue
+        between = source[match.end() : mention.start]
+        if _CLAUSE_BREAK.search(between):
+            continue
+        if _WAIT.search(between) or _MONITOR.search(between) or _DO.search(between):
+            continue
+        return True
     return False
 
 
