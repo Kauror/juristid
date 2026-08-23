@@ -1,0 +1,92 @@
+{% comment %}
+A two-dimensional count — year × responsibility, month × responsibility — as a
+real HTML table.
+
+Not a heat map. Every cell prints its number, the header cells carry `scope`, and
+the caption names the table. A grid whose value lived in a background shade would
+be unreadable to anybody who cannot separate two tints, and there would be no
+fallback: a heat map has no data table beneath it, it *is* the data table
+(master specification 17.8; Stage-2E brief 50, 81).
+
+Totals are printed, never computed here. Row totals, column totals and the grand
+total all arrive already worked out, so two renderings of the same matrix cannot
+add up differently (brief 54).
+
+The table sits inside `.tablewrap`, which scrolls horizontally on its own. A wide
+matrix must never push the page sideways.
+{% endcomment %}
+
+<section class="chart chart--wide" aria-labelledby="matrix-{{ item.result.key }}-heading">
+  <div class="chart__head">
+    <h3 class="chart__title" id="matrix-{{ item.result.key }}-heading">
+      {{ item.result.definition.label_et }}
+    </h3>
+    <span class="muted">
+      {% if item.result.definition.respects_period %}{{ reporting.period.label }}{% else %}Kogu korpus{% endif %}
+    </span>
+  </div>
+
+  <p class="chart__summary">{{ item.summary }}</p>
+
+  {% if item.matrix and not item.matrix.is_empty %}
+    <div class="tablewrap">
+      <table class="data-table matrix">
+        <caption class="visually-hidden">
+          {{ item.result.definition.label_et }} — {{ item.matrix.row_header }} ja vastutaja kaupa
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">{{ item.matrix.row_header }}</th>
+            {% for column in item.matrix.columns %}
+              <th scope="col" class="numeric">{{ column }}</th>
+            {% endfor %}
+            <th scope="col" class="numeric">Kokku</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in item.matrix.rows %}
+            <tr {% if row.is_unknown %}class="matrix__row--unknown"{% endif %}>
+              <th scope="row">{{ row.label }}{% if row.is_unknown %} (määramata){% endif %}</th>
+              {% for cell in row.cells %}
+                <td class="numeric">{{ cell.value }}</td>
+              {% endfor %}
+              <td class="numeric matrix__total">{{ row.total }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th scope="row">Kokku</th>
+            {% for total in item.matrix.column_totals %}
+              <td class="numeric matrix__total">{{ total }}</td>
+            {% endfor %}
+            <td class="numeric matrix__total">{{ item.matrix.grand_total }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    {% if item.matrix.folded_note %}
+      <p class="metric__note">{{ item.matrix.folded_note }}</p>
+    {% endif %}
+  {% else %}
+    <p class="empty">
+      {% if item.result.status == "INSUFFICIENT_DATA" %}
+        Selle näitaja jaoks ei ole veel piisavalt andmeid.
+      {% else %}
+        Valitud filtritega kirjeid ei ole.
+      {% endif %}
+    </p>
+  {% endif %}
+
+  {% for note in item.result.notes %}
+    <p class="metric__note">{{ note }}</p>
+  {% endfor %}
+
+  <details class="definition">
+    <summary class="definition__summary">Kuidas arvutatakse?</summary>
+    <div class="definition__body">
+      {% include "reporting/_definition.html" with definition=item.result.definition result=item.result %}
+    </div>
+  </details>
+</section>

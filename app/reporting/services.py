@@ -22,10 +22,12 @@ from app.reporting.metric_catalogue import CATALOGUE
 from app.reporting.metric_types import MetricResult
 from app.reporting.selectors import (
     activity,
+    archive,
     documents,
     historical,
     opinions,
     organisations,
+    portfolio,
     quality,
 )
 from app.reporting.selectors import matters as matter_selectors
@@ -42,6 +44,10 @@ COMPUTERS: dict[str, Computer] = {
     keys.MATTERS_BY_ORIGIN: matter_selectors.matters_by_origin,
     keys.MATTERS_BY_STAGE: matter_selectors.matters_by_stage,
     keys.MATTERS_BY_OWNER: matter_selectors.matters_by_owner,
+    keys.MATTERS_BY_RESPONSIBILITY: portfolio.matters_by_responsibility,
+    keys.MATTERS_BY_YEAR_AND_RESPONSIBILITY: portfolio.matters_by_year_and_responsibility,
+    keys.ACTIVE_FULL_MATTERS_BY_STAGE: portfolio.active_full_matters_by_stage,
+    keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY: (portfolio.active_full_matters_by_responsibility),
     keys.MATTERS_BY_POLICY_AREA: matter_selectors.matters_by_policy_area,
     keys.MATTERS_UNCLASSIFIED_POLICY_AREA: matter_selectors.matters_unclassified_policy_area,
     keys.MATTERS_BY_TRACK: matter_selectors.matters_by_track,
@@ -62,6 +68,11 @@ COMPUTERS: dict[str, Computer] = {
     ),
     # Koja tegevus
     keys.NEW_NATIVE_FULL_MATTERS: activity.new_native_full_matters,
+    keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH: portfolio.new_native_full_matters_by_month,
+    keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH: (
+        portfolio.new_native_matters_by_responsibility_month
+    ),
+    keys.NEW_NATIVE_MATTERS_YOY_CHANGE: portfolio.new_native_matters_yoy_change,
     keys.ACTIVE_WITHOUT_NEXT_ACTION: activity.active_without_next_action,
     keys.ACTIVE_WITHOUT_OWNER: activity.active_without_owner,
     keys.ACTIVE_WITHOUT_STAGE: activity.active_without_stage,
@@ -103,6 +114,17 @@ COMPUTERS: dict[str, Computer] = {
     # Andmekvaliteet
     keys.OPINION_ARCHIVE_OCCURRENCES: opinions.opinion_archive_occurrences,
     keys.OPINION_ARCHIVE_DISTINCT_BINARIES: opinions.opinion_archive_distinct_binaries,
+    # Arvamuste arhiiv ajas — evidence trends, never canonical Submissions.
+    keys.OPINION_ARCHIVE_BY_YEAR: archive.opinion_archive_by_year,
+    keys.OPINION_ARCHIVE_BY_MONTH: archive.opinion_archive_by_month,
+    keys.OPINION_ARCHIVE_YOY_CHANGE: archive.opinion_archive_yoy_change,
+    keys.OPINION_ARCHIVE_LINK_COVERAGE: archive.opinion_archive_link_coverage,
+    keys.OPINION_ARCHIVE_LINKED_BY_RESPONSIBILITY: (
+        archive.opinion_archive_linked_by_responsibility
+    ),
+    keys.OPINION_ARCHIVE_LINKED_BY_MONTH_RESPONSIBILITY: (
+        archive.opinion_archive_linked_by_month_and_responsibility
+    ),
     keys.OPINION_ARCHIVE_MATTER_COVERAGE: opinions.opinion_archive_matter_coverage,
     keys.OPINION_ARCHIVE_UNRESOLVED: opinions.opinion_archive_unresolved,
     keys.HISTORICAL_SUBMISSION_COVERAGE: opinions.historical_submission_coverage,
@@ -144,35 +166,80 @@ def compute_many(metric_keys: list[str], context: ReportingContext) -> list[Metr
 
 @dataclass
 class Page:
-    """One tab's worth of answers, already computed."""
+    """One tab's worth of answers, already computed.
+
+    ``trends``, ``matrices`` and ``comparisons`` are separate lists rather than
+    a flag on each result, because the view renders each with a different
+    partial and a tab that had to sort its own results by shape would be one
+    more place for two tabs to disagree.
+    """
 
     cards: list[MetricResult] = field(default_factory=list)
     charts: list[MetricResult] = field(default_factory=list)
     tables: list[MetricResult] = field(default_factory=list)
+    trends: list[MetricResult] = field(default_factory=list)
+    matrices: list[MetricResult] = field(default_factory=list)
+    comparisons: list[MetricResult] = field(default_factory=list)
+    #: Extra named groups a single tab needs — the archive block on Koja
+    #: tegevus, the portfolio and coverage blocks on Üldpilt.
+    groups: dict[str, list[MetricResult]] = field(default_factory=dict)
 
     @property
     def all_results(self) -> list[MetricResult]:
-        return [*self.cards, *self.charts, *self.tables]
+        return [
+            *self.cards,
+            *self.charts,
+            *self.tables,
+            *self.trends,
+            *self.matrices,
+            *self.comparisons,
+            *[result for group in self.groups.values() for result in group],
+        ]
 
 
-#: Üldpilt is five numbers and six charts, and no more. A landing page that
-#: tries to say everything says nothing, and every card here links into the
-#: tab that explains it (brief 16, 17).
+#: Üldpilt, in five groups: the headline counts, how much work there is over
+#: time, how much archived advocacy there is over time, what the department is
+#: holding right now, and how far the data reaches.
+#:
+#: Deliberately not every metric. A landing page that tries to say everything
+#: says nothing, and every group here is a question somebody arrives with
+#: (brief 11, 56).
 OVERVIEW_CARDS = [
     keys.MATTERS_TOTAL,
     keys.ACTIVE_FULL_MATTERS,
+    keys.NEW_NATIVE_FULL_MATTERS,
+    keys.OPINION_ARCHIVE_DISTINCT_BINARIES,
     keys.SUBMISSIONS_SENT,
-    keys.MATTERS_WITH_HISTORICAL_SOURCE,
-    keys.DATA_QUALITY_ATTENTION,
 ]
 
-OVERVIEW_CHARTS = [
+#: Period-over-period cards. Both sides of each are cut at the same date, and
+#: neither direction is framed as good news (brief 33, 34).
+OVERVIEW_COMPARISONS = [
+    keys.NEW_NATIVE_MATTERS_YOY_CHANGE,
+    keys.OPINION_ARCHIVE_YOY_CHANGE,
+]
+
+#: Two long trends with deliberately different starting years: the register
+#: begins in 2011 and the opinions archive in 2020. Aligning them by drawing
+#: nine years of archive zeros would be the false fact this workspace exists to
+#: refuse (brief 43).
+OVERVIEW_TRENDS = [
     keys.MATTERS_BY_REPORTING_YEAR,
-    keys.MATTERS_BY_ORIGIN,
-    keys.MATTERS_BY_POLICY_AREA,
-    keys.SUBMISSIONS_SENT_BY_PERIOD,
-    keys.HISTORICAL_SOURCE_COVERAGE_CLASSES,
-    keys.MATERIALISATION_STATUS,
+    keys.OPINION_ARCHIVE_BY_YEAR,
+]
+
+#: What is on the department's desk today — the point-in-time pair.
+OVERVIEW_PORTFOLIO = [
+    keys.ACTIVE_FULL_MATTERS_BY_STAGE,
+    keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY,
+]
+
+#: How far the data reaches. Coverage rather than achievement, and the wording
+#: on each card says so.
+OVERVIEW_COVERAGE = [
+    keys.OPINION_ARCHIVE_LINK_COVERAGE,
+    keys.MATTERS_WITH_HISTORICAL_SOURCE,
+    keys.DATA_QUALITY_ATTENTION,
 ]
 
 MATTERS_CARDS = [
@@ -182,15 +249,34 @@ MATTERS_CARDS = [
     keys.MATTERS_UNCLASSIFIED_POLICY_AREA,
 ]
 
-MATTERS_CHARTS = [
+MATTERS_TRENDS = [
     keys.MATTERS_BY_REPORTING_YEAR,
+    keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH,
+]
+
+#: The two-dimensional views. Real tables, computed in Python, never a heat map
+#: whose value is carried by a shade (brief 50).
+MATTERS_MATRICES = [
+    keys.MATTERS_BY_YEAR_AND_RESPONSIBILITY,
+    keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH,
+]
+
+MATTERS_CHARTS = [
     keys.MATTERS_BY_RECORD_MODE,
     keys.MATTERS_BY_ORIGIN,
     keys.MATTERS_BY_STAGE,
     keys.MATTERS_BY_TRACK,
     keys.MATTERS_BY_POLICY_AREA,
     keys.MATTERS_BY_TAG,
-    keys.MATTERS_BY_OWNER,
+    # `MATTERS_BY_RESPONSIBILITY` rather than `MATTERS_BY_OWNER`. The two
+    # answer the same question and rendered side by side as two charts with
+    # identical bars and near-identical Estonian titles — *vastutuse järgi* and
+    # *vastutaja järgi* — which a browser screenshot made obvious and no
+    # assertion would have. The one kept is the one that preserves a register
+    # name this system has no account for instead of discarding it into
+    # "Vastutaja määramata", which is the whole point of the dimension on a
+    # reporting surface (brief 15, 55, 56).
+    keys.MATTERS_BY_RESPONSIBILITY,
     keys.HISTORICAL_SOURCE_COVERAGE_CLASSES,
 ]
 
@@ -207,8 +293,29 @@ ACTIVITY_CARDS = [
     keys.OVERDUE_DO_DEADLINE,
 ]
 
-ACTIVITY_CHARTS = [
+#: Canonical Submissions. This is the only trend on the tab that claims Koda
+#: sent anything.
+ACTIVITY_TRENDS = [
     keys.SUBMISSIONS_SENT_BY_PERIOD,
+]
+
+#: The archive's own history, kept in its own section with its own heading and
+#: its own date basis. Beside the canonical metrics, never on top of them
+#: (brief 39, 40).
+ACTIVITY_ARCHIVE_TRENDS = [
+    keys.OPINION_ARCHIVE_BY_YEAR,
+    keys.OPINION_ARCHIVE_BY_MONTH,
+]
+
+ACTIVITY_ARCHIVE_CHARTS = [
+    keys.OPINION_ARCHIVE_LINKED_BY_RESPONSIBILITY,
+]
+
+ACTIVITY_ARCHIVE_MATRICES = [
+    keys.OPINION_ARCHIVE_LINKED_BY_MONTH_RESPONSIBILITY,
+]
+
+ACTIVITY_CHARTS = [
     keys.SUBMISSIONS_BY_KIND,
     keys.MATTERS_BY_SUBMISSION_COUNT,
     keys.NEXT_ACTION_BY_KIND,
@@ -227,6 +334,7 @@ HISTORICAL_CARDS = [
     keys.HISTORICAL_SIGNED_CONTAINERS,
     keys.OPINION_ARCHIVE_OCCURRENCES,
     keys.OPINION_ARCHIVE_DISTINCT_BINARIES,
+    keys.OPINION_ARCHIVE_LINK_COVERAGE,
 ]
 
 HISTORICAL_CHARTS = [
@@ -252,6 +360,7 @@ QUALITY_CARDS = [
     # "Koja tegevus" because an unmatched letter is a reconciliation gap, not
     # a statement about how much advocacy happened (Stage-2H brief 55).
     keys.OPINION_ARCHIVE_MATTER_COVERAGE,
+    keys.OPINION_ARCHIVE_LINK_COVERAGE,
     keys.HISTORICAL_SUBMISSION_COVERAGE,
     keys.SUBMISSION_RECIPIENT_COVERAGE,
     keys.OPINION_ARCHIVE_UNRESOLVED,
@@ -262,16 +371,53 @@ QUALITY_CHARTS = [
 ]
 
 
+#: Every group of keys a tab renders, named once.
+#:
+#: The catalogue parity test reads this rather than restating the list, so a
+#: new section on a tab cannot quietly escape the check that its keys exist —
+#: which is exactly what happened the first time a section was added and the
+#: test kept passing against the six groups it still knew about.
+PAGE_GROUPS: tuple[tuple[str, list[str]], ...] = (
+    ("OVERVIEW_CARDS", OVERVIEW_CARDS),
+    ("OVERVIEW_COMPARISONS", OVERVIEW_COMPARISONS),
+    ("OVERVIEW_TRENDS", OVERVIEW_TRENDS),
+    ("OVERVIEW_PORTFOLIO", OVERVIEW_PORTFOLIO),
+    ("OVERVIEW_COVERAGE", OVERVIEW_COVERAGE),
+    ("MATTERS_CARDS", MATTERS_CARDS),
+    ("MATTERS_TRENDS", MATTERS_TRENDS),
+    ("MATTERS_MATRICES", MATTERS_MATRICES),
+    ("MATTERS_CHARTS", MATTERS_CHARTS),
+    ("MATTERS_TABLES", MATTERS_TABLES),
+    ("ACTIVITY_CARDS", ACTIVITY_CARDS),
+    ("ACTIVITY_TRENDS", ACTIVITY_TRENDS),
+    ("ACTIVITY_ARCHIVE_TRENDS", ACTIVITY_ARCHIVE_TRENDS),
+    ("ACTIVITY_ARCHIVE_CHARTS", ACTIVITY_ARCHIVE_CHARTS),
+    ("ACTIVITY_ARCHIVE_MATRICES", ACTIVITY_ARCHIVE_MATRICES),
+    ("ACTIVITY_CHARTS", ACTIVITY_CHARTS),
+    ("ACTIVITY_TABLES", ACTIVITY_TABLES),
+    ("HISTORICAL_CARDS", HISTORICAL_CARDS),
+    ("HISTORICAL_CHARTS", HISTORICAL_CHARTS),
+    ("HISTORICAL_TABLES", HISTORICAL_TABLES),
+    ("QUALITY_CARDS", QUALITY_CARDS),
+    ("QUALITY_CHARTS", QUALITY_CHARTS),
+)
+
+
 def overview_page(context: ReportingContext) -> Page:
     return Page(
         cards=compute_many(OVERVIEW_CARDS, context),
-        charts=compute_many(OVERVIEW_CHARTS, context),
+        comparisons=compute_many(OVERVIEW_COMPARISONS, context),
+        trends=compute_many(OVERVIEW_TRENDS, context),
+        charts=compute_many(OVERVIEW_PORTFOLIO, context),
+        groups={"coverage": compute_many(OVERVIEW_COVERAGE, context)},
     )
 
 
 def matters_page(context: ReportingContext) -> Page:
     return Page(
         cards=compute_many(MATTERS_CARDS, context),
+        trends=compute_many(MATTERS_TRENDS, context),
+        matrices=compute_many(MATTERS_MATRICES, context),
         charts=compute_many(MATTERS_CHARTS, context),
         tables=compute_many(MATTERS_TABLES, context),
     )
@@ -280,8 +426,14 @@ def matters_page(context: ReportingContext) -> Page:
 def activity_page(context: ReportingContext) -> Page:
     return Page(
         cards=compute_many(ACTIVITY_CARDS, context),
+        trends=compute_many(ACTIVITY_TRENDS, context),
         charts=compute_many(ACTIVITY_CHARTS, context),
         tables=compute_many(ACTIVITY_TABLES, context),
+        groups={
+            "archive_trends": compute_many(ACTIVITY_ARCHIVE_TRENDS, context),
+            "archive_charts": compute_many(ACTIVITY_ARCHIVE_CHARTS, context),
+            "archive_matrices": compute_many(ACTIVITY_ARCHIVE_MATRICES, context),
+        },
     )
 
 

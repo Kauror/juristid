@@ -205,3 +205,23 @@ def summarise(result: MetricResult, *, top: int = 3) -> str:
     if tail > 0:
         sentence += f"; ja veel {tail} rühma"
     return sentence + "."
+
+
+def describe_matrix(result: MetricResult) -> str:
+    """The text alternative for a two-dimensional table.
+
+    Written from the matrix's own totals, so it cannot describe a shape the
+    table does not have. A reader using a screen reader gets the size of the
+    grid and the total before being asked to navigate a hundred cells, which is
+    the difference between a table they can orient themselves in and one they
+    have to walk (master specification 17.8; brief 50, 81).
+    """
+    matrix = result.matrix
+    if matrix is None or matrix.is_empty:
+        return "Andmeid ei ole."
+
+    return (
+        f"{len(matrix.rows)} rida ({matrix.row_header.lower()}) × "
+        f"{matrix.column_count} vastutajat, kokku {matrix.grand_total}. "
+        "Täpsed arvud on tabelis; ükski väärtus ei ole edastatud ainult värviga."
+    )

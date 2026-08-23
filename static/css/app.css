@@ -4505,3 +4505,108 @@ p.factsection__none {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* -- Statistika 2.0: matrix and comparison ---------------------------------
+ *
+ * A matrix is a real table, and nothing in it carries meaning through colour.
+ * The value is printed in every cell; the shading below separates the totals
+ * row and column from the body, which is orientation rather than data
+ * (Stage-2E brief 50, 51).
+ *
+ * The table scrolls inside `.tablewrap`. A sixteen-year × twelve-lawyer grid
+ * must never push the page sideways.
+ * ------------------------------------------------------------------------ */
+
+.chart--wide {
+  grid-column: 1 / -1;
+  margin-bottom: var(--spacing-4);
+}
+
+.matrix {
+  min-width: max-content;
+}
+
+.matrix th[scope="col"] {
+  white-space: nowrap;
+}
+
+.matrix th[scope="row"] {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.matrix td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Zero is printed rather than blanked, but is muted: a grid of emphatic zeros
+   reads as a problem, and a blank cell reads as missing data. It is neither. */
+.matrix td:not(.matrix__total) {
+  color: var(--text-secondary);
+}
+
+.matrix__total {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.matrix tfoot th,
+.matrix tfoot td {
+  border-top: 2px solid var(--border-strong);
+}
+
+.matrix__row--unknown th[scope="row"] {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* A comparison card. Deliberately no red and no green: neither direction of a
+   volume change is good news, and a colour that implied one would be a
+   judgement the data does not support (brief 34). */
+.comparison {
+  gap: var(--spacing-2);
+}
+
+.comparison__change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  margin: 0;
+}
+
+.comparison__delta {
+  font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison__percent {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison__percent--none {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.comparison__periods {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.comparison__periods dt {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-1);
+}
+
+.comparison__periods dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}

@@ -34,12 +34,14 @@ from django.db.models import Count, Q, QuerySet
 from django.urls import reverse
 
 from app.core.authorization import scoped_count
-from app.matters.enums import RecordMode
+from app.matters.enums import REGISTER_YEAR_ORIGINS, RecordMode
 from app.matters.models import Matter
 from app.matters.selectors import UNKNOWN_YEAR, register_year_q, unknown_register_year_q
 from app.reporting.context import ReportingContext
 from app.reporting.metric_types import (
+    Comparison,
     Distribution,
+    Matrix,
     MetricDefinition,
     MetricResult,
     MetricStatus,
@@ -139,6 +141,18 @@ def eligible_matters(context: ReportingContext, definition: MetricDefinition) ->
     if definition.eligible_origins:
         queryset = queryset.filter(origin__in=definition.eligible_origins)
     return queryset
+
+
+def known_year_q() -> Q:
+    """What counts as a *register* reporting year, in one predicate.
+
+    A OneNote-only Matter carries a ``reporting_year`` taken from a page
+    timestamp. It is the only date that page has and it is not a reporting
+    year, so every year-shaped statistic asks this rather than restating the
+    origin list — three metrics restating it is three places for one of them to
+    drift (``app.matters.enums.REGISTER_YEAR_ORIGINS``).
+    """
+    return Q(reporting_year__isnull=False, origin__in=REGISTER_YEAR_ORIGINS)
 
 
 def in_reporting_year(queryset: QuerySet[Matter], context: ReportingContext) -> QuerySet[Matter]:
@@ -281,6 +295,8 @@ def simple_result(
     url: str = "",
     segments: tuple[Segment, ...] = (),
     distribution: Distribution | None = None,
+    matrix: Matrix | None = None,
+    comparison: Comparison | None = None,
     notes: tuple[str, ...] = (),
     status: MetricStatus | None = None,
 ) -> MetricResult:
@@ -314,6 +330,8 @@ def simple_result(
         drillthrough_url=url,
         segments=segments,
         distribution=distribution,
+        matrix=matrix,
+        comparison=comparison,
         notes=notes,
     )
 

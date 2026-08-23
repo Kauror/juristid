@@ -2,16 +2,24 @@
 {% block title %}Statistika · Koja tegevus · {{ application_name }}{% endblock %}
 
 {% comment %}
-Koja tegevus — the structured work this system records, and nothing else.
+Koja tegevus — two different kinds of claim, in two sections that never merge.
+
+**Arvamused** are canonical `Submission` records: Koda sent this exact document,
+on this date, to these recipients. Nothing there is inferred from a filename, a
+PDF or the register's outbound-date column, and the era note on every card says
+where the measurement actually starts.
+
+**Arvamuste arhiiv** is historical evidence: files Koda holds, dated by the
+archive's own naming convention. That date is a matching signal, not a send date,
+and the section says so in its own words. The two are shown beside each other and
+are never added, because the archive has history the canonical model does not and
+the canonical model makes an assertion the archive cannot (Stage-2E brief 24, 39,
+40; Stage-2H brief 12, 19).
 
 Historical attachment volume is not lawyer activity and is not on this page.
-Neither is any comparison between people: `Teemad vastutaja järgi` lives on the
-Teemad tab and is called inventory there, because a count of open files does not
-measure effort (master specification 18.8).
-
-Submissions are canonical `Submission` records. Nothing here is inferred from a
-filename, a PDF or the register's outbound-date column, and the era note on
-every submission card says where the measurement actually starts.
+Neither is any comparison between people: the archive's responsibility breakdown
+counts files linked to a lawyer's Matters, which is inventory of evidence, and it
+says so (master specification 18.8).
 {% endcomment %}
 
 {% block page_actions %}
@@ -32,12 +40,37 @@ every submission card says where the measurement actually starts.
   </section>
 
   <section aria-labelledby="tegevus-arvamused-heading">
-    <h2 class="sectionlabel" id="tegevus-arvamused-heading">Arvamused ajas</h2>
+    <h2 class="sectionlabel" id="tegevus-arvamused-heading">Saadetud arvamused</h2>
+    <p class="chart__summary">
+      Kanoonilised arvamuse kirjed: Koda saatis selle dokumendi sel kuupäeval
+      nendele saajatele. Struktuurne kirje tekib alles selles süsteemis, seega
+      varasemate aastate kohta siin mõõtmist ei ole.
+    </p>
     <div class="chartgrid">
       {% for item in trends %}
         {% include "reporting/_trend.html" with item=item %}
       {% endfor %}
     </div>
+  </section>
+
+  <section aria-labelledby="tegevus-arhiiv-heading">
+    <h2 class="sectionlabel" id="tegevus-arhiiv-heading">Arvamuste arhiiv ajas</h2>
+    <p class="chart__summary">
+      Ajalooline tõendus, mitte kanooniline saatmise fakt. Kuupäev tuleb arhiivi
+      failinimest — see on allika metaandmed, mitte väljasaatmise aeg. Neid arve
+      ei liideta saadetud arvamustega.
+    </p>
+    <div class="chartgrid">
+      {% for item in archive_trends %}
+        {% include "reporting/_trend.html" with item=item %}
+      {% endfor %}
+      {% for item in archive_compositions %}
+        {% include "reporting/_composition.html" with item=item %}
+      {% endfor %}
+    </div>
+    {% for item in archive_matrices %}
+      {% include "reporting/_matrix.html" with item=item %}
+    {% endfor %}
   </section>
 
   <section aria-labelledby="tegevus-jaotus-heading">

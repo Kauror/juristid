@@ -101,6 +101,23 @@ def _trends(results: list[MetricResult]) -> list[dict[str, Any]]:
     ]
 
 
+def _matrices(results: list[MetricResult]) -> list[dict[str, Any]]:
+    """Pair each two-dimensional result with the sentence that describes it.
+
+    The matrix itself was assembled in the selector, totals and all. Nothing is
+    computed here — a view that added up a column would be a second arithmetic
+    for a number the selector already produced (brief 54).
+
+    A result whose matrix is ``None`` is kept rather than filtered out. It
+    declined, and the partial renders that refusal in words; dropping it would
+    leave a section heading with nothing beneath it and no explanation of why.
+    """
+    return [
+        {"result": result, "matrix": result.matrix, "summary": charts.describe_matrix(result)}
+        for result in results
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Tabs
 # ---------------------------------------------------------------------------
@@ -108,10 +125,16 @@ def _trends(results: list[MetricResult]) -> list[dict[str, Any]]:
 
 @gate_required
 def overview(request: HttpRequest) -> HttpResponse:
-    """Üldpilt — five numbers, six pictures, and a way into each of them."""
+    """Üldpilt — five groups, in the order somebody arriving needs them.
+
+    Põhinäitajad, then how much work there is over time, then how much archived
+    advocacy, then what the department is holding right now, then how far the
+    data reaches. The two long trends deliberately start in different years, and
+    the two comparison cards are cut at the same date on both sides
+    (brief 11, 33, 43).
+    """
     context = reporting_context.from_request(request)
     page = services.overview_page(context)
-    trend_keys = {metric_keys.MATTERS_BY_REPORTING_YEAR, metric_keys.SUBMISSIONS_SENT_BY_PERIOD}
 
     return render(
         request,
@@ -119,8 +142,10 @@ def overview(request: HttpRequest) -> HttpResponse:
         {
             **_shell(request, context, "ulevaade"),
             "cards": page.cards,
-            "trends": _trends([r for r in page.charts if r.key in trend_keys]),
-            "compositions": _bars([r for r in page.charts if r.key not in trend_keys]),
+            "comparisons": page.comparisons,
+            "trends": _trends(page.trends),
+            "portfolio": _bars(page.charts),
+            "coverage": page.groups.get("coverage", []),
         },
     )
 
@@ -129,7 +154,6 @@ def overview(request: HttpRequest) -> HttpResponse:
 def matters(request: HttpRequest) -> HttpResponse:
     context = reporting_context.from_request(request)
     page = services.matters_page(context)
-    trend_keys = {metric_keys.MATTERS_BY_REPORTING_YEAR}
 
     return render(
         request,
@@ -137,8 +161,9 @@ def matters(request: HttpRequest) -> HttpResponse:
         {
             **_shell(request, context, "teemad"),
             "cards": page.cards,
-            "trends": _trends([r for r in page.charts if r.key in trend_keys]),
-            "compositions": _bars([r for r in page.charts if r.key not in trend_keys]),
+            "trends": _trends(page.trends),
+            "matrices": _matrices(page.matrices),
+            "compositions": _bars(page.charts),
             "organisation_tables": _bars(page.tables),
             "export_url": exports.export_url(context, "teemad"),
         },
@@ -147,9 +172,15 @@ def matters(request: HttpRequest) -> HttpResponse:
 
 @gate_required
 def activity(request: HttpRequest) -> HttpResponse:
+    """Koja tegevus — canonical Submissions, then the archive, kept apart.
+
+    The archive block has its own heading, its own date basis and its own
+    wording. An archived letter is evidence Koda holds; a Submission is Koda
+    asserting it sent something. Rendering them in one section would invite
+    exactly the addition the data model refuses (brief 24, 39).
+    """
     context = reporting_context.from_request(request)
     page = services.activity_page(context)
-    trend_keys = {metric_keys.SUBMISSIONS_SENT_BY_PERIOD}
 
     return render(
         request,
@@ -157,8 +188,11 @@ def activity(request: HttpRequest) -> HttpResponse:
         {
             **_shell(request, context, "tegevus"),
             "cards": page.cards,
-            "trends": _trends([r for r in page.charts if r.key in trend_keys]),
-            "compositions": _bars([r for r in page.charts if r.key not in trend_keys]),
+            "trends": _trends(page.trends),
+            "compositions": _bars(page.charts),
+            "archive_trends": _trends(page.groups.get("archive_trends", [])),
+            "archive_compositions": _bars(page.groups.get("archive_charts", [])),
+            "archive_matrices": _matrices(page.groups.get("archive_matrices", [])),
             "recipient_tables": _bars(page.tables),
             "export_url": exports.export_url(context, "arvamused"),
         },

@@ -24,6 +24,13 @@ exists because some metric has a branch that nothing else would reach:
 
 Years are relative to the day a test runs, so nothing here starts failing in
 January.
+
+Two extensions sit at the bottom of this module and are **not** built by
+``build_world``: ``add_responsibility_world`` adds register-backed responsibility
+and ``add_archive_world`` adds an opinions archive. Both are opt-in because the
+suite's expectations are derived by hand from the list above, and because the
+shared world's *absence* of an archive is itself the state the empty-archive
+tests need (brief 76).
 """
 
 from __future__ import annotations
@@ -808,4 +815,316 @@ def build_world(today: date | None = None) -> World:
         resources=resources,
         versions=versions,
         submissions=submissions,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Statistics 2.0 — two opt-in extensions
+#
+# Deliberately *not* part of ``build_world``. The existing suite reads its
+# expectations off the eleven Matters Martin can see, and quietly adding rows to
+# the shared world would silently change a dozen assertions that were derived by
+# hand rather than by running the code.
+#
+# It also leaves the shared world in the state the archive tests most need: with
+# **no** ``OpinionArchiveItem`` at all, which is what this branch ships into
+# before P3 populates production and is exactly where a false "0 arvamust
+# saadetud" would appear (brief 60, 76).
+# ---------------------------------------------------------------------------
+
+
+#: A lawyer the register names and this system has no account for. The whole
+#: point of the source-responsibility rule is that this string survives.
+HISTORICAL_NAME = "Mari Ajalooline"
+
+
+@dataclass
+class ResponsibilityWorld:
+    """Handles onto the register-responsibility extension."""
+
+    #: A retired register row whose VASTUTAJA names somebody with no account.
+    historical: Matter
+    #: Open FULL work the register still names HISTORICAL_NAME on. The case that
+    #: must not collapse into "Määramata".
+    promoted_named: Matter
+    #: Open FULL work whose VASTUTAJA cell is genuinely blank.
+    promoted_blank: Matter
+
+
+def _source_reference(matter: Matter, *, year: int, owner_cell: str) -> Any:
+    """One minimal verbatim register row, enough to hang a state off."""
+    from app.legacy_import.models import MatterSourceReference
+
+    return MatterSourceReference.objects.create(
+        matter=matter,
+        source_system="EXCEL_REGISTER",
+        source_file_name="Naidisregister.xlsx",
+        source_snapshot_sha256=_sha("statistika-register-snapshot"),
+        source_sheet=str(year),
+        source_row_number=matter.reference_number,
+        source_row_raw={"VASTUTAJA": owner_cell},
+        source_title=matter.title,
+        source_era=str(year),
+    )
+
+
+def _register_state(matter: Matter, *, year: int, owner_cell: str, currency: str) -> None:
+    from app.legacy_import.current_state import CurrentRegisterState
+
+    reference = _source_reference(matter, year=year, owner_cell=owner_cell)
+    CurrentRegisterState.objects.create(
+        matter=matter,
+        source_reference=reference,
+        source_snapshot_sha256=_sha("statistika-register-snapshot"),
+        source_sheet=str(year),
+        source_row_number=reference.source_row_number,
+        currency=currency,
+        status_label="Kooskolastusringil" if currency == "CURRENT" else "Loppenud",
+        opinion_sent_recorded=False,
+        owner_raw=owner_cell,
+        # False on purpose for the named rows: the register names somebody this
+        # system has no account for, which is the fact the whole precedence rule
+        # exists to preserve (Stage-2F owner resolver).
+        owner_resolved=False,
+        observed_at=timezone.now(),
+    )
+
+
+def add_responsibility_world(world: World) -> ResponsibilityWorld:
+    """Register-backed responsibility, in the three shapes that differ.
+
+    A retired archive row and an open FULL row both naming a colleague with no
+    account here, and one open FULL row whose cell is blank. Together they
+    separate the two failures the source-responsibility rule exists to prevent:
+    a named historical lawyer disappearing into *Määramata*, and a genuinely
+    unassigned Matter being given somebody's name.
+    """
+    from app.legacy_import.current_state import RegisterCurrency
+
+    previous = world.previous_year
+
+    _register_state(
+        world.archive_excel,
+        year=world.archive_year,
+        owner_cell=HISTORICAL_NAME,
+        currency=RegisterCurrency.RETIRED,
+    )
+
+    promoted_named = Matter.objects.create(
+        title="Registrist aktiveeritud teema nimelise vastutajaga",
+        record_mode=RecordMode.FULL,
+        origin=MatterOrigin.PROMOTED_LEGACY,
+        data_quality_tier=DataQualityTier.TIER_1_VERIFIED_ACTIVE,
+        source_era=str(previous),
+        reference_year=previous,
+        reference_number=61,
+        reporting_year=previous,
+        # No canonical owner: the register names somebody and the resolver could
+        # not match them to an account. Exactly the case that must not read as
+        # unassigned.
+        owner=None,
+        stage=world.stage,
+        is_open=True,
+    )
+    _register_state(
+        promoted_named,
+        year=previous,
+        owner_cell=HISTORICAL_NAME,
+        currency=RegisterCurrency.CURRENT,
+    )
+
+    promoted_blank = Matter.objects.create(
+        title="Registrist aktiveeritud teema vastutajata",
+        record_mode=RecordMode.FULL,
+        origin=MatterOrigin.PROMOTED_LEGACY,
+        data_quality_tier=DataQualityTier.TIER_1_VERIFIED_ACTIVE,
+        source_era=str(previous),
+        reference_year=previous,
+        reference_number=62,
+        reporting_year=previous,
+        owner=None,
+        is_open=True,
+    )
+    _register_state(
+        promoted_blank,
+        year=previous,
+        owner_cell="",
+        currency=RegisterCurrency.CURRENT,
+    )
+
+    return ResponsibilityWorld(
+        historical=world.archive_excel,
+        promoted_named=promoted_named,
+        promoted_blank=promoted_blank,
+    )
+
+
+#: The archive's own first year. Nothing in the fixture is dated earlier, so a
+#: test can assert that no earlier bar was drawn.
+ARCHIVE_BASE_YEAR = 2020
+
+
+@dataclass
+class ArchiveWorld:
+    """Handles onto the opinion-archive extension.
+
+    ``duplicate_sha`` is the same bytes filed at a second path: two occurrences,
+    one distinct file. Every trend here counts the second number and the
+    inventory metric counts the first, and a fixture where the two were equal
+    could not tell whether the code knew the difference (brief 27, 70).
+    """
+
+    batch: Any
+    #: sha256 to the binary row, for the links the tests assert on.
+    binaries: dict[str, Any]
+    #: The file linked to two Matters with different responsibility labels.
+    multi_linked_sha: str
+    #: The file linked only to the restricted Matter.
+    restricted_sha: str
+    #: The file with no Matter link at all.
+    unlinked_sha: str
+    duplicate_sha: str
+    #: The most recent filename date in the fixture. Every same-cutoff
+    #: comparison is derived from this rather than from today.
+    cutoff: date
+
+
+def _archive_item(batch: Any, *, when: date, title: str, payload: str, path: str = "") -> Any:
+    from app.legacy_import.opinion_archive import OpinionArchiveItem
+
+    digest = _sha(payload)
+    filename = f"{when.isoformat()} - {MINISTRY} - {title}.pdf"
+    return OpinionArchiveItem.objects.create(
+        batch=batch,
+        archive_sha256=batch.archive_sha256,
+        archive_relative_path=path or f"Arvamused/{filename}",
+        original_filename=filename,
+        sha256=digest,
+        size_bytes=len(payload),
+        detected_type="application/pdf",
+        filename_date=when,
+        filename_recipient=MINISTRY,
+        filename_title=title,
+    )
+
+
+def _archive_binary(payload: str) -> Any:
+    from app.legacy_import.opinion_binary import OpinionArchiveBinary
+
+    digest = _sha(payload)
+    return OpinionArchiveBinary.objects.create(
+        sha256=digest,
+        size_bytes=len(payload),
+        mime_type="application/pdf",
+        storage_key=f"synthetic/opinion-archive/{digest}",
+        source_archive_sha256=_sha("statistika-arvamuste-arhiiv"),
+        materialized_at=timezone.now(),
+    )
+
+
+def _archive_link(binary: Any, matter: Matter) -> None:
+    from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
+    from app.legacy_import.opinion_enums import ArchiveLinkBasis
+
+    OpinionArchiveMatterLink.objects.create(
+        binary=binary,
+        matter=matter,
+        basis=ArchiveLinkBasis.EXACT_BINARY,
+        linked_at=timezone.now(),
+    )
+
+
+def add_archive_world(
+    world: World,
+    *,
+    cutoff: date | None = None,
+    letters: list[tuple[str, date]] | None = None,
+) -> ArchiveWorld:
+    """A small opinions archive with every shape a trend has to handle.
+
+    Fixed calendar years rather than years relative to today, because the
+    archive's own era boundary is a fixed 2020 and a fixture that drifted past it
+    would stop testing the boundary. The comparison cutoff is passed in and
+    defaults to a mid-year date, so the same-cutoff test has a partial year to
+    measure against a fuller one.
+
+    ``letters`` replaces the default set outright, for the one case the default
+    cannot express: an archive whose entire history sits inside a single year,
+    so that the previous comparable period is genuinely empty rather than merely
+    small (brief 73).
+    """
+    from app.legacy_import.opinion_archive import OpinionArchiveBatch
+
+    cutoff = cutoff or date(ARCHIVE_BASE_YEAR + 3, 6, 30)
+    batch = OpinionArchiveBatch.objects.create(
+        archive_sha256=_sha("statistika-arvamuste-arhiiv"),
+        archive_file_name="Arvamused-naidis.zip",
+        importer_version="synthetic/1",
+        started_at=timezone.now(),
+    )
+
+    # Two in the base year, one in the next, then a previous year that runs past
+    # the cutoff month and a current year that stops at it — which is what makes
+    # the same-cutoff comparison assertable.
+    letters = letters or [
+        ("kiri-a", date(ARCHIVE_BASE_YEAR, 3, 4)),
+        ("kiri-b", date(ARCHIVE_BASE_YEAR, 11, 20)),
+        ("kiri-c", date(ARCHIVE_BASE_YEAR + 1, 5, 5)),
+        # Previous year, inside the comparable window.
+        ("kiri-d", date(ARCHIVE_BASE_YEAR + 2, 2, 2)),
+        ("kiri-e", date(ARCHIVE_BASE_YEAR + 2, 4, 4)),
+        # Previous year, after the cutoff month. Must never enter the
+        # comparison's denominator (brief 72).
+        ("kiri-f", date(ARCHIVE_BASE_YEAR + 2, 9, 9)),
+        ("kiri-g", date(ARCHIVE_BASE_YEAR + 2, 12, 12)),
+        # Current year, up to the cutoff.
+        ("kiri-h", date(ARCHIVE_BASE_YEAR + 3, 1, 15)),
+        ("kiri-i", date(ARCHIVE_BASE_YEAR + 3, 3, 3)),
+        ("kiri-j", cutoff),
+    ]
+
+    binaries: dict[str, Any] = {}
+    for payload, when in letters:
+        _archive_item(batch, when=when, title=f"Arvamus {payload}", payload=payload)
+        binaries[_sha(payload)] = _archive_binary(payload)
+
+    if not {"kiri-a", "kiri-h", "kiri-i", "kiri-d"} <= {payload for payload, _ in letters}:
+        # A caller-supplied set has none of the shapes below, so there is
+        # nothing to duplicate and nothing to link.
+        return ArchiveWorld(
+            batch=batch,
+            binaries=binaries,
+            multi_linked_sha="",
+            restricted_sha="",
+            unlinked_sha="",
+            duplicate_sha="",
+            cutoff=cutoff,
+        )
+
+    # The same bytes filed at a second path, dated later. Occurrences: 11.
+    # Distinct files: 10. The trend counts the *earlier* date, so this second
+    # occurrence must not move a bar (see ``archive._distinct_dates``).
+    _archive_item(
+        batch,
+        when=date(ARCHIVE_BASE_YEAR + 1, 8, 8),
+        title="Arvamus kiri-a koopia",
+        payload="kiri-a",
+        path="Arvamused/koopiad/kiri-a.pdf",
+    )
+
+    # One file on two Matters with different responsibility labels, one file on
+    # the restricted Matter only, and several with no link at all.
+    _archive_link(binaries[_sha("kiri-h")], world.native_open)
+    _archive_link(binaries[_sha("kiri-h")], world.native_waiting)
+    _archive_link(binaries[_sha("kiri-i")], world.native_open)
+    _archive_link(binaries[_sha("kiri-d")], world.restricted)
+
+    return ArchiveWorld(
+        batch=batch,
+        binaries=binaries,
+        multi_linked_sha=_sha("kiri-h"),
+        restricted_sha=_sha("kiri-d"),
+        unlinked_sha=_sha("kiri-c"),
+        duplicate_sha=_sha("kiri-a"),
+        cutoff=cutoff,
     )
