@@ -277,7 +277,13 @@ localStorage (Stage-2E.1 brief 12).
             <span class="field__label">Järjestus</span>
             <select class="field__input" name="jarjestus">
               <option value="reference" {% if filters.jarjestus == "reference" %}selected{% endif %}>Viide</option>
-              <option value="updated" {% if filters.jarjestus == "updated" %}selected{% endif %}>Viimane tegevus</option>
+              {% comment %}
+                Named for what it sorts by. `?jarjestus=updated` orders on
+                `Matter.updated_at` — when the row was last written — and the
+                Viimane tegevus column no longer shows that. Leaving both called
+                the same thing would make a sorted page look wrong (ADR 0026).
+              {% endcomment %}
+              <option value="updated" {% if filters.jarjestus == "updated" %}selected{% endif %}>Viimati muudetud</option>
               <option value="deadline" {% if filters.jarjestus == "deadline" %}selected{% endif %}>Tähtaeg</option>
               <option value="title" {% if filters.jarjestus == "title" %}selected{% endif %}>Pealkiri</option>
             </select>

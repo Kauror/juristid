@@ -1,4 +1,4 @@
-{% load register_source %}
+{% load register_source matter_activity %}
 {% comment %}
 The dense register row, shared by Teemad, Minu töö and Saabunud so a row means
 the same thing everywhere.
@@ -129,8 +129,27 @@ list by.
             {% endif %}
           </td>
 
+          {% comment %}
+            The derived activity fact, not `updated_at`. For an imported row
+            `updated_at` is the moment the 2026 cutover touched it, so a file
+            whose last real work was a OneNote page edited in 2018 read as
+            though somebody had been on it this morning — and most of this
+            register is imported (ADR 0026).
+
+            No known date renders an em dash. Falling back to the import
+            timestamp is the exact mistake this replaces, and a dash is the
+            honest statement that nothing is recorded.
+          {% endcomment %}
           <td class="table__date table__lastactivity">
-            <span class="muted">{{ matter.updated_at|date:"d.m.Y" }}</span>
+            {% with activity=matter|last_activity %}
+              {% if activity %}
+                <span class="muted" title="{{ activity.label }}">
+                  {{ activity.occurred_on|date:"d.m.Y" }}
+                </span>
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            {% endwith %}
           </td>
         </tr>
         {% endwith %}

@@ -57,14 +57,20 @@ a hundred-row register (brief 65).
 
 Not wired to the template yet
 -----------------------------
-``templates/matters/partials/matter_table.html`` still renders
-``matter.updated_at``, deliberately: the shared register table is being changed
-concurrently by the multiple-sender work, and a one-line edit in a file two
-branches are touching is the expensive kind of conflict. **Integration note:
-replace the ``matter.updated_at`` rendering in the last-activity cell with
-``activity_display`` after the Agent E multiple-sender branch has merged**, and
-annotate ``matter_list_queryset`` with :func:`annotate_last_activity` at the
-same time. Everything needed for that is here and tested.
+Where it is wired
+-----------------
+:func:`annotate_last_activity` is applied inside
+``app.matters.selectors.matter_list_queryset``, which every surface rendering
+``matters/partials/matter_table.html`` already comes through, and the partial
+reads the fact through the ``last_activity`` template filter. That placement is
+deliberate: :func:`activity_of` refuses to answer without the annotations, so a
+surface that forgot them would raise rather than quietly show a wrong date —
+and putting the annotation at the one shared chokepoint means forgetting is not
+possible.
+
+``Matter.updated_at`` is still what ``?jarjestus=updated`` sorts by, and that
+option is labelled *Viimati muudetud* rather than *Viimane tegevus* so the two
+are not read as the same fact.
 """
 
 from __future__ import annotations
