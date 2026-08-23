@@ -153,7 +153,7 @@ def summary_cards(user: Any, today: date | None = None) -> list[SummaryCard]:
             label="Tegevuse tähtaeg möödas",
             count=overdue_actions(user, today).count(),
             url=register_url(**_open_full(), tegevus="hilinenud"),
-            note="Ainult tähtajaga tehtavad tegevused",
+            note="Tegevused, mille tähtaeg on käes olnud",
         ),
         SummaryCard(
             key="no_action",
