@@ -24,3 +24,15 @@ from the server, and the route enforces the same check again.
      {% if nav_active == 'osakonna_too' %}aria-current="page"{% endif %}
      href="{% url 'matters:department_work' %}">Osakonna töö</a>
 {% endif %}
+{% if can_read_opinion_archive %}
+  {% comment %}
+    The held opinion archive. Behind the disclosure with the other reading
+    surfaces rather than on the bar, because it is migration work: several
+    hundred unfiled letters are not something a lawyer navigates past all day
+    (Stage-2H brief 62). Offered by capability, and the routes refuse a crafted
+    URL regardless (docs/adr/0027).
+  {% endcomment %}
+  <a class="topnav__link {% if nav_active == 'haldus' %}is-active{% endif %}"
+     {% if nav_active == 'haldus' %}aria-current="page"{% endif %}
+     href="{% url 'legacy_import:opinion_archive_browse' %}">Arvamuste arhiiv</a>
+{% endif %}

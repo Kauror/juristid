@@ -55,3 +55,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0024 — real/test data classification and the purge plan that precedes a purge
 - 0025 — multiple Matter senders, and the addressee that stays singular
 - 0026 — Wave 2 source-data enrichment: JÄRGMISEKS, OneNote filing structure and historical activity
+- 0027 — the development archive workspace: who may read the corpus behind the shared gate, and why that is not the register

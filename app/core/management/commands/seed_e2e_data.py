@@ -261,13 +261,13 @@ class Command(BaseCommand):
         )
 
         self._historical_world(visible)
-        self._opinion_archive_world(visible)
+        self._opinion_archive_world(visible, restricted)
         self._statistics_world(visible, martin, ministry)
         self._department_world(sandra, martin, ministry, stage)
         self._intelligence_world(visible, restricted, martin, sandra)
         self.stdout.write(self.style.SUCCESS("E2E world ready."))
 
-    def _opinion_archive_world(self, matter: Matter) -> None:
+    def _opinion_archive_world(self, matter: Matter, restricted: Matter) -> None:
         """Two held archive letters, one of them findable by its contents.
 
         Built through the ORM and the storage API rather than by running the
@@ -280,6 +280,14 @@ class Command(BaseCommand):
         with extracted text and a Matter it is linked to, and one with neither.
         The coverage strip on the browse screen is only meaningful when the two
         differ.
+
+        The filed letter is filed onto **both** a normal and a RESTRICTED
+        Matter, which is the state the archive's hardest property needs: an
+        administrator may open every letter Koda holds and may not read a
+        restricted register entry, so the detail page has to name one of these
+        two and neither confirm nor deny anything about the other. A browser is
+        the only place that claim can be checked against what is actually on the
+        screen (docs/adr/0027).
         """
         from django.core.files.base import ContentFile
 
@@ -338,12 +346,13 @@ class Command(BaseCommand):
                     parser="e2e",
                     parser_version="1",
                 )
-                link_matter(
-                    binary=binary,
-                    matter=matter,
-                    basis=ArchiveLinkBasis.EXACT_BINARY,
-                    note="Sünteetiline e2e seos.",
-                )
+                for target in (matter, restricted):
+                    link_matter(
+                        binary=binary,
+                        matter=target,
+                        basis=ArchiveLinkBasis.EXACT_BINARY,
+                        note="Sünteetiline e2e seos.",
+                    )
 
         rebuild_archive_index()
 

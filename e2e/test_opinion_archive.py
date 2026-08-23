@@ -18,8 +18,13 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from app.core.management.commands.seed_e2e_data import ARCHIVE_LETTERS, archive_letter_sha
-from e2e.conftest import ADMIN, MARTIN, sign_in
+from app.core.management.commands.seed_e2e_data import (
+    ARCHIVE_LETTERS,
+    OPEN_TITLE,
+    RESTRICTED_TITLE,
+    archive_letter_sha,
+)
+from e2e.conftest import ADMIN, HEAD, MARTIN, go_to, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -167,3 +172,99 @@ def test_the_download_offers_the_hash_rather_than_the_archive_name(page, base_ur
     assert disposition.startswith("attachment")
     assert LINKED_SHA[:16] in disposition
     assert "Näidisministeerium" not in disposition
+
+
+# -- the register boundary, in a browser --------------------------------------
+
+
+def test_the_archive_names_the_matter_it_may_and_not_the_one_it_may_not(page, base_url):
+    """The property the whole P3.3 boundary rests on, checked on the screen.
+
+    The seeded letter is filed onto two Matters: one ordinary and one
+    RESTRICTED. The administrator may open every letter Koda holds — reading
+    the corpus is a decision about the corpus — and may not read a restricted
+    register entry. So the page has to name the first, refuse the second, and
+    still not pretend the letter is unfiled (docs/adr/0027).
+
+    A database test proves the queryset; only a browser proves what is rendered.
+    """
+    sign_in(page, base_url, ADMIN)
+    open_letter(page, base_url, LINKED_TITLE)
+
+    section = page.locator("section").filter(has=page.get_by_role("heading", name="Seotud teemad"))
+    body = section.first.inner_text()
+
+    # A prefix, because the link truncates a realistically long title.
+    assert OPEN_TITLE[:60] in body
+    assert RESTRICTED_TITLE not in body
+    # Present but unnamed, rather than absent. "This letter concerns nothing"
+    # would be a false statement about the archive rather than a discreet one.
+    assert "ei kuvata" in body
+    assert "Ükski teema ei ole selle kirjaga seotud" not in body
+
+
+def test_the_administrator_is_offered_no_way_into_the_restricted_matter(page, base_url):
+    """No link to follow, either. A URL is an identity as much as a title is.
+
+    The letter is filed onto two Matters and the section offers exactly one
+    destination: withholding a title while leaving a working link beside it
+    would be a boundary that only looks like one.
+    """
+    sign_in(page, base_url, ADMIN)
+    open_letter(page, base_url, LINKED_TITLE)
+
+    section = page.locator("section").filter(has=page.get_by_role("heading", name="Seotud teemad"))
+    expect(section.first.locator("a[href*='/teemad/']")).to_have_count(1)
+
+
+# -- what did not widen -------------------------------------------------------
+
+
+def test_a_department_head_is_still_refused_outside_the_shared_gate(page, base_url):
+    """This deployment authenticates individuals, so nothing was widened here.
+
+    The head's archive access is a shared-gate concession made because that mode
+    cannot say who is at the keyboard. Where identity is real, the question is a
+    different one and gets asked later on its own merits (brief 9, 46).
+    """
+    sign_in(page, base_url, HEAD)
+    response = page.goto(f"{base_url}{ARCHIVE_PATH}")
+    assert response is not None
+    assert response.status == 403
+
+
+def test_the_archive_is_in_the_navigation_for_a_reader_and_not_for_anybody_else(page, base_url):
+    """Reachable without knowing the URL, and invisible to those who may not.
+
+    Hiding it is presentation; the refusal above is the boundary. Both are
+    needed: a link that 403s is a worse interface, and a hidden link is not
+    a control.
+    """
+    sign_in(page, base_url, MARTIN)
+    navigation = page.get_by_role("navigation", name="Peamine")
+    expect(navigation.get_by_role("link", name="Arvamuste arhiiv")).to_have_count(0)
+    sign_out(page, base_url)
+
+    sign_in(page, base_url, ADMIN)
+    go_to(page, "Arvamuste arhiiv")
+    expect(page.get_by_role("heading", name="Arvamuste arhiiv")).to_be_visible()
+
+
+# -- what the workspace promises ----------------------------------------------
+
+
+def test_the_workspace_says_a_link_is_not_a_sent_opinion(page, base_url):
+    """Load-bearing copy. Filing a letter is not filing an opinion."""
+    sign_in(page, base_url, ADMIN)
+    open_archive(page, base_url)
+    expect(page.get_by_text("Arenduse arhiivitööruum")).to_be_visible()
+
+
+def test_the_unlinked_shortcut_narrows_to_the_review_workload(page, base_url):
+    """523 of 767 in production, and the reason anybody opens this page."""
+    sign_in(page, base_url, ADMIN)
+    open_archive(page, base_url)
+
+    page.get_by_role("link", name="Sidumata", exact=False).click()
+    expect(page.get_by_role("link", name=UNLINKED_TITLE)).to_be_visible()
+    expect(page.get_by_role("link", name=LINKED_TITLE)).to_have_count(0)
