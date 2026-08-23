@@ -349,7 +349,8 @@ def unassigned_matters(user: Any) -> QuerySet[Matter]:
     return (
         active_matters(user)
         .filter(owner__isnull=True)
-        .select_related("stage", "source_organisation")
+        .select_related("stage")
+        .prefetch_related("source_organisations")
         .order_by("response_deadline", "-received_date", "-created_at")
     )
 
@@ -368,7 +369,8 @@ def recent_incoming(user: Any, today: date | None = None) -> QuerySet[Matter]:
     return (
         active_matters(user)
         .filter(received_date__gte=since, received_date__lte=today)
-        .select_related("owner", "source_organisation", "stage")
+        .select_related("owner", "stage")
+        .prefetch_related("source_organisations")
         .order_by("-received_date", "title")[:INCOMING_LIMIT]
     )
 

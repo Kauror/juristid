@@ -121,16 +121,22 @@ def organisations_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation
 
     usage = (
         Matter.objects.visible_to(viewer)
-        .filter(source_organisation__isnull=False)
+        .filter(source_organisations__isnull=False)
         # Cleared first, then re-ordered by the aggregate. The default ordering
         # would otherwise join the GROUP BY and give every organisation a count
         # of one (see `policy_areas_by_usage`).
         .order_by()
-        .values("source_organisation")
+        .values("source_organisations")
+        # Distinct *Matters* per organisation, which is what makes the plural
+        # relation count correctly in both directions. A Matter sent by two
+        # bodies contributes one to each of them, and a Matter with three
+        # collaborators still contributes one — the sender join and the
+        # visibility join both fan out, and `Count("source_organisations")`
+        # would have counted the rows either of them produced.
         .annotate(total=scoped_count())
         .order_by("-total")[:limit]
     )
-    ranking = {row["source_organisation"]: index for index, row in enumerate(usage)}
+    ranking = {row["source_organisations"]: index for index, row in enumerate(usage)}
     if not ranking:
         return list(Organisation.objects.order_by("name")[:limit])
     found = Organisation.objects.filter(pk__in=ranking)
@@ -184,21 +190,29 @@ class MatterCreateForm(forms.Form):
         required=False,
         widget=SELECT_WIDGET,
     )
-    source_organisation = forms.ModelChoiceField(
+    source_organisations = forms.ModelMultipleChoiceField(
         label="Saatja",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
-        help_text="Kellelt teema tuli.",
+        # Checkboxes, because a Matter really can arrive from several bodies at
+        # once. This was radios while the model held one sender, and the control
+        # was right for the model it had; both moved together (Agent-E brief 28).
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
+        help_text="Kellelt teema tuli. Saatjaid võib olla mitu.",
     )
     #: The long tail. Shown only when the reader asks for it, and validated
-    #: against the same queryset, so this is a second way to pick an existing
-    #: organisation rather than a way to invent one.
-    source_organisation_other = forms.ModelChoiceField(
+    #: against the same queryset, so this is a second way to pick existing
+    #: organisations rather than a way to invent one.
+    #:
+    #: A plain multiple select rather than a search widget: the reference table
+    #: is small enough that a sized list is usable, and a JS dependency added
+    #: for one disclosure is a dependency the whole product then carries
+    #: (brief 30).
+    source_organisations_other = forms.ModelMultipleChoiceField(
         label="Muu saatja",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=SELECT_WIDGET,
+        widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "8"}),
     )
     addressee_organisation = forms.ModelChoiceField(
         label="Adressaat",
@@ -266,10 +280,15 @@ class MatterCreateForm(forms.Form):
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
 
-        # The long-tail sender only counts when nothing was picked from the
-        # frequent list, so the two controls cannot disagree about one field.
-        if not cleaned.get("source_organisation") and cleaned.get("source_organisation_other"):
-            cleaned["source_organisation"] = cleaned["source_organisation_other"]
+        # The two sender controls are two ways into one set, so the canonical
+        # answer is their union. Nothing is privileged for having come from the
+        # frequent list, and an organisation ticked in both places appears once
+        # (Agent-E brief 31).
+        senders: dict[Any, Organisation] = {}
+        for source in ("source_organisations", "source_organisations_other"):
+            for organisation in cleaned.get(source) or []:
+                senders.setdefault(organisation.pk, organisation)
+        cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
 
         # Free text belongs to the checkbox that reveals it. Unticking "Muu"
         # and leaving the box full must not quietly save the text.
@@ -307,8 +326,8 @@ class MatterCreateForm(forms.Form):
         # narrowing it to the visible ten would reject a correct answer given
         # through the search control.
         everything = Organisation.objects.order_by("name")
-        set_choices(self, "source_organisation", everything)
-        set_choices(self, "source_organisation_other", everything)
+        set_choices(self, "source_organisations", everything)
+        set_choices(self, "source_organisations_other", everything)
 
         set_choices(
             self,
@@ -322,7 +341,7 @@ class MatterCreateForm(forms.Form):
             # `fields[...]` is typed as the base Field, which has no `choices`.
             # These two are ChoiceFields by construction a few lines above.
             areas = cast(Any, self.fields["policy_areas"])
-            senders = cast(Any, self.fields["source_organisation"])
+            senders = cast(Any, self.fields["source_organisations"])
             areas.choices = [(area.pk, area.name_et) for area in policy_areas_by_usage(viewer)]
             self.frequent_senders = organisations_by_usage(viewer)
             senders.choices = [
@@ -517,7 +536,11 @@ class MatterFieldForm(forms.Form):
     owner = UserChoiceField(queryset=User.objects.none(), required=False)
     stage = forms.ModelChoiceField(queryset=StageVocabulary.objects.none(), required=False)
     track = forms.ChoiceField(choices=[("", "—"), *Track.choices], required=False)
-    source_organisation = forms.ModelChoiceField(
+    # Plural, and a multiple field even though the surface it posts from is a
+    # checkbox list: an inline edit of the sender set replaces the whole set, so
+    # an empty POST is how somebody clears it rather than a validation error
+    # (Agent-E brief 34).
+    source_organisations = forms.ModelMultipleChoiceField(
         queryset=Organisation.objects.none(), required=False
     )
     addressee_organisation = forms.ModelChoiceField(
@@ -542,7 +565,7 @@ class MatterFieldForm(forms.Form):
         super().__init__(*args, **kwargs)
         set_choices(self, "owner", active_users())
         set_choices(self, "stage", active_stages())
-        set_choices(self, "source_organisation", Organisation.objects.order_by("name"))
+        set_choices(self, "source_organisations", Organisation.objects.order_by("name"))
         set_choices(self, "addressee_organisation", Organisation.objects.order_by("name"))
 
 
@@ -601,11 +624,12 @@ class IncomingIntakeForm(forms.Form):
             }
         ),
     )
-    source_organisation = forms.ModelChoiceField(
+    source_organisations = forms.ModelMultipleChoiceField(
         label="Saatja",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=SELECT_WIDGET,
+        widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "6"}),
+        help_text="Saatjaid võib olla mitu.",
     )
     received_date = forms.DateField(label="Saabus", required=False, widget=DATE_WIDGET)
     response_deadline = forms.DateField(
@@ -640,7 +664,7 @@ class IncomingIntakeForm(forms.Form):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         set_choices(self, "owner", User.objects.filter(is_active=True).order_by("display_name"))
-        set_choices(self, "source_organisation", Organisation.objects.order_by("name"))
+        set_choices(self, "source_organisations", Organisation.objects.order_by("name"))
         set_choices(
             self,
             "stage",

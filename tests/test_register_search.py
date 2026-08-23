@@ -343,9 +343,9 @@ def test_the_organisation_convenience_filter_matches_either_direction(signed_in)
     ministry = factories.OrganisationFactory(name="Näidisministeerium")
     other = factories.OrganisationFactory(name="Muu asutus")
 
-    sent = factories.MatterFactory(title="Nemad saatsid", source_organisation=ministry)
+    sent = factories.MatterFactory(title="Nemad saatsid", source_organisations=[ministry])
     answered = factories.MatterFactory(title="Meie vastasime", addressee_organisation=ministry)
-    factories.MatterFactory(title="Kõrvaline", source_organisation=other)
+    factories.MatterFactory(title="Kõrvaline", source_organisations=[other])
 
     response = signed_in.get(REGISTER, {"asutus": str(ministry.pk), "olek": "koik"})
     assert set(titles_on(response)) == {sent.title, answered.title}
@@ -354,7 +354,7 @@ def test_the_organisation_convenience_filter_matches_either_direction(signed_in)
 def test_the_convenience_filter_does_not_replace_the_precise_ones(signed_in):
     """Both directions stay separately askable, and stay separately stored."""
     ministry = factories.OrganisationFactory(name="Näidisministeerium")
-    sent = factories.MatterFactory(title="Nemad saatsid", source_organisation=ministry)
+    sent = factories.MatterFactory(title="Nemad saatsid", source_organisations=[ministry])
     answered = factories.MatterFactory(title="Meie vastasime", addressee_organisation=ministry)
 
     by_sender = signed_in.get(REGISTER, {"saatja": str(ministry.pk), "olek": "koik"})
@@ -366,7 +366,7 @@ def test_the_convenience_filter_does_not_replace_the_precise_ones(signed_in):
     sent.refresh_from_db()
     answered.refresh_from_db()
     assert sent.addressee_organisation_id is None
-    assert answered.source_organisation_id is None
+    assert not answered.source_organisations.exists()
 
 
 def test_a_malformed_organisation_id_empties_rather_than_crashes(signed_in):
@@ -479,7 +479,7 @@ def test_the_chooser_carries_no_counts_and_no_usage_order(signed_in):
     busy = factories.OrganisationFactory(name="Üliaktiivne asutus")
     quiet = factories.OrganisationFactory(name="Aeg-ajalt kirjutav asutus")
     for _ in range(5):
-        factories.MatterFactory(source_organisation=busy, visibility=Visibility.RESTRICTED)
+        factories.MatterFactory(source_organisations=[busy], visibility=Visibility.RESTRICTED)
 
     response = signed_in.get(CHOOSER, {"vali": "asutus"})
     names = [row.name for row in response.context["organisation_options"]]
@@ -507,7 +507,7 @@ def test_a_page_of_results_does_not_cost_a_query_per_row(signed_in, django_asser
     for index in range(25):
         matter = factories.MatterFactory(
             title=f"Pakendiseaduse säte {index}",
-            source_organisation=factories.OrganisationFactory(),
+            source_organisations=[factories.OrganisationFactory()],
             addressee_organisation=factories.OrganisationFactory(),
         )
         matter.policy_areas.add(factories.PolicyAreaFactory())

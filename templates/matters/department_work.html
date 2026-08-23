@@ -216,7 +216,7 @@ attribute of a file, and two people sharing a first name must stay apart.
                     <td class="table__title">
                       <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
                     </td>
-                    <td>{{ matter.source_organisation.name|default:"—" }}</td>
+                    <td>{% include "matters/partials/senders.html" with matter=matter %}</td>
                     <td class="table__date">
                       {% if matter.response_deadline %}{{ matter.response_deadline|date:"d.m.Y" }}
                       {% else %}<span class="table__missing">—</span>{% endif %}
@@ -258,7 +258,7 @@ attribute of a file, and two people sharing a first name must stay apart.
                     <td class="table__title">
                       <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
                     </td>
-                    <td>{{ matter.source_organisation.name|default:"—" }}</td>
+                    <td>{% include "matters/partials/senders.html" with matter=matter %}</td>
                     <td>
                       {% if matter.owner %}
                         <span title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>

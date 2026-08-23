@@ -101,6 +101,16 @@ class MatterFactory(factory.django.DjangoModelFactory):
     reference_number = factory.Sequence(lambda n: n + 1)
     owner = factory.SubFactory(UserFactory)
 
+    @factory.post_generation
+    def source_organisations(obj, create, extracted, **kwargs):
+        """`KELLELT`, plural, written after the Matter has a primary key.
+
+        A relation and not a column, so it cannot go through `Meta.model` the
+        way every other field on this factory does.
+        """
+        if create and extracted:
+            obj.source_organisations.set(extracted)
+
 
 class ArchiveMatterFactory(MatterFactory):
     """A historical register row: modern fields deliberately absent."""

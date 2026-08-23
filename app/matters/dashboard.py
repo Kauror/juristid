@@ -719,7 +719,8 @@ def recent_incoming(user: Any) -> QuerySet[Matter]:
     return (
         Matter.objects.visible_to(user)
         .filter(record_mode=RecordMode.FULL)
-        .select_related("owner", "source_organisation", "stage")
+        .select_related("owner", "stage")
+        .prefetch_related("source_organisations")
         .order_by(F("received_date").desc(nulls_last=True), "-created_at")[:RECENT_INCOMING_LIMIT]
     )
 

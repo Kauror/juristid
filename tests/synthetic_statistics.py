@@ -365,7 +365,7 @@ def build_world(today: date | None = None) -> World:
         owner=sandra,
         stage=stage,
         track=Track.DOMESTIC,
-        source_organisation=ministry,
+        source_organisations=[ministry],
         received_date=date(current, 2, 3),
         response_deadline=today + timedelta(days=10),
     )
@@ -446,7 +446,7 @@ def build_world(today: date | None = None) -> World:
         owner=sandra,
         stage=stage,
         track=Track.DOMESTIC,
-        source_organisation=partner,
+        source_organisations=[partner],
         visibility=Visibility.RESTRICTED,
         received_date=date(current, 4, 4),
     )
@@ -463,7 +463,7 @@ def build_world(today: date | None = None) -> World:
         reference_year=archive,
         reference_number=12,
         reporting_year=archive,
-        source_organisation=ministry,
+        source_organisations=[ministry],
         is_open=False,
     )
 

@@ -72,6 +72,18 @@ def _text(value: Any) -> str:
     return "" if value is None else str(value)
 
 
+def _organisations(organisations: Any) -> str:
+    """Several institutions in one cell, in an order that does not drift.
+
+    Sorted by name rather than taken in join order, because a CSV people diff
+    between two exports must differ only where the data did. Semicolon-separated
+    because organisation names contain commas (``Rahandusministeerium, osakond``)
+    and the comma is already the column separator (Agent-E brief 44).
+    """
+    names = sorted(organisation.name for organisation in organisations)
+    return "; ".join(names)
+
+
 # ---------------------------------------------------------------------------
 # Teemad
 # ---------------------------------------------------------------------------
@@ -105,9 +117,8 @@ def matters_csv(context: ReportingContext) -> StreamingHttpResponse:
             "adressaat",
         ]
         selected = (
-            queryset.select_related(
-                "owner", "stage", "source_organisation", "addressee_organisation"
-            )
+            queryset.select_related("owner", "stage", "addressee_organisation")
+            .prefetch_related("source_organisations")
             .distinct()
             .order_by("-reporting_year", "reference_number")
         )
@@ -124,7 +135,7 @@ def matters_csv(context: ReportingContext) -> StreamingHttpResponse:
                 "jah" if matter.is_open else "ei",
                 _text(matter.received_date),
                 _text(matter.response_deadline),
-                matter.source_organisation.name if matter.source_organisation else "",
+                _organisations(matter.source_organisations.all()),
                 matter.addressee_organisation.name if matter.addressee_organisation else "",
             ]
 

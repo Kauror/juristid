@@ -1,0 +1,8 @@
+{% comment %}
+Every sender of a Matter, comma-separated, or an em dash when there is none.
+
+One partial rather than the same `{% for %}` in five places, because "show all
+of them" is exactly the rule a copy would eventually get wrong by falling back
+to `.first` (Agent-E brief 33).
+{% endcomment %}
+{% spaceless %}{% for organisation in matter.source_organisations.all %}{% if not forloop.first %}, {% endif %}{{ organisation.name }}{% empty %}—{% endfor %}{% endspaceless %}

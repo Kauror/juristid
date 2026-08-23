@@ -220,8 +220,12 @@ def test_the_sender_can_be_an_organisation_created_moments_ago(client, specialis
         name="Regionaal- ja Põllumajandusministeerium",
         organisation_type=OrganisationType.MINISTRY,
     )
-    _post(client, [_file("x.pdf", PDF)], title="Ministeeriumist", source_organisation=ministry.pk)
-    assert Matter.objects.get(title="Ministeeriumist").source_organisation == ministry
+    _post(
+        client, [_file("x.pdf", PDF)], title="Ministeeriumist", source_organisations=[ministry.pk]
+    )
+    assert list(Matter.objects.get(title="Ministeeriumist").source_organisations.all()) == [
+        ministry
+    ]
 
 
 def test_the_new_matter_is_searchable_at_once(client, specialist) -> None:

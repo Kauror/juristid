@@ -42,7 +42,7 @@ def world(db, specialist, other_specialist):
         owner=other_specialist,
         reference_year=2026,
         stage=stage,
-        source_organisation=ministry,
+        source_organisations=[ministry],
         received_date=today - timedelta(days=2),
         response_deadline=today + timedelta(days=3),
     )
@@ -60,7 +60,7 @@ def world(db, specialist, other_specialist):
         owner=specialist,
         reference_year=2026,
         stage=stage,
-        source_organisation=ministry,
+        source_organisations=[ministry],
         visibility=Visibility.RESTRICTED,
         received_date=today - timedelta(days=1),
         response_deadline=today + timedelta(days=2),

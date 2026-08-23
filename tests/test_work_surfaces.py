@@ -241,7 +241,7 @@ def test_search_finds_a_matter_by_alternate_title(specialist):
 
 def test_search_finds_a_matter_by_organisation(specialist):
     ministry = factories.OrganisationFactory(name="Kliimaministeerium")
-    matter = factories.MatterFactory(owner=specialist, source_organisation=ministry)
+    matter = factories.MatterFactory(owner=specialist, source_organisations=[ministry])
     results = search_matters(query="kliima", user=specialist)
     assert matter.id in {result.matter.id for result in results}
 

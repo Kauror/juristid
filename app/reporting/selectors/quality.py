@@ -203,7 +203,7 @@ def _unresolved_legacy_organisations(context: ReportingContext) -> int:
     """
     matters = eligible_matters(context, definition(keys.ACTIVE_WITHOUT_STAGE)).filter(
         is_open=True,
-        source_organisation__isnull=True,
+        source_organisations__isnull=True,
         addressee_organisation__isnull=True,
     )
     return count(matters)

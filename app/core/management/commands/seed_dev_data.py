@@ -268,7 +268,7 @@ class Command(BaseCommand):
                 owner=owner,
                 stage=stages[index % len(stages)],
                 track=Track.DOMESTIC,
-                source_organisation=ministry,
+                source_organisations=[ministry],
                 addressee_organisation=authority if index % 3 == 0 else None,
                 received_date=date.today() - timedelta(days=30 - index),
                 response_deadline=date.today() + timedelta(days=14 + index),
@@ -405,7 +405,7 @@ class Command(BaseCommand):
                 data_quality_tier=DataQualityTier.TIER_3_REGISTER_ARCHIVE,
                 source_era=str(year),
                 reporting_year=year,
-                source_organisation=company if index else None,
+                source_organisations=[company] if index else [],
             )
             MatterSourceReference.objects.create(
                 matter=matter,

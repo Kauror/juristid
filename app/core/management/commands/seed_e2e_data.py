@@ -40,6 +40,10 @@ PERSONAS = [
 ]
 
 MINISTRY = "Näidisministeerium"
+#: A second institution, for the same reason there is a second policy area: a
+#: browser regression that proves the sender control accepts several senders
+#: cannot prove anything against a list of one (Agent-E brief 51).
+PARTNER = "Näidisettevõtete liit"
 RESTRICTED_TITLE = "Konfidentsiaalne liikmete tagasiside"
 #: Deliberately as long as a real one. Short fixture titles hide the defects
 #: that only appear at realistic length — a register row that wraps and loses
@@ -173,6 +177,9 @@ class Command(BaseCommand):
         ministry, _ = Organisation.objects.get_or_create(
             name=MINISTRY, defaults={"organisation_type": OrganisationType.MINISTRY}
         )
+        partner, _ = Organisation.objects.get_or_create(
+            name=PARTNER, defaults={"organisation_type": OrganisationType.ASSOCIATION}
+        )
         area, _ = PolicyArea.objects.get_or_create(
             key="keskkond", defaults={"name_et": "Keskkond", "sort_order": 10}
         )
@@ -196,7 +203,7 @@ class Command(BaseCommand):
             owner=sandra,
             stage=stage,
             track=Track.DOMESTIC,
-            source_organisation=ministry,
+            source_organisations=[ministry],
             visibility=Visibility.RESTRICTED,
         )
         add_entry(
@@ -221,7 +228,10 @@ class Command(BaseCommand):
             owner=martin,
             stage=stage,
             track=Track.DOMESTIC,
-            source_organisation=ministry,
+            # Two senders, because a matter really does arrive from a ministry
+            # and an association at once, and the detail page's rendering of a
+            # sender *set* has to be exercised by something.
+            source_organisations=[ministry, partner],
         )
         visible.policy_areas.add(area)
         add_entry(
@@ -481,7 +491,7 @@ class Command(BaseCommand):
             actor=martin,
             owner=martin,
             track=Track.DOMESTIC,
-            source_organisation=ministry,
+            source_organisations=[ministry],
             received_date=date.today() - timedelta(days=40),
         )
         set_next_action(
@@ -525,7 +535,7 @@ class Command(BaseCommand):
             owner=None,
             stage=stage,
             track=Track.DOMESTIC,
-            source_organisation=ministry,
+            source_organisations=[ministry],
             received_date=today - timedelta(days=3),
             response_deadline=today + timedelta(days=4),
         )
@@ -536,7 +546,7 @@ class Command(BaseCommand):
             owner=sandra,
             stage=stage,
             track=Track.DOMESTIC,
-            source_organisation=ministry,
+            source_organisations=[ministry],
             received_date=today - timedelta(days=30),
         )
         set_next_action(
@@ -554,7 +564,7 @@ class Command(BaseCommand):
             owner=martin,
             stage=stage,
             track=Track.DOMESTIC,
-            source_organisation=ministry,
+            source_organisations=[ministry],
             received_date=today - timedelta(days=6),
         )
 
@@ -571,7 +581,7 @@ class Command(BaseCommand):
             owner=former,
             stage=stage,
             track=Track.DOMESTIC,
-            source_organisation=ministry,
+            source_organisations=[ministry],
             received_date=today - timedelta(days=9),
         )
 

@@ -406,7 +406,7 @@ def test_renaming_an_organisation_is_reported_as_stale_index(db, specialist):
     from app.search.management.commands.check_search_integrity import build_report
 
     organisation = factories.OrganisationFactory(name="Näidisministeerium")
-    matter = factories.MatterFactory(owner=specialist, source_organisation=organisation)
+    matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     refresh_matters(Matter.objects.filter(pk=matter.pk))
 
     assert build_report().ok, "a freshly indexed corpus is not stale"
@@ -426,7 +426,7 @@ def test_a_rebuild_clears_the_staleness(db, specialist):
     from app.search.management.commands.check_search_integrity import build_report
 
     organisation = factories.OrganisationFactory(name="Näidisministeerium")
-    matter = factories.MatterFactory(owner=specialist, source_organisation=organisation)
+    matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     refresh_matters(Matter.objects.filter(pk=matter.pk))
     Organisation.objects.filter(pk=organisation.pk).update(name="Kliimaministeerium")
 
@@ -442,7 +442,7 @@ def test_the_drift_check_can_be_skipped(db, specialist):
     from app.search.management.commands.check_search_integrity import build_report
 
     organisation = factories.OrganisationFactory(name="Näidisministeerium")
-    matter = factories.MatterFactory(owner=specialist, source_organisation=organisation)
+    matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     refresh_matters(Matter.objects.filter(pk=matter.pk))
     Organisation.objects.filter(pk=organisation.pk).update(name="Kliimaministeerium")
 

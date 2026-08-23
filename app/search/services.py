@@ -268,7 +268,6 @@ def visible_documents(user: Any) -> QuerySet[SearchDocument]:
         "matter",
         "matter__owner",
         "matter__stage",
-        "matter__source_organisation",
         "matter__addressee_organisation",
         "document",
         "document_version",

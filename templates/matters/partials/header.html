@@ -148,26 +148,41 @@ unchanged — this moves the control, not the write.
       <dd class="metafield__value">
         <details class="inlineedit">
           <summary class="inlineedit__trigger">
-            {% if matter.source_organisation %}{{ matter.source_organisation.name }}
+            {% if matter.source_organisations.all %}
+              {% include "matters/partials/senders.html" with matter=matter %}
             {% else %}<span class="muted">—</span>{% endif %}
             <span class="inlineedit__caret" aria-hidden="true">▾</span>
           </summary>
-          <form class="inlineedit__form inlineform"
-                hx-post="{% url 'matters:update_field' pk=matter.pk field='source_organisation' %}"
+          {% comment %}
+            Checkboxes, and no `data-autosubmit`. The sender set is edited as a
+            whole and submitted once: a control that posted on every tick would
+            write the intermediate set, so replacing one sender with another
+            would pass through "no senders at all" and leave that in the audit
+            trail as a change somebody made (Agent-E brief 34).
+
+            An unticked-everything submit is how the set is cleared. That is
+            unambiguous only because the endpoint names the field it is editing
+            in its URL — an HTML form omits unchecked boxes entirely, so on a
+            shared endpoint "clear them all" and "this POST is about something
+            else" would arrive identically.
+          {% endcomment %}
+          <form class="inlineedit__form inlineform inlineform--stacked"
+                hx-post="{% url 'matters:update_field' pk=matter.pk field='source_organisations' %}"
                 hx-target="#teema-pais" hx-swap="outerHTML">
             {% csrf_token %}
-            <select class="field__input field__input--compact" name="source_organisation"
-                    aria-label="Algataja või saatja" data-autosubmit>
-              <option value="">—</option>
+            <fieldset class="inlineform__group">
+              <legend class="visually-hidden">Algatajad või saatjad</legend>
               {% for organisation in organisations %}
-                <option value="{{ organisation.pk }}"
-                        {% if matter.source_organisation_id == organisation.pk %}selected{% endif %}>
-                  {{ organisation.name }}
-                </option>
+                <label class="checkitem">
+                  <input class="checkitem__input" type="checkbox"
+                         name="source_organisations" value="{{ organisation.pk }}"
+                         {% if organisation.pk in selected_sender_ids %}checked{% endif %}>
+                  <span class="checkitem__name">{{ organisation.name }}</span>
+                </label>
               {% endfor %}
-            </select>
+            </fieldset>
             <button class="button button--quiet button--tiny" type="submit"
-                    aria-label="Salvesta algataja muudatus">Salvesta</button>
+                    aria-label="Salvesta saatjate muudatus">Salvesta</button>
           </form>
         </details>
       </dd>

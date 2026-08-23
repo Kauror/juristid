@@ -47,12 +47,18 @@ version, not an edit to this one.
 | `track` | `Matter.track` | |
 | `policy_areas` | `Matter.policy_areas` | Repeated values; a Matter may have several. |
 | `tags` | confirmed `TagAssignment` rows only | Machine suggestions are excluded. |
-| `source_organisation` | `Matter.source_organisation` | The `KELLELT` direction. |
-| `addressee_organisation` | `Matter.addressee_organisation` | The `KELLELE` direction. |
+| `source_organisations` | `Matter.source_organisations` | The `KELLELT` direction. Repeated values; a Matter may have several senders. |
+| `addressee_organisation` | `Matter.addressee_organisation` | The `KELLELE` direction. Exactly one, or none. |
 
-**Direction rule.** `source_organisation` and `addressee_organisation` are
+**Direction rule.** `source_organisations` and `addressee_organisation` are
 different facts and must never be merged into one counterparty column, in either
 direction, for any era.
+
+**Cardinality rule.** The sender side is repeated and the addressee side is not,
+and a consumer must not flatten the first to a single value. A Matter with two
+senders contributes to both of their segments, so counts grouped by sender do
+not partition the population and their total may exceed the number of Matters
+(ADR 0025).
 
 ## Dates and lifecycle
 

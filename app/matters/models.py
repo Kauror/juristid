@@ -9,6 +9,8 @@ so that archive rows never have to invent a stage, an owner or a date
 
 from __future__ import annotations
 
+from typing import Any
+
 from django.conf import settings
 from django.contrib.postgres.fields import ArrayField
 from django.db import models
@@ -163,13 +165,22 @@ class Matter(BaseModel):
 
     # -- institutions ------------------------------------------------------
     # KELLELT and KELLELE are different facts and are never unified.
-    source_organisation = models.ForeignKey(
+    #
+    # The sender side is 0..N; the addressee side stays 0..1. That asymmetry is
+    # the domain's, not an oversight: a draft law reaches Koda from a ministry
+    # *and* an association at once often enough that the single column was being
+    # worked around, while an answer Koda sends goes to one body.
+    #
+    # There is deliberately no singular `source_organisation` accessor and no
+    # notion of a primary sender. A compatibility property returning `.first()`
+    # would let every one-sender assumption in the codebase survive unnoticed
+    # and read as correct (Agent-E brief 8).
+    source_organisations = models.ManyToManyField(
         "organisations.Organisation",
-        on_delete=models.PROTECT,
-        null=True,
+        through="matters.MatterSourceOrganisation",
         blank=True,
-        related_name="matters_as_source",
-        verbose_name="algataja või saatja",
+        related_name="matters_as_sources",
+        verbose_name="algatajad või saatjad",
     )
     addressee_organisation = models.ForeignKey(
         "organisations.Organisation",
@@ -376,6 +387,19 @@ class Matter(BaseModel):
         return self.visibility == Visibility.RESTRICTED
 
     @property
+    def source_organisation_ids(self) -> set[Any]:
+        """Sender primary keys, for a template deciding which boxes are ticked.
+
+        A set rather than a queryset: `{% if pk in ... %}` inside a loop over
+        every organisation would otherwise be one query per row, and the
+        prefetch every caller already asks for is used instead.
+
+        Named for the ids it returns rather than for the organisations, so
+        nothing reads it as the singular field this replaced.
+        """
+        return {organisation.pk for organisation in self.source_organisations.all()}
+
+    @property
     def is_test_data(self) -> bool:
         """Whether this record was made while developing the system.
 
@@ -385,6 +409,54 @@ class Matter(BaseModel):
         end up holding a TEST submission (Agent-C brief 20).
         """
         return self.data_class == MatterDataClass.TEST
+
+
+class MatterSourceOrganisation(BaseModel):
+    """One sender of one Matter — `KELLELT`, plural.
+
+    An explicit through model for a relation that carries no extra facts, and
+    the reason is integrity rather than modelling. The singular field this
+    replaces was ``on_delete=PROTECT``: an Organisation that had sent Koda
+    something could not be deleted out from under the record. Django's
+    auto-created through table cascades instead, so the ordinary
+    ``ManyToManyField`` would have quietly traded a guarantee for a shorter
+    model definition — and nothing would have failed until the day somebody
+    tidied up the organisation list and took a decade of provenance with it
+    (Agent-E brief 73).
+
+    So the table exists to hold ``PROTECT`` on the organisation side and
+    ``CASCADE`` on the Matter side, and holds nothing else. No primary flag, no
+    ordering, no role, no per-relation provenance: none of those is a current
+    requirement, raw source provenance already lives in
+    ``MatterSourceReference``, and a column added "in case" is a column
+    something starts depending on (brief 74, 75).
+    """
+
+    matter = models.ForeignKey(
+        Matter, on_delete=models.CASCADE, related_name="source_links", verbose_name="teema"
+    )
+    organisation = models.ForeignKey(
+        "organisations.Organisation",
+        on_delete=models.PROTECT,
+        related_name="matter_source_links",
+        verbose_name="organisatsioon",
+    )
+
+    class Meta:
+        verbose_name = "teema saatja"
+        verbose_name_plural = "teema saatjad"
+        # No `ordering`. Presentation order comes from `Organisation.Meta`,
+        # which sorts by name; an ordering here would join the GROUP BY of
+        # every aggregate over this relation and turn each count into 1.
+        constraints = [
+            models.UniqueConstraint(
+                fields=["matter", "organisation"],
+                name="matters_unique_source_organisation_per_matter",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.matter_id} ← {self.organisation_id}"
 
 
 class TagAssignment(BaseModel):

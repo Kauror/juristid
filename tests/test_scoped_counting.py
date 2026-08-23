@@ -42,7 +42,7 @@ def shared_world(db, specialist, other_specialist, department_head):
         title="Üksi menetletav eelnõu",
         owner=other_specialist,
         stage=stage,
-        source_organisation=ministry,
+        source_organisations=[ministry],
     )
     alone.policy_areas.add(area)
 
@@ -50,7 +50,7 @@ def shared_world(db, specialist, other_specialist, department_head):
         title="Ühiselt menetletav eelnõu",
         owner=other_specialist,
         stage=stage,
-        source_organisation=ministry,
+        source_organisations=[ministry],
     )
     shared.collaborators.add(specialist, other_specialist, department_head)
     shared.policy_areas.add(area)
@@ -165,7 +165,7 @@ def test_policy_area_ordering_counts_matters_not_collaborator_rows(shared_world,
 def test_organisation_ordering_counts_matters_not_collaborator_rows(shared_world, specialist):
     other = factories.OrganisationFactory(name="Teine ministeerium")
     for _ in range(3):
-        factories.MatterFactory(owner=specialist, source_organisation=other)
+        factories.MatterFactory(owner=specialist, source_organisations=[other])
 
     ordered = [organisation.name for organisation in organisations_by_usage(specialist)]
 

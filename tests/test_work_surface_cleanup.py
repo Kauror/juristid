@@ -92,12 +92,12 @@ def populated(specialist):
         title="Pakendiseaduse muutmise eelnõu",
         owner=specialist,
         reference_year=2026,
-        source_organisation=ministry,
+        source_organisations=[ministry],
     )
     unowned = create_matter(
         title="Vastutajata saabunud materjal",
         reference_year=2026,
-        source_organisation=ministry,
+        source_organisations=[ministry],
     )
     return {"owned": owned, "unowned": unowned}
 
