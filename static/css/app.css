@@ -1432,6 +1432,26 @@ p.formnote {
   list-style: none;
 }
 
+/* The value inside a trigger, when it is long enough to need cutting.
+ *
+ * `text-overflow: ellipsis` needs a *block* container. The trigger is an
+ * `inline-flex`, where the property does nothing at all: the text simply stops
+ * at the clip edge, and so does the caret beside it. With one short
+ * institution name that never showed. With a list of senders it rendered
+ * "Näidisettevõtete liit, Näidis" — a second organisation reading as a broken
+ * name — and took the disclosure's own affordance off the screen with it.
+ *
+ * So the cut happens on this inner block, which shrinks (`min-width: 0`) while
+ * the caret keeps its width. The reader gets an ellipsis, which says
+ * "there is more", and a caret, which says where to find it (Agent-E brief 33).
+ */
+.inlineedit__value {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .inlineedit__trigger::-webkit-details-marker {
   display: none;
 }

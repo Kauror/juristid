@@ -156,9 +156,11 @@ unchanged — this moves the control, not the write.
             unclipped in the Saabunud materjalid note further down the page.
           {% endcomment %}
           <summary class="inlineedit__trigger" title="{{ matter.sender_names }}">
-            {% if matter.source_organisations.all %}
-              {% include "matters/partials/senders.html" with matter=matter %}
-            {% else %}<span class="muted">—</span>{% endif %}
+            <span class="inlineedit__value">
+              {% if matter.source_organisations.all %}
+                {% include "matters/partials/senders.html" with matter=matter %}
+              {% else %}<span class="muted">—</span>{% endif %}
+            </span>
             <span class="inlineedit__caret" aria-hidden="true">▾</span>
           </summary>
           {% comment %}
