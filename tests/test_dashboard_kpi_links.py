@@ -24,8 +24,8 @@ from app.legacy_import.current_state import CurrentRegisterState, RegisterCurren
 from app.matters import dashboard
 from app.matters.enums import RecordMode
 from app.matters.register_filters import register_population
-from app.matters.services import create_matter
-from app.workflow.enums import ActionKind, DateSemantics
+from app.matters.services import close_matter, create_matter
+from app.workflow.enums import ActionKind, DateSemantics, Disposition
 from app.workflow.services import set_next_action
 from tests import factories
 
@@ -116,9 +116,14 @@ def world(db, specialist, other_specialist):
     _register_state(sent, sent_recorded=True)
 
     # Closed and archived rows exist so "aktiivsed" has something to exclude.
-    closed = create_matter(title="Suletud teema", owner=other_specialist)
-    closed.is_open = False
-    closed.save(update_fields=["is_open"])
+    # Closed through the service: `is_open=False` on its own violates
+    # `matters_closure_fields_consistent`, because a closed Matter without a
+    # disposition and a closing timestamp is not a state the database allows.
+    close_matter(
+        matter=create_matter(title="Suletud teema", owner=other_specialist),
+        disposition=Disposition.COMPLETED,
+        actor=other_specialist,
+    )
     factories.ArchiveMatterFactory(title="Arhiivirida")
 
     hidden = create_matter(

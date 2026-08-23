@@ -215,7 +215,7 @@ def test_the_cutoff_is_visible_beside_the_numbers_that_depend_on_it(
     world, archive_world, reporting_context
 ):
     result = compute(keys.OPINION_ARCHIVE_BY_YEAR, reporting_context(world.martin))
-    assert any("30.06." in note for note in result.notes)
+    assert any("30.6." in note for note in result.notes)
 
 
 # ---------------------------------------------------------------------------

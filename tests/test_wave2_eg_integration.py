@@ -111,8 +111,12 @@ def test_the_register_row_shows_the_source_date_not_the_import_timestamp(signed_
 
     body = signed_in.get(REGISTER, {"olek": "koik"}).content.decode()
 
-    assert "15.06.2018" in body
+    assert "15.6.2018" in body
+    # Both spellings of the import timestamp, because the register writes dates
+    # unpadded now and a guard against only the padded form would pass whether
+    # the bug was there or not (app/core/dates.py).
     assert "03.02.2026" not in body
+    assert "3.2.2026" not in body
 
 
 def test_a_matter_with_nothing_known_renders_a_dash_not_a_timestamp(signed_in, specialist):

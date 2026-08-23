@@ -201,6 +201,12 @@ class MatterCreateForm(forms.Form):
         # The blank option is named rather than left as Django's row of dashes:
         # "not decided yet" is a real answer here and should read like one.
         empty_label="Määramata",
+        # `blank=True` is what makes that label survive. Django drops the empty
+        # choice entirely for a `ModelChoiceField` rendered as radios unless it
+        # is set (django/forms/models.py, `ModelChoiceField.__init__`) — so
+        # without it the row had no Määramata chip at all, and a stage picked by
+        # mistake could not be unpicked. Caught by CI, not by reading.
+        blank=True,
         widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
     )
     track = forms.ChoiceField(

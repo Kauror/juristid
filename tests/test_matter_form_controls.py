@@ -169,9 +169,13 @@ def test_the_same_choices_store_what_they_always_stored(signed_in, specialist):
     A lawyer picking the same values before and after the control changed must
     produce the same canonical Matter.
     """
-    stage = factories.StageFactory(key="consultation", label_et="Kooskõlastusringil")
+    # No explicit keys. `consultation` and `maksud` are *seeded* by
+    # `workflow/0004` and `taxonomy/0002`, so naming them here is a unique-key
+    # collision rather than a fixture — and the reviewed vocabularies are not
+    # something a test may mint a second copy of (ADR 0029).
+    stage = factories.StageFactory(label_et="Kooskõlastusringil")
     ministry = factories.OrganisationFactory(name="Näidisministeerium")
-    area = factories.PolicyAreaFactory(key="maksud", name_et="Maksud")
+    area = factories.PolicyAreaFactory(name_et="Maksundus")
 
     signed_in.post(
         CREATE,
@@ -201,8 +205,8 @@ def test_the_same_choices_store_what_they_always_stored(signed_in, specialist):
 def test_a_second_stage_value_cannot_be_smuggled_in(signed_in, specialist):
     """Radios can only send one value; a hand-built POST sending two is refused
     rather than silently keeping the last."""
-    first = factories.StageFactory(key="idea", label_et="Idee")
-    second = factories.StageFactory(key="government", label_et="Valitsuses")
+    first = factories.StageFactory(label_et="Esimene etapp")
+    second = factories.StageFactory(label_et="Teine etapp")
 
     signed_in.post(CREATE, {"title": "Kaks hetkeseisu", "stage": [first.pk, second.pk]})
     matter = Matter.objects.get(title="Kaks hetkeseisu")
