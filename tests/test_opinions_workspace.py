@@ -407,8 +407,13 @@ def test_a_reader_who_may_not_open_the_archive_sees_no_letters_on_the_matter(sig
     assert "Seotud arhiivikirjad" not in body
 
 
-def test_one_letter_filed_twice_is_listed_once(db, specialist):
-    """The page lists letters. The same bytes twice is a duplicate, not a second."""
+def test_one_letter_filed_twice_is_listed_once(shared, specialist):
+    """The page lists letters. The same bytes twice is a duplicate, not a second.
+
+    Behind the shared gate, because that is the only mode in which a department
+    head reads the corpus at all; outside it the archive is the administrator's,
+    and the selector would correctly return nothing.
+    """
     head = factories.DepartmentHeadFactory()
     binary = hold()
     matter = factories.MatterFactory(owner=specialist)

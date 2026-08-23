@@ -84,6 +84,8 @@ keep it.
         </h2>
         <p class="cardnote">
           Ühe teema kohta võib olla mitu arvamust. Saadetud arvamus vajab täpset lõplikku tõendit.
+          Kõik saadetud arvamused on koos
+          <a href="{% url 'submissions:sent' %}">Arvamuste</a> töölaual.
         </p>
 
         {% for submission in submissions %}
