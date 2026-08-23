@@ -63,15 +63,32 @@ implied by a deployment.
 | 3.1 | Register import | `import_legacy_register --dry-run` | `--apply` | Source snapshot hash |
 | 3.2 | Current portfolio | `final_register_cutover --snapshot <sha> --dry-run` | `--apply` | The snapshot digest must be in `REVIEWED_SNAPSHOT_SHA256` |
 | 3.3 | Historical cutover | `historical_cutover_state --cutover-year 2026 --dry-run` | `--apply` | The cutover year is a reviewed constant |
-| 3.4 | Opinion archive catalogue | `opinion_archive plan --opinions … --expect-archive-sha256 …` | `opinion_archive apply` | Archive digest |
+| 3.4 | Opinion archive catalogue | `opinion_archive plan --opinions … --expect-archive-sha256 …` | `opinion_archive catalogue` | Archive digest |
 | 3.5 | Opinion archive bytes | `opinion_archive materialize-plan` | `opinion_archive materialize` | Holding bytes is not filing them |
-| 3.6 | Opinion canonical records | included in 3.4's plan | `opinion_archive apply` | Only automatic classes file themselves |
+| 3.6 | Opinion canonical records | `opinion_archive plan` (same plan) | `opinion_archive apply` | Only automatic classes file themselves |
 | 3.7 | Archive text and search | `opinion_archive_search status` | `extract-text`, then `rebuild` | Extraction is **BLOCKED** where real data lives (ADR 0014) |
 | 3.8 | Second-pass proposals | `opinion_archive content-plan` | `content-apply` | Proposals only; nothing files (ADR 0023) |
 
-**3.5 and 3.6 are different acts.** Materialising holds a letter's bytes;
-applying decides whose letter it is. Tying them together is what left two thirds
-of the corpus visible only as catalogue rows.
+**3.4, 3.5 and 3.6 are three different acts, and the order is fixed.**
+Cataloguing records what the archive holds; materialising holds the bytes;
+applying decides whose letter it is. Run them as
+
+> 3.4 catalogue → 3.5 materialise → 3.7 search → review → 3.6 apply
+
+`opinion_archive catalogue` writes only `OpinionArchiveBatch`,
+`OpinionArchiveItem`, `OpinionArchiveMetadata` and `OpinionMatchCandidate`. It
+creates **no** Submission — not even for a proposal 3.6 would file without
+asking anyone — and its report says `loodud arvamusi 0` rather than leaving that
+to be inferred.
+
+`opinion_archive apply` is unchanged and still does 3.4 and 3.6 together, which
+is why 3.6's row names it. Use it for 3.6 *after* the review, not as the way to
+reach 3.5: doing that files letters before anybody has read them.
+
+Between 3.5 and 3.6 sits the part no command performs. The review queue needs an
+identified administrator, and `may_read_archive` refuses under
+`AUTH_MODE=shared_gate` — so 3.4 and 3.5 can run on the current deployment while
+3.6 cannot honestly be reached on it (ADR 0016, ADR 0019).
 
 ### A schema change to a derived table
 

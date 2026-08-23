@@ -3,6 +3,7 @@
     manage.py opinion_archive audit    --opinions … [--kodadash …]
     manage.py opinion_archive plan     --opinions … [--kodadash …] [--report …]
     manage.py opinion_archive dry-run  --opinions … [--kodadash …]
+    manage.py opinion_archive catalogue --opinions … [--kodadash …]
     manage.py opinion_archive apply    --opinions … [--kodadash …]
     manage.py opinion_archive materialize-plan --opinions … --expect-archive-sha256 …
     manage.py opinion_archive materialize      --opinions … --expect-archive-sha256 …
@@ -18,8 +19,18 @@ Separate commands rather than a ``--apply`` flag, for the reason the historical
 importer already learned: the phases have different consequences and a flag is
 easy to mistype. ``audit`` and ``plan`` write nothing and touch no database
 rows. ``dry-run`` executes the real plan against the real schema and rolls the
-*database* back. Only ``apply`` commits, and it refuses unless the sources still
-hash to what the plan was reviewed against (Stage-2H brief 47, 48, 49).
+*database* back. ``catalogue`` and ``apply`` commit, and both refuse unless the
+sources still hash to what the plan was reviewed against (Stage-2H brief 47, 48,
+49).
+
+``catalogue`` records the archive, the producer's metadata and the
+reconciliation's proposals, and stops there. It creates no Submission — not even
+for a proposal whose match class an apply would execute without asking anyone.
+It exists because ``materialize`` needs a catalogue to work from and the only
+thing that used to produce one was the full ``apply``, so holding a letter's
+bytes meant first asserting who sent it. The production sequence is
+``plan`` → ``catalogue`` → ``materialize`` → search → review → ``apply``
+(docs/production-readiness.md).
 
 ``materialize`` is deliberately not part of ``apply``. Holding a letter's bytes
 and deciding whose letter it is are different acts with different bars, and
@@ -45,6 +56,12 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
+#: Written to ``OpinionArchiveBatch.notes`` so the batch list says what the run
+#: did. A catalogue batch is already identifiable by having no
+#: ``OpinionSubmissionImport`` pointing at it, but reading a phase off an absence
+#: is the kind of inference an operator should not have to make.
+CATALOGUE_BATCH_NOTE = "catalogue: kataloogimine ilma kanoonilise arvamuseta"
+
 
 class Command(BaseCommand):
     help = "Reconcile the Chamber opinions archive against the register, OneNote and KodaDash."
@@ -56,6 +73,7 @@ class Command(BaseCommand):
                 "audit",
                 "plan",
                 "dry-run",
+                "catalogue",
                 "apply",
                 "materialize-plan",
                 "materialize",
@@ -101,6 +119,8 @@ class Command(BaseCommand):
         self._require_gate()
         if phase == "dry-run":
             return self._dry_run(plan, options)
+        if phase == "catalogue":
+            return self._catalogue(plan, options)
         return self._apply(plan, options)
 
     # -- phases ------------------------------------------------------------
@@ -171,6 +191,43 @@ class Command(BaseCommand):
             self._write_report(
                 options["report"], {"dry_run": carrier["report"].__dict__, "plan": plan.summary()}
             )
+
+    def _catalogue(self, plan: Any, options: dict) -> None:
+        """Record the archive and the reconciliation. Assert nothing about sending.
+
+        The source pin is checked before the batch is opened, so a mismatched
+        archive leaves no run behind at all — a refused catalogue should not be
+        distinguishable from one that never started.
+        """
+        from app.legacy_import.opinion_apply import (
+            OpinionApplyError,
+            catalogue_plan,
+            open_batch,
+            require_unchanged_sources,
+        )
+
+        try:
+            require_unchanged_sources(plan)
+        except OpinionApplyError as error:
+            raise CommandError(str(error)) from error
+
+        batch = open_batch(plan, notes=CATALOGUE_BATCH_NOTE)
+        report = catalogue_plan(plan, batch=batch)
+        batch.finished_at = timezone.now()
+        batch.save(update_fields=["finished_at", "updated_at"])
+
+        self.stdout.write(report.as_text())
+        self.stdout.write(
+            self.style.SUCCESS("\nArhiiv on kataloogitud. Kanoonilist arvamust ei loodud.")
+        )
+        self.stdout.write(
+            "Järgmine ohutu samm: opinion_archive materialize-plan "
+            "--opinions … --expect-archive-sha256 …\n"
+            "Ülevaatuse töölaud avaneb alles pärast materialiseerimist ja "
+            "tuvastatud kasutajaga sisselogimist; kanooniline apply on eraldi samm."
+        )
+        if options.get("report"):
+            self._write_report(options["report"], report.__dict__ | {"batch_id": str(batch.pk)})
 
     def _apply(self, plan: Any, options: dict) -> None:
         from app.legacy_import.opinion_apply import (
