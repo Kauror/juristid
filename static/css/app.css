@@ -1432,24 +1432,6 @@ p.formnote {
   list-style: none;
 }
 
-/* A field whose value is a *list*. The 22ch clamp above is right for one long
- * institution name — an ellipsis after "Majandus- ja Kommunikatsioo…" still
- * reads as one truncated name. It is wrong for several: clipping mid-item
- * produced "Näidisettevõtete liit, Näidis", which reads as a broken name
- * rather than as a second organisation, and hides that a sender exists at all.
- *
- * So the sender field wraps instead of clipping. Every sender stays legible,
- * which is what the detail page owes a reader, and the band absorbs the extra
- * line — it already wraps (Agent-E brief 33). */
-.inlineedit__trigger--list {
-  max-width: 30ch;
-  white-space: normal;
-  overflow: visible;
-  text-overflow: clip;
-  align-items: flex-start;
-  overflow-wrap: anywhere;
-}
-
 .inlineedit__trigger::-webkit-details-marker {
   display: none;
 }

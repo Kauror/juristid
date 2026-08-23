@@ -147,7 +147,15 @@ unchanged — this moves the control, not the write.
       <dt class="metafield__label">Kellelt</dt>
       <dd class="metafield__value">
         <details class="inlineedit">
-          <summary class="inlineedit__trigger inlineedit__trigger--list">
+          {% comment %}
+            The band clips a long value to one line, as it does for every other
+            fact here — it has a height contract and a Matter page that opened
+            on a 150px wall of controls is what that contract exists to prevent.
+            A list clipped mid-name is harder to read than a clipped name, so
+            the complete list is on the tooltip, in the editor below, and
+            unclipped in the Saabunud materjalid note further down the page.
+          {% endcomment %}
+          <summary class="inlineedit__trigger" title="{{ matter.sender_names }}">
             {% if matter.source_organisations.all %}
               {% include "matters/partials/senders.html" with matter=matter %}
             {% else %}<span class="muted">—</span>{% endif %}

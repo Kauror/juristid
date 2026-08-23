@@ -387,6 +387,19 @@ class Matter(BaseModel):
         return self.visibility == Visibility.RESTRICTED
 
     @property
+    def sender_names(self) -> str:
+        """Every sender, comma-joined, in a stable order.
+
+        A string rather than a template loop because the header needs the same
+        value inside a `title` attribute, where an included partial would carry
+        its own newlines into the tooltip. One renderer, so the summary line and
+        the tooltip cannot drift.
+
+        Ordered by `Organisation.Meta`, which sorts by name.
+        """
+        return ", ".join(organisation.name for organisation in self.source_organisations.all())
+
+    @property
     def source_organisation_ids(self) -> set[Any]:
         """Sender primary keys, for a template deciding which boxes are ticked.
 
