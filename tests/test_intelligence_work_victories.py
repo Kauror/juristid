@@ -166,7 +166,7 @@ def test_a_day_precise_period_is_kept_as_a_day(normal_matter, specialist):
         date_precision=DatePrecision.EXACT,
         actor=specialist,
     )
-    assert record.display_period == "13.07.2026"
+    assert record.display_period == "13.7.2026"
 
 
 def test_a_candidate_may_have_no_period_at_all(normal_matter, specialist):

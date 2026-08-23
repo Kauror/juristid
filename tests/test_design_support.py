@@ -49,12 +49,12 @@ def test_an_exact_date_renders_as_a_day(normal_matter, specialist):
         target_date=date(2026, 8, 21),
         actor=specialist,
     )
-    assert action.display_date == "21.08.2026"
+    assert action.display_date == "21.8.2026"
     assert action.is_approximate is False
 
 
 def test_a_month_precision_date_names_the_month(normal_matter, specialist):
-    """September 2026 is honest; 01.09.2026 invents a day nobody chose."""
+    """September 2026 is honest; 1.9.2026 invents a day nobody chose."""
     action = set_next_action(
         matter=normal_matter,
         text="Ootan rakendusakte",

@@ -224,11 +224,11 @@ def test_the_received_date_range_narrows_the_register(page, base_url):
     open_register(page, base_url)
     open_advanced(page)
 
-    page.locator("input[name='saabus_alates']").fill("2024-03-07")
+    page.locator("input[name='saabus_alates']").fill("7.3.2024")
     page.get_by_role("button", name="Filtreeri").click()
 
     page.wait_for_url(re.compile(r"saabus_alates="))
-    assert "07.03.2024" in chip_text(page)
+    assert "7.3.2024" in chip_text(page)
 
 
 def test_the_register_scope_segments_work(page, base_url):

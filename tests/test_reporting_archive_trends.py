@@ -246,10 +246,10 @@ def test_the_comparison_prints_both_windows_rather_than_implying_them(
         keys.OPINION_ARCHIVE_YOY_CHANGE, reporting_context(world.martin)
     ).comparison
     assert comparison is not None
-    assert comparison.current_period_label.startswith("01.01.2023")
-    assert comparison.current_period_label.endswith("30.06.2023")
-    assert comparison.previous_period_label.startswith("01.01.2022")
-    assert comparison.previous_period_label.endswith("30.06.2022")
+    assert comparison.current_period_label.startswith("1.1.2023")
+    assert comparison.current_period_label.endswith("30.6.2023")
+    assert comparison.previous_period_label.startswith("1.1.2022")
+    assert comparison.previous_period_label.endswith("30.6.2022")
 
 
 def test_the_change_is_worded_neutrally(world, archive_world, reporting_context):

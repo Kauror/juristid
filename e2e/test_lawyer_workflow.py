@@ -26,7 +26,14 @@ MATTER_TITLE = "Pakendiseaduse muutmise eelnõu"
 
 
 def _future(days: int) -> str:
-    return (date.today() + timedelta(days=days)).isoformat()
+    """A date the way the application now reads and writes one: `7.9.2026`.
+
+    ISO would still parse — the field accepts both — but a browser test that
+    typed ISO would not be exercising what a lawyer types
+    (app/core/dates.py).
+    """
+    on = date.today() + timedelta(days=days)
+    return f"{on.day}.{on.month}.{on.year}"
 
 
 def test_the_whole_lawyer_workflow(page, base_url, screenshots):
@@ -63,14 +70,18 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.get_by_role("checkbox", name="Näidisministeerium").check()
 
     page.locator("summary", has_text="Täpsusta teema andmeid").click()
-    page.locator("#id_stage").select_option(label="Kooskõlastusringil")
-    page.locator("#id_track").select_option(label="Riigisisene")
+    # Hetkeseis and Menetlusliik are visible radio chips now, not dropdowns:
+    # each holds one value, and the control says so (Agent-UI brief 5.1).
+    page.get_by_role("radio", name="Kooskõlastusringil", exact=True).check()
+    page.get_by_role("radio", name="Riigisisene", exact=True).check()
     page.locator("#id_response_deadline").fill(_future(21))
 
-    page.locator("summary", has_text="Määra kohe Järgmiseks").click()
+    page.locator("summary", has_text="Järgmine tegevus").first.click()
     page.locator("#id_next-text").fill("Koosta ja saada koja arvamus")
-    page.locator("#id_next-kind").select_option("DO")
-    page.locator("#id_next-date_semantics").select_option("DEADLINE")
+    # The kind is a card, and the date meaning is derived from it rather than
+    # asked as a second question. DEADLINE is what DO derives to
+    # (app/workflow/enums.py, `default_date_semantics`).
+    page.locator('input[name="next-kind"][value="DO"]').check()
     page.locator("#id_next-target_date").fill(_future(14))
     screenshots(page, "02-uus-teema")
 
