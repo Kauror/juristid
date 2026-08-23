@@ -125,6 +125,11 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator("#komposer-manus")).to_be_hidden()
     page.locator("#id_next_text").fill("Ootan ministeeriumi uut sõnastust")
     page.locator("#next_kind_WAIT").check(force=True)
+    # The stored date meaning derives from the kind now, and OOTAN derives to
+    # *Oodatav*. This scenario wants the other one a WAIT may legitimately
+    # carry, so it opens the disclosure and says so — which is the override path
+    # the model still permits and the UI still offers (app/workflow/enums.py).
+    page.locator("summary", has_text="Täpsusta, mida kuupäev tähendab").first.click()
     page.locator("#id_next_date_semantics").select_option("REVIEW_ON")
     page.locator("#id_next_target_date").fill(_future(7))
     screenshots(page, "04-komposer")
@@ -305,8 +310,10 @@ def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(pa
     page.locator(".composer__body").fill("See tekst peab alles jääma.")
     page.locator("#id_update_next_action").check()
     page.locator("#id_next_text").fill("Tähtajaline tegevus ilma kuupäevata")
+    # No date meaning chosen: TEEN derives to *Tähtaeg*, and a deadline with no
+    # date is still the one combination the server refuses. Left unstated on
+    # purpose — this is the path a lawyer who never opens the disclosure takes.
     page.locator("#next_kind_DO").check(force=True)
-    page.locator("#id_next_date_semantics").select_option("DEADLINE")
     page.get_by_role("button", name="Salvesta sissekanne").click()
 
     expect(page.get_by_text("Tähtajaline tegevus vajab kuupäeva.")).to_be_visible()
