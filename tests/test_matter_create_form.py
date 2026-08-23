@@ -322,8 +322,11 @@ def test_the_whole_field_set_a_browser_sends_is_accepted(signed_in, evidence_roo
             "title": "Nagu brauser saadab",
             "owner": "",
             "received_date": tz.localdate().isoformat(),
-            "source_organisation": "",
-            "source_organisation_other": "",
+            # No sender key at all, which is what a browser sends when nothing
+            # is ticked: an unchecked box is omitted from the submission, and
+            # `source_organisations=""` — which is what this posted while the
+            # field was a single select — is a value no rendered page produces
+            # and a multiple field correctly refuses.
             "policy_area_other": "",
             "stage": "",
             "track": "",
