@@ -59,7 +59,7 @@ from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 #: plan digest, the operator report and the audit provenance, so two runs that
 #: read the same sentence differently can never be mistaken for each other
 #: (brief 70).
-REGISTER_NEXT_ACTION_PARSER_VERSION = "1.1"
+REGISTER_NEXT_ACTION_PARSER_VERSION = "1.2"
 
 
 class Verdict:
@@ -103,6 +103,21 @@ class ReviewReason:
     #: takes effect, not when the awaited link arrives, and the two are
     #: years apart.
     DATE_GOVERNED_BY_ANOTHER_CLAUSE = "DATE_GOVERNED_BY_ANOTHER_CLAUSE"
+    #: A day or a month written with no year — "vaata 13.11 üle", "ootan
+    #: oktoobris". The register means the next such date, which is a fact about
+    #: when somebody read the cell rather than about what it says; on a snapshot
+    #: catalogued in August, "13.11" is this November and "jaanuaris" is next
+    #: January, and nothing in the sentence distinguishes them (brief E).
+    DATE_WITHOUT_YEAR = "DATE_WITHOUT_YEAR"
+    #: The date sits in a relative clause describing the thing being waited
+    #: for rather than the waiting — "ootan ELAKi seisukohta, mille arutelu
+    #: 27.07.2027". Sometimes the two coincide and sometimes they are a year
+    #: apart, and the sentence does not say which (brief C, I).
+    DATE_IN_RELATIVE_CLAUSE = "DATE_IN_RELATIVE_CLAUSE"
+    #: The sentence names Koda's work *and* a review of it — "ootan 2. lugemist
+    #: riigikogus, vaata üle septembris". Two actionable timings, and converting
+    #: one silently discards the other (brief B).
+    WAIT_AND_REVIEW = "WAIT_AND_REVIEW"
 
 
 # ---------------------------------------------------------------------------
@@ -121,6 +136,52 @@ WAIT_FORMS: tuple[str, ...] = ("ootan", "ootame", "oodata", "ootel")
 
 #: Watching a proceeding without being blocked by it.
 MONITOR_FORMS: tuple[str, ...] = ("jälgin", "jälgime", "jälgida")
+
+#: Looking at a file again on a named day. The register writes this constantly
+#: — *vaata üle septembris*, *vaata 13.11 üle* — and until 1.2 it was invisible,
+#: which is worse than refusing it: a sentence reading "ootan 2. lugemist
+#: riigikogus, vaata üle septembris" produced a dateless WAIT and the review
+#: instruction, with its date, was silently thrown away.
+#:
+#: Closed verb forms, exactly like every other class here — no `vaata\w*` stem,
+#: which would also match `vaatasin` in *viimati vaatasin 01.08.2026*, a note
+#: about the past that instructs nobody.
+REVIEW_FORMS: tuple[str, ...] = ("vaata", "vaatan", "vaatame", "vaadata")
+
+#: The particle that makes those verbs mean *review*. `vaata` alone is "look";
+#: `vaata üle` is "look over", and the register never means the first. Required
+#: in the same clause as the verb, so a full stop between them separates two
+#: sentences rather than assembling an instruction out of both.
+_REVIEW_PARTICLE = re.compile(r"\büle\b", re.IGNORECASE)
+
+#: Relative pronouns, closed and explicit. Each one opens a clause *about
+#: something already named* — the opinion, the reading, the proposal — so a date
+#: inside it describes that thing's timetable rather than Koda's action. The
+#: register writes them constantly, and the two timetables are routinely months
+#: apart.
+#:
+#: Listed rather than stemmed for the same reason every other class here is:
+#: `mis\w*` would also match `missugune`, and `kus\w*` would match `kuskil`.
+RELATIVE_PRONOUNS: tuple[str, ...] = (
+    "mille",
+    "millele",
+    "millest",
+    "millega",
+    "millal",
+    "mis",
+    "kelle",
+    "kellele",
+    "kes",
+    "kus",
+)
+
+
+#: What ends the clause a *review* verb governs. Deliberately not
+#: :data:`_CLAUSE_BREAK`: the thing being reviewed is very often a date, and a
+#: full stop inside "01.12.2026" is not a clause boundary. Ignoring that is why
+#: "Vaata 01.12.2026 üle" read as a bare "Vaata" with the particle in the next
+#: clause, and so as no instruction at all.
+_REVIEW_CLAUSE_BREAK = re.compile(r"[,;:!?]|(?<!\d)\.(?!\d)")
 
 #: Work Koda itself performs. Three verbs, each in the infinitive and the two
 #: present-tense persons the register actually uses. Deliberately short: a wide
@@ -147,6 +208,27 @@ def _forms_pattern(forms: tuple[str, ...]) -> re.Pattern[str]:
 _WAIT = _forms_pattern(WAIT_FORMS)
 _MONITOR = _forms_pattern(MONITOR_FORMS)
 _DO = _forms_pattern(DO_FORMS)
+_REVIEW_VERB = _forms_pattern(REVIEW_FORMS)
+_RELATIVE_PRONOUN = _forms_pattern(RELATIVE_PRONOUNS)
+
+
+def _review_forms(source: str) -> tuple[str, ...]:
+    """Review instructions in ``source``: a closed verb plus ``üle`` beside it.
+
+    The particle has to be in the same clause as the verb, because the two are
+    routinely separated by the thing being reviewed — *vaata 13.11 üle* — and
+    requiring adjacency would miss exactly the sentences that carry a date.
+    Clause boundaries are punctuation, which is how Estonian marks them far more
+    reliably than word order.
+    """
+    found: list[str] = []
+    for match in _REVIEW_VERB.finditer(source):
+        break_at = _REVIEW_CLAUSE_BREAK.search(source, match.end())
+        clause_end = break_at.start() if break_at else len(source)
+        if _REVIEW_PARTICLE.search(source, match.end(), clause_end):
+            found.append(match.group(0).casefold())
+    return tuple(dict.fromkeys(found))
+
 
 #: Wording that states a deadline rather than implying one. ``tähtaeg`` and its
 #: inflections, ``hiljemalt``, and the translative ``-ks`` written onto a date
@@ -214,10 +296,47 @@ MONTH_FORMS: dict[str, int] = {
     "detsembris": 12,
 }
 
+#: The stem every other case is built on. Listed rather than derived for the
+#: same reason the nominative/inessive pair above is: Estonian changes the stem
+#: (``oktoober`` → ``oktoobri``, ``september`` → ``septembri``), so appending a
+#: suffix to the nominative would invent words that do not exist.
+MONTH_STEMS: dict[str, int] = {
+    "jaanuari": 1,
+    "veebruari": 2,
+    "märtsi": 3,
+    "aprilli": 4,
+    "mai": 5,
+    "juuni": 6,
+    "juuli": 7,
+    "augusti": 8,
+    "septembri": 9,
+    "oktoobri": 10,
+    "novembri": 11,
+    "detsembri": 12,
+}
+
+#: The oblique endings the register actually writes: translative (*jaanuariks*
+#: — "by January"), adessive (*jaanuaril*), elative (*jaanuarist*) and
+#: terminative (*jaanuarini*). A closed list, so the vocabulary can be
+#: enumerated in a test rather than described.
+#:
+#: Recognising these is **not** permission to read them. A month with no year
+#: is refused by :data:`ReviewReason.DATE_WITHOUT_YEAR`; the point of detecting
+#: it is that the sentence stops looking dateless, which is how *ootan
+#: oktoobris uut versiooni* used to be converted to a WAIT with no date at all.
+MONTH_SUFFIXES: tuple[str, ...] = ("ks", "l", "st", "ni")
+
+INFLECTED_MONTH_FORMS: dict[str, int] = {
+    f"{stem}{suffix}": number for stem, number in MONTH_STEMS.items() for suffix in MONTH_SUFFIXES
+}
+
+#: Every written month, in every form this parser knows.
+ALL_MONTH_FORMS: dict[str, int] = {**MONTH_FORMS, **INFLECTED_MONTH_FORMS}
+
 #: Longest first, so ``jaanuaris`` is not matched as ``jaanuar`` with a stray
-#: ``is`` left over.
+#: ``is`` left over, and ``jaanuariks`` is not matched as ``jaanuari`` either.
 _MONTH_ALTERNATION = "|".join(
-    re.escape(form) for form in sorted(MONTH_FORMS, key=len, reverse=True)
+    re.escape(form) for form in sorted(ALL_MONTH_FORMS, key=len, reverse=True)
 )
 
 _ROMAN_TO_INT: dict[str, int] = {"i": 1, "ii": 2, "iii": 3, "iv": 4}
@@ -252,6 +371,40 @@ _YEAR_THEN_HALF = re.compile(
 )
 
 _YEAR_ONLY = re.compile(rf"\b{_YEAR_WORD}", re.IGNORECASE)
+
+#: A written day and month spelled out, with the year: "1. jaanuaril 2028",
+#: "22. jaanuariks 2029". The numeric ``1.01.2028`` form is already covered;
+#: this is the one the register writes when it expects a person to read it.
+_DAY_MONTHNAME_YEAR = re.compile(
+    rf"\b(?P<day>\d{{1,2}})\.\s*(?P<month>{_MONTH_ALTERNATION})\s+(?P<year>\d{{4}})\b",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# Dates written without a year
+# ---------------------------------------------------------------------------
+#
+# The register writes these constantly — "vaata 13.11 üle", "ootan oktoobris",
+# "hiljemalt oktoobriks" — and means "the next one". That is a fact about the
+# day somebody read the cell, not about what the cell says: on a snapshot
+# catalogued in August, "13.11" is this November and "jaanuaris" is next
+# January, and the sentence does not distinguish them.
+#
+# So they are **detected and refused**, and detecting them is the whole point:
+# before 1.2 they were invisible, so "ootan oktoobris uut versiooni" looked
+# dateless and was converted to a WAIT carrying no date at all — which is not a
+# smaller claim than the wrong date, it is a different wrong claim.
+
+#: ``13.11``, ``9.7``, ``13.11.`` — never ``13.11.2026``, which the lookahead
+#: excludes by refusing a following year, and never ``2. lugemist``, which has
+#: no second number.
+_BARE_DAY_MONTH = re.compile(r"(?<![\d.])(?P<day>\d{1,2})\.(?P<month>\d{1,2})\.?(?!\s*\d)")
+
+#: Any month name at all. Matched last and only where no fuller phrase already
+#: covered that span, so a month inside "2026. aasta oktoobris" is not counted
+#: a second time as a year-less one.
+_BARE_MONTH = re.compile(rf"\b(?P<month>{_MONTH_ALTERNATION})\b", re.IGNORECASE)
+
 
 #: Malformed-period detectors. A written ``5. kvartal`` is not a date this
 #: parser may quietly ignore — ignoring it would let a sentence carrying an
@@ -317,14 +470,25 @@ def _anchor(
     return start
 
 
-def _scan_dates(text: str) -> tuple[list[DateMention], bool]:
-    """Every written date in ``text``, and whether any was written unreadably.
+@dataclass(frozen=True)
+class DateScan:
+    """Every date in one sentence, split by what may be done with it.
 
-    The second half of the return value is the point of scanning at all. A
-    sentence containing ``5. kvartal 2027`` has a date; it simply has one that
-    cannot exist. Treating that as "no date mentioned" would convert the
-    sentence on its verb alone.
+    Three outcomes, and they are genuinely different. ``mentions`` can be read
+    and used. ``unreadable`` is a date that cannot exist — ``5. kvartal 2027``.
+    ``undated`` is a date the sentence really wrote and deliberately left
+    year-less, which is the one the parser must see in order to refuse it: a
+    sentence with a year-less month is not a dateless sentence, and treating it
+    as one converts it on its verb alone.
     """
+
+    mentions: list[DateMention]
+    unreadable: bool
+    undated: tuple[str, ...] = ()
+
+
+def _scan_dates(text: str) -> DateScan:
+    """Every written date in ``text``, classified by what may be done with it."""
     mentions: list[DateMention] = []
     unreadable = False
 
@@ -378,9 +542,20 @@ def _scan_dates(text: str) -> tuple[list[DateMention], bool]:
                 DateMention(match.start(), match.end(), anchor, DatePrecision.HALF_YEAR.value)
             )
 
+    for match in _DAY_MONTHNAME_YEAR.finditer(text):
+        value = _safe_date(
+            int(match.group("year")),
+            ALL_MONTH_FORMS[match.group("month").casefold()],
+            int(match.group("day")),
+        )
+        if value is None:
+            unreadable = True
+            continue
+        mentions.append(DateMention(match.start(), match.end(), value, DatePrecision.EXACT.value))
+
     for pattern in (_MONTH_THEN_YEAR, _YEAR_THEN_MONTH):
         for match in pattern.finditer(text):
-            month = MONTH_FORMS[match.group("month").casefold()]
+            month = ALL_MONTH_FORMS[match.group("month").casefold()]
             anchor = _anchor(DatePrecision.MONTH.value, year=int(match.group("year")), month=month)
             if anchor is None:
                 unreadable = True
@@ -418,7 +593,24 @@ def _scan_dates(text: str) -> tuple[list[DateMention], bool]:
             if ordinal is None or not 1 <= ordinal <= limit:
                 unreadable = True
 
-    return kept, unreadable
+    # Dates the sentence wrote and left year-less. Collected only where no fuller
+    # phrase already covers the span, so the month inside "2026. aasta oktoobris"
+    # is a read date rather than a refused one.
+    undated: list[str] = []
+    for pattern in (_BARE_DAY_MONTH, _BARE_MONTH):
+        for match in pattern.finditer(text):
+            if any(other.start <= match.start() and match.end() <= other.end for other in kept):
+                continue
+            if pattern is _BARE_DAY_MONTH:
+                day, month = int(match.group("day")), int(match.group("month"))
+                # A malformed day-month is unreadable rather than merely
+                # year-less: "32.13" is not a date somebody forgot to date.
+                if not (1 <= month <= 12 and 1 <= day <= 31):
+                    unreadable = True
+                    continue
+            undated.append(match.group(0).casefold())
+
+    return DateScan(kept, unreadable, tuple(dict.fromkeys(undated)))
 
 
 # ---------------------------------------------------------------------------
@@ -500,18 +692,34 @@ def parse_instruction(text: str) -> ParsedInstruction:
     wait = _matched(_WAIT, source)
     monitor = _matched(_MONITOR, source)
     do = _matched(_DO, source)
-    forms = wait + monitor + do
-    classes = [bool(wait), bool(monitor), bool(do)]
+    review = _review_forms(source)
+    forms = wait + monitor + do + review
+    classes = [bool(wait), bool(monitor or review), bool(do)]
 
+    # A wait and a review of it are the commonest shape in this corpus —
+    # "ootan 2. lugemist riigikogus, vaata üle septembris" — and they are two
+    # actionable timings, not one instruction with decoration. Named separately
+    # from AMBIGUOUS_KIND because the operator report should be able to say how
+    # many sentences carry a review the department would lose by converting
+    # them (brief B).
+    if wait and review:
+        return _review(source, ReviewReason.WAIT_AND_REVIEW, forms=forms)
     if sum(classes) > 1:
         return _review(source, ReviewReason.AMBIGUOUS_KIND, forms=forms)
     if not any(classes):
         return _review(source, ReviewReason.NO_KIND)
 
-    mentions, unreadable = _scan_dates(source)
-    if unreadable:
+    scan = _scan_dates(source)
+    if scan.unreadable:
         return _review(source, ReviewReason.UNREADABLE_DATE, forms=forms)
 
+    # Refused before ambiguity is counted, and before a dateless reading can be
+    # reached. A year-less date is one the sentence wrote; the question is what
+    # year it means, and nothing here may answer it (brief E).
+    if scan.undated:
+        return _review(source, ReviewReason.DATE_WITHOUT_YEAR, forms=forms)
+
+    mentions = scan.mentions
     distinct = {mention.identity for mention in mentions}
     if len(distinct) > 1:
         return _review(source, ReviewReason.AMBIGUOUS_DATE, forms=forms)
@@ -519,10 +727,12 @@ def parse_instruction(text: str) -> ParsedInstruction:
 
     if mention is not None and _governed_by_entry_into_force(source, mention):
         return _review(source, ReviewReason.DATE_GOVERNED_BY_ANOTHER_CLAUSE, forms=forms)
+    if mention is not None and _governed_by_relative_clause(source, mention):
+        return _review(source, ReviewReason.DATE_IN_RELATIVE_CLAUSE, forms=forms)
 
     if wait:
         return _understood(source, ActionKind.WAIT, DateSemantics.EXPECTED_AROUND, mention, forms)
-    if monitor:
+    if monitor or review:
         # A monitoring date says when to look again; that is what REVIEW_ON
         # means. Without a date the kind is still unambiguous, so the action is
         # honest as "jälgin, kuupäeva pole" — and no review date is invented
@@ -611,6 +821,33 @@ def _governed_by_entry_into_force(source: str, mention: DateMention) -> bool:
         if _CLAUSE_BREAK.search(between):
             continue
         if _WAIT.search(between) or _MONITOR.search(between) or _DO.search(between):
+            continue
+        return True
+    return False
+
+
+def _governed_by_relative_clause(source: str, mention: DateMention) -> bool:
+    """Whether a relative clause owns the date, rather than the instruction.
+
+    *ootan ELAKi seisukohta, mille arutelu 27.07.2027* is a lawyer waiting for a
+    committee position and a committee meeting that produces it. Those are often
+    the same week and sometimes a year apart, and the sentence says which only
+    to a reader who already knows the file. Reading the meeting date as the
+    waiting date is therefore an inference, not a reading.
+
+    The test is deliberately blunt and deliberately conservative: a relative
+    pronoun before the date, with no instruction verb between them to take the
+    sentence back over. *Ootan eelnõud 2027. aasta 2. kvartalis. Ministeerium
+    pole teada andnud, millal eelnõu tuleb* is unaffected, because its pronoun
+    comes after the date it would otherwise capture.
+    """
+    for match in _RELATIVE_PRONOUN.finditer(source):
+        if match.end() > mention.start:
+            continue
+        between = source[match.end() : mention.start]
+        if _WAIT.search(between) or _MONITOR.search(between) or _DO.search(between):
+            continue
+        if _REVIEW_VERB.search(between):
             continue
         return True
     return False

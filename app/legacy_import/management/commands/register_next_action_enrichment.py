@@ -63,6 +63,9 @@ _REASON_LABELS: dict[str, str] = {
     "DO_DATE_WITHOUT_DEADLINE_WORDING": "a day beside a verb, not stated to be a deadline",
     "APPROXIMATE_DEADLINE": "deadline wording attached to a period rather than a day",
     "DATE_GOVERNED_BY_ANOTHER_CLAUSE": "the only date belongs to another clause",
+    "DATE_IN_RELATIVE_CLAUSE": "the date describes the thing waited for, not the waiting",
+    "DATE_WITHOUT_YEAR": "a day or month written with no year",
+    "WAIT_AND_REVIEW": "a wait and a review of it — two actionable timings",
 }
 
 
