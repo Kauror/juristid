@@ -13,6 +13,7 @@ that looks right and a search that silently cannot find half the register.
 
 from __future__ import annotations
 
+import re
 import uuid
 
 import pytest
@@ -36,6 +37,16 @@ pytestmark = pytest.mark.django_db
 
 CREATE = reverse("matters:matter_create")
 REGISTER = reverse("matters:matter_list")
+
+
+def titles_on(response) -> list[str]:
+    """The rows the register actually returned.
+
+    Counting a title in the rendered HTML would be a different assertion: the
+    register prints a title in both the row and a `title=` attribute, so a
+    substring count is two before any join has duplicated anything.
+    """
+    return [matter.title for matter in response.context["page"].object_list]
 
 
 def senders_of(matter: Matter) -> set[str]:
@@ -370,16 +381,23 @@ def test_the_form_refuses_an_organisation_that_does_not_exist(signed_in):
 
 
 def test_the_detail_page_shows_every_sender(signed_in, specialist):
+    """The rendered summary, not merely the names appearing somewhere.
+
+    Every organisation's name is on this page anyway — the editor lists the
+    whole reference table — so asserting "the name is present" would pass
+    against a page that showed only the first sender (Agent-E brief 33).
+    """
     first = factories.OrganisationFactory(name="Esimene saatja")
     second = factories.OrganisationFactory(name="Teine saatja")
+    factories.OrganisationFactory(name="Kolmas asutus")
     matter = factories.MatterFactory(owner=specialist, source_organisations=[first, second])
 
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
 
-    assert "Esimene saatja" in body
-    assert "Teine saatja" in body
+    assert "Esimene saatja, Teine saatja" in body
+    assert "Kolmas asutus," not in body
 
 
 def test_the_detail_page_survives_a_matter_with_no_sender(signed_in, specialist):
@@ -431,8 +449,12 @@ def test_the_inline_editor_offers_checkboxes(signed_in, specialist):
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
 
-    assert 'type="checkbox"' in body
-    assert 'name="source_organisations"' in body
+    inputs = re.findall(r"<input[^>]*name=\"source_organisations\"[^>]*>", body)
+    assert inputs, "the header offers no sender control at all"
+    assert all('type="checkbox"' in tag for tag in inputs)
+    # And emphatically not the single-choice control it replaced.
+    assert not re.search(r"<select[^>]*name=\"source_organisations\"", body)
+    assert sum("checked" in tag for tag in inputs) == 1
 
 
 # -- search -----------------------------------------------------------------
@@ -491,10 +513,8 @@ def test_filtering_by_any_sender_finds_the_matter_once(signed_in, specialist):
     )
 
     for organisation in (first, second):
-        body = signed_in.get(
-            REGISTER, {"saatja": str(organisation.pk), "olek": "koik"}
-        ).content.decode()
-        assert body.count("Kahe saatjaga") == 1, organisation.name
+        response = signed_in.get(REGISTER, {"saatja": str(organisation.pk), "olek": "koik"})
+        assert titles_on(response) == ["Kahe saatjaga"], organisation.name
 
 
 def test_the_convenience_filter_does_not_duplicate_a_multi_sender_matter(signed_in, specialist):
@@ -508,10 +528,8 @@ def test_the_convenience_filter_does_not_duplicate_a_multi_sender_matter(signed_
         addressee_organisation=organisation,
     )
 
-    body = signed_in.get(
-        REGISTER, {"asutus": str(organisation.pk), "olek": "koik"}
-    ).content.decode()
-    assert body.count("Mõlemat pidi") == 1
+    response = signed_in.get(REGISTER, {"asutus": str(organisation.pk), "olek": "koik"})
+    assert titles_on(response) == ["Mõlemat pidi"]
 
 
 def test_matters_without_any_sender_are_still_findable(signed_in, specialist):
@@ -524,9 +542,8 @@ def test_matters_without_any_sender_are_still_findable(signed_in, specialist):
         source_organisations=[factories.OrganisationFactory()],
     )
 
-    body = signed_in.get(REGISTER, {"saatja": selectors.MISSING, "olek": "koik"}).content.decode()
-    assert "Saatjata teema" in body
-    assert "Saatjaga teema" not in body
+    response = signed_in.get(REGISTER, {"saatja": selectors.MISSING, "olek": "koik"})
+    assert titles_on(response) == ["Saatjata teema"]
 
 
 # -- usage ranking ----------------------------------------------------------

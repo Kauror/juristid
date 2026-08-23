@@ -55,7 +55,10 @@ def test_the_sender_is_a_multiple_choice(specialist):
     field = form.fields["source_organisations"]
     assert isinstance(field, forms.ModelMultipleChoiceField)
     assert isinstance(field.widget, forms.CheckboxSelectMultiple)
-    assert not isinstance(field.widget, forms.RadioSelect)
+    # `allow_multiple_selected` rather than `not isinstance(..., RadioSelect)`:
+    # `CheckboxSelectMultiple` *subclasses* `RadioSelect`, so the isinstance
+    # form of this assertion is true of both controls and proves nothing.
+    assert field.widget.allow_multiple_selected
 
 
 def test_the_policy_areas_are_real_checkboxes(specialist):

@@ -58,7 +58,9 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # inside the disclosure — that is the Stage-2E.1 redesign, and driving them
     # the old way is what this test is for (docs/adr, brief 15–17).
     page.get_by_role("radio", name=SANDRA.short_name, exact=True).check()
-    page.get_by_role("radio", name="Näidisministeerium").check()
+    # A checkbox, not a radio: a matter may have arrived from several bodies
+    # (Wave-2 multiple senders, ADR 0025).
+    page.get_by_role("checkbox", name="Näidisministeerium").check()
 
     page.locator("summary", has_text="Täpsusta teema andmeid").click()
     page.locator("#id_stage").select_option(label="Kooskõlastusringil")

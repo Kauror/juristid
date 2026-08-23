@@ -28,7 +28,18 @@ LINK_TABLE = "matters_mattersourceorganisation"
 
 
 def migrate_to(target: tuple[str, str]) -> None:
-    """Move the `matters` app to one migration, rebuilding the graph first."""
+    """Move the `matters` app to one migration, rebuilding the graph first.
+
+    ``SET CONSTRAINTS ALL IMMEDIATE`` first, and it is not optional. Django
+    creates its foreign keys ``DEFERRABLE INITIALLY DEFERRED``, so every row a
+    test wrote leaves a pending trigger event on the table — and PostgreSQL
+    refuses ``ALTER TABLE`` on a table that has any, with *cannot ALTER TABLE
+    because it has pending trigger events*. Setting the constraints immediate
+    fires the queue and empties it, which is what lets a migration run inside
+    the same transaction as the data it is migrating.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
     executor = MigrationExecutor(connection)
     executor.loader.build_graph()
     executor.migrate([target])

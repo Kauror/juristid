@@ -365,10 +365,12 @@ def build_world(today: date | None = None) -> World:
         owner=sandra,
         stage=stage,
         track=Track.DOMESTIC,
-        source_organisations=[ministry],
         received_date=date(current, 2, 3),
         response_deadline=today + timedelta(days=10),
     )
+    # A relation, so it is written after the row exists rather than passed to
+    # `create()` — the sender side became many-to-many in Wave 2.
+    native_open.source_organisations.set([ministry])
     native_open.policy_areas.add(area_tax)
     TagAssignment.objects.create(matter=native_open, tag=tag)
 
@@ -446,10 +448,10 @@ def build_world(today: date | None = None) -> World:
         owner=sandra,
         stage=stage,
         track=Track.DOMESTIC,
-        source_organisations=[partner],
         visibility=Visibility.RESTRICTED,
         received_date=date(current, 4, 4),
     )
+    restricted.source_organisations.set([partner])
     restricted.policy_areas.add(area_tax)
 
     # -- archive ----------------------------------------------------------
@@ -463,9 +465,9 @@ def build_world(today: date | None = None) -> World:
         reference_year=archive,
         reference_number=12,
         reporting_year=archive,
-        source_organisations=[ministry],
         is_open=False,
     )
+    archive_excel.source_organisations.set([ministry])
 
     archive_excel_no_source = Matter.objects.create(
         title="Registririda ilma OneNote'i leheta",

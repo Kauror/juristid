@@ -194,9 +194,11 @@ def test_two_ticked_areas_both_survive_the_save(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_create(page, base_url)
 
-    chosen = [
-        page.locator(".checkitems .checkitem").nth(index).inner_text().strip() for index in (0, 1)
-    ]
+    # Scoped to the policy-area boxes by their input name. The sender control
+    # is a `.checkitems` group too now, and it sits above this one — an
+    # unscoped nth(0) reads a ministry and then looks for it among the tags.
+    area_labels = page.locator("label.checkitem:has(input[name='policy_areas'])")
+    chosen = [area_labels.nth(index).inner_text().strip() for index in (0, 1)]
     page.locator("#id_title").fill("Kahe valdkonnaga teema")
     page.locator("input[name='policy_areas']").nth(0).check()
     page.locator("input[name='policy_areas']").nth(1).check()

@@ -1432,6 +1432,24 @@ p.formnote {
   list-style: none;
 }
 
+/* A field whose value is a *list*. The 22ch clamp above is right for one long
+ * institution name — an ellipsis after "Majandus- ja Kommunikatsioo…" still
+ * reads as one truncated name. It is wrong for several: clipping mid-item
+ * produced "Näidisettevõtete liit, Näidis", which reads as a broken name
+ * rather than as a second organisation, and hides that a sender exists at all.
+ *
+ * So the sender field wraps instead of clipping. Every sender stays legible,
+ * which is what the detail page owes a reader, and the band absorbs the extra
+ * line — it already wraps (Agent-E brief 33). */
+.inlineedit__trigger--list {
+  max-width: 30ch;
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  align-items: flex-start;
+  overflow-wrap: anywhere;
+}
+
 .inlineedit__trigger::-webkit-details-marker {
   display: none;
 }
@@ -3701,6 +3719,17 @@ a.barchart__row:hover {
 .checkitem:has(input:focus-visible) {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* The native control inside the chip. Styled rather than hidden: a real
+ * checkbox is what makes "several of these may be ticked" legible to a
+ * keyboard and to a screen reader, and `accent-color` is enough to make it
+ * belong to the palette without replacing it with a div. */
+.choicecard__input,
+.checkitem__input {
+  accent-color: var(--accent-primary);
+  flex: none;
+  margin: 0;
 }
 
 .checkitems__other {
