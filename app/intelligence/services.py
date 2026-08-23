@@ -417,6 +417,54 @@ def _validate_period(period_date: date | None, period_end: date | None, precisio
     _check_bounds(period_date, period_end, precision)
 
 
+def _create_work_victory(
+    *,
+    matter: Any,
+    status: str,
+    title: str,
+    detail: str,
+    period_date: date | None,
+    period_end: date | None,
+    date_precision: str,
+    source_url: str,
+    note: str,
+    actor: Any,
+    source_text: str,
+    legacy_source_page: Any,
+) -> MatterWorkVictory:
+    """The row itself, in whichever state it is genuinely being created in.
+
+    Shared by the two entry points below so the validation and the field
+    handling cannot drift apart. It writes no audit event: what happened is
+    different in each case, and each caller records its own truth.
+    """
+    title = _require_text(title, "Töövõidul peab olema kirjeldus.")
+    _validate_period(period_date, period_end, date_precision)
+
+    now = timezone.now()
+    confirmed = status == WorkVictoryStatus.CONFIRMED
+    return MatterWorkVictory.objects.create(
+        matter=matter,
+        status=status,
+        title=title,
+        detail=detail.strip(),
+        period_date=period_date,
+        period_end=period_end,
+        date_precision=date_precision,
+        source_url=source_url.strip(),
+        note=note.strip(),
+        created_by=actor,
+        # A confirmed row carries who decided and when, from the moment it
+        # exists. Leaving them blank would make a confirmed victory that nobody
+        # appears to have confirmed.
+        confirmed_by=actor if confirmed else None,
+        confirmed_at=now if confirmed else None,
+        source_text=source_text,
+        legacy_source_page=legacy_source_page,
+        status_changed_at=now,
+    )
+
+
 @transaction.atomic
 def add_work_victory_candidate(
     *,
@@ -432,38 +480,107 @@ def add_work_victory_candidate(
     source_text: str = "",
     legacy_source_page: Any = None,
 ) -> MatterWorkVictory:
-    """Record a claim that this was a Koda win. Always as a candidate.
+    """Propose that something was a Koda win. A claim, not yet a count.
 
-    There is no path that creates a confirmed victory directly. Confirmation is
-    a separate, deliberate act by a separate person, because the alternative is
-    a department whose count of its own achievements rises whenever somebody
-    types confidently (Stage-2G brief 20, 24).
+    This is the machine's and the importer's door: a suggestion derived from a
+    source, or an old proposed win carried over, neither of which any person
+    has yet decided. Confirmation is a separate, deliberate act, because a
+    department whose achievements rise whenever a script matches a pattern is
+    counting the script (Stage-2G brief 20, 24).
+
+    A person adding a victory from the Matter UI does not come through here.
+    They have already made the judgement, and
+    :func:`add_confirmed_work_victory` records that instead of inventing a
+    candidate stage the row never had.
     """
-    title = _require_text(title, "Töövõidul peab olema kirjeldus.")
-    _validate_period(period_date, period_end, date_precision)
-
-    record = MatterWorkVictory.objects.create(
+    record = _create_work_victory(
         matter=matter,
         status=WorkVictoryStatus.CANDIDATE,
         title=title,
-        detail=detail.strip(),
+        detail=detail,
         period_date=period_date,
         period_end=period_end,
         date_precision=date_precision,
-        source_url=source_url.strip(),
-        note=note.strip(),
-        created_by=actor,
+        source_url=source_url,
+        note=note,
+        actor=actor,
         source_text=source_text,
         legacy_source_page=legacy_source_page,
-        status_changed_at=timezone.now(),
     )
     record_change_event(
         event_type=ChangeEventType.WORK_VICTORY_PROPOSED,
         matter=matter,
         actor=actor,
         obj=record,
-        summary=title[:SUMMARY_LIMIT],
+        summary=record.title[:SUMMARY_LIMIT],
         payload={"period": _iso(period_date), "precision": date_precision},
+    )
+    return record
+
+
+@transaction.atomic
+def add_confirmed_work_victory(
+    *,
+    matter: Any,
+    title: str,
+    detail: str = "",
+    period_date: date | None = None,
+    period_end: date | None = None,
+    date_precision: str = DatePrecision.YEAR,
+    source_url: str = "",
+    note: str = "",
+    actor: Any = None,
+) -> MatterWorkVictory:
+    """A person states that this was a Koda work victory. One act, one row.
+
+    The department's manual door, and deliberately not the candidate one. A
+    colleague who opens a Matter and writes down a win has already made the
+    judgement the review step exists to make; routing them through CANDIDATE
+    made them ask somebody else to agree with what they had just decided, and
+    left every manual entry sitting unconfirmed until it did.
+
+    Not implemented as "create a candidate, then confirm it". That would leave
+    two audit rows describing a proposal and an approval that never happened —
+    an audit trail is worth exactly as much as its worst entry, and this row
+    was confirmed the moment it was written.
+
+    Authorization is the ordinary business-write gate on the Matter, because
+    this is a person adding visible content to a file they may already write
+    to. Deciding the fate of a *machine* candidate stays with
+    ``may_review_work_victory``: that is a judgement about somebody else's
+    proposal, which is a different question (app/core/authorization.py).
+    """
+    record = _create_work_victory(
+        matter=matter,
+        status=WorkVictoryStatus.CONFIRMED,
+        title=title,
+        detail=detail,
+        period_date=period_date,
+        period_end=period_end,
+        date_precision=date_precision,
+        source_url=source_url,
+        note=note,
+        actor=actor,
+        source_text="",
+        legacy_source_page=None,
+    )
+    record_change_event(
+        event_type=ChangeEventType.WORK_VICTORY_CONFIRMED,
+        matter=matter,
+        actor=actor,
+        obj=record,
+        summary=record.title[:SUMMARY_LIMIT],
+        payload={
+            # No `from_status`: there was no earlier status. `origin` is what
+            # tells a reader of the trail that this is somebody writing down a
+            # win rather than approving a machine's guess.
+            "origin": "MANUAL",
+            "to_status": WorkVictoryStatus.CONFIRMED.value,
+            "confirmed_by": str(getattr(actor, "pk", "") or ""),
+            "confirmed_at": record.confirmed_at.isoformat() if record.confirmed_at else "",
+            "period": _iso(period_date),
+            "precision": date_precision,
+        },
     )
     return record
 

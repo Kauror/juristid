@@ -22,7 +22,7 @@ from app.documents.enums import DocumentRole
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import read_upload
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import DataQualityTier, MatterOrigin, RecordMode
+from app.matters.enums import DataQualityTier, MatterDataClass, MatterOrigin, RecordMode
 from app.matters.models import Entry, EntryRevision, Matter, MatterReferenceSequence
 from app.workflow.enums import Disposition, Track
 from app.workflow.services import end_open_action_for_closure, set_next_action
@@ -121,13 +121,20 @@ def create_matter(
     record_mode: str = RecordMode.FULL,
     origin: str = MatterOrigin.NATIVE,
     visibility: str = Visibility.NORMAL,
+    data_class: str = MatterDataClass.REAL,
     **extra: Any,
 ) -> Matter:
-    """Create a Matter. Only the title is required (specification 3.8)."""
+    """Create a Matter. Only the title is required (specification 3.8).
+
+    ``data_class`` defaults to REAL, which is what makes every importer, every
+    fixture and every existing caller keep producing business data without
+    being changed (Agent-C brief 29).
+    """
     if not title.strip():
         raise DomainError("Teema vajab pealkirja.")
     if visibility not in Visibility.values:
         raise DomainError(f"Tundmatu nähtavus {visibility!r}.")
+    validate_test_classification(data_class=data_class, origin=origin)
     track = extra.get("track", "")
     if track and track not in Track.values:
         raise DomainError(f"Tundmatu menetlusliik {track!r}.")
@@ -151,6 +158,7 @@ def create_matter(
         record_mode=record_mode,
         origin=origin,
         visibility=visibility,
+        data_class=data_class,
         reference_year=year_number[0] if year_number else None,
         reference_number=year_number[1] if year_number else None,
         reporting_year=extra.pop("reporting_year", year_number[0] if year_number else None),
@@ -169,7 +177,68 @@ def create_matter(
             "reference": matter.display_reference,
             "record_mode": matter.record_mode,
             "origin": matter.origin,
+            # Carried on the creation event rather than raising a second one.
+            # MATTER_CREATED already says what kind of record this is; a
+            # separate MATTER_DATA_CLASS_CHANGED beside it would describe a
+            # change that never happened (Agent-C brief 17).
+            "data_class": matter.data_class,
         },
+    )
+    return matter
+
+
+def validate_test_classification(*, data_class: str, origin: str) -> None:
+    """Refuse an unknown class, and refuse TEST on anything not created here.
+
+    The second rule is the load-bearing one. TEST means "made while developing
+    Juristid", so the only Matter that can honestly carry it is one this system
+    created. An imported register row is somebody's real work from years ago,
+    with provenance that cannot be reconstructed, and marking it disposable
+    because a control sat next to the wrong row is the single most expensive
+    mistake this feature could enable.
+
+    Mirrored by the ``matters_test_data_is_native`` database constraint, because
+    this function is not the only thing that can write the column
+    (Agent-C brief 12, 17, 48).
+    """
+    if data_class not in MatterDataClass.values:
+        raise DomainError(f"Tundmatu andmeklass {data_class!r}.")
+    if data_class == MatterDataClass.TEST and origin != MatterOrigin.NATIVE:
+        raise DomainError(
+            "Testandmeteks saab märkida ainult süsteemis loodud teema. "
+            "Ajalooline või imporditud kirje jääb alati pärisandmeteks."
+        )
+
+
+@transaction.atomic
+def set_matter_data_class(*, matter: Matter, data_class: str, actor: Any = None) -> Matter:
+    """Reclassify a Matter as real business data or as development data.
+
+    Both directions are supported and both are ordinary. A development record
+    created without ticking the box is the common case; the opposite —
+    a real matter somebody opened while demonstrating the system — happens too.
+
+    Child records are deliberately left alone. Their testness is derived from
+    this Matter every time it is read, exactly as their visibility is, so
+    nothing here can go stale and no combination of a REAL Matter with a TEST
+    submission is representable (Agent-C brief 18, 20).
+    """
+    validate_test_classification(data_class=data_class, origin=matter.origin)
+
+    previous = matter.data_class
+    if previous == data_class:
+        return matter
+
+    matter.data_class = data_class
+    matter.save(update_fields=["data_class", "updated_at"])
+
+    record_change_event(
+        event_type=ChangeEventType.MATTER_DATA_CLASS_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=f"{previous} → {data_class}",
+        payload={"from": previous, "to": data_class},
     )
     return matter
 

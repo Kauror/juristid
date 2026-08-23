@@ -92,8 +92,14 @@ because a plan that changed is part of the file's history.
       <p class="factsection__none">Töövõite ega kandidaate pole lisatud.</p>
     {% endif %}
     {% if can_write %}
+      {% comment %}
+        "Lisa töövõit", because that is what the button does: a colleague who
+        may write on this Matter records a win and it is recorded as one.
+        Kandidaat is what a machine suggestion or an import arrives as, and
+        those are reviewed with the controls on the rows below.
+      {% endcomment %}
       <a class="button button--quiet button--tiny"
-         href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}">+ Lisa töövõidu kandidaat</a>
+         href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}">+ Lisa töövõit</a>
     {% endif %}
   </div>
 

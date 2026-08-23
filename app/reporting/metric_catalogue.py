@@ -78,6 +78,10 @@ MATTERS_BY_RECORD_MODE = "MATTERS_BY_RECORD_MODE"
 MATTERS_BY_ORIGIN = "MATTERS_BY_ORIGIN"
 MATTERS_BY_STAGE = "MATTERS_BY_STAGE"
 MATTERS_BY_OWNER = "MATTERS_BY_OWNER"
+MATTERS_BY_RESPONSIBILITY = "MATTERS_BY_RESPONSIBILITY"
+MATTERS_BY_YEAR_AND_RESPONSIBILITY = "MATTERS_BY_YEAR_AND_RESPONSIBILITY"
+ACTIVE_FULL_MATTERS_BY_STAGE = "ACTIVE_FULL_MATTERS_BY_STAGE"
+ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY = "ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY"
 MATTERS_BY_POLICY_AREA = "MATTERS_BY_POLICY_AREA"
 MATTERS_UNCLASSIFIED_POLICY_AREA = "MATTERS_UNCLASSIFIED_POLICY_AREA"
 MATTERS_BY_TRACK = "MATTERS_BY_TRACK"
@@ -96,6 +100,9 @@ MATTERS_BY_SUBMISSION_COUNT = "MATTERS_BY_SUBMISSION_COUNT"
 MATTERS_WITH_MULTIPLE_SUBMISSIONS = "MATTERS_WITH_MULTIPLE_SUBMISSIONS"
 
 NEW_NATIVE_FULL_MATTERS = "NEW_NATIVE_FULL_MATTERS"
+NEW_NATIVE_FULL_MATTERS_BY_MONTH = "NEW_NATIVE_FULL_MATTERS_BY_MONTH"
+NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH = "NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH"
+NEW_NATIVE_MATTERS_YOY_CHANGE = "NEW_NATIVE_MATTERS_YOY_CHANGE"
 ACTIVE_WITHOUT_NEXT_ACTION = "ACTIVE_WITHOUT_NEXT_ACTION"
 ACTIVE_WITHOUT_OWNER = "ACTIVE_WITHOUT_OWNER"
 OVERDUE_DO_DEADLINE = "OVERDUE_DO_DEADLINE"
@@ -134,6 +141,12 @@ SEARCHABLE_DOCUMENT_COVERAGE = "SEARCHABLE_DOCUMENT_COVERAGE"
 
 OPINION_ARCHIVE_OCCURRENCES = "OPINION_ARCHIVE_OCCURRENCES"
 OPINION_ARCHIVE_DISTINCT_BINARIES = "OPINION_ARCHIVE_DISTINCT_BINARIES"
+OPINION_ARCHIVE_BY_YEAR = "OPINION_ARCHIVE_BY_YEAR"
+OPINION_ARCHIVE_BY_MONTH = "OPINION_ARCHIVE_BY_MONTH"
+OPINION_ARCHIVE_YOY_CHANGE = "OPINION_ARCHIVE_YOY_CHANGE"
+OPINION_ARCHIVE_LINK_COVERAGE = "OPINION_ARCHIVE_LINK_COVERAGE"
+OPINION_ARCHIVE_LINKED_BY_RESPONSIBILITY = "OPINION_ARCHIVE_LINKED_BY_RESPONSIBILITY"
+OPINION_ARCHIVE_LINKED_BY_MONTH_RESPONSIBILITY = "OPINION_ARCHIVE_LINKED_BY_MONTH_RESPONSIBILITY"
 
 OPINION_ARCHIVE_MATTER_COVERAGE = "OPINION_ARCHIVE_MATTER_COVERAGE"
 OPINION_ARCHIVE_UNRESOLVED = "OPINION_ARCHIVE_UNRESOLVED"
@@ -245,6 +258,98 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         minimum_coverage=0.0,
         notes_et="Juriste ei järjestata ega võrrelda.",
         source_era_limitations_et=_ARCHIVE_SPARSITY,
+    ),
+    _matter(
+        MATTERS_BY_RESPONSIBILITY,
+        "Teemad vastutuse järgi",
+        (
+            "Portfelli jaotus vastutaja järgi, nii nagu allikas teda nimetab: "
+            "registri VASTUTAJA tekst, selle puudumisel kanooniline vastutaja. "
+            "See on inventuur, mitte töökoormus, tulemuslikkus ega juristide "
+            "järjestus."
+        ),
+        population="Nähtavad teemad",
+        coverage_description_et="Teemad, millel on vastutaja nimi teada",
+        minimum_coverage=0.0,
+        source_era_limitations_et=(
+            "Registris nimetatud kolleegil ei pruugi olla siinset kasutajakontot. "
+            "Sel juhul säilib allika nimi ja teda ei liideta rühma „Määramata“."
+        ),
+        notes_et=(
+            "Juriste ei järjestata ega võrrelda. Erineb näitajast „Teemad "
+            "vastutaja järgi“, mis rühmitab ainult kanoonilise kasutajakonto "
+            "järgi ja avab registri loendi."
+        ),
+        drillthrough_et=(
+            "Loendit ei avata: register filtreerib lahendatud vastutaja järgi, "
+            "siin on rühmitatud allika nime järgi, ja link avaks teistsuguse hulga."
+        ),
+    ),
+    _matter(
+        MATTERS_BY_YEAR_AND_RESPONSIBILITY,
+        "Teemad aastate ja vastutuse kaupa",
+        (
+            "Kui palju teemasid on iga aasta kohta millise vastutaja all. "
+            "Tabel, mitte edetabel: read on aastad, veerud vastutajad tähestiku "
+            "järjekorras, ja arv on inventuur, mitte tehtud töö maht."
+        ),
+        population="Nähtavad teemad, millel on registri aruandlusaasta",
+        earliest_reliable_period=REGISTER_FIRST_YEAR,
+        source_era_limitations_et=_ERA_ONENOTE_YEAR,
+        coverage_description_et="Teemad, mis mahuvad aastatelgele",
+        minimum_coverage=0.0,
+        notes_et=(
+            "Aastad, mille kohta kirjeid ei ole, jäetakse tabelist välja. Kui "
+            "vastutajate nimesid on rohkem, kui tabel loetavalt mahutab, "
+            "koondatakse ülejäänud eraldi märgistatud veergu ja tabel ütleb, "
+            "mitu nime seal on."
+        ),
+        drillthrough_et="Loendit ei avata: registril ei ole aasta × vastutaja filtrit.",
+    ),
+    _matter(
+        ACTIVE_FULL_MATTERS_BY_STAGE,
+        "Aktiivsed teemad hetkeseisu järgi",
+        (
+            "Kus praegu avatud täielike teemade väline menetlus seisab. "
+            "Arhiivikirjed ei ole aktiivne töö ega kuulu siia."
+        ),
+        population="Avatud teemad, kirje liik FULL",
+        time_basis=TimeBasis.POINT_IN_TIME,
+        eligible_record_modes=(RecordMode.FULL.value,),
+        required_fields=("is_open", "record_mode"),
+        exclusions_et="Arhiivikirjed; suletud teemad",
+        respects_period=False,
+        coverage_description_et="Aktiivsed teemad, millel on hetkeseis määratud",
+        minimum_coverage=0.0,
+        notes_et=(
+            "Erineb näitajast „Teemad hetkeseisu järgi“, mis järgib valitud "
+            "perioodi ja sisaldab ka arhiivikirjeid, millel hetkeseisu "
+            "õigustatult ei ole."
+        ),
+        drillthrough_et="Teemade register: avatud, kirje liik FULL, valitud hetkeseis",
+    ),
+    _matter(
+        ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY,
+        "Aktiivsed teemad vastutuse järgi",
+        (
+            "Praegune portfell vastutajate kaupa, allika nimetuse järgi. "
+            "Hetkeseisu inventuur, mitte töökoormus ega tulemuslikkus."
+        ),
+        population="Avatud teemad, kirje liik FULL",
+        time_basis=TimeBasis.POINT_IN_TIME,
+        eligible_record_modes=(RecordMode.FULL.value,),
+        respects_period=False,
+        coverage_description_et="Aktiivsed teemad, millel on vastutaja nimi teada",
+        minimum_coverage=0.0,
+        source_era_limitations_et=(
+            "Kui register nimetab vastutajat, kellel siinset kontot ei ole, "
+            "säilib allika nimi. Teda ei loeta määramata vastutajaks."
+        ),
+        notes_et="Juriste ei järjestata ega võrrelda.",
+        drillthrough_et=(
+            "Loendit ei avata: register filtreerib lahendatud vastutaja järgi, "
+            "siin on rühmitatud allika nime järgi."
+        ),
     ),
     _matter(
         MATTERS_BY_POLICY_AREA,
@@ -444,6 +549,76 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         required_fields=("received_date",),
         coverage_description_et="Teemad, millel on saabumise kuupäev",
         minimum_coverage=0.0,
+    ),
+    _matter(
+        NEW_NATIVE_FULL_MATTERS_BY_MONTH,
+        "Uued teemad kuude kaupa",
+        (
+            "Süsteemis loodud täielikud teemad saabumise kuu järgi. Sama "
+            "populatsioon ja sama kell nagu näitajal „Uusi teemasid perioodil“."
+        ),
+        population="Nähtavad teemad, kirje liik FULL, päritolu NATIVE, saabumise kuupäev teada",
+        time_basis=TimeBasis.RECEIVED_DATE,
+        eligible_record_modes=(RecordMode.FULL.value,),
+        eligible_origins=(MatterOrigin.NATIVE.value,),
+        required_fields=("received_date",),
+        exclusions_et=(
+            "Imporditud registriread: allikas annab ainult aruandlusaasta, mitte "
+            "kuu, ja kuu täpsust ei tuletata."
+        ),
+        notes_et=(
+            "Telg algab esimesel ja lõpeb viimasel mõõdetud kuupäeval. Vahepealne "
+            "tühi kuu on mõõdetud null; akna taha tulpa ei joonistata."
+        ),
+        drillthrough_et=(
+            "Loendit ei avata. Registril on aasta-, mitte kuufilter, ja "
+            "„saabumise kuupäev on teada“ ei ole filter — avanev loend oleks "
+            "pikem kui number selle kohal."
+        ),
+    ),
+    _matter(
+        NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH,
+        "Uued teemad kuude ja vastutuse kaupa",
+        (
+            "Kes sai millisel kuul uusi teemasid. Saabunud töö jaotus, mitte "
+            "tehtud töö maht ega juristide võrdlus."
+        ),
+        population="Nähtavad teemad, kirje liik FULL, päritolu NATIVE, saabumise kuupäev teada",
+        time_basis=TimeBasis.RECEIVED_DATE,
+        eligible_record_modes=(RecordMode.FULL.value,),
+        eligible_origins=(MatterOrigin.NATIVE.value,),
+        required_fields=("received_date",),
+        exclusions_et="Imporditud registriread, millel kuud ei ole",
+        notes_et=(
+            "Veerud on tähestiku järjekorras, määramata vastutaja viimasena. "
+            "Suuruse järgi ei järjestata."
+        ),
+        drillthrough_et="Loendit ei avata: registril ei ole kuu × vastutaja filtrit.",
+    ),
+    _matter(
+        NEW_NATIVE_MATTERS_YOY_CHANGE,
+        "Uute teemade muutus eelmise aastaga",
+        (
+            "Käesolev aasta tänase kuupäevani, võrrelduna eelmise aasta sama "
+            "ajavahemikuga. Mahu muutus, mitte tulemuslikkus."
+        ),
+        population="Nähtavad teemad, kirje liik FULL, päritolu NATIVE, saabumise kuupäev teada",
+        time_basis=TimeBasis.RECEIVED_DATE,
+        eligible_record_modes=(RecordMode.FULL.value,),
+        eligible_origins=(MatterOrigin.NATIVE.value,),
+        required_fields=("received_date",),
+        respects_period=False,
+        minimum_population=1,
+        notes_et=(
+            "Mõlemad pooled on lõigatud samal kuupäeval: osalist aastat ei "
+            "võrrelda terve aastaga. Kui eelmises võrreldavas perioodis ei olnud "
+            "ühtki teemat, näidatakse ainult absoluutset vahet — protsenti "
+            "nullist ei arvutata."
+        ),
+        drillthrough_et=(
+            "Loendit ei avata: registril ei ole filtrit „saabus 1. jaanuarist "
+            "tänaseni“, ja lähem filter avaks numbrist erineva hulga."
+        ),
     ),
     _matter(
         ACTIVE_WITHOUT_NEXT_ACTION,
@@ -847,6 +1022,155 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         time_basis=TimeBasis.WHOLE_CORPUS,
         unit=Unit.FILES,
         respects_period=False,
+    ),
+    MetricDefinition(
+        key=OPINION_ARCHIVE_BY_YEAR,
+        version=1,
+        label_et="Arvamuste arhiiv aastate kaupa",
+        description_et=(
+            "Erinevaid arhiivi faile aasta kohta, arhiivi failinime kuupäeva "
+            "järgi. See ei ole väljasaatmise aeg ja mitte kanooniline saadetud "
+            "arvamus: allika metaandmed ütlevad, millise kuupäeva kiri kannab."
+        ),
+        source_population_et="Kataloogitud arvamuste arhiivi kirjed, millel on failinime kuupäev",
+        time_basis=TimeBasis.SOURCE_TIMESTAMP,
+        unit=Unit.FILES,
+        earliest_reliable_period=OPINION_ARCHIVE_FIRST_YEAR,
+        required_fields=("filename_date",),
+        coverage_description_et="Erinevad failid, millel on failinime kuupäev",
+        minimum_coverage=0.0,
+        source_era_limitations_et=(
+            "Arhiiv algab 2020. aastast. Varasemate aastate kohta arhiivis "
+            "mõõtmist ei ole ja neid aastaid ei joonistata — puuduv mõõtmine "
+            "ei ole null."
+        ),
+        notes_et=(
+            "Loetakse erinevaid faile (SHA-256), mitte esinemisi: sama kiri "
+            "kahes kohas on üks kiri. Sama fail kahe kuupäevaga arvestatakse "
+            "varaseima kuupäeva järgi. Teemafiltrid ei kitsenda seda näitajat."
+        ),
+        drillthrough_et=(
+            "Loendit ei avata: arhiivil ei ole jagatud värava taga lugejale "
+            "avatavat vaadet, ja katkine link oleks halvem kui link puudub."
+        ),
+    ),
+    MetricDefinition(
+        key=OPINION_ARCHIVE_BY_MONTH,
+        version=1,
+        label_et="Arvamuste arhiiv kuude kaupa",
+        description_et=("Erinevaid arhiivi faile kuu kohta, arhiivi failinime kuupäeva järgi."),
+        source_population_et="Kataloogitud arvamuste arhiivi kirjed, millel on failinime kuupäev",
+        time_basis=TimeBasis.SOURCE_TIMESTAMP,
+        unit=Unit.FILES,
+        earliest_reliable_period=OPINION_ARCHIVE_FIRST_YEAR,
+        required_fields=("filename_date",),
+        coverage_description_et="Erinevad failid, millel on failinime kuupäev",
+        minimum_coverage=0.0,
+        source_era_limitations_et=(
+            "Telg lõpeb arhiivi viimasel mõõdetud kuupäeval. Hilisemaid kuid ei "
+            "joonistata nullidena: nende kohta ei ole tõendust, mitte tõendus "
+            "tühjusest."
+        ),
+        notes_et="Loetakse erinevaid faile, mitte esinemisi.",
+        drillthrough_et="Loendit ei avata; vt aastate kaupa näitaja selgitust.",
+    ),
+    MetricDefinition(
+        key=OPINION_ARCHIVE_YOY_CHANGE,
+        version=1,
+        label_et="Arhiivi arvamuste muutus eelmise aastaga",
+        description_et=(
+            "Arhiivi viimane aasta kuni viimase mõõdetud kuupäevani, võrrelduna "
+            "eelmise aasta täpselt sama ajavahemikuga."
+        ),
+        source_population_et="Kataloogitud arvamuste arhiivi kirjed, millel on failinime kuupäev",
+        time_basis=TimeBasis.SOURCE_TIMESTAMP,
+        unit=Unit.FILES,
+        earliest_reliable_period=OPINION_ARCHIVE_FIRST_YEAR,
+        required_fields=("filename_date",),
+        respects_period=False,
+        source_era_limitations_et=(
+            "Arhiivi katvus lõpeb viimase failinime kuupäevaga. Kui see on näiteks "
+            "31. juuli, siis on ka eelmise aasta pool lõigatud 31. juulil."
+        ),
+        notes_et=(
+            "Mahu muutus, mitte tulemuslikkus: rohkem arvamusi ei ole iseenesest "
+            "parem ega halvem. Kui eelmises võrreldavas perioodis ei olnud ühtki "
+            "faili, näidatakse ainult absoluutset vahet — protsenti nullist ei "
+            "arvutata."
+        ),
+        drillthrough_et="Loendit ei avata; vt aastate kaupa näitaja selgitust.",
+    ),
+    MetricDefinition(
+        key=OPINION_ARCHIVE_LINK_COVERAGE,
+        version=1,
+        label_et="Arhiivi failid teemaga seotud (seoste järgi)",
+        description_et=(
+            "Kui suur osa erinevatest arhiivi failidest on seotud vähemalt ühe "
+            "teemaga. Loetakse kinnitatud ja tuletatud teemaseoseid, mitte "
+            "ülevaatust ootavaid ettepanekuid."
+        ),
+        source_population_et="Kataloogitud arvamuste arhiivi kirjed",
+        time_basis=TimeBasis.POINT_IN_TIME,
+        unit=Unit.PERCENT,
+        coverage_description_et="Erinevad failid, millel on seos nähtava teemaga",
+        minimum_coverage=0.0,
+        respects_period=False,
+        notes_et=(
+            "Sidumata fail ei ole puuduv arvamus, vaid arhiivitõendus, mis ei ole "
+            "veel teemaga seotud. Mitme teemaga seotud fail loetakse kaetuks üks "
+            "kord. Loetakse ainult seoseid teemadega, mida lugeja näeb, seega "
+            "piiratud nähtavusega teema ei muuda kellegi teise numbrit."
+        ),
+        drillthrough_et="Loendit ei avata; vt aastate kaupa näitaja selgitust.",
+    ),
+    MetricDefinition(
+        key=OPINION_ARCHIVE_LINKED_BY_RESPONSIBILITY,
+        version=1,
+        label_et="Arhiivi failid vastutuse järgi",
+        description_et=(
+            "Erinevad arhiivi failid, millel on seos selle vastutaja teemaga. "
+            "Üks fail võib puudutada mitut teemat ja on siis arvestatud iga "
+            "vastutaja juures, seega rühmade summa võib ületada failide koguarvu."
+        ),
+        source_population_et="Arhiivi failid, mis on seotud lugejale nähtava teemaga",
+        time_basis=TimeBasis.POINT_IN_TIME,
+        unit=Unit.FILES,
+        coverage_description_et="Erinevad failid, millel on seos nähtava teemaga",
+        minimum_coverage=0.0,
+        respects_period=False,
+        source_era_limitations_et=(
+            "Vastutaja on registri VASTUTAJA tekst, selle puudumisel kanooniline "
+            "vastutaja. Ajaloolist nime ei asendata praeguse töötajaga."
+        ),
+        notes_et=(
+            "Arhiivi inventuur, mitte juristide võrdlus ega tulemuslikkus. "
+            "Esmast teemat ei valita: mudelis seda ei ole ja väljamõeldud "
+            "esmasus paneks kirja vale inimese nimele."
+        ),
+        drillthrough_et="Loendit ei avata; vt aastate kaupa näitaja selgitust.",
+    ),
+    MetricDefinition(
+        key=OPINION_ARCHIVE_LINKED_BY_MONTH_RESPONSIBILITY,
+        version=1,
+        label_et="Arhiivi failid kuude ja vastutuse kaupa",
+        description_et=(
+            "Teemaga seotud arhiivi failid kuu ja vastutaja kaupa, arhiivi "
+            "failinime kuupäeva järgi."
+        ),
+        source_population_et="Arhiivi failid, mis on seotud lugejale nähtava teemaga",
+        time_basis=TimeBasis.SOURCE_TIMESTAMP,
+        unit=Unit.FILES,
+        earliest_reliable_period=OPINION_ARCHIVE_FIRST_YEAR,
+        required_fields=("filename_date",),
+        source_era_limitations_et=(
+            "Kuupäev on failinime kuupäev, mitte väljasaatmise aeg. Arhiiv algab 2020. aastast."
+        ),
+        notes_et=(
+            "Mitut teemat puudutav fail on arvestatud iga vastutaja juures, "
+            "seega ridade summa võib ületada erinevate failide arvu. Esmast "
+            "teemat ei valita."
+        ),
+        drillthrough_et="Loendit ei avata; vt aastate kaupa näitaja selgitust.",
     ),
     # -- Andmekvaliteet ----------------------------------------------------
     MetricDefinition(

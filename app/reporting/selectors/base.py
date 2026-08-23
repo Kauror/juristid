@@ -34,12 +34,14 @@ from django.db.models import Count, Q, QuerySet
 from django.urls import reverse
 
 from app.core.authorization import scoped_count
-from app.matters.enums import RecordMode
+from app.matters.enums import REGISTER_YEAR_ORIGINS, RecordMode
 from app.matters.models import Matter
 from app.matters.selectors import UNKNOWN_YEAR, register_year_q, unknown_register_year_q
 from app.reporting.context import ReportingContext
 from app.reporting.metric_types import (
+    Comparison,
     Distribution,
+    Matrix,
     MetricDefinition,
     MetricResult,
     MetricStatus,
@@ -88,8 +90,27 @@ def visible_matters(context: ReportingContext) -> QuerySet[Matter]:
     depends on the metric's time basis, so applying it at this level would force
     every metric onto the Matter's reporting year — including the ones measured
     on a submission's send date (brief 14).
+
+    **Published statistics are real data only, and that is decided here.**
+    Development and testing happen against the same database as real work, and
+    a Matter carries `data_class` saying which it is. A figure that counts
+    development records is wrong in the way that is hardest to notice: nothing
+    on the screen looks broken and the number is simply too big.
+
+    So `real_data()` is applied once, to the population every other selector in
+    this package starts from, rather than metric by metric — the same reason
+    authorization is applied here and not at render time. A metric added
+    tomorrow inherits it without its author having to know the rule exists.
+
+    **The data class is not authorization and the two are not merged.** They
+    narrow the same queryset here because a *published statistic* wants both,
+    but they answer different questions, and `Matter.objects.visible_to` still
+    means exactly what it meant before. The operational surfaces — Teemad, Minu
+    töö, Saabunud — deliberately keep showing TEST records, defaulting to
+    *Kõik* with an explicit *Andmed* filter, because a developer has to be able
+    to see the record they just made (docs/adr/0024, Agent-C brief 28, 63).
     """
-    queryset = Matter.objects.visible_to(context.viewer)
+    queryset = Matter.objects.visible_to(context.viewer).real_data()
 
     if context.owner_unreadable:
         return queryset.none()
@@ -125,6 +146,18 @@ def eligible_matters(context: ReportingContext, definition: MetricDefinition) ->
     if definition.eligible_origins:
         queryset = queryset.filter(origin__in=definition.eligible_origins)
     return queryset
+
+
+def known_year_q() -> Q:
+    """What counts as a *register* reporting year, in one predicate.
+
+    A OneNote-only Matter carries a ``reporting_year`` taken from a page
+    timestamp. It is the only date that page has and it is not a reporting
+    year, so every year-shaped statistic asks this rather than restating the
+    origin list — three metrics restating it is three places for one of them to
+    drift (``app.matters.enums.REGISTER_YEAR_ORIGINS``).
+    """
+    return Q(reporting_year__isnull=False, origin__in=REGISTER_YEAR_ORIGINS)
 
 
 def in_reporting_year(queryset: QuerySet[Matter], context: ReportingContext) -> QuerySet[Matter]:
@@ -267,6 +300,8 @@ def simple_result(
     url: str = "",
     segments: tuple[Segment, ...] = (),
     distribution: Distribution | None = None,
+    matrix: Matrix | None = None,
+    comparison: Comparison | None = None,
     notes: tuple[str, ...] = (),
     status: MetricStatus | None = None,
 ) -> MetricResult:
@@ -300,6 +335,8 @@ def simple_result(
         drillthrough_url=url,
         segments=segments,
         distribution=distribution,
+        matrix=matrix,
+        comparison=comparison,
         notes=notes,
     )
 

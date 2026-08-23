@@ -24,6 +24,40 @@ stays behind the tabs (master specification 8.7).
         <span>{{ matter.closed_at|date:"d.m.Y" }}</span>
       </p>
     {% endif %}
+    {% comment %}
+      The class is always shown and the control is one disclosure behind it.
+      Both directions are ordinary: a development record created without
+      ticking the box is the common case, and a real matter opened while
+      demonstrating the system happens too. An imported register row is offered
+      no control at all — the service and the database both refuse TEST on one,
+      and a disabled control the reader cannot use is worse than none
+      (Agent-C brief 12, 18).
+    {% endcomment %}
+    <p class="railcard__row">
+      <span class="railcard__key">Andmeklass</span>
+      <span>{{ matter.get_data_class_display }}</span>
+    </p>
+    {% if matter.origin == "NATIVE" %}
+      <details class="disclosure disclosure--inline">
+        <summary class="disclosure__summary">
+          {% if matter.is_test_data %}Märgi pärisandmeteks{% else %}Märgi testandmeteks{% endif %}
+        </summary>
+        {% comment %}
+          A plain POST, not an HTMX swap. The class shows in three places at
+          once — the header badge, this row and every register row — and a swap
+          would refresh one of them (Agent-C brief 22).
+        {% endcomment %}
+        <form class="inlineform disclosure__body" method="post"
+              action="{% url 'matters:set_data_class' pk=matter.pk %}">
+          {% csrf_token %}
+          <input type="hidden" name="data_class"
+                 value="{% if matter.is_test_data %}REAL{% else %}TEST{% endif %}">
+          <button class="button button--quiet button--tiny" type="submit">
+            {% if matter.is_test_data %}Märgi pärisandmeteks{% else %}Märgi testandmeteks{% endif %}
+          </button>
+        </form>
+      </details>
+    {% endif %}
   </div>
 
   {% if matter.policy_areas.all or matter.tags.all or matter.policy_area_other %}

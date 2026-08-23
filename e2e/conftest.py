@@ -28,6 +28,16 @@ class Persona:
     upn: str
     display_name: str
 
+    @property
+    def short_name(self) -> str:
+        """What the ordinary work UI calls this person.
+
+        Mirrors `User.get_short_name`, because these tests have no database
+        access on purpose and a browser test that looked the answer up in the
+        model could not notice the page disagreeing with it.
+        """
+        return self.display_name.split(" ")[0]
+
 
 # Mirrors e2e/seed_e2e.py. Kept as data rather than looked up, so a browser test
 # never has database access and therefore cannot mask an authorization bug by

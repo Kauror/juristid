@@ -388,6 +388,24 @@
   letter-spacing: 0;
 }
 
+/* A section heading with a control beside it — Ülevaade's deadline period.
+   The heading keeps its own padding, so the control aligns to the bottom of
+   the label rather than floating above the table it belongs to. `wrap`,
+   because five period links and a heading do not fit a narrow column and a
+   segmented control that overflows is one nobody can reach the end of. */
+.sectionhead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  padding-right: var(--spacing-3);
+}
+
+.sectionhead .sectionlabel {
+  padding-right: 0;
+}
+
 /* "kuvatud 50" beside a larger total. Quieter than the count itself, because
    it qualifies the number rather than competing with it. */
 .sectionlabel__note {
@@ -609,6 +627,18 @@ p.formnote {
   color: var(--status-warning);
   background: var(--status-warning-soft);
   border-color: var(--status-warning-border);
+}
+
+/* Development data. Warning-coloured and solid rather than tinted, because
+   this is the one badge whose entire job is to be impossible to skim past —
+   and still a badge rather than an alarm bar, because a developer sees it
+   fifty times a day (Agent-C brief 22). */
+.badge--test {
+  color: var(--text-inverse);
+  background: var(--status-warning);
+  border-color: var(--status-warning);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: 0.05em;
 }
 
 .badge--closed,
@@ -1110,10 +1140,6 @@ p.formnote {
 .table tbody tr:focus-within {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: calc(var(--focus-ring-offset-width) * -1);
-}
-
-.table--register .table__ref {
-  width: 84px;
 }
 
 /* No width: in a fixed layout the unsized column absorbs the remainder, and
@@ -4252,10 +4278,6 @@ p.factsection__none {
   table-layout: fixed;
 }
 
-.table--dash .table__ref {
-  width: 84px;
-}
-
 .table--dash .table__owner {
   width: 140px;
 }
@@ -4481,5 +4503,110 @@ p.factsection__none {
 .pager__status {
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* -- Statistika 2.0: matrix and comparison ---------------------------------
+ *
+ * A matrix is a real table, and nothing in it carries meaning through colour.
+ * The value is printed in every cell; the shading below separates the totals
+ * row and column from the body, which is orientation rather than data
+ * (Stage-2E brief 50, 51).
+ *
+ * The table scrolls inside `.tablewrap`. A sixteen-year × twelve-lawyer grid
+ * must never push the page sideways.
+ * ------------------------------------------------------------------------ */
+
+.chart--wide {
+  grid-column: 1 / -1;
+  margin-bottom: var(--spacing-4);
+}
+
+.matrix {
+  min-width: max-content;
+}
+
+.matrix th[scope="col"] {
+  white-space: nowrap;
+}
+
+.matrix th[scope="row"] {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.matrix td {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Zero is printed rather than blanked, but is muted: a grid of emphatic zeros
+   reads as a problem, and a blank cell reads as missing data. It is neither. */
+.matrix td:not(.matrix__total) {
+  color: var(--text-secondary);
+}
+
+.matrix__total {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
+.matrix tfoot th,
+.matrix tfoot td {
+  border-top: 2px solid var(--border-strong);
+}
+
+.matrix__row--unknown th[scope="row"] {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* A comparison card. Deliberately no red and no green: neither direction of a
+   volume change is good news, and a colour that implied one would be a
+   judgement the data does not support (brief 34). */
+.comparison {
+  gap: var(--spacing-2);
+}
+
+.comparison__change {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  margin: 0;
+}
+
+.comparison__delta {
+  font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison__percent {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.comparison__percent--none {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.comparison__periods {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.comparison__periods dt {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  margin-top: var(--spacing-1);
+}
+
+.comparison__periods dd {
+  margin: 0;
   font-variant-numeric: tabular-nums;
 }

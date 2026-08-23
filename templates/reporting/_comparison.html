@@ -1,0 +1,72 @@
+{% comment %}
+One period measured against a comparable earlier one.
+
+Three things this card does deliberately.
+
+**It names both windows.** "+12" is meaningless without knowing that it is
+1 January – 31 July against 1 January – 31 July. The dates are printed, not
+implied, because the single most misleading thing a year-on-year card can do is
+compare seven months with twelve (Stage-2E brief 33).
+
+**It stays neutral.** No green, no red, no arrow that has to be seen to be
+understood, no word suggesting the change is good or bad. More new matters
+arriving is more work the department was handed; more archived opinions is more
+letters, not more success. The reading is the reader's (brief 34, 51).
+
+**It refuses a percentage it cannot compute.** With nothing in the previous
+period there is no percentage change, and the card shows the absolute difference
+alone rather than ∞ or a fabricated 100 % (brief 73).
+{% endcomment %}
+
+<div class="metric comparison">
+  <span class="metric__label" id="comparison-{{ result.key }}-label">
+    {{ result.definition.label_et }}
+  </span>
+
+  {% if result.has_value and result.comparison %}
+    <span class="metric__value tabular">{{ result.comparison.current_value }}</span>
+
+    <p class="comparison__change">
+      <span class="comparison__delta">{{ result.comparison.change_text }}</span>
+      {% if result.comparison.has_percent %}
+        <span class="comparison__percent tabular">{{ result.comparison.percent_text }}</span>
+      {% else %}
+        <span class="comparison__percent comparison__percent--none">
+          protsent puudub (võrreldav periood oli tühi)
+        </span>
+      {% endif %}
+    </p>
+
+    <dl class="comparison__periods">
+      <dt>Praegune periood</dt>
+      <dd class="tabular">
+        {{ result.comparison.current_period_label }} — {{ result.comparison.current_value }}
+      </dd>
+      <dt>Võrreldav varasem periood</dt>
+      <dd class="tabular">
+        {{ result.comparison.previous_period_label }} — {{ result.comparison.previous_value }}
+      </dd>
+    </dl>
+
+    {% if result.comparison.cutoff_note %}
+      <p class="metric__note">{{ result.comparison.cutoff_note }}</p>
+    {% endif %}
+  {% elif result.status == "NOT_APPLICABLE" %}
+    <span class="metric__unavailable">Ei kohaldu</span>
+  {% else %}
+    <span class="metric__unavailable">Ebapiisavad andmed</span>
+  {% endif %}
+
+  <span class="metric__basis">{{ result.time_basis_label }}</span>
+
+  {% for note in result.notes %}
+    <p class="metric__note">{{ note }}</p>
+  {% endfor %}
+
+  <details class="definition">
+    <summary class="definition__summary">Kuidas arvutatakse?</summary>
+    <div class="definition__body">
+      {% include "reporting/_definition.html" with definition=result.definition result=result %}
+    </div>
+  </details>
+</div>

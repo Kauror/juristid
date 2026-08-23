@@ -47,7 +47,7 @@ localStorage (Stage-2E.1 brief 12).
                id="teemad-otsing"
                value="{{ query }}"
                autocomplete="off"
-               placeholder="Otsi teemadest — pealkiri, viide (2026_123) või sisu">
+               placeholder="Otsi teemadest — pealkiri või sisu">
       </label>
       {% comment %}
         Every other chosen dimension travels with the query. Without these the
@@ -116,7 +116,7 @@ localStorage (Stage-2E.1 brief 12).
               {% for owner in owners %}
                 <option value="{{ owner.pk }}"
                         {% if filters.vastutaja == owner.pk|stringformat:"s" %}selected{% endif %}>
-                  {{ owner.display_name }}
+                  {{ owner.get_short_name }}
                 </option>
               {% endfor %}
             </select>
@@ -190,6 +190,21 @@ localStorage (Stage-2E.1 brief 12).
               <option value="">Kõik</option>
               {% for value, label in material_options %}
                 <option value="{{ value }}" {% if filters.materjalid == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          {% comment %}
+            Kõik by default, and deliberately so while the department is still
+            building the system: a developer must be able to find the test
+            matter they created ten seconds ago. Reporting is where the real
+            population becomes the default (Agent-C brief 14, 24, 25).
+          {% endcomment %}
+          <label class="field">
+            <span class="field__label">Andmed</span>
+            <select class="field__input" name="andmed">
+              {% for value, label in data_class_options %}
+                <option value="{{ value }}" {% if filters.andmed == value %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
           </label>

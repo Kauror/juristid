@@ -18,7 +18,13 @@ from app.core.authorization import child_visibility_q, matter_visibility_q, scop
 from app.core.enums import Visibility
 from app.core.models import AppendOnlyModel, BaseModel, VisibilityInheritingModel
 from app.matters.entry_enums import EntryKind
-from app.matters.enums import DataQualityTier, MatterOrigin, RecordMode, TagAssignmentSource
+from app.matters.enums import (
+    DataQualityTier,
+    MatterDataClass,
+    MatterOrigin,
+    RecordMode,
+    TagAssignmentSource,
+)
 from app.workflow.enums import Disposition, Track
 
 
@@ -35,6 +41,27 @@ class MatterQuerySet(models.QuerySet):
 
     def archive_records(self) -> MatterQuerySet:
         return self.filter(record_mode=RecordMode.ARCHIVE)
+
+    def real_data(self) -> MatterQuerySet:
+        """Business data. **Every statistic starts here** (Agent-C brief 28, 63).
+
+        A production or business figure that counts development records is
+        wrong in the way that is hardest to notice: nothing on the screen looks
+        broken, the number is simply too big. So a reporting population says
+        `.real_data()` explicitly rather than relying on a development database
+        happening to be clean.
+
+        Deliberately *not* folded into `visible_to`. Visibility answers "may
+        this reader see it" and data class answers "is it about anything";
+        collapsing them would mean a developer could not open the TEST Matter
+        they had just created, and would make authorization depend on a field
+        that has nothing to do with authorization (brief 13, 14).
+        """
+        return self.filter(data_class=MatterDataClass.REAL)
+
+    def test_data(self) -> MatterQuerySet:
+        """Records made while developing or testing the system."""
+        return self.filter(data_class=MatterDataClass.TEST)
 
 
 class MatterReferenceSequence(models.Model):
@@ -97,6 +124,18 @@ class Matter(BaseModel):
         blank=True,
         default="",
         verbose_name="andmekvaliteedi tase",
+    )
+    #: Real business data, or something made while developing the system.
+    #:
+    #: Indexed because every reporting population filters on it, and because
+    #: the maintenance planner's first query is "which Matters are TEST".
+    data_class = models.CharField(
+        max_length=16,
+        choices=MatterDataClass.choices,
+        default=MatterDataClass.REAL,
+        db_index=True,
+        verbose_name="andmeklass",
+        help_text="Testandmed on arenduseks loodud kirjed; need ei kuulu päris aruandlusse.",
     )
     policy_area_other = models.CharField(
         max_length=400,
@@ -274,6 +313,33 @@ class Matter(BaseModel):
                 condition=models.Q(visibility__in=[Visibility.NORMAL, Visibility.RESTRICTED]),
                 name="matters_visibility_vocabulary",
             ),
+            # The same reasoning as the visibility constraint above. A value
+            # outside the vocabulary reads as neither REAL nor TEST: it
+            # would be missing from `real_data()` — so absent from every
+            # statistic — and missing from `test_data()` too, so invisible to
+            # the maintenance planner that is supposed to find it. Django
+            # choices do not stop a bulk `update()`, a data migration or a shell
+            # session; this does (Agent-C brief 10).
+            models.CheckConstraint(
+                condition=models.Q(data_class__in=[MatterDataClass.REAL, MatterDataClass.TEST]),
+                name="matters_data_class_vocabulary",
+            ),
+            # Only a natively created Matter may be development data.
+            #
+            # A historical register row is somebody's real work from 2017. It
+            # arrived through an importer, it carries provenance nothing can
+            # reconstruct, and the one thing that must never happen to it is
+            # being marked disposable because a control was next to the wrong
+            # row. The service refuses it and this refuses it again, because the
+            # service is not the only thing that can write this column
+            # (Agent-C brief 12, 38).
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(data_class=MatterDataClass.TEST)
+                    | models.Q(origin=MatterOrigin.NATIVE)
+                ),
+                name="matters_test_data_is_native",
+            ),
         ]
         indexes = [
             models.Index(fields=["owner", "is_open"], name="matters_owner_open"),
@@ -308,6 +374,17 @@ class Matter(BaseModel):
     @property
     def is_restricted(self) -> bool:
         return self.visibility == Visibility.RESTRICTED
+
+    @property
+    def is_test_data(self) -> bool:
+        """Whether this record was made while developing the system.
+
+        Child records — entries, submissions, documents, dates, victories —
+        deliberately have no flag of their own. A child is test data when its
+        Matter is, which is the only arrangement in which a REAL Matter cannot
+        end up holding a TEST submission (Agent-C brief 20).
+        """
+        return self.data_class == MatterDataClass.TEST
 
 
 class TagAssignment(BaseModel):

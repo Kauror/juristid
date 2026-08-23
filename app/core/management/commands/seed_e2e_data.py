@@ -95,6 +95,14 @@ SUBMISSION_FILENAME = "arvamus-2026.asice"
 #: nothing: a current file with nobody's name on it, one whose review date has
 #: arrived (which is *not* overdue), one carrying no instruction at all, and a
 #: former colleague who still owns live work (Stage-2F brief 42, 45).
+#: A work victory nobody has decided on yet, standing in for a machine or
+#: import proposal so the review controls have something to review.
+#:
+#: Deliberately free of the words its own status badge uses: a title
+#: containing "töövõidu kandidaat" makes every attempt to locate the badge
+#: inside the row match the title too.
+MACHINE_CANDIDATE = "Registrist leitud ettepaneku arvestamine"
+
 UNASSIGNED_TITLE = "Vastutajata sünteetiline teema"
 REVIEW_DUE_TITLE = "Ootamise ülevaatuse aeg on käes"
 NO_ACTION_TITLE = "Järgmiseta sünteetiline teema"
@@ -167,6 +175,12 @@ class Command(BaseCommand):
         )
         area, _ = PolicyArea.objects.get_or_create(
             key="keskkond", defaults={"name_et": "Keskkond", "sort_order": 10}
+        )
+        # A second area, because a Matter genuinely belongs to several and the
+        # browser regression that proves the control is a multi-select cannot
+        # prove anything against a list of one.
+        PolicyArea.objects.get_or_create(
+            key="maksundus", defaults={"name_et": "Maksundus", "sort_order": 20}
         )
         stage = StageVocabulary.objects.get(key="consultation")
 
@@ -402,6 +416,19 @@ class Command(BaseCommand):
         add_work_victory_candidate(
             matter=visible,
             title="Koja ettepanek rakendusaja pikendamiseks võeti arvesse",
+            period_date=victory_start,
+            period_end=victory_end,
+            date_precision=DatePrecision.YEAR,
+            actor=martin,
+        )
+        # A candidate for the review path to act on. A person adding a victory
+        # from the Matter page now records a confirmed one, so a proposal
+        # awaiting somebody's decision has to come from where proposals
+        # actually come from — a machine or an import — for the browser suite
+        # to be able to exercise confirming and rejecting one at all.
+        add_work_victory_candidate(
+            matter=visible,
+            title=MACHINE_CANDIDATE,
             period_date=victory_start,
             period_end=victory_end,
             date_precision=DatePrecision.YEAR,

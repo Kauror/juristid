@@ -17,6 +17,10 @@ the next a year of consultation, so it measures neither effort nor performance.
 Urgency is never carried by colour alone: every emphasised cell also states its
 reason in words, so the page reads the same to somebody who cannot see the
 difference.
+
+Colleagues appear by short name in the ordinary rows and in full in the Juristid
+matrix above them, where the name is the subject of the row rather than one
+attribute of a file, and two people sharing a first name must stay apart.
 {% endcomment %}
 
 {% block content %}
@@ -121,7 +125,6 @@ difference.
             <table class="table">
               <thead>
                 <tr>
-                  <th scope="col">Viide</th>
                   <th scope="col">Teema</th>
                   <th scope="col">Vastutaja</th>
                   <th scope="col">Põhjus</th>
@@ -131,7 +134,6 @@ difference.
               <tbody>
                 {% for row in work.attention %}
                   <tr>
-                    <td><span class="reference">{{ row.matter.display_reference|default:"—" }}</span></td>
                     <td class="table__title"><a href="{{ row.url }}">{{ row.matter.title }}</a></td>
                     <td>{{ row.owner_name }}</td>
                     <td>{{ row.reason }}</td>
@@ -168,7 +170,6 @@ difference.
                 <tr>
                   <th scope="col">Kuupäev</th>
                   <th scope="col">Tähendus</th>
-                  <th scope="col">Viide</th>
                   <th scope="col">Teema</th>
                   <th scope="col">Vastutaja</th>
                   <th scope="col">Hetkeseis</th>
@@ -179,7 +180,6 @@ difference.
                   <tr>
                     <td class="table__date">{{ row.when|date:"d.m.Y" }}</td>
                     <td><span class="muted">{{ row.meaning }}</span></td>
-                    <td><span class="reference">{{ row.matter.display_reference|default:"—" }}</span></td>
                     <td class="table__title"><a href="{{ row.url }}">{{ row.matter.title }}</a></td>
                     <td>{{ row.owner_name }}</td>
                     <td>{{ row.stage_label }}</td>
@@ -204,7 +204,6 @@ difference.
             <table class="table">
               <thead>
                 <tr>
-                  <th scope="col">Viide</th>
                   <th scope="col">Teema</th>
                   <th scope="col">Saatja</th>
                   <th scope="col">Arvamuse tähtaeg</th>
@@ -214,7 +213,6 @@ difference.
               <tbody>
                 {% for matter in work.unassigned %}
                   <tr>
-                    <td><span class="reference">{{ matter.display_reference|default:"—" }}</span></td>
                     <td class="table__title">
                       <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
                     </td>
@@ -247,7 +245,6 @@ difference.
               <thead>
                 <tr>
                   <th scope="col">Saabus</th>
-                  <th scope="col">Viide</th>
                   <th scope="col">Teema</th>
                   <th scope="col">Saatja</th>
                   <th scope="col">Vastutaja</th>
@@ -258,12 +255,15 @@ difference.
                 {% for matter in work.incoming %}
                   <tr>
                     <td class="table__date">{{ matter.received_date|date:"d.m.Y" }}</td>
-                    <td><span class="reference">{{ matter.display_reference|default:"—" }}</span></td>
                     <td class="table__title">
                       <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
                     </td>
                     <td>{{ matter.source_organisation.name|default:"—" }}</td>
-                    <td>{{ matter.owner.display_name|default:"Vastutajata" }}</td>
+                    <td>
+                      {% if matter.owner %}
+                        <span title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
+                      {% else %}Vastutajata{% endif %}
+                    </td>
                     <td>{{ matter.stage.label_et|default:"—" }}</td>
                   </tr>
                 {% endfor %}

@@ -2,16 +2,26 @@
 {% block title %}Statistika · {{ application_name }}{% endblock %}
 
 {% comment %}
-Üldpilt — five numbers and the shape of the corpus behind them.
+Üldpilt — five groups, in the order somebody arriving actually needs them.
 
-None of these is a performance indicator. They are counts of records that
-exist, each one linked to the records it counted, and none of them is compared
-to a target or a colleague (master specification 18.8).
+Põhinäitajad says how much there is. Teemade trend and Arvamuste trend say how
+that has moved, over two axes that deliberately start in different years: the
+register begins in 2011 and the opinions archive in 2020, and drawing nine years
+of archive zeros to make the two charts line up would publish a false fact
+(Stage-2E brief 24, 43).
+
+Praegune portfell is the only point-in-time group: open FULL Matters, by stage
+and by responsibility. Andmekatvus says how far the data reaches, which is a
+statement about the corpus and never a score.
+
+None of these is a performance indicator. They are counts of records that exist,
+each linked to the records it counted where a truthful link exists, and none is
+compared to a target or a colleague (master specification 18.8).
 {% endcomment %}
 
 {% block statistics %}
   <section aria-labelledby="ulevaade-naitajad-heading">
-    <h2 class="sectionlabel" id="ulevaade-naitajad-heading">Koondnäitajad</h2>
+    <h2 class="sectionlabel" id="ulevaade-naitajad-heading">Põhinäitajad</h2>
     <div class="metricgrid">
       {% for result in cards %}
         {% include "reporting/_metric.html" with result=result %}
@@ -19,8 +29,29 @@ to a target or a colleague (master specification 18.8).
     </div>
   </section>
 
+  {% if comparisons %}
+    <section aria-labelledby="ulevaade-muutus-heading">
+      <h2 class="sectionlabel" id="ulevaade-muutus-heading">Muutus eelmise aastaga</h2>
+      <p class="chart__summary">
+        Mõlemad pooled on lõigatud samal kuupäeval, et osalist aastat ei võrreldaks
+        terve aastaga. Muutus on maht, mitte tulemuslikkus — rohkem ei ole
+        iseenesest parem.
+      </p>
+      <div class="metricgrid">
+        {% for result in comparisons %}
+          {% include "reporting/_comparison.html" with result=result %}
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+
   <section aria-labelledby="ulevaade-trendid-heading">
-    <h2 class="sectionlabel" id="ulevaade-trendid-heading">Ajas</h2>
+    <h2 class="sectionlabel" id="ulevaade-trendid-heading">Pikk ajajoon</h2>
+    <p class="chart__summary">
+      Kaks eri algusaastat, ja see on õige: register algab 2011. aastast,
+      arvamuste arhiiv 2020. aastast. Aastaid, mille kohta mõõtmist ei ole, ei
+      joonistata nullidena.
+    </p>
     <div class="chartgrid">
       {% for item in trends %}
         {% include "reporting/_trend.html" with item=item %}
@@ -28,11 +59,28 @@ to a target or a colleague (master specification 18.8).
     </div>
   </section>
 
-  <section aria-labelledby="ulevaade-koosseis-heading">
-    <h2 class="sectionlabel" id="ulevaade-koosseis-heading">Koosseis</h2>
+  <section aria-labelledby="ulevaade-portfell-heading">
+    <h2 class="sectionlabel" id="ulevaade-portfell-heading">Praegune portfell</h2>
+    <p class="chart__summary">
+      Ainult avatud täielikud teemad. Arhiivikirjed ei ole aktiivne töö.
+      Vastutuse jaotus on inventuur, mitte töökoormus ega juristide järjestus.
+    </p>
     <div class="chartgrid">
-      {% for item in compositions %}
+      {% for item in portfolio %}
         {% include "reporting/_composition.html" with item=item %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <section aria-labelledby="ulevaade-katvus-heading">
+    <h2 class="sectionlabel" id="ulevaade-katvus-heading">Andmekatvus</h2>
+    <p class="chart__summary">
+      Kui kaugele andmed ulatuvad. Katvuse puudumine ei ole hinnang tehtud tööle:
+      sidumata arhiivifail on olemasolev tõendus, mis ootab teemaga sidumist.
+    </p>
+    <div class="metricgrid">
+      {% for result in coverage %}
+        {% include "reporting/_metric.html" with result=result %}
       {% endfor %}
     </div>
   </section>

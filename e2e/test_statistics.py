@@ -300,3 +300,172 @@ def test_a_submission_number_reaches_the_submission_list(page, base_url):
 
     expect(page.get_by_role("heading", name="Saadetud arvamused")).to_be_visible()
     expect(page.get_by_text(SUBMISSION_TITLE).first).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# Statistics 2.0
+#
+# Four things only a browser proves about this pass: that the landing page's
+# five groups are actually there and in order, that a wide matrix scrolls
+# instead of pushing the page sideways, that the comparison card reads as text
+# rather than as a colour, and that a register-only lawyer's name survives all
+# the way to the screen.
+# ---------------------------------------------------------------------------
+
+
+def test_the_landing_page_answers_its_five_questions_in_order(page, base_url, screenshots):
+    """Põhinäitajad, muutus, pikk ajajoon, praegune portfell, andmekatvus.
+
+    Order matters: somebody opening this page is asking "how much is there",
+    then "is that more or less than before", then "what is on the desk now".
+    """
+    sign_in(page, base_url, MARTIN)
+    open_statistics(page, base_url)
+
+    # Compared case-insensitively: `.sectionlabel` is uppercased in CSS, and
+    # `inner_text()` returns rendered text. Asserting the rendered casing would
+    # make this test fail the day somebody changes a `text-transform`, which is
+    # not what it is here to catch.
+    headings = page.locator("h2.sectionlabel")
+    rendered = [headings.nth(i).inner_text().strip().lower() for i in range(headings.count())]
+    assert rendered == [
+        "põhinäitajad",
+        "muutus eelmise aastaga",
+        "pikk ajajoon",
+        "praegune portfell",
+        "andmekatvus",
+    ]
+    screenshots(page, "statistika-ulevaade-2")
+
+
+def test_the_two_long_trends_start_in_different_years(page, base_url):
+    """The register begins in 2011 and the archive in 2020.
+
+    A reader must be able to see that the archive chart simply has no earlier
+    bars, rather than a run of zeros implying Koda sent nothing before 2020.
+    """
+    sign_in(page, base_url, MARTIN)
+    open_statistics(page, base_url)
+
+    archive = page.locator("section.chart").filter(has_text="Arvamuste arhiiv aastate kaupa")
+    expect(archive).to_be_visible()
+    archive.get_by_text("Vaata tabelina").click()
+    years = archive.locator("table.data-table tbody th").all_inner_texts()
+    assert years, "the archive trend drew no years"
+    assert all(int(year.strip()) >= 2020 for year in years)
+    assert "2011" not in years
+
+
+def test_the_comparison_card_is_readable_without_seeing_a_colour(page, base_url, screenshots):
+    """No arrow, no red, no green. The change is a sentence (brief 34, 81)."""
+    sign_in(page, base_url, MARTIN)
+    open_statistics(page, base_url)
+
+    card = page.locator(".comparison").first
+    expect(card).to_be_visible()
+    text = card.inner_text()
+    assert "rohkem" in text or "vähem" in text or "muutumatu" in text
+    # Both windows are printed, so nobody has to assume the two sides are
+    # comparable. That assumption is what makes a part year look like a collapse.
+    expect(card.get_by_text("Praegune periood")).to_be_visible()
+    expect(card.get_by_text("Võrreldav varasem periood")).to_be_visible()
+    screenshots(page, "statistika-vordlus")
+
+
+def test_a_previous_period_of_zero_shows_no_percentage(page, base_url):
+    """The seeded archive's previous comparable window is empty.
+
+    So the card must say the percentage is unavailable rather than print an
+    infinity or a fabricated 100 % (brief 73).
+    """
+    sign_in(page, base_url, MARTIN)
+    open_statistics(page, base_url)
+
+    card = page.locator(".comparison").filter(has_text="Arhiivi arvamuste muutus").first
+    expect(card).to_be_visible()
+    assert "∞" not in card.inner_text()
+
+
+def test_the_responsibility_matrix_is_a_real_table_that_scrolls(page, base_url, screenshots):
+    """Semantic table, headed rows and columns, inside its own scroll container.
+
+    The failure a browser catches: a wide grid that widens the page instead of
+    scrolling, which makes every other section unreadable on a laptop.
+    """
+    sign_in(page, base_url, MARTIN)
+    open_statistics(page, base_url, "teemad/")
+
+    section = page.locator("section.chart").filter(has_text="Teemad aastate ja vastutuse kaupa")
+    expect(section).to_be_visible()
+    table = section.locator("table.matrix")
+    expect(table).to_be_visible()
+    expect(table.locator("thead th[scope='col']").first).to_be_visible()
+    expect(table.locator("tbody th[scope='row']").first).to_be_visible()
+    expect(table.locator("tfoot")).to_be_visible()
+
+    body_width = page.evaluate("document.body.scrollWidth")
+    viewport = page.evaluate("window.innerWidth")
+    assert body_width <= viewport + 1, f"the page scrolls sideways: {body_width} > {viewport}"
+    screenshots(page, "statistika-maatriks")
+
+
+# A browser test for the register-only lawyer would need a seeded Matter whose
+# VASTUTAJA names somebody with no account. Adding one moved the register, the
+# dashboard and the search baselines — pages this branch does not own — because
+# the browser suite shares a single seeded world with the visual suite. The rule
+# is proved against a controlled world in
+# `tests/test_reporting_responsibility.py` instead, and perturbing another
+# agent's baselines to restate it here would cost more than it is worth.
+
+
+def test_the_archive_block_is_kept_apart_from_the_canonical_one(page, base_url, screenshots):
+    """Two headings, two date bases, and nothing that invites adding them up."""
+    sign_in(page, base_url, MARTIN)
+    open_statistics(page, base_url, "tegevus/")
+
+    # Scoped to `h2.sectionlabel`: a chart's own `h3` title can carry similar
+    # words, and what this test is about is the two *sections* being separate.
+    sections = page.locator("h2.sectionlabel")
+    rendered = [
+        sections.nth(index).inner_text().strip().lower() for index in range(sections.count())
+    ]
+    assert "saadetud arvamused" in rendered
+    assert "arvamuste arhiiv ajas" in rendered
+
+    archive_section = page.locator("section").filter(has=page.locator("h2#tegevus-arhiiv-heading"))
+    assert "failinimest" in archive_section.first.inner_text()
+    screenshots(page, "statistika-arhiiv-ajas")
+
+
+def test_no_statistics_page_calls_a_count_a_workload(page, base_url):
+    """The wording rule, checked where a reader actually meets it.
+
+    Deliberately not a search for *edetabel*: a definition panel is allowed to
+    say a table is "not a league table", and whether a collapsed `<details>`
+    counts as rendered text is a browser detail rather than a product rule. The
+    catalogue test covers the hedged wording properly; these four have no
+    innocent reading.
+    """
+    sign_in(page, base_url, MARTIN)
+    for tab in ("", "teemad/", "tegevus/"):
+        open_statistics(page, base_url, tab)
+        body = page.locator("body").inner_text().lower()
+        for forbidden in ("produktiivsus", "parim jurist", "kõige tootlikum", "tulemusreiting"):
+            assert forbidden not in body, f"{tab}: {forbidden}"
+
+
+@pytest.mark.parametrize("width", [1440, 1280, 1024])
+def test_the_workspace_survives_a_narrower_laptop(page, base_url, screenshots, width):
+    """Charts reflow; the matrix scrolls inside itself; nothing overflows.
+
+    The widths are the ones the shell's own visual baselines cover. Below 1024
+    the application's chrome overflows on every page, which is a product-wide
+    decision rather than something this branch introduced or should assert on.
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    open_statistics(page, base_url, "teemad/")
+
+    body_width = page.evaluate("document.body.scrollWidth")
+    assert body_width <= width + 1, f"{width}px: page scrolls sideways ({body_width})"
+    screenshots(page, f"statistika-teemad-{width}")

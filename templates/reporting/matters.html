@@ -4,6 +4,12 @@
 {% comment %}
 Teemad — what Koda has worked on, by every dimension the record supports.
 
+Two sections are new in Statistics 2.0 and both are tables rather than pictures.
+*Aastate ja vastutuse kaupa* answers how legislative work divided among lawyers
+in each year of the register; *kuude kaupa* answers who received the new work of
+each month. Both are inventory counts. Neither is a ranking, neither is sorted by
+size, and the wording on each says so (master specification 18.8).
+
 The two organisation tables at the bottom are kept apart on purpose.
 `Algataja või saatja` and `Adressaat` are opposite directions of the same
 relationship, and the register itself changed which one its single counterparty
@@ -25,13 +31,30 @@ number that means neither (Stage-2E brief 27).
     </div>
   </section>
 
-  <section aria-labelledby="teemad-aastad-heading">
-    <h2 class="sectionlabel" id="teemad-aastad-heading">Aastate kaupa</h2>
+  <section aria-labelledby="teemad-ajas-heading">
+    <h2 class="sectionlabel" id="teemad-ajas-heading">Ajas</h2>
+    <p class="chart__summary">
+      Aastatelg tuleb registri aruandlusaastast, kuutelg süsteemis loodud teemade
+      saabumise kuupäevast. Imporditud registriridadel kuud ei ole ja seda ei
+      tuletata.
+    </p>
     <div class="chartgrid">
       {% for item in trends %}
         {% include "reporting/_trend.html" with item=item %}
       {% endfor %}
     </div>
+  </section>
+
+  <section aria-labelledby="teemad-vastutus-heading">
+    <h2 class="sectionlabel" id="teemad-vastutus-heading">Vastutuse kaupa</h2>
+    <p class="chart__summary">
+      Teemade jaotus vastutajate vahel. Inventuur, mitte töökoormus ega
+      tulemuslikkus: teemade arv ei mõõda tehtud tööd. Veerud on tähestiku
+      järjekorras, mitte suuruse järgi.
+    </p>
+    {% for item in matrices %}
+      {% include "reporting/_matrix.html" with item=item %}
+    {% endfor %}
   </section>
 
   <section aria-labelledby="teemad-jaotus-heading">

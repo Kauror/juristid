@@ -5,12 +5,16 @@ the same thing everywhere.
 
 Two things the design insists on: the date column says what kind of date it is,
 and a Matter with no next step says so in words rather than showing a blank.
+
+The register reference is not a column. It is still the row's identity, still
+searchable exactly, and still on the Matter's own page — it was simply costing
+the title eighty-four pixels on every surface to show something nobody reads a
+list by.
 {% endcomment %}
 <div class="tablewrap">
   <table class="table table--register">
     <thead>
       <tr>
-        <th scope="col" class="table__ref">Viide</th>
         <th scope="col" class="table__title">Pealkiri</th>
         <th scope="col" class="table__stage">Hetkeseis</th>
         <th scope="col" class="table__owner">Vastutaja</th>
@@ -23,14 +27,6 @@ and a Matter with no next step says so in words rather than showing a blank.
       {% for matter in matters %}
         {% with action=matter.open_actions|first %}
         <tr>
-          <td class="table__ref">
-            {% if matter.display_reference %}
-              <span class="reference">{{ matter.display_reference }}</span>
-            {% else %}
-              <span class="muted" title="Arhiivikirjel ei pruugi viidet olla">—</span>
-            {% endif %}
-          </td>
-
           {% comment %}
             The title truncates; the state badges beside it never do. A row that
             drops "Piiratud" to fit a long title has hidden the one thing about
@@ -44,8 +40,18 @@ and a Matter with no next step says so in words rather than showing a blank.
                  href="{% url 'matters:matter_detail' pk=matter.pk %}" title="{{ matter.title }}">
                 {{ matter.title }}
               </a>
-              {% if matter.record_mode == "ARCHIVE" or matter.is_restricted or not matter.is_open %}
+              {% if matter.record_mode == "ARCHIVE" or matter.is_restricted or not matter.is_open or matter.is_test_data %}
                 <span class="table__flags">
+                  {% comment %}
+                    First of the flags, and never truncated, for the reason the
+                    comment above gives: a development record that reads as
+                    ordinary business data in the register is the exact
+                    confusion this classification exists to prevent
+                    (Agent-C brief 22, 23).
+                  {% endcomment %}
+                  {% if matter.is_test_data %}
+                    <span class="badge badge--test">TEST</span>
+                  {% endif %}
                   {% if matter.record_mode == "ARCHIVE" %}
                     <span class="badge badge--archive">Arhiiv</span>
                   {% endif %}
@@ -66,9 +72,14 @@ and a Matter with no next step says so in words rather than showing a blank.
             {% else %}<span class="muted">—</span>{% endif %}
           </td>
 
+          {% comment %}
+            The short name in the cell, the full one in the tooltip. The model
+            owns what a person is called informally (`User.get_short_name`);
+            this is not a first-token split written into a template.
+          {% endcomment %}
           <td class="table__owner">
             {% if matter.owner %}
-              <span class="table__clip" title="{{ matter.owner.display_name }}">{{ matter.owner.display_name }}</span>
+              <span class="table__clip" title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
             {% else %}<span class="table__missing">Vastutajata</span>{% endif %}
           </td>
 

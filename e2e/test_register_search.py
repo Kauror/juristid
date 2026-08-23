@@ -189,7 +189,7 @@ def test_the_owner_filter_narrows_the_register(page, base_url):
     open_register(page, base_url)
     open_advanced(page)
 
-    page.locator("select[name='vastutaja']").select_option(label=MARTIN.display_name)
+    page.locator("select[name='vastutaja']").select_option(label=MARTIN.short_name)
     page.get_by_role("button", name="Filtreeri").click()
 
     page.wait_for_url(re.compile(r"vastutaja="))
@@ -253,7 +253,7 @@ def test_a_query_and_a_filter_mean_both(page, base_url):
     open_register(page, base_url)
     open_advanced(page)
 
-    page.locator("select[name='vastutaja']").select_option(label=MARTIN.display_name)
+    page.locator("select[name='vastutaja']").select_option(label=MARTIN.short_name)
     page.get_by_role("button", name="Filtreeri").click()
     page.wait_for_url(re.compile(r"vastutaja="))
 

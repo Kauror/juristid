@@ -20,10 +20,10 @@ presenting it as if it did (18.8).
 
 from __future__ import annotations
 
-from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models import Count, Exists, OuterRef
 
 from app.legacy_import.source_pages import MatterSourcePage
-from app.matters.enums import REGISTER_YEAR_ORIGINS, MatterOrigin, RecordMode
+from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.selectors import MISSING
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
@@ -35,6 +35,7 @@ from app.reporting.selectors.base import (
     eligible_matters,
     grouped_count,
     in_reporting_year,
+    known_year_q,
     population_for,
     register_url,
     simple_result,
@@ -54,10 +55,6 @@ def _has_source_page() -> Exists:
     return Exists(MatterSourcePage.objects.filter(matter=OuterRef("pk")))
 
 
-def _known_year_q() -> Q:
-    return Q(reporting_year__isnull=False, origin__in=REGISTER_YEAR_ORIGINS)
-
-
 # ---------------------------------------------------------------------------
 # Totals
 # ---------------------------------------------------------------------------
@@ -68,7 +65,7 @@ def matters_total(context: ReportingContext) -> MetricResult:
     spec = definition(keys.MATTERS_TOTAL)
     population = eligible_matters(context, spec)
     population_count = count(population)
-    with_year = count(population.filter(_known_year_q()))
+    with_year = count(population.filter(known_year_q()))
 
     value = (
         population_count if context.period.is_all else count(in_reporting_year(population, context))
@@ -124,7 +121,7 @@ def matters_by_reporting_year(context: ReportingContext) -> MetricResult:
     population = eligible_matters(context, spec)
     population_count = count(population)
 
-    dated = population.filter(_known_year_q())
+    dated = population.filter(known_year_q())
     if not context.period.is_all:
         dated = in_reporting_year(dated, context)
 
@@ -138,7 +135,7 @@ def matters_by_reporting_year(context: ReportingContext) -> MetricResult:
         for row in rows
     ]
 
-    unknown = count(population.exclude(_known_year_q()))
+    unknown = count(population.exclude(known_year_q()))
     notes: tuple[str, ...] = ()
     if context.period.is_all:
         if unknown:
@@ -156,7 +153,7 @@ def matters_by_reporting_year(context: ReportingContext) -> MetricResult:
             f"{unknown} teemat on väljaspool aastatelge, sest registri aruandlusaastat ei ole.",
         )
 
-    covered = count(population.filter(_known_year_q()))
+    covered = count(population.filter(known_year_q()))
     return simple_result(
         spec,
         context=context,
