@@ -61,8 +61,6 @@ ORG_PRESENT = "PRESENT"
 ORG_CREATE = "CREATE"
 ORG_CONFLICT = "CONFLICT"
 
-CONFLICTING = frozenset({AREA_CONFLICT, ORG_CONFLICT})
-
 
 class ReferenceDataConflict(Exception):
     """The database disagrees with the reviewed baseline in a way only a person may settle."""
@@ -172,15 +170,6 @@ class ReferencePlan:
             for alias in f.aliases_claimed_elsewhere
         ]
         return tuple(reasons)
-
-    @property
-    def writes_anything(self) -> bool:
-        return bool(self.organisations_to_create) or self.aliases_to_add > 0
-
-    @property
-    def is_complete(self) -> bool:
-        """Every reviewed row is present, unambiguous, and carries its aliases."""
-        return not self.conflicts and not self.areas_missing and not self.writes_anything
 
     # -- digest ------------------------------------------------------------
 

@@ -30,6 +30,7 @@ from app.legacy_import.counterparty_coverage import (
     build_coverage_report,
     classify,
 )
+from app.legacy_import.parser import SOURCE_SYSTEM
 from app.organisations.models import Organisation
 from tests import factories
 
@@ -51,6 +52,11 @@ def register_row(sheet: str, counterparty: str, *, row: int, **matter_kwargs):
     matter = factories.MatterFactory(**matter_kwargs)
     return factories.MatterSourceReferenceFactory(
         matter=matter,
+        # The register importer's own system name. The factory's default is a
+        # different string, and coverage reads exactly what
+        # `select_register_snapshot` reads — a row filed under anything else is
+        # not part of the register being measured.
+        source_system=SOURCE_SYSTEM,
         source_sheet=sheet,
         source_row_number=row,
         source_snapshot_sha256=SNAPSHOT,
@@ -228,7 +234,9 @@ def test_the_json_summary_carries_no_raw_values(capsys):
         SNAPSHOT,
         "--json",
     )
-    payload = json.loads(capsys.readouterr().out.split("\n\n")[0])
+    # The command prints its closing lines after the object; read only the object.
+    out = capsys.readouterr().out
+    payload = json.loads(out[: out.rindex("}") + 1])
 
     assert payload["distinct_unresolved_values"] == 1
     assert "Väga Eriline" not in json.dumps(payload, ensure_ascii=False)
@@ -259,6 +267,7 @@ def test_only_the_named_register_is_measured():
     """A database imported twice holds two registers, not one twice as long."""
     register_row("2019", "Rahandusministeerium", row=3)
     other = factories.MatterSourceReferenceFactory(
+        source_system=SOURCE_SYSTEM,
         source_sheet="2019",
         source_row_number=3,
         source_snapshot_sha256="b" * 64,

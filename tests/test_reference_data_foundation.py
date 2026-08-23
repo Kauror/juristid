@@ -236,7 +236,7 @@ def test_reverse_leaves_a_row_somebody_edited():
 # ---------------------------------------------------------------------------
 
 
-def test_the_development_seed_does_not_create_a_second_vocabulary():
+def test_the_development_seed_does_not_create_a_second_vocabulary(settings):
     """Synthetic Matters, real classification.
 
     The rehearsal environment exists to show whether the work surfaces make
@@ -244,14 +244,20 @@ def test_the_development_seed_does_not_create_a_second_vocabulary():
     reviewed. `seed_dev_data` now reads the migration-seeded areas the way it
     already read the stage vocabulary.
     """
+    settings.DEBUG = True
+    settings.REAL_DATA_ALLOWED = False
+
     call_command("seed_dev_data", verbosity=0)
 
     assert not PolicyArea.objects.filter(key__in=PROVISIONAL_KEYS).exists()
     assert PolicyArea.objects.count() == 9
 
 
-def test_the_development_seed_classifies_with_the_canonical_areas():
+def test_the_development_seed_classifies_with_the_canonical_areas(settings):
     from app.matters.models import Matter
+
+    settings.DEBUG = True
+    settings.REAL_DATA_ALLOWED = False
 
     call_command("seed_dev_data", verbosity=0)
 
@@ -396,7 +402,9 @@ def test_the_plan_command_reports_the_digest(capsys):
 
 def test_the_plan_command_json_names_tags_as_unmanaged(capsys):
     call_command("reference_data", "plan", "--json")
-    payload = json.loads(capsys.readouterr().out)
+    # The command prints its closing lines after the object; read only the object.
+    out = capsys.readouterr().out
+    payload = json.loads(out[: out.rindex("}") + 1])
     assert payload["tags"] == "not managed by this baseline"
     assert payload["policy_areas"]["present"] == 9
     assert payload["plan_sha256"] == build_reference_plan().digest()
