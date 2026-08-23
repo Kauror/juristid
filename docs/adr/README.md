@@ -37,6 +37,7 @@ consequences and reversibility.
 | [0026](0026-source-data-enrichment.md) | Source facts are never rewritten; interpretation is added on top of them | Accepted, on a feature branch |
 | [0027](0027-matter-engagement.md) | `Kaasamine` is a pointer to outreach, not an engagement system | Accepted |
 | [0028](0028-development-archive-workspace-access.md) | The archive is readable behind the shared gate; the register is not | Accepted |
+| [0029](0029-reference-data-foundation.md) | Reference data is governed, additive, and never invented from source strings | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -59,3 +60,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0026 — Wave 2 source-data enrichment: JÄRGMISEKS, OneNote filing structure and historical activity
 - 0027 — Wave 2 Kaasamine: how members and stakeholders were asked
 - 0028 — the development archive workspace: who may read the corpus behind the shared gate, and why that is not the register
+- 0029 — the reviewed reference-data baseline: nine policy areas, the core public institutions, and why no backfill yet

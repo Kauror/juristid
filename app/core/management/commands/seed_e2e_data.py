@@ -180,15 +180,12 @@ class Command(BaseCommand):
         partner, _ = Organisation.objects.get_or_create(
             name=PARTNER, defaults={"organisation_type": OrganisationType.ASSOCIATION}
         )
-        area, _ = PolicyArea.objects.get_or_create(
-            key="keskkond", defaults={"name_et": "Keskkond", "sort_order": 10}
-        )
-        # A second area, because a Matter genuinely belongs to several and the
-        # browser regression that proves the control is a multi-select cannot
-        # prove anything against a list of one.
-        PolicyArea.objects.get_or_create(
-            key="maksundus", defaults={"name_et": "Maksundus", "sort_order": 20}
-        )
+        # Read, not created. The vocabulary is reference data and arrives with
+        # `taxonomy/0002_reference_policy_areas`; a browser world that invented
+        # its own `maksundus` beside the canonical `maksud` would put two
+        # spellings of one concept into the control it exists to exercise.
+        # Nine real areas are also a better test of a multi-select than two.
+        area = PolicyArea.objects.get(key="keskkond")
         stage = StageVocabulary.objects.get(key="consultation")
 
         if Matter.objects.filter(title=RESTRICTED_TITLE).exists():

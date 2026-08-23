@@ -55,3 +55,49 @@ MINISTRIES: tuple[ReferenceOrganisation, ...] = (
     ReferenceOrganisation("Sotsiaalministeerium", OrganisationType.MINISTRY, ("SoM",)),
     ReferenceOrganisation("Välisministeerium", OrganisationType.MINISTRY, ("VäM",)),
 )
+
+
+#: The handful of non-ministry bodies legal-policy work cannot be described
+#: without. Deliberately tiny.
+#:
+#: A complete Estonian public-sector directory — boards, inspectorates,
+#: agencies, municipalities, associations — is a different project with a
+#: different evidence requirement, and seeding hundreds of rows nobody has
+#: checked would make the register look authoritative while being unverified.
+#: `reference_data coverage` exists to say which further bodies the register
+#: actually needs; that measurement comes first.
+#:
+#: On the missing abbreviations: ministries carry theirs because `MKM` and `RM`
+#: are the state's own unambiguous short forms. `EK` is not in that class — it
+#: is used in Estonian for Euroopa Komisjon, Euroopa Kohus and Euroopa
+#: Kontrollikoda alike, and an alias is an identity decision that matching
+#: trusts absolutely. One wrong `EK` would file a Commission consultation under
+#: the Court. So Euroopa Komisjon is seeded with no abbreviation, and a reviewed
+#: alias can be added later against real register evidence.
+CORE_PUBLIC_INSTITUTIONS: tuple[ReferenceOrganisation, ...] = (
+    ReferenceOrganisation("Riigikogu", OrganisationType.PARLIAMENT),
+    # `Valitsus` is the everyday short form and, unlike `EK`, has no competing
+    # referent: nothing else in this domain is called that on its own.
+    ReferenceOrganisation("Vabariigi Valitsus", OrganisationType.GOVERNMENT, ("Valitsus",)),
+    ReferenceOrganisation("Euroopa Komisjon", OrganisationType.EU_INSTITUTION),
+    ReferenceOrganisation("Euroopa Parlament", OrganisationType.EU_INSTITUTION, ("EP",)),
+)
+
+#: The whole reviewed public baseline, in the order an operator should read it.
+#: This — not `MINISTRIES` alone — is what `reference_data` plans, applies and
+#: verifies, and what deployment readiness requires before a real-data
+#: environment is called ready.
+PUBLIC_REFERENCE_ORGANISATIONS: tuple[ReferenceOrganisation, ...] = (
+    *MINISTRIES,
+    *CORE_PUBLIC_INSTITUTIONS,
+)
+
+#: Bumped when the reviewed public set changes. Part of the plan digest, so a
+#: digest approved under one manifest cannot be applied under another.
+REFERENCE_ORGANISATION_VERSION = "1.0"
+
+#: Where the ministry names were checked, and when.
+ORGANISATION_SOURCE_TITLE = "Ministeeriumid"
+ORGANISATION_SOURCE_PUBLISHER = "Eesti Vabariigi Valitsus"
+ORGANISATION_SOURCE_URL = "https://valitsus.ee/"
+ORGANISATION_SOURCE_VERIFIED_ON = "2026-08-23"

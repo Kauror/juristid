@@ -184,6 +184,16 @@ def test_a_real_data_deployment_must_know_which_commit_it_is(settings) -> None:
 
 
 def test_a_build_that_knows_its_commit_passes(settings) -> None:
+    """A real-data build also needs its reference vocabulary.
+
+    The organisations are applied here rather than assumed: policy areas arrive
+    with the schema, but the public institutions are operator-seeded, and a
+    deployment without them is exactly the state readiness now refuses.
+    """
+    from app.core.reference_data import apply_reference_plan, build_reference_plan
+
+    apply_reference_plan(expected_sha256=build_reference_plan().digest())
+
     settings.REAL_DATA_ALLOWED = True
     settings.APPLICATION_REVISION = "36ea5df5b2fc434b68fe0d94d995d1a74ea7cd8f"
     call_command("deployment_readiness", "--quiet")
