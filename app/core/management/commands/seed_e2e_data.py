@@ -105,13 +105,6 @@ FORMER_OWNER_TITLE = "Endise kolleegi avatud teema"
 FORMER_UPN = "endine@example.invalid"
 FORMER_NAME = "Kadri Endine"
 
-#: A lawyer the register names and this system has no account for. The Statistika
-#: responsibility charts must keep this string rather than folding the Matter it
-#: is on into *Määramata*, and that is only visible with a register-backed row in
-#: the seeded world (Stage-2F owner resolver; Statistics 2.0 brief 15, 67).
-REGISTER_ONLY_NAME = "Mari Registrist"
-REGISTER_ONLY_TITLE = "Registrist aktiveeritud näidisteema"
-
 
 #: The archive's synthetic snapshot, and the letters inside it. Invented, like
 #: everything else here: no Koda opinion, ministry or filename may appear in a
@@ -246,7 +239,6 @@ class Command(BaseCommand):
         self._historical_world(visible)
         self._opinion_archive_world(visible)
         self._statistics_world(visible, martin, ministry)
-        self._responsibility_world(stage)
         self._department_world(sandra, martin, ministry, stage)
         self._intelligence_world(visible, restricted, martin, sandra)
         self.stdout.write(self.style.SUCCESS("E2E world ready."))
@@ -488,62 +480,6 @@ class Command(BaseCommand):
             actor=martin,
         )
         mark_submission_sent(submission=submission, actor=martin, channel="EIS")
-
-    def _responsibility_world(self, stage: Any) -> None:
-        """One open Matter the register names a lawyer on who has no account.
-
-        Everything else in this world resolves to a seeded user, so without this
-        row the source-responsibility precedence is untestable in a browser: the
-        chart would look identical whether it read the register's own VASTUTAJA
-        text or fell back to ``Matter.owner``. The one shape that separates them
-        is a Matter with a named source and *no* owner.
-
-        Written through the ORM rather than by running the cutover: that command
-        has its own suite against a synthetic workbook, and what a browser adds
-        here is only that the name reaches the screen.
-        """
-        from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
-        from app.legacy_import.models import MatterSourceReference
-
-        if CurrentRegisterState.objects.exists():
-            return
-
-        matter = create_matter(
-            title=REGISTER_ONLY_TITLE,
-            record_mode=RecordMode.FULL,
-            origin=MatterOrigin.PROMOTED_LEGACY,
-            data_quality_tier=DataQualityTier.TIER_1_VERIFIED_ACTIVE,
-            source_era=str(date.today().year - 1),
-            reporting_year=date.today().year - 1,
-            owner=None,
-            stage=stage,
-            received_date=date.today() - timedelta(days=120),
-        )
-        snapshot = hashlib.sha256(b"juristid-e2e-register-snapshot").hexdigest()
-        reference = MatterSourceReference.objects.create(
-            matter=matter,
-            source_system="EXCEL_REGISTER",
-            source_file_name="Naidisregister-e2e.xlsx",
-            source_snapshot_sha256=snapshot,
-            source_sheet=str(date.today().year - 1),
-            source_row_number=1,
-            source_row_raw={"VASTUTAJA": REGISTER_ONLY_NAME},
-            source_title=REGISTER_ONLY_TITLE,
-            source_era=str(date.today().year - 1),
-        )
-        CurrentRegisterState.objects.create(
-            matter=matter,
-            source_reference=reference,
-            source_snapshot_sha256=snapshot,
-            source_sheet=str(date.today().year - 1),
-            source_row_number=1,
-            currency=RegisterCurrency.CURRENT,
-            status_label="Kooskolastusringil",
-            opinion_sent_recorded=False,
-            owner_raw=REGISTER_ONLY_NAME,
-            owner_resolved=False,
-            observed_at=timezone.now(),
-        )
 
     def _department_world(self, sandra: Any, martin: Any, ministry: Any, stage: Any) -> None:
         """The states Osakonna töö exists to surface.
