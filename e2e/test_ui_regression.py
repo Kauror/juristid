@@ -36,6 +36,16 @@ job with `E2E_UPDATE_BASELINES=1` and commit what lands in the artifact.
 A missing baseline skips rather than fails, so a new scenario does not turn the
 build red before anybody has had a chance to look at what it captured. A missing
 baseline is reported by name.
+
+One trap worth knowing before adding a browser test
+---------------------------------------------------
+This step runs *after* the functional browser suite, against the same database,
+so every Matter that suite creates is in these renderings. A new test that files
+a Matter therefore lengthens the register, the dashboard's attention table and
+Minu töö — and nine baselines go red for a reason that has nothing to do with
+CSS. That is worth the coupling (the alternative is a second seeded world nobody
+keeps in step), but it means "the visual suite failed" should be read against
+what changed in the functional suite before anybody goes looking at stylesheets.
 """
 
 from __future__ import annotations
