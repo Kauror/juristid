@@ -335,16 +335,27 @@ def test_the_author_cannot_be_deleted_out_of_the_record(normal_matter, specialis
         specialist.delete()
 
 
-def test_deleting_the_matter_takes_its_engagements(specialist):
-    matter = factories.MatterFactory(owner=specialist)
-    add_engagement(matter=matter, kind=EngagementKind.WEB_CALL, title="Kutse", actor=specialist)
-    other = factories.MatterFactory(owner=specialist)
-    add_engagement(matter=other, kind=EngagementKind.SURVEY, title="Küsitlus", actor=specialist)
+def test_the_engagement_is_owned_by_its_matter_and_not_by_the_organisation_table():
+    """CASCADE from the Matter, PROTECT on the person who recorded it.
 
-    matter.engagements.all().delete()
-    matter.delete()
+    Asserted on the schema rather than by deleting a Matter, because a Matter
+    that has been written to cannot be deleted at all: `ChangeEvent.matter` is
+    PROTECT and the audit trail is append-only. That is the product's rule, not
+    something this feature may work around.
+    """
+    matter_fk = MatterEngagement._meta.get_field("matter")
+    author_fk = MatterEngagement._meta.get_field("created_by")
 
-    assert MatterEngagement.objects.count() == 1
+    assert matter_fk.remote_field.on_delete.__name__ == "CASCADE"
+    assert author_fk.remote_field.on_delete.__name__ == "PROTECT"
+    # Nothing here points at reference data, which is what keeps the purge
+    # planner from ever reaching an Organisation or a PolicyArea through it.
+    related = {
+        field.related_model._meta.label
+        for field in MatterEngagement._meta.get_fields()
+        if field.is_relation and getattr(field, "concrete", False) and field.related_model
+    }
+    assert related == {"matters.Matter", "accounts.User"}
 
 
 # -- activity ----------------------------------------------------------------
@@ -480,7 +491,10 @@ def test_the_section_renders_every_engagement_once(signed_in, specialist):
     ).content.decode()
 
     assert "Kaasamine" in body
-    assert body.count("Ainulaadne kaasamiskutse") == 1
+    # One row. The title also appears in the edit form's prefilled input, which
+    # is correct, so the row count is what this asserts rather than a substring.
+    assert body.count('class="factrow"') == 1
+    assert "Ainulaadne kaasamiskutse" in body
     assert "Vastuseid ootame" in body
     assert 'rel="noopener noreferrer"' in body
     # The host, not the tracking URL, is what the row prints beside the title.
@@ -665,6 +679,8 @@ def test_a_matter_is_found_through_its_engagement_text(specialist):
     )
     refresh_matters(indexable_matters().filter(pk=matter.pk))
 
+    # Including the vendor's name, which lives only in the link's host — and
+    # which a single `host` token would have made unfindable.
     for term in ("Ainulaadne", "pakendiküsitlus", "alchemer"):
         hits = [hit.matter.pk for hit in search_matters(query=term, user=specialist)]
         assert hits.count(matter.pk) == 1, term

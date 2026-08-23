@@ -87,7 +87,12 @@ There is no delete: a wrong row is corrected (brief 16).
              {% if engagement_error and not engagement_editing %}open{% endif %}>
       <summary class="disclosure__summary">+ Lisa kaasamine</summary>
       <div class="disclosure__body">
-        <form class="stackform"
+        {% comment %}
+          `data-engagement-add` distinguishes this from a row's edit form: both
+          carry the same five field names, and a browser test that located
+          `input[name="title"]` without it would match every row on the page.
+        {% endcomment %}
+        <form class="stackform" data-engagement-add
               hx-post="{% url 'matters:add_engagement' pk=matter.pk %}"
               hx-target="#ulevaade" hx-swap="outerHTML">
           {% csrf_token %}

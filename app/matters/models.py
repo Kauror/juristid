@@ -764,3 +764,20 @@ class MatterEngagement(VisibilityInheritingModel):
         from urllib.parse import urlsplit
 
         return urlsplit(self.url).netloc or self.url[:60]
+
+    @property
+    def link_search_terms(self) -> list[str]:
+        """The host, and each of its labels, for the search projection.
+
+        The host alone is not enough. PostgreSQL tokenises
+        ``survey.alchemer.example`` as one ``host`` token, so somebody typing
+        the vendor's name finds nothing — which is precisely the search the
+        column exists to answer. The labels are indexed beside the whole host
+        so both work, and ``www`` and the public suffix are dropped because
+        they match everything (Agent-F brief 47).
+        """
+        host = self.link_label
+        if not host:
+            return []
+        labels = [part for part in host.split(".") if part and part != "www"]
+        return [host, *labels[:-1]] if len(labels) > 1 else [host]

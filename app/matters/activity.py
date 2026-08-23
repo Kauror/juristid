@@ -84,6 +84,8 @@ from typing import Any
 from django.db.models import Max, OuterRef, QuerySet, Subquery
 from django.utils import timezone
 
+from app.core.authorization import apply as apply_scope
+from app.core.authorization import child_visibility_q, scope_for_user
 from app.legacy_import.source_pages import MatterSourcePage, SourceRelationshipKind
 from app.matters.enums import MatterOrigin
 from app.matters.models import Entry, Matter, MatterEngagement
@@ -205,17 +207,26 @@ def annotate_last_activity(queryset: QuerySet[Matter], user: Any) -> QuerySet[Ma
 
     Source pages have no visibility of their own and are reached through the
     Matter, which the reader already sees, so they need no scope.
+
+    The scope is resolved **once**. ``visible_to`` calls ``scope_for_user``,
+    which asks the database whether this person holds a break-glass grant, so
+    four calls to it here meant four identical lookups for one page — and this
+    function runs several times on a surface that builds more than one
+    population. Same predicate, same rule, computed once (Agent-F brief 31).
     """
-    people_actions = NextAction.objects.visible_to(user)
+    scope = scope_for_user(user)
+
+    def scoped(model: Any) -> QuerySet[Any]:
+        return apply_scope(model._default_manager.all(), child_visibility_q(scope))
+
+    people_actions = scoped(NextAction)
     pages = MatterSourcePage.objects.filter(relationship_kind__in=CHRONOLOGY_RELATIONSHIPS)
     return queryset.annotate(
-        activity_entry_at=_latest(Entry.objects.visible_to(user), "occurred_at"),
+        activity_entry_at=_latest(scoped(Entry), "occurred_at"),
         # Any submission that carries a send date. A submission later withdrawn
         # or superseded was still genuinely sent on that day, and the withdrawal
         # does not un-happen the work.
-        activity_submission_at=_latest(
-            Submission.objects.visible_to(user).filter(sent_at__isnull=False), "sent_at"
-        ),
+        activity_submission_at=_latest(scoped(Submission).filter(sent_at__isnull=False), "sent_at"),
         activity_action_created_at=_latest(
             people_actions.filter(created_by__isnull=False), "created_at"
         ),
@@ -228,7 +239,7 @@ def annotate_last_activity(queryset: QuerySet[Matter], user: Any) -> QuerySet[Ma
         # this module exists to remove, arriving by a different door
         # (Agent-F brief 29).
         activity_engagement_on=_latest(
-            MatterEngagement.objects.visible_to(user).filter(occurred_on__isnull=False),
+            scoped(MatterEngagement).filter(occurred_on__isnull=False),
             "occurred_on",
         ),
     )

@@ -217,8 +217,10 @@ def _engagement_text_for(matter: Matter) -> str:
 
     The title, the note, and the link's **host** rather than the link. A
     campaign URL is mostly tracking parameters, and indexing those adds
-    thousands of meaningless tokens per Matter while making "Alchemer" no
-    easier to find than the host already does (Agent-F brief 47).
+    thousands of meaningless tokens per Matter without making anything easier
+    to find. The host's own labels go in beside it, because PostgreSQL treats
+    ``survey.alchemer.example`` as a single token and a reader typing the
+    vendor's name would otherwise get nothing (Agent-F brief 47).
 
     Sorted before joining, so two rebuilds of an unchanged Matter produce
     identical text. The projection is compared to decide whether a row changed;
@@ -232,8 +234,7 @@ def _engagement_text_for(matter: Matter) -> str:
         parts.append(engagement.title)
         if engagement.note:
             parts.append(engagement.note)
-        if engagement.link_label:
-            parts.append(engagement.link_label)
+        parts.extend(engagement.link_search_terms)
     return " ".join(parts)
 
 
