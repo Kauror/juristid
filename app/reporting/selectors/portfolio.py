@@ -371,7 +371,7 @@ def new_native_full_matters_by_month(context: ReportingContext) -> MetricResult:
     """
     spec = definition(keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH)
     population = _native_intake(context, keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH)
-    eligible = population if context.period.is_all else _in_period(population, context)
+    eligible = _in_period(population, context)
     window = _intake_window(context, eligible)
 
     if window is None:

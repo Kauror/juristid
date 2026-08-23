@@ -242,6 +242,10 @@ def test_a_wider_department_does_not_cost_more_queries(world, reporting_context)
     from django.test.utils import CaptureQueriesContext
 
     context = reporting_context(world.martin)
+    # One warm-up call outside the measurement. Anything a first call caches —
+    # a permission lookup, a vocabulary row — would otherwise make the second
+    # capture *smaller* and the comparison meaningless.
+    compute(keys.MATTERS_BY_YEAR_AND_RESPONSIBILITY, context)
     with CaptureQueriesContext(connection) as first:
         compute(keys.MATTERS_BY_YEAR_AND_RESPONSIBILITY, context)
     baseline = len(first)
@@ -271,9 +275,11 @@ def test_the_archive_responsibility_breakdown_is_also_one_pass(
     from django.test.utils import CaptureQueriesContext
 
     context = reporting_context(world.martin)
+    compute(keys.OPINION_ARCHIVE_LINKED_BY_RESPONSIBILITY, context)
     with CaptureQueriesContext(connection) as first:
         compute(keys.OPINION_ARCHIVE_LINKED_BY_RESPONSIBILITY, context)
     baseline = len(first)
+    assert baseline > 0
 
     from tests.synthetic_statistics import _archive_binary, _archive_item, _archive_link
 
