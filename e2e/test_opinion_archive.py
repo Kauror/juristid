@@ -265,6 +265,10 @@ def test_the_unlinked_shortcut_narrows_to_the_review_workload(page, base_url):
     sign_in(page, base_url, ADMIN)
     open_archive(page, base_url)
 
-    page.get_by_role("link", name="Sidumata", exact=False).click()
+    # Scoped to the filter strip: the seeded unlinked letter is *called*
+    # "Sidumata näidiskiri", so an unscoped name match finds the row as well as
+    # the tab.
+    filters = page.get_by_role("navigation", name="Seotuse järgi")
+    filters.get_by_role("link", name="Sidumata", exact=False).click()
     expect(page.get_by_role("link", name=UNLINKED_TITLE)).to_be_visible()
     expect(page.get_by_role("link", name=LINKED_TITLE)).to_have_count(0)

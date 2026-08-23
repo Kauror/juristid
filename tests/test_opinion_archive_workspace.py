@@ -638,14 +638,16 @@ def test_a_link_a_canonical_submission_stands_on_cannot_be_withdrawn(
     withdrawing a reviewer's judgement is undoing an opinion, not a link.
     """
     from app.legacy_import.opinion_archive import OpinionSubmissionImport
-    from app.submissions.enums import SubmissionStatus
     from app.submissions.models import Submission
 
     normal, _ = two_matters
     link_matter(binary=binary, matter=normal, basis=ArchiveLinkBasis.REVIEWED, actor=reader)
-    submission = Submission.objects.create(
-        matter=normal, title="Sünteetiline arvamus", status=SubmissionStatus.SENT
-    )
+    # Left at its default status. `submissions_sent_requires_timestamp_and_evidence`
+    # refuses a SENT row without its final text, and building one would be
+    # fixture machinery for a rule that does not read the status: what protects
+    # the link is the import record naming these bytes as the Submission's
+    # source.
+    submission = Submission.objects.create(matter=normal, title="Sünteetiline arvamus")
     item = item_of(binary)
     OpinionSubmissionImport.objects.create(item=item, batch=item.batch, submission=submission)
 
