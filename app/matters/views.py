@@ -40,6 +40,7 @@ from app.documents.models import Document
 from app.documents.uploads import UploadRejected
 from app.intelligence.selectors import matter_intelligence
 from app.legacy_import.register_display import (
+    snapshot_label,
     source_instruction_for,
     source_instructions_for,
 )
@@ -169,6 +170,10 @@ def my_work(request: HttpRequest) -> HttpResponse:
             "waiting": waiting,
             "waiting_due": [action for action in waiting if action.is_due_for_review(today)],
             "attention": attention,
+            # One row per Matter, several reasons inside it. The flat list stays
+            # in the context because the count in the heading is a count of
+            # problems, not of files.
+            "attention_groups": selectors.group_attention(attention),
             "without_next_action": without_action,
             "active_matters": active,
             "active_count": selectors.my_active_matters(request.user).count(),
@@ -178,6 +183,10 @@ def my_work(request: HttpRequest) -> HttpResponse:
             # sentence as context — those Matters are, by definition, exactly
             # the ones where only the register has anything to say (ADR 0021).
             "source_instructions": source_instructions_for([*active, *without_action]),
+            # Which approved workbook that wording is a photograph of. Excel is
+            # still being edited, so an undated "Excelist" chip invites somebody
+            # to act on a sentence that has since moved (ADR 0021).
+            "source_snapshot": snapshot_label(),
             "nav_active": "minu_too",
         },
     )
@@ -209,6 +218,7 @@ def inbox(request: HttpRequest) -> HttpResponse:
             "recent": recent,
             "intake_form": IncomingIntakeForm(),
             "source_instructions": source_instructions_for([*unassigned, *recent]),
+            "source_snapshot": snapshot_label(),
             "nav_active": "saabunud",
         },
     )
@@ -755,6 +765,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "cleared_query": cleared.urlencode(),
         "has_any_filter": bool(chips or query),
         "source_instructions": source_instructions_for(page.object_list),
+        "source_snapshot": snapshot_label(),
         # What the search box submits alongside `q`, so typing narrows the
         # chosen filters rather than silently widening the population.
         "carried_params": [
@@ -1077,6 +1088,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # exists. Read here rather than in the template so the page cannot start
         # asking the database a question of its own (ADR 0021).
         "source_instruction": source_instruction_for(matter),
+        "source_snapshot": snapshot_label(),
         "timeline_items": items,
         "timeline_has_more": has_more,
         "composer_form": ComposerForm(),
@@ -1167,6 +1179,11 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
         ]
         submission.joint_rows = list(submission.joint_submitter_rows.all())
         submission.archive_import_rows = list(submission.archive_imports.all())
+    # Historical letters already filed onto this Matter. Imported lazily for the
+    # same reason `_historical_context` is: `app.legacy_import` imports the
+    # matters app, and a module-level import here would close the circle.
+    from app.legacy_import.opinion_links import archive_letters_for_matter
+
     context = _header_context(request, matter)
     context.update(
         {
@@ -1180,6 +1197,12 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
             ),
             "submissions": submissions,
             "submission_form": SubmissionCreateForm(),
+            # Two different kinds of record, listed apart on the page. A
+            # canonical Submission says Koda sent an opinion; an archive letter
+            # says we hold a file that concerns this Matter. Merging them into
+            # one list would make the second look like the first, which is the
+            # one confusion the opinion domain cannot afford.
+            "archive_letters": archive_letters_for_matter(matter, reader=request.user),
         }
     )
     return render(request, "matters/matter_position.html", context)

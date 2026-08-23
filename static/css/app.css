@@ -1723,6 +1723,17 @@ p.formnote {
   margin-right: var(--spacing-1);
 }
 
+/* Which approved snapshot the sentence above came from. Quieter than the
+ * instruction it dates, because it is context rather than content: the reader
+ * needs it when they are wondering whether Excel has moved on, and not
+ * before. */
+.nextaction__source-snapshot {
+  font-style: normal;
+  color: var(--text-muted);
+  font-size: var(--typography-size-sm);
+  white-space: nowrap;
+}
+
 /* ====================================================================
  * Composer
  * ==================================================================== */

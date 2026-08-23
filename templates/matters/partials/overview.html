@@ -158,6 +158,16 @@ about the save that just happened.
         <p class="nextaction__source">
           <span class="nextaction__source-label">Järgmiseks (Excelist):</span>
           {{ source_instruction }}
+          {% comment %}
+            Which approved snapshot those words are from, kept out of the label
+            itself. Excel is still being edited, so an undated provenance chip
+            invites acting on a sentence that has since moved — but the label is
+            the *provenance*, and the date is *how old* it is. Two facts, two
+            elements (ADR 0021).
+          {% endcomment %}
+          {% if source_snapshot %}
+            <span class="nextaction__source-snapshot">{{ source_snapshot }}</span>
+          {% endif %}
         </p>
       {% endif %}
     </section>

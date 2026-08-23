@@ -393,6 +393,12 @@ class AttentionItem:
 
 
 def my_attention_items(user: Any, today: date | None = None) -> list[AttentionItem]:
+    # Imported here rather than at module scope: `app.legacy_import` imports the
+    # matters app, so a top-level import would close the circle. The same reason
+    # `register_display.source_instructions_for` defers its own model import.
+    from app.legacy_import.current_state import RegisterCurrency
+    from app.legacy_import.register_display import source_instructions_for
+
     today = today or timezone.localdate()
     items: list[AttentionItem] = []
 
@@ -408,13 +414,48 @@ def my_attention_items(user: Any, today: date | None = None) -> list[AttentionIt
         user,
     )
 
-    for matter in matters_without_next_action(user).filter(owner=user)[:50]:
+    # "Nothing to do next" means neither a structured action nor a sentence the
+    # register left behind. Flagging on the structured action alone would put
+    # every Matter whose JÄRGMISEKS still carries the instruction on this
+    # panel — 185 of the current portfolio on the approved snapshot — and a
+    # warning that fires on almost everything is one nobody reads.
+    #
+    # The source instruction is *not* promoted to an action by being counted
+    # here. It only decides whether the Matter has gone quiet.
+    without_action = list(matters_without_next_action(user).filter(owner=user)[:200])
+    source_texts = source_instructions_for(without_action)
+    for matter in without_action[:50]:
+        if source_texts.get(matter.pk):
+            continue
         items.append(
             AttentionItem(
                 key="no_next_action",
                 label="Järgmiseks puudub",
                 matter=matter,
-                detail="Aktiivsel teemal ei ole määratud järgmist tegevust.",
+                detail="Aktiivsel teemal ei ole järgmist tegevust ega registri juhist.",
+            )
+        )
+
+    # Deliberately no "vastutaja puudub" here. It is a real attention state and
+    # it is not a *personal* one: an unowned Matter is on nobody's list by
+    # definition, so putting it on everybody's would make each lawyer's panel
+    # grow with work that is not theirs. Saabunud already leads with exactly
+    # that population, and Osakonna töö carries it for the department head.
+
+    # No HETKESEIS on live work. Read from the derived register state rather
+    # than guessed from the stage: a blank status column is a recorded gap in
+    # the register, and `stage` is this system's own vocabulary, which a Matter
+    # can legitimately carry while the register says nothing.
+    for matter in owned.filter(
+        current_register_state__currency=RegisterCurrency.CURRENT,
+        current_register_state__status_label="",
+    )[:50]:
+        items.append(
+            AttentionItem(
+                key="no_status",
+                label="Hetkeseis puudub",
+                matter=matter,
+                detail="Jooksval teemal ei ole registris hetkeseisu märgitud.",
             )
         )
 
@@ -437,7 +478,48 @@ def my_attention_items(user: Any, today: date | None = None) -> list[AttentionIt
             )
         )
 
+    # Deliberately no "overdue NextAction" item. `my_do_groups` already leads
+    # Minu töö with a *Tähtaeg möödas* band built from exactly those actions,
+    # and repeating them here would make the same task look like two problems.
+
     return items
+
+
+@dataclass(frozen=True)
+class AttentionGroup:
+    """One Matter and every reason it needs attention.
+
+    Grouping happens here rather than in the template because the panel now
+    produces several kinds of reason, and one Matter can legitimately carry
+    three of them — no owner recorded, no status, and a deadline gone by. Three
+    separate rows for one file would make the panel look three times as bad as
+    it is and leave the reader to work out that they are the same Matter.
+    """
+
+    matter: Matter
+    items: tuple[AttentionItem, ...]
+
+    @property
+    def labels(self) -> tuple[str, ...]:
+        return tuple(item.label for item in self.items)
+
+
+def group_attention(items: list[AttentionItem]) -> list[AttentionGroup]:
+    """One entry per Matter, reasons in the order they were detected.
+
+    Insertion-ordered rather than sorted: the detection order is already the
+    order the panel wants — a missing next step first, then a missing status,
+    then a passed deadline — and re-sorting would put the tidiest problem at the
+    top of somebody's day.
+    """
+    grouped: dict[Any, list[AttentionItem]] = {}
+    matters: dict[Any, Matter] = {}
+    for item in items:
+        grouped.setdefault(item.matter.pk, []).append(item)
+        matters.setdefault(item.matter.pk, item.matter)
+    return [
+        AttentionGroup(matter=matters[key], items=tuple(values)) for key, values in grouped.items()
+    ]
 
 
 def my_active_matters(user: Any) -> QuerySet[Matter]:

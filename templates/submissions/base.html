@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% comment %}
+  The Arvamused shell: one heading, one tab strip, two very different lists.
+
+  The tab strip is the whole design decision. Canonical Submissions and the
+  historical archive answer the same human question — "what did we write about
+  this" — from sources that are not interchangeable, and the one thing this
+  workspace must never do is let a reader mistake one for the other. Merging
+  them into a single list with a badge would put a held PDF and a recorded
+  outbound act on the same row, and the badge would be the only thing standing
+  between a lawyer and a wrong count.
+
+  So the sources stay in separate tabs, each captioned with what it is, and the
+  workspace has no code that would need unpicking when P4 eventually turns
+  defensible archive letters into real Submissions — those simply start
+  appearing under Saadetud on their own.
+
+  Arhiiv appears only for a reader `may_read_archive` admits. It is captioned
+  rather than silently dropped for everybody else: hiding it entirely would say
+  "there is no archive", which is untrue, and a lawyer who has heard about the
+  767 letters would reasonably think the feature was broken.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Arvamused</h1>
+    <span class="pagehead__context">{% block workspace_context %}{% endblock %}</span>
+    {% block page_actions %}{% endblock %}
+  </div>
+
+  <nav class="segmented" aria-label="Arvamuste allikas">
+    <a class="segmented__option {% if active_tab == 'saadetud' %}is-active{% endif %}"
+       {% if active_tab == 'saadetud' %}aria-current="page"{% endif %}
+       href="{% url 'submissions:sent' %}">Saadetud
+      <span class="segmented__count">{{ sent_counts.sent }}</span></a>
+    {% if can_read_archive %}
+      <a class="segmented__option {% if active_tab == 'arhiiv' %}is-active{% endif %}"
+         {% if active_tab == 'arhiiv' %}aria-current="page"{% endif %}
+         href="{% url 'submissions:archive' %}">Arhiiv
+        <span class="segmented__count">{{ archive_total }}</span></a>
+    {% endif %}
+  </nav>
+
+  {% block workspace %}{% endblock %}
+
+  {% if not can_read_archive %}
+    {% comment %}
+      Said once, at the foot, and only to readers who cannot open the archive.
+
+      The corpus exists and is held; what this persona may not do is read it.
+      That is a deliberate access decision (docs/adr/0028) and not a gap in the
+      product, so the page says which it is. No count appears here: a reader
+      refused the archive must not learn its size from the sentence explaining
+      that they cannot see it.
+    {% endcomment %}
+    <p class="cardnote">
+      Koja varasem arvamuste arhiiv on eraldi hoiul ja seda loeb praegu halduse
+      kasutajavaade. Jagatud parooli režiimis ei tuvasta süsteem inimest, seega
+      arhiivi kirjad ei ole tavakasutajale avatud.
+    </p>
+  {% endif %}
+</div>
+{% endblock %}

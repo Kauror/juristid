@@ -96,7 +96,7 @@ list by.
                   no overdue state — the source says all three at once and the
                   importer refuses to choose (ADR 0021).
                 {% endcomment %}
-                <span class="table__sourcelabel">Excelist</span>
+                <span class="table__sourcelabel">Excelist{% if source_snapshot %} · {{ source_snapshot }}{% endif %}</span>
                 <span class="table__actiontext table__actiontext--source"
                       title="{{ source_instructions|get_item:matter.pk }}">
                   {{ source_instructions|get_item:matter.pk }}

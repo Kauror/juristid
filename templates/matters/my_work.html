@@ -111,7 +111,7 @@ that have gone quiet because nothing was planned next.
                 {% with instruction=source_instructions|get_item:matter.pk %}
                   {% if instruction %}
                     <span class="attentionrow__source">
-                      <span class="table__sourcelabel">Excelist</span>
+                      <span class="table__sourcelabel">Excelist{% if source_snapshot %} · {{ source_snapshot }}{% endif %}</span>
                       <span class="attentionrow__sourcetext" title="{{ instruction }}">{{ instruction }}</span>
                     </span>
                   {% endif %}
@@ -146,12 +146,27 @@ that have gone quiet because nothing was planned next.
             Tähelepanu
             <span class="sectionlabel__count">{{ attention|length }}</span>
           </h2>
+          {% comment %}
+            One row per Matter, every reason inside it.
+
+            The panel detects several kinds of problem now — no next step and no
+            register instruction, no HETKESEIS on live work, a response deadline
+            gone by with nothing sent — and one file can carry more than one.
+            Rendering the flat list would show the same title three times and
+            make the panel look three times as alarming as the day actually is.
+
+            Each reason keeps its own explanation. A warning a lawyer cannot act
+            on, or cannot tell apart from the one above it, teaches them to
+            ignore the panel.
+          {% endcomment %}
           <div class="card">
-            {% for item in attention %}
+            {% for group in attention_groups %}
               <div class="attentionrow">
                 <a class="attentionrow__title"
-                   href="{% url 'matters:matter_detail' pk=item.matter.pk %}">{{ item.matter.title }}</a>
-                <span class="attentionrow__meta">{{ item.label }} · {{ item.detail }}</span>
+                   href="{% url 'matters:matter_detail' pk=group.matter.pk %}">{{ group.matter.title }}</a>
+                {% for item in group.items %}
+                  <span class="attentionrow__meta">{{ item.label }} · {{ item.detail }}</span>
+                {% endfor %}
               </div>
             {% endfor %}
           </div>

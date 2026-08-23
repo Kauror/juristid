@@ -51,3 +51,36 @@ def source_instructions_for(matters: Any) -> dict[Any, str]:
         "matter_id", "next_action_text"
     )
     return {matter_id: (text or "").strip() for matter_id, text in rows if (text or "").strip()}
+
+
+def snapshot_label() -> str:
+    """Which approved workbook the register text on screen came from.
+
+    Every ``CurrentRegisterState`` row in one deployment is written by a single
+    reconciliation against a single reviewed snapshot, so this is one label for
+    the whole surface rather than one per Matter — and asking per row would be a
+    join on every work list to render a constant.
+
+    It exists because the text those rows carry is a *photograph* of a
+    spreadsheet several people are still editing. An instruction reading "uuri
+    21.08 ministeeriumilt" is not wrong, it is from the 21st; a lawyer who has
+    since moved that date in Excel needs to see which of the two they are
+    looking at, and the fix for that is a date on the label, not a quiet import
+    of whatever the newest file happens to say.
+
+    Returns "" when nothing is derived yet, or when the digest production holds
+    is not one anybody approved — in which case saying nothing is better than
+    naming a workbook the reviewed list has never heard of.
+    """
+    from app.legacy_import.current_state import CurrentRegisterState
+    from app.legacy_import.final_cutover import reviewed_snapshot
+
+    digest = (
+        CurrentRegisterState.objects.exclude(source_snapshot_sha256="")
+        .values_list("source_snapshot_sha256", flat=True)
+        .first()
+    )
+    if not digest:
+        return ""
+    snapshot = reviewed_snapshot(digest)
+    return snapshot.label if snapshot else ""

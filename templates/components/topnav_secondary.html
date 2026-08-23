@@ -13,6 +13,21 @@ cannot reach: the row simply never appeared. Measured, not assumed.
 Nothing here decides anything. Osakonna töö is offered by role, the value comes
 from the server, and the route enforces the same check again.
 {% endcomment %}
+{% comment %}
+  Arvamused leads this group, and is in this group rather than beside Teemad on
+  the fixed part of the bar for a measured reason: a fifth always-visible item
+  pushes the shell into a horizontal scrollbar at 1024px, which the browser
+  suite catches. Here it sits on the bar at generous widths — first, next to
+  Teemad, which is where it belongs — and folds into "Veel" with the other
+  reading destinations when the viewport cannot hold it.
+
+  Offered to everybody, because canonical Submissions carry ordinary Matter
+  visibility. The historical archive tab inside the workspace is a separate
+  question, and the workspace asks it for itself (docs/adr/0028).
+{% endcomment %}
+<a class="topnav__link {% if nav_active == 'arvamused' %}is-active{% endif %}"
+   {% if nav_active == 'arvamused' %}aria-current="page"{% endif %}
+   href="{% url 'submissions:sent' %}">Arvamused</a>
 <a class="topnav__link {% if nav_active == 'jalgimine' %}is-active{% endif %}"
    {% if nav_active == 'jalgimine' %}aria-current="page"{% endif %}
    href="{% url 'intelligence:important_dates' %}">Jälgimine</a>
