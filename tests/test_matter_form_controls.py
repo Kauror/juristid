@@ -376,3 +376,48 @@ def test_no_ordinary_form_control_is_a_native_date_input(signed_in):
     assert 'type="date"' not in body
     assert "mm/dd/yyyy" not in body
     assert rendered_field(body, "id_received_date").count('type="text"') == 1
+
+
+def test_a_refused_save_does_not_make_the_optional_block_look_mandatory(signed_in):
+    """The screenshot defect, as an assertion.
+
+    A save refused for something else entirely — a missing title — used to come
+    back with the Järgmine tegevus disclosure forced open and "See lahter on
+    nõutav." under fields nobody had touched. That reads as "this is mandatory
+    after all", which is the one thing this block must not say
+    (master specification 3.8).
+    """
+    response = signed_in.post(CREATE, {"title": ""})
+
+    assert response.status_code == 400
+    assert response.context["form"].errors["title"]
+    action_form = response.context["action_form"]
+    assert not action_form.is_bound
+    assert not action_form.errors
+
+    # One refusal on screen, and it is the one the user caused. Counting the
+    # rendered message rather than inspecting which `<details>` carries `open`:
+    # the symptom is what a person sees, and the markup that produces it is
+    # free to change.
+    body = response.content.decode()
+    assert body.count("See lahter on nõutav.") == 1
+    assert "Tähtajaline tegevus vajab kuupäeva." not in body
+
+
+def test_a_refused_next_action_still_reopens_with_what_was_typed(signed_in):
+    """The other half. Somebody who *did* fill it in must get it back."""
+    response = signed_in.post(
+        CREATE,
+        {
+            "title": "",
+            "next-text": "Koosta arvamus",
+            "next-kind": ActionKind.DO,
+            "next-target_date": "",
+        },
+    )
+
+    assert response.status_code == 400
+    action_form = response.context["action_form"]
+    assert action_form.is_bound
+    assert action_form["text"].value() == "Koosta arvamus"
+    assert "Koosta arvamus" in response.content.decode()

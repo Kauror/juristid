@@ -750,12 +750,22 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     (Stage-2E.1 brief 23).
     """
     form = MatterCreateForm(request.POST or None, viewer=request.user)
-    action_form = NextActionForm(request.POST or None, prefix="next")
+    # Bound only when somebody actually wrote a next action. Bound
+    # unconditionally, a refused save — a missing title, a rejected file —
+    # re-rendered the optional Järgmine tegevus block with "See lahter on
+    # nõutav." under fields nobody had touched, and opened the disclosure to
+    # show them. That reads as "this is mandatory after all", which is the one
+    # thing the block must not say (specification 3.8, Agent-UI brief 9.6).
+    #
+    # `next-text` is the same signal the save path already used to decide
+    # whether to create an action at all, so there is one definition of "the
+    # user wants a next action" rather than two.
+    wants_action = bool((request.POST.get("next-text") or "").strip())
+    action_form = NextActionForm(request.POST if wants_action else None, prefix="next")
     uploads: list[Any] = []
     upload_error = ""
 
     if request.method == "POST" and form.is_valid():
-        wants_action = bool(request.POST.get("next-text", "").strip())
         try:
             uploads = _read_new_matter_files(request)
         except (DomainError, UploadRejected) as error:
