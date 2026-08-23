@@ -168,14 +168,59 @@ restore comparison is allowed to find empty. Everything else is canonical until
 somebody argues otherwise, which is the safe default rather than an assessment
 of each table.
 
-## What is still outstanding
+## Where production actually stands
 
 Facts, not plans — see `docs/open-decisions.md` for the decisions themselves.
+Verified by direct read-only inspection of the real instance at revision
+`53377932f5cba82fdc1193e35f7eca244c9d6809` on 2026-08-23. Earlier versions of
+this section said the register apply and the archive materialisation had not
+been run; both had, and the list below is what the instance answers rather than
+what a development task last remembered.
 
-- the current-register production apply has **not** been run against the real
-  instance by any development task;
-- the opinion archive has **not** been materialised in production;
-- no canonical opinion apply has been run in production;
-- real-archive text extraction is blocked pending the Secure Pilot Gate
-  scanner, so production archive search is metadata-only by design;
-- off-host disaster recovery has no destination yet, and no RPO/RTO is agreed.
+### Done, and converged
+
+Converged means the operation's own dry run now reports no work: running it
+again would change nothing.
+
+- **Register import** — 2458 source references from the reviewed snapshot
+  `f38906c2…`. Two snapshots are present and the newest finished `ImportBatch`
+  selects between them, so `select_register_snapshot` is unambiguous.
+- **Current/final register cutover** — ACTIVATE 0, RETIRE 0, review 0; 200
+  current Matters (60 in 2025, 140 in 2026), 15 still drafting.
+- **Historical cutover** — would become historical: 0.
+- **Opinion archive catalogue** — 767 items, 759 metadata rows, 244 archive →
+  Matter links, 523 unlinked.
+- **Opinion archive materialisation** — 767 binaries held.
+- **Reference vocabulary** — 9 PolicyAreas by `taxonomy/0002`, 15 public
+  Organisations and 13 aliases by `reference_data apply` against a reviewed
+  digest. `reference_data verify` reports the baseline complete and
+  `deployment_readiness` is green.
+
+### Not done, and each blocked for a stated reason
+
+- **OneNote → PolicyArea relationships** — the first real-data plan exists
+  (71 relations, 4 of 24 filing locations exact-matched) and **awaits human
+  review**. Nothing is wrong with it; nobody has read it. `Matter.policy_areas`
+  is still 0.
+- **`JÄRGMISEKS` / NextAction enrichment** — blocked on the parser-safety
+  review in PR #49. The plan still reports an AUTO set; the audit established
+  that those proposals are not all defensible, so the number is not an approval.
+- **Canonical historical opinion Submissions** — blocked by **two independent
+  gates, and clearing either one alone is not enough**:
+  1. *Operational.* Canonical filing needs an identified administrator, and
+     `AUTH_MODE=shared_gate` does not honestly provide one.
+  2. *Engineering.* The production canonical-apply path still lacks its P4
+     hardening — exact reviewed-plan digest binding, safe unresolved-recipient
+     provenance, retryable recipient resolution, conflict/existing-Submission
+     parity with the reviewed path, and precise reviewed sent-date provenance.
+     P4 is not implemented.
+
+  The plan proposes 244 Submissions. Changing the authentication mode would not
+  make applying them correct.
+- **Real-archive text extraction** — blocked pending the Secure Pilot Gate
+  scanner, so production archive search is metadata-only by design.
+- **Second-pass archive content proposals** — downstream of extraction: 767
+  examined, 767 without content, 0 proposals. Not a defect.
+- **Off-host disaster recovery** — still no destination, and no agreed RPO/RTO.
+  The local backup set protects against an operator mistake and a bad
+  deployment, and against nothing that happens to the host itself.
