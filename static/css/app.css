@@ -3749,6 +3749,18 @@ a.barchart__row:hover {
   border: 0;
 }
 
+/* The add and edit controls inside a fact section.
+ *
+ * `disclosure--inline` drops the border and the padding but keeps the raised
+ * background it inherits from `.disclosure`, which under a list of quiet rows
+ * reads as a full-width bar — heavier than the "+ Lisa …" links the sibling
+ * sections use, and directly below three of them. Scoped here rather than
+ * changed on the modifier itself, which `Uus teema` also uses and where the
+ * background is doing no harm (Agent-F brief 34, 37). */
+.factsection .disclosure--inline {
+  background: none;
+}
+
 /* -- the file area --------------------------------------------------------- */
 
 .dropzone {
