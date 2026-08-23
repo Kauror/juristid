@@ -13,7 +13,7 @@ and named here.
 | Final `Hetkeseis` vocabulary, help text, track applicability and closure mapping | Department head + lawyers | `StageVocabulary` and `LegacyStatusMapping` are empty; the dev seed uses provisional labels flagged `is_provisional`. The workbook's 11 authoritative labels must be transcribed from the live file, not reconstructed. | Reviewed data migration |
 | Matter numbering and successor reference rules | Department head | `YYYY_N` is implemented as the default. Allocation is isolated in `allocate_matter_reference()`. | One function |
 | Submission kinds, recipients, and what counts as a reportable written opinion | Department head + reporting owner | Drives `submission_sent_count` in the export contract and the Stage-1 Submission model. | ADR 0007 + Stage-1 schema |
-| Initial PolicyArea list, controlled Tag seed, taxonomy owner | Department head + lawyers | Taxonomy tables ship empty on purpose; the dev seed uses only the tag concepts the specification itself names. | Reviewed data migration |
+| Controlled Tag seed, taxonomy owner | Department head + lawyers | **The PolicyArea half is decided and deployed** — the nine areas Koda publishes, seeded by `taxonomy/0002` and recorded in ADR 0029. `Tag` still ships empty on purpose and its authoritative vocabulary is unreviewed; the dev seed uses only the tag concepts the specification itself names. | ADR 0029 for the areas; a reviewed data migration for the tags |
 | DashKoda export format and consumer owner | DashKoda owner | The v1 contract is drafted and awaiting agreement. | `docs/data-contracts/dashkoda-export-v1.md` |
 
 ## Required before the Secure Pilot Gate
