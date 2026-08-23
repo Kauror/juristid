@@ -62,6 +62,11 @@ def test_every_published_metric_appears_on_some_tab() -> None:
         "EXTRACTION_AWAITING_SCANNER",
         "EXTRACTION_FAILED",
         "EXTRACTION_NOT_APPLICABLE",
+        # Superseded on the Teemad tab by `MATTERS_BY_RESPONSIBILITY`, which
+        # answers the same question and keeps a register name this system has
+        # no account for. Kept in the catalogue: it is the version with a
+        # working drill-through, and `test_reporting_drillthrough` verifies it.
+        "MATTERS_BY_OWNER",
         # Counterparts to cards that are shown; both reachable from the
         # definitions page, and both computed for the exports.
         "MATTERS_WITHOUT_HISTORICAL_SOURCE",

@@ -268,8 +268,15 @@ MATTERS_CHARTS = [
     keys.MATTERS_BY_TRACK,
     keys.MATTERS_BY_POLICY_AREA,
     keys.MATTERS_BY_TAG,
+    # `MATTERS_BY_RESPONSIBILITY` rather than `MATTERS_BY_OWNER`. The two
+    # answer the same question and rendered side by side as two charts with
+    # identical bars and near-identical Estonian titles — *vastutuse järgi* and
+    # *vastutaja järgi* — which a browser screenshot made obvious and no
+    # assertion would have. The one kept is the one that preserves a register
+    # name this system has no account for instead of discarding it into
+    # "Vastutaja määramata", which is the whole point of the dimension on a
+    # reporting surface (brief 15, 55, 56).
     keys.MATTERS_BY_RESPONSIBILITY,
-    keys.MATTERS_BY_OWNER,
     keys.HISTORICAL_SOURCE_COVERAGE_CLASSES,
 ]
 
