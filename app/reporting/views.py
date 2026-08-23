@@ -287,12 +287,15 @@ def _year_param(request: HttpRequest) -> int | None:
 
 @gate_required
 def submissions_list(request: HttpRequest) -> HttpResponse:
-    """Sent Submissions. The product has no other list of them.
+    """Sent Submissions, as this statistic counted them.
 
-    Built here rather than reusing an existing surface because there is no
-    existing surface: submissions are created and read from inside a Matter.
-    Everything that *does* have a list — the register, the reconciliation queue
-    — is linked to instead of duplicated (brief 39).
+    This was once the product's only list of them, and is no longer: Arvamused
+    is a workspace of its own (app/submissions/workspace_views.py). It stays,
+    because a drill-through has to be *the statistic's own* population — same
+    reporting context, same filters, same period — and the workspace answers a
+    different question with a different default. Sending a reader from a chart
+    to a list built by other rules is how a number and the rows behind it start
+    disagreeing (brief 39).
     """
     context = reporting_context.from_request(request)
     selection = {
