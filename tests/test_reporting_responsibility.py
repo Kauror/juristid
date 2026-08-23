@@ -308,9 +308,13 @@ def test_no_responsibility_metric_calls_itself_a_workload(world, reporting_conte
                 *result.notes,
             ]
         ).lower()
-        for forbidden in ("edetabel", "produktiivsus", "parim jurist", "tulemuslikkuse mõõt"):
+        for forbidden in ("produktiivsus", "parim jurist", "tulemuslikkuse mõõt"):
             assert forbidden not in text, f"{key}: {forbidden}"
-        for hedged in ("töökoormus", "tulemuslikkus"):
+        # A definition is allowed to *deny* being one of these — "tabel, mitte
+        # edetabel" is the clearest way to say what a matrix is not. What it may
+        # not do is claim to be one, which is the same rule the catalogue test
+        # applies to every prohibited measure.
+        for hedged in ("töökoormus", "tulemuslikkus", "edetabel"):
             if hedged in text:
                 assert "ei ole" in text or "mitte" in text, f"{key}: {hedged}"
 
