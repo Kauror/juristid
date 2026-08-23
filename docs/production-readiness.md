@@ -37,6 +37,23 @@ back independently.
 | 1.3 | Build, migrate, replace | `deploy/unraid-main/README.md` §"Deploying a new build" |
 | 1.4 | Post-flight | `manage.py deployment_readiness`, then the A–L browser list in the same README |
 
+**A first deployment of the reference-data baseline sits inside step 1.** The
+nine policy areas arrive with the migration at 1.3; the public institutions do
+not, because they are operator-seeded reference data. Between the two,
+`deployment_readiness` at 1.4 will refuse — correctly, the deployment really is
+missing the vocabulary its features run on. Close the gap before calling the
+deployment done:
+
+| | Step | Command |
+| --- | --- | --- |
+| 1.5 | Read the reference-data plan | `manage.py reference_data plan` |
+| 1.6 | Apply it, against the digest you just read | `manage.py reference_data apply --expect-plan-sha256 <digest>` |
+| 1.7 | Confirm the baseline | `manage.py reference_data verify`, then `manage.py deployment_readiness` |
+
+`plan` writes nothing. `apply` only ever adds a missing institution or a missing
+reviewed alias — it never renames, retypes, merges or deactivates anything that
+already exists, and refuses outright on any conflict (ADR 0029).
+
 ## 2. Backup — before any data change, not after
 
 | | Check | How |
@@ -68,6 +85,7 @@ implied by a deployment.
 | 3.6 | Opinion canonical records | `opinion_archive plan` (same plan) | `opinion_archive apply` | Only automatic classes file themselves |
 | 3.7 | Archive text and search | `opinion_archive_search status` | `extract-text`, then `rebuild` | Extraction is **BLOCKED** where real data lives (ADR 0014) |
 | 3.8 | Second-pass proposals | `opinion_archive content-plan` | `content-apply` | Proposals only; nothing files (ADR 0023) |
+| 3.10 | Counterparty coverage — diagnostic only | `reference_data coverage --expect-register-snapshot-sha256 <sha>` | *(none — it never writes)* | Whether the reviewed institutions resolve enough of the register to be worth a backfill decision |
 
 **3.4, 3.5 and 3.6 are three different acts, and the order is fixed.**
 Cataloguing records what the archive holds; materialising holds the bytes;

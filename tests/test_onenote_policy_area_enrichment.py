@@ -44,6 +44,13 @@ GROUP = "ARHIIV"
 TAX_SECTION = "Maksundus ja toll"
 UNKNOWN_SECTION = "Muud"
 
+#: The invented area these tests file under. Deliberately *not* `keskkond`: that
+#: key now belongs to the reviewed production vocabulary
+#: (`taxonomy/0002_reference_policy_areas`), and a fixture that reuses it
+#: collides on the unique key. The row here is a different concept anyway — a
+#: section named `Keskkond ja kliima`, not the canonical `Keskkond`.
+ENV_KEY = "keskkond-ja-kliima"
+
 
 def _page(*, key: str, section: str, group: str = GROUP, system=SourceSystem.ONENOTE_DESKTOP):
     now = timezone.now()
@@ -119,7 +126,7 @@ def test_diacritics_are_meaning_and_are_not_folded():
 
 
 def test_a_reviewed_alias_maps_a_section_that_is_named_nothing_like_the_area():
-    area = _area("Keskkond ja kliima", "keskkond")
+    area = _area("Keskkond ja kliima", ENV_KEY)
     matter = factories.MatterFactory()
     _link(matter, _page(key="a", section="Pakendid ja jäätmed"))
 
@@ -128,7 +135,7 @@ def test_a_reviewed_alias_maps_a_section_that_is_named_nothing_like_the_area():
             rule_id="pakendid-keskkond",
             source_section_group=GROUP,
             source_section="Pakendid ja jäätmed",
-            policy_area_key="keskkond",
+            policy_area_key=ENV_KEY,
         ),
     )
     plan = build_policy_area_plan(rules=rules)
@@ -146,7 +153,7 @@ def test_the_mapping_key_is_the_group_and_the_section_together():
     A key that ignored the group would file both under whichever one happened to
     be reviewed first.
     """
-    area = _area("Keskkond ja kliima", "keskkond")
+    area = _area("Keskkond ja kliima", ENV_KEY)
     first, second = factories.MatterFactory(), factories.MatterFactory()
     _link(first, _page(key="a", section="Üldine", group="ARHIIV keskkond"))
     _link(second, _page(key="b", section="Üldine", group="ARHIIV maksud"))
@@ -156,7 +163,7 @@ def test_the_mapping_key_is_the_group_and_the_section_together():
             rule_id="keskkond-yldine",
             source_section_group="ARHIIV keskkond",
             source_section="Üldine",
-            policy_area_key="keskkond",
+            policy_area_key=ENV_KEY,
         ),
     )
     plan = build_policy_area_plan(rules=rules)
@@ -307,7 +314,7 @@ def test_enrichment_is_additive_and_never_replaces_a_manual_choice():
 def test_several_pages_may_add_several_areas():
     """``policy_areas`` is genuinely many-to-many; no primary is chosen."""
     tax = _area(TAX_SECTION, "maksundus")
-    env = _area("Keskkond ja kliima", "keskkond")
+    env = _area("Keskkond ja kliima", ENV_KEY)
     matter = factories.MatterFactory()
     _link(matter, _page(key="a", section=TAX_SECTION))
     _link(matter, _page(key="b", section="Keskkond ja kliima"), SourceRelationshipKind.RELATED)
@@ -407,7 +414,7 @@ def test_the_plan_digest_is_stable_across_identical_runs():
 
 def test_the_digest_moves_when_the_mapping_registry_does():
     """The same pages read under different rules are a different plan."""
-    _area("Keskkond ja kliima", "keskkond")
+    _area("Keskkond ja kliima", ENV_KEY)
     matter = factories.MatterFactory()
     _link(matter, _page(key="a", section="Pakendid ja jäätmed"))
 
@@ -418,7 +425,7 @@ def test_the_digest_moves_when_the_mapping_registry_does():
                 rule_id="pakendid-keskkond",
                 source_section_group=GROUP,
                 source_section="Pakendid ja jäätmed",
-                policy_area_key="keskkond",
+                policy_area_key=ENV_KEY,
             ),
         )
     ).digest

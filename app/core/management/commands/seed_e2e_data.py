@@ -180,15 +180,12 @@ class Command(BaseCommand):
         partner, _ = Organisation.objects.get_or_create(
             name=PARTNER, defaults={"organisation_type": OrganisationType.ASSOCIATION}
         )
-        area, _ = PolicyArea.objects.get_or_create(
-            key="keskkond", defaults={"name_et": "Keskkond", "sort_order": 10}
-        )
-        # A second area, because a Matter genuinely belongs to several and the
-        # browser regression that proves the control is a multi-select cannot
-        # prove anything against a list of one.
-        PolicyArea.objects.get_or_create(
-            key="maksundus", defaults={"name_et": "Maksundus", "sort_order": 20}
-        )
+        # Read, not created. The vocabulary is reference data and arrives with
+        # `taxonomy/0002_reference_policy_areas`; a browser world that invented
+        # its own `maksundus` beside the canonical `maksud` would put two
+        # spellings of one concept into the control it exists to exercise.
+        # Nine real areas are also a better test of a multi-select than two.
+        area = PolicyArea.objects.get(key="keskkond")
         stage = StageVocabulary.objects.get(key="consultation")
 
         if Matter.objects.filter(title=RESTRICTED_TITLE).exists():
@@ -275,13 +272,13 @@ class Command(BaseCommand):
         )
 
         self._historical_world(visible)
-        self._opinion_archive_world(visible)
+        self._opinion_archive_world(visible, restricted)
         self._statistics_world(visible, martin, ministry)
         self._department_world(sandra, martin, ministry, stage)
         self._intelligence_world(visible, restricted, martin, sandra)
         self.stdout.write(self.style.SUCCESS("E2E world ready."))
 
-    def _opinion_archive_world(self, matter: Matter) -> None:
+    def _opinion_archive_world(self, matter: Matter, restricted: Matter) -> None:
         """Two held archive letters, one of them findable by its contents.
 
         Built through the ORM and the storage API rather than by running the
@@ -294,6 +291,14 @@ class Command(BaseCommand):
         with extracted text and a Matter it is linked to, and one with neither.
         The coverage strip on the browse screen is only meaningful when the two
         differ.
+
+        The filed letter is filed onto **both** a normal and a RESTRICTED
+        Matter, which is the state the archive's hardest property needs: an
+        administrator may open every letter Koda holds and may not read a
+        restricted register entry, so the detail page has to name one of these
+        two and neither confirm nor deny anything about the other. A browser is
+        the only place that claim can be checked against what is actually on the
+        screen (docs/adr/0028).
         """
         from django.core.files.base import ContentFile
 
@@ -352,12 +357,13 @@ class Command(BaseCommand):
                     parser="e2e",
                     parser_version="1",
                 )
-                link_matter(
-                    binary=binary,
-                    matter=matter,
-                    basis=ArchiveLinkBasis.EXACT_BINARY,
-                    note="Sünteetiline e2e seos.",
-                )
+                for target in (matter, restricted):
+                    link_matter(
+                        binary=binary,
+                        matter=target,
+                        basis=ArchiveLinkBasis.EXACT_BINARY,
+                        note="Sünteetiline e2e seos.",
+                    )
 
         rebuild_archive_index()
 

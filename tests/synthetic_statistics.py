@@ -346,8 +346,12 @@ def build_world(today: date | None = None) -> World:
         name=PARTNER, organisation_type=OrganisationType.ASSOCIATION
     )
 
-    area_tax = PolicyArea.objects.create(key="maksud", name_et="Maksud", sort_order=10)
-    area_env = PolicyArea.objects.create(key="keskkond", name_et="Keskkond", sort_order=20)
+    # Read, not created. The vocabulary is reference data now and arrives with
+    # `taxonomy/0002_reference_policy_areas`, so creating these two here raised
+    # on the unique key — and creating them under *different* keys would have
+    # been worse: two rows named `Maksud` make every by-name figure ambiguous.
+    area_tax = PolicyArea.objects.get(key="maksud")
+    area_env = PolicyArea.objects.get(key="keskkond")
     stage = StageVocabulary.objects.create(
         key="kooskolastusel", label_et="Kooskõlastusringil", is_provisional=True
     )

@@ -13,6 +13,15 @@
   The link form says what it does not do, in the form itself. Tying a file to a
   matter is a weaker claim than a canonical opinion, and a reviewer who thinks
   they have just recorded a sent opinion has been misled by the interface.
+
+  **Every Matter on this page comes through `MatterView`.** Reading the archive
+  is a decision about the corpus; naming a register entry is a decision about
+  that entry, and it is not the archive's to make. Where the reader may not
+  read the entry, the view carries no object at all — so a relationship is
+  acknowledged as existing and nothing about it is rendered. That is deliberately
+  not the same as saying there is none: the search projection records the letter
+  as filed, and a page claiming otherwise would be wrong rather than discreet
+  (docs/adr/0028).
 {% endcomment %}
 
 {% block content %}
@@ -79,17 +88,30 @@
 
   <section class="card">
     <h2 class="sectionlabel">Seotud teemad</h2>
-    {% if links %}
+    {% if link_rows %}
       <ul class="linklist">
-        {% for link in links %}
+        {% for link_row in link_rows %}
           <li class="linklist__item">
-            <a href="{% url 'matters:matter_detail' pk=link.matter_id %}">
-              {{ link.matter.display_reference|default:"—" }} {{ link.matter.title|truncatechars:90 }}
-            </a>
-            <span class="badge">{{ link.get_basis_display }}</span>
-            {% if link.linked_by %}<span class="linklist__meta">{{ link.linked_by.display_name }}</span>{% endif %}
-            {% if link.linked_at %}<span class="linklist__meta">{{ link.linked_at|date:"d.m.Y" }}</span>{% endif %}
-            {% if link.basis == "REVIEWED" %}
+            {% if link_row.view.visible %}
+              <a href="{% url 'matters:matter_detail' pk=link_row.link.matter_id %}">
+                {{ link_row.view.matter.display_reference|default:"—" }} {{ link_row.view.matter.title|truncatechars:90 }}
+              </a>
+            {% else %}
+              {% comment %}
+                Neutral on purpose, and neither an error nor an apology. The
+                archive-side facts — that a relationship exists, and on what
+                basis it was recorded — say nothing about the register entry;
+                its title, reference, owner and stage do, so none of them are
+                here and there is no link to follow.
+              {% endcomment %}
+              <span class="linklist__meta">
+                Seos on olemas teemaga, mida selles kasutajavaates ei kuvata.
+              </span>
+            {% endif %}
+            <span class="badge">{{ link_row.link.get_basis_display }}</span>
+            {% if link_row.link.linked_by %}<span class="linklist__meta">{{ link_row.link.linked_by.display_name }}</span>{% endif %}
+            {% if link_row.link.linked_at %}<span class="linklist__meta">{{ link_row.link.linked_at|date:"d.m.Y" }}</span>{% endif %}
+            {% if link_row.may_withdraw %}
               <form class="linklist__action" method="post"
                     action="{% url 'legacy_import:opinion_archive_link' pk=binary.pk %}">
                 {% csrf_token %}
@@ -97,58 +119,105 @@
                   The id rather than the reference: an archive Matter may have
                   no reference, and its link must still be removable.
                 {% endcomment %}
-                <input type="hidden" name="teema" value="{{ link.matter_id }}">
+                <input type="hidden" name="teema" value="{{ link_row.link.matter_id }}">
                 <button type="submit" class="button button--quiet" name="action" value="unlink">Eemalda</button>
               </form>
             {% endif %}
           </li>
         {% endfor %}
       </ul>
+      {% if hidden_link_count %}
+        <p class="cardnote">
+          {{ hidden_link_count }} seost ei kuvata, sest teema ei ole selles kasutajavaates loetav.
+        </p>
+      {% endif %}
     {% else %}
       <p class="empty">Ükski teema ei ole selle kirjaga seotud.</p>
     {% endif %}
 
-    <form class="form" method="post" action="{% url 'legacy_import:opinion_archive_link' pk=binary.pk %}">
-      {% csrf_token %}
-      <div class="formgrid">
-        <label class="field">
-          <span class="field__label">Teema viide</span>
-          <input class="field__input" type="text" name="viide" placeholder="2025_44" maxlength="20" required>
-        </label>
-        <label class="field field--wide">
-          <span class="field__label">Märkus</span>
-          <input class="field__input" type="text" name="markus" maxlength="2000"
-                 placeholder="Miks see kiri sellesse teemasse kuulub">
-        </label>
-      </div>
-      <div class="form__actions">
-        <button type="submit" class="button" name="action" value="link">Seo teemaga</button>
-        <span class="form__hint">
-          Seos ütleb, et see tõend puudutab teemat. See ei loo arvamust ega väida, et Koda selle välja saatis.
-        </span>
-      </div>
-    </form>
+    {% if can_manage_links %}
+      {% comment %}
+        Offered only to somebody who may record the judgement. Under the shared
+        gate that is the department head and not the administrator: filing a
+        letter onto a teema is a claim about what the Chamber's correspondence
+        concerns, and technical administration is not business authorship
+        (app/legacy_import/opinion_access.py).
+      {% endcomment %}
+      <form class="form" method="post" action="{% url 'legacy_import:opinion_archive_link' pk=binary.pk %}">
+        {% csrf_token %}
+        <div class="formgrid">
+          <label class="field">
+            <span class="field__label">Teema viide</span>
+            <input class="field__input" type="text" name="viide" placeholder="2025_44" maxlength="20" required>
+            <span class="field__help">
+              Ainult olemasolev teema, mille sa ise avada saad. Uut teemat siit ei teki.
+            </span>
+          </label>
+          <label class="field field--wide">
+            <span class="field__label">Märkus</span>
+            <input class="field__input" type="text" name="markus" maxlength="2000"
+                   placeholder="Miks see kiri sellesse teemasse kuulub">
+          </label>
+        </div>
+        <div class="form__actions">
+          <button type="submit" class="button" name="action" value="link">Seo teemaga</button>
+          <span class="form__hint">
+            Seos ütleb, et see tõend puudutab teemat. See ei loo arvamust ega väida, et Koda selle välja saatis.
+          </span>
+        </div>
+      </form>
+    {% else %}
+      <p class="cardnote">
+        Seos ütleb, et see tõend puudutab teemat. See ei loo arvamust ega väida, et Koda selle
+        välja saatis. Selles kasutajavaates saab arhiivi lugeda, kuid seoseid mitte muuta.
+      </p>
+    {% endif %}
   </section>
 
-  {% if live_candidates %}
+  {% if candidate_rows %}
     <section class="card">
       <h2 class="sectionlabel">Võrdluse ettepanekud</h2>
+      {% comment %}
+        Proposals, not decisions. Accepting one here files the letter and
+        nothing else: the candidate keeps its own state, and confirming that
+        Koda actually sent the letter stays in /haldus/arvamuste-ulevaatus/,
+        where it belongs to a different surface and a different role.
+      {% endcomment %}
       <ul class="linklist">
-        {% for candidate in live_candidates %}
+        {% for candidate_row in candidate_rows %}
           <li class="linklist__item">
-            <span class="reviewstate reviewstate--{{ candidate.state|lower }}">{{ candidate.get_state_display }}</span>
-            <span class="badge">{{ candidate.get_match_class_display }}</span>
-            {% if candidate.matter %}
-              <a href="{% url 'matters:matter_detail' pk=candidate.matter_id %}">
-                {{ candidate.matter.display_reference|default:"—" }} {{ candidate.matter.title|truncatechars:80 }}
+            <span class="reviewstate reviewstate--{{ candidate_row.candidate.state|lower }}">{{ candidate_row.candidate.get_state_display }}</span>
+            <span class="badge">{{ candidate_row.candidate.get_match_class_display }}</span>
+            {% if candidate_row.view.visible %}
+              <a href="{% url 'matters:matter_detail' pk=candidate_row.candidate.matter_id %}">
+                {{ candidate_row.view.matter.display_reference|default:"—" }} {{ candidate_row.view.matter.title|truncatechars:80 }}
               </a>
+            {% elif candidate_row.candidate.matter_id %}
+              <span class="linklist__meta">
+                Ettepanek osutab teemale, mida selles kasutajavaates ei kuvata.
+              </span>
             {% else %}
               <span class="linklist__meta">Teemat ei ole pakutud</span>
             {% endif %}
-            {% if candidate.explanation %}<span class="linklist__meta">{{ candidate.explanation|truncatechars:120 }}</span>{% endif %}
+            {% if candidate_row.candidate.explanation %}<span class="linklist__meta">{{ candidate_row.candidate.explanation|truncatechars:120 }}</span>{% endif %}
+            {% if candidate_row.may_link %}
+              <form class="linklist__action" method="post"
+                    action="{% url 'legacy_import:opinion_archive_link' pk=binary.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="teema" value="{{ candidate_row.candidate.matter_id }}">
+                <input type="hidden" name="markus" value="Võrdluse ettepanekust üle vaadatud.">
+                <button type="submit" class="button button--quiet" name="action" value="link">Seo selle teemaga</button>
+              </form>
+            {% endif %}
           </li>
         {% endfor %}
       </ul>
+      {% if hidden_candidate_count %}
+        <p class="cardnote">
+          {{ hidden_candidate_count }} ettepaneku teemat ei kuvata, sest see ei ole selles
+          kasutajavaates loetav.
+        </p>
+      {% endif %}
     </section>
   {% endif %}
 
