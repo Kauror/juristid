@@ -261,3 +261,41 @@ def link_findings() -> list[str]:
         findings.append(f"{crossed} seose arhiivikirje ei kuulu selle baidi juurde")
 
     return findings
+
+
+def archive_letters_for_matter(matter: Any, *, reader: Any) -> list[OpinionArchiveBinary]:
+    """Historical letters filed onto this Matter, for the Matter's own page.
+
+    The reverse of :func:`links_for`, and it exists so that discovering an old
+    opinion does not require opening an administrator's reconciliation queue.
+    Two hundred and forty-four archive letters are already tied to a Matter;
+    before this they were reachable only from the archive side, which meant the
+    lawyer holding the file was the one person who could not see them.
+
+    ``reader`` is asked, not assumed. Whether somebody may read the corpus at
+    all is a question about the corpus rather than about this Matter
+    (``may_read_archive``, docs/adr/0028), so a reader who may open the Matter
+    and not the archive gets an empty list rather than a row they cannot follow.
+    The Matter's own visibility is already settled by the caller — this is only
+    ever reached through a Matter the reader opened.
+    """
+    from app.legacy_import.opinion_access import may_read_archive
+
+    if not may_read_archive(reader):
+        return []
+    links = (
+        OpinionArchiveMatterLink.objects.filter(matter=matter)
+        .select_related("binary", "binary__search_document")
+        .order_by("basis", "-created_at")
+    )
+    # One binary per row even when a reviewer filed two occurrences of the same
+    # bytes: the page is listing letters, and the same letter twice is a
+    # duplicate, not a second piece of correspondence.
+    seen: set[Any] = set()
+    letters: list[OpinionArchiveBinary] = []
+    for link in links:
+        if link.binary_id in seen:
+            continue
+        seen.add(link.binary_id)
+        letters.append(link.binary)
+    return letters

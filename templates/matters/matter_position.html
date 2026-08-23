@@ -112,6 +112,48 @@ keep it.
           </form>
         </details>
       </section>
+
+      {% if archive_letters %}
+        {% comment %}
+          Historical letters already filed onto this Matter.
+
+          A separate section, below the canonical one and worded differently on
+          purpose. These are files the Chamber holds and somebody has judged to
+          concern this teema; none of them is a record that an opinion was
+          formally submitted, and no date or recipient here has been promoted to
+          a canonical fact. Listing them beside the Submissions would have made
+          the weaker claim look like the stronger one.
+
+          Offered only where `may_read_archive` admits the reader — the view
+          returns an empty list otherwise, so this block simply does not render
+          rather than showing rows that lead to a 403 (docs/adr/0028).
+        {% endcomment %}
+        <section aria-labelledby="arhiivikirjad-heading">
+          <h2 class="sectionlabel" id="arhiivikirjad-heading">
+            Seotud arhiivikirjad
+            <span class="sectionlabel__count">{{ archive_letters|length }}</span>
+          </h2>
+          <p class="cardnote">
+            Koja varasemad kirjad, mis selle teemaga seotud on. Need on tõendid
+            tehtud tööst, mitte kanoonilised arvamuse kirjed.
+          </p>
+          <ul class="linklist">
+            {% for letter in archive_letters %}
+              <li class="linklist__item">
+                <a href="{% url 'legacy_import:opinion_archive_detail' pk=letter.pk %}">
+                  {{ letter.search_document.title|default:"Pealkirjata kiri"|truncatechars:110 }}
+                </a>
+                {% if letter.search_document.document_date %}
+                  <span class="muted">· {{ letter.search_document.document_date|date:"d.m.Y" }}</span>
+                {% endif %}
+                {% if letter.search_document.recipient %}
+                  <span class="muted">· {{ letter.search_document.recipient|truncatechars:50 }}</span>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
     </div>
 
     <aside class="rail" aria-label="Kaasamine">

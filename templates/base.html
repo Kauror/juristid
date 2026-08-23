@@ -52,6 +52,19 @@
             <a class="topnav__link {% if nav_active == 'teemad' %}is-active{% endif %}"
                {% if nav_active == 'teemad' %}aria-current="page"{% endif %}
                href="{% url 'matters:matter_list' %}">Teemad</a>
+            {% comment %}
+              Arvamused is on the bar rather than behind "Veel", beside Teemad.
+              What the Chamber wrote is the department's other primary object:
+              a register entry is the work, an opinion is the output, and until
+              now the output could only be reached through the entry that
+              produced it. Offered to everybody, because canonical Submissions
+              carry ordinary Matter visibility; the historical archive tab
+              inside it is a separate question the workspace asks for itself
+              (docs/adr/0028).
+            {% endcomment %}
+            <a class="topnav__link {% if nav_active == 'arvamused' %}is-active{% endif %}"
+               {% if nav_active == 'arvamused' %}aria-current="page"{% endif %}
+               href="{% url 'submissions:sent' %}">Arvamused</a>
 
             {% comment %}
               Statistika is its own destination, not a tab on Ülevaade. Ülevaade

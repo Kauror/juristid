@@ -1,0 +1,154 @@
+{% extends "submissions/base.html" %}
+{% block title %}Arvamused · Arhiiv · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Arhiiv — Koja varasemad väljasaadetud kirjad, ainult lugemiseks.
+
+  Deliberately narrower than the administrative browse at
+  /haldus/arvamuste-arhiiv/, which shares its search function. There a reviewer
+  decides whose letter this is; here a lawyer finds out what the Chamber wrote
+  about a subject. So no candidate state, no link form, no withdraw action, and
+  no shortcut into the reconciliation queue.
+
+  **No row ever names a Matter.** Not because these rows lack the foreign key —
+  they have it — but because naming the Matter would make the archive a route
+  into the register: a reader could learn the title and reference of a
+  RESTRICTED entry from a letter tied to it. The linked/unlinked state is a fact
+  about the letter and is safe to show; the identity of what it is linked to is
+  not, and the detail page resolves it through `Matter.objects.visible_to`
+  before it says anything (docs/adr/0028).
+
+  The heading strip keeps four figures apart on purpose. Held is not filed onto
+  a Matter, filed is not sent as an opinion, and only a canonical Submission is
+  a claim that Koda sent anything at all.
+{% endcomment %}
+
+{% block workspace_context %}
+  {{ counts.total }} kirja · {{ counts.linked }} teemaga seotud ·
+  {{ counts.with_submission }} kanoonilise arvamusena
+{% endblock %}
+
+{% block workspace %}
+  <p class="cardnote">
+    Koja varasemad väljasaadetud kirjad, nii nagu need arhiivis on. Need on
+    tõendid tehtud tööst, mitte kanoonilised arvamuse kirjed: arhiivi rida ei
+    ütle, millal või kellele arvamus ametlikult esitati. Kanoonilised arvamused
+    on <a href="{% url 'submissions:sent' %}">Saadetud</a> vahelehel.
+  </p>
+
+  {% url 'submissions:archive' as archive_path %}
+  <nav class="segmented" aria-label="Seotuse järgi">
+    <a class="segmented__option {% if not filters.linked %}is-active{% endif %}"
+       {% if not filters.linked %}aria-current="true"{% endif %}
+       href="{{ archive_path }}{% querystring seotud=None leht=None %}">Kõik
+      <span class="segmented__count">{{ counts.total }}</span></a>
+    <a class="segmented__option {% if filters.linked == 'jah' %}is-active{% endif %}"
+       {% if filters.linked == 'jah' %}aria-current="true"{% endif %}
+       href="{{ archive_path }}{% querystring seotud='jah' leht=None %}">Teemaga seotud
+      <span class="segmented__count">{{ counts.linked }}</span></a>
+    <a class="segmented__option {% if filters.linked == 'ei' %}is-active{% endif %}"
+       {% if filters.linked == 'ei' %}aria-current="true"{% endif %}
+       href="{{ archive_path }}{% querystring seotud='ei' leht=None %}">Sidumata
+      <span class="segmented__count">{{ unlinked_count }}</span></a>
+  </nav>
+
+  <div class="card card--tight">
+    <form class="form" method="get" role="search">
+      <div class="formgrid">
+        <label class="field field--wide" for="archive-opinion-search">
+          <span class="field__label">Otsi arhiivist</span>
+          <input class="field__input" type="search" name="q" id="archive-opinion-search"
+                 value="{{ filters.query }}" maxlength="500"
+                 placeholder="{% if body_search_available %}Pealkiri, saaja, viide või sisu{% else %}Pealkiri, saaja või viide{% endif %}">
+          {% if not body_search_available %}
+            {% comment %}
+              Phase 8: the metadata-only limitation is explained where somebody
+              would otherwise experience it as a broken search. Every held text
+              is BLOCKED by the Secure Pilot Gate, so a reader searching a
+              phrase from inside a letter finds nothing — and would reasonably
+              conclude the Chamber never wrote it.
+            {% endcomment %}
+            <span class="field__help">
+              Otsing käib pealkirja, saaja ja viite järgi. Kirjade sisu ei ole
+              veel loetud, seega fraas kirja seest tulemusi ei anna.
+            </span>
+          {% endif %}
+        </label>
+        <label class="field">
+          <span class="field__label">Aasta</span>
+          <select class="field__input" name="aasta">
+            <option value="">Kõik</option>
+            {% for year in years %}
+              <option value="{{ year }}" {% if filters.year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>
+            {% endfor %}
+          </select>
+        </label>
+      </div>
+      <div class="form__actions">
+        <button type="submit" class="button button--primary">Otsi arhiivist</button>
+        <a class="button button--quiet" href="{% url 'submissions:archive' %}">Lähtesta</a>
+      </div>
+    </form>
+  </div>
+
+  {% if refusal %}
+    <p class="notice notice--warning">{{ refusal }}</p>
+  {% elif page.object_list %}
+    <p class="cardnote">{{ total }} vastet.</p>
+    <div class="tablewrap tablewrap--evidence">
+      <table class="table">
+        <caption class="visually-hidden">Koja varasemad väljasaadetud kirjad</caption>
+        <thead>
+          <tr>
+            <th scope="col">Kuupäev</th>
+            <th scope="col">Kiri</th>
+            <th scope="col">Saaja</th>
+            <th scope="col">Seisund</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in page.object_list %}
+            <tr>
+              <td class="table__date">
+                {% if row.document_date %}
+                  <time datetime="{{ row.document_date|date:'Y-m-d' }}">{{ row.document_date|date:"d.m.Y" }}</time>
+                {% else %}
+                  <span class="table__missing">—</span>
+                {% endif %}
+              </td>
+              <td class="table__title">
+                <a href="{% url 'legacy_import:opinion_archive_detail' pk=row.binary_id %}">
+                  {{ row.title|default:"Pealkirjata kiri"|truncatechars:110 }}
+                </a>
+                {% if row.occurrence_count > 1 %}
+                  <span class="badge">{{ row.occurrence_count }} esinemist</span>
+                {% endif %}
+              </td>
+              <td>{{ row.recipient|default:"—"|truncatechars:60 }}</td>
+              <td>
+                {% comment %}
+                  The letter's own state, never the identity of what it is tied
+                  to. "Teemaga seotud" says a relationship exists; which teema
+                  it is stays for the detail page, which filters it.
+                {% endcomment %}
+                {% if row.has_submission %}
+                  <span class="reviewstate reviewstate--applied">Kanooniline arvamus</span>
+                {% elif row.is_linked %}
+                  <span class="reviewstate reviewstate--linked">Teemaga seotud</span>
+                {% else %}
+                  <span class="reviewstate reviewstate--pending">Sidumata</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "components/pagination.html" with page=page query_string=query_string %}
+  {% elif filters.any_applied or filters.query %}
+    <p class="empty">Ükski arhiivi kiri ei vasta nendele tingimustele.</p>
+  {% else %}
+    <p class="empty">Arhiivis ei ole ühtegi kirja.</p>
+  {% endif %}
+{% endblock %}

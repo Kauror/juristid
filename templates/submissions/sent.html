@@ -1,0 +1,183 @@
+{% extends "submissions/base.html" %}
+{% block title %}Arvamused · Saadetud · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Saadetud — the canonical record of what Koda sent from this system.
+
+  Production holds zero of these today, and that is not a bug: a Submission is
+  created when somebody sends an opinion *here*, and the department has only
+  just arrived. The empty state therefore explains the boundary rather than
+  apologising for a missing feature — and it is the state QA will actually meet,
+  so it gets the same care as the populated one.
+
+  Every row is one recorded outbound act. The final evidence column is the point
+  of the record: a SENT submission without immutable evidence cannot exist
+  (ADR 0011), so a row that shows a document is showing the letter itself.
+{% endcomment %}
+
+{% block workspace_context %}
+  {{ sent_counts.sent }} saadetud · {{ sent_counts.draft }} koostamisel
+{% endblock %}
+
+{% block workspace %}
+  <div class="card card--tight">
+    <form class="form" method="get" role="search">
+      <div class="formgrid">
+        <label class="field field--wide" for="sent-search">
+          <span class="field__label">Otsi arvamustest</span>
+          <input class="field__input" type="search" name="q" id="sent-search"
+                 value="{{ filters.query }}" maxlength="500"
+                 placeholder="Pealkiri, viide, kanal, teema või saaja">
+        </label>
+        <label class="field">
+          <span class="field__label">Aasta</span>
+          <select class="field__input" name="aasta">
+            <option value="">Kõik</option>
+            {% for year in years %}
+              <option value="{{ year }}" {% if filters.year == year|stringformat:"s" %}selected{% endif %}>{{ year }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field">
+          <span class="field__label">Olek</span>
+          <select class="field__input" name="olek">
+            {% comment %}
+              SENT is the default and is listed first. "Kõik" is offered, but a
+              reader has to ask for it: a page headed "Saadetud" that silently
+              included drafts would make the department's own count of sent
+              opinions wrong.
+            {% endcomment %}
+            {% for value, label in statuses %}
+              <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+            <option value="KOIK" {% if filters.status == "KOIK" %}selected{% endif %}>Kõik olekud</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="field__label">Liik</span>
+          <select class="field__input" name="liik">
+            <option value="">Kõik</option>
+            {% for value, label in kinds %}
+              <option value="{{ value }}" {% if filters.kind == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% if recipients %}
+          {% comment %}
+            Offered only when a visible submission actually names one. The full
+            reference list would advertise fifteen ministries whose every
+            selection returns nothing.
+          {% endcomment %}
+          <label class="field">
+            <span class="field__label">Saaja</span>
+            <select class="field__input" name="saaja">
+              <option value="">Kõik</option>
+              {% for organisation in recipients %}
+                <option value="{{ organisation.pk }}" {% if filters.recipient_id == organisation.pk|stringformat:"s" %}selected{% endif %}>{{ organisation.name }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        {% endif %}
+      </div>
+      <div class="form__actions">
+        <button type="submit" class="button button--primary">Otsi</button>
+        <a class="button button--quiet" href="{% url 'submissions:sent' %}">Lähtesta</a>
+      </div>
+    </form>
+  </div>
+
+  {% if refusal %}
+    <p class="notice notice--warning">{{ refusal }}</p>
+  {% elif page.object_list %}
+    <p class="cardnote">{{ total }} vastet.</p>
+    <div class="tablewrap tablewrap--evidence">
+      <table class="table">
+        <caption class="visually-hidden">Selles süsteemis saadetud arvamused</caption>
+        <thead>
+          <tr>
+            <th scope="col">Saadetud</th>
+            <th scope="col">Arvamus</th>
+            <th scope="col">Teema</th>
+            <th scope="col">Vastutaja</th>
+            <th scope="col">Adressaat</th>
+            <th scope="col">Tõend</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for submission in page.object_list %}
+            <tr>
+              <td class="table__date">
+                {% comment %}
+                  The register supplies a date and this system supplies a
+                  timestamp, and the difference is rendered rather than
+                  flattened: printing "00:00" beside a reconstructed date tells
+                  a lawyer the letter went out at midnight, which no source ever
+                  said (Stage-2H brief 20).
+                {% endcomment %}
+                {% if submission.sent_at %}
+                  {% if submission.sent_at_precision == "DATE" %}
+                    {{ submission.sent_at|date:"d.m.Y" }}
+                  {% else %}
+                    {{ submission.sent_at|date:"d.m.Y H:i" }}
+                  {% endif %}
+                {% else %}
+                  <span class="table__missing">—</span>
+                {% endif %}
+              </td>
+              <td class="table__title">
+                <a href="{% url 'matters:matter_position' pk=submission.matter_id %}">{{ submission.title }}</a>
+                <span class="muted">· {{ submission.get_kind_display }}</span>
+                {% if submission.status != "SENT" %}
+                  <span class="badge">{{ submission.get_status_display }}</span>
+                {% endif %}
+                {% if submission.reference %}
+                  <span class="muted">· {{ submission.reference }}</span>
+                {% endif %}
+              </td>
+              <td>
+                <span class="reference">{{ submission.matter.display_reference|default:"—" }}</span>
+                <a href="{% url 'matters:matter_detail' pk=submission.matter_id %}">{{ submission.matter.title }}</a>
+              </td>
+              <td>
+                {% if submission.matter.owner %}
+                  {{ submission.matter.owner.get_full_name|default:submission.matter.owner.email }}
+                {% else %}
+                  <span class="table__missing">—</span>
+                {% endif %}
+              </td>
+              <td>
+                {% for row in submission.recipient_rows.all %}
+                  {% if row.role == "ADDRESSEE" %}{{ row.organisation.name }}{% if not forloop.last %}, {% endif %}{% endif %}
+                {% empty %}
+                  <span class="table__missing">—</span>
+                {% endfor %}
+              </td>
+              <td>
+                {% if submission.final_version_id %}
+                  <a href="{% url 'documents:open' pk=submission.final_version.document_id %}">Ava</a>
+                {% else %}
+                  <span class="table__missing">—</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% include "components/pagination.html" with page=page query_string=query_string %}
+  {% elif filters.any_applied %}
+    <p class="empty">Nende filtritega arvamusi ei leitud. Muuda otsingut või lähtesta filtrid.</p>
+  {% else %}
+    {% comment %}
+      The production state. Said plainly, because the alternative reading —
+      "the Chamber has never sent an opinion" — is both alarming and false.
+    {% endcomment %}
+    <p class="empty">
+      Selles süsteemis ei ole veel ühtegi arvamust välja saadetud. Kanooniline
+      arvamuse kirje tekib siis, kui arvamus siit teelt välja saadetakse: see
+      nõuab nii saatmisaega kui muutumatut lõplikku tõendit. Varem saadetud
+      kirjad on Koja arvamuste arhiivis ja need ei ole kanoonilised arvamused.
+    </p>
+  {% endif %}
+{% endblock %}
