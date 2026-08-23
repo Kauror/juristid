@@ -49,12 +49,21 @@ def set_next_action(
     source_text: str = "",
     responsible: Any = None,
     actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> NextAction:
     """Set the current action, superseding whatever it replaces.
 
     Responsibility defaults to the Matter owner: in practice the person who
     owns the file is the person who acts on it, and forcing that choice on every
     routine update would slow the composer down for no gain.
+
+    ``provenance`` is for the callers that are not a person: an importer or an
+    enrichment run has no ``actor``, and "who set this" would otherwise read as
+    a blank. It is recorded under its own key on the existing
+    ``NEXT_ACTION_SET`` event rather than as a second event, because only one
+    thing happened — an action was set — and a history that raised two rows for
+    it would double every imported instruction in the timeline. Manual callers
+    pass nothing and are unaffected.
     """
     text = text.strip()
     if not text:
@@ -108,18 +117,24 @@ def set_next_action(
         previous.replaced_by = action
         previous.save(update_fields=["replaced_by", "updated_at"])
 
+    payload: dict[str, Any] = {
+        "kind": kind,
+        "date_semantics": date_semantics,
+        "target_date": target_date.isoformat() if target_date else None,
+        "replaced": str(previous.id) if previous else None,
+    }
+    if provenance:
+        # Nested rather than merged flat, so a provenance key can never shadow
+        # one of the four above and silently change what the event says.
+        payload["provenance"] = provenance
+
     record_change_event(
         event_type=ChangeEventType.NEXT_ACTION_SET,
         matter=locked_matter,
         actor=actor,
         obj=action,
         summary=text[:200],
-        payload={
-            "kind": kind,
-            "date_semantics": date_semantics,
-            "target_date": target_date.isoformat() if target_date else None,
-            "replaced": str(previous.id) if previous else None,
-        },
+        payload=payload,
     )
     return action
 

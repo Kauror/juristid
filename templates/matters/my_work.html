@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load register_source %}
+{% load register_source matter_activity %}
 {% block title %}Minu töö · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -120,7 +120,15 @@ that have gone quiet because nothing was planned next.
                   {% if matter.display_reference %}
                     <span class="reference">{{ matter.display_reference }}</span> ·
                   {% endif %}
-                  viimane tegevus <time datetime="{{ matter.updated_at|date:'c' }}">{{ matter.updated_at|date:"d.m.Y" }}</time>
+                  {% with activity=matter|last_activity %}
+                    {% if activity %}
+                      viimane tegevus
+                      <time datetime="{{ activity.occurred_on|date:'c' }}"
+                            title="{{ activity.label }}">{{ activity.occurred_on|date:"d.m.Y" }}</time>
+                    {% else %}
+                      viimane tegevus <span class="muted">—</span>
+                    {% endif %}
+                  {% endwith %}
                   <a class="attentionrow__cta"
                      href="{% url 'matters:matter_detail' pk=matter.pk %}">Määra järgmine samm →</a>
                 </span>

@@ -15,6 +15,7 @@ from typing import Any
 from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
 from django.utils import timezone
 
+from app.matters.activity import annotate_last_activity
 from app.matters.enums import REGISTER_YEAR_ORIGINS, MatterDataClass, RecordMode
 from app.matters.models import Matter
 from app.submissions.enums import SubmissionStatus
@@ -237,11 +238,22 @@ def open_action_prefetch() -> Prefetch:
 
 
 def matter_list_queryset(user: Any) -> QuerySet[Matter]:
-    """The base register query: authorized, with everything a row displays."""
-    return (
+    """The base register query: authorized, with everything a row displays.
+
+    ``annotate_last_activity`` is applied here rather than in each of the four
+    views that render the shared row partial. *Viimane tegevus* is part of what
+    a row displays, and a surface that forgot the annotation would not render a
+    wrong date — `activity_of` refuses to guess — it would raise. Putting it at
+    the one place every one of those surfaces already comes through is what
+    makes forgetting impossible (Agent-G brief 63, ADR 0026).
+
+    Six correlated subqueries, evaluated once for the page, not per row.
+    """
+    return annotate_last_activity(
         Matter.objects.visible_to(user)
         .select_related("owner", "stage", "addressee_organisation")
-        .prefetch_related(open_action_prefetch(), "source_organisations", "policy_areas")
+        .prefetch_related(open_action_prefetch(), "source_organisations", "policy_areas"),
+        user,
     )
 
 
@@ -369,10 +381,16 @@ def my_attention_items(user: Any, today: date | None = None) -> list[AttentionIt
     today = today or timezone.localdate()
     items: list[AttentionItem] = []
 
-    owned = (
+    # Annotated like every other population that reaches a row showing
+    # *viimane tegevus*. `matters_without_next_action` inherits it from
+    # `matter_list_queryset`; this one builds its own query, so it says so here
+    # rather than rendering an import timestamp beside rows that do not
+    # (ADR 0026).
+    owned = annotate_last_activity(
         Matter.objects.visible_to(user)
         .filter(owner=user, is_open=True, record_mode="FULL")
-        .select_related("stage")
+        .select_related("stage"),
+        user,
     )
 
     for matter in matters_without_next_action(user).filter(owner=user)[:50]:
