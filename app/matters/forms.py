@@ -182,6 +182,13 @@ class MatterCreateForm(forms.Form):
         # Radios, not checkboxes, and the styling makes them look like chips.
         # `Matter.owner` is one person; a control that lets you tick two would be
         # promising something the model cannot keep (brief 16).
+        #
+        # Deliberately without `blank=True`, unlike `stage` below, and therefore
+        # with no *Määramata* chip: a chosen owner cannot be un-chosen on this
+        # form without reloading it. That is how the control has behaved since
+        # Stage 2E.1 and is left alone here rather than redesigned in a round
+        # about other things — but it is the same gap `stage` had, so if anybody
+        # is asked to fix it, this is the line (Agent-UI brief 5.1).
         widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
     )
     #: Radios, rendered as chips. Both fields hold exactly one value, and a
