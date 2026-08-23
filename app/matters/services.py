@@ -8,6 +8,7 @@ later from an importer or a scheduled job (master specification 12.4).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from django.db import transaction
@@ -513,6 +514,69 @@ def set_policy_area_other(*, matter: Matter, value: str, actor: Any = None) -> M
         payload={"cleared": not cleaned},
     )
     return matter
+
+
+@transaction.atomic
+def add_source_derived_policy_areas(
+    *,
+    matter: Matter,
+    policy_areas: Sequence[Any],
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
+) -> list[Any]:
+    """Add canonical areas a reviewed source mapping proposed. Never removes.
+
+    The one write path for classification derived from imported evidence, and
+    deliberately narrow. It exists because the OneNote enrichment would
+    otherwise reach through ``matter.policy_areas`` from a management command,
+    which is the one place in this codebase where a business change would happen
+    with no named use case and no audit row behind it.
+
+    **Additive, always.** The modern taxonomy and the way the department filed
+    things in OneNote are not the same classification, and a page that lived in
+    one drawer is not evidence that a lawyer's own choice was wrong. An area
+    somebody set by hand survives this untouched (Agent-G brief 45).
+
+    **It creates no taxonomy.** The caller resolves a mapping to an existing
+    ``PolicyArea`` or reports a configuration error; a source section that
+    matches nothing stays unmapped, which is a valid answer (brief 46).
+
+    Recorded as ``IMPORT_APPLIED`` — the event this codebase already uses for
+    "an import wrote something onto this Matter" — with the mapping's identity
+    in the payload. A new event type would mean an audit migration for
+    vocabulary, and this one is truthful: an import applied it, and the
+    provenance says which. It is not in ``TIMELINE_EVENT_TYPES``, so filing does
+    not push meeting notes out of the professional narrative.
+
+    Adding nothing raises nothing. That is what makes a second apply a no-op in
+    the audit trail as well as in the data.
+    """
+    existing = set(matter.policy_areas.values_list("pk", flat=True))
+    missing: list[Any] = []
+    for area in policy_areas:
+        # Deduplicated as well as filtered. Two accepted source pages filed in
+        # the same place propose the same area twice, and counting that as two
+        # additions would report a number the database never held.
+        if area.pk in existing:
+            continue
+        existing.add(area.pk)
+        missing.append(area)
+    if not missing:
+        return []
+
+    matter.policy_areas.add(*missing)
+    payload: dict[str, Any] = {"policy_area_keys": sorted(area.key for area in missing)}
+    if provenance:
+        payload["provenance"] = provenance
+    record_change_event(
+        event_type=ChangeEventType.IMPORT_APPLIED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=", ".join(sorted(area.name_et for area in missing))[:200],
+        payload=payload,
+    )
+    return missing
 
 
 @transaction.atomic
