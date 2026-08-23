@@ -47,6 +47,7 @@ from django.utils import timezone
 
 from app.accounts.enums import UserRole
 from app.accounts.models import User
+from app.core.dates import format_estonian_date
 from app.matters.dashboard import (
     UPCOMING_HORIZON_DAYS,
     AttentionRow,
@@ -145,8 +146,15 @@ def summary_cards(user: Any, today: date | None = None) -> list[SummaryCard]:
             count=active.filter(
                 response_deadline__gte=today, response_deadline__lte=horizon
             ).count(),
-            url=register_url(**_open_full(), jarjestus="deadline"),
-            note="Loend on järjestatud tähtaja järgi; vahemikku register veel ei filtreeri",
+            # The range itself, not a sort and an apology. The register has read
+            # `?tahtaeg_alates=`/`?tahtaeg_kuni=` since Stage 2E.1; the card was
+            # written before that and kept telling the reader it could not
+            # (app/matters/register_filters.py).
+            url=register_url(
+                **_open_full(),
+                tahtaeg_alates=format_estonian_date(today),
+                tahtaeg_kuni=format_estonian_date(horizon),
+            ),
         ),
         SummaryCard(
             key="overdue",
