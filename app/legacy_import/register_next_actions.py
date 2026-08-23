@@ -577,6 +577,8 @@ def _do_reading(
     # second quarter". EXPECTED_AROUND is what that sentence says, and it can
     # never be reported as overdue.
     return _understood(source, ActionKind.DO, DateSemantics.EXPECTED_AROUND, mention, forms)
+
+
 def _governed_by_entry_into_force(source: str, mention: DateMention) -> bool:
     """Whether an entry-into-force verb owns the only date in the sentence.
 
@@ -596,8 +598,6 @@ def _governed_by_entry_into_force(source: str, mention: DateMention) -> bool:
         if match.end() <= mention.start and not source[match.end() : mention.start].strip():
             return True
     return False
-
-
 
 
 def _states_a_deadline(source: str, mention: DateMention) -> bool:
