@@ -286,3 +286,30 @@ def test_clearing_the_filter_returns_the_whole_register(world, client, other_spe
 
     assert cleared.context["total"] > filtered.context["total"]
     assert cleared.context["has_any_filter"] is False
+
+
+def test_the_register_panel_can_set_the_dimension_the_card_opens(world, client, other_specialist):
+    """A filter a KPI can apply and the panel cannot is one somebody can arrive
+    at and never reproduce — or narrow further without editing the URL by hand.
+    """
+    client.force_login(other_specialist)
+    body = client.get("/teemad/").content.decode()
+
+    assert 'name="arvamus"' in body
+    for value in ("koostamisel", "saadetud"):
+        assert f'value="{value}"' in body
+
+
+def test_the_opinion_dimension_answers_both_of_its_values(world, other_specialist):
+    """`saadetud` is the complement of `koostamisel` over current register rows.
+
+    Asserted because the filter is the card's definition: a value that quietly
+    matched nothing would make the card's own count wrong rather than merely
+    make one control useless.
+    """
+    drafting = register_ids(other_specialist, "/teemad/?olek=avatud&arvamus=koostamisel")
+    sent = register_ids(other_specialist, "/teemad/?olek=avatud&arvamus=saadetud")
+
+    assert drafting == {world["drafting"].pk}
+    assert sent == {world["sent"].pk}
+    assert drafting.isdisjoint(sent)
