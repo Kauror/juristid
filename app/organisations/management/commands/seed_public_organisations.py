@@ -10,6 +10,12 @@ deployment too: a secure environment needs the actual ministries, not
 Idempotent. It adds what is missing and never renames, retypes or removes an
 institution that already exists, because by the second run somebody may have
 edited one deliberately.
+
+**For a real deployment, prefer `manage.py reference_data`.** This command seeds
+the ministries and writes immediately; the guarded path plans first, covers the
+whole reviewed public baseline including Riigikogu, Vabariigi Valitsus and the
+two EU institutions, and applies only against a digest a person read (ADR 0027).
+This one remains for a quick development database.
 """
 
 from __future__ import annotations

@@ -45,6 +45,7 @@ from app.submissions.services import (
     mark_submission_sent,
 )
 from app.taxonomy.models import PolicyArea, Tag, TagAlias
+from app.taxonomy.reference_data import REFERENCE_POLICY_AREA_KEYS
 from app.workflow.enums import ActionKind, DateSemantics, Track
 from app.workflow.models import StageVocabulary
 from app.workflow.services import set_next_action
@@ -53,6 +54,16 @@ from app.workflow.services import set_next_action
 # not re-invented here. Development data uses the same rows production will.
 SEEDED_STAGE_KEYS = ["consultation", "government", "parliament", "in_force", "eu_procedure"]
 
+# The five categories this command used to *create*. They are kept only as the
+# record of what a development database looked like before the real vocabulary
+# existed, and are deliberately no longer written: `maksundus` beside `maksud`
+# and `tooeigus` beside `toojoud` would give a developer two spellings of the
+# same concept and make a fixture look like a taxonomy decision.
+#
+# Synthetic Matters now classify with the canonical areas from
+# `taxonomy/0002_reference_policy_areas`. That is the point of the split — the
+# *Matters* are props, the *vocabulary* is real, and mixing the two is how a
+# rehearsal starts reporting on categories nobody reviewed.
 PROVISIONAL_POLICY_AREAS = [
     ("maksundus", "Maksundus"),
     ("tooeigus", "Tööõigus"),
@@ -163,12 +174,21 @@ class Command(BaseCommand):
         return stages
 
     def _seed_policy_areas(self) -> list[PolicyArea]:
-        areas = []
-        for index, (key, name) in enumerate(PROVISIONAL_POLICY_AREAS):
-            area, _ = PolicyArea.objects.get_or_create(
-                key=key, defaults={"name_et": name, "sort_order": (index + 1) * 10}
+        """Read the migration-seeded vocabulary; never create a parallel one.
+
+        The same rule as `_seed_stages`, and it arrived for the same reason: the
+        real classification is reference data now, so a fixture that
+        `get_or_create`s its own five categories would leave a development
+        database holding two vocabularies for one concept and no way to tell
+        which one a report was counting.
+        """
+        areas = list(
+            PolicyArea.objects.filter(key__in=REFERENCE_POLICY_AREA_KEYS).order_by("sort_order")
+        )
+        if not areas:  # pragma: no cover - only if migrations have not run
+            raise CommandError(
+                "Policy area vocabulary is missing. Run migrations before seeding development data."
             )
-            areas.append(area)
         return areas
 
     def _seed_tags(self) -> list[Tag]:

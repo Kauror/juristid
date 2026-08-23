@@ -30,7 +30,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DatabaseError
 
-from app.core import deployment
+from app.core import deployment, reference_data
 
 
 class Command(BaseCommand):
@@ -115,6 +115,33 @@ class Command(BaseCommand):
             self.stdout.write(f"  auth mode    {settings.AUTH_MODE}")
             self.stdout.write(f"  real data    {'yes' if settings.REAL_DATA_ALLOWED else 'no'}")
             self.stdout.write(f"  debug        {'ON' if settings.DEBUG else 'off'}")
+
+        # -- reference data ------------------------------------------------
+        #
+        # Production reported itself ready while holding zero Organisations and
+        # zero PolicyAreas, which made several shipped features structurally
+        # present and practically unusable: nothing to file under, nobody to
+        # address, and an OneNote enrichment that could map nothing. A build is
+        # not ready for real data until the vocabulary it depends on is there.
+        #
+        # Checked only where REAL_DATA_ALLOWED, and deliberately not as a Django
+        # system check: `manage.py check` runs in every isolated unit test and in
+        # every developer's shell, where a hard requirement for production
+        # reference data would fail thousands of tests that have no business
+        # caring.
+        baseline = reference_data.verify_reference_data()
+        if not quiet:
+            self.stdout.write("")
+            self.stdout.write("Reference data")
+            self.stdout.write(
+                f"  policy areas  {baseline.policy_areas_present}/{baseline.policy_areas_expected}"
+            )
+            self.stdout.write(
+                f"  organisations {baseline.organisations_present}"
+                f"/{baseline.organisations_expected}"
+            )
+            self.stdout.write("  tags          not managed by the reviewed baseline")
+        problems.extend(reference_data.readiness_problems(baseline))
 
         unparseable = deployment.unparseable_boolean_variables()
         for name, value in sorted(unparseable.items()):
