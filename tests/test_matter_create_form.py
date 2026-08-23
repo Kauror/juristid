@@ -44,9 +44,21 @@ def test_the_owner_is_a_single_choice(specialist):
     assert not isinstance(form.fields["owner"].widget, forms.CheckboxSelectMultiple)
 
 
-def test_the_sender_is_a_single_choice(specialist):
+def test_the_sender_is_a_multiple_choice(specialist):
+    """A matter can arrive from several bodies, so the control offers several.
+
+    The inverse of the owner test above: the shape of the control is a promise
+    about the data, and `Matter.source_organisations` really is plural now
+    (Agent-E brief 28).
+    """
     form = MatterCreateForm(viewer=specialist)
-    assert isinstance(form.fields["source_organisation"].widget, forms.RadioSelect)
+    field = form.fields["source_organisations"]
+    assert isinstance(field, forms.ModelMultipleChoiceField)
+    assert isinstance(field.widget, forms.CheckboxSelectMultiple)
+    # `allow_multiple_selected` rather than `not isinstance(..., RadioSelect)`:
+    # `CheckboxSelectMultiple` *subclasses* `RadioSelect`, so the isinstance
+    # form of this assertion is true of both controls and proves nothing.
+    assert field.widget.allow_multiple_selected
 
 
 def test_the_policy_areas_are_real_checkboxes(specialist):
@@ -101,8 +113,8 @@ def test_the_frequent_senders_are_the_ones_actually_used(specialist):
     common = factories.OrganisationFactory(name="Sage ministeerium")
     rare = factories.OrganisationFactory(name="Harv amet")
     for _ in range(3):
-        factories.MatterFactory(owner=specialist, source_organisation=common)
-    factories.MatterFactory(owner=specialist, source_organisation=rare)
+        factories.MatterFactory(owner=specialist, source_organisations=[common])
+    factories.MatterFactory(owner=specialist, source_organisations=[rare])
 
     form = MatterCreateForm(viewer=specialist)
     assert form.frequent_senders[0] == common
@@ -117,13 +129,16 @@ def test_an_organisation_outside_the_frequent_list_is_still_a_valid_answer(signe
     for index in range(12):
         factories.MatterFactory(
             owner=specialist,
-            source_organisation=factories.OrganisationFactory(name=f"Sage {index}"),
+            source_organisations=[factories.OrganisationFactory(name=f"Sage {index}")],
         )
     rare = factories.OrganisationFactory(name="Väga harv amet")
 
-    signed_in.post(CREATE, {"title": "Harva saatjaga", "source_organisation_other": str(rare.pk)})
+    signed_in.post(
+        CREATE, {"title": "Harva saatjaga", "source_organisations_other": [str(rare.pk)]}
+    )
 
-    assert Matter.objects.get(title="Harva saatjaga").source_organisation == rare
+    matter = Matter.objects.get(title="Harva saatjaga")
+    assert list(matter.source_organisations.all()) == [rare]
 
 
 # -- the date ---------------------------------------------------------------

@@ -102,8 +102,8 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
     """
     queryset = (
         Matter.objects.visible_to(request.user)
-        .select_related("owner", "stage", "source_organisation", "addressee_organisation")
-        .prefetch_related("policy_areas", "tags", "collaborators")
+        .select_related("owner", "stage", "addressee_organisation")
+        .prefetch_related("source_organisations", "policy_areas", "tags", "collaborators")
     )
     return get_object_or_404(queryset, pk=pk)
 
@@ -236,7 +236,7 @@ def intake(request: HttpRequest) -> HttpResponse:
                     title=data.get("title", ""),
                     actor=request.user,
                     owner=data.get("owner"),
-                    source_organisation=data.get("source_organisation"),
+                    source_organisations=list(data.get("source_organisations") or []),
                     received_date=data.get("received_date") or timezone.localdate(),
                     response_deadline=data.get("response_deadline"),
                     stage=data.get("stage"),
@@ -357,9 +357,15 @@ SOURCE_SEVERAL = "mitu"
 #: WAIT whose review date has passed is "ülevaatus käes", never "hilinenud".
 #: The two organisation directions, as URL parameters. Never merged: the same
 #: register column meant the sender until 2019 and the addressee from 2020.
+#: URL parameter -> the lookup path that answers it, and whether the path
+#: crosses a many-to-many join. The sender side does, so its filters need an
+#: explicit `.distinct()`: a Matter sent by two bodies would otherwise come back
+#: twice from `?asutus=`, and — more quietly — the `visible_to` scope only adds
+#: `.distinct()` when the reader is actually restricted, so a department head
+#: would see the duplicate row nobody else did (Agent-E brief 39, 43).
 ORGANISATION_FILTERS = {
-    "saatja": "source_organisation",
-    "adressaat": "addressee_organisation",
+    "saatja": ("source_organisations", True),
+    "adressaat": ("addressee_organisation", False),
 }
 
 NEXT_ACTION_LABELS = {
@@ -681,23 +687,31 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             )
     if action_filter := params.get("tegevus"):
         queryset = selectors.filter_by_next_action(queryset, request.user, action_filter)
-    for parameter, field in ORGANISATION_FILTERS.items():
+    for parameter, (field, many) in ORGANISATION_FILTERS.items():
         raw = params.get(parameter)
         if not raw:
             continue
         if raw == selectors.MISSING:
+            # "No sender recorded" over a plural relation is still one condition:
+            # the outer join produces a single null row for a Matter with no
+            # link at all, so no duplicate is possible here.
             queryset = queryset.filter(**{f"{field}__isnull": True})
             continue
         try:
-            queryset = queryset.filter(**{f"{field}_id": uuid.UUID(raw)})
+            queryset = queryset.filter(**{f"{field}__id": uuid.UUID(raw)})
         except ValueError:
             queryset = queryset.none()
+        else:
+            if many:
+                queryset = queryset.distinct()
     # The convenience filter, beside the two precise ones rather than instead of
     # them. Nothing stored is collapsed: this is an OR over two columns that
     # keep their separate meanings (Stage-2E.1 brief 11F).
     if involved := params.get("asutus"):
         try:
-            queryset = queryset.filter(selectors.organisation_involved_q(uuid.UUID(involved)))
+            queryset = queryset.filter(
+                selectors.organisation_involved_q(uuid.UUID(involved))
+            ).distinct()
         except ValueError:
             queryset = queryset.none()
     if materials := params.get("materjalid"):
@@ -919,7 +933,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 owner=data.get("owner"),
                 stage=data.get("stage"),
                 track=data.get("track") or "",
-                source_organisation=data.get("source_organisation"),
+                source_organisations=list(data.get("source_organisations") or []),
                 addressee_organisation=data.get("addressee_organisation"),
                 received_date=data.get("received_date"),
                 response_deadline=data.get("response_deadline"),
@@ -1097,6 +1111,11 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "owners": User.objects.filter(is_active=True).order_by("display_name"),
         "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "organisations": Organisation.objects.order_by("name"),
+        # Resolved once here rather than read off the Matter inside the loop
+        # over every organisation: the sender checkboxes iterate the whole
+        # reference table, and a membership test that re-queried per row would
+        # be an N+1 nobody notices until the institution list grows.
+        "selected_sender_ids": matter.source_organisation_ids,
         "tracks": Track.choices,
         "visibilities": Visibility.choices,
         "current_action": current_next_action(matter),
@@ -1315,7 +1334,7 @@ FIELD_SERVICES = {
     "owner",
     "stage",
     "track",
-    "source_organisation",
+    "source_organisations",
     "addressee_organisation",
     "received_date",
     "response_deadline",
@@ -1347,8 +1366,13 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
             change_stage(matter=matter, stage=value, actor=request.user)
         elif field == "track":
             change_track(matter=matter, track=value or "", actor=request.user)
-        elif field == "source_organisation":
-            set_organisations(matter=matter, source_organisation=value, actor=request.user)
+        elif field == "source_organisations":
+            # `list(...)` rather than the queryset, so an empty POST arrives as
+            # `[]` — "clear every sender" — and never as the `_UNSET` that means
+            # "leave them alone" (Agent-E brief 20, 34).
+            set_organisations(
+                matter=matter, source_organisations=list(value or []), actor=request.user
+            )
         elif field == "addressee_organisation":
             set_organisations(matter=matter, addressee_organisation=value, actor=request.user)
         elif field == "received_date":

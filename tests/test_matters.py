@@ -86,22 +86,80 @@ def test_source_and_addressee_are_independent_facts():
     sender = factories.OrganisationFactory(name="Näidisministeerium")
     recipient = factories.OrganisationFactory(name="Näidisamet")
 
-    matter = factories.MatterFactory(source_organisation=sender, addressee_organisation=recipient)
-    assert matter.source_organisation != matter.addressee_organisation
-    assert list(sender.matters_as_source.all()) == [matter]
+    matter = factories.MatterFactory(
+        source_organisations=[sender], addressee_organisation=recipient
+    )
+    assert list(matter.source_organisations.all()) == [sender]
+    assert matter.addressee_organisation == recipient
+    assert list(sender.matters_as_sources.all()) == [matter]
     assert list(recipient.matters_as_addressee.all()) == [matter]
     assert sender.matters_as_addressee.count() == 0
+    assert recipient.matters_as_sources.count() == 0
 
 
 def test_either_direction_may_be_unknown():
     only_source = factories.MatterFactory(
-        source_organisation=factories.OrganisationFactory(), addressee_organisation=None
+        source_organisations=[factories.OrganisationFactory()], addressee_organisation=None
     )
     only_addressee = factories.MatterFactory(
-        source_organisation=None, addressee_organisation=factories.OrganisationFactory()
+        source_organisations=[], addressee_organisation=factories.OrganisationFactory()
     )
     assert only_source.addressee_organisation is None
-    assert only_addressee.source_organisation is None
+    assert not only_addressee.source_organisations.exists()
+
+
+def test_a_matter_may_have_several_senders():
+    """The point of the plural relation, pinned at the model level."""
+    first = factories.OrganisationFactory(name="Näidisministeerium")
+    second = factories.OrganisationFactory(name="Näidisliit")
+
+    matter = factories.MatterFactory(source_organisations=[first, second])
+
+    assert set(matter.source_organisations.all()) == {first, second}
+    assert matter.source_links.count() == 2
+    assert list(first.matters_as_sources.all()) == [matter]
+    assert list(second.matters_as_sources.all()) == [matter]
+
+
+def test_the_same_organisation_cannot_be_a_sender_twice():
+    """The join table refuses it; nothing in the application has to remember."""
+    from app.matters.models import MatterSourceOrganisation
+
+    organisation = factories.OrganisationFactory()
+    matter = factories.MatterFactory(source_organisations=[organisation])
+
+    with pytest.raises(IntegrityError), transaction.atomic():
+        MatterSourceOrganisation.objects.create(matter=matter, organisation=organisation)
+
+
+def test_an_organisation_that_sent_something_cannot_be_deleted():
+    """The guarantee the removed singular foreign key used to give.
+
+    A stock ManyToManyField would have cascaded here and taken the sender off
+    the record without a word, which is why the relation has an explicit through
+    model holding PROTECT (Agent-E brief 73, 76).
+    """
+    from django.db.models import ProtectedError
+
+    organisation = factories.OrganisationFactory()
+    factories.MatterFactory(source_organisations=[organisation])
+
+    with pytest.raises(ProtectedError):
+        organisation.delete()
+
+
+def test_deleting_a_matter_removes_only_its_own_sender_links():
+    """The Matter side is ordinary owned-child behaviour."""
+    from app.matters.models import MatterSourceOrganisation
+
+    organisation = factories.OrganisationFactory()
+    doomed = factories.MatterFactory(source_organisations=[organisation])
+    kept = factories.MatterFactory(source_organisations=[organisation])
+
+    doomed.delete()
+
+    assert MatterSourceOrganisation.objects.filter(matter=kept).count() == 1
+    assert not MatterSourceOrganisation.objects.filter(matter_id=doomed.pk).exists()
 
 
 # -- creation service -------------------------------------------------------

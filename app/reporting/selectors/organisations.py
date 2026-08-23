@@ -3,7 +3,8 @@
 Four different relationships exist between a Matter and an organisation, and
 this module refuses to merge any of them:
 
-* ``Matter.source_organisation`` — who sent it, or who initiated it;
+* ``Matter.source_organisations`` — who sent it, or who initiated it, and there
+  may be several of them;
 * ``Matter.addressee_organisation`` — who it was addressed to;
 * ``SubmissionRecipient`` — who Koda formally wrote to (``selectors.submissions``);
 * ``SubmissionJointSubmitter`` — who co-signed.
@@ -36,9 +37,21 @@ from app.reporting.selectors.base import (
     top_segments,
 )
 
+#: Said on the metric itself, not only in the code. A reader looking at bars
+#: that sum past the headline needs to know why on the page they are on.
+MULTI_VALUED_NOTE = (
+    "Teemal võib olla mitu saatjat, seega kuulub üks teema mitmesse tulpa "
+    "ja tulpade summa võib ületada teemade arvu. Päis loeb teemasid, mitte seoseid."
+)
+
 
 def _by_organisation(
-    context: ReportingContext, key: str, field: str, note: str, parameter: str
+    context: ReportingContext,
+    key: str,
+    field: str,
+    note: str,
+    parameter: str,
+    extra_notes: tuple[str, ...] = (),
 ) -> MetricResult:
     spec = definition(key)
     population = population_for(context, spec)
@@ -73,18 +86,26 @@ def _by_organisation(
         coverage_denominator=population_count,
         segments=segments,
         url=register_url(context),
-        notes=(spec.source_era_limitations_et,),
+        notes=(spec.source_era_limitations_et, *extra_notes),
     )
 
 
 def matters_by_source_organisation(context: ReportingContext) -> MetricResult:
-    """Who the matter came from. `KELLELT` — the sender, 2011–2019."""
+    """Who the matter came from. `KELLELT` — the sender, 2011–2019.
+
+    **The segments do not partition the population and the note below says so.**
+    A matter may have several senders, so it appears in a segment for each of
+    them and the segment totals can add up to more than the headline. The
+    headline itself stays a count of distinct matters that have at least one
+    sender, which is why it is smaller rather than larger (Agent-E brief 42).
+    """
     return _by_organisation(
         context,
         keys.MATTERS_BY_SOURCE_ORGANISATION,
-        "source_organisation",
+        "source_organisations",
         "Algataja või saatja",
         "saatja",
+        extra_notes=(MULTI_VALUED_NOTE,),
     )
 
 

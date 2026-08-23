@@ -44,7 +44,7 @@ arriving says something was received, not where the external process stands.
       <span class="field__help">{{ form.title.help_text|default:"Jäta tühjaks, et kasutada esimese faili nime." }}</span>
     </label>
 
-    {% include "organisations/partials/picker.html" with target="source_organisation" label="Saatja" multiple=0 organisations=form.fields.source_organisation.queryset selected=None %}
+    {% include "organisations/partials/picker.html" with target="source_organisations" label="Saatja" multiple=1 organisations=form.fields.source_organisations.queryset selected=None %}
 
     <div class="formgrid">
       <label class="field">

@@ -142,10 +142,9 @@ def indexable_matters() -> QuerySet[Matter]:
     authorization filters. An index that only held rows the indexing user could
     see would silently differ between operators.
     """
-    return Matter.objects.select_related(
-        "source_organisation", "addressee_organisation"
-    ).prefetch_related(
-        "source_organisation__aliases",
+    return Matter.objects.select_related("addressee_organisation").prefetch_related(
+        "source_organisations",
+        "source_organisations__aliases",
         "addressee_organisation__aliases",
         "policy_areas",
         "tags",
@@ -175,7 +174,20 @@ def _alias_text_for(matter: Matter) -> str:
     using them here is not fuzzy matching — it is using somebody's decision.
     """
     parts: list[str] = []
-    for organisation in (matter.source_organisation, matter.addressee_organisation):
+    # Every sender, not the first one. A Matter that arrived from a ministry and
+    # an association has to be findable through either name, and indexing only
+    # one of them would fail in the way nobody reports: the search returns
+    # results, just not that record (Agent-E brief 40).
+    #
+    # Sorted here rather than taken in join order. The projection is hashed and
+    # compared between rebuilds to decide whether a row changed, so text whose
+    # word order depended on what the database happened to return would make
+    # every rebuild look like a content change (brief 41).
+    senders = sorted(
+        matter.source_organisations.all(),
+        key=lambda organisation: (organisation.name, str(organisation.pk)),
+    )
+    for organisation in (*senders, matter.addressee_organisation):
         if organisation is None:
             continue
         parts.append(organisation.name)

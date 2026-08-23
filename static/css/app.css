@@ -1432,6 +1432,26 @@ p.formnote {
   list-style: none;
 }
 
+/* The value inside a trigger, when it is long enough to need cutting.
+ *
+ * `text-overflow: ellipsis` needs a *block* container. The trigger is an
+ * `inline-flex`, where the property does nothing at all: the text simply stops
+ * at the clip edge, and so does the caret beside it. With one short
+ * institution name that never showed. With a list of senders it rendered
+ * "Näidisettevõtete liit, Näidis" — a second organisation reading as a broken
+ * name — and took the disclosure's own affordance off the screen with it.
+ *
+ * So the cut happens on this inner block, which shrinks (`min-width: 0`) while
+ * the caret keeps its width. The reader gets an ellipsis, which says
+ * "there is more", and a caret, which says where to find it (Agent-E brief 33).
+ */
+.inlineedit__value {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .inlineedit__trigger::-webkit-details-marker {
   display: none;
 }
@@ -1477,6 +1497,27 @@ p.formnote {
   display: flex;
   align-items: center;
   gap: var(--spacing-15);
+}
+
+/* A sender set is edited as a list of chips rather than in one row: `Kellelt`
+ * holds several organisations now, and a horizontal row of checkboxes beside a
+ * Salvesta button wraps into something unreadable at the first long ministry
+ * name (Agent-E brief 34). */
+.inlineform--stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+}
+
+.inlineform__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  max-height: 14rem;
+  overflow-y: auto;
+  padding: 0;
+  border: 0;
+  margin: 0;
 }
 
 .tabs {
@@ -3680,6 +3721,17 @@ a.barchart__row:hover {
 .checkitem:has(input:focus-visible) {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* The native control inside the chip. Styled rather than hidden: a real
+ * checkbox is what makes "several of these may be ticked" legible to a
+ * keyboard and to a screen reader, and `accent-color` is enough to make it
+ * belong to the palette without replacing it with a div. */
+.choicecard__input,
+.checkitem__input {
+  accent-color: var(--accent-primary);
+  flex: none;
+  margin: 0;
 }
 
 .checkitems__other {

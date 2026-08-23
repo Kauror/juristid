@@ -101,7 +101,7 @@ def test_scenario_a_a_2017_row_imports_as_archive_with_its_sender(
 
     # KELLELT is the sender. The addressee column did not exist that year and
     # is not invented from the same value.
-    assert matter.source_organisation == ministry
+    assert list(matter.source_organisations.all()) == [ministry]
     assert matter.addressee_organisation is None
 
     # The era had no status model, so no stage is manufactured for it.
@@ -133,7 +133,7 @@ def test_scenario_b_a_2021_row_takes_an_addressee_and_never_a_sender(
     _apply(corpus)
     matter = _matter("2021_1")
     assert matter.addressee_organisation == authority
-    assert matter.source_organisation is None, "2020+ has no sender column to read"
+    assert not matter.source_organisations.exists(), "2020+ has no sender column to read"
 
 
 def test_scenario_b_member_counts_stay_raw_and_produce_no_rate(

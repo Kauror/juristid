@@ -46,7 +46,7 @@ about the save that just happened.
         </h2>
         <p class="cardnote">
           {% if matter.received_date %}{{ matter.received_date|date:"d.m.Y" }}{% endif %}
-          {% if matter.source_organisation %} · {{ matter.source_organisation.name }}{% endif %}
+          {% if matter.source_organisations.all %} · {% include "matters/partials/senders.html" with matter=matter %}{% endif %}
         </p>
         <ul class="filelist">
           {% for document in incoming_documents %}

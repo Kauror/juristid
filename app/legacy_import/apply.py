@@ -100,9 +100,16 @@ def _matter_fields(plan: RowPlan) -> dict[str, Any]:
 
     # The direction is whatever the era's contract said it was. It is never
     # inferred here, and the two columns never merge.
+    #
+    # The sender side takes a list because the Matter now holds a set of them,
+    # and the list this importer builds is never longer than one. A raw KELLELT
+    # cell that mentions two institutions is still whatever the reviewed
+    # resolver made of it: plural storage is permission to record several
+    # senders when we know them, not permission to start splitting historical
+    # strings on a comma (Agent-E brief 17, 49).
     if plan.organisation is not None and plan.organisation.resolved:
         if row.counterparty_direction == "source":
-            fields["source_organisation"] = plan.organisation.value
+            fields["source_organisations"] = [plan.organisation.value]
         elif row.counterparty_direction == "addressee":
             fields["addressee_organisation"] = plan.organisation.value
 

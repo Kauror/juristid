@@ -8,6 +8,7 @@ later from an importer or a scheduled job (master specification 12.4).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from django.db import transaction
@@ -76,6 +77,7 @@ def create_imported_matter(
     reference_number: int | None,
     actor: Any = None,
     record_mode: str = RecordMode.ARCHIVE,
+    source_organisations: Any = None,
     **extra: Any,
 ) -> Matter:
     """Create a Matter from a legacy register row, keeping its own reference.
@@ -98,6 +100,13 @@ def create_imported_matter(
         record_mode=record_mode,
         origin=MatterOrigin.LEGACY_IMPORT,
         reporting_year=reference_year,
+        # Named rather than left in `**extra` so the plural sender contract is
+        # visible at the importer's entry point too. An era whose contract
+        # resolves one sender passes a one-element list; an era whose
+        # counterparty column meant the addressee passes nothing at all, and the
+        # direction is still decided by the contract and never here
+        # (Agent-E brief 19, 48).
+        source_organisations=source_organisations,
         **extra,
     )
 
@@ -122,6 +131,7 @@ def create_matter(
     origin: str = MatterOrigin.NATIVE,
     visibility: str = Visibility.NORMAL,
     data_class: str = MatterDataClass.REAL,
+    source_organisations: Any = None,
     **extra: Any,
 ) -> Matter:
     """Create a Matter. Only the title is required (specification 3.8).
@@ -129,6 +139,13 @@ def create_matter(
     ``data_class`` defaults to REAL, which is what makes every importer, every
     fixture and every existing caller keep producing business data without
     being changed (Agent-C brief 29).
+
+    ``source_organisations`` is named rather than left to ``**extra`` because it
+    is a relation and not a column: it cannot be passed to ``objects.create``
+    and has to be written once the Matter has a primary key. Keeping it in the
+    signature is what stops a caller handing a list to a keyword argument that
+    used to take one organisation and getting a confusing ``ValueError`` from
+    deep inside the ORM (Agent-E brief 18).
     """
     if not title.strip():
         raise DomainError("Teema vajab pealkirja.")
@@ -151,6 +168,9 @@ def create_matter(
         extra["policy_area_other"] = other_area[:400]
 
     policy_areas = extra.pop("policy_areas", None)
+    # Validated before the Matter exists, so a bad sender fails the whole
+    # creation rather than leaving a titled Matter behind with no senders.
+    senders = normalize_source_organisations(source_organisations)
 
     matter = Matter.objects.create(
         title=title.strip(),
@@ -166,6 +186,8 @@ def create_matter(
     )
     if policy_areas:
         matter.policy_areas.set(policy_areas)
+    if senders:
+        matter.source_organisations.set(senders)
 
     record_change_event(
         event_type=ChangeEventType.MATTER_CREATED,
@@ -364,11 +386,60 @@ def change_track(*, matter: Matter, track: str, actor: Any = None) -> Matter:
     return matter
 
 
+def normalize_source_organisations(value: Any) -> list[Any]:
+    """Turn whatever a caller offered into a list of distinct Organisations.
+
+    Accepts a single Organisation, any iterable of them, or ``None`` — which
+    means *no senders*, the same thing an empty list means. Order is discarded
+    on purpose: which sender was ticked first is not a fact about the Matter,
+    so two inputs that name the same institutions are the same input (brief 21).
+    """
+    from app.organisations.models import Organisation
+
+    if value is None:
+        return []
+    if isinstance(value, Organisation):
+        candidates: list[Any] = [value]
+    else:
+        try:
+            candidates = list(value)
+        except TypeError as error:
+            raise DomainError("Saatjate loend ei ole loetelu.") from error
+
+    seen: dict[Any, Any] = {}
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        if not isinstance(candidate, Organisation):
+            raise DomainError("Saatja peab olema organisatsioon.")
+        if candidate.pk is None:
+            raise DomainError("Saatja peab olema salvestatud organisatsioon.")
+        seen.setdefault(candidate.pk, candidate)
+    return list(seen.values())
+
+
+def _sender_payload(organisations: Sequence[Any]) -> dict[str, Any]:
+    """How a sender set is written into an audit payload.
+
+    Sorted by name, with the primary keys beside the names. The ordering is
+    explicit rather than inherited from whatever order the join table handed
+    back, so re-reading the same set twice produces the same event body and a
+    diff between two events means something actually moved.
+    """
+    ordered = sorted(
+        organisations, key=lambda organisation: (organisation.name, str(organisation.pk))
+    )
+    return {
+        "ids": [str(organisation.pk) for organisation in ordered],
+        "names": [organisation.name for organisation in ordered],
+    }
+
+
 @transaction.atomic
 def set_organisations(
     *,
     matter: Matter,
-    source_organisation: Any = _UNSET,
+    source_organisations: Any = _UNSET,
     addressee_organisation: Any = _UNSET,
     actor: Any = None,
 ) -> Matter:
@@ -379,15 +450,26 @@ def set_organisations(
     `KELLELT` to `KELLELE` in 2020, so merging them on name similarity would
     silently invert the direction of a decade of records
     (master specification 2.1, 19.3).
+
+    The sender side is a *set* and the addressee side is a single organisation.
+    ``_UNSET`` still means "leave this alone" on both, and on the sender side it
+    is emphatically not the same as ``[]`` — one is an inline edit of the
+    deadline that happened to reach this function, the other is somebody
+    clearing the sender list on purpose (Agent-E brief 20).
     """
     changed: dict[str, Any] = {}
     fields: list[str] = []
+    new_senders: list[Any] | None = None
 
-    if source_organisation is not _UNSET and source_organisation != matter.source_organisation:
-        changed["source_from"] = getattr(matter.source_organisation, "name", None)
-        changed["source_to"] = getattr(source_organisation, "name", None)
-        matter.source_organisation = source_organisation
-        fields.append("source_organisation")
+    if source_organisations is not _UNSET:
+        proposed = normalize_source_organisations(source_organisations)
+        current = list(matter.source_organisations.all())
+        if {organisation.pk for organisation in current} != {
+            organisation.pk for organisation in proposed
+        }:
+            changed["source_from"] = _sender_payload(current)
+            changed["source_to"] = _sender_payload(proposed)
+            new_senders = proposed
 
     if (
         addressee_organisation is not _UNSET
@@ -398,8 +480,17 @@ def set_organisations(
         matter.addressee_organisation = addressee_organisation
         fields.append("addressee_organisation")
 
-    if not fields:
+    if not changed:
         return matter
+
+    if new_senders is not None:
+        matter.source_organisations.set(new_senders)
+        # `.set()` writes the join table and nothing else, so without this the
+        # Matter that just changed would still claim it had not been touched
+        # since whenever somebody last edited a scalar field. A sender change is
+        # a real edit and every activity surface reads `updated_at`; the save
+        # below carries `updated_at` whether or not a scalar field moved
+        # (brief 22).
 
     matter.save(update_fields=[*fields, "updated_at"])
     record_change_event(
@@ -768,7 +859,7 @@ def refresh_matter_from_register(
     stage: Any = _UNSET,
     received_date: Any = _UNSET,
     response_deadline: Any = _UNSET,
-    source_organisation: Any = _UNSET,
+    source_organisations: Any = _UNSET,
     addressee_organisation: Any = _UNSET,
     actor: Any = None,
     provenance: dict[str, Any] | None = None,
@@ -788,6 +879,16 @@ def refresh_matter_from_register(
     Deliberately absent: ``title``. The register's wording and the department's
     may both be right, later native editing is real work, and overwriting a
     title people navigate by would be the change nobody asked for.
+
+    ``source_organisations`` inherits the same three-way distinction now that
+    the sender side is plural, and the middle case is the one worth naming:
+    ``_UNSET`` means the source could not settle the sender and the canonical
+    set is left alone, ``[]`` means the source says there is no sender, and a
+    one-element list means it resolved exactly one. The resolved set *replaces*
+    what is stored rather than being added to it — the register stayed
+    authoritative for this field when it was singular, and accumulating a stale
+    reading beside a fresh one would be a new behaviour nobody asked for
+    (Agent-E brief 25, 27, 61).
     """
     if matter.origin not in REGISTER_MANAGED_ORIGINS:
         raise DomainError("Registri operatsioon ei muuda kohapeal loodud teemat.")
@@ -797,7 +898,6 @@ def refresh_matter_from_register(
         "stage": stage,
         "received_date": received_date,
         "response_deadline": response_deadline,
-        "source_organisation": source_organisation,
         "addressee_organisation": addressee_organisation,
     }
 
@@ -813,10 +913,30 @@ def refresh_matter_from_register(
         setattr(matter, field, value)
         changed[field] = {"from": str(current_id or ""), "to": str(new_id or "")}
 
+    # The sender set, written through the same event rather than through
+    # `set_organisations`. Calling that here would raise a second, competing
+    # organisation-change event for one refresh, and this operation already has
+    # an event that says what the register moved (brief 26).
+    senders: list[Any] | None = None
+    if source_organisations is not _UNSET:
+        senders = normalize_source_organisations(source_organisations)
+        current_ids = sorted(
+            str(pk) for pk in matter.source_organisations.values_list("pk", flat=True)
+        )
+        new_ids = sorted(str(organisation.pk) for organisation in senders)
+        if current_ids == new_ids:
+            senders = None
+        else:
+            changed["source_organisations"] = {"from": current_ids, "to": new_ids}
+
     if not changed:
         return matter, {}
 
-    matter.save(update_fields=[*changed.keys(), "updated_at"])
+    if senders is not None:
+        matter.source_organisations.set(senders)
+
+    scalar_fields = [field for field in changed if field != "source_organisations"]
+    matter.save(update_fields=[*scalar_fields, "updated_at"])
     record_change_event(
         event_type=ChangeEventType.MATTER_SOURCE_FIELDS_REFRESHED,
         matter=matter,

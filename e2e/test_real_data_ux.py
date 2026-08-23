@@ -138,20 +138,35 @@ def test_only_one_owner_can_be_chosen(page, base_url):
         expect(owners.nth(1)).to_be_checked()
 
 
-def test_only_one_sender_can_be_chosen(page, base_url):
+def test_several_senders_can_be_ticked(page, base_url):
+    """Checkboxes, and ticking a second one does not untick the first.
+
+    The inverse of the owner test above, and the one that would still pass if
+    the control had been made to *look* plural over a single stored sender: it
+    checks the browser's own behaviour, which is where a radio group reveals
+    itself (Agent-E brief 28, 51).
+    """
     sign_in(page, base_url, MARTIN)
     open_create(page, base_url)
-    senders = page.locator("input[name='source_organisation']")
-    if senders.count():
-        expect(senders.first).to_have_attribute("type", "radio")
+
+    senders = page.locator("input[name='source_organisations']")
+    expect(senders.first).to_have_attribute("type", "checkbox")
+    assert senders.count() >= 2, "the seeded world needs two senders for this to mean anything"
+
+    senders.nth(0).check()
+    senders.nth(1).check()
+    expect(senders.nth(0)).to_be_checked()
+    expect(senders.nth(1)).to_be_checked()
 
 
-def test_the_long_tail_of_senders_is_searchable(page, base_url):
+def test_the_long_tail_of_senders_accepts_several(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_create(page, base_url)
 
-    page.get_by_text("Muu / otsi organisatsiooni").click()
-    expect(page.locator("#id_source_organisation_other")).to_be_visible()
+    page.get_by_text("Muu / lisa saatja").click()
+    other = page.locator("#id_source_organisations_other")
+    expect(other).to_be_visible()
+    expect(other).to_have_attribute("multiple", "")
 
 
 def test_several_policy_areas_can_be_ticked(page, base_url):
@@ -179,9 +194,11 @@ def test_two_ticked_areas_both_survive_the_save(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_create(page, base_url)
 
-    chosen = [
-        page.locator(".checkitems .checkitem").nth(index).inner_text().strip() for index in (0, 1)
-    ]
+    # Scoped to the policy-area boxes by their input name. The sender control
+    # is a `.checkitems` group too now, and it sits above this one — an
+    # unscoped nth(0) reads a ministry and then looks for it among the tags.
+    area_labels = page.locator("label.checkitem:has(input[name='policy_areas'])")
+    chosen = [area_labels.nth(index).inner_text().strip() for index in (0, 1)]
     page.locator("#id_title").fill("Kahe valdkonnaga teema")
     page.locator("input[name='policy_areas']").nth(0).check()
     page.locator("input[name='policy_areas']").nth(1).check()

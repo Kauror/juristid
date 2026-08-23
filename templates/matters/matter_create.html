@@ -74,30 +74,40 @@
     </label>
 
     <fieldset class="field">
-      <legend class="field__label">{{ form.source_organisation.label }}</legend>
-      <div class="choicecards">
-        {% for choice in form.source_organisation %}
-          <label class="choicecard">
+      <legend class="field__label">{{ form.source_organisations.label }}</legend>
+      {% comment %}
+        Checkboxes, and several of them may be ticked. A matter really can arrive
+        from a ministry and an association at once, and the radios that used to
+        be here were promising something the old single-sender column could keep
+        and the model no longer does (Agent-E brief 28, 29).
+      {% endcomment %}
+      <div class="checkitems">
+        {% for choice in form.source_organisations %}
+          <label class="checkitem">
             {{ choice.tag }}
-            <span class="choicecard__name">{{ choice.choice_label }}</span>
+            <span class="checkitem__name">{{ choice.choice_label }}</span>
           </label>
         {% empty %}
           <p class="field__help">Ühtegi saatjat ei ole veel salvestatud.</p>
         {% endfor %}
       </div>
+      <span class="field__help">{{ form.source_organisations.help_text }}</span>
       {% comment %}
         The long tail. Every organisation is a valid sender; only the frequent
         ones are worth a chip, and the rest stay one disclosure away rather than
-        making the list unreadable.
+        making the list unreadable. Several may be picked here too, and the two
+        controls are unioned rather than ranked.
       {% endcomment %}
       <details class="disclosure disclosure--inline">
-        <summary class="disclosure__summary">Muu / otsi organisatsiooni</summary>
+        <summary class="disclosure__summary">Muu / lisa saatja</summary>
         <div class="disclosure__body">
-          {{ form.source_organisation_other }}
+          {{ form.source_organisations_other }}
         </div>
       </details>
-      {% if form.source_organisation.errors %}
-        <span class="field__error">{{ form.source_organisation.errors|first }}</span>
+      {% if form.source_organisations.errors %}
+        <span class="field__error">{{ form.source_organisations.errors|first }}</span>
+      {% elif form.source_organisations_other.errors %}
+        <span class="field__error">{{ form.source_organisations_other.errors|first }}</span>
       {% endif %}
     </fieldset>
 

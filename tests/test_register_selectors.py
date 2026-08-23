@@ -103,12 +103,12 @@ def test_either_direction_counts_as_involvement():
     ministry = factories.OrganisationFactory()
     other = factories.OrganisationFactory()
 
-    factories.MatterFactory(title="Nemad saatsid", source_organisation=ministry)
+    factories.MatterFactory(title="Nemad saatsid", source_organisations=[ministry])
     factories.MatterFactory(title="Meie vastasime", addressee_organisation=ministry)
     factories.MatterFactory(
-        title="Mõlemat pidi", source_organisation=ministry, addressee_organisation=ministry
+        title="Mõlemat pidi", source_organisations=[ministry], addressee_organisation=ministry
     )
-    factories.MatterFactory(title="Kõrvaline", source_organisation=other)
+    factories.MatterFactory(title="Kõrvaline", source_organisations=[other])
 
     condition = selectors.organisation_involved_q(ministry.pk)
     assert matched(condition) == {"Nemad saatsid", "Meie vastasime", "Mõlemat pidi"}
@@ -119,7 +119,7 @@ def test_a_matter_involving_a_body_twice_is_still_one_row():
     ministry = factories.OrganisationFactory()
     factories.MatterFactory(
         title="Mõlemat pidi",
-        source_organisation=ministry,
+        source_organisations=[ministry],
         addressee_organisation=ministry,
     )
     assert Matter.objects.filter(selectors.organisation_involved_q(ministry.pk)).count() == 1
@@ -128,12 +128,12 @@ def test_a_matter_involving_a_body_twice_is_still_one_row():
 def test_the_convenience_filter_reads_and_never_writes():
     """A query convenience. The stored distinction is untouched (brief 11F)."""
     ministry = factories.OrganisationFactory()
-    sent = factories.MatterFactory(title="Nemad saatsid", source_organisation=ministry)
+    sent = factories.MatterFactory(title="Nemad saatsid", source_organisations=[ministry])
 
     list(Matter.objects.filter(selectors.organisation_involved_q(ministry.pk)))
 
     sent.refresh_from_db()
-    assert sent.source_organisation_id == ministry.pk
+    assert list(sent.source_organisations.all()) == [ministry]
     assert sent.addressee_organisation_id is None
 
 

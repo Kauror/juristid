@@ -153,7 +153,9 @@ def organisation_involved_q(organisation_id: Any) -> Q:
 
     Nothing here writes, merges or rewrites either column.
     """
-    return Q(source_organisation_id=organisation_id) | Q(addressee_organisation_id=organisation_id)
+    return Q(source_organisations__id=organisation_id) | Q(
+        addressee_organisation_id=organisation_id
+    )
 
 
 def filter_by_materials(queryset: QuerySet[Matter], user: Any, value: str) -> QuerySet[Matter]:
@@ -238,8 +240,8 @@ def matter_list_queryset(user: Any) -> QuerySet[Matter]:
     """The base register query: authorized, with everything a row displays."""
     return (
         Matter.objects.visible_to(user)
-        .select_related("owner", "stage", "source_organisation", "addressee_organisation")
-        .prefetch_related(open_action_prefetch(), "policy_areas")
+        .select_related("owner", "stage", "addressee_organisation")
+        .prefetch_related(open_action_prefetch(), "source_organisations", "policy_areas")
     )
 
 

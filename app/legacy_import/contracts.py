@@ -43,6 +43,12 @@ class ContractError(Exception):
 
 #: What a column means in the canonical model. ``unknown`` is a real, honest
 #: answer and appears in the 2022 contract.
+#:
+#: These name *workbook columns*, not Matter fields, and they keep the singular
+#: spelling deliberately. A sheet has one counterparty column; that the Matter it
+#: feeds can now hold several senders is a fact about the destination, and
+#: renaming the contract vocabulary to match would rewrite reviewed era
+#: contracts to describe a column that never changed (Agent-E brief 17, 82).
 CANONICAL_FIELDS: frozenset[str] = frozenset(
     {
         "matter_reference",

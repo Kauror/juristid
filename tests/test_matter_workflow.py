@@ -118,11 +118,11 @@ def test_source_and_addressee_are_independent(normal_matter, specialist):
     sender = factories.OrganisationFactory(name="Kliimaministeerium")
     recipient = factories.OrganisationFactory(name="Rahandusministeerium")
 
-    set_organisations(matter=normal_matter, source_organisation=sender, actor=specialist)
+    set_organisations(matter=normal_matter, source_organisations=[sender], actor=specialist)
     set_organisations(matter=normal_matter, addressee_organisation=recipient, actor=specialist)
     normal_matter.refresh_from_db()
 
-    assert normal_matter.source_organisation == sender
+    assert list(normal_matter.source_organisations.all()) == [sender]
     assert normal_matter.addressee_organisation == recipient
 
 
@@ -131,14 +131,14 @@ def test_setting_one_institution_leaves_the_other_alone(normal_matter, specialis
     recipient = factories.OrganisationFactory()
     set_organisations(
         matter=normal_matter,
-        source_organisation=sender,
+        source_organisations=[sender],
         addressee_organisation=recipient,
         actor=specialist,
     )
 
-    set_organisations(matter=normal_matter, source_organisation=None, actor=specialist)
+    set_organisations(matter=normal_matter, source_organisations=[], actor=specialist)
     normal_matter.refresh_from_db()
-    assert normal_matter.source_organisation is None
+    assert not normal_matter.source_organisations.exists()
     assert normal_matter.addressee_organisation == recipient
 
 

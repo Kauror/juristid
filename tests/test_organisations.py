@@ -173,7 +173,7 @@ def test_quick_create_returns_a_picker_with_the_new_row_selected(client, special
     client.force_login(specialist)
     response = client.post(
         reverse("organisations:quick_create"),
-        {"name": "Riigikogu rahanduskomisjon", "target": "source_organisation"},
+        {"name": "Riigikogu rahanduskomisjon", "target": "source_organisations"},
     )
     assert response.status_code == 200
     body = response.content.decode()
@@ -188,7 +188,7 @@ def test_quick_create_says_so_when_it_reused_an_existing_row(client, specialist)
     client.force_login(specialist)
     response = client.post(
         reverse("organisations:quick_create"),
-        {"name": "näidisamet", "target": "source_organisation"},
+        {"name": "näidisamet", "target": "source_organisations"},
     )
     assert "oli juba olemas" in response.content.decode()
 
@@ -196,7 +196,7 @@ def test_quick_create_says_so_when_it_reused_an_existing_row(client, specialist)
 def test_quick_create_rejects_a_blank_name(client, specialist) -> None:
     client.force_login(specialist)
     response = client.post(
-        reverse("organisations:quick_create"), {"name": "", "target": "source_organisation"}
+        reverse("organisations:quick_create"), {"name": "", "target": "source_organisations"}
     )
     assert response.status_code == 400
 
@@ -217,13 +217,13 @@ def test_sender_and_addressee_remain_separate_facts(db, specialist) -> None:
         title="Suunaga teema",
         owner=specialist,
         reference_year=2026,
-        source_organisation=sender,
+        source_organisations=[sender],
         addressee_organisation=addressee,
     )
     matter.refresh_from_db()
-    assert matter.source_organisation == sender
+    assert list(matter.source_organisations.all()) == [sender]
     assert matter.addressee_organisation == addressee
-    assert matter.source_organisation != matter.addressee_organisation
+    assert addressee not in matter.source_organisations.all()
 
 
 def test_a_submission_accepts_an_organisation_created_moments_ago(db, specialist) -> None:

@@ -147,8 +147,8 @@ a morning list by, and a permanent column of it cost the title its width.
                       </span>
                     </td>
                     <td class="table__org">
-                      <span class="table__clip" title="{{ matter.source_organisation.name|default:'—' }}">
-                        {{ matter.source_organisation.name|default:"—" }}
+                      <span class="table__clip" title="{{ matter.sender_names|default:'—' }}">
+                        {% include "matters/partials/senders.html" with matter=matter %}
                       </span>
                     </td>
                     {% comment %}
