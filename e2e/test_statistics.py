@@ -435,12 +435,19 @@ def test_the_archive_block_is_kept_apart_from_the_canonical_one(page, base_url, 
 
 
 def test_no_statistics_page_calls_a_count_a_workload(page, base_url):
-    """The wording rule, checked where a reader actually meets it."""
+    """The wording rule, checked where a reader actually meets it.
+
+    Deliberately not a search for *edetabel*: a definition panel is allowed to
+    say a table is "not a league table", and whether a collapsed `<details>`
+    counts as rendered text is a browser detail rather than a product rule. The
+    catalogue test covers the hedged wording properly; these four have no
+    innocent reading.
+    """
     sign_in(page, base_url, MARTIN)
     for tab in ("", "teemad/", "tegevus/"):
         open_statistics(page, base_url, tab)
         body = page.locator("body").inner_text().lower()
-        for forbidden in ("edetabel", "produktiivsus", "parim jurist", "kõige tootlikum"):
+        for forbidden in ("produktiivsus", "parim jurist", "kõige tootlikum", "tulemusreiting"):
             assert forbidden not in body, f"{tab}: {forbidden}"
 
 
