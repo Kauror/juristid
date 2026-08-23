@@ -91,21 +91,26 @@ def visible_matters(context: ReportingContext) -> QuerySet[Matter]:
     every metric onto the Matter's reporting year — including the ones measured
     on a submission's send date (brief 14).
 
-    **Open handoff — the data class is not applied here yet.** Development and
-    testing happen against the same database as real work, and a Matter now
-    carries `data_class` saying which it is. A business or statistical
-    population must start from `Matter.objects.real_data()`; a figure that
-    counts development records is wrong in the way that is hardest to notice,
-    because nothing on the screen looks broken and the number is simply too
-    big.
+    **Published statistics are real data only, and that is decided here.**
+    Development and testing happen against the same database as real work, and
+    a Matter carries `data_class` saying which it is. A figure that counts
+    development records is wrong in the way that is hardest to notice: nothing
+    on the screen looks broken and the number is simply too big.
 
-    This is the one line that would apply it for the whole package, and it is
-    deliberately not changed on the branch that introduced the field: the
-    Statistics work owns this file in parallel, and a reporting-wide population
-    change is that work's decision to make rather than a side effect of adding
-    a column (docs/adr/0024, Agent-C brief 28, 63).
+    So `real_data()` is applied once, to the population every other selector in
+    this package starts from, rather than metric by metric — the same reason
+    authorization is applied here and not at render time. A metric added
+    tomorrow inherits it without its author having to know the rule exists.
+
+    **The data class is not authorization and the two are not merged.** They
+    narrow the same queryset here because a *published statistic* wants both,
+    but they answer different questions, and `Matter.objects.visible_to` still
+    means exactly what it meant before. The operational surfaces — Teemad, Minu
+    töö, Saabunud — deliberately keep showing TEST records, defaulting to
+    *Kõik* with an explicit *Andmed* filter, because a developer has to be able
+    to see the record they just made (docs/adr/0024, Agent-C brief 28, 63).
     """
-    queryset = Matter.objects.visible_to(context.viewer)
+    queryset = Matter.objects.visible_to(context.viewer).real_data()
 
     if context.owner_unreadable:
         return queryset.none()
