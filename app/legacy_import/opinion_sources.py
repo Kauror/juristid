@@ -1,4 +1,4 @@
-"""Reading the four sources, without trusting any of them.
+r"""Reading the four sources, without trusting any of them.
 
 Every function here treats its input as evidence rather than as data: a
 filename is a claim, a ZIP entry name is a claim, and a producer's spreadsheet
@@ -18,6 +18,14 @@ entry so a damaged name cannot pass for a deliberate one.
 workbook records a ``file_sha256`` per row and it binds 759 of 759 rows to the
 archive exactly. The same data matched by (encoding-tolerant) filename produced
 three collisions and five wrong assignments. Bytes first, always.
+
+**A ZIP entry name is not a path until it is canonicalised.** Every entry in
+the real archive is stored as ``Opinions\<name>.pdf`` — the producer wrote a
+Windows separator into the member names. ``zipfile`` rewrites the OS separator
+to ``/`` when it reads a name, so the same container reads as ``Opinions/x.pdf``
+on Windows and ``Opinions\x.pdf`` on Linux. The separator is therefore
+canonicalised here, before the safety guard and before anything is used as an
+identity, so one archive means one path on every host.
 
 **The archive's naming convention is a signal, not a date.** Every file is
 ``YYYY-MM-DD - Saaja - Pealkiri.pdf``, and that date is the letter's own date:
@@ -44,6 +52,12 @@ ARCHIVE_NAME = re.compile(r"^(\d{4})-(\d{2})-(\d{2})\s+-\s+(.*?)\s+-\s+(.+)\.pdf
 #: A Riigikogu proceeding number — `662 SE`, `180 SE`, `21 OE`. An exact,
 #: citable reference token rather than a word that happens to be shared.
 LAW_REFERENCE = re.compile(r"\b(\d{1,4})\s*(SE|OE|UA)\b", re.IGNORECASE)
+
+#: A Windows drive prefix — ``C:/x``, ``C:x``. Refused wherever it appears in an
+#: archive member name, on every host: it is not a relative path, and a reader
+#: that treats it as one is one `os.path.join` away from writing outside the
+#: directory it was given.
+WINDOWS_DRIVE = re.compile(r"^[A-Za-z]:")
 
 #: File signatures the archive is allowed to contain. The corpus is 767 PDFs;
 #: anything else is reported rather than quietly catalogued as an opinion.
@@ -208,13 +222,77 @@ def _safe_relative_path(name: str) -> str:
     Nothing in this stage extracts to an archive-chosen path, but the guard
     stays where the name is first read: a later caller that does extract must
     not have to remember to re-check (Stage-2H brief 2).
+
+    The rules are deliberately host-independent, because a name that is
+    harmless on the machine that reads it can be an absolute path on the
+    machine that later writes it: a drive prefix is refused on Linux too, and a
+    backslash is refused outright here rather than quietly meaning one thing on
+    Windows and another on POSIX. ZIP entries reach this function through
+    `_normalize_zip_entry_path`, which translates the separator first.
+
+    A "." segment is refused rather than collapsed. Collapsing it would let
+    ``Opinions/./x.pdf`` and ``Opinions/x.pdf`` become one identity while
+    remaining two entries, and `archive_relative_path` is part of an
+    occurrence's identity.
     """
     if not name or name.startswith("/") or "\\" in name:
         raise OpinionSourceError(f"Refusing an unsafe archive entry name: {name!r}")
-    parts = name.split("/")
-    if any(part in ("..", "") for part in parts[:-1]) or parts[-1] in ("..", ""):
+    if WINDOWS_DRIVE.match(name):
+        raise OpinionSourceError(f"Refusing an unsafe archive entry name: {name!r}")
+    if any(part in ("..", ".", "") for part in name.split("/")):
         raise OpinionSourceError(f"Refusing an unsafe archive entry name: {name!r}")
     return posixpath.normpath(name)
+
+
+def _normalize_zip_entry_path(name: str) -> str | None:
+    r"""The one place a ZIP member name becomes an application path.
+
+    The approved archive stores every member as ``Opinions\<name>.pdf``.
+    ``zipfile`` replaces the OS separator with ``/`` while parsing a name, so
+    that container reads as ``Opinions/<name>.pdf`` on Windows and keeps the
+    backslash on Linux — same bytes, same SHA, two different paths, and the
+    guard above refused the Linux reading. Translating here makes the canonical
+    path the POSIX one on every host.
+
+    The translation happens *before* validation, never after: ``Opinions\..\x``
+    has to become ``Opinions/../x`` in time for the traversal check to see it.
+
+    Returns None for a directory record — a name that ends in a separator.
+    That question is `zipfile.ZipInfo.is_dir`'s, and it answers it with
+    ``os.path.altsep``, so it too reads one stored name as a directory on
+    Windows and as a file with an empty last segment on Linux. Answering it
+    here, after the translation, is what makes one container hold one set of
+    files.
+    """
+    posix = name.replace("\\", "/")
+    if posix.endswith("/"):
+        return None
+    return _safe_relative_path(posix)
+
+
+def _canonical_zip_entry(info: zipfile.ZipInfo, seen: dict[str, str]) -> tuple[str, str] | None:
+    r"""One entry's canonical path and how its name was decoded, or None.
+
+    None means a directory record, which every caller here skips.
+
+    `seen` maps an already-taken canonical path to the entry name that took it.
+    Two members that canonicalise to the same path — ``Opinions/x.pdf`` beside
+    ``Opinions\x.pdf``, most plausibly — are refused rather than resolved. Either
+    resolution is wrong: as two occurrences they duplicate one identity, and as
+    one occurrence a byte sequence silently disappears from the catalogue.
+    """
+    decoded, encoding = _decode_entry_name(info)
+    canonical = _normalize_zip_entry_path(decoded)
+    if canonical is None:
+        return None
+    previous = seen.get(canonical)
+    if previous is not None:
+        raise OpinionSourceError(
+            f"Refusing an archive with two entries at one path: "
+            f"{previous!r} and {decoded!r} both mean {canonical!r}."
+        )
+    seen[canonical] = decoded
+    return canonical, encoding
 
 
 def file_sha256(path: Path) -> str:
@@ -240,12 +318,13 @@ def read_opinion_archive(path: Path) -> tuple[str, list[ArchiveOccurrence]]:
 
 
 def _read_zip(path: Path) -> Iterator[ArchiveOccurrence]:
+    seen: dict[str, str] = {}
     with zipfile.ZipFile(path) as archive:
         for info in archive.infolist():
-            if info.is_dir():
+            entry = _canonical_zip_entry(info, seen)
+            if entry is None:
                 continue
-            name, encoding = _decode_entry_name(info)
-            relative = _safe_relative_path(name)
+            relative, encoding = entry
             data = archive.read(info)
             base = posixpath.basename(relative)
             parsed_date, recipient, title = _parse_archive_name(base)
@@ -485,25 +564,32 @@ class ArchiveReader:
     Lives here rather than beside one of its callers because both the canonical
     apply and the archive materialisation need to read the same bytes the same
     way, and two readers would eventually decode a ZIP entry name differently.
+
+    It is keyed by `_canonical_zip_entry`, the same function the inventory uses,
+    so the path the catalogue stored is the path that opens the file. The value
+    is the `ZipInfo` rather than its name: two members can carry one stored name
+    once separators are canonicalised, and a name lookup would then return
+    whichever `zipfile` reached first.
     """
 
     def __init__(self, path: Path) -> None:
         self._path = path
         self._zip: zipfile.ZipFile | None = None
-        self._names: dict[str, str] = {}
+        self._entries: dict[str, zipfile.ZipInfo] = {}
         if path.is_file():
             self._zip = zipfile.ZipFile(path)
+            seen: dict[str, str] = {}
             for info in self._zip.infolist():
-                if not info.is_dir():
-                    decoded, _ = _decode_entry_name(info)
-                    self._names[decoded] = info.filename
+                entry = _canonical_zip_entry(info, seen)
+                if entry is not None:
+                    self._entries[entry[0]] = info
 
     def read(self, relative_path: str) -> bytes | None:
         if self._zip is not None:
-            name = self._names.get(relative_path)
-            if name is None:
+            info = self._entries.get(relative_path)
+            if info is None:
                 return None
-            return self._zip.read(name)
+            return self._zip.read(info)
         candidate = self._path / relative_path
         if not candidate.is_file():
             return None
