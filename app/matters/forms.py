@@ -18,6 +18,7 @@ from app.accounts.models import User
 from app.core.authorization import scoped_count
 from app.core.enums import Visibility
 from app.matters.entry_enums import EntryKind
+from app.matters.enums import MatterDataClass
 from app.organisations.models import Organisation
 from app.taxonomy.models import PolicyArea, Tag
 from app.workflow.enums import (
@@ -240,6 +241,20 @@ class MatterCreateForm(forms.Form):
         ),
         help_text="Vabatekst. Siit ei teki uut valdkonda ega silti.",
     )
+    #: One checkbox, unticked, rather than a REAL/TEST select.
+    #:
+    #: Real work is the overwhelmingly normal case, and a required dropdown on
+    #: every creation would put a decision in front of somebody who has none to
+    #: make — the shape of control people learn to click past without reading.
+    #: The presentation is a boolean; the *stored* value is still the two-value
+    #: class, resolved by the `data_class` property below (Agent-C brief 15, 16).
+    is_test_data = forms.BooleanField(
+        label="Testandmed",
+        required=False,
+        widget=forms.CheckboxInput(attrs={"class": "checkitem__input"}),
+        help_text="Arenduseks loodud teema; ei kuulu päris aruandlusse.",
+    )
+
     #: `Nähtavus` is deliberately absent from this form.
     #:
     #: Restricting a Matter is a rare, deliberate act, and putting it on the
@@ -266,6 +281,18 @@ class MatterCreateForm(forms.Form):
             self.add_error("policy_area_other", "Kirjuta, millise valdkonnaga on tegemist.")
 
         return cleaned
+
+    @property
+    def data_class(self) -> str:
+        """What the checkbox means in the vocabulary the model stores.
+
+        The form parses and the service writes: this hands the service a value
+        from `MatterDataClass`, and nothing here touches a model field
+        (the convention this module opens with, Agent-C brief 16).
+        """
+        if self.cleaned_data.get("is_test_data"):
+            return MatterDataClass.TEST
+        return MatterDataClass.REAL
 
     def __init__(self, *args: Any, viewer: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -503,6 +530,13 @@ class MatterFieldForm(forms.Form):
     # legitimate value here — it is how somebody clears a note that turned out
     # to belong under a real PolicyArea after all (Stage-2E.1 brief 20).
     policy_area_other = forms.CharField(max_length=400, required=False)
+    # `required=False` like every other field on this form: one POST carries
+    # one field, so demanding this one would refuse every other inline edit.
+    # An absent or empty value is still refused — by the service, which knows
+    # no blank data class — rather than being defaulted to REAL, because a
+    # malformed POST must not quietly reclassify a development record as
+    # business data.
+    data_class = forms.ChoiceField(choices=MatterDataClass.choices, required=False)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)

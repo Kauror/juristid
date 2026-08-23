@@ -67,6 +67,7 @@ from app.matters.services import (
     compose_update,
     create_matter,
     reopen_matter,
+    set_matter_data_class,
     set_matter_dates,
     set_matter_visibility,
     set_organisations,
@@ -302,12 +303,26 @@ FILTER_LABELS = {
     "tahtaeg_alates": "Tähtaeg alates",
     "tahtaeg_kuni": "Tähtaeg kuni",
     "materjalid": "Materjalid",
+    # Real business data or development data. Sits with the other dimensions
+    # rather than beside the status segments, because it narrows the population
+    # like any filter and belongs in the same chip row and the same shared URL
+    # (Agent-C brief 24, 26).
+    "andmed": "Andmed",
 }
 
 #: What `?materjalid=` reads as in a chip.
 MATERIAL_LABELS = {
     selectors.MATERIALS_PRESENT: "Failid olemas",
     selectors.MATERIALS_ABSENT: "Failid puuduvad",
+}
+
+#: What `?andmed=` reads as, in the chip and in the control. `Kõik` is the
+#: default and therefore never becomes a chip — a chip for the absence of a
+#: filter is noise the reader has to learn to ignore.
+DATA_CLASS_LABELS = {
+    selectors.DATA_CLASS_ALL: "Kõik",
+    selectors.DATA_CLASS_REAL: "Päris",
+    selectors.DATA_CLASS_TEST: "Test",
 }
 
 #: Every filter parameter the register understands, plus the sort and the free
@@ -463,6 +478,8 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         return organisation.name if organisation else value
     if name == "materjalid":
         return MATERIAL_LABELS.get(value, value)
+    if name == "andmed":
+        return DATA_CLASS_LABELS.get(value, value)
     if name in DATE_FILTERS:
         # The stored value is ISO because that is what `<input type=date>`
         # submits; the chip reads it back the way Estonians write dates.
@@ -486,6 +503,8 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     for name, label in FILTER_LABELS.items():
         value = params.get(name, "")
         if not value or (name == "ulatus" and value == "koik"):
+            continue
+        if name == "andmed" and value == selectors.DATA_CLASS_ALL:
             continue
         without = params.copy()
         without.pop(name, None)
@@ -683,6 +702,11 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             queryset = queryset.none()
     if materials := params.get("materjalid"):
         queryset = selectors.filter_by_materials(queryset, request.user, materials)
+    # After every authorization-bearing filter above, and applied to the scoped
+    # queryset rather than the raw table. Data class narrows what is already
+    # visible; it never decides what is visible (Agent-C brief 14, 50).
+    data_class = params.get("andmed", selectors.DATA_CLASS_ALL)
+    queryset = selectors.filter_by_data_class(queryset, data_class)
 
     queryset, date_echo = _apply_date_filters(queryset, params)
 
@@ -729,6 +753,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             "q": query,
             "asutus": params.get("asutus", ""),
             "materjalid": params.get("materjalid", ""),
+            "andmed": data_class,
             **date_echo,
             "vastutaja": params.get("vastutaja", ""),
             "hetkeseis": params.get("hetkeseis", ""),
@@ -766,6 +791,13 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "origins": MatterOrigin.choices,
         "next_action_options": list(NEXT_ACTION_LABELS.items()),
         "material_options": sorted(MATERIAL_LABELS.items()),
+        # Kõik first: it is the default, and the control should open on the
+        # state the page is actually in.
+        "data_class_options": [
+            (selectors.DATA_CLASS_ALL, DATA_CLASS_LABELS[selectors.DATA_CLASS_ALL]),
+            (selectors.DATA_CLASS_REAL, DATA_CLASS_LABELS[selectors.DATA_CLASS_REAL]),
+            (selectors.DATA_CLASS_TEST, DATA_CLASS_LABELS[selectors.DATA_CLASS_TEST]),
+        ],
         "chosen_organisation": _organisation_or_none(params.get("asutus", "")),
         "organisation_options": _organisation_options(""),
     }
@@ -897,6 +929,11 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # from the page and an omitted field must not become a blank
                 # value the model would refuse (brief 21).
                 visibility=Visibility.NORMAL,
+                # Unlike visibility, this one *is* on the page — as one
+                # checkbox, unticked. The form turns it into the stored
+                # vocabulary; the service validates it and refuses TEST on
+                # anything not created here (Agent-C brief 15, 16, 17).
+                data_class=form.data_class,
             )
             for upload in uploads:
                 _attach_incoming_file(matter, upload, actor=request.user)
@@ -1339,6 +1376,39 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
 #: Fields whose control is not in the header band. `_header_context` already
 #: carries everything the rail reads, so one context serves both.
 _FIELD_SURFACES = {"policy_area_other": "matters/partials/rail.html"}
+
+
+@login_required
+@require_http_methods(["POST"])
+def set_data_class(request: HttpRequest, pk: Any) -> HttpResponse:
+    """Reclassify a Matter as real business data or as development data.
+
+    Its own endpoint rather than another `update_field` case, for one reason:
+    this value is rendered in three places at once — the TEST badge in the
+    header, the class on the facts rail, and the flag on every register row —
+    and `update_field` swaps exactly one surface. Marking a Matter TEST and
+    leaving the header still saying nothing is the precise failure this
+    classification exists to prevent, so the whole page re-renders instead
+    (Agent-C brief 18, 22).
+    """
+    matter = get_visible_matter(request, pk)
+    form = MatterFieldForm(request.POST)
+    # `data_class` is `required=False` on that form, because one POST carries
+    # one field. An absent value is refused here rather than defaulted: a
+    # malformed request must not quietly make a development record real.
+    value = form.cleaned_data.get("data_class", "") if form.is_valid() else ""
+    try:
+        set_matter_data_class(matter=matter, data_class=value, actor=request.user)
+    except DomainError as error:
+        messages.error(request, str(error))
+        return redirect("matters:matter_detail", pk=matter.pk)
+
+    matter.refresh_from_db()
+    if matter.is_test_data:
+        messages.success(request, "Teema on märgitud testandmeteks.")
+    else:
+        messages.success(request, "Teema on märgitud pärisandmeteks.")
+    return redirect("matters:matter_detail", pk=matter.pk)
 
 
 @login_required

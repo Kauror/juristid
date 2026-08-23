@@ -147,6 +147,29 @@
           {% endif %}
         {% endfor %}
       </div>
+
+      {% comment %}
+        One checkbox, unticked, and no REAL/TEST dropdown: real work is the
+        normal path and must stay a straight line, and a required choice on
+        every creation is a control people learn to click past.
+
+        Inside the disclosure rather than on the capture path, for the reason
+        this panel exists — the same reason `Nähtavus` is not on this page at
+        all. Marking a matter as development data is a rare, deliberate act by
+        somebody who came here to do it; the four lawyers filing real work
+        every week should not have to read past it. Recoverable afterwards from
+        the facts rail either way (Agent-C brief 15, 62).
+      {% endcomment %}
+      <fieldset class="field">
+        <legend class="field__label">Andmeklass</legend>
+        <div class="checkitems">
+          <label class="checkitem" id="andmeklass-test">
+            {{ form.is_test_data }}
+            <span class="checkitem__name">{{ form.is_test_data.label }}</span>
+          </label>
+        </div>
+        <span class="field__help">{{ form.is_test_data.help_text }}</span>
+      </fieldset>
     </details>
 
     <details class="disclosure" {% if action_form.errors %}open{% endif %}>

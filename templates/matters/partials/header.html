@@ -32,6 +32,15 @@ unchanged — this moves the control, not the write.
       {% else %}
         <span class="badge badge--state badge--closed">Suletud</span>
       {% endif %}
+      {% if matter.is_test_data %}
+        {% comment %}
+          A badge, not a banner. It has to be impossible to mistake a
+          development record for business data — and it also has to stay
+          proportionate: an alarm bar across a page a developer opens fifty
+          times a day is an alarm bar they stop seeing (Agent-C brief 22).
+        {% endcomment %}
+        <span class="badge badge--test">TEST</span>
+      {% endif %}
       {% if matter.record_mode == "ARCHIVE" %}
         <span class="badge badge--archive">Arhiiv</span>
       {% endif %}

@@ -629,6 +629,18 @@ p.formnote {
   border-color: var(--status-warning-border);
 }
 
+/* Development data. Warning-coloured and solid rather than tinted, because
+   this is the one badge whose entire job is to be impossible to skim past —
+   and still a badge rather than an alarm bar, because a developer sees it
+   fifty times a day (Agent-C brief 22). */
+.badge--test {
+  color: var(--text-inverse);
+  background: var(--status-warning);
+  border-color: var(--status-warning);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: 0.05em;
+}
+
 .badge--closed,
 .badge--archive {
   color: var(--text-muted);
