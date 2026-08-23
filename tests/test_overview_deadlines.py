@@ -36,11 +36,6 @@ pytestmark = pytest.mark.django_db
 OVERVIEW = "matters:overview"
 
 
-@pytest.fixture
-def today():
-    return timezone.localdate()
-
-
 def _matter_due(owner, *, days: int, title: str):
     """A Matter whose own `Arvamuse tähtaeg` falls `days` from today."""
     return create_matter(
@@ -287,15 +282,25 @@ def test_an_unrecognised_period_falls_back_instead_of_emptying_the_page(raw) -> 
     assert dashboard.deadline_window(raw).key == dashboard.DEFAULT_DEADLINE_WINDOW.key
 
 
+def _deadline_titles(response) -> set[str]:
+    """What the deadline table itself holds.
+
+    Read off the page's own data rather than searched for in the body: a Matter
+    outside the period is still on this page, under *Hiljuti saabunud*, and a
+    substring test would call that a period that had not filtered anything.
+    """
+    return {row.matter.title for row in response.context["dashboard"].upcoming.rows}
+
+
 def test_the_page_reads_the_period_from_the_url(client, specialist) -> None:
     _matter_due(specialist, days=20, title="Kahekümne päeva pärast")
     client.force_login(specialist)
 
-    fortnight = client.get(reverse(OVERVIEW)).content.decode()
-    assert "Kahekümne päeva pärast" not in fortnight
+    fortnight = client.get(reverse(OVERVIEW))
+    assert "Kahekümne päeva pärast" not in _deadline_titles(fortnight)
 
-    month = client.get(reverse(OVERVIEW), {"tahtajad": "30"}).content.decode()
-    assert "Kahekümne päeva pärast" in month
+    month = client.get(reverse(OVERVIEW), {"tahtajad": "30"})
+    assert "Kahekümne päeva pärast" in _deadline_titles(month)
 
 
 def test_a_nonsense_period_still_renders_the_default_view(client, specialist) -> None:
@@ -305,8 +310,9 @@ def test_a_nonsense_period_still_renders_the_default_view(client, specialist) ->
     response = client.get(reverse(OVERVIEW), {"tahtajad": "jama"})
     assert response.status_code == 200
 
-    body = response.content.decode()
-    assert "Kolme päeva pärast" in body
+    # The default view, not an empty one: a mistyped period must not look like
+    # an answer.
+    assert "Kolme päeva pärast" in _deadline_titles(response)
     selected = [option for option in response.context["dashboard"].windows if option.active]
     assert [option.key for option in selected] == [dashboard.DEFAULT_DEADLINE_WINDOW.key]
 

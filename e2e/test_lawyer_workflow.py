@@ -35,7 +35,9 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # -- Ülevaade is the landing surface ---------------------------------
     expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
-    expect(page.get_by_role("heading", name="Tähtajad", exact=True)).to_be_visible()
+    # Not `exact`: the heading carries its count, so its accessible name is
+    # "Tähtajad" followed by a number that changes with the seeded data.
+    expect(page.get_by_role("heading", name="Tähtajad")).to_be_visible()
     expect(page.get_by_role("heading", name="Vajab tähelepanu")).to_be_visible()
     screenshots(page, "00-ulevaade")
 

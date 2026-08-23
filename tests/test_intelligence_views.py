@@ -501,7 +501,8 @@ def test_a_general_order_commencement_saves_with_no_date(signed_in, specialist):
     assert record.display_when == "Jõustub üldises korras"
 
 
-def test_a_work_victory_form_defaults_to_a_candidate(signed_in, specialist):
+def test_a_work_victory_form_saves_a_confirmed_victory_with_its_period(signed_in, specialist):
+    """The period is entered; the status is what the person's act was."""
     matter = factories.MatterFactory(owner=specialist)
     signed_in.post(
         reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk}),
@@ -509,7 +510,7 @@ def test_a_work_victory_form_defaults_to_a_candidate(signed_in, specialist):
     )
 
     record = matter.work_victories.get()
-    assert record.status == WorkVictoryStatus.CANDIDATE
+    assert record.status == WorkVictoryStatus.CONFIRMED
     assert record.display_period == "2026"
 
 

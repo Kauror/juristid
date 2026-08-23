@@ -97,7 +97,11 @@ SUBMISSION_FILENAME = "arvamus-2026.asice"
 #: former colleague who still owns live work (Stage-2F brief 42, 45).
 #: A work victory nobody has decided on yet, standing in for a machine or
 #: import proposal so the review controls have something to review.
-MACHINE_CANDIDATE = "Registrist pakutud töövõidu kandidaat"
+#:
+#: Deliberately free of the words its own status badge uses: a title
+#: containing "töövõidu kandidaat" makes every attempt to locate the badge
+#: inside the row match the title too.
+MACHINE_CANDIDATE = "Registrist leitud ettepaneku arvestamine"
 
 UNASSIGNED_TITLE = "Vastutajata sünteetiline teema"
 REVIEW_DUE_TITLE = "Ootamise ülevaatuse aeg on käes"
