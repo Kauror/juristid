@@ -202,6 +202,125 @@ class Distribution:
         return self.n == 0
 
 
+# ---------------------------------------------------------------------------
+# Statistics 2.0 presentation types
+#
+# Two shapes the segment list cannot express honestly, added rather than
+# encoded into ``Segment`` because both carry arithmetic a template must never
+# do: a period-over-period change, and a two-dimensional count.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Comparison:
+    """One period measured against a comparable earlier one.
+
+    ``percent_change`` is ``None`` rather than infinity when the previous
+    period is zero. There is no percentage change from nothing, and a card
+    printing ∞ % — or, worse, 100 % — would be read as a measurement.
+
+    ``coverage_cutoff`` is what stops the comparison being dishonest by
+    default. A part-year measured against a whole one always looks like a
+    collapse, so the cutoff the current side actually reaches is carried here
+    and applied to the previous side too (brief 33).
+    """
+
+    current_value: int
+    previous_value: int
+    current_period_label: str
+    previous_period_label: str
+    coverage_cutoff: date | None = None
+    #: What the cutoff means for this measure, in one sentence. Rendered beside
+    #: the date, because "kuni 31.07" is only useful with "arhiivis on andmeid".
+    cutoff_note: str = ""
+
+    @property
+    def absolute_change(self) -> int:
+        return self.current_value - self.previous_value
+
+    @property
+    def percent_change(self) -> float | None:
+        if not self.previous_value:
+            return None
+        return 100.0 * self.absolute_change / self.previous_value
+
+    @property
+    def has_percent(self) -> bool:
+        return self.percent_change is not None
+
+    @property
+    def change_text(self) -> str:
+        """Neutral wording, in Estonian, with no judgement attached.
+
+        "+12" and "12 rohkem" describe a count. *Parem*, *kasv*, *edukam* would
+        describe an opinion about the count, and more opinions are not
+        inherently better than fewer (brief 34).
+        """
+        change = self.absolute_change
+        if change > 0:
+            return f"+{change} · {change} rohkem"
+        if change < 0:
+            return f"−{abs(change)} · {abs(change)} vähem"
+        return "0 · muutumatu"
+
+    @property
+    def percent_text(self) -> str:
+        """Estonian decimal comma, with an explicit sign. Empty when absent."""
+        percentage = self.percent_change
+        if percentage is None:
+            return ""
+        sign = "+" if percentage > 0 else ("−" if percentage < 0 else "")
+        return f"{sign}{abs(percentage):.1f}%".replace(".", ",")
+
+
+@dataclass(frozen=True)
+class MatrixCell:
+    value: int
+    url: str = ""
+
+
+@dataclass(frozen=True)
+class MatrixRow:
+    label: str
+    cells: tuple[MatrixCell, ...]
+    total: int
+    is_unknown: bool = False
+
+
+@dataclass(frozen=True)
+class Matrix:
+    """A year-by-person or month-by-person count, as a real table.
+
+    Not a heat map. Colour intensity may decorate a cell but never carries the
+    value, because a reader who cannot distinguish two shades would then have no
+    way to read the number at all — which is why every cell prints its own
+    figure and the totals are computed here rather than in the template
+    (brief 50, 54).
+
+    Columns are ordered alphabetically with the unassigned bucket last. Not by
+    size: an ordering by count is a league table however it is captioned, and
+    these are inventory counts (brief 51).
+    """
+
+    row_header: str
+    columns: tuple[str, ...]
+    rows: tuple[MatrixRow, ...]
+    column_totals: tuple[int, ...]
+    grand_total: int
+    #: Present when the tail of a wide axis was folded into one labelled
+    #: column. Never silent: a matrix that dropped columns without saying so
+    #: would read as the whole picture (brief, "no silent caps").
+    folded_note: str = ""
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.rows or not self.columns
+
+    @property
+    def column_count(self) -> int:
+        return len(self.columns)
+
+
 @dataclass(frozen=True)
 class MetricResult:
     """One computed answer, carrying everything needed to read it honestly."""
@@ -227,6 +346,13 @@ class MetricResult:
     drillthrough_url: str = ""
     segments: tuple[Segment, ...] = field(default_factory=tuple)
     distribution: Distribution | None = None
+    #: A two-dimensional count — year × responsibility, month × responsibility.
+    #: Rendered as a real table; see :class:`Matrix`.
+    matrix: Matrix | None = None
+    #: A period-over-period change, already computed. Never derived in a
+    #: template: a percentage worked out beside a chart is a second definition
+    #: of the number above it (brief 54).
+    comparison: Comparison | None = None
     notes: tuple[str, ...] = field(default_factory=tuple)
 
     # -- reading the answer ------------------------------------------------

@@ -152,6 +152,30 @@ def world(db):
 
 
 @pytest.fixture
+def responsibility_world(world):
+    """The shared world plus register-backed responsibility.
+
+    Opt-in, so the existing suite's hand-derived counts stay true. See
+    ``tests/synthetic_statistics.add_responsibility_world``.
+    """
+    from tests.synthetic_statistics import add_responsibility_world
+
+    return add_responsibility_world(world)
+
+
+@pytest.fixture
+def archive_world(world):
+    """The shared world plus a small opinions archive.
+
+    Opt-in for the same reason, and because the world *without* it is what the
+    empty-archive tests assert against (brief 76).
+    """
+    from tests.synthetic_statistics import add_archive_world
+
+    return add_archive_world(world)
+
+
+@pytest.fixture
 def reporting_context(world):
     """A context builder bound to the fixture's day.
 

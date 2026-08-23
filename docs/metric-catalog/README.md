@@ -144,6 +144,112 @@ owner: department head + reporting owner
 version: 1
 ```
 
+## Statistics 2.0: two new answer shapes and five rules
+
+The catalogue grew fourteen definitions when the workspace was made useful for
+department reporting. Nothing about the architecture changed — one catalogue,
+one `compute(key, context)`, server-rendered charts, authorization before
+aggregation — but two answers do not fit a list of segments and needed shapes of
+their own.
+
+**`Matrix`** is a two-dimensional count: reporting year × responsibility, month
+× responsibility. It renders as a real HTML table with `scope`ed headers, a
+caption and printed totals. It is deliberately not a heat map: a grid whose
+value lives in a background shade has no data table beneath it, because it *is*
+the data table, and a reader who cannot separate two tints has nothing left. Row
+totals, column totals and the grand total are computed in Python, never in a
+template.
+
+**`Comparison`** is one period measured against a comparable earlier one, and it
+carries both window labels and the cutoff they were derived from.
+
+Five rules govern the new definitions.
+
+### 1. Responsibility is a source fact before it is an account
+
+For a Matter carrying a `CurrentRegisterState`, the responsibility label is the
+register's own `VASTUTAJA` text. Only a Matter with no register row falls back
+to `Matter.owner`, and only a Matter with neither becomes *Määramata*.
+
+The order is load-bearing rather than tidy. Colleagues the register names have
+no login here, and grouping by the resolved account would file them under
+*Määramata* — discarding the one thing the register is certain about. Inventing
+an account to hold them would be worse. The precedence lives in one place,
+`app/reporting/selectors/responsibility.py`, and nothing in reporting writes to
+`Matter.owner`.
+
+Because these counts are grouped by the source name and the register filters on
+the resolved owner, they carry **no drill-through**. A link that opened a list
+disagreeing with the number above it is worse than no link.
+
+### 2. A responsibility count is inventory
+
+Not workload, not output, not a ranking. Columns and segments are ordered
+alphabetically with *Määramata* last — never by size, because an ordering by
+count is a league table however it is captioned. When a matrix is wider than a
+table can show, the tail becomes one labelled column that says how many names it
+holds, and every name still appears in full in the responsibility composition
+beside it. No silent caps.
+
+### 3. Archive evidence is not a canonical Submission
+
+`OpinionArchiveItem` says a file with this name sits at this path in the
+archive. `Submission` says Koda sent this document on this date to these
+recipients. The first is a statement about a zip file and the second about the
+department's conduct, so the two are reported beside each other and never added.
+`SUBMISSIONS_SENT` keeps its own metric even while it has little history to
+show.
+
+Archive metrics are dated on `filename_date` and are labelled as *arhiivi
+dokumendid kuupäeva järgi*. The field's own model comment calls it a matching
+signal rather than a sent date, and the register's `VÄLJA` agrees with it on the
+same day in 326 cases and the next day in 227.
+
+### 4. The archive counts distinct binaries, and declines when empty
+
+A trend counts distinct SHA-256 values; occurrence inventory stays a separate
+metric. The measured corpus happens to hold 767 of each, so the two are equal
+today and would stop being equal the moment a later snapshot files a letter
+twice — at which point a trend built on occurrences would report a filing habit
+as advocacy volume. A binary found at two paths is dated by its earliest
+occurrence.
+
+With no catalogued archive at all the metrics report `INSUFFICIENT_DATA`, not
+zero. A year axis reading 0 is a confident claim that Koda sent nothing.
+
+### 5. A period comparison is cut at the same date on both sides
+
+`OPINION_ARCHIVE_YOY_CHANGE` derives its cutoff from the latest archive date
+that exists; `NEW_NATIVE_MATTERS_YOY_CHANGE` uses today. Both then apply that
+same day-of-year to the previous year, so seven months are never measured
+against twelve. When the previous comparable period is zero the card shows the
+absolute difference and **no** percentage: there is no percentage change from
+nothing, and printing one would be read as a measurement.
+
+The wording stays neutral in both directions. More matters arriving is more work
+the department was handed; more archived letters is more letters. Neither is a
+result, and no colour on the card suggests otherwise.
+
+### Archive links, and what a category total means
+
+Archive metrics that name a Matter read the derived and reviewed
+`OpinionArchiveMatterLink` layer, never a `PENDING` `OpinionMatchCandidate` — a
+proposal nobody accepted is not coverage. They are scoped through
+`visible_matters` before they are grouped, so a link to a restricted Matter
+moves nothing; unlinked archive inventory names no Matter and keeps the existing
+rule of being counted for everyone.
+
+One archived letter may concern several Matters and the model has no notion of a
+primary one. `OPINION_ARCHIVE_LINKED_BY_RESPONSIBILITY` therefore counts
+**distinct files per responsibility label**, a file appears under each lawyer it
+reaches, and its segments can add up to more than the corpus total. The
+definition says so rather than leaving a reader to discover it by adding the
+bars up. `OPINION_ARCHIVE_LINK_COVERAGE` counts the same letter once, because it
+asks a different question: how much of the corpus is placed at all.
+
+An unlinked archive file is never called a missing opinion. It is evidence Koda
+holds that has not yet been tied to a Teema.
+
 ## Owner
 
 Metric catalogue owner and the coverage thresholds are an open business decision

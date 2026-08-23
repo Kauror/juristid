@@ -35,23 +35,50 @@ def test_every_definition_has_an_implementation_and_the_reverse() -> None:
 
 
 def test_every_page_only_asks_for_metrics_that_exist() -> None:
-    for page_keys in (
-        services.OVERVIEW_CARDS,
-        services.OVERVIEW_CHARTS,
-        services.MATTERS_CARDS,
-        services.MATTERS_CHARTS,
-        services.MATTERS_TABLES,
-        services.ACTIVITY_CARDS,
-        services.ACTIVITY_CHARTS,
-        services.ACTIVITY_TABLES,
-        services.HISTORICAL_CARDS,
-        services.HISTORICAL_CHARTS,
-        services.HISTORICAL_TABLES,
-        services.QUALITY_CARDS,
-        services.QUALITY_CHARTS,
-    ):
+    """Read from ``services.PAGE_GROUPS`` rather than a list restated here.
+
+    A restated list is a list that stops covering the page the first time a tab
+    gains a section, and it keeps passing while it does.
+    """
+    for name, page_keys in services.PAGE_GROUPS:
         for key in page_keys:
-            assert key in CATALOGUE, key
+            assert key in CATALOGUE, f"{name}: {key}"
+
+
+def test_every_published_metric_appears_on_some_tab() -> None:
+    """A metric nothing renders is a definition nobody reads.
+
+    Three are exempt and each for a stated reason: ``EXTRACTION_ELIGIBLE`` is
+    the definition the assembled extraction composition borrows,
+    ``MATTERS_WITHOUT_HISTORICAL_SOURCE`` and the two remaining ones are reached
+    through the definitions page and the exports rather than through a card.
+    """
+    placed = {key for _name, page_keys in services.PAGE_GROUPS for key in page_keys}
+    exempt = {
+        # Rendered as the five-state composition assembled in the view.
+        "EXTRACTION_ELIGIBLE",
+        "EXTRACTION_SUCCESS",
+        "EXTRACTION_PENDING",
+        "EXTRACTION_AWAITING_SCANNER",
+        "EXTRACTION_FAILED",
+        "EXTRACTION_NOT_APPLICABLE",
+        # Counterparts to cards that are shown; both reachable from the
+        # definitions page, and both computed for the exports.
+        "MATTERS_WITHOUT_HISTORICAL_SOURCE",
+        "MATTERS_WITH_MULTIPLE_SOURCE_PAGES",
+        "MATTERS_WITH_MULTIPLE_SUBMISSIONS",
+        "HISTORICAL_EMAIL_RESOURCES",
+        "MATERIALISATION_FAILED",
+        "READING_ORDER_AMBIGUOUS",
+        "UNLINKED_SUBSTANTIVE_PAGES",
+        "ACTIVE_WITHOUT_OWNER",
+        "ACTIVE_WITHOUT_STAGE",
+        "RESPONSE_DEADLINES_OPEN",
+        "WAIT_REVIEW_DUE",
+        "MONITOR_REVIEW_DUE",
+    }
+    unplaced = set(CATALOGUE) - placed - exempt
+    assert unplaced == set(), f"Defined but rendered nowhere: {sorted(unplaced)}"
 
 
 def test_a_definition_key_matches_its_catalogue_key() -> None:
