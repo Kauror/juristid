@@ -10,9 +10,15 @@
   we hold, some of it filed, some of it readable, and the strip says how much
   of each before anybody searches anything.
 
+  Its four figures are four different dimensions and are kept apart on purpose.
+  "Held" is not "filed onto a Matter", "filed onto a Matter" is not "sent as an
+  opinion", and only the third figure — canonical submissions — is a claim that
+  Koda sent anything at all.
+
   Every row links to the letter, not to a queue decision. This surface answers
   "what did we write about X"; deciding whose letter it is stays in
-  /haldus/arvamuste-ulevaatus/.
+  /haldus/arvamuste-ulevaatus/, and the link to it is offered only to somebody
+  who may actually work that queue.
 {% endcomment %}
 
 {% block content %}
@@ -22,10 +28,65 @@
     <span class="pagehead__context">
       {{ counts.total }} kirja · {{ counts.linked }} teemaga seotud ·
       {{ counts.with_submission }} kanoonilise arvamusena ·
-      {{ counts.with_body }} sisu järgi otsitavat
+      {% if body_search_available %}
+        {{ counts.with_body }} sisu järgi otsitavat
+      {% else %}
+        otsing metaandmete järgi
+      {% endif %}
     </span>
-    <a class="button button--quiet" href="{% url 'legacy_import:opinion_queue' %}">Ava ülevaatus</a>
+    {% if can_use_opinion_queue %}
+      <a class="button button--quiet" href="{% url 'legacy_import:opinion_queue' %}">Ava ülevaatus</a>
+    {% endif %}
   </div>
+
+  {% comment %}
+    One sentence about what this workspace is, and one about what a link here
+    does not mean. Both matter more than they look: the letters are real
+    outgoing correspondence, and a reviewer who thinks tying one to a teema has
+    recorded a sent opinion has been misled by the interface rather than by
+    themselves (docs/adr/0028).
+
+    Said once at the top rather than repeated on every row. The auth mode is
+    named only where it changes what a record means — under the shared gate the
+    name on a link is the selected kasutajavaade, not a verified person.
+  {% endcomment %}
+  <p class="cardnote">
+    Arenduse arhiivitööruum. Seos ütleb, et kiri puudutab teemat — see ei ole
+    arvamus ega väide, et Koda selle välja saatis.
+    {% if shared_gate_mode %}
+      Jagatud parooli režiimis jääb seose juurde valitud kasutajavaade, mitte tuvastatud isik.
+    {% endif %}
+  </p>
+
+  {% comment %}
+    The review workload is the unlinked remainder, so it gets a shortcut rather
+    than being assembled out of the filter row every time. These are the same
+    `seotud` values the form below posts — one filter, two ways to reach it —
+    and each keeps whatever search and year are already applied while dropping
+    the page number, because page 7 of the old result set is not page 7 of the
+    new one.
+
+    The path is written out in front of `querystring` rather than relying on the
+    tag alone. `{% querystring %}` returns the empty string once every parameter
+    has been dropped, and `href=""` means *this document, query string
+    included* — so "Kõik" clicked from "Sidumata" would have kept `seotud=ei`
+    and appeared to do nothing.
+  {% endcomment %}
+  {% url 'legacy_import:opinion_archive_browse' as archive_path %}
+  <nav class="segmented" aria-label="Seotuse järgi">
+    <a class="segmented__option {% if not filters.linked %}is-active{% endif %}"
+       {% if not filters.linked %}aria-current="true"{% endif %}
+       href="{{ archive_path }}{% querystring seotud=None leht=None %}">Kõik
+      <span class="segmented__count">{{ counts.total }}</span></a>
+    <a class="segmented__option {% if filters.linked == 'ei' %}is-active{% endif %}"
+       {% if filters.linked == 'ei' %}aria-current="true"{% endif %}
+       href="{{ archive_path }}{% querystring seotud='ei' leht=None %}">Sidumata
+      <span class="segmented__count">{{ unlinked_count }}</span></a>
+    <a class="segmented__option {% if filters.linked == 'jah' %}is-active{% endif %}"
+       {% if filters.linked == 'jah' %}aria-current="true"{% endif %}
+       href="{{ archive_path }}{% querystring seotud='jah' leht=None %}">Seotud
+      <span class="segmented__count">{{ counts.linked }}</span></a>
+  </nav>
 
   <div class="card card--tight">
     <form class="form" method="get" role="search">
@@ -37,13 +98,24 @@
             different question over a different corpus. Two boxes both called
             "Otsi" on one page is a box nobody can name.
 
+            The placeholder promises only what this deployment can deliver.
+            Every held text is currently BLOCKED, so offering "sisu" would
+            invite somebody to search a phrase, find nothing, and conclude the
+            Chamber never wrote it (brief 35, 37).
+
             `maxlength` mirrors the bound the service enforces, so the ordinary
             path cannot submit a query the service will refuse. The service
             still checks: this is a keyboard, not a boundary.
           {% endcomment %}
           <input class="field__input" type="search" name="q" id="archive-search"
                  value="{{ filters.query }}" maxlength="500"
-                 placeholder="Pealkiri, saaja, viide, SHA-256 või sisu">
+                 placeholder="{% if body_search_available %}Pealkiri, saaja, viide, SHA-256 või sisu{% else %}Pealkiri, saaja, viide või SHA-256{% endif %}">
+          {% if not body_search_available %}
+            <span class="field__help">
+              Otsing käib praegu metaandmete järgi. Kirjade sisu ei ole loetud, seega
+              tekstiotsing kirja sees ei anna tulemusi.
+            </span>
+          {% endif %}
         </label>
         <label class="field">
           <span class="field__label">Aasta</span>
@@ -71,14 +143,22 @@
             <option value="ei" {% if filters.linked == "ei" %}selected{% endif %}>Ei</option>
           </select>
         </label>
-        <label class="field">
-          <span class="field__label">Sisu olemas</span>
-          <select class="field__input" name="sisu">
-            <option value="">Kõik</option>
-            <option value="jah" {% if filters.body == "jah" %}selected{% endif %}>Jah</option>
-            <option value="ei" {% if filters.body == "ei" %}selected{% endif %}>Ei</option>
-          </select>
-        </label>
+        {% if body_search_available %}
+          {% comment %}
+            Offered only when there is something to filter on. With no extracted
+            text anywhere, "Sisu olemas: jah" is a control whose only possible
+            answer is an empty list — which reads as "we hold nothing about
+            that" rather than as "nothing has been read yet".
+          {% endcomment %}
+          <label class="field">
+            <span class="field__label">Sisu olemas</span>
+            <select class="field__input" name="sisu">
+              <option value="">Kõik</option>
+              <option value="jah" {% if filters.body == "jah" %}selected{% endif %}>Jah</option>
+              <option value="ei" {% if filters.body == "ei" %}selected{% endif %}>Ei</option>
+            </select>
+          </label>
+        {% endif %}
       </div>
       <div class="form__actions">
         <button type="submit" class="button button--primary">Otsi arhiivist</button>

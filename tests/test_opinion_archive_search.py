@@ -307,17 +307,35 @@ def test_an_anonymous_visitor_sees_nothing(held):
     assert archive_counts(None)["total"] == 0
 
 
-def test_the_shared_gate_is_not_identity_enough_for_the_archive(held, administrator, settings):
-    """Stricter than the reconciliation queue, and deliberately so.
+def test_the_shared_gate_opens_the_archive_to_high_authority_personas(
+    held, administrator, department_head, settings
+):
+    """The development-phase widening, pinned where the old refusal was.
 
-    The queue shows filenames and dates. This surface serves the letters, and
-    an audit row naming a persona behind one shared department password is not
-    a record of who read real correspondence.
+    This surface used to refuse the shared gate outright, on the grounds that an
+    audit row naming a persona behind one shared password is not a record of who
+    read real correspondence. That is still true — and the price was 767 held
+    letters nobody could read, for however long Cloudflare Access takes.
+
+    So the corpus is served and the record stays honest instead: every download
+    carries `authenticated_via` beside the persona, and the widening reaches
+    only the two roles trusted with the whole register (docs/adr/0028).
     """
     from app.accounts.enums import AuthMode
 
     settings.AUTH_MODE = AuthMode.SHARED_GATE
-    assert search_archive(user=administrator, filters=ArchiveFilters()).count() == 0
+    assert search_archive(user=administrator, filters=ArchiveFilters()).count() == 2
+    assert search_archive(user=department_head, filters=ArchiveFilters()).count() == 2
+
+
+def test_the_shared_gate_does_not_open_the_archive_to_everybody_behind_it(
+    held, specialist, settings
+):
+    """Knowing the shared password is not on its own an archive credential."""
+    from app.accounts.enums import AuthMode
+
+    settings.AUTH_MODE = AuthMode.SHARED_GATE
+    assert search_archive(user=specialist, filters=ArchiveFilters()).count() == 0
 
 
 def test_an_inactive_administrator_is_refused(held, administrator):

@@ -23,14 +23,13 @@ from typing import Any
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
 from django.db.models import Count
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from app.accounts.enums import UserRole
+from app.legacy_import.opinion_access import require_opinion_queue_operator
 from app.legacy_import.opinion_archive import OpinionMatchCandidate
 from app.legacy_import.opinion_enums import (
     IRREVERSIBLE_CANDIDATE_STATES,
@@ -46,10 +45,14 @@ def _require_administrator(request: HttpRequest) -> None:
     business content; what it opens is this queue, whose rows deliberately show
     filenames, dates and references rather than document text (AGENTS.md,
     brief 62, 71).
+
+    Delegated to `may_use_opinion_queue` rather than compared here, so that the
+    browse page deciding whether to *offer* this queue and this view deciding
+    whether to *serve* it read the same rule. P3.3 widened who may read the
+    archive without widening this, and two copies of "who works the queue" that
+    agree today are two copies that can stop agreeing (docs/adr/0028).
     """
-    role = getattr(request.user, "role", "")
-    if role != UserRole.ADMINISTRATOR:
-        raise PermissionDenied("Arvamuste ülevaatus on halduri töövahend.")
+    require_opinion_queue_operator(request.user)
 
 
 @login_required

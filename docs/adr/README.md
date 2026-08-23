@@ -36,6 +36,7 @@ consequences and reversibility.
 | [0025](0025-multiple-matter-senders.md) | A Matter has zero, one or several senders; the addressee stays singular | Accepted |
 | [0026](0026-source-data-enrichment.md) | Source facts are never rewritten; interpretation is added on top of them | Accepted, on a feature branch |
 | [0027](0027-matter-engagement.md) | `Kaasamine` is a pointer to outreach, not an engagement system | Accepted |
+| [0028](0028-development-archive-workspace-access.md) | The archive is readable behind the shared gate; the register is not | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -57,3 +58,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0025 — multiple Matter senders, and the addressee that stays singular
 - 0026 — Wave 2 source-data enrichment: JÄRGMISEKS, OneNote filing structure and historical activity
 - 0027 — Wave 2 Kaasamine: how members and stakeholders were asked
+- 0028 — the development archive workspace: who may read the corpus behind the shared gate, and why that is not the register
