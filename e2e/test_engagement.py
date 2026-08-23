@@ -68,9 +68,13 @@ def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     expect(section.get_by_text("www.koda.ee")).to_be_visible()
 
     # And correcting it edits the same record rather than adding a second.
+    # Scoped to the row itself: `has=` on a section-rooted locator matched the
+    # add form as readily as the edit one, which is how this first picked an
+    # empty field and reported the wrong value.
     before = section.locator(".factrow").count()
-    section.get_by_text("Muuda").first.click()
-    row_form = section.locator("form").filter(has=section.locator('input[name="title"]')).first
+    row = section.locator(".factrow").first
+    row.get_by_text("Muuda").click()
+    row_form = row.locator("form")
     title = row_form.locator('input[name="title"]')
     expect(title).to_have_value("Liikmete kaasamiskutse")
     title.fill("Liikmete kaasamiskutse — parandatud")
