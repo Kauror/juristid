@@ -20,14 +20,17 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from app.core.management.commands.seed_e2e_data import OPEN_TITLE, RESTRICTED_TITLE
+from app.core.management.commands.seed_e2e_data import (
+    MACHINE_CANDIDATE,
+    OPEN_TITLE,
+    RESTRICTED_TITLE,
+)
 from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, go_to, sign_in
 
 pytestmark = pytest.mark.e2e
 
 #: Added by the tests below rather than by the seed, so each one owns the record
 #: it changes and the file's tests do not depend on each other's order.
-HEAD_CANDIDATE = "Osakonnajuhi kinnitatav kandidaat"
 CORRECTED = "Parandatud sõnastusega tähtaeg"
 
 
@@ -184,17 +187,25 @@ def test_a_general_order_form_hides_the_date_control(page, base_url):
 # -- work victories ---------------------------------------------------------
 
 
-def test_a_new_record_is_saved_as_a_candidate(page, base_url, screenshots):
+def test_a_person_adding_a_victory_gets_a_confirmed_one(page, base_url, screenshots):
+    """One click, and the row is what the person said it was.
+
+    Not a candidate awaiting somebody's agreement: a colleague who may write on
+    this Matter has already made that judgement, and the second step asked them
+    to seek approval for a decision they had just taken.
+    """
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
 
-    section(page, "Töövõidud").get_by_role("link", name="+ Lisa töövõidu kandidaat").click()
+    section(page, "Töövõidud").get_by_role("link", name="+ Lisa töövõit").click()
     page.wait_for_load_state("networkidle")
+    expect(page.get_by_role("heading", name="Lisa töövõit")).to_be_visible()
+
     page.get_by_label("Töövõit", exact=True).fill("Erisus jäi eelnõusse sisse")
     # `exact=True`, because "Poolaasta täpsusega" contains "Aasta täpsusega".
     page.get_by_label("Aasta täpsusega", exact=True).check()
     page.get_by_label("Aasta", exact=True).fill("2030")
-    page.get_by_role("button", name="Salvesta kandidaadina").click()
+    page.get_by_role("button", name="Salvesta töövõit").click()
     page.wait_for_load_state("networkidle")
 
     row = (
@@ -202,43 +213,44 @@ def test_a_new_record_is_saved_as_a_candidate(page, base_url, screenshots):
         .get_by_role("listitem")
         .filter(has_text="Erisus jäi eelnõusse sisse")
     )
-    expect(row.get_by_text("Töövõidu kandidaat")).to_be_visible()
+    expect(row.get_by_text("Kinnitatud töövõit")).to_be_visible()
     expect(row.get_by_text("2030")).to_be_visible()
-    screenshots(page, "teema-toovoidu-kandidaat")
+    # And no second click was available to make, because there is nothing left
+    # to decide about this row.
+    expect(row.get_by_role("link", name="Kinnita töövõiduks")).to_have_count(0)
+    screenshots(page, "teema-toovoit")
 
 
 def test_a_specialist_has_no_confirmation_control(page, base_url):
+    """Adding is theirs. Adjudicating a proposal somebody else made is not."""
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
 
     expect(page.get_by_role("link", name="Kinnita töövõiduks")).to_have_count(0)
 
 
-def test_the_department_head_confirms_a_candidate(page, base_url, screenshots):
-    """Its own candidate, so this test owns the record it changes."""
+def test_the_department_head_confirms_a_proposed_candidate(page, base_url, screenshots):
+    """The review path, on the kind of row that still arrives as a candidate.
+
+    Seeded rather than created here: the manual form no longer produces a
+    candidate, so the only honest source of one is a machine or an import.
+    """
     sign_in(page, base_url, HEAD)
     open_the_matter(page, base_url, OPEN_TITLE)
 
-    section(page, "Töövõidud").get_by_role("link", name="+ Lisa töövõidu kandidaat").click()
-    page.wait_for_load_state("networkidle")
-    page.get_by_label("Töövõit", exact=True).fill(HEAD_CANDIDATE)
-    # An explicit answer either way. The form will not save a period nobody
-    # stated, and it will not quietly record one as unknown either
-    # (Stage-2G brief 21, 22).
-    page.get_by_label("Teadmata periood").check()
-    page.get_by_role("button", name="Salvesta kandidaadina").click()
-    page.wait_for_load_state("networkidle")
-
-    row = section(page, "Töövõidud").get_by_role("listitem").filter(has_text=HEAD_CANDIDATE)
+    row = section(page, "Töövõidud").get_by_role("listitem").filter(has_text=MACHINE_CANDIDATE)
+    expect(row.get_by_text("Töövõidu kandidaat")).to_be_visible()
     row.get_by_role("link", name="Kinnita töövõiduks").click()
     page.wait_for_load_state("networkidle")
 
     expect(page.get_by_role("heading", name="Kinnita töövõiduks")).to_be_visible()
-    expect(page.get_by_text(HEAD_CANDIDATE)).to_be_visible()
+    expect(page.get_by_text(MACHINE_CANDIDATE)).to_be_visible()
     page.get_by_role("button", name="Kinnita töövõiduks").click()
     page.wait_for_load_state("networkidle")
 
-    confirmed = section(page, "Töövõidud").get_by_role("listitem").filter(has_text=HEAD_CANDIDATE)
+    confirmed = (
+        section(page, "Töövõidud").get_by_role("listitem").filter(has_text=MACHINE_CANDIDATE)
+    )
     expect(confirmed.get_by_text("Kinnitatud töövõit")).to_be_visible()
     screenshots(page, "teema-kinnitatud-toovoit")
 
@@ -369,7 +381,7 @@ def test_an_administrator_has_no_write_controls(page, base_url):
     open_the_matter(page, base_url, OPEN_TITLE)
 
     expect(page.get_by_role("link", name="+ Lisa oluline tähtaeg")).to_have_count(0)
-    expect(page.get_by_role("link", name="+ Lisa töövõidu kandidaat")).to_have_count(0)
+    expect(page.get_by_role("link", name="+ Lisa töövõit")).to_have_count(0)
 
 
 def test_the_department_head_sees_restricted_facts_by_role(page, base_url):

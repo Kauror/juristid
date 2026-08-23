@@ -155,16 +155,42 @@ def test_the_long_tail_of_senders_is_searchable(page, base_url):
 
 
 def test_several_policy_areas_can_be_ticked(page, base_url):
+    """Visible checkboxes, more than one of them tickable at a time.
+
+    Unconditional: the same assertions guarded by `if areas.count() >= 2` were
+    silently skipped for as long as the seeded world had a single area, which
+    is the shape of test that reports green about a control nobody exercised.
+    """
     sign_in(page, base_url, MARTIN)
     open_create(page, base_url)
 
     areas = page.locator("input[name='policy_areas']")
     expect(areas.first).to_have_attribute("type", "checkbox")
-    if areas.count() >= 2:
-        areas.nth(0).check()
-        areas.nth(1).check()
-        expect(areas.nth(0)).to_be_checked()
-        expect(areas.nth(1)).to_be_checked()
+    assert areas.count() >= 2, "the seeded world needs two areas for this to mean anything"
+
+    areas.nth(0).check()
+    areas.nth(1).check()
+    expect(areas.nth(0)).to_be_checked()
+    expect(areas.nth(1)).to_be_checked()
+
+
+def test_two_ticked_areas_both_survive_the_save(page, base_url):
+    """The whole round trip: two boxes in, two areas on the Matter."""
+    sign_in(page, base_url, MARTIN)
+    open_create(page, base_url)
+
+    chosen = [
+        page.locator(".checkitems .checkitem").nth(index).inner_text().strip() for index in (0, 1)
+    ]
+    page.locator("#id_title").fill("Kahe valdkonnaga teema")
+    page.locator("input[name='policy_areas']").nth(0).check()
+    page.locator("input[name='policy_areas']").nth(1).check()
+    page.get_by_role("button", name="Loo teema").click()
+
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    tags = page.locator(".tag").all_inner_texts()
+    for name in chosen:
+        assert name in [tag.strip() for tag in tags], f"{name} missing from {tags}"
 
 
 def test_muu_reveals_its_own_text_field(page, base_url):

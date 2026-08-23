@@ -123,8 +123,8 @@ def test_a_hidden_matter_does_not_appear_in_attention(world, other_specialist) -
 
 
 def test_a_hidden_matter_does_not_appear_in_upcoming(world, other_specialist) -> None:
-    titles = [row.matter.title for row in dashboard.upcoming_rows(other_specialist)]
-    assert RESTRICTED_TITLE not in titles
+    result = dashboard.upcoming_rows(other_specialist)
+    assert RESTRICTED_TITLE not in [row.matter.title for row in result.rows]
 
 
 def test_a_hidden_matter_does_not_appear_in_recent_incoming(world, other_specialist) -> None:
@@ -203,7 +203,7 @@ def test_an_unassigned_matter_is_reported(db, specialist) -> None:
 
 def test_upcoming_says_what_each_date_means(world, specialist) -> None:
     """Four kinds of date share one column and must not read alike."""
-    meanings = {row.meaning for row in dashboard.upcoming_rows(specialist)}
+    meanings = {row.meaning for row in dashboard.upcoming_rows(specialist).rows}
     assert dashboard.MEANING_RESPONSE in meanings
     assert meanings <= {
         dashboard.MEANING_RESPONSE,

@@ -45,7 +45,7 @@ from app.legacy_import.register_display import (
 )
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters import selectors
-from app.matters.dashboard import build_dashboard
+from app.matters.dashboard import DEADLINE_WINDOW_PARAM, build_dashboard, deadline_window
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.forms import (
@@ -128,11 +128,16 @@ def overview(request: HttpRequest) -> HttpResponse:
     RESTRICTED appears merely because a shared password was typed
     (Stage-2D auth brief 6, app/core/authorization.py).
     """
+    # The deadline period comes from the URL and nowhere else, so the back
+    # button, a refresh and a pasted link all show the same table. An
+    # unrecognised value falls back to the default rather than 500ing or
+    # rendering a convincing empty list (`deadline_window`).
+    window = deadline_window(request.GET.get(DEADLINE_WINDOW_PARAM))
     return render(
         request,
         "matters/overview_dashboard.html",
         {
-            "dashboard": build_dashboard(viewer_for(request)),
+            "dashboard": build_dashboard(viewer_for(request), window=window),
             "today": timezone.localdate(),
             "nav_active": "ulevaade",
         },
@@ -426,7 +431,10 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         return "Määramata"
     if name == "vastutaja":
         person = _named_by_pk(User, value)
-        return person.display_name if person else value
+        # The short name, matching the control the filter was chosen from: a
+        # chip that reads "Vastutaja: Sandra Näidis" beside a select offering
+        # "Sandra" looks like two different filters.
+        return person.get_short_name() if person else value
     if name == "hetkeseis":
         stage = StageVocabulary.objects.filter(key=value).first()
         return stage.label_et if stage else value

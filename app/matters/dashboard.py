@@ -43,11 +43,14 @@ from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 
-#: The summary cards look this far ahead.
+#: The summary cards look this far ahead. Fixed: the card is a KPI, not a view
+#: of the table below it, and making the whole page depend on one query
+#: parameter would be a lot of machinery for a number nobody filters.
 DEADLINE_HORIZON_DAYS = 7
 
-#: The upcoming table looks further, because a fortnight is the planning unit a
-#: department review actually uses.
+#: The deadline table's default. A fortnight is the planning unit a department
+#: review actually uses, and it is what the table looked at before the period
+#: selector existed — so the page opens on the same rows it always did.
 UPCOMING_HORIZON_DAYS = 14
 
 #: Caps. A dashboard that renders four hundred rows is a dashboard nobody reads,
@@ -55,6 +58,87 @@ UPCOMING_HORIZON_DAYS = 14
 ATTENTION_LIMIT = 40
 UPCOMING_LIMIT = 40
 RECENT_INCOMING_LIMIT = 10
+
+
+#: The query parameter the deadline period lives in. In the URL rather than in
+#: the session, so a refresh, the back button and a link pasted into a chat all
+#: show the same page — a period held in a cookie is a page that cannot be
+#: shared and cannot be reproduced from a bug report.
+DEADLINE_WINDOW_PARAM = "tahtajad"
+
+
+@dataclass(frozen=True)
+class DeadlineWindow:
+    """How far ahead the deadline table looks.
+
+    Every window starts at *today* and none of them reach backwards. A date
+    that has already passed is not "upcoming", and a WAIT or MONITOR review
+    date that has arrived is not late — both are already answered, in their own
+    words, by :func:`overdue_actions` and :func:`reviews_due` above.
+    """
+
+    key: str
+    label: str
+    days: int | None
+    #: True when the window begins *after* ``days`` instead of ending at it.
+    beyond: bool = False
+
+    def bounds(self, today: date) -> tuple[date, date | None]:
+        """``(earliest, latest)``. ``latest`` of ``None`` means no upper bound."""
+        if self.days is None:
+            return today, None
+        if self.beyond:
+            # "later than thirty days" — the day after the thirty-day window's
+            # last day, so the two never overlap and never leave a date in
+            # neither.
+            return today + timedelta(days=self.days + 1), None
+        return today, today + timedelta(days=self.days)
+
+
+DEADLINE_WINDOWS: tuple[DeadlineWindow, ...] = (
+    DeadlineWindow(key="7", label="7 päeva", days=7),
+    DeadlineWindow(key="14", label="14 päeva", days=UPCOMING_HORIZON_DAYS),
+    DeadlineWindow(key="30", label="30 päeva", days=30),
+    DeadlineWindow(key="30plus", label="30+ päeva", days=30, beyond=True),
+    DeadlineWindow(key="koik", label="Kõik", days=None),
+)
+
+DEFAULT_DEADLINE_WINDOW = DEADLINE_WINDOWS[1]
+
+
+def deadline_window(key: str | None) -> DeadlineWindow:
+    """The window a query parameter asks for, or the default.
+
+    Anything unrecognised falls back rather than raising or emptying the table:
+    a mistyped URL should show the page, not a stack trace and not a convincing
+    empty list somebody reads as "no deadlines".
+    """
+    for window in DEADLINE_WINDOWS:
+        if window.key == key:
+            return window
+    return DEFAULT_DEADLINE_WINDOW
+
+
+@dataclass(frozen=True)
+class WindowOption:
+    """One choice in the period control, with the link that selects it."""
+
+    key: str
+    label: str
+    query: str
+    active: bool
+
+
+def window_options(selected: DeadlineWindow) -> list[WindowOption]:
+    return [
+        WindowOption(
+            key=window.key,
+            label=window.label,
+            query=f"{DEADLINE_WINDOW_PARAM}={window.key}",
+            active=window.key == selected.key,
+        )
+        for window in DEADLINE_WINDOWS
+    ]
 
 
 def _teemad(**params: Any) -> str:
@@ -220,8 +304,18 @@ def _stage_label(matter: Matter) -> str:
 
 
 def _owner_name(matter: Matter) -> str:
+    """The colleague's short name, because these tables are read at a glance.
+
+    ``get_short_name`` rather than a first-token split written here: the User
+    model already owns what a person is called informally, and a second copy of
+    that rule is a second place for it to drift.
+
+    Only for a resolved account. The register's own ``VASTUTAJA`` text is a
+    different thing and is never shortened — see :func:`source_responsibility`,
+    which names a colleague who has no account here at all.
+    """
     owner = matter.owner
-    return owner.display_name if owner is not None else "Vastutajata"
+    return owner.get_short_name() if owner is not None else "Vastutajata"
 
 
 def attention_rows(user: Any, today: date | None = None) -> list[AttentionRow]:
@@ -345,17 +439,61 @@ _SEMANTICS_MEANING = {
 }
 
 
-def upcoming_rows(user: Any, today: date | None = None) -> list[UpcomingRow]:
-    today = today or timezone.localdate()
-    horizon = today + timedelta(days=UPCOMING_HORIZON_DAYS)
-    rows: list[UpcomingRow] = []
+@dataclass(frozen=True)
+class UpcomingResult:
+    """The rows a period holds, and how many there really are.
 
-    response_due = (
+    Two numbers rather than one, because they legitimately differ: the table
+    renders at most :data:`UPCOMING_LIMIT` rows and the heading states the full
+    count. Deriving the heading from the rendered list instead would make the
+    number quietly stop at forty and read as the truth.
+    """
+
+    rows: list[UpcomingRow]
+    total: int
+    window: DeadlineWindow
+
+
+def _upcoming_sources(user: Any, today: date, window: DeadlineWindow) -> tuple[Any, Any]:
+    """The two things this table calls a deadline, filtered by the same window.
+
+    A Matter's own ``response_deadline`` and an open ``NextAction``'s target
+    date are different facts with different meanings, and both belong here — so
+    a period that applied to one of them would silently hide half of what the
+    department is looking for.
+    """
+    earliest, latest = window.bounds(today)
+
+    matters = (
         active_matters(user)
-        .filter(response_deadline__gte=today, response_deadline__lte=horizon)
+        .filter(response_deadline__gte=earliest)
         .select_related("owner", "stage")
     )
-    for matter in response_due.order_by("response_deadline")[:UPCOMING_LIMIT]:
+    actions = (
+        NextAction.objects.visible_to(user)
+        .filter(
+            status=ActionStatus.OPEN,
+            target_date__gte=earliest,
+            matter__is_open=True,
+            matter__record_mode=RecordMode.FULL,
+        )
+        .select_related("matter", "matter__owner", "matter__stage")
+    )
+    if latest is not None:
+        matters = matters.filter(response_deadline__lte=latest)
+        actions = actions.filter(target_date__lte=latest)
+    return matters, actions
+
+
+def upcoming_rows(
+    user: Any, today: date | None = None, window: DeadlineWindow | None = None
+) -> UpcomingResult:
+    today = today or timezone.localdate()
+    window = window or DEFAULT_DEADLINE_WINDOW
+    matters, actions = _upcoming_sources(user, today, window)
+    rows: list[UpcomingRow] = []
+
+    for matter in matters.order_by("response_deadline")[:UPCOMING_LIMIT]:
         if matter.response_deadline is None:  # pragma: no cover - excluded by the filter
             continue
         rows.append(
@@ -369,17 +507,6 @@ def upcoming_rows(user: Any, today: date | None = None) -> list[UpcomingRow]:
             )
         )
 
-    actions = (
-        NextAction.objects.visible_to(user)
-        .filter(
-            status=ActionStatus.OPEN,
-            target_date__gte=today,
-            target_date__lte=horizon,
-            matter__is_open=True,
-            matter__record_mode=RecordMode.FULL,
-        )
-        .select_related("matter", "matter__owner", "matter__stage")
-    )
     for action in actions.order_by("target_date")[:UPCOMING_LIMIT]:
         if action.target_date is None:  # pragma: no cover - excluded by the filter
             continue
@@ -389,12 +516,23 @@ def upcoming_rows(user: Any, today: date | None = None) -> list[UpcomingRow]:
                 matter=action.matter,
                 owner_name=_owner_name(action.matter),
                 stage_label=_stage_label(action.matter),
+                # The semantic label travels with the row. A review date and a
+                # response deadline are not the same obligation, and one column
+                # called "tähtaeg" is exactly the conflation this product
+                # exists to undo.
                 meaning=_SEMANTICS_MEANING.get(action.date_semantics, MEANING_ACTION),
                 url=reverse("matters:matter_detail", kwargs={"pk": action.matter_id}),
             )
         )
 
-    return sorted(rows, key=lambda row: (row.when, row.matter.title))[:UPCOMING_LIMIT]
+    # Counted on the querysets, not on the capped list above. Both have been
+    # through the visibility predicate, and `apply` ends in `.distinct()`, so a
+    # plain `.count()` is the scoped total (app/core/authorization.py).
+    return UpcomingResult(
+        rows=sorted(rows, key=lambda row: (row.when, row.matter.title))[:UPCOMING_LIMIT],
+        total=matters.count() + actions.count(),
+        window=window,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -591,11 +729,16 @@ def recent_incoming(user: Any) -> QuerySet[Matter]:
 # ---------------------------------------------------------------------------
 
 
+def _empty_upcoming() -> UpcomingResult:
+    return UpcomingResult(rows=[], total=0, window=DEFAULT_DEADLINE_WINDOW)
+
+
 @dataclass
 class Dashboard:
     cards: list[SummaryCard] = field(default_factory=list)
     attention: list[AttentionRow] = field(default_factory=list)
-    upcoming: list[UpcomingRow] = field(default_factory=list)
+    upcoming: UpcomingResult = field(default_factory=_empty_upcoming)
+    windows: list[WindowOption] = field(default_factory=list)
     responsibility: list[CountRow] = field(default_factory=list)
     drafting_responsibility: list[CountRow] = field(default_factory=list)
     stages: list[CountRow] = field(default_factory=list)
@@ -606,7 +749,9 @@ class Dashboard:
         return len(self.attention)
 
 
-def build_dashboard(user: Any, today: date | None = None) -> Dashboard:
+def build_dashboard(
+    user: Any, today: date | None = None, window: DeadlineWindow | None = None
+) -> Dashboard:
     """Assemble the page.
 
     The responsibility rail reads :func:`source_responsibility`, not
@@ -617,12 +762,19 @@ def build_dashboard(user: Any, today: date | None = None) -> Dashboard:
     register is certain about (docs/adr/0021). The resolved inventory remains
     available and tested; the register's own filters are where it drills
     through, so it is not duplicated here beside numbers it would disagree with.
+
+    ``window`` reaches only the deadline table. The summary cards keep their own
+    fixed seven-day horizon: they are the page's headline figures rather than a
+    view of the list below them, and a card that moved with a filter would stop
+    meaning the same thing from one visit to the next.
     """
     today = today or timezone.localdate()
+    window = window or DEFAULT_DEADLINE_WINDOW
     return Dashboard(
         cards=summary_cards(user, today),
         attention=attention_rows(user, today),
-        upcoming=upcoming_rows(user, today),
+        upcoming=upcoming_rows(user, today, window),
+        windows=window_options(window),
         responsibility=source_responsibility(user),
         drafting_responsibility=drafting_by_responsibility(user),
         stages=stage_distribution(user),

@@ -31,15 +31,22 @@ from app.workflow.models import StageVocabulary
 
 
 class UserChoiceField(forms.ModelChoiceField):
-    """Show a colleague's name, not "Name (upn@example)".
+    """Show what a colleague is called, not "Name (upn@example)".
 
     ``User.__str__`` includes the UPN because that is what makes a user
-    unambiguous in the admin and in logs. In a dropdown of half a dozen
-    colleagues it is noise.
+    unambiguous in the admin and in logs. In a list of half a dozen colleagues
+    it is noise, and so is the surname: this department addresses each other by
+    first name, and a row of chips reading *Ireen · Ann · Marko · Sandra* is
+    read at a glance where full names are read one at a time.
+
+    ``get_short_name`` rather than a split written here, because the User model
+    already owns what a person is called informally and two copies of that rule
+    are two places for it to drift. Falls back to the UPN for an account with
+    no display name at all, exactly as before.
     """
 
     def label_from_instance(self, obj: Any) -> str:
-        return obj.display_name or obj.upn
+        return obj.get_short_name() or obj.upn
 
 
 def set_choices(form: forms.Form, name: str, queryset: QuerySet) -> None:
