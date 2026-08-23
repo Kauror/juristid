@@ -15,6 +15,8 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
+from app.audit.enums import ChangeEventType
+from app.audit.models import ChangeEvent
 from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictoryStatus
 from app.intelligence.services import (
     add_effective_date,
@@ -343,16 +345,92 @@ def test_a_reader_sees_the_facts_and_none_of_the_controls(client, specialist):
     body = _text(client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
     assert "Nähtav tähtaeg" in body
     assert "+ Lisa oluline tähtaeg" not in body
-    assert "+ Lisa töövõidu kandidaat" not in body
+    assert "+ Lisa töövõit" not in body
 
 
 def test_a_specialist_sees_no_confirmation_control(signed_in, specialist):
+    """Adding is theirs; adjudicating somebody else's candidate is not.
+
+    The two are different acts on purpose. A specialist may state a victory
+    they know about, and still not be the person who decides the fate of a
+    proposal a machine or an import produced.
+    """
     matter = factories.MatterFactory(owner=specialist)
     add_work_victory_candidate(matter=matter, title="Kandidaat", actor=specialist)
 
     body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
-    assert "+ Lisa töövõidu kandidaat" in body
+    assert "+ Lisa töövõit" in body
     assert "Kinnita töövõiduks" not in body
+
+
+def test_adding_a_victory_from_the_matter_page_confirms_it(signed_in, specialist):
+    """One click, one truthful row — no waiting to be approved by somebody.
+
+    The person filling the form has already made the judgement the review step
+    exists to make, and they did it on a Matter they may write to.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    response = signed_in.post(
+        reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk}),
+        {"title": "Ettepanek võeti arvesse", "precision": "YEAR", "year": "2026"},
+    )
+
+    assert response.status_code == 302
+    record = matter.work_victories.get()
+    assert record.status == WorkVictoryStatus.CONFIRMED
+    assert record.created_by == specialist
+    assert record.confirmed_by == specialist
+    assert record.confirmed_at is not None
+
+    events = ChangeEvent.objects.filter(object_id=record.pk)
+    assert [event.event_type for event in events] == [ChangeEventType.WORK_VICTORY_CONFIRMED]
+    assert events.get().payload["origin"] == "MANUAL"
+
+
+def test_the_add_form_never_calls_the_saved_row_a_candidate(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    body = _text(
+        signed_in.get(reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk}))
+    )
+    assert "Lisa töövõit" in body
+    assert "kandidaadina" not in body.casefold()
+
+
+def test_a_reader_still_cannot_add_a_victory(client, specialist):
+    """The gate is the ordinary business-write permission, not a new one."""
+    matter = factories.MatterFactory(owner=specialist)
+    client.force_login(factories.UserFactory(role="READER"))
+
+    response = client.post(
+        reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk}),
+        {"title": "Ei tohiks salvestuda", "precision": "YEAR", "year": "2026"},
+    )
+    assert response.status_code == 403
+    assert matter.work_victories.count() == 0
+
+
+def test_adding_a_victory_grants_no_right_over_somebody_elses_candidate(
+    signed_in, specialist, department_head
+):
+    """The manual door must not quietly widen the review role."""
+    matter = factories.MatterFactory(owner=specialist)
+    signed_in.post(
+        reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk}),
+        {"title": "Minu võit", "precision": "YEAR", "year": "2026"},
+    )
+    candidate = add_work_victory_candidate(
+        matter=matter, title="Masina pakkumine", actor=department_head
+    )
+
+    refused = signed_in.post(
+        reverse(
+            "intelligence:confirm_work_victory",
+            kwargs={"matter_id": matter.pk, "pk": candidate.pk},
+        )
+    )
+    assert refused.status_code == 403
+    candidate.refresh_from_db()
+    assert candidate.status == WorkVictoryStatus.CANDIDATE
 
 
 def test_the_department_head_sees_the_confirmation_control(client, specialist, department_head):

@@ -445,7 +445,10 @@ def build_department_work(user: Any, today: date | None = None) -> DepartmentWor
         # five truthful states Ülevaade already defines, over a wider
         # authorized population — not a second, similar list beside it.
         attention=attention_rows(user, today),
-        upcoming=upcoming_rows(user, today),
+        # `.rows`, and the default fortnight. Ülevaade's period control belongs
+        # to Ülevaade; this page keeps the fixed horizon its heading and its
+        # empty state describe.
+        upcoming=upcoming_rows(user, today).rows,
         unassigned=list(unassigned[:UNASSIGNED_LIMIT]),
         unassigned_total=unassigned.count(),
         incoming=list(recent_incoming(user, today)),

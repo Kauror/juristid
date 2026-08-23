@@ -319,7 +319,13 @@ class EffectiveDateForm(PeriodForm):
 
 
 class WorkVictoryForm(PeriodForm):
-    """A claimed `Töövõit`. Always saved as a candidate; never as confirmed."""
+    """A `Töövõit` as somebody describes it: the words, the period, the source.
+
+    The form carries no status. Which state the row is created in belongs to
+    the service that receives it — confirmed when a person adds one from the
+    Matter page, a candidate when a machine or an import proposes one — and a
+    status field here would let a request choose (app/intelligence/services.py).
+    """
 
     precision_choices = VICTORY_PRECISION_CHOICES
     period_required = False

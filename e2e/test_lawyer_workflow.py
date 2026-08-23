@@ -35,8 +35,8 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # -- Ülevaade is the landing surface ---------------------------------
     expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
-    expect(page.get_by_role("heading", name="Tähelepanu")).to_be_visible()
-    expect(page.get_by_role("heading", name="Lähenevad tähtajad")).to_be_visible()
+    expect(page.get_by_role("heading", name="Tähtajad", exact=True)).to_be_visible()
+    expect(page.get_by_role("heading", name="Vajab tähelepanu")).to_be_visible()
     screenshots(page, "00-ulevaade")
 
     # -- Minu töö is the personal queue ----------------------------------
@@ -55,7 +55,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # Owner, sender and the arrival date are visible choices now, not selects
     # inside the disclosure — that is the Stage-2E.1 redesign, and driving them
     # the old way is what this test is for (docs/adr, brief 15–17).
-    page.get_by_role("radio", name=SANDRA.display_name).check()
+    page.get_by_role("radio", name=SANDRA.short_name, exact=True).check()
     page.get_by_role("radio", name="Näidisministeerium").check()
 
     page.locator("summary", has_text="Täpsusta teema andmeid").click()

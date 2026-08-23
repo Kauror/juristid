@@ -156,6 +156,27 @@ def test_the_breakdown_publishes_no_rate_or_ranking(applied) -> None:
         assert isinstance(row.count, int)
 
 
+def test_a_source_name_is_never_shortened_to_its_first_word(applied) -> None:
+    """Short names are for resolved accounts. This is somebody's provenance.
+
+    The rail counts the register's own VASTUTAJA text, and the register names a
+    colleague who has no account here. Running that string through the
+    short-name rule would file a decade of somebody's work under a first name
+    the source never wrote, which is the opposite of what keeping the raw text
+    is for (docs/adr/0021).
+    """
+    from app.legacy_import.current_state import CurrentRegisterState
+
+    matter = applied.refresh(CURRENT_DRAFTING)
+    state = CurrentRegisterState.objects.get(matter=matter)
+    state.owner_raw = "Former Lawyer Fullname"
+    state.save(update_fields=["owner_raw", "updated_at"])
+
+    breakdown = rows(dashboard.source_responsibility(applied.people.head))
+    assert "Former Lawyer Fullname" in breakdown
+    assert "Former" not in breakdown
+
+
 def test_a_restricted_matter_contributes_to_no_breakdown_it_should_not(applied) -> None:
     from app.core.enums import Visibility
 
@@ -221,6 +242,36 @@ def test_a_structured_action_replaces_the_source_instruction(applied, client) ->
 
     assert "Sünteetiline struktuurne samm." in body
     assert "Järgmiseks (Excelist)" not in body
+
+
+def test_the_page_no_longer_explains_how_the_importer_works(applied, client) -> None:
+    """The provenance label is the whole explanation a reader needs.
+
+    A sentence under every Matter restating that the importer derives neither a
+    deadline nor a kind from this text answered a question nobody had asked. It
+    described an implementation constraint; what stays is the register's own
+    words and the label saying whose words they are.
+    """
+    from django.urls import reverse
+
+    from app.legacy_import.current_state import CurrentRegisterState
+
+    matter = applied.refresh(CURRENT_DRAFTING)
+    state = CurrentRegisterState.objects.get(matter=matter)
+    state.next_action_text = "Sünteetiline registri juhis."
+    state.save(update_fields=["next_action_text", "updated_at"])
+
+    client.force_login(applied.people.head)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+
+    # The half that is useful, kept.
+    assert "Sünteetiline registri juhis." in body
+    assert "Järgmiseks (Excelist)" in body
+
+    # The half that was a lecture, gone.
+    assert "Registri tekst" not in body
+    assert "struktuurne tegevus" not in body
+    assert "tähtaega ega liiki" not in body
 
 
 def test_the_shown_instruction_carries_no_date_or_overdue_state(applied, client) -> None:

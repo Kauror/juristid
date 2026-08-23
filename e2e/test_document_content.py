@@ -158,7 +158,7 @@ def test_a_restricted_document_is_invisible_to_an_unrelated_lawyer(
     # An owner, because a RESTRICTED Matter with nobody on it is invisible to
     # everybody including whoever filed it — restricted access follows
     # participation, not authorship. Stage 2A.5 found this the same way.
-    page.select_option("select[name='owner']", label=SANDRA.display_name)
+    page.select_option("select[name='owner']", label=SANDRA.short_name)
     page.get_by_role("button", name="Salvesta ja ava teema").click()
     expect(page.get_by_role("heading", name="Piiratud katsedokument")).to_be_visible()
 

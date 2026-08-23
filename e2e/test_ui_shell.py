@@ -237,6 +237,121 @@ def test_the_register_drops_columns_in_the_order_the_design_states(page, base_ur
     expect(stage).to_be_hidden()
 
 
+# ---------------------------------------------------------------------------
+# Ülevaade
+# ---------------------------------------------------------------------------
+
+
+def open_overview(page, base_url: str, query: str = "") -> None:
+    page.goto(f"{base_url}/ulevaade/{query}")
+    page.wait_for_load_state("networkidle")
+
+
+def test_the_overview_leads_with_dates_then_arrivals_then_attention(page, base_url):
+    """Priority order, read off the rendered document rather than the template.
+
+    A section can move without its source moving — a grid, an include, an
+    override — so the order is taken from where the headings actually are on
+    the page.
+    """
+    sign_in(page, base_url, SANDRA)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    open_overview(page, base_url)
+
+    order = page.evaluate(
+        "() => Array.from("
+        "  document.querySelectorAll('.dashgrid__main h2[id]')"
+        ").map(node => node.id)"
+    )
+    assert order == ["tahtajad-heading", "saabunud-heading", "tahelepanu-heading"], order
+
+
+def test_the_attention_queue_says_what_it_wants(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    open_overview(page, base_url)
+
+    expect(page.get_by_role("heading", name="Vajab tähelepanu")).to_be_visible()
+
+
+def test_the_deadline_period_is_a_keyboard_reachable_set_of_links(page, base_url):
+    """Links and a GET, not a script.
+
+    A custom dropdown would take the period away from the keyboard, from the
+    back button and from anybody who pastes the URL into a chat.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_overview(page, base_url)
+
+    control = page.get_by_role("navigation", name="Tähtaegade periood")
+    expect(control).to_be_visible()
+    expect(control.get_by_role("link")).to_have_count(5)
+    expect(control.locator("[aria-current='true']")).to_have_text("14 päeva")
+
+    control.get_by_role("link", name="30 päeva").click()
+    page.wait_for_load_state("networkidle")
+
+    assert "tahtajad=30" in page.url
+    expect(
+        page.get_by_role("navigation", name="Tähtaegade periood").locator("[aria-current='true']")
+    ).to_have_text("30 päeva")
+
+
+def test_the_selected_period_survives_the_back_button(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    open_overview(page, base_url, "?tahtajad=koik")
+    open_overview(page, base_url, "?tahtajad=7")
+
+    page.go_back()
+    page.wait_for_load_state("networkidle")
+
+    expect(
+        page.get_by_role("navigation", name="Tähtaegade periood").locator("[aria-current='true']")
+    ).to_have_text("Kõik")
+
+
+def test_a_nonsense_period_shows_the_default_rather_than_an_error(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    open_overview(page, base_url, "?tahtajad=jama")
+
+    expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
+    expect(
+        page.get_by_role("navigation", name="Tähtaegade periood").locator("[aria-current='true']")
+    ).to_have_text("14 päeva")
+
+
+def test_no_work_surface_still_spends_a_column_on_the_reference(page, base_url):
+    """Teemad, Minu töö, Saabunud and Ülevaade, in a real browser."""
+    sign_in(page, base_url, SANDRA)
+    for path in ("/teemad/", "/minu-too/", "/saabunud/", "/ulevaade/"):
+        page.goto(f"{base_url}{path}")
+        page.wait_for_load_state("networkidle")
+        expect(page.get_by_role("columnheader", name="Viide")).to_have_count(0)
+
+
+def test_a_colleague_is_named_by_their_short_name_in_the_register(page, base_url):
+    """Every resolved owner cell, not whichever row happens to sort first."""
+    sign_in(page, base_url, SANDRA)
+    open_register(page, base_url)
+
+    owners = page.locator(".table--register .table__owner .table__clip")
+    assert owners.count(), "no row in the register has a resolved owner"
+
+    full_names = []
+    for index in range(owners.count()):
+        cell = owners.nth(index)
+        shown = cell.inner_text().strip()
+        assert " " not in shown, f"a full name is still in the cell: {shown!r}"
+        full_names.append(cell.get_attribute("title") or "")
+
+    # And the full name has not been thrown away; it is one hover away.
+    assert any(" " in name for name in full_names), full_names
+
+
+# ---------------------------------------------------------------------------
+# The register's narrowing panel
+# ---------------------------------------------------------------------------
+
+
 def test_the_narrowing_panel_gets_the_registers_full_width(page, base_url):
     """Täpsem otsing is a panel, not a column.
 

@@ -80,8 +80,13 @@ unchanged — this moves the control, not the write.
       <dt class="metafield__label">Vastutaja</dt>
       <dd class="metafield__value">
         <details class="inlineedit">
+          {% comment %}
+            Short name on the strip, full name in the tooltip. The facts strip
+            is one line of values and a full name is the widest of them; who a
+            colleague is stays reachable without spending the row on it.
+          {% endcomment %}
           <summary class="inlineedit__trigger">
-            {% if matter.owner %}{{ matter.owner.display_name }}
+            {% if matter.owner %}<span title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
             {% else %}<span class="metafield__missing">Määramata</span>{% endif %}
             <span class="inlineedit__caret" aria-hidden="true">▾</span>
           </summary>
@@ -94,7 +99,7 @@ unchanged — this moves the control, not the write.
               <option value="">Määramata</option>
               {% for person in owners %}
                 <option value="{{ person.pk }}" {% if matter.owner_id == person.pk %}selected{% endif %}>
-                  {{ person.display_name }}
+                  {{ person.get_short_name }}
                 </option>
               {% endfor %}
             </select>

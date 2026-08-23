@@ -20,6 +20,7 @@ from app.intelligence import selectors
 from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.models import MatterWorkVictory
 from app.intelligence.services import (
+    add_confirmed_work_victory,
     add_work_victory_candidate,
     confirm_work_victory,
     reject_work_victory,
@@ -40,7 +41,8 @@ def _year(year: int) -> dict:
 # -- the claim --------------------------------------------------------------
 
 
-def test_a_new_record_is_always_a_candidate(normal_matter, specialist):
+def test_the_proposal_door_always_creates_a_candidate(normal_matter, specialist):
+    """The machine's and the importer's door. Nothing here is decided yet."""
     record = add_work_victory_candidate(
         matter=normal_matter, title="Ettepanek võeti arvesse", actor=specialist, **_year(2026)
     )
@@ -49,6 +51,70 @@ def test_a_new_record_is_always_a_candidate(normal_matter, specialist):
     assert record.is_confirmed is False
     assert record.confirmed_at is None
     assert ChangeEvent.objects.filter(event_type=ChangeEventType.WORK_VICTORY_PROPOSED).exists()
+
+
+def test_a_person_adding_a_victory_creates_a_confirmed_one(normal_matter, specialist):
+    """The manual door. A colleague states a win, and the row says so."""
+    record = add_confirmed_work_victory(
+        matter=normal_matter, title="Ettepanek võeti arvesse", actor=specialist, **_year(2026)
+    )
+
+    assert record.status == WorkVictoryStatus.CONFIRMED
+    assert record.is_confirmed is True
+    assert record.created_by == specialist
+    assert record.confirmed_by == specialist
+    assert record.confirmed_at is not None
+    assert record.status_changed_at is not None
+
+
+def test_the_manual_door_invents_no_candidate_stage(normal_matter, specialist):
+    """The trail says what happened, not what a two-step implementation implies.
+
+    Creating a candidate and immediately confirming it would leave a proposal
+    and an approval in the audit log that nobody ever made.
+    """
+    record = add_confirmed_work_victory(
+        matter=normal_matter, title="Ettepanek võeti arvesse", actor=specialist, **_year(2026)
+    )
+
+    events = ChangeEvent.objects.filter(object_id=record.pk)
+    assert [event.event_type for event in events] == [ChangeEventType.WORK_VICTORY_CONFIRMED]
+
+    payload = events.get().payload
+    assert payload["origin"] == "MANUAL"
+    assert payload["to_status"] == WorkVictoryStatus.CONFIRMED.value
+    assert "from_status" not in payload
+
+
+def test_a_manual_victory_needs_a_description_too(normal_matter, specialist):
+    with pytest.raises(DomainError):
+        add_confirmed_work_victory(matter=normal_matter, title="   ", actor=specialist)
+
+    assert MatterWorkVictory.objects.count() == 0
+
+
+def test_a_manual_victory_will_not_be_confirmed_twice(normal_matter, specialist):
+    """It is already confirmed; there is no second decision to record."""
+    record = add_confirmed_work_victory(
+        matter=normal_matter, title="Juba kinnitatud", actor=specialist, **_year(2026)
+    )
+
+    with pytest.raises(DomainError):
+        confirm_work_victory(record=record, actor=specialist)
+
+
+def test_a_manual_victory_can_still_be_marked_unrealised(
+    normal_matter, specialist, department_head
+):
+    """A win recorded in good faith that did not come off is still correctable."""
+    record = add_confirmed_work_victory(
+        matter=normal_matter, title="Osutus ennatlikuks", actor=specialist, **_year(2026)
+    )
+    reject_work_victory(record=record, actor=department_head, reason="Eelnõu kukkus välja")
+
+    record.refresh_from_db()
+    assert record.status == WorkVictoryStatus.NOT_REALIZED
+    assert record.confirmed_at is None
 
 
 def test_several_victories_may_belong_to_one_matter(normal_matter, specialist):

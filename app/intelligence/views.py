@@ -567,6 +567,17 @@ def cancel_effective_date(request: HttpRequest, matter_id: Any, pk: Any) -> Http
 @login_required
 @require_http_methods(["GET", "POST"])
 def add_work_victory(request: HttpRequest, matter_id: Any) -> HttpResponse:
+    """A colleague writes down a work victory, and it is one.
+
+    The person filling this in has already made the judgement — they opened a
+    Matter they may write to and stated that Koda achieved something. Saving
+    that as a candidate for somebody else to approve asked them to seek
+    agreement with a decision they had just made, and left every manual entry
+    unconfirmed until it arrived.
+
+    ``may_review_work_victory`` still gates the *review* of a machine or
+    imported candidate, which is a judgement about somebody else's proposal.
+    """
     matter = _matter_for(request, matter_id)
     _require_business_write(request)
     action = reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk})
@@ -575,21 +586,21 @@ def add_work_victory(request: HttpRequest, matter_id: Any) -> HttpResponse:
         form = WorkVictoryForm(request.POST)
         if form.is_valid():
             try:
-                services.add_work_victory_candidate(
+                services.add_confirmed_work_victory(
                     matter=matter, actor=request.user, **form.as_service_kwargs()
                 )
             except DomainError as error:
                 form.add_error(None, str(error))
             else:
-                messages.success(request, "Töövõidu kandidaat lisatud.")
+                messages.success(request, "Töövõit lisatud.")
                 return redirect(_matter_anchor(matter, "toovoidud"))
         return _render_form(
             request,
             matter,
             form,
-            heading="Lisa töövõidu kandidaat",
+            heading="Lisa töövõit",
             action=action,
-            submit="Salvesta kandidaadina",
+            submit="Salvesta töövõit",
             status=400,
         )
 
@@ -597,11 +608,11 @@ def add_work_victory(request: HttpRequest, matter_id: Any) -> HttpResponse:
         request,
         matter,
         WorkVictoryForm(),
-        heading="Lisa töövõidu kandidaat",
+        heading="Lisa töövõit",
         action=action,
-        submit="Salvesta kandidaadina",
+        submit="Salvesta töövõit",
         help_text=(
-            "Kirje salvestub kandidaadina. Töövõiduks kinnitab selle osakonnajuht eraldi otsusega."
+            "Kirje salvestub kinnitatud töövõiduna sinu nimel. Eraldi kinnitamist ei ole vaja."
         ),
     )
 
@@ -647,7 +658,7 @@ def edit_work_victory(request: HttpRequest, matter_id: Any, pk: Any) -> HttpResp
         heading="Muuda töövõidu kirjet",
         action=action,
         submit="Salvesta",
-        help_text="Sõnastuse muutmine ei kinnita töövõitu — selleks on eraldi otsus.",
+        help_text="Sõnastuse muutmine ei muuda kirje seisu.",
     )
 
 

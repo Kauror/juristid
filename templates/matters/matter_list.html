@@ -47,7 +47,7 @@ localStorage (Stage-2E.1 brief 12).
                id="teemad-otsing"
                value="{{ query }}"
                autocomplete="off"
-               placeholder="Otsi teemadest — pealkiri, viide (2026_123) või sisu">
+               placeholder="Otsi teemadest — pealkiri või sisu">
       </label>
       {% comment %}
         Every other chosen dimension travels with the query. Without these the
@@ -116,7 +116,7 @@ localStorage (Stage-2E.1 brief 12).
               {% for owner in owners %}
                 <option value="{{ owner.pk }}"
                         {% if filters.vastutaja == owner.pk|stringformat:"s" %}selected{% endif %}>
-                  {{ owner.display_name }}
+                  {{ owner.get_short_name }}
                 </option>
               {% endfor %}
             </select>

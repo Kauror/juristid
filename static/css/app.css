@@ -388,6 +388,24 @@
   letter-spacing: 0;
 }
 
+/* A section heading with a control beside it — Ülevaade's deadline period.
+   The heading keeps its own padding, so the control aligns to the bottom of
+   the label rather than floating above the table it belongs to. `wrap`,
+   because five period links and a heading do not fit a narrow column and a
+   segmented control that overflows is one nobody can reach the end of. */
+.sectionhead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+  padding-right: var(--spacing-3);
+}
+
+.sectionhead .sectionlabel {
+  padding-right: 0;
+}
+
 /* "kuvatud 50" beside a larger total. Quieter than the count itself, because
    it qualifies the number rather than competing with it. */
 .sectionlabel__note {
@@ -1110,10 +1128,6 @@ p.formnote {
 .table tbody tr:focus-within {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: calc(var(--focus-ring-offset-width) * -1);
-}
-
-.table--register .table__ref {
-  width: 84px;
 }
 
 /* No width: in a fixed layout the unsized column absorbs the remainder, and
@@ -4250,10 +4264,6 @@ p.factsection__none {
 .table--dash {
   min-width: 52rem;
   table-layout: fixed;
-}
-
-.table--dash .table__ref {
-  width: 84px;
 }
 
 .table--dash .table__owner {
