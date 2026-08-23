@@ -31,6 +31,7 @@ urlpatterns = [
         name="review_action",
     ),
     path("teemad/<uuid:pk>/vali/<str:field>/", views.update_field, name="update_field"),
+    path("teemad/<uuid:pk>/andmeklass/", views.set_data_class, name="set_data_class"),
     path("teemad/<uuid:pk>/ajalugu/", views.timeline_page, name="timeline_page"),
     # Full-page posts
     path("teemad/<uuid:pk>/seisukoht/salvesta/", views.update_position, name="update_position"),

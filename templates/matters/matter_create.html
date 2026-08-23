@@ -129,6 +129,23 @@
     </fieldset>
 
     {% comment %}
+      One checkbox, unticked, and no REAL/TEST dropdown. Real work is the
+      normal path and must stay a straight line; a required choice on every
+      creation is a control people learn to click past. Ticking it is the whole
+      interaction (Agent-C brief 15, 62).
+    {% endcomment %}
+    <fieldset class="field">
+      <legend class="field__label">Andmeklass</legend>
+      <div class="checkitems">
+        <label class="checkitem" id="andmeklass-test">
+          {{ form.is_test_data }}
+          <span class="checkitem__name">{{ form.is_test_data.label }}</span>
+        </label>
+      </div>
+      <span class="field__help">{{ form.is_test_data.help_text }}</span>
+    </fieldset>
+
+    {% comment %}
       Procedural metadata: available, subordinate. Opened automatically when it
       holds an error, so a refused save never hides what somebody typed
       (brief 25).

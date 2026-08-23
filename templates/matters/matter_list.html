@@ -195,6 +195,21 @@ localStorage (Stage-2E.1 brief 12).
           </label>
 
           {% comment %}
+            Kõik by default, and deliberately so while the department is still
+            building the system: a developer must be able to find the test
+            matter they created ten seconds ago. Reporting is where the real
+            population becomes the default (Agent-C brief 14, 24, 25).
+          {% endcomment %}
+          <label class="field">
+            <span class="field__label">Andmed</span>
+            <select class="field__input" name="andmed">
+              {% for value, label in data_class_options %}
+                <option value="{{ value }}" {% if filters.andmed == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
+          {% comment %}
             Both ends inclusive — 01.01–31.01 means January, including the 31st
             (app/matters/selectors.py, `date_range_q`).
           {% endcomment %}

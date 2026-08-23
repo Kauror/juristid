@@ -32,6 +32,7 @@ consequences and reversibility.
 | [0021](0021-final-register-cutover.md) | The final register cutover, and the two columns that mean different things | Accepted, on a feature branch |
 | [0022](0022-deployment-backup-and-recovery.md) | Deployment, backup and recovery on the Unraid host | Accepted |
 | [0023](0023-searchable-opinion-archive.md) | Making the whole opinions archive searchable evidence | Accepted, on a feature branch |
+| [0024](0024-test-data-classification.md) | Test data is a stored class on the Matter, and purging it is a later decision | Accepted, on a feature branch |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -49,3 +50,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0021 — the final register cutover
 - 0022 — deployment, backup and recovery on the host the system actually runs on
 - 0023 — Stage 2H.2, the searchable opinion archive
+- 0024 — real/test data classification and the purge plan that precedes a purge

@@ -22,6 +22,15 @@ class ChangeEventType(models.TextChoices):
     # called it any of those would be describing a change that did not happen.
     MATTER_POLICY_AREA_OTHER_SET = "MATTER_POLICY_AREA_OTHER_SET", "Muu valdkond muudetud"
     MATTER_VISIBILITY_CHANGED = "MATTER_VISIBILITY_CHANGED", "Nähtavus muudetud"
+    # Real business data, or a record made while developing. Its own event
+    # rather than a reused field-change one, for the same reason as the two
+    # above it: a history that called this "kuupäev muudetud" could not answer
+    # who decided that a record was never about anything. Deliberately absent
+    # from `matters.timeline.TIMELINE_EVENT_TYPES`, beside
+    # MATTER_VISIBILITY_CHANGED — reclassifying a record is data management, not
+    # authored chronology, and it would sit in the narrative saying nothing
+    # about the policy work (Agent-C brief 19).
+    MATTER_DATA_CLASS_CHANGED = "MATTER_DATA_CLASS_CHANGED", "Andmeklass muudetud"
     MATTER_CLOSED = "MATTER_CLOSED", "Teema suletud"
     MATTER_REOPENED = "MATTER_REOPENED", "Teema taasavatud"
     # An archive register record activated as current work. Distinct from

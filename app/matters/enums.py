@@ -58,3 +58,28 @@ class TagAssignmentSource(models.TextChoices):
     MANUAL = "MANUAL", "Käsitsi"
     IMPORTED = "IMPORTED", "Imporditud"
     APPROVED_RULE = "APPROVED_RULE", "Kinnitatud reegel"
+
+
+class MatterDataClass(models.TextChoices):
+    """Real business data, or data made while developing Juristid.
+
+    Deliberately its own dimension rather than a reuse of something nearby.
+
+    - It is not ``record_mode``: an archive row is real history.
+    - It is not ``origin``: a Matter created in the system is normally real work.
+    - It is not ``DataQualityTier``: an unverified register row is real data
+      somebody has not checked yet, which is the opposite of a record that was
+      never about anything.
+    - It is not a ``Tag`` or a ``PolicyArea``: those are business vocabulary a
+      lawyer curates, and a taxonomy entry called TEST would appear in the
+      chooser, in statistics and in the tag cloud.
+    - It is not an environment flag: a development record and a real one can sit
+      in the same database at the same time, which is precisely the situation
+      that needs naming.
+
+    Testness is a property of the record's own identity, so it is stored on the
+    record (Agent-C brief 0, 8).
+    """
+
+    REAL = "REAL", "Pärisandmed"
+    TEST = "TEST", "Testandmed"

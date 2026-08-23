@@ -15,7 +15,7 @@ from typing import Any
 from django.db.models import Exists, OuterRef, Prefetch, Q, QuerySet
 from django.utils import timezone
 
-from app.matters.enums import REGISTER_YEAR_ORIGINS, RecordMode
+from app.matters.enums import REGISTER_YEAR_ORIGINS, MatterDataClass, RecordMode
 from app.matters.models import Matter
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
@@ -47,6 +47,44 @@ MISSING = "puudub"
 #: somebody is editing by hand.
 MATERIALS_PRESENT = "on"
 MATERIALS_ABSENT = "puudub"
+
+#: What `?andmed=` selects. Words rather than the stored REAL/TEST tokens,
+#: because every other filter in this register speaks Estonian in the URL, and a
+#: link somebody pastes into a chat should read as a sentence.
+#:
+#: `koik` is the default while the department is still building the system: a
+#: developer looking for the test matter they created ten seconds ago must find
+#: it in the register, and a filter that silently hid it would teach them the
+#: record had not saved. Reporting is where REAL becomes the default, and that
+#: is a different surface with a different question (Agent-C brief 14, 24).
+DATA_CLASS_ALL = "koik"
+DATA_CLASS_REAL = "paris"
+DATA_CLASS_TEST = "test"
+
+DATA_CLASS_FILTERS: dict[str, str] = {
+    DATA_CLASS_REAL: MatterDataClass.REAL,
+    DATA_CLASS_TEST: MatterDataClass.TEST,
+}
+
+
+def filter_by_data_class(queryset: QuerySet[Matter], value: str) -> QuerySet[Matter]:
+    """Apply `?andmed=`, after authorization has already narrowed the rows.
+
+    Called on an already-scoped queryset, never on the raw table: data class is
+    not an authorization dimension and must not be able to widen one
+    (brief 14, 50).
+
+    An unreadable value falls back to the whole population rather than emptying
+    it. That is the opposite of what `?tegevus=` does, and deliberately: an
+    unknown *condition* should show nothing rather than everything, but this
+    parameter's own default is "no restriction", so a typo landing on the
+    default is the honest answer rather than a blank register.
+    """
+    stored = DATA_CLASS_FILTERS.get(value)
+    if stored is None:
+        return queryset
+    return queryset.filter(data_class=stored)
+
 
 NEXT_ACTION_FILTERS: tuple[str, ...] = (
     MISSING,

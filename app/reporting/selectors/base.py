@@ -88,6 +88,20 @@ def visible_matters(context: ReportingContext) -> QuerySet[Matter]:
     depends on the metric's time basis, so applying it at this level would force
     every metric onto the Matter's reporting year — including the ones measured
     on a submission's send date (brief 14).
+
+    **Open handoff — the data class is not applied here yet.** Development and
+    testing happen against the same database as real work, and a Matter now
+    carries `data_class` saying which it is. A business or statistical
+    population must start from `Matter.objects.real_data()`; a figure that
+    counts development records is wrong in the way that is hardest to notice,
+    because nothing on the screen looks broken and the number is simply too
+    big.
+
+    This is the one line that would apply it for the whole package, and it is
+    deliberately not changed on the branch that introduced the field: the
+    Statistics work owns this file in parallel, and a reporting-wide population
+    change is that work's decision to make rather than a side effect of adding
+    a column (docs/adr/0024, Agent-C brief 28, 63).
     """
     queryset = Matter.objects.visible_to(context.viewer)
 
