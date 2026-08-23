@@ -22,6 +22,16 @@ copy of a 400 KB PDF is not extra safety, it is a second thing that can drift
 **Evidence enters through the front door.** ``create_document`` and
 ``add_evidence_version``, with the malware state left PENDING for the normal
 scanner. No parallel store, no hand-set CLEAN (brief 32).
+
+**Cataloguing and applying are two authority levels, not two halves of one.**
+`catalogue_plan` records what the archive contains and what the reconciliation
+proposes; `apply_plan` additionally claims that the Chamber *sent* a letter, in
+canonical rows the rest of the application counts. The first is bookkeeping over
+evidence somebody else produced and is safe to run as soon as the sources are
+pinned. The second asserts a fact about the department's history and needs
+either a deterministic match or a person. Keeping them callable separately is
+what lets an archive be held and read months before anybody decides whose letter
+each one was (docs/adr/0019).
 """
 
 from __future__ import annotations
@@ -65,6 +75,48 @@ class OpinionApplyError(RuntimeError):
 
 
 @dataclass
+class CatalogueReport:
+    """What one catalogue run recorded. Aggregates only, never row content.
+
+    ``submissions_created`` is present and always zero. It is not a placeholder:
+    the operator's question after this phase is precisely "did this create any
+    canonical sending?", and a report that answered by omission would leave them
+    reading code to find out.
+    """
+
+    items_created: int = 0
+    items_existing: int = 0
+    metadata_rows_written: int = 0
+    candidates_written: int = 0
+    candidates_existing: int = 0
+    automatic_class_proposals: int = 0
+    pending_candidates: int = 0
+    human_decided_candidates: int = 0
+    archive_sha256: str = ""
+    kodadash_sha256: str = ""
+    #: Invariant, not a counter. Cataloguing cannot create one.
+    submissions_created: int = 0
+
+    def as_text(self) -> str:
+        return "\n".join(
+            [
+                "Arvamuste arhiivi kataloogimine",
+                f"  uusi arhiivikirjeid        {self.items_created:>6}",
+                f"  juba olemas                {self.items_existing:>6}",
+                f"  tuletatud metaandmeid      {self.metadata_rows_written:>6}",
+                f"  uusi sidumiskandidaate     {self.candidates_written:>6}",
+                f"  kandidaate juba olemas     {self.candidates_existing:>6}",
+                f"  neist automaatset klassi   {self.automatic_class_proposals:>6}",
+                f"  ootel kandidaate           {self.pending_candidates:>6}",
+                f"  inimese otsustatud         {self.human_decided_candidates:>6}",
+                f"  loodud arvamusi            {self.submissions_created:>6}",
+                "",
+                "  Kanoonilist arvamust ega saatmiskirjet ei loodud.",
+            ]
+        )
+
+
+@dataclass
 class ApplyReport:
     items_created: int = 0
     items_existing: int = 0
@@ -99,8 +151,24 @@ class ApplyReport:
         )
 
 
-def open_batch(plan: OpinionArchivePlan) -> OpinionArchiveBatch:
+def open_batch(plan: OpinionArchivePlan, *, notes: str = "") -> OpinionArchiveBatch:
+    """One row per run, whatever the run did.
+
+    A batch is a *run*, not a lifecycle stage, and the phase split does not
+    change that: cataloguing opens one, a later canonical apply opens another,
+    and each records the sources it reasoned about. Rows stay attributed to the
+    run that first created them — `get_or_create` sets ``batch`` in ``defaults``
+    — so a candidate keeps pointing at the reconciliation that proposed it even
+    after a later apply executes it, and a Submission's provenance names both
+    through ``OpinionSubmissionImport``.
+
+    ``notes`` is how a catalogue run says so without a schema change. A batch
+    that recorded no sending is already visible as one — nothing references it
+    from ``OpinionSubmissionImport`` — but an operator reading the batch list
+    should not have to infer it from an absence.
+    """
     return OpinionArchiveBatch.objects.create(
+        notes=notes,
         archive_file_name=plan.archive_path.name,
         archive_sha256=plan.archive_sha256,
         archive_occurrence_count=len(plan.occurrences),
@@ -140,14 +208,83 @@ def require_unchanged_sources(plan: OpinionArchivePlan) -> None:
 
 
 @transaction.atomic
-def apply_plan(
-    plan: OpinionArchivePlan, *, batch: OpinionArchiveBatch, actor: Any = None
-) -> ApplyReport:
-    """Write the catalogue, the metadata, the candidates and the Submissions."""
-    report = ApplyReport()
+def catalogue_plan(plan: OpinionArchivePlan, *, batch: OpinionArchiveBatch) -> CatalogueReport:
+    """Record what the archive holds and what the reconciliation proposes.
+
+    Writes exactly four kinds of row — `OpinionArchiveBatch` (the caller's),
+    `OpinionArchiveItem`, `OpinionArchiveMetadata`, `OpinionMatchCandidate` —
+    and nothing that claims the Chamber sent anything. No Document, no
+    DocumentVersion, no Submission, no SubmissionRecipient, no
+    `OpinionSubmissionImport`, no `OpinionArchiveBinary`, no
+    `OpinionArchiveMatterLink`, no text and no search row.
+
+    This exists because materialisation needs a catalogue and the only thing
+    that produced one used to be the full apply. Holding a letter's bytes then
+    required first asserting who sent it, which is the wrong way round: the
+    bytes are the evidence the assertion would be based on.
+
+    It does not skip the automatic classes so much as decline to act on them.
+    `AUTOMATIC_MATCH_CLASSES` decides what an *apply* may execute without a
+    person; it says nothing about what a catalogue may record, and the proposals
+    are written here in full so the queue and the counts are complete.
+    """
+    report = CatalogueReport(
+        archive_sha256=plan.archive_sha256, kodadash_sha256=plan.kodadash_sha256
+    )
+    _catalogue(plan, batch, report)
+    _count_candidates(plan, report)
+    return report
+
+
+def _catalogue(
+    plan: OpinionArchivePlan, batch: OpinionArchiveBatch, report: Any
+) -> dict[str, OpinionArchiveItem]:
+    """The three catalogue writers, in the one order they may run in.
+
+    Shared verbatim by `catalogue_plan` and `apply_plan` rather than reimplemented
+    beside it: two copies of "record the archive" would be two things to keep
+    idempotent, and only one of them would be exercised by the phase an operator
+    actually runs first.
+    """
     items = _write_items(plan, batch, report)
     _write_metadata(plan, items, report)
     _write_candidates(plan, batch, items, report)
+    return items
+
+
+def _count_candidates(plan: OpinionArchivePlan, report: CatalogueReport) -> None:
+    """Aggregate the queue this run leaves behind, including rows it reused.
+
+    Counted from the database rather than from the plan, because a rerun's
+    interesting number is the *state* of the queue — how much of it a person has
+    already decided — and the plan has no idea.
+    """
+    from app.legacy_import.opinion_enums import AUTOMATIC_MATCH_CLASSES, HUMAN_DECIDED_STATES
+
+    report.automatic_class_proposals = sum(
+        1 for proposal in plan.proposals if proposal.match_class in AUTOMATIC_MATCH_CLASSES
+    )
+    candidate_ids = [
+        proposal.candidate_id for proposal in plan.proposals if proposal.candidate_id is not None
+    ]
+    rows = OpinionMatchCandidate.objects.filter(pk__in=candidate_ids)
+    report.candidates_existing = len(candidate_ids) - report.candidates_written
+    report.pending_candidates = rows.filter(state=OpinionCandidateState.PENDING).count()
+    report.human_decided_candidates = rows.filter(state__in=HUMAN_DECIDED_STATES).count()
+
+
+@transaction.atomic
+def apply_plan(
+    plan: OpinionArchivePlan, *, batch: OpinionArchiveBatch, actor: Any = None
+) -> ApplyReport:
+    """Write the catalogue, the metadata, the candidates and the Submissions.
+
+    Unchanged as an operator contract. It catalogues first — idempotently, so a
+    prior `catalogue_plan` run costs it nothing and loses nothing — and then does
+    the part only an apply may do.
+    """
+    report = ApplyReport()
+    items = _catalogue(plan, batch, report)
     _write_submissions(plan, batch, items, report, actor)
     return report
 

@@ -3,6 +3,8 @@
 - **Status:** Accepted — implemented on the `stage-2h-opinions-archive` branch, pending integration
 - **Date:** 2026-08-21
 - **Builds on** ADR 0012 (register import), ADR 0015 (historical corpus), ADR 0017 (metrics).
+- **Refined 2026-08-23** — see *Cataloguing is not applying* below. A production
+  sequencing fix; no decision recorded here changes.
 
 ## Context
 
@@ -99,6 +101,44 @@ similarity, and never by creating one.
 
 Its public gate is provenance, not an archival gate. A row the membership app
 hid is still a letter the Chamber sent.
+
+### Cataloguing is not applying
+
+*Added 2026-08-23, before the first production import.*
+
+The ADR already separates holding a letter's bytes from deciding whose letter it
+is. It did not separate *recording that the archive contains it* from deciding
+it was sent — those both lived in `apply`. Preparing the real import showed why
+that is the wrong seam: `materialize` needs `OpinionArchiveItem` rows, the only
+thing that produced them was `apply`, and `apply` also writes Submissions. So
+holding the bytes required first asserting the sending, when the bytes are the
+evidence the assertion rests on.
+
+There are two authority levels here, not two halves of one operation:
+
+* **cataloguing** is bookkeeping over evidence somebody else produced. It records
+  what the archive holds, what the producer's workbook says about it, and what
+  the reconciliation proposes. Every one of those is a claim about a *source*,
+  and it is safe as soon as the sources are pinned by digest;
+* **canonical apply** claims the Chamber sent a letter. That is a fact about the
+  department's history which the rest of the application counts, reports and
+  shows to members. It needs a deterministic match or a person.
+
+So `catalogue` is its own phase, and the supported sequence is
+
+> plan → **catalogue** → materialise → search → review → apply
+
+`AUTOMATIC_MATCH_CLASSES` is unchanged and still decides what an apply may
+execute unasked; it says nothing about what a catalogue may record, and a
+catalogue records every proposal including those. `apply` keeps its meaning
+exactly — it catalogues whatever is missing, idempotently, and then does the
+part only it may do — so an operator who never learns the new phase is not
+worse off.
+
+One consequence worth naming: the review queue now fills before any Submission
+exists, which is the benefit. A reviewer's decision therefore has to survive a
+later apply reaching rows it did not create, and Stage 2H.1's protections are
+what make that true rather than a new rule.
 
 ### Date-only history says so
 
