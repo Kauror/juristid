@@ -29,6 +29,7 @@ from app.workflow.enums import (
     DateSemantics,
     Disposition,
     Track,
+    default_date_semantics,
 )
 from app.workflow.models import StageVocabulary
 
@@ -405,24 +406,54 @@ class NextActionForm(forms.Form):
     use_required_attribute = False
 
     text = forms.CharField(
-        label="Järgmiseks",
+        # "Järgmiseks" is what the column is called; it is not a question a
+        # lawyer can answer without being told what belongs in it.
+        label="Mida järgmisena teed või ootad?",
         max_length=2000,
         widget=forms.TextInput(
-            attrs={"class": "field__input", "placeholder": "Mida teed, ootad või jälgid?"}
+            attrs={
+                "class": "field__input",
+                "placeholder": "Näiteks: uurin 7. septembril ministeeriumilt kohtumise kohta",
+            }
         ),
     )
+    #: Radios rather than a select, and the enum's own labels: Teen, Ootan,
+    #: Jälgin already read as Estonian a lawyer uses. What the template adds is
+    #: a line under each saying what it means, which is where the distinction
+    #: between "I have to do something" and "I am waiting on someone" actually
+    #: gets made. The stored values are unchanged — DO, WAIT, MONITOR
+    #: (master specification 11.2).
     kind = forms.ChoiceField(
-        label="Liik", choices=ActionKind.choices, initial=ActionKind.DO, widget=SELECT_WIDGET
+        label="Mis laadi samm see on?",
+        choices=ActionKind.choices,
+        initial=ActionKind.DO,
+        widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
     )
+    #: Optional, and normally derived. "Kuupäeva tähendus" is a question about
+    #: the data model, and a required dropdown asking it was in front of every
+    #: lawyer setting a next step.
+    #:
+    #: It is *not* deleted, because the model genuinely permits more than one
+    #: meaning per kind and the register's parser uses that — a DO whose source
+    #: names a vague month is DO + EXPECTED_AROUND, not a deadline. Left alone
+    #: it derives from the kind; the explicit choice is one disclosure away
+    #: (app/workflow/enums.py, Agent-UI brief 9.4).
     date_semantics = forms.ChoiceField(
-        label="Kuupäeva tähendus",
+        label="Mida kuupäev täpselt tähendab",
         choices=DateSemantics.choices,
-        initial=DateSemantics.DEADLINE,
+        required=False,
         widget=SELECT_WIDGET,
     )
     target_date = EstonianDateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
     responsible = UserChoiceField(
-        label="Vastutaja", queryset=User.objects.none(), required=False, widget=SELECT_WIDGET
+        label="Kes selle eest vastutab?",
+        queryset=User.objects.none(),
+        required=False,
+        widget=SELECT_WIDGET,
+        # The service already falls back to the Matter's owner. Saying so turns
+        # a blank select from "I must choose again" into "this is already
+        # right" (app/workflow/services.py, `set_next_action`).
+        help_text="Tühjaks jättes vastutab teema vastutaja.",
     )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -432,7 +463,11 @@ class NextActionForm(forms.Form):
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
         kind = cleaned.get("kind")
-        semantics = cleaned.get("date_semantics")
+        # Derived here rather than in the template, so a POST from anywhere —
+        # a browser with the disclosure closed, a test, an integration — stores
+        # the same canonical value.
+        semantics = cleaned.get("date_semantics") or default_date_semantics(kind or "")
+        cleaned["date_semantics"] = semantics
         target = cleaned.get("target_date")
 
         # A deadline with no date cannot be overdue, cannot be planned against
@@ -441,14 +476,22 @@ class NextActionForm(forms.Form):
             self.add_error("target_date", "Tähtajaline tegevus vajab kuupäeva.")
         return cleaned
 
-    def as_service_kwargs(self) -> dict[str, Any]:
+    def as_service_kwargs(self, *, default_responsible: Any = None) -> dict[str, Any]:
+        """What ``set_next_action`` needs.
+
+        ``default_responsible`` is for the one caller that has an owner the
+        service cannot see yet: Uus teema chooses the Matter's owner on the same
+        form as the next action, and the Matter does not exist when this is
+        read. Everywhere else the service's own fallback to ``matter.owner``
+        already does this, and passing nothing keeps that behaviour exactly.
+        """
         return {
             "text": self.cleaned_data["text"],
             "kind": self.cleaned_data["kind"],
             "date_semantics": self.cleaned_data["date_semantics"],
             "target_date": self.cleaned_data.get("target_date"),
             "date_precision": self.cleaned_data.get("date_precision") or DatePrecision.EXACT,
-            "responsible": self.cleaned_data.get("responsible"),
+            "responsible": self.cleaned_data.get("responsible") or default_responsible,
         }
 
 
@@ -509,10 +552,12 @@ class ComposerForm(forms.Form):
         required=False,
         widget=SELECT_WIDGET,
     )
+    #: Left blank it derives from `next_kind`, like the field it mirrors on
+    #: `NextActionForm`. One derivation rule, in one place
+    #: (app/workflow/enums.py, `default_date_semantics`).
     next_date_semantics = forms.ChoiceField(
-        label="Kuupäeva tähendus",
+        label="Mida kuupäev täpselt tähendab",
         choices=DateSemantics.choices,
-        initial=DateSemantics.DEADLINE,
         required=False,
         widget=SELECT_WIDGET,
     )
@@ -541,9 +586,12 @@ class ComposerForm(forms.Form):
         if wants_action:
             if not (cleaned.get("next_text") or "").strip():
                 self.add_error("next_text", "Järgmiseks vajab teksti.")
+            kind = cleaned.get("next_kind") or ActionKind.DO
+            semantics = cleaned.get("next_date_semantics") or default_date_semantics(kind)
+            cleaned["next_date_semantics"] = semantics
             if (
-                cleaned.get("next_kind") == ActionKind.DO
-                and cleaned.get("next_date_semantics") == DateSemantics.DEADLINE
+                kind == ActionKind.DO
+                and semantics == DateSemantics.DEADLINE
                 and cleaned.get("next_target_date") is None
             ):
                 self.add_error("next_target_date", "Tähtajaline tegevus vajab kuupäeva.")
@@ -555,7 +603,10 @@ class ComposerForm(forms.Form):
         return {
             "text": self.cleaned_data["next_text"],
             "kind": self.cleaned_data["next_kind"] or ActionKind.DO,
-            "date_semantics": self.cleaned_data["next_date_semantics"] or DateSemantics.DEADLINE,
+            "date_semantics": (
+                self.cleaned_data["next_date_semantics"]
+                or default_date_semantics(self.cleaned_data.get("next_kind") or ActionKind.DO)
+            ),
             "target_date": self.cleaned_data.get("next_target_date"),
             "date_precision": self.cleaned_data.get("next_date_precision") or DatePrecision.EXACT,
         }

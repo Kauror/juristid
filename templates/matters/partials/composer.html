@@ -84,7 +84,7 @@ together or not at all.
     <div class="composer__next" id="jargmiseks-valjad" hidden>
       <span class="nextaction__label">Uus järgmine samm</span>
 
-      <div class="modeselect" role="group" aria-label="Tegevuse liik">
+      <div class="modeselect" role="group" aria-label="Tegevuse liik" id="komposer-liik">
         {% for value, label in composer_form.next_kind.field.choices %}
           <span class="modeselect__option">
             <input type="radio" name="next_kind" id="next_kind_{{ value }}" value="{{ value }}"
@@ -93,6 +93,16 @@ together or not at all.
           </span>
         {% endfor %}
       </div>
+      {% comment %}
+        The one sentence that keeps this apart from Arvamuse tähtaeg. They are
+        two different dates about two different things, and a composer that
+        offered them as interchangeable is what made people ask which one to
+        use (Agent-UI brief 10).
+      {% endcomment %}
+      <p class="field__help">
+        Mis selle teemaga järgmisena juhtub. Arvamuse esitamise tähtaeg on
+        eraldi, teema päises.
+      </p>
 
       <label class="field">
         <span class="visually-hidden">Järgmiseks</span>
@@ -104,11 +114,15 @@ together or not at all.
 
       <div class="composer__optional composer__optional--flush">
         <label class="field field--inline">
-          <span class="field__label field__label--plain">Kuupäeva tähendus:</span>
-          {{ composer_form.next_date_semantics }}
-        </label>
-        <label class="field field--inline">
-          <span class="field__label field__label--plain">Kuupäev:</span>
+          {% comment %}
+            The label follows the chosen kind, because that is the question a
+            lawyer is actually answering. Swapped by app.js; without scripting
+            it reads "Kuupäev", which is true for all three.
+          {% endcomment %}
+          <span class="field__label field__label--plain" data-datelabel-for="komposer-liik"
+                data-label-do="Tähtaeg:"
+                data-label-wait="Millal arengut oodata:"
+                data-label-monitor="Millal uuesti vaatan:">Kuupäev:</span>
           {{ composer_form.next_target_date }}
         </label>
         <label class="field field--inline">
@@ -119,6 +133,23 @@ together or not at all.
       {% if composer_form.next_target_date.errors %}
         <p class="field__error">{{ composer_form.next_target_date.errors|first }}</p>
       {% endif %}
+
+      {% comment %}
+        The stored meaning, moved behind a disclosure rather than removed. It
+        derives from the chosen kind when left alone, and the model genuinely
+        permits pairs the derivation does not produce — the register's own
+        parser records a DO with a vague month as an expectation, not a deadline
+        (app/workflow/enums.py, `default_date_semantics`).
+      {% endcomment %}
+      <details class="disclosure disclosure--inline">
+        <summary class="disclosure__summary">Täpsusta, mida kuupäev tähendab</summary>
+        <div class="disclosure__body">
+          <label class="field field--inline">
+            <span class="field__label field__label--plain">Tähendus:</span>
+            {{ composer_form.next_date_semantics }}
+          </label>
+        </div>
+      </details>
 
       <p class="nextaction__note">
         OOTAN-i ja JÄLGIN-i kuupäev on ülevaatamise, mitte tähtaja kuupäev — möödumine

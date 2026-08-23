@@ -543,11 +543,50 @@
     });
   }
 
+  /* ---- What the Järgmine tegevus date means ------------------------------
+   * The stored field is `date_semantics`, and asking a lawyer to pick one from
+   * a dropdown called "Kuupäeva tähendus" was asking a question in the
+   * vocabulary of the database. The value is derived from the chosen kind on
+   * the server; this makes the *label* say the same thing, so the box reads
+   * "Tähtaeg" for TEEN and "Millal vaatan uuesti üle?" for JÄLGIN.
+   *
+   * Presentation only. The server derives and validates regardless, and with
+   * scripting off the label reads the neutral "Kuupäev", which is true for all
+   * three (app/workflow/enums.py, `default_date_semantics`).
+   */
+  function bindDateLabels(scope) {
+    (scope || document).querySelectorAll("[data-datelabel-for]").forEach(function (label) {
+      if (!once(label, "DateLabel")) {
+        return;
+      }
+      var group = document.getElementById(label.getAttribute("data-datelabel-for"));
+      if (!group) {
+        return;
+      }
+      var byKind = {
+        DO: label.getAttribute("data-label-do"),
+        WAIT: label.getAttribute("data-label-wait"),
+        MONITOR: label.getAttribute("data-label-monitor"),
+      };
+      var neutral = label.textContent;
+      var sync = function () {
+        var chosen = group.querySelector("input[type=radio]:checked");
+        var wording = chosen ? byKind[chosen.value] : null;
+        label.textContent = wording || neutral;
+      };
+      group.querySelectorAll("input[type=radio]").forEach(function (radio) {
+        radio.addEventListener("change", sync);
+      });
+      sync();
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     bind(document);
     bindPeriodFields(document);
     bindDatePickers(document);
     bindChoiceFilters(document);
+    bindDateLabels(document);
   });
 
   /* A rejected save returns 400 with the surface re-rendered and the errors in
@@ -568,5 +607,6 @@
     bindPeriodFields(event.target.querySelector ? event.target : document);
     bindDatePickers(event.target.querySelector ? event.target : document);
     bindChoiceFilters(event.target.querySelector ? event.target : document);
+    bindDateLabels(event.target.querySelector ? event.target : document);
   });
 })();

@@ -4856,3 +4856,43 @@ p.factsection__none {
   color: var(--text-inverse);
   font-weight: var(--typography-weight-semibold);
 }
+
+/* A choice card that carries a line of explanation.
+ *
+ * Used where the option name alone does not settle the choice: TEEN, OOTAN and
+ * JÄLGIN are three ordinary Estonian verbs, and which one a lawyer means
+ * depends on whether the next move is theirs. The hint is what makes that
+ * decidable without training (templates/matters/matter_create.html).
+ *
+ * Still a radio underneath. The card is styling on a real control, never a
+ * clickable div — the selected state, the focus ring and the keyboard
+ * behaviour all come from the input. */
+.choicecards--described {
+  align-items: stretch;
+}
+
+.choicecard--described {
+  align-items: flex-start;
+  /* Wide enough for a clause, capped so three cards sit on one row at desktop
+     width and wrap cleanly below it rather than stretching to fill. */
+  flex: 1 1 15rem;
+  max-width: 22rem;
+  padding: var(--spacing-3);
+}
+
+.choicecard__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-width: 0;
+}
+
+.choicecard__hint {
+  font-size: var(--typography-size-meta);
+  line-height: var(--typography-line-normal);
+  color: var(--text-muted);
+}
+
+.choicecard:has(input:checked) .choicecard__hint {
+  color: var(--text-secondary);
+}

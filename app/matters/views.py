@@ -799,8 +799,15 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 _attach_incoming_file(matter, upload, actor=request.user)
 
             if wants_action:
+                # The owner is chosen on this same form, so the Matter does not
+                # exist yet when the action form is read and the service's own
+                # fallback to `matter.owner` has nothing to fall back to. Handed
+                # in explicitly, and only as a default: an explicit choice in
+                # the action form still wins (app/matters/forms.py).
                 set_next_action(
-                    matter=matter, actor=request.user, **action_form.as_service_kwargs()
+                    matter=matter,
+                    actor=request.user,
+                    **action_form.as_service_kwargs(default_responsible=data.get("owner")),
                 )
 
         if uploads:

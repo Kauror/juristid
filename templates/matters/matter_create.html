@@ -251,17 +251,121 @@
       </fieldset>
     </details>
 
+    {% comment %}
+      Järgmine tegevus, and the whole point of the copy here is that it is not
+      the same thing as Arvamuse tähtaeg one disclosure up. One says when this
+      opinion has to be submitted; the other says what happens next with the
+      file, which may be a year of waiting on a ministry.
+
+      Nothing in the domain changed. TEEN / OOTAN / JÄLGIN are still DO / WAIT /
+      MONITOR, the date still carries a stored meaning, and the block is still
+      entirely optional — an opinion already has its tähtaeg (Agent-UI brief 9).
+    {% endcomment %}
     <details class="disclosure" {% if action_form.errors %}open{% endif %}>
-      <summary class="disclosure__summary">+ Määra kohe Järgmiseks</summary>
+      <summary class="disclosure__summary">+ Järgmine tegevus</summary>
+
+      <p class="field__help">
+        Mis selle teemaga järgmisena juhtub? Märgi siia järgmine tegevus, asi
+        mida ootad, või aeg millal teemat uuesti kontrollida.
+      </p>
+      <p class="field__help">
+        <strong>Arvamuse tähtaeg on eraldi</strong> — see näitab, mis ajaks
+        tuleb arvamus esitada. Järgmine tegevus võib olla sellest palju
+        hilisem.
+      </p>
+
+      <label class="field">
+        <span class="field__label">{{ action_form.text.label }}</span>
+        {{ action_form.text }}
+        {% if action_form.text.errors %}
+          <span class="field__error">{{ action_form.text.errors|first }}</span>
+        {% endif %}
+      </label>
+
+      {% comment %}
+        Radios styled as cards. Exactly one may be active, because the model
+        holds one kind — the checkmark is decoration on a radio, not a promise
+        that two can be chosen.
+      {% endcomment %}
+      <fieldset class="field" id="jargmine-liik">
+        <legend class="field__label">{{ action_form.kind.label }}</legend>
+        <div class="choicecards choicecards--described">
+          {% for choice in action_form.kind %}
+            <label class="choicecard choicecard--described">
+              {{ choice.tag }}
+              <span class="choicecard__body">
+                <span class="choicecard__name">{{ choice.choice_label }}</span>
+                {% comment %}
+                  The lawyer-facing gloss on each stored kind. Written against
+                  the enum value rather than the label, because the label is
+                  what a reader may reword and the value is what the database
+                  holds (app/workflow/enums.py, ActionKind).
+                {% endcomment %}
+                <span class="choicecard__hint">
+                  {% if choice.data.value == 'DO' %}Mul endal tuleb midagi teha
+                  {% elif choice.data.value == 'WAIT' %}Ootan infot, vastust, eelnõud või muud arengut
+                  {% elif choice.data.value == 'MONITOR' %}Vaatan teema hiljem uuesti üle{% endif %}
+                </span>
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+        {% if action_form.kind.errors %}
+          <span class="field__error">{{ action_form.kind.errors|first }}</span>
+        {% endif %}
+      </fieldset>
+
       <div class="formgrid">
-        {% for field in action_form %}
-          <label class="field">
-            <span class="field__label">{{ field.label }}</span>
-            {{ field }}
-            {% if field.errors %}<span class="field__error">{{ field.errors|first }}</span>{% endif %}
-          </label>
-        {% endfor %}
+        <label class="field field--narrow">
+          {% comment %}
+            The label says what the date means for the kind that is selected,
+            which is the question the technical "Kuupäeva tähendus" dropdown
+            was asking in the vocabulary of the database. Swapped by app.js;
+            without scripting it reads as the neutral wording below, which is
+            true for all three.
+          {% endcomment %}
+          <span class="field__label" data-datelabel-for="jargmine-liik"
+                data-label-do="Tähtaeg"
+                data-label-wait="Millal võiks arengut oodata?"
+                data-label-monitor="Millal vaatan uuesti üle?">Kuupäev</span>
+          {{ action_form.target_date }}
+          {% if action_form.target_date.errors %}
+            <span class="field__error">{{ action_form.target_date.errors|first }}</span>
+          {% endif %}
+        </label>
+
+        <label class="field">
+          <span class="field__label">{{ action_form.responsible.label }}</span>
+          {{ action_form.responsible }}
+          <span class="field__help">{{ action_form.responsible.help_text }}</span>
+          {% if action_form.responsible.errors %}
+            <span class="field__error">{{ action_form.responsible.errors|first }}</span>
+          {% endif %}
+        </label>
       </div>
+
+      {% comment %}
+        The stored meaning, kept and not deleted. It derives from the kind when
+        nobody touches it, and the model genuinely permits combinations the
+        derivation does not produce — a DO whose date is a rough month is
+        recorded as an expectation, not a deadline (app/workflow/enums.py).
+      {% endcomment %}
+      <details class="disclosure disclosure--inline"
+               {% if action_form.date_semantics.errors %}open{% endif %}>
+        <summary class="disclosure__summary">Täpsusta, mida kuupäev tähendab</summary>
+        <div class="disclosure__body">
+          <label class="field field--narrow">
+            <span class="field__label">{{ action_form.date_semantics.label }}</span>
+            {{ action_form.date_semantics }}
+            <span class="field__help">
+              Tühjaks jättes tuletatakse tähendus valitud laadist.
+            </span>
+            {% if action_form.date_semantics.errors %}
+              <span class="field__error">{{ action_form.date_semantics.errors|first }}</span>
+            {% endif %}
+          </label>
+        </div>
+      </details>
     </details>
 
     <p class="form__actions">
