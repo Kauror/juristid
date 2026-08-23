@@ -93,15 +93,45 @@
       </div>
       <span class="field__help">{{ form.source_organisations.help_text }}</span>
       {% comment %}
-        The long tail. Every organisation is a valid sender; only the frequent
-        ones are worth a chip, and the rest stay one disclosure away rather than
-        making the list unreadable. Several may be picked here too, and the two
-        controls are unioned rather than ranked.
+        The long tail — and only the long tail. This used to re-offer the same
+        ten bodies that are already chips above, inside a panel headed "Muu /
+        lisa saatja", which read as a second sender control disagreeing with the
+        first and hid the one case it exists for: a body that is genuinely not
+        on the list.
+
+        The filter box narrows the chips below it and nothing else. It is
+        progressive enhancement — with scripting off every remaining body is
+        visible and tickable, which is what the multiple select offered anyway.
       {% endcomment %}
       <details class="disclosure disclosure--inline">
-        <summary class="disclosure__summary">Muu / lisa saatja</summary>
+        <summary class="disclosure__summary">Vali nimekirjast</summary>
         <div class="disclosure__body">
-          {{ form.source_organisations_other }}
+          <label class="field" data-choicefilter="saatja-nimekiri">
+            <span class="visually-hidden">Otsi asutust</span>
+            <input class="field__input" type="search" autocomplete="off"
+                   placeholder="Otsi asutust nime järgi">
+          </label>
+          <div class="checkitems" id="saatja-nimekiri">
+            {% for choice in form.source_organisations_other %}
+              <label class="checkitem">
+                {{ choice.tag }}
+                <span class="checkitem__name">{{ choice.choice_label }}</span>
+              </label>
+            {% empty %}
+              <p class="field__help">Kõik salvestatud asutused on juba ülal.</p>
+            {% endfor %}
+          </div>
+          {% comment %}
+            Said plainly, because the alternative is somebody typing a new
+            spelling of a ministry into a box and creating a second reference
+            record for it. Adding an institution is a deliberate act on the
+            reference data, not a side effect of filing a matter
+            (app/organisations, master specification 14.7).
+          {% endcomment %}
+          <p class="field__help">
+            Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla —
+            teema vormilt uut asutust ei teki.
+          </p>
         </div>
       </details>
       {% if form.source_organisations.errors %}
@@ -145,6 +175,45 @@
     {% endcomment %}
     <details class="disclosure" {% if form.stage.errors or form.track.errors or form.addressee_organisation.errors or form.response_deadline.errors %}open{% endif %}>
       <summary class="disclosure__summary">+ Täpsusta teema andmeid</summary>
+
+      {% comment %}
+        Hetkeseis and Menetlusliik hold one value each, so these are radios —
+        styled as chips, but radios. The shape of the control carries a promise
+        about the data, and a checkbox list here would be offering something
+        `Matter.stage` and `Matter.track` cannot keep.
+
+        Visible rather than in a select: eleven stages and seven tracks fit on
+        two lines, and for a department of four a dropdown is a click spent
+        finding out what the choices even are (Agent-UI brief 5.1).
+      {% endcomment %}
+      <fieldset class="field">
+        <legend class="field__label">{{ form.stage.label }}</legend>
+        <div class="choicecards">
+          {% for choice in form.stage %}
+            <label class="choicecard">
+              {{ choice.tag }}
+              <span class="choicecard__name">{{ choice.choice_label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <span class="field__help">Kus menetlus praegu on. Üks valik.</span>
+        {% if form.stage.errors %}<span class="field__error">{{ form.stage.errors|first }}</span>{% endif %}
+      </fieldset>
+
+      <fieldset class="field">
+        <legend class="field__label">{{ form.track.label }}</legend>
+        <div class="choicecards">
+          {% for choice in form.track %}
+            <label class="choicecard">
+              {{ choice.tag }}
+              <span class="choicecard__name">{{ choice.choice_label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <span class="field__help">Mis liiki menetlusega on tegemist. Üks valik.</span>
+        {% if form.track.errors %}<span class="field__error">{{ form.track.errors|first }}</span>{% endif %}
+      </fieldset>
+
       <div class="formgrid">
         {% for field in form %}
           {% if field.name in secondary_fields %}

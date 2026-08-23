@@ -183,17 +183,30 @@ class MatterCreateForm(forms.Form):
         # promising something the model cannot keep (brief 16).
         widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
     )
+    #: Radios, rendered as chips. Both fields hold exactly one value, and a
+    #: control that let you tick two would promise something the model cannot
+    #: keep — the same rule that keeps Vastutaja radios and Valdkonnad
+    #: checkboxes (brief 16, Agent-UI brief 5.1).
+    #:
+    #: Visible rather than collapsed because eleven stages and seven tracks fit
+    #: on two lines each, and for a department of four a select is a click spent
+    #: finding out what the options are. If either vocabulary grows past what
+    #: reads at a glance, a select is the better control again and this should
+    #: go back to one.
     stage = forms.ModelChoiceField(
         label="Hetkeseis",
         queryset=StageVocabulary.objects.none(),
         required=False,
-        widget=SELECT_WIDGET,
+        # The blank option is named rather than left as Django's row of dashes:
+        # "not decided yet" is a real answer here and should read like one.
+        empty_label="Määramata",
+        widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
     )
     track = forms.ChoiceField(
         label="Menetlusliik",
-        choices=[("", "—"), *Track.choices],
+        choices=[("", "Määramata"), *Track.choices],
         required=False,
-        widget=SELECT_WIDGET,
+        widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
     )
     source_organisations = forms.ModelMultipleChoiceField(
         label="Saatja",
@@ -209,15 +222,21 @@ class MatterCreateForm(forms.Form):
     #: against the same queryset, so this is a second way to pick existing
     #: organisations rather than a way to invent one.
     #:
-    #: A plain multiple select rather than a search widget: the reference table
-    #: is small enough that a sized list is usable, and a JS dependency added
-    #: for one disclosure is a dependency the whole product then carries
-    #: (brief 30).
+    #: Two things changed here. The rendered choices now *exclude* the frequent
+    #: chips above, because a disclosure headed "Muu saatja" that reopened the
+    #: same ten bodies read as a second, contradictory sender control — the
+    #: screenshot complaint this addresses. And it is checkboxes rather than an
+    #: eight-row multiple select, so ticking two does not depend on knowing to
+    #: hold Ctrl (Agent-UI brief 6.1).
+    #:
+    #: The queryset stays the whole catalogue. Validation must accept an
+    #: organisation this reader's frequent list happens to contain, or a POST
+    #: from a colleague with a different history would be refused as invalid.
     source_organisations_other = forms.ModelMultipleChoiceField(
         label="Muu saatja",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "8"}),
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
     )
     addressee_organisation = forms.ModelChoiceField(
         label="Adressaat",
@@ -351,6 +370,17 @@ class MatterCreateForm(forms.Form):
             self.frequent_senders = organisations_by_usage(viewer)
             senders.choices = [
                 (organisation.pk, organisation.name) for organisation in self.frequent_senders
+            ]
+            # The disclosure holds what the chips do not. Offering the same ten
+            # bodies twice is what made "Muu / lisa saatja" read as a second
+            # sender control that contradicted the first — and it is why nobody
+            # could find the body that genuinely was not on the list.
+            frequent = {organisation.pk for organisation in self.frequent_senders}
+            rest = cast(Any, self.fields["source_organisations_other"])
+            rest.choices = [
+                (organisation.pk, organisation.name)
+                for organisation in Organisation.objects.order_by("name")
+                if organisation.pk not in frequent
             ]
         else:
             self.frequent_senders = []

@@ -834,9 +834,10 @@ def _create_context(request: HttpRequest, form: Any, action_form: Any) -> dict[s
         # Named here rather than excluded in the template by listing the primary
         # ones: a field added to the form later should appear *somewhere* by
         # default, and the safe default is the disclosure.
+        # `stage` and `track` are named in the template now, because each is a
+        # row of radio chips rather than one more box in the grid. They stay out
+        # of this tuple so the generic loop does not render them a second time.
         "secondary_fields": (
-            "stage",
-            "track",
             "addressee_organisation",
             "response_deadline",
         ),

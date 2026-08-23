@@ -511,10 +511,43 @@
     });
   }
 
+  /* ---- Narrowing a long list of chips ------------------------------------
+   * One search box over one already-rendered checkbox list. No request, no
+   * store: the choices are in the page and this only hides the ones that do
+   * not match, which is why a ticked option that scrolls out of the filter
+   * still submits — hiding a checkbox does not clear it.
+   *
+   * Progressive enhancement. With scripting off every choice is visible and
+   * tickable, which is what the multiple select it replaced offered anyway.
+   */
+  function bindChoiceFilters(scope) {
+    (scope || document).querySelectorAll("[data-choicefilter]").forEach(function (holder) {
+      if (!once(holder, "ChoiceFilter")) {
+        return;
+      }
+      var list = document.getElementById(holder.getAttribute("data-choicefilter"));
+      var box = holder.querySelector("input");
+      if (!list || !box) {
+        return;
+      }
+      box.addEventListener("input", function () {
+        var needle = box.value.trim().toLowerCase();
+        list.querySelectorAll(".checkitem").forEach(function (item) {
+          var name = (item.textContent || "").trim().toLowerCase();
+          var checked = item.querySelector("input:checked");
+          /* A ticked choice never hides. Somebody who types after choosing
+             should still be able to see — and untick — what they chose. */
+          item.hidden = !checked && needle !== "" && name.indexOf(needle) === -1;
+        });
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     bind(document);
     bindPeriodFields(document);
     bindDatePickers(document);
+    bindChoiceFilters(document);
   });
 
   /* A rejected save returns 400 with the surface re-rendered and the errors in
@@ -534,5 +567,6 @@
     bind(event.target);
     bindPeriodFields(event.target.querySelector ? event.target : document);
     bindDatePickers(event.target.querySelector ? event.target : document);
+    bindChoiceFilters(event.target.querySelector ? event.target : document);
   });
 })();
