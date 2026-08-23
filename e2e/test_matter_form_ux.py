@@ -234,3 +234,64 @@ def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
     responsible = page.locator(".nextaction__responsible")
     expect(responsible).to_be_visible()
     assert responsible.inner_text().strip(), "the next action has nobody responsible for it"
+
+
+# ---------------------------------------------------------------------------
+# Narrow windows
+# ---------------------------------------------------------------------------
+
+
+def _document_overflows(page) -> bool:
+    """Mirrors `e2e/test_ui_shell.py`, because the rule is the same one.
+
+    Wide content scrolls inside its own container; the document itself never
+    scrolls sideways.
+    """
+    return page.evaluate(
+        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
+    )
+
+
+@pytest.mark.parametrize("width", [1440, 1024, 420])
+def test_the_form_survives_a_narrow_window(page, base_url, width):
+    """Every row of chips this round added has to wrap rather than push.
+
+    Three rows of them now — Vastutaja, Valdkonnad, Hetkeseis, Menetlusliik and
+    the three Järgmine tegevus cards — and a card that refused to wrap would
+    take the whole page sideways with it.
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    create_form(page, base_url)
+    open_details(page, "Täpsusta teema andmeid")
+    open_details(page, "Järgmine tegevus")
+    page.wait_for_load_state("networkidle")
+
+    assert not _document_overflows(page), f"the create form scrolls sideways at {width}px"
+
+
+@pytest.mark.parametrize("width", [1024, 420])
+def test_the_kpi_cards_survive_a_narrow_window(page, base_url, width):
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(f"{base_url}/ulevaade/")
+    page.wait_for_load_state("networkidle")
+
+    expect(page.locator(".statcard").first).to_be_visible()
+    assert not _document_overflows(page), f"Ülevaade scrolls sideways at {width}px"
+
+
+def test_the_choice_cards_are_real_controls_with_real_labels(page, base_url):
+    """No click-only divs. Every chip is a label bound to an input, which is
+    what makes the row keyboard-reachable and readable to a screen reader."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+    open_details(page, "Täpsusta teema andmeid")
+
+    for name in ("stage", "track", "owner"):
+        inputs = page.locator(f'input[name="{name}"]')
+        expect(inputs.first).to_be_attached()
+        # Wrapped in their own <label>, so the whole chip is the hit area and
+        # the accessible name is the chip's text.
+        wrapped = inputs.first.evaluate("node => node.closest('label') !== null")
+        assert wrapped, f"{name} chips are not inside a label"
