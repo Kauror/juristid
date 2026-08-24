@@ -89,7 +89,7 @@ evidence until a specific version has been captured
                       {% else %}—{% endif %}
                     </td>
                     <td class="table__date">
-                      <span class="muted">{{ document.created_at|date:"d.m.Y" }}</span>
+                      <span class="muted">{{ document.created_at|date:"j.n.Y" }}</span>
                     </td>
                   </tr>
                 {% endfor %}
@@ -189,7 +189,7 @@ evidence until a specific version has been captured
             </a>
             <span class="muted">elav fail</span>
             {% if document.sharepoint_observed_at %}
-              <span class="muted">· viimati nähtud {{ document.sharepoint_observed_at|date:"d.m.Y" }}</span>
+              <span class="muted">· viimati nähtud {{ document.sharepoint_observed_at|date:"j.n.Y" }}</span>
             {% endif %}
           </p>
         {% empty %}

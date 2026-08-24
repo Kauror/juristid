@@ -21,7 +21,7 @@ paragraph. The banner's own action slot keeps it inside and at the right.
     <p class="banner__text">
       <strong>Teema on suletud.</strong>
       {{ matter.get_disposition_display }}{% if matter.disposition_reason %} — {{ matter.disposition_reason }}{% endif %}
-      {% if matter.closed_at %}<span class="muted">({{ matter.closed_at|date:"d.m.Y" }})</span>{% endif %}
+      {% if matter.closed_at %}<span class="muted">({{ matter.closed_at|date:"j.n.Y" }})</span>{% endif %}
     </p>
     <form class="banner__actions" method="post" action="{% url 'matters:reopen' pk=matter.pk %}">
       {% csrf_token %}

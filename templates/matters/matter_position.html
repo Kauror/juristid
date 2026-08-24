@@ -146,7 +146,7 @@ keep it.
                   {{ letter.search_document.title|default:"Pealkirjata kiri"|truncatechars:110 }}
                 </a>
                 {% if letter.search_document.document_date %}
-                  <span class="muted">· {{ letter.search_document.document_date|date:"d.m.Y" }}</span>
+                  <span class="muted">· {{ letter.search_document.document_date|date:"j.n.Y" }}</span>
                 {% endif %}
                 {% if letter.search_document.recipient %}
                   <span class="muted">· {{ letter.search_document.recipient|truncatechars:50 }}</span>

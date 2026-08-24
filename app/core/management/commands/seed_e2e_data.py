@@ -117,6 +117,15 @@ FORMER_OWNER_TITLE = "Endise kolleegi avatud teema"
 FORMER_UPN = "endine@example.invalid"
 FORMER_NAME = "Kadri Endine"
 
+#: Two register-backed Matters, so *Arvamusi koostamisel* is a real number in
+#: the browser world rather than a zero that any broken filter would also
+#: produce. One has a blank VÄLJA cell and belongs in the card; the other has a
+#: mark in it and must not, which is what makes the drill-through test able to
+#: fail (app/matters/register_filters.py, ADR 0021).
+DRAFTING_TITLE = "Koostamisel olev sünteetiline arvamus"
+DRAFTING_SENT_TITLE = "Saadetud sünteetiline arvamus"
+REGISTER_SNAPSHOT_SHA = hashlib.sha256(b"juristid-e2e-current-register").hexdigest()
+
 
 #: The archive's synthetic snapshot, and the letters inside it. Invented, like
 #: everything else here: no Koda opinion, ministry or filename may appear in a
@@ -604,6 +613,59 @@ class Command(BaseCommand):
             source_organisations=[ministry],
             received_date=today - timedelta(days=9),
         )
+
+        self._drafting_world(martin, stage, ministry, today)
+
+    def _drafting_world(self, actor: Any, stage: Any, ministry: Any, today: date) -> None:
+        """Two current register rows: one opinion still being drafted, one sent.
+
+        Built through the ORM rather than through the cutover, for the reason
+        the historical world is: the browser suite asks whether a lawyer can
+        click a number and land on the rows behind it, and that question does
+        not need a workbook to answer.
+        """
+        from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
+        from app.legacy_import.models import MatterSourceReference
+
+        if Matter.objects.filter(title=DRAFTING_TITLE).exists():
+            return
+
+        for index, (title, sent_recorded) in enumerate(
+            ((DRAFTING_TITLE, False), (DRAFTING_SENT_TITLE, True)), start=1
+        ):
+            matter = create_matter(
+                title=title,
+                actor=actor,
+                owner=actor,
+                stage=stage,
+                track=Track.DOMESTIC,
+                source_organisations=[ministry],
+                received_date=today - timedelta(days=20),
+            )
+            reference = MatterSourceReference.objects.create(
+                matter=matter,
+                source_system="EXCEL_REGISTER",
+                source_file_name="Naidisregister.xlsx",
+                source_snapshot_sha256=REGISTER_SNAPSHOT_SHA,
+                source_sheet=str(today.year),
+                source_row_number=index,
+                source_row_raw={"VALJA": "12.03" if sent_recorded else ""},
+                source_title=title,
+                source_era=str(today.year),
+            )
+            CurrentRegisterState.objects.create(
+                matter=matter,
+                source_reference=reference,
+                source_snapshot_sha256=REGISTER_SNAPSHOT_SHA,
+                source_sheet=str(today.year),
+                source_row_number=index,
+                currency=RegisterCurrency.CURRENT,
+                status_label="Kooskolastusringil",
+                opinion_sent_recorded=sent_recorded,
+                owner_raw=actor.get_short_name(),
+                owner_resolved=True,
+                observed_at=timezone.now(),
+            )
 
     def _historical_world(self, matter: Matter) -> None:
         """A OneNote page, its file, and one decision nobody has made yet.

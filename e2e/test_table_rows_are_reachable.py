@@ -102,6 +102,13 @@ def test_the_first_rows_own_links_receive_the_pointer(page, base_url, persona, r
         link = links.nth(index)
         if not link.is_visible():
             continue
+        # Scrolled to first, because `elementFromPoint` takes *viewport*
+        # coordinates and returns null for anything below the fold — which is
+        # what a person scrolling to a link does anyway. Without this, the test
+        # reported "nothing intercepts the pointer" the moment the seeded world
+        # grew enough to push a table past the first screen, which reads as a
+        # covered link and is nothing of the kind.
+        link.scroll_into_view_if_needed()
         blocker = link.evaluate(
             """(element) => {
                 const box = element.getBoundingClientRect();

@@ -54,7 +54,7 @@ def test_the_footer_shows_the_build_time_in_local_time(client: Client, settings)
     body = client.get("/").content.decode()
 
     assert "versioon ceb324c" in body
-    assert "ehitatud 19.08.2026 14:52" in body
+    assert "ehitatud 19.8.2026 14:52" in body
 
 
 @pytest.mark.django_db

@@ -22,16 +22,16 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models import Q
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
 from app.core.authorization import may_review_work_victory, may_write_business_content
+from app.core.dates import format_estonian_date, parse_flexible_date
 from app.core.decorators import gate_required, viewer_for
 from app.core.enums import Visibility
 from app.core.errors import DomainError
@@ -44,8 +44,7 @@ from app.legacy_import.register_display import (
     source_instruction_for,
     source_instructions_for,
 )
-from app.legacy_import.source_pages import MatterSourcePage
-from app.matters import selectors
+from app.matters import register_filters, selectors
 from app.matters.dashboard import DEADLINE_WINDOW_PARAM, build_dashboard, deadline_window
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import MatterOrigin, RecordMode
@@ -300,6 +299,11 @@ FILTER_LABELS = {
     "paritolu": "Päritolu",
     "allikas": "Ajalooline allikas",
     "tegevus": "Järgmine tegevus",
+    # What the register recorded about the drafting step. A dimension of its own
+    # rather than a synonym for `tegevus`: a Matter can carry a next action and
+    # an unfinished opinion at the same time, and they are different questions
+    # (app/matters/register_filters.py, ADR 0021).
+    "arvamus": "Arvamus",
     # Two organisation filters, never one. `KELLELT` and `KELLELE` are
     # different facts and the register itself changed which one its single
     # counterparty column meant in 2020, so a combined filter would answer a
@@ -357,28 +361,12 @@ def _is_control_param(name: str) -> bool:
     return name.endswith(CONTROL_PARAM_SUFFIX)
 
 
-#: What `?allikas=` means. A word rather than a boolean, because `allikas=0`
-#: reads as "source number zero" in a URL somebody is editing by hand.
-SOURCE_PRESENT = "on"
-SOURCE_ABSENT = "puudub"
-#: More than one archived page claims this Matter. A separate value rather than
-#: a count parameter because it is the only threshold any statistic asks about,
-#: and 402 Matters in the real corpus have it (Stage-2D brief 12).
-SOURCE_SEVERAL = "mitu"
-
 #: How each `?tegevus=` value reads in a filter chip. Wording matters here: a
 #: WAIT whose review date has passed is "ülevaatus käes", never "hilinenud".
-#: The two organisation directions, as URL parameters. Never merged: the same
-#: register column meant the sender until 2019 and the addressee from 2020.
-#: URL parameter -> the lookup path that answers it, and whether the path
-#: crosses a many-to-many join. The sender side does, so its filters need an
-#: explicit `.distinct()`: a Matter sent by two bodies would otherwise come back
-#: twice from `?asutus=`, and — more quietly — the `visible_to` scope only adds
-#: `.distinct()` when the reader is actually restricted, so a department head
-#: would see the duplicate row nobody else did (Agent-E brief 39, 43).
-ORGANISATION_FILTERS = {
-    "saatja": ("source_organisations", True),
-    "adressaat": ("addressee_organisation", False),
+#: How each `?arvamus=` value reads in a chip and in the control.
+OPINION_LABELS = {
+    register_filters.OPINION_DRAFTING: "Koostamisel",
+    register_filters.OPINION_SENT: "Saadetud",
 }
 
 NEXT_ACTION_LABELS = {
@@ -487,11 +475,13 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     if name == "aasta":
         return "Teadmata aasta" if value == selectors.UNKNOWN_YEAR else value
     if name == "allikas":
-        if value == SOURCE_SEVERAL:
+        if value == register_filters.SOURCE_SEVERAL:
             return "Mitu lähtelehte"
-        return "Olemas" if value == SOURCE_PRESENT else "Puudub"
+        return "Olemas" if value == register_filters.SOURCE_PRESENT else "Puudub"
     if name == "tegevus":
         return NEXT_ACTION_LABELS.get(value, value)
+    if name == "arvamus":
+        return OPINION_LABELS.get(value, value)
     if name in {"saatja", "adressaat", "asutus"}:
         organisation = _named_by_pk(Organisation, value)
         return organisation.name if organisation else value
@@ -499,22 +489,14 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         return MATERIAL_LABELS.get(value, value)
     if name == "andmed":
         return DATA_CLASS_LABELS.get(value, value)
-    if name in DATE_FILTERS:
-        # The stored value is ISO because that is what `<input type=date>`
-        # submits; the chip reads it back the way Estonians write dates.
-        parsed = parse_date(value)
-        return f"{parsed:%d.%m.%Y}" if parsed else value
+    if name in register_filters.DATE_FILTERS:
+        # The parameter may carry either form — the control submits Estonian and
+        # an older link carries ISO — and the chip reads back the one way this
+        # application writes a date. An unparseable value is shown as typed, so
+        # a chip above an empty register says what emptied it.
+        parsed = parse_flexible_date(value)
+        return format_estonian_date(parsed) if parsed else value
     return value
-
-
-#: Which parameters hold a date, and which column each pair narrows. Both ends
-#: of each pair are inclusive — see `selectors.date_range_q`.
-DATE_FILTERS = {
-    "saabus_alates": ("received_date", "start"),
-    "saabus_kuni": ("received_date", "end"),
-    "tahtaeg_alates": ("response_deadline", "start"),
-    "tahtaeg_kuni": ("response_deadline", "end"),
-}
 
 
 def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
@@ -537,33 +519,6 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
             }
         )
     return chips
-
-
-def _filter_by_reporting_year(queryset: Any, value: str) -> Any:
-    """Apply `?aasta=`, using the same condition the year chart counted with.
-
-    Accepts `YYYY`, `YYYY-YYYY`, or the word that asks for the bucket with no
-    usable year. An unreadable value empties the list rather than being ignored:
-    a filter chip saying "2O24" above the whole register would be a lie the
-    reader has no way to catch.
-    """
-    if value == selectors.UNKNOWN_YEAR:
-        return queryset.filter(selectors.unknown_register_year_q())
-
-    parts = value.split("-")
-    try:
-        if len(parts) == 1:
-            first = last = int(parts[0])
-        elif len(parts) == 2:
-            first, last = int(parts[0]), int(parts[1])
-        else:
-            return queryset.none()
-    except ValueError:
-        return queryset.none()
-
-    if first > last:
-        return queryset.none()
-    return queryset.filter(selectors.register_year_q(start=first, end=last))
 
 
 SORT_FIELDS = {
@@ -594,32 +549,6 @@ def _wants_fragment(request: HttpRequest) -> bool:
     )
 
 
-def _apply_date_filters(queryset: Any, params: Any) -> tuple[Any, dict[str, str]]:
-    """``?saabus_alates=`` and its three siblings, as two closed intervals.
-
-    An unreadable date empties the list rather than being ignored, for the same
-    reason an unreadable year does: a chip reading "31.02.2024" above the whole
-    register is a lie the reader has no way to catch.
-    """
-    bounds: dict[str, dict[str, Any]] = {}
-    echo: dict[str, str] = {}
-    for parameter, (field, edge) in DATE_FILTERS.items():
-        raw = (params.get(parameter) or "").strip()
-        if not raw:
-            continue
-        echo[parameter] = raw
-        parsed = parse_date(raw)
-        if parsed is None:
-            return queryset.none(), echo
-        bounds.setdefault(field, {})[edge] = parsed
-
-    for field, edges in bounds.items():
-        queryset = queryset.filter(
-            selectors.date_range_q(field, start=edges.get("start"), end=edges.get("end"))
-        )
-    return queryset, echo
-
-
 @login_required
 def matter_list(request: HttpRequest) -> HttpResponse:
     """The register. Dense, filtered through the URL, paginated server-side.
@@ -641,101 +570,13 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             pk__in=search_services.matching_matter_ids(query=query, user=request.user)
         )
 
+    # One call, and it is the same call the Ülevaade cards count through. The
+    # register and the KPI above it therefore cannot disagree about what
+    # "Arvamusi koostamisel" means — there is one definition, in one place
+    # (app/matters/register_filters.py).
     status = params.get("olek", "avatud")
-    if status == "avatud":
-        queryset = queryset.filter(is_open=True)
-    elif status == "suletud":
-        queryset = queryset.filter(is_open=False)
-    elif status == "arhiiv":
-        queryset = queryset.filter(record_mode=RecordMode.ARCHIVE)
-
     scope = params.get("ulatus", "koik")
-    if scope == "minu":
-        queryset = queryset.filter(Q(owner=request.user) | Q(collaborators=request.user))
-
-    # `puudub` is the one word every dimension uses for "this field is empty",
-    # so that the *Määramata* bucket on a chart is a link like any other bar
-    # rather than a number the reader has to take on trust (Stage-2E brief 42).
-    if owner_id := params.get("vastutaja"):
-        if owner_id == selectors.MISSING:
-            queryset = queryset.filter(owner__isnull=True)
-        else:
-            # A hand-edited URL must not reach the database as a malformed UUID.
-            try:
-                queryset = queryset.filter(owner_id=uuid.UUID(owner_id))
-            except ValueError:
-                queryset = queryset.none()
-    if stage_key := params.get("hetkeseis"):
-        if stage_key == selectors.MISSING:
-            queryset = queryset.filter(stage__isnull=True)
-        else:
-            queryset = queryset.filter(stage__key=stage_key)
-    if track := params.get("menetlusliik"):
-        queryset = queryset.filter(track="" if track == selectors.MISSING else track)
-    if area_key := params.get("valdkond"):
-        if area_key == selectors.MISSING:
-            queryset = queryset.filter(policy_areas__isnull=True)
-        else:
-            queryset = queryset.filter(policy_areas__key=area_key)
-    if tag_key := params.get("silt"):
-        queryset = queryset.filter(tags__key=tag_key)
-    if mode := params.get("liik"):
-        queryset = queryset.filter(record_mode=mode)
-    if origin := params.get("paritolu"):
-        # Comma-separated, because one statistic legitimately means two origins:
-        # a register row is `LEGACY_IMPORT` or an archive row somebody activated
-        # (`PROMOTED_LEGACY`), and the bar counting both has to open both.
-        queryset = queryset.filter(origin__in=origin.split(","))
-    if year := params.get("aasta"):
-        queryset = _filter_by_reporting_year(queryset, year)
-    if source := params.get("allikas"):
-        if source == SOURCE_SEVERAL:
-            queryset = queryset.annotate(
-                source_page_count=Count("source_pages", distinct=True)
-            ).filter(source_page_count__gte=2)
-        else:
-            has_page = Exists(MatterSourcePage.objects.filter(matter=OuterRef("pk")))
-            queryset = queryset.annotate(has_source_page=has_page).filter(
-                has_source_page=source == SOURCE_PRESENT
-            )
-    if action_filter := params.get("tegevus"):
-        queryset = selectors.filter_by_next_action(queryset, request.user, action_filter)
-    for parameter, (field, many) in ORGANISATION_FILTERS.items():
-        raw = params.get(parameter)
-        if not raw:
-            continue
-        if raw == selectors.MISSING:
-            # "No sender recorded" over a plural relation is still one condition:
-            # the outer join produces a single null row for a Matter with no
-            # link at all, so no duplicate is possible here.
-            queryset = queryset.filter(**{f"{field}__isnull": True})
-            continue
-        try:
-            queryset = queryset.filter(**{f"{field}__id": uuid.UUID(raw)})
-        except ValueError:
-            queryset = queryset.none()
-        else:
-            if many:
-                queryset = queryset.distinct()
-    # The convenience filter, beside the two precise ones rather than instead of
-    # them. Nothing stored is collapsed: this is an OR over two columns that
-    # keep their separate meanings (Stage-2E.1 brief 11F).
-    if involved := params.get("asutus"):
-        try:
-            queryset = queryset.filter(
-                selectors.organisation_involved_q(uuid.UUID(involved))
-            ).distinct()
-        except ValueError:
-            queryset = queryset.none()
-    if materials := params.get("materjalid"):
-        queryset = selectors.filter_by_materials(queryset, request.user, materials)
-    # After every authorization-bearing filter above, and applied to the scoped
-    # queryset rather than the raw table. Data class narrows what is already
-    # visible; it never decides what is visible (Agent-C brief 14, 50).
-    data_class = params.get("andmed", selectors.DATA_CLASS_ALL)
-    queryset = selectors.filter_by_data_class(queryset, data_class)
-
-    queryset, date_echo = _apply_date_filters(queryset, params)
+    queryset, date_echo = register_filters.apply_register_filters(queryset, request.user, params)
 
     sort = params.get("jarjestus", "reference")
     queryset = queryset.order_by(*SORT_FIELDS.get(sort, SORT_FIELDS["reference"]), "-created_at")
@@ -781,7 +622,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             "q": query,
             "asutus": params.get("asutus", ""),
             "materjalid": params.get("materjalid", ""),
-            "andmed": data_class,
+            "andmed": params.get("andmed", selectors.DATA_CLASS_ALL),
             **date_echo,
             "vastutaja": params.get("vastutaja", ""),
             "hetkeseis": params.get("hetkeseis", ""),
@@ -793,6 +634,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             "aasta": params.get("aasta", ""),
             "allikas": params.get("allikas", ""),
             "tegevus": params.get("tegevus", ""),
+            "arvamus": params.get("arvamus", ""),
             "saatja": params.get("saatja", ""),
             "adressaat": params.get("adressaat", ""),
             "jarjestus": sort,
@@ -818,6 +660,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "record_modes": RecordMode.choices,
         "origins": MatterOrigin.choices,
         "next_action_options": list(NEXT_ACTION_LABELS.items()),
+        "opinion_options": list(OPINION_LABELS.items()),
         "material_options": sorted(MATERIAL_LABELS.items()),
         # Kõik first: it is the default, and the control should open on the
         # state the page is actually in.
@@ -918,12 +761,22 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     (Stage-2E.1 brief 23).
     """
     form = MatterCreateForm(request.POST or None, viewer=request.user)
-    action_form = NextActionForm(request.POST or None, prefix="next")
+    # Bound only when somebody actually wrote a next action. Bound
+    # unconditionally, a refused save — a missing title, a rejected file —
+    # re-rendered the optional Järgmine tegevus block with "See lahter on
+    # nõutav." under fields nobody had touched, and opened the disclosure to
+    # show them. That reads as "this is mandatory after all", which is the one
+    # thing the block must not say (specification 3.8, Agent-UI brief 9.6).
+    #
+    # `next-text` is the same signal the save path already used to decide
+    # whether to create an action at all, so there is one definition of "the
+    # user wants a next action" rather than two.
+    wants_action = bool((request.POST.get("next-text") or "").strip())
+    action_form = NextActionForm(request.POST if wants_action else None, prefix="next")
     uploads: list[Any] = []
     upload_error = ""
 
     if request.method == "POST" and form.is_valid():
-        wants_action = bool(request.POST.get("next-text", "").strip())
         try:
             uploads = _read_new_matter_files(request)
         except (DomainError, UploadRejected) as error:
@@ -967,8 +820,15 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 _attach_incoming_file(matter, upload, actor=request.user)
 
             if wants_action:
+                # The owner is chosen on this same form, so the Matter does not
+                # exist yet when the action form is read and the service's own
+                # fallback to `matter.owner` has nothing to fall back to. Handed
+                # in explicitly, and only as a default: an explicit choice in
+                # the action form still wins (app/matters/forms.py).
                 set_next_action(
-                    matter=matter, actor=request.user, **action_form.as_service_kwargs()
+                    matter=matter,
+                    actor=request.user,
+                    **action_form.as_service_kwargs(default_responsible=data.get("owner")),
                 )
 
         if uploads:
@@ -1002,9 +862,10 @@ def _create_context(request: HttpRequest, form: Any, action_form: Any) -> dict[s
         # Named here rather than excluded in the template by listing the primary
         # ones: a field added to the form later should appear *somewhere* by
         # default, and the safe default is the disclosure.
+        # `stage` and `track` are named in the template now, because each is a
+        # row of radio chips rather than one more box in the grid. They stay out
+        # of this tuple so the generic loop does not render them a second time.
         "secondary_fields": (
-            "stage",
-            "track",
             "addressee_organisation",
             "response_deadline",
         ),
@@ -1429,8 +1290,11 @@ def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse
     action = get_object_or_404(
         NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
     )
+    # The box beside "Vaatasin üle" is the Estonian date control like every
+    # other one, so `7.9.2026` has to reach here as a date. ISO still parses:
+    # this route was posted to with ISO before the control changed.
     raw_date = request.POST.get("next_review_date", "").strip()
-    next_review_date = parse_date(raw_date) if raw_date else None
+    next_review_date = parse_flexible_date(raw_date) if raw_date else None
 
     try:
         acknowledge_review(action=action, actor=request.user, next_review_date=next_review_date)

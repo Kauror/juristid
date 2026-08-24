@@ -35,9 +35,15 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.authorization import scoped_count
-from app.legacy_import.current_state import RegisterCurrency
+from app.core.dates import format_estonian_date
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
+from app.matters.register_filters import (
+    OPINION_DRAFTING,
+    filter_by_opinion_state,
+    register_population,
+)
+from app.matters.selectors import MISSING
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
@@ -219,53 +225,85 @@ def without_next_action(user: Any) -> QuerySet[Matter]:
     return active_matters(user).annotate(has_action=Exists(has_open)).filter(has_action=False)
 
 
-def summary_cards(user: Any, today: date | None = None) -> list[SummaryCard]:
-    today = today or timezone.localdate()
+#: Every summary card, as the register parameters that define it.
+#:
+#: The parameters are the definition, not a link built beside one. ``count`` is
+#: produced by running exactly these through the register's own filter pipeline,
+#: and ``url`` is exactly these as a query string, so clicking a card that reads
+#: *15* opens fifteen rows — not fourteen, not sixteen. Adding a card means
+#: adding a line here; there is nowhere else to keep in step
+#: (app/matters/register_filters.py, master specification 18.9).
+#:
+#: ``note`` is what genuinely clarifies the metric for a lawyer. It is not a
+#: place to explain where the data came from: *Registris puudub VÄLJA märge*
+#: described an import column to somebody who wanted to know which files still
+#: need an opinion written.
+#:
+#: There is deliberately no *Järgmine tegevus puudub* card. Almost no historical
+#: record carries a structured next action yet, so the number measured how far
+#: the migration had got rather than anything the department can act on, and a
+#: prominent KPI nobody can move is a KPI people learn to read past. The
+#: condition itself is not gone — ``?tegevus=puudub`` still opens exactly those
+#: files, and *Vajab tähelepanu* below still lists the ones with an owner.
+def _card_definitions(today: date) -> tuple[tuple[str, str, str, dict[str, str]], ...]:
     horizon = today + timedelta(days=DEADLINE_HORIZON_DAYS)
-    active = active_matters(user)
+    current = {"olek": "avatud", "liik": RecordMode.FULL}
+    return (
+        (
+            "active",
+            "Aktiivsed teemad",
+            "",
+            current,
+        ),
+        (
+            "deadlines",
+            f"Arvamuse tähtaeg {DEADLINE_HORIZON_DAYS} päeva jooksul",
+            "",
+            {
+                **current,
+                "tahtaeg_alates": format_estonian_date(today),
+                "tahtaeg_kuni": format_estonian_date(horizon),
+            },
+        ),
+        (
+            "overdue",
+            "Tähtaeg möödas",
+            "Tegevused, mille tähtaeg on käes olnud",
+            {"olek": "avatud", "tegevus": "hilinenud"},
+        ),
+        (
+            "drafting",
+            "Arvamusi koostamisel",
+            "Arvamust ei ole veel saadetud",
+            {**current, "arvamus": OPINION_DRAFTING},
+        ),
+        (
+            "unassigned",
+            "Vastutajata",
+            "",
+            {**current, "vastutaja": MISSING},
+        ),
+    )
 
+
+def summary_cards(user: Any, today: date | None = None) -> list[SummaryCard]:
+    """The cards, each counted through the list it opens.
+
+    One query per card, and it is the register's query. The alternative —
+    counting here and linking there — is what let *Arvamusi koostamisel* send a
+    lawyer to an unfiltered register and leave them to reconstruct the filter by
+    hand (Agent-UI brief 3.1).
+    """
+    today = today or timezone.localdate()
     return [
         SummaryCard(
-            key="active",
-            label="Aktiivsed teemad",
-            count=active.count(),
-            url=_teemad(olek="avatud", liik=RecordMode.FULL),
-        ),
-        SummaryCard(
-            key="deadlines",
-            label=f"Tähtajad {DEADLINE_HORIZON_DAYS} päeva jooksul",
-            count=active.filter(
-                response_deadline__gte=today, response_deadline__lte=horizon
-            ).count(),
-            url=_teemad(olek="avatud", liik=RecordMode.FULL),
-            note="Arvamuse tähtaeg",
-        ),
-        SummaryCard(
-            key="overdue",
-            label="Tähtaeg möödas",
-            count=overdue_actions(user, today).count(),
-            url=reverse("matters:my_work"),
-            note="Ainult tähtajaga tegevused",
-        ),
-        SummaryCard(
-            key="drafting",
-            label="Arvamusi koostamisel",
-            count=drafting_matters(user).count(),
-            url=_teemad(olek="avatud", liik=RecordMode.FULL),
-            note="Registris puudub VÄLJA märge",
-        ),
-        SummaryCard(
-            key="no_action",
-            label="Järgmine tegevus puudub",
-            count=without_next_action(user).count(),
-            url=_teemad(olek="avatud", liik=RecordMode.FULL),
-        ),
-        SummaryCard(
-            key="unassigned",
-            label="Vastutajata",
-            count=active.filter(owner__isnull=True).count(),
-            url=reverse("matters:inbox"),
-        ),
+            key=key,
+            label=label,
+            count=register_population(user, params, today=today).count(),
+            url=_teemad(**params),
+            note=note,
+        )
+        for key, label, note, params in _card_definitions(today)
     ]
 
 
@@ -611,11 +649,14 @@ def drafting_matters(user: Any) -> QuerySet[Matter]:
     whether what it wrote parses as a date. Those differ on fourteen current
     Matters in the approved snapshot, and reading the parsed date's nullability
     reported all fourteen as unfinished work.
+
+    The source half is applied by the register's own ``?arvamus=koostamisel``
+    rather than restated here. That is what lets the card, this function and the
+    list a lawyer lands on be the same query: a second copy of the condition,
+    written next door, is how a count and its drill-through start disagreeing
+    (app/matters/register_filters.py).
     """
-    return active_matters(user).filter(
-        current_register_state__currency=RegisterCurrency.CURRENT,
-        current_register_state__opinion_sent_recorded=False,
-    )
+    return filter_by_opinion_state(active_matters(user), OPINION_DRAFTING)
 
 
 def drafting_by_responsibility(user: Any) -> list[CountRow]:

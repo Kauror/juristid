@@ -339,6 +339,11 @@ def test_a_date_only_submission_never_renders_an_invented_time(client, specialis
     response = client.get(reverse("matters:matter_position", args=[normal_matter.pk]))
     body = response.content.decode()
 
-    assert "10.04.2024" in body
-    assert "10.04.2024 00:00" not in body
+    assert "10.4.2024" in body
+    # The guard has to follow the format it guards: with the date rendered
+    # `10.4.2024`, an invented midnight would read `10.4.2024 00:00`, and the
+    # zero-padded spelling would no longer appear whether the bug was there or
+    # not (app/core/dates.py).
+    assert "10.4.2024 00:00" not in body
+    assert "10.04.2024" not in body
     assert submission.sent_at_precision == SentAtPrecision.DATE

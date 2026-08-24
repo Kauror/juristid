@@ -4709,3 +4709,201 @@ p.factsection__none {
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
+
+/* ---------------------------------------------------------------------------
+   The Estonian date control
+
+   Every date box in the application is a text input reading 7.9.2026, because
+   a native date input renders in the browser's locale and a US-English Chrome
+   put mm/dd/yyyy on an Estonian form. The calendar beside it is ours: weeks
+   start on Monday, the labels are Estonian, and it is progressive enhancement
+   — the wrapper and the button are created by app.js, so with scripting off
+   there is a plain text box and nothing broken (app/core/dates.py).
+   --------------------------------------------------------------------------- */
+
+.datepicker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  /* The box still fills whatever field it was dropped into. Without this the
+     wrapper shrink-wraps the input and every date field on the create form
+     became half the width of the text field above it. */
+  width: 100%;
+  max-width: 100%;
+}
+
+.datepicker .dateinput {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.datepicker__trigger {
+  flex: none;
+  padding: var(--spacing-1) var(--spacing-15);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+  color: var(--text-secondary);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.datepicker__trigger:hover {
+  border-color: var(--accent-border);
+}
+
+.datepicker__trigger:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+/* Above the sticky header, which is z-index 30, and above the table head that
+   sits at 20 — a calendar opened from a filter row underneath either of them
+   is a calendar nobody can click. */
+.datepicker__panel {
+  position: absolute;
+  top: calc(100% + var(--spacing-1));
+  left: 0;
+  z-index: 50;
+  min-width: 16rem;
+  padding: var(--spacing-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-menu);
+}
+
+/* Near the right edge the panel would otherwise run off the viewport. Anchored
+   to the right instead, which is what a narrow window needs and what the
+   inline edits in the Matter header need at any width. */
+@media (max-width: 40rem) {
+  .datepicker__panel {
+    left: auto;
+    right: 0;
+  }
+}
+
+.datepicker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-2);
+}
+
+.datepicker__title {
+  font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.datepicker__nav {
+  padding: 0 var(--spacing-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-panel);
+  color: var(--text-body);
+  cursor: pointer;
+  font-size: var(--typography-size-row);
+  line-height: 1.6;
+}
+
+.datepicker__nav:hover {
+  border-color: var(--accent-border);
+}
+
+.datepicker__nav:focus-visible,
+.datepicker__day:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+/* Seven columns, Monday first. The order is in the markup, not here: a grid
+   that reordered columns in CSS would read one way and be tabbed another. */
+.datepicker__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+  text-align: center;
+}
+
+.datepicker__weekday {
+  padding: var(--spacing-1) 0;
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-muted);
+}
+
+.datepicker__blank {
+  display: block;
+}
+
+.datepicker__day {
+  padding: var(--spacing-1) 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-body);
+  cursor: pointer;
+  font-size: var(--typography-size-row);
+  font-variant-numeric: tabular-nums;
+}
+
+.datepicker__day:hover {
+  background: var(--surface-hover);
+}
+
+/* Today is outlined, the chosen day is filled. Two different questions, so
+   two different treatments — a single highlight for both leaves somebody
+   unable to tell which day they picked in the current month. */
+.datepicker__day.is-today {
+  border-color: var(--border-strong);
+}
+
+.datepicker__day.is-selected {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--text-inverse);
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* A choice card that carries a line of explanation.
+ *
+ * Used where the option name alone does not settle the choice: TEEN, OOTAN and
+ * JÄLGIN are three ordinary Estonian verbs, and which one a lawyer means
+ * depends on whether the next move is theirs. The hint is what makes that
+ * decidable without training (templates/matters/matter_create.html).
+ *
+ * Still a radio underneath. The card is styling on a real control, never a
+ * clickable div — the selected state, the focus ring and the keyboard
+ * behaviour all come from the input. */
+.choicecards--described {
+  align-items: stretch;
+}
+
+.choicecard--described {
+  align-items: flex-start;
+  /* Wide enough for a clause, capped so three cards sit on one row at desktop
+     width and wrap cleanly below it rather than stretching to fill. */
+  flex: 1 1 15rem;
+  max-width: 22rem;
+  padding: var(--spacing-3);
+}
+
+.choicecard__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-width: 0;
+}
+
+.choicecard__hint {
+  font-size: var(--typography-size-meta);
+  line-height: var(--typography-line-normal);
+  color: var(--text-muted);
+}
+
+.choicecard:has(input:checked) .choicecard__hint {
+  color: var(--text-secondary);
+}

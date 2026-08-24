@@ -57,14 +57,14 @@ def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     add_form(page).locator('select[name="kind"]').select_option("WEB_CALL")
     add_form(page).locator('input[name="title"]').fill("Liikmete kaasamiskutse")
     add_form(page).locator('input[name="url"]').fill("https://www.koda.ee/kaasamine/naidis")
-    add_form(page).locator('input[name="occurred_on"]').fill("2026-09-15")
+    add_form(page).locator('input[name="occurred_on"]').fill("15.9.2026")
     add_form(page).locator('textarea[name="note"]').fill("Vastuseid ootame septembrini.")
     add_form(page).get_by_role("button", name="Lisa kaasamine").click()
 
     # The swap replaces the overview column; the row is there without a reload.
     section = page.locator("#kaasamine")
     expect(section.get_by_text("Liikmete kaasamiskutse", exact=True)).to_be_visible()
-    expect(section.get_by_text("15.09.2026")).to_be_visible()
+    expect(section.get_by_text("15.9.2026")).to_be_visible()
     expect(section.get_by_text("www.koda.ee")).to_be_visible()
 
     # And correcting it edits the same record rather than adding a second.
