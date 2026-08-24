@@ -6154,3 +6154,583 @@ p.factsection__none {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ====================================================================
+ * Uus teema
+ *
+ * Lifted from design/mockups/uus-teema.css, which is the visual authority
+ * (design/UUS_TEEMA_HANDOFF.md). Two integrations were made on the way in:
+ *
+ *   1. every selector is scoped to `.uus`, so nothing here can reach another
+ *      page — `.pick` in particular is a name a future surface may want;
+ *   2. the field rules also match `.field__input`, which is what Django's own
+ *      widgets render. Renaming the widget classes would have churned
+ *      `NextActionForm`, and that form is not only this page's.
+ *
+ * Values are semantic tokens throughout. The two literals — the pick's 3px
+ * vertical padding and the danger ring's rgba — carry their reason inline.
+ * ==================================================================== */
+/* ==================================================================== *
+ * The page
+ * ==================================================================== */
+
+.uus {
+  /* 1060px, not the Teema page's 1140. The Teema page spends its extra width
+     on a 300px facts rail; a form has no rail, and a single column wider than
+     this starts putting the label and the far edge of the input in different
+     saccades. */
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: var(--spacing-6) var(--spacing-8) var(--spacing-10);
+}
+
+.uus__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-3);
+  padding-bottom: var(--spacing-4);
+}
+
+.uus__title {
+  font-size: var(--typography-size-page-title);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-title);
+  color: var(--text-primary);
+}
+
+/* ==================================================================== *
+ * Sections — spacing and a 1px rule, never a card
+ *
+ * The current page wraps every field in a bordered box, which gives nine
+ * concepts the same visual weight and costs ~24px of chrome each. A rule plus
+ * padding separates them for a tenth of the height and lets the type carry the
+ * hierarchy instead.
+ * ==================================================================== */
+
+.uus .sec {
+  padding: var(--spacing-35) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.uus .sec:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+/* The one section that is a panel. See `.nextpanel`. */
+.uus .sec--panel {
+  padding-bottom: var(--spacing-4);
+}
+
+.uus .sec__grid {
+  display: grid;
+  gap: var(--spacing-5);
+  align-items: start;
+}
+
+/* Section 2 — summary beside notes. */
+.uus .sec__grid--summary { grid-template-columns: minmax(0, 1fr) 320px; }
+/* Section 3 — files, then two dates. */
+.uus .sec__grid--files { grid-template-columns: minmax(0, 1fr) 146px 146px; }
+/* Section 4 — owner, then senders. */
+.uus .sec__grid--who { grid-template-columns: 246px minmax(0, 1fr); }
+/* Section 6 — addressee, then the data class. */
+.uus .sec__grid--class { grid-template-columns: minmax(0, 1fr) 150px; }
+
+/* ==================================================================== *
+ * Labels and fields
+ * ==================================================================== */
+
+.uus .lbl {
+  display: block;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-2);
+}
+
+.uus .lbl--err { color: var(--status-danger); }
+
+/* A fieldset carrying a pick group: no border, no padding, and the legend is
+   the same micro-label. `display: contents` would drop the legend from the
+   accessibility tree in some engines, so the reset is explicit instead. */
+.uus .grp {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.uus .fld,
+.uus .field__input {
+  width: 100%;
+  background: var(--surface-base);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font: var(--typography-weight-regular) var(--typography-size-base) / var(--typography-line-normal)
+    var(--typography-font-sans);
+  padding: var(--spacing-2) var(--spacing-3);
+}
+
+.uus .fld::placeholder,
+.uus .field__input::placeholder { color: var(--text-muted); }
+
+.uus .fld:focus-visible,
+.uus .field__input:focus-visible {
+  outline: 2px solid var(--accent-link);
+  outline-offset: 2px;
+  border-color: var(--accent-border);
+}
+
+/* The one field that is bigger than the others, because it is the only one
+   that has to be filled. 15px against the form's 13px is the whole signal —
+   no asterisk, no "kohustuslik" note. */
+.uus .fld--title,
+.uus .field__input--prominent {
+  font-size: var(--typography-size-lg);
+  padding: var(--spacing-25) var(--spacing-35);
+}
+
+.uus .fld--date,
+.uus .dateinput {
+  font-variant-numeric: tabular-nums;
+  /* Dates are read as columns of digits; proportional figures make 11.09 and
+     31.08 different widths and the eye stops being able to compare them. */
+}
+
+.uus .fld--area {
+  resize: vertical;
+  min-height: 74px;
+  line-height: var(--typography-line-body);
+}
+
+/* Märkmed. Dashed, and one step quieter in every dimension: this is scratch
+   paper beside the summary that the Teema header will publish. */
+.uus .fld--notes {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--text-body);
+}
+
+.uus .fld--err,
+.uus .field__input--err {
+  border-color: var(--status-danger-border);
+  box-shadow: 0 0 0 3px rgba(239, 125, 110, 0.08);
+}
+
+.uus .err {
+  display: block;
+  margin-top: var(--spacing-15);
+  font-size: var(--typography-size-meta);
+  color: var(--status-danger);
+}
+
+/* The two helper lines that survive. Everything else the controls say
+   themselves. */
+.uus .note {
+  display: block;
+  margin-top: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  line-height: var(--typography-line-normal);
+}
+
+/* ==================================================================== *
+ * The pick
+ *
+ * One control, two behaviours. `input[type=radio]` where the model holds one
+ * value, `input[type=checkbox]` where it holds several — the shape of the
+ * control is the promise, and the promise is enforced by the input type rather
+ * than by CSS.
+ *
+ * The input is visually hidden but focusable and hit-testable: it covers the
+ * label, so clicking the pick *is* clicking the input. A 1px `pointer-events:
+ * none` box was the earlier approach and made clicks land wherever the label
+ * happened to be (static/js — the same trap the composer's mode picks hit).
+ * ==================================================================== */
+
+.uus .picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-15);
+  align-items: center;
+}
+
+.uus .pick {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.uus .pick input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.uus .pick__name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  /* 3px/11px. The vertical value is off the 4px scale on purpose: a 4px pick is
+     26px tall and eight rows of them is 40px of air the form does not have. */
+  padding: 3px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-control);
+  background: var(--surface-raised);
+  color: var(--text-body);
+  font-size: var(--typography-size-meta);
+  line-height: var(--typography-line-normal);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--motion-duration-fast) var(--motion-easing-standard),
+    background var(--motion-duration-fast) var(--motion-easing-standard);
+}
+
+.uus .pick:hover .pick__name { border-color: var(--border-strong); }
+
+.uus .pick input:checked + .pick__name {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.uus .pick input:focus-visible + .pick__name {
+  outline: 2px solid var(--accent-link);
+  outline-offset: 2px;
+}
+
+/* Multi-select only. The × says "this one comes off", which a checked radio
+   must not say — you replace a radio, you do not clear it. */
+.uus .pick__x {
+  color: var(--accent-link);
+  font-size: var(--typography-size-meta-sm);
+  display: none;
+}
+
+.uus .pick input[type="checkbox"]:checked + .pick__name .pick__x { display: inline; }
+
+/* `Muu` keeps its dashed border when it is checked. It is selected *and* it is
+   still the control that revealed the text field below the row, and losing the
+   dash on selection would make it indistinguishable from a governed area — the
+   one thing this pick must never look like (master specification 11.2: nothing
+   here creates taxonomy). */
+.uus .pick--muu input:checked + .pick__name {
+  border-style: dashed;
+  border-color: var(--accent-link);
+}
+
+/* Dashed always means "this opens something optional" — the long-tail picker,
+   Muu, and nothing else. Borrowed from the Teema page, where the rail's `+`
+   pick and the SharePoint rows already use it. */
+.pick--more .pick__name,
+.uus .chip--open {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+/* ==================================================================== *
+ * The workflow pick — TEEN / OOTAN / JÄLGIN
+ *
+ * Deliberately NOT the selection pick. It is the vocabulary Minu töö and the
+ * Teema page already use, and it has to read as the same object here: caps,
+ * 700, tracked, and the fill / solid / dashed triad that survives greyscale
+ * (ADR 0031 §7, master specification 18.8).
+ * ==================================================================== */
+
+.uus .modepick .pick__name {
+  padding: 3px 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-chip);
+  background: var(--surface-elevated);
+  border-color: var(--border-control);
+  color: var(--text-muted);
+}
+
+/* Unselected, JÄLGIN keeps its dashed border — the one shape difference that
+   survives both states. */
+.uus .modepick--monitor .pick__name { border-style: dashed; }
+
+.uus .modepick--do input:checked + .pick__name {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+.uus .modepick--wait input:checked + .pick__name {
+  background: var(--surface-selected);
+  border-color: var(--accent-link);
+  color: var(--text-primary);
+}
+
+.uus .modepick--monitor input:checked + .pick__name {
+  background: var(--surface-selected);
+  border-color: var(--accent-link);
+  border-style: dashed;
+  color: var(--text-primary);
+}
+
+/* ==================================================================== *
+ * Files
+ * ==================================================================== */
+
+.uus .drop {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  min-height: 36px;
+  padding: var(--spacing-15) var(--spacing-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+.uus .drop input[type="file"],
+.uus .dropzone__input { color: var(--text-secondary); font-size: var(--typography-size-meta); }
+
+.uus .filelist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-15);
+  margin-top: var(--spacing-2);
+  list-style: none;
+  padding: 0;
+}
+
+.uus .filelist li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  color: var(--text-body);
+  font-size: var(--typography-size-meta-sm);
+}
+
+.uus .filelist b { color: var(--text-muted); font-weight: var(--typography-weight-regular); }
+
+/* ==================================================================== *
+ * The long tail
+ * ==================================================================== */
+
+.uus .tail { margin-top: var(--spacing-2); }
+
+.uus .tail > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 3px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-strong);
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+  cursor: pointer;
+  list-style: none;
+}
+
+.uus .tail > summary::-webkit-details-marker { display: none; }
+.uus .tail > summary:focus-visible { outline: 2px solid var(--accent-link); outline-offset: 2px; }
+.uus .tail[open] > summary { color: var(--text-primary); border-color: var(--accent-border); }
+
+.uus .tail__body {
+  margin-top: var(--spacing-2);
+  padding: var(--spacing-25);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.uus .tail__search {
+  width: 100%;
+  max-width: 280px;
+  margin-bottom: var(--spacing-2);
+}
+
+/* ==================================================================== *
+ * Järgmine tegevus — the one panel
+ *
+ * Same treatment as the Teema page's composer, because it is the same act:
+ * saying what happens next. The blue left edge is what marks a capture surface
+ * throughout the product.
+ * ==================================================================== */
+
+.uus .nextpanel {
+  background: var(--surface-capture);
+  border: 1px solid var(--accent-border);
+  border-left: 2px solid var(--accent-primary);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-3) var(--spacing-4) var(--spacing-35);
+}
+
+.uus .nextpanel__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-25);
+  flex-wrap: wrap;
+}
+
+.uus .nextpanel__row + .nextpanel__row { margin-top: var(--spacing-25); }
+
+.uus .nextpanel__text { flex: 1 1 320px; min-width: 0; }
+
+.uus .nextpanel__date { width: 146px; flex: none; }
+
+/* ==================================================================== *
+ * Actions
+ * ==================================================================== */
+
+.uus .acts {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding-top: var(--spacing-4);
+}
+
+.uus .btn {
+  font: var(--typography-weight-semibold) var(--typography-size-base) / 1
+    var(--typography-font-sans);
+  padding: var(--spacing-25) var(--spacing-45);
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.uus .btn:focus-visible { outline: 2px solid var(--accent-link); outline-offset: 2px; }
+
+.uus .btn--primary { background: var(--accent-primary); color: var(--text-inverse); }
+.uus .btn--primary:hover { background: var(--accent-hover); }
+
+/* Inactive, not `disabled`. A disabled button is not focusable and announces
+   nothing, so a keyboard user meets a control that does not exist. This one
+   stays reachable and explains itself; the server refuses a blank title
+   regardless (app/matters/forms.py). */
+.uus .btn--primary[aria-disabled="true"] {
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.uus .btn--quiet {
+  background: transparent;
+  border-color: var(--border-control);
+  color: var(--text-secondary);
+}
+
+.uus .btn--quiet:hover { background: var(--surface-hover); color: var(--text-primary); }
+
+.uus .acts__note {
+  margin-left: auto;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* A refused save says so once, at the top, and names how many fields. The
+   fields themselves carry the detail. */
+.uus .formerr {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-4);
+  padding: var(--spacing-25) var(--spacing-3);
+  border: 1px solid var(--status-danger-border);
+  border-left: 2px solid var(--status-danger);
+  border-radius: var(--radius-sm);
+  background: var(--status-danger-soft);
+  color: var(--text-body);
+  font-size: var(--typography-size-base);
+}
+
+.uus .formerr b { color: var(--status-danger); font-weight: var(--typography-weight-semibold); }
+
+/* ==================================================================== *
+ * Responsive
+ *
+ * Two rules, both expressed as "when a column would be too narrow to read",
+ * never as a device. Order is preserved in every case: the DOM order is the
+ * reading order, and nothing reflows across sections.
+ * ==================================================================== */
+
+@media (max-width: 1100px) {
+  .uus { padding-left: var(--spacing-6); padding-right: var(--spacing-6); }
+}
+
+/* Nothing stacks at 1024. Measured at that width the content column is 976px,
+   which leaves the summary 636px beside a 320px note, the file field 644px
+   beside two 146px dates, and the sender picks 710px beside a 246px owner
+   column — every one of them comfortable. Stacking there would add ~250px of
+   height to buy nothing, and the brief's "the main action should not end up
+   several screens away" is the constraint that matters at this width.
+
+   900px is where the second column genuinely stops working: the note falls
+   under 260px, where three lines become six. */
+@media (max-width: 900px) {
+  .uus .sec__grid--summary { grid-template-columns: minmax(0, 1fr); }
+  .uus .sec__grid--who { grid-template-columns: minmax(0, 1fr); }
+  .uus .sec__grid--class { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The dates keep their 146px to the very end — a date box is as wide as
+   `pp.kk.aaaa` needs and no wider, at any viewport. Only the file field gives
+   up its row. */
+@media (max-width: 720px) {
+  .uus .sec__grid--files { grid-template-columns: minmax(0, 1fr); }
+}
+
+
+/* -- integrations the mockup did not need ------------------------------ */
+
+/* A `<label>` or `<fieldset>` that has to lay its label above its control. The
+   mockup used an inline style for this; a class is what a template should get. */
+.uus .grp--block { display: block; }
+.uus .grp--next { margin-top: var(--spacing-35); }
+.uus .grp--other { margin-top: var(--spacing-25); max-width: 420px; }
+
+/* The file input Django renders, plus the app's own selected-file list. */
+.uus .drop__hint { color: var(--text-muted); }
+.uus .dropzone__list { margin-top: var(--spacing-2); }
+.uus .dropzone__list[hidden] { display: none; }
+
+/* The count `app.js` writes into the long-tail summary once it knows how many
+   picks are actually in there. Without scripting the summary reads
+   "Vali nimekirjast", which is true and complete. */
+.uus .tail__count { color: var(--text-muted); }
+
+/* Chip groups inside the panel sit on the row, not stacked. */
+.uus .nextpanel .picks { flex: none; }
+
+/* The Teema page's own `.formerr` is a plain paragraph; this page's is a band.
+   Scoped, so the other one is untouched. */
+.uus p.formerr { margin-top: 0; }
+
+/* The Adressaat row needs the same 14px the two chip groups above it get; it is
+   a grid rather than a fieldset, so it cannot use `.grp--next`. */
+.uus .sec__grid--class { margin-top: var(--spacing-35); }
+
+/* The date picker wraps its input in a `.datepicker` span and appends a
+   trigger, so the 146px column holds two things rather than one. Letting the
+   input shrink keeps the column at 146px instead of 146px plus a button. */
+.uus .sec__grid--files .datepicker,
+.uus .nextpanel .datepicker { width: 100%; }
+
+/* `Failid` is one line, not a paragraph. */
+.uus .drop { flex-wrap: nowrap; }
+.uus .drop__hint { white-space: nowrap; }
+
+/* `Loobu` is an anchor, and base.css underlines anchors. It is a button here. */
+.uus a.btn { text-decoration: none; display: inline-flex; align-items: center; }

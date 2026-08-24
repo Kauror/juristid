@@ -845,6 +845,14 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # anything not created here (Agent-C brief 15, 16, 17).
                 data_class=form.data_class,
             )
+            # Both through the service that already owns the fact, so a summary
+            # written here is audited exactly as one written inline on the Teema
+            # page, and a note written here is as private as one written there.
+            if data.get("brief_summary"):
+                set_brief_summary(matter=matter, value=data["brief_summary"], actor=request.user)
+            if data.get("notes"):
+                save_personal_note(matter=matter, author=request.user, body=data["notes"])
+
             for upload in uploads:
                 _attach_incoming_file(matter, upload, actor=request.user)
 
@@ -888,16 +896,15 @@ def _create_context(request: HttpRequest, form: Any, action_form: Any) -> dict[s
         "form": form,
         "action_form": action_form,
         "frequent_senders": getattr(form, "frequent_senders", []),
-        # Named here rather than excluded in the template by listing the primary
-        # ones: a field added to the form later should appear *somewhere* by
-        # default, and the safe default is the disclosure.
-        # `stage` and `track` are named in the template now, because each is a
-        # row of radio chips rather than one more box in the grid. They stay out
-        # of this tuple so the generic loop does not render them a second time.
-        "secondary_fields": (
-            "addressee_organisation",
-            "response_deadline",
-        ),
+        # Which sender chips belong in the visible row; everything else goes
+        # inside the disclosure. Both rows render from one bound field, so an
+        # organisation cannot end up with a checkbox in each
+        # (app/matters/forms.py).
+        "frequent_sender_ids": getattr(form, "frequent_sender_ids", set()),
+        # `secondary_fields` is gone. It held `addressee_organisation` and
+        # `response_deadline`, and the redesign places every field on the page
+        # deliberately — a generic loop over "whatever is left" would render
+        # them a second time.
         "today": timezone.localdate(),
         "nav_active": "teemad",
     }

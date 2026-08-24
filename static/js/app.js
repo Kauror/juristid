@@ -746,6 +746,118 @@
    * scripting off the label reads the neutral "Kuupäev", which is true for all
    * three (app/workflow/enums.py, `default_date_semantics`).
    */
+
+  /* The next action's date meaning, derived from the kind until somebody
+   * disagrees.
+   *
+   * `Uus teema` shows the three meanings as chips beside the date instead of
+   * hiding them in a disclosure, which means they have a visible state that has
+   * to stay honest: picking TEEN should select `Tähtaeg` without a click,
+   * because that is what the server would derive anyway
+   * (app/workflow/enums.py, `default_date_semantics`).
+   *
+   * It stops deriving the moment a person picks a meaning themselves. The model
+   * permits combinations the derivation does not produce — a DO whose date is a
+   * rough month is an expectation, not a deadline — and overwriting a
+   * deliberate choice on the next kind change would make those unreachable.
+   *
+   * Presentation only. With scripting off, no meaning is preselected and the
+   * server derives from the kind exactly as it always has: the field is
+   * `required=False` and an empty value means "derive it".
+   */
+  var SEMANTICS_FOR_KIND = {
+    DO: "DEADLINE",
+    WAIT: "EXPECTED_AROUND",
+    MONITOR: "REVIEW_ON",
+  };
+
+  function bindSemanticDerivation(scope) {
+    (scope || document).querySelectorAll("[data-derive-from]").forEach(function (group) {
+      if (!once(group, "Derive")) {
+        return;
+      }
+      var kinds = document.getElementById(group.getAttribute("data-derive-from"));
+      if (!kinds) {
+        return;
+      }
+      /* A meaning already selected when the page arrives is either what the
+         person chose before a refused save, or nothing. Either way it is not
+         this handler's to overwrite. */
+      var touched = !!group.querySelector("input:checked");
+
+      group.querySelectorAll("input").forEach(function (input) {
+        input.addEventListener("change", function () {
+          touched = true;
+        });
+      });
+
+      kinds.querySelectorAll("input[type=radio]").forEach(function (radio) {
+        radio.addEventListener("change", function () {
+          if (touched) {
+            return;
+          }
+          var wanted = SEMANTICS_FOR_KIND[radio.value];
+          var target = wanted && group.querySelector('input[value="' + wanted + '"]');
+          if (target) {
+            target.checked = true;
+          }
+        });
+      });
+    });
+  }
+
+  /* A primary button that is inactive until a field has something in it.
+   *
+   * `aria-disabled`, never the `disabled` attribute: a disabled button is not
+   * focusable and announces nothing, so a keyboard user meets a control that
+   * does not exist and is told nothing about why. This one stays in the tab
+   * order and stays announced; the click is swallowed and the server refuses a
+   * blank title regardless (app/matters/forms.py).
+   */
+  function bindRequiredGate(scope) {
+    (scope || document).querySelectorAll("[data-requires]").forEach(function (button) {
+      if (!once(button, "Requires")) {
+        return;
+      }
+      var field = document.getElementById(button.getAttribute("data-requires"));
+      if (!field) {
+        return;
+      }
+      var sync = function () {
+        var ready = field.value.trim().length > 0;
+        button.setAttribute("aria-disabled", ready ? "false" : "true");
+      };
+      field.addEventListener("input", sync);
+      button.addEventListener("click", function (event) {
+        if (button.getAttribute("aria-disabled") === "true") {
+          event.preventDefault();
+          field.focus();
+        }
+      });
+      sync();
+    });
+  }
+
+  /* How many organisations are actually inside the long-tail disclosure.
+   *
+   * Counted from the DOM rather than passed from the template, because the
+   * template's own answer would be wrong the moment a chosen organisation is
+   * promoted into the visible row. Without scripting the summary reads
+   * "Vali nimekirjast", which is true and complete.
+   */
+  function bindTailCounts(scope) {
+    (scope || document).querySelectorAll("[data-tail-count]").forEach(function (slot) {
+      if (!once(slot, "TailCount")) {
+        return;
+      }
+      var tail = slot.closest("details");
+      var chips = tail && tail.querySelectorAll(".tail__body .pick");
+      if (chips && chips.length) {
+        slot.textContent = " (" + chips.length + ")";
+      }
+    });
+  }
+
   function bindDateLabels(scope) {
     (scope || document).querySelectorAll("[data-datelabel-for]").forEach(function (label) {
       if (!once(label, "DateLabel")) {
@@ -779,6 +891,9 @@
     bindDatePickers(document);
     bindChoiceFilters(document);
     bindDateLabels(document);
+    bindSemanticDerivation(document);
+    bindRequiredGate(document);
+    bindTailCounts(document);
   });
 
   /* A rejected save returns 400 with the surface re-rendered and the errors in
@@ -800,5 +915,8 @@
     bindDatePickers(event.target.querySelector ? event.target : document);
     bindChoiceFilters(event.target.querySelector ? event.target : document);
     bindDateLabels(event.target.querySelector ? event.target : document);
+    bindSemanticDerivation(event.target.querySelector ? event.target : document);
+    bindRequiredGate(event.target.querySelector ? event.target : document);
+    bindTailCounts(event.target.querySelector ? event.target : document);
   });
 })();

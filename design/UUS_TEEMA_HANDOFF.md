@@ -57,14 +57,16 @@ Grid gap is `var(--spacing-5)` (20 px) throughout. Section 6's three groups are 
 
 ---
 
-## 3. The chip
+## 3. The selection chip — `.pick`
 
-One control, two behaviours. This is the change that removes most of the height: a chip row is 26 px where a `checkitem` column is 26 px *per item*.
+> Named `.pick` and not `.chip`: `.chip` was already taken by the restricted badge beside a Matter title, which is uppercase and heavy, and every selection control inherited that through the label wrapper. Two different objects, two names.
+
+One control, two behaviours. This is the change that removes most of the height: a pick row is 26 px where a `checkitem` column is 26 px *per item*.
 
 ```html
-<label class="chip">
+<label class="pick">
   <input type="checkbox" name="policy_areas" value="{{ area.pk }}">
-  <span class="chip__name">Keskkond<span class="chip__x" aria-hidden="true">×</span></span>
+  <span class="pick__name">Keskkond<span class="pick__x" aria-hidden="true">×</span></span>
 </label>
 ```
 
@@ -81,7 +83,7 @@ One control, two behaviours. This is the change that removes most of the height:
 | row gap | 6 px | `--spacing-15` |
 | `×` gap | 4 px | `--spacing-1` |
 
-The vertical `3px` is off the 4 px scale deliberately: at `--spacing-1` (4 px) a chip is 26 px tall and the form's eight chip rows gain ~40 px for nothing. The border is present in **every** state so selection never changes the box size and a row never reflows on click.
+The vertical `3px` is off the 4 px scale deliberately: at `--spacing-1` (4 px) a pick is 26 px tall and the form's eight pick rows gain ~40 px for nothing. The border is present in **every** state so selection never changes the box size and a row never reflows on click.
 
 ### States
 
@@ -92,21 +94,21 @@ The vertical `3px` is off the 4 px scale deliberately: at `--spacing-1` (4 px) a
 | **Selected** | `--accent-soft` | `--accent-border` | `--text-primary`, 600 |
 | Focus | unchanged | unchanged | + `outline: 2px solid var(--accent-link); outline-offset: 2px` |
 
-Hover changes the border and nothing else. Focus is an outline and is **never** removed — the input is `opacity: 0` but covers the label, so it is focusable, and `:focus-visible + .chip__name` is what paints the ring.
+Hover changes the border and nothing else. Focus is an outline and is **never** removed — the input is `opacity: 0` but covers the label, so it is focusable, and `:focus-visible + .pick__name` is what paints the ring.
 
 The `×` renders only on `input[type=checkbox]:checked`. A checked radio does not get one: you replace a radio, you do not clear it, and offering an × that cannot do anything is a lie about the control.
 
 ### Dashed means "this opens something optional"
 
-`Vali nimekirjast (N)`, `Muu`, and nothing else: `border: 1px dashed var(--border-strong)`, `color: var(--text-secondary)`, transparent background. Same geometry as a chip so the row stays even. `Muu` **keeps its dash when checked** (border colour moves to `--accent-link`) — selected, it is still the control that revealed the free-text field, and losing the dash would make it look like a governed area, which is the one thing it must never look like.
+`Vali nimekirjast (N)`, `Muu`, and nothing else: `border: 1px dashed var(--border-strong)`, `color: var(--text-secondary)`, transparent background. Same geometry as a pick so the row stays even. `Muu` **keeps its dash when checked** (border colour moves to `--accent-link`) — selected, it is still the control that revealed the free-text field, and losing the dash would make it look like a governed area, which is the one thing it must never look like.
 
 This convention is borrowed from the Teema page, where the rail's `+` chip and the SharePoint rows already use it.
 
 ---
 
-## 4. Workflow chips — TEEN / OOTAN / JÄLGIN
+## 4. Workflow picks — TEEN / OOTAN / JÄLGIN
 
-Deliberately **not** the selection chip. This is the vocabulary `Minu töö` and the Teema page already use and it has to read as the same object here.
+Deliberately **not** the selection pick. This is the vocabulary `Minu töö` and the Teema page already use and it has to read as the same object here.
 
 | | Value |
 | --- | --- |
@@ -124,7 +126,7 @@ Deliberately **not** the selection chip. This is the vocabulary `Minu töö` and
 
 Filled / solid / dashed is the distinction that survives greyscale, and JÄLGIN keeps its dash in both states. This is ADR 0031 §7 exactly; do not re-derive it.
 
-**The distinction from selection chips is weight, case and tracking — not radius.** `tokens.css` says *"radius: never pill except avatars"*, and the Teema page's own taxonomy badges are 4 px. See §10.
+**The distinction from selection picks is weight, case and tracking — not radius.** `tokens.css` says *"radius: never pill except avatars"*, and the Teema page's own taxonomy badges are 4 px. See §10.
 
 ---
 
@@ -136,8 +138,8 @@ Filled / solid / dashed is the distinction that survives greyscale, and JÄLGIN 
 Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla — teema vormilt uut asutust ei teki.
 ```
 
-- Frequent organisations (`organisations_by_usage(viewer)`) render as chips inline.
-- The rest go inside `<details class="tail">` whose `<summary>` is chip-shaped and dashed. Inside: the existing search input (progressive enhancement — it filters the chips below and does nothing else) and the remaining organisations as chips.
+- Frequent organisations (`organisations_by_usage(viewer)`) render as picks inline.
+- The rest go inside `<details class="tail">` whose `<summary>` is chip-shaped and dashed. Inside: the existing search input (progressive enhancement — it filters the picks below and does nothing else) and the remaining organisations as picks.
 - **The count in the summary is the number of organisations inside the disclosure**, after promotion.
 
 ### The promotion rule — get this right
@@ -148,11 +150,11 @@ Not duplicated. Two inputs sharing one `name` and `value` post the value twice, 
 
 Nothing on this page creates an organisation. No `+ Lisa asutus`, no free text, no silent master-data creation (ADR 0025, master specification 14.7). The sentence above stays.
 
-**Without scripting**, `<details>` is still openable and every chip is tickable, so the whole catalogue remains reachable and the form submits.
+**Without scripting**, `<details>` is still openable and every pick is tickable, so the whole catalogue remains reachable and the form submits.
 
 ### Adressaat
 
-Same control. The design shows it multi-select, which is where the model should go — a Matter is answered to a ministry and a committee at once, exactly as ADR 0025 argued for senders. **If `addressee_organisation` is still a `ForeignKey` at implementation time, render it as a single-value radio chip group.** The layout does not change and this uncertainty must not distort it.
+Same control. The design shows it multi-select, which is where the model should go — a Matter is answered to a ministry and a committee at once, exactly as ADR 0025 argued for senders. **If `addressee_organisation` is still a `ForeignKey` at implementation time, render it as a single-value radio pick group.** The layout does not change and this uncertainty must not distort it.
 
 ---
 
@@ -160,9 +162,9 @@ Same control. The design shows it multi-select, which is where the model should 
 
 All 23 visible, wrapping, no disclosure. Measured: at a 1060 px column the governed vocabulary is **three rows, ~120 px including the label**. That is not visually excessive, and a `Veel N` control would trade the taxonomy's scannability — the thing a lawyer actually needs from this list — for eighty pixels.
 
-`Muu` is the last chip in the row. Ticking it reveals the `policy_area_other` text input directly below the row, `max-width: 420px`, labelled `MUU VALDKOND`, placeholder `Millisesse valdkonda see kuulub?`. No modal. Unticking it clears the text server-side, as `MatterCreateForm.clean` already does.
+`Muu` is the last pick in the row. Ticking it reveals the `policy_area_other` text input directly below the row, `max-width: 420px`, labelled `MUU VALDKOND`, placeholder `Millisesse valdkonda see kuulub?`. No modal. Unticking it clears the text server-side, as `MatterCreateForm.clean` already does.
 
-A retired area a Matter already carries is offered and marked; on a *create* form there is no such case, so this only matters when the same chip control is reused on `Muuda teemat`.
+A retired area a Matter already carries is offered and marked; on a *create* form there is no such case, so this only matters when the same pick control is reused on `Muuda teemat`.
 
 ---
 
@@ -191,15 +193,15 @@ The blue left edge is what marks a capture surface throughout the product — it
 
 ### Date meaning
 
-Three chips, on the row with the date, in the **selection** chip style (rounded-family, 12 px / 400), not the workflow style. That is the point: they qualify the date, they are not a fourth mode.
+Three picks, on the row with the date, in the **selection** pick style (rounded-family, 12 px / 400), not the workflow style. That is the point: they qualify the date, they are not a fourth mode.
 
 Derivation: `DO → Tähtaeg`, `WAIT → Oodatav aeg`, `MONITOR → Vaatan üle`. The meaning re-derives when the kind changes **until the user picks one explicitly**; after that the choice is theirs and every combination the model permits stays reachable. Implement with a `data-touched` flag on the group, set on first user change.
 
-The `data-datelabel-for` label-swapping in `app.js` is no longer needed — the chip states what the date means.
+The `data-datelabel-for` label-swapping in `app.js` is no longer needed — the pick states what the date means.
 
 **No `responsible` field.** The action inherits the Matter's Vastutaja from section 4; the service already falls back to `matter.owner`. Reassignment happens on the Teema page.
 
-**No kind descriptions** ("Mul endal tuleb midagi teha" etc.). Three words plus a meaning chip carry it. They stay on the Teema-page composer if they help there.
+**No kind descriptions** ("Mul endal tuleb midagi teha" etc.). Three words plus a meaning pick carry it. They stay on the Teema-page composer if they help there.
 
 ### One required change to `NextActionForm`
 
@@ -254,7 +256,7 @@ State 8c shows three at once, which is the state to build against.
 - **Field**: `border-color: var(--status-danger-border)` plus `box-shadow: 0 0 0 3px rgba(239,125,110,.08)`. The literal rgba has no token; add one if it is used a third time.
 - **Message**: 12 px `--status-danger`, 6 px below the control.
 - **Label** of an erroring field turns `--status-danger`.
-- **Chip group** in error: the label turns danger and the message goes under the row. Do not put a red border on twenty-three chips.
+- **Chip group** in error: the label turns danger and the message goes under the row. Do not put a red border on twenty-three picks.
 - **`Loo teema` inactive** while the title is empty: `--surface-elevated` fill, `--text-muted` text, `cursor: not-allowed`, `aria-disabled="true"` — **not** the `disabled` attribute. A `disabled` button is unfocusable and announces nothing, so a keyboard user meets a control that does not exist. The server refuses a blank title regardless.
 
 Every value the user typed re-renders in place. Nothing is inside a closed disclosure, so no error can hide — which is the structural reason the accordions had to go, not just an aesthetic one.
@@ -263,9 +265,9 @@ Every value the user typed re-renders in place. Nothing is inside a closed discl
 
 ## 10. Two decisions for you
 
-**A. Chip radius — 4 px or 13 px.** The brief asked for ~13 px so selection chips read as distinct from the square workflow chips. `tokens.css` states *"radius: never pill except avatars"*, and the Teema page's own taxonomy badges are 4 px. The component plate shows both side by side. **Recommendation: 4 px.** The distinction is already carried by weight (700 vs 400), case and the filled/solid/dashed triad, and 13 px would make the form's chips the only pill in the product — including TEEN, which would weaken exactly the vocabulary the brief wants protected. Switching to B is one value in `.chip__name`.
+**A. Chip radius — 4 px or 13 px.** The brief asked for ~13 px so selection picks read as distinct from the square workflow picks. `tokens.css` states *"radius: never pill except avatars"*, and the Teema page's own taxonomy badges are 4 px. The component plate shows both side by side. **Recommendation: 4 px.** The distinction is already carried by weight (700 vs 400), case and the filled/solid/dashed triad, and 13 px would make the form's picks the only pill in the product — including TEEN, which would weaken exactly the vocabulary the brief wants protected. Switching to B is one value in `.pick__name`.
 
-**B. Adressaat cardinality.** The design is multi-select. Shipping it needs `addressee_organisation` (FK) → `addressee_organisations` (M2M) with a through-model, mirroring ADR 0025. If that migration is not in scope for this round, ship single-select with the same chip control; nothing in the layout moves.
+**B. Adressaat cardinality.** The design is multi-select. Shipping it needs `addressee_organisation` (FK) → `addressee_organisations` (M2M) with a through-model, mirroring ADR 0025. If that migration is not in scope for this round, ship single-select with the same pick control; nothing in the layout moves.
 
 ---
 
@@ -275,7 +277,7 @@ Every value the user typed re-renders in place. Nothing is inside a closed discl
 2. Every field present on `main` is still present and still posts the same name and value.
 3. `owner` / `stage` / `track` accept exactly one value; `policy_areas` / senders / addressees accept several. No name+value pair appears twice in the DOM.
 4. No organisation can be created from this page.
-5. Scripting off: every chip is visible and tickable, both `<details>` are openable, the form submits.
-6. Keyboard: tab reaches every chip, space toggles, the focus ring is visible on all of them, and `Loo teema` is reachable even while inactive.
+5. Scripting off: every pick is visible and tickable, both `<details>` are openable, the form submits.
+6. Keyboard: tab reaches every pick, space toggles, the focus ring is visible on all of them, and `Loo teema` is reachable even while inactive.
 7. A refused save re-renders every typed value, and every error is visible without opening anything.
 8. Title → `Loo teema` is ≤ 1 100 px at 1440 px and ≤ 1 100 px at 1024 px; no horizontal overflow at 1440, 1280 or 1024.

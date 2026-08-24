@@ -273,12 +273,17 @@ class MatterCreateForm(forms.Form):
         required=False,
         widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
     )
+    #: Radio chips, like Vastutaja, and for the same reason: the field holds one
+    #: organisation and a control that let you tick two would promise something
+    #: `Matter.addressee_organisation` cannot keep. `empty_label=None` so no
+    #: blank chip appears — there is nothing to un-choose on a form that starts
+    #: empty (Uus teema handoff §10).
     addressee_organisation = forms.ModelChoiceField(
         label="Adressaat",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=SELECT_WIDGET,
-        help_text="Kellele Koda vastab. Eraldi fakt saatjast.",
+        empty_label=None,
+        widget=forms.RadioSelect(attrs={"class": "pick__input"}),
     )
     received_date = EstonianDateField(
         label="Saabus",
@@ -313,9 +318,34 @@ class MatterCreateForm(forms.Form):
         max_length=400,
         required=False,
         widget=forms.TextInput(
-            attrs={"class": "field__input", "placeholder": "Millisesse valdkonda see kuulub?"}
+            attrs={"class": "fld", "placeholder": "Millisesse valdkonda see kuulub?"}
         ),
-        help_text="Vabatekst. Siit ei teki uut valdkonda ega silti.",
+    )
+    #: The plain-language summary the Teema header publishes. Asked for here
+    #: because the person filing has the context now and will not have it on a
+    #: second visit; written by `set_brief_summary`, exactly as the inline edit
+    #: on the Teema page writes it (Uus teema handoff §2).
+    brief_summary = forms.CharField(
+        label="Millest teema räägib",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "fld fld--area",
+                "rows": "3",
+                "placeholder": (
+                    "Mida see teema puudutatud ettevõtete jaoks tähendab ja mida Koda tahab?"
+                ),
+            }
+        ),
+    )
+    #: The author's own scratch note, stored as a `MatterPersonalNote` and never
+    #: as business history — no `ChangeEvent`, no timeline row, nobody else's to
+    #: read (app/matters/services.py, `save_personal_note`). It sits beside the
+    #: summary and is styled a step quieter, because that is what it is.
+    notes = forms.CharField(
+        label="Märkmed",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "fld fld--area fld--notes", "rows": "3"}),
     )
     #: One checkbox, unticked, rather than a REAL/TEST select.
     #:
@@ -395,27 +425,31 @@ class MatterCreateForm(forms.Form):
 
         # Ordering is a presentation concern, so it is applied to the rendered
         # choices rather than to the validating queryset.
-        if viewer is not None:
-            # `fields[...]` is typed as the base Field, which has no `choices`.
-            # These two are ChoiceFields by construction a few lines above.
-            senders = cast(Any, self.fields["source_organisations"])
-            self.frequent_senders = organisations_by_usage(viewer)
-            senders.choices = [
-                (organisation.pk, organisation.name) for organisation in self.frequent_senders
-            ]
-            # The disclosure holds what the chips do not. Offering the same ten
-            # bodies twice is what made "Muu / lisa saatja" read as a second
-            # sender control that contradicted the first — and it is why nobody
-            # could find the body that genuinely was not on the list.
-            frequent = {organisation.pk for organisation in self.frequent_senders}
-            rest = cast(Any, self.fields["source_organisations_other"])
-            rest.choices = [
-                (organisation.pk, organisation.name)
-                for organisation in Organisation.objects.order_by("name")
-                if organisation.pk not in frequent
-            ]
-        else:
-            self.frequent_senders = []
+        #
+        # One field renders both rows. `frequent_sender_ids` tells the template
+        # which choices belong in the visible row and which go inside the
+        # disclosure; because there is only one field, one organisation can only
+        # ever have one checkbox, whichever row it lands in. The previous split
+        # across two fields made a promoted choice renderable in both.
+        self.frequent_senders = organisations_by_usage(viewer) if viewer is not None else []
+        self.frequent_sender_ids = {organisation.pk for organisation in self.frequent_senders}
+        everything_ordered = [
+            (organisation.pk, organisation.name)
+            for organisation in Organisation.objects.order_by("name")
+        ]
+        senders = cast(Any, self.fields["source_organisations"])
+        senders.choices = everything_ordered
+        # `source_organisations_other` stays on the form and renders nothing.
+        # `clean` still unions it, so a POST that names it — a test, an
+        # integration, a bookmarked form — keeps working.
+        rest = cast(Any, self.fields["source_organisations_other"])
+        rest.choices = everything_ordered
+
+        # Adressaat, the same way and still single-value: one `ModelChoiceField`,
+        # rendered as radio chips split by frequency. The design draws it
+        # multi-select; the cardinality is deliberately unchanged this round, and
+        # the layout is identical either way (handoff §10).
+        self.frequent_addressee_ids = self.frequent_sender_ids
 
 
 class MatterEditForm(forms.Form):
@@ -649,19 +683,30 @@ class NextActionForm(forms.Form):
     #: names a vague month is DO + EXPECTED_AROUND, not a deadline. Left alone
     #: it derives from the kind; the explicit choice is one disclosure away
     #: (app/workflow/enums.py, Agent-UI brief 9.4).
+    #: Radios, and visible. It used to be a select one disclosure down, which
+    #: asked a question about the data model in the vocabulary of the database.
+    #: The three meanings are chips beside the date now: `app.js` preselects the
+    #: one the kind implies and stops the moment somebody picks another, and
+    #: `required=False` still means "empty derives it" for a POST that omits it
+    #: (app/workflow/enums.py, `default_date_semantics`).
     date_semantics = forms.ChoiceField(
         label="Mida kuupäev täpselt tähendab",
         choices=DateSemantics.choices,
         required=False,
-        widget=SELECT_WIDGET,
+        widget=forms.RadioSelect(attrs={"class": "pick__input"}),
     )
-    #: Today, because that is the answer nearly every time and nobody should have
-    #: to type it. `initial` only ever fills an *unbound* form, so a POSTed value
-    #: always wins, a validation error keeps what was typed, and a date somebody
-    #: deliberately cleared stays cleared (Teema QA §5.2).
-    target_date = EstonianDateField(
-        label="Kuupäev", required=False, widget=DATE_WIDGET, initial=timezone.localdate
-    )
+    #: **No `initial`.** It carried today until the redesign, and that was safe
+    #: while this whole block sat inside a closed `<details>`: `wants_action` is
+    #: driven by the text field, so nothing read the date's emptiness.
+    #:
+    #: The block is always visible now, and that changes the answer. Somebody
+    #: who picks TEEN, types a step and never touches the date would silently
+    #: get a deadline of *today* — which is the failure ADR 0031 §5 names, and
+    #: `set_next_action` does read this field's emptiness: DO + DEADLINE with no
+    #: date is the one combination the domain refuses.
+    #:
+    #: `Saabus` and `Arvamuse tähtaeg` keep their defaults. Nothing reads those.
+    target_date = EstonianDateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
     responsible = UserChoiceField(
         label="Kes selle eest vastutab?",
         queryset=User.objects.none(),

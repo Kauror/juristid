@@ -2,376 +2,374 @@
 {% block title %}Uus teema · {{ application_name }}{% endblock %}
 
 {% comment %}
-  A new matter arrives as a title, a file, a person, a sender and a date. Those
-  five are the page; everything procedural sits one disclosure down.
+  Filing a Matter, in one screen.
 
-  The controls are visible rather than collapsed into selects. For a department
-  of four, a dropdown is a click spent finding out what the options are — and
-  the shape of the control carries a promise about the data: radios where the
-  model holds one value, checkboxes where it holds several. A checkbox list for
-  Vastutaja would be offering something `Matter.owner` cannot keep
-  (Stage-2E.1 brief 14–22).
+  The page this replaces was correct about the data and wrong about the shape:
+  nine bordered boxes of equal weight, two seventeen- and twenty-five-item
+  checkbox columns, and half the form behind `+ Täpsusta teema andmeid` and
+  `+ Järgmine tegevus`. Measured at 1440 px with both disclosures open it was
+  2 139 px from the title to the submit, and four of its eight sections were
+  82 % of that. Nothing read as optional because nothing read as anything.
 
-  Only the title is required. That has not changed (master specification 3.8).
+  Both disclosures are gone. Every field is on screen at load; the height comes
+  back from pick rows, paired columns and a 1 px rule instead of a card. What is
+  left of the hierarchy is carried by type: a 15 px title above the first rule,
+  11 px uppercase micro-labels, and one accent panel for the only block that is
+  about the future rather than about the record.
+
+  Nothing about the domain moved. Only the title is required (specification
+  3.8); radios where the model holds one value and checkboxes where it holds
+  several; no organisation is created here; `Nähtavus` is still not on this page
+  (design/UUS_TEEMA_HANDOFF.md).
 {% endcomment %}
 
 {% block content %}
-<div class="page page--narrow">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Uus teema</h1>
-    <span class="pagehead__context">Pealkiri on ainus kohustuslik väli.</span>
+<form class="uus" method="post" action="{% url 'matters:matter_create' %}"
+      enctype="multipart/form-data">
+  {% csrf_token %}
+
+  <div class="uus__head">
+    <h1 class="uus__title">Uus teema</h1>
   </div>
 
-  <form class="form createform" method="post"
-        action="{% url 'matters:matter_create' %}"
-        enctype="multipart/form-data">
-    {% csrf_token %}
+  {% if form.non_field_errors %}
+    <p class="formerr" role="alert">
+      <b>Teemat ei salvestatud.</b>
+      <span>{{ form.non_field_errors|first }}</span>
+    </p>
+  {% endif %}
 
-    {% if form.non_field_errors %}
-      <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
-    {% endif %}
-
-    <label class="field">
-      <span class="field__label">{{ form.title.label }}</span>
+  {% comment %} 1 — Pealkiri. The only field above the first rule. {% endcomment %}
+  <div class="sec">
+    <label class="grp grp--block">
+      <span class="lbl {% if form.title.errors %}lbl--err{% endif %}">{{ form.title.label }}</span>
       {{ form.title }}
-      {% if form.title.errors %}<span class="field__error">{{ form.title.errors|first }}</span>{% endif %}
+      {% if form.title.errors %}<span class="err">{{ form.title.errors|first }}</span>{% endif %}
     </label>
+  </div>
 
-    {% comment %}
-      Near the title, because the file is usually the reason the matter exists.
-      A plain multiple input: no library, no SPA, and it degrades to the ordinary
-      chooser everywhere (brief 24).
-    {% endcomment %}
-    <fieldset class="field dropzone" id="failid">
-      <legend class="field__label">Failid</legend>
-      <input class="dropzone__input" type="file" name="files" id="id_files" multiple>
-      <p class="field__help">
-        Vali failid või lohista need siia. Iga fail salvestatakse muutumatu
-        tõendina koos teemaga.
-      </p>
-      <ul class="dropzone__list" id="valitud-failid" hidden></ul>
-    </fieldset>
+  {% comment %}
+    2 — What the Matter is about, beside the reader's own scratch note.
 
-    <fieldset class="field">
-      <legend class="field__label">{{ form.owner.label }}</legend>
-      <div class="choicecards">
-        {% for choice in form.owner %}
-          <label class="choicecard">
-            {{ choice.tag }}
-            <span class="choicecard__name">{{ choice.choice_label }}</span>
-          </label>
-        {% endfor %}
-      </div>
-      {% if form.owner.errors %}<span class="field__error">{{ form.owner.errors|first }}</span>{% endif %}
-    </fieldset>
+    The summary is the text the Teema header publishes; Märkmed is a private
+    `MatterPersonalNote` that nothing downstream reads. They are asked for
+    together because that is when somebody has the context, and they are styled
+    a step apart because one of them is for everybody and one is not.
+  {% endcomment %}
+  <div class="sec">
+    <div class="sec__grid sec__grid--summary">
+      <label class="grp grp--block">
+        <span class="lbl">{{ form.brief_summary.label }}</span>
+        {{ form.brief_summary }}
+        {% if form.brief_summary.errors %}
+          <span class="err">{{ form.brief_summary.errors|first }}</span>
+        {% endif %}
+      </label>
+      <label class="grp grp--block">
+        <span class="lbl">{{ form.notes.label }}</span>
+        {{ form.notes }}
+      </label>
+    </div>
+  </div>
 
-    <label class="field field--narrow">
-      <span class="field__label">{{ form.received_date.label }}</span>
-      {{ form.received_date }}
-      {% if form.received_date.errors %}
-        <span class="field__error">{{ form.received_date.errors|first }}</span>
-      {% endif %}
-    </label>
-
-    <fieldset class="field">
-      <legend class="field__label">{{ form.source_organisations.label }}</legend>
-      {% comment %}
-        Checkboxes, and several of them may be ticked. A matter really can arrive
-        from a ministry and an association at once, and the radios that used to
-        be here were promising something the old single-sender column could keep
-        and the model no longer does (Agent-E brief 28, 29).
-      {% endcomment %}
-      <div class="checkitems">
-        {% for choice in form.source_organisations %}
-          <label class="checkitem">
-            {{ choice.tag }}
-            <span class="checkitem__name">{{ choice.choice_label }}</span>
-          </label>
-        {% empty %}
-          <p class="field__help">Ühtegi saatjat ei ole veel salvestatud.</p>
-        {% endfor %}
-      </div>
-      <span class="field__help">{{ form.source_organisations.help_text }}</span>
-      {% comment %}
-        The long tail — and only the long tail. This used to re-offer the same
-        ten bodies that are already chips above, inside a panel headed "Muu /
-        lisa saatja", which read as a second sender control disagreeing with the
-        first and hid the one case it exists for: a body that is genuinely not
-        on the list.
-
-        The filter box narrows the chips below it and nothing else. It is
-        progressive enhancement — with scripting off every remaining body is
-        visible and tickable, which is what the multiple select offered anyway.
-      {% endcomment %}
-      <details class="disclosure disclosure--inline">
-        <summary class="disclosure__summary">Vali nimekirjast</summary>
-        <div class="disclosure__body">
-          <label class="field" data-choicefilter="saatja-nimekiri">
-            <span class="visually-hidden">Otsi asutust</span>
-            <input class="field__input" type="search" autocomplete="off"
-                   placeholder="Otsi asutust nime järgi">
-          </label>
-          <div class="checkitems" id="saatja-nimekiri">
-            {% for choice in form.source_organisations_other %}
-              <label class="checkitem">
-                {{ choice.tag }}
-                <span class="checkitem__name">{{ choice.choice_label }}</span>
-              </label>
-            {% empty %}
-              <p class="field__help">Kõik salvestatud asutused on juba ülal.</p>
-            {% endfor %}
-          </div>
-          {% comment %}
-            Said plainly, because the alternative is somebody typing a new
-            spelling of a ministry into a box and creating a second reference
-            record for it. Adding an institution is a deliberate act on the
-            reference data, not a side effect of filing a matter
-            (app/organisations, master specification 14.7).
-          {% endcomment %}
-          <p class="field__help">
-            Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla —
-            teema vormilt uut asutust ei teki.
-          </p>
+  {% comment %} 3 — The material, and the two dates that came with it. {% endcomment %}
+  <div class="sec">
+    <div class="sec__grid sec__grid--files">
+      <div class="grp">
+        <span class="lbl">Failid</span>
+        <div class="drop" id="failid">
+          <input class="dropzone__input" type="file" name="files" id="id_files" multiple>
+          <span class="drop__hint">või lohista siia</span>
         </div>
-      </details>
-      {% if form.source_organisations.errors %}
-        <span class="field__error">{{ form.source_organisations.errors|first }}</span>
-      {% elif form.source_organisations_other.errors %}
-        <span class="field__error">{{ form.source_organisations_other.errors|first }}</span>
-      {% endif %}
-    </fieldset>
-
-    <fieldset class="field">
-      <legend class="field__label">{{ form.policy_areas.label }}</legend>
-      <div class="checkitems">
-        {% for choice in form.policy_areas %}
-          <label class="checkitem">
-            {{ choice.tag }}
-            <span class="checkitem__name">{{ choice.choice_label }}</span>
-          </label>
-        {% endfor %}
-        <label class="checkitem" id="valdkond-muu">
-          {{ form.policy_area_other_selected }}
-          <span class="checkitem__name">{{ form.policy_area_other_selected.label }}</span>
-        </label>
-      </div>
-      <div class="checkitems__other" id="valdkond-muu-tekst"
-           {% if not form.policy_area_other_selected.value %}hidden{% endif %}>
-        <label class="field">
-          <span class="field__label">{{ form.policy_area_other.label }}</span>
-          {{ form.policy_area_other }}
-          <span class="field__help">{{ form.policy_area_other.help_text }}</span>
-          {% if form.policy_area_other.errors %}
-            <span class="field__error">{{ form.policy_area_other.errors|first }}</span>
-          {% endif %}
-        </label>
-      </div>
-    </fieldset>
-
-    {% comment %}
-      Procedural metadata: available, subordinate. Opened automatically when it
-      holds an error, so a refused save never hides what somebody typed
-      (brief 25).
-    {% endcomment %}
-    <details class="disclosure" {% if form.stage.errors or form.track.errors or form.addressee_organisation.errors or form.response_deadline.errors %}open{% endif %}>
-      <summary class="disclosure__summary">+ Täpsusta teema andmeid</summary>
-
-      {% comment %}
-        Hetkeseis and Menetlusliik hold one value each, so these are radios —
-        styled as chips, but radios. The shape of the control carries a promise
-        about the data, and a checkbox list here would be offering something
-        `Matter.stage` and `Matter.track` cannot keep.
-
-        Visible rather than in a select: eleven stages and seven tracks fit on
-        two lines, and for a department of four a dropdown is a click spent
-        finding out what the choices even are (Agent-UI brief 5.1).
-      {% endcomment %}
-      <fieldset class="field">
-        <legend class="field__label">{{ form.stage.label }}</legend>
-        <div class="choicecards">
-          {% for choice in form.stage %}
-            <label class="choicecard">
-              {{ choice.tag }}
-              <span class="choicecard__name">{{ choice.choice_label }}</span>
-            </label>
-          {% endfor %}
-        </div>
-        <span class="field__help">Kus menetlus praegu on. Üks valik.</span>
-        {% if form.stage.errors %}<span class="field__error">{{ form.stage.errors|first }}</span>{% endif %}
-      </fieldset>
-
-      <fieldset class="field">
-        <legend class="field__label">{{ form.track.label }}</legend>
-        <div class="choicecards">
-          {% for choice in form.track %}
-            <label class="choicecard">
-              {{ choice.tag }}
-              <span class="choicecard__name">{{ choice.choice_label }}</span>
-            </label>
-          {% endfor %}
-        </div>
-        <span class="field__help">Mis liiki menetlusega on tegemist. Üks valik.</span>
-        {% if form.track.errors %}<span class="field__error">{{ form.track.errors|first }}</span>{% endif %}
-      </fieldset>
-
-      <div class="formgrid">
-        {% for field in form %}
-          {% if field.name in secondary_fields %}
-            <label class="field">
-              <span class="field__label">{{ field.label }}</span>
-              {{ field }}
-              {% if field.help_text %}<span class="field__help">{{ field.help_text }}</span>{% endif %}
-              {% if field.errors %}<span class="field__error">{{ field.errors|first }}</span>{% endif %}
-            </label>
-          {% endif %}
-        {% endfor %}
+        <ul class="dropzone__list filelist" id="valitud-failid" hidden></ul>
       </div>
 
-      {% comment %}
-        One checkbox, unticked, and no REAL/TEST dropdown: real work is the
-        normal path and must stay a straight line, and a required choice on
-        every creation is a control people learn to click past.
-
-        Inside the disclosure rather than on the capture path, for the reason
-        this panel exists — the same reason `Nähtavus` is not on this page at
-        all. Marking a matter as development data is a rare, deliberate act by
-        somebody who came here to do it; the four lawyers filing real work
-        every week should not have to read past it. Recoverable afterwards from
-        the facts rail either way (Agent-C brief 15, 62).
-      {% endcomment %}
-      <fieldset class="field">
-        <legend class="field__label">Andmeklass</legend>
-        <div class="checkitems">
-          <label class="checkitem" id="andmeklass-test">
-            {{ form.is_test_data }}
-            <span class="checkitem__name">{{ form.is_test_data.label }}</span>
-          </label>
-        </div>
-        <span class="field__help">{{ form.is_test_data.help_text }}</span>
-      </fieldset>
-    </details>
-
-    {% comment %}
-      Järgmine tegevus, and the whole point of the copy here is that it is not
-      the same thing as Arvamuse tähtaeg one disclosure up. One says when this
-      opinion has to be submitted; the other says what happens next with the
-      file, which may be a year of waiting on a ministry.
-
-      Nothing in the domain changed. TEEN / OOTAN / JÄLGIN are still DO / WAIT /
-      MONITOR, the date still carries a stored meaning, and the block is still
-      entirely optional — an opinion already has its tähtaeg (Agent-UI brief 9).
-    {% endcomment %}
-    <details class="disclosure" {% if action_form.errors %}open{% endif %}>
-      <summary class="disclosure__summary">+ Järgmine tegevus</summary>
-
-      <p class="field__help">
-        Mis selle teemaga järgmisena juhtub? Märgi siia järgmine tegevus, asi
-        mida ootad, või aeg millal teemat uuesti kontrollida.
-      </p>
-      <p class="field__help">
-        <strong>Arvamuse tähtaeg on eraldi</strong> — see näitab, mis ajaks
-        tuleb arvamus esitada. Järgmine tegevus võib olla sellest palju
-        hilisem.
-      </p>
-
-      <label class="field">
-        <span class="field__label">{{ action_form.text.label }}</span>
-        {{ action_form.text }}
-        {% if action_form.text.errors %}
-          <span class="field__error">{{ action_form.text.errors|first }}</span>
+      <label class="grp grp--block">
+        <span class="lbl {% if form.received_date.errors %}lbl--err{% endif %}">{{ form.received_date.label }}</span>
+        {{ form.received_date }}
+        {% if form.received_date.errors %}
+          <span class="err">{{ form.received_date.errors|first }}</span>
         {% endif %}
       </label>
 
-      {% comment %}
-        Radios styled as cards. Exactly one may be active, because the model
-        holds one kind — the checkmark is decoration on a radio, not a promise
-        that two can be chosen.
-      {% endcomment %}
-      <fieldset class="field" id="jargmine-liik">
-        <legend class="field__label">{{ action_form.kind.label }}</legend>
-        <div class="choicecards choicecards--described">
-          {% for choice in action_form.kind %}
-            <label class="choicecard choicecard--described">
-              {{ choice.tag }}
-              <span class="choicecard__body">
-                <span class="choicecard__name">{{ choice.choice_label }}</span>
-                {% comment %}
-                  The lawyer-facing gloss on each stored kind. Written against
-                  the enum value rather than the label, because the label is
-                  what a reader may reword and the value is what the database
-                  holds (app/workflow/enums.py, ActionKind).
-                {% endcomment %}
-                <span class="choicecard__hint">
-                  {% if choice.data.value == 'DO' %}Mul endal tuleb midagi teha
-                  {% elif choice.data.value == 'WAIT' %}Ootan infot, vastust, eelnõud või muud arengut
-                  {% elif choice.data.value == 'MONITOR' %}Vaatan teema hiljem uuesti üle{% endif %}
-                </span>
-              </span>
-            </label>
+      <label class="grp grp--block">
+        <span class="lbl {% if form.response_deadline.errors %}lbl--err{% endif %}">{{ form.response_deadline.label }}</span>
+        {{ form.response_deadline }}
+        {% if form.response_deadline.errors %}
+          <span class="err">{{ form.response_deadline.errors|first }}</span>
+        {% endif %}
+      </label>
+    </div>
+  </div>
+
+  {% comment %}
+    4 — Who owns it, and who it came from.
+
+    Vastutaja is radios: `Matter.owner` holds one person and a checkbox list
+    would promise something it cannot keep. Saatja is checkboxes for the
+    opposite reason (Agent-E brief 28).
+  {% endcomment %}
+  <div class="sec">
+    <div class="sec__grid sec__grid--who">
+      <fieldset class="grp">
+        <legend class="lbl">{{ form.owner.label }}</legend>
+        <div class="picks">
+          {% for choice in form.owner %}
+            <label class="pick">{{ choice.tag }}<span class="pick__name">{{ choice.choice_label }}</span></label>
           {% endfor %}
         </div>
-        {% if action_form.kind.errors %}
-          <span class="field__error">{{ action_form.kind.errors|first }}</span>
-        {% endif %}
+        {% if form.owner.errors %}<span class="err">{{ form.owner.errors|first }}</span>{% endif %}
       </fieldset>
 
-      <div class="formgrid">
-        <label class="field field--narrow">
-          {% comment %}
-            The label says what the date means for the kind that is selected,
-            which is the question the technical "Kuupäeva tähendus" dropdown
-            was asking in the vocabulary of the database. Swapped by app.js;
-            without scripting it reads as the neutral wording below, which is
-            true for all three.
-          {% endcomment %}
-          <span class="field__label" data-datelabel-for="jargmine-liik"
-                data-label-do="Tähtaeg"
-                data-label-wait="Millal võiks arengut oodata?"
-                data-label-monitor="Millal vaatan uuesti üle?">Kuupäev</span>
-          {{ action_form.target_date }}
-          {% if action_form.target_date.errors %}
-            <span class="field__error">{{ action_form.target_date.errors|first }}</span>
-          {% endif %}
-        </label>
+      {% comment %}
+        Both rows render from the same bound field. The frequent bodies are
+        inline; everything else is inside the disclosure — and an organisation
+        that is *chosen* is inline whichever list it came from, which is what
+        "promoted" means here.
 
-        <label class="field">
-          <span class="field__label">{{ action_form.responsible.label }}</span>
-          {{ action_form.responsible }}
-          <span class="field__help">{{ action_form.responsible.help_text }}</span>
-          {% if action_form.responsible.errors %}
-            <span class="field__error">{{ action_form.responsible.errors|first }}</span>
+        One field is the whole guarantee against a duplicate: with two, the same
+        organisation could carry a checkbox in each row and a click would reach
+        only one of them (app/matters/forms.py).
+      {% endcomment %}
+      <fieldset class="grp">
+        <legend class="lbl">{{ form.source_organisations.label }}</legend>
+        <div class="picks">
+          {% for choice in form.source_organisations %}
+            {% if choice.data.value in frequent_sender_ids or choice.data.selected %}
+              <label class="pick">{{ choice.tag }}<span class="pick__name">{{ choice.choice_label }}<span class="pick__x" aria-hidden="true">×</span></span></label>
+            {% endif %}
+          {% empty %}
+            <span class="note">Ühtegi asutust ei ole veel salvestatud.</span>
+          {% endfor %}
+        </div>
+
+        <details class="tail" {% if form.source_organisations.errors %}open{% endif %}>
+          <summary>Vali nimekirjast<span class="tail__count" data-tail-count></span></summary>
+          <div class="tail__body">
+            <label class="grp grp--block" data-choicefilter="saatja-nimekiri">
+              <span class="visually-hidden">Otsi asutust</span>
+              <input class="fld tail__search" type="search" autocomplete="off"
+                     placeholder="Otsi asutust nime järgi">
+            </label>
+            <div class="picks" id="saatja-nimekiri">
+              {% for choice in form.source_organisations %}
+                {% if not choice.data.value in frequent_sender_ids and not choice.data.selected %}
+                  <label class="pick">{{ choice.tag }}<span class="pick__name">{{ choice.choice_label }}</span></label>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+
+        {% comment %}
+          Said plainly, because the alternative is somebody typing a new
+          spelling of a ministry into a box and creating a second reference
+          record for it (master specification 14.7).
+        {% endcomment %}
+        <span class="note">
+          Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla —
+          teema vormilt uut asutust ei teki.
+        </span>
+        {% if form.source_organisations.errors %}
+          <span class="err">{{ form.source_organisations.errors|first }}</span>
+        {% elif form.source_organisations_other.errors %}
+          <span class="err">{{ form.source_organisations_other.errors|first }}</span>
+        {% endif %}
+      </fieldset>
+    </div>
+  </div>
+
+  {% comment %}
+    5 — Valdkonnad, all of them.
+
+    Twenty-three picks are three wrapping rows at this width, so there is no
+    `Veel N`: a disclosure would trade the taxonomy's scannability — the thing a
+    lawyer actually needs from this list — for eighty pixels. The vocabulary is
+    the governed one, read from `selectable_policy_areas` (Teema redesign §7.1).
+  {% endcomment %}
+  <div class="sec">
+    <fieldset class="grp">
+      <legend class="lbl">{{ form.policy_areas.label }}</legend>
+      <div class="picks">
+        {% for choice in form.policy_areas %}
+          <label class="pick">{{ choice.tag }}<span class="pick__name">{{ choice.choice_label }}<span class="pick__x" aria-hidden="true">×</span></span></label>
+        {% endfor %}
+        <label class="pick pick--more pick--muu" id="valdkond-muu">
+          {{ form.policy_area_other_selected }}
+          <span class="pick__name">{{ form.policy_area_other_selected.label }}</span>
+        </label>
+      </div>
+      <div id="valdkond-muu-tekst"
+           {% if not form.policy_area_other_selected.value %}hidden{% endif %}>
+        <label class="grp grp--block grp--other">
+          <span class="lbl {% if form.policy_area_other.errors %}lbl--err{% endif %}">{{ form.policy_area_other.label }}</span>
+          {{ form.policy_area_other }}
+          {% if form.policy_area_other.errors %}
+            <span class="err">{{ form.policy_area_other.errors|first }}</span>
           {% endif %}
         </label>
       </div>
+      {% if form.policy_areas.errors %}<span class="err">{{ form.policy_areas.errors|first }}</span>{% endif %}
+    </fieldset>
+  </div>
+
+  {% comment %}
+    6 — How the Matter is classified. One section, three groups, no disclosure.
+
+    Hetkeseis and Menetlusliik hold one value each and are radios. Adressaat is
+    a radio group too: the design draws it multi-select, and the cardinality is
+    deliberately unchanged this round — the layout is identical either way, so
+    the migration can happen when it is the task rather than a side effect of
+    one (handoff §10).
+  {% endcomment %}
+  <div class="sec">
+    <fieldset class="grp">
+      <legend class="lbl">{{ form.stage.label }}</legend>
+      <div class="picks">
+        {% for choice in form.stage %}
+          <label class="pick">{{ choice.tag }}<span class="pick__name">{{ choice.choice_label }}</span></label>
+        {% endfor %}
+      </div>
+      {% if form.stage.errors %}<span class="err">{{ form.stage.errors|first }}</span>{% endif %}
+    </fieldset>
+
+    <fieldset class="grp grp--next">
+      <legend class="lbl">{{ form.track.label }}</legend>
+      <div class="picks">
+        {% for choice in form.track %}
+          <label class="pick">{{ choice.tag }}<span class="pick__name">{{ choice.choice_label }}</span></label>
+        {% endfor %}
+      </div>
+      {% if form.track.errors %}<span class="err">{{ form.track.errors|first }}</span>{% endif %}
+    </fieldset>
+
+    <div class="sec__grid sec__grid--class">
+      <fieldset class="grp">
+        <legend class="lbl">{{ form.addressee_organisation.label }}</legend>
+        <div class="picks">
+          {% for choice in form.addressee_organisation %}
+            {% if choice.data.value and choice.data.value in frequent_sender_ids or choice.data.selected and choice.data.value %}
+              <label class="pick">{{ choice.tag }}<span class="pick__name">{{ choice.choice_label }}</span></label>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <details class="tail" {% if form.addressee_organisation.errors %}open{% endif %}>
+          <summary>Vali nimekirjast<span class="tail__count" data-tail-count></span></summary>
+          <div class="tail__body">
+            <label class="grp grp--block" data-choicefilter="adressaat-nimekiri">
+              <span class="visually-hidden">Otsi adressaati</span>
+              <input class="fld tail__search" type="search" autocomplete="off"
+                     placeholder="Otsi asutust nime järgi">
+            </label>
+            <div class="picks" id="adressaat-nimekiri">
+              {% for choice in form.addressee_organisation %}
+                {% if choice.data.value and not choice.data.value in frequent_sender_ids and not choice.data.selected %}
+                  <label class="pick">{{ choice.tag }}<span class="pick__name">{{ choice.choice_label }}</span></label>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+        {% if form.addressee_organisation.errors %}
+          <span class="err">{{ form.addressee_organisation.errors|first }}</span>
+        {% endif %}
+      </fieldset>
 
       {% comment %}
-        The stored meaning, kept and not deleted. It derives from the kind when
-        nobody touches it, and the model genuinely permits combinations the
-        derivation does not produce — a DO whose date is a rough month is
-        recorded as an expectation, not a deadline (app/workflow/enums.py).
+        One checkbox, unticked, and no REAL/TEST selector: real work is the
+        normal path and must stay a straight line (Agent-C brief 15).
       {% endcomment %}
-      <details class="disclosure disclosure--inline"
-               {% if action_form.date_semantics.errors %}open{% endif %}>
-        <summary class="disclosure__summary">Täpsusta, mida kuupäev tähendab</summary>
-        <div class="disclosure__body">
-          <label class="field field--narrow">
-            <span class="field__label">{{ action_form.date_semantics.label }}</span>
-            {{ action_form.date_semantics }}
-            <span class="field__help">
-              Tühjaks jättes tuletatakse tähendus valitud laadist.
-            </span>
-            {% if action_form.date_semantics.errors %}
-              <span class="field__error">{{ action_form.date_semantics.errors|first }}</span>
-            {% endif %}
+      <fieldset class="grp">
+        <legend class="lbl">Andmeklass</legend>
+        <div class="picks">
+          <label class="pick" id="andmeklass-test">
+            {{ form.is_test_data }}
+            <span class="pick__name">{{ form.is_test_data.label }}</span>
           </label>
         </div>
-      </details>
-    </details>
+      </fieldset>
+    </div>
+  </div>
 
-    <p class="form__actions">
-      <button type="submit" class="button button--primary">Loo teema</button>
-      <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Loobu</a>
-    </p>
-  </form>
-</div>
+  {% comment %}
+    7 — Järgmine tegevus. The one panel, and the only thing on the page that is
+    about the future rather than about the record.
+
+    Always visible and entirely optional: nothing is written unless somebody
+    types the step. It is *not* Arvamuse tähtaeg — that says when the opinion is
+    due, this says what happens next with the file, which may be a year of
+    waiting on a ministry. The two words the old page needed three paragraphs to
+    separate are separated here by being in different sections.
+
+    TEEN / OOTAN / JÄLGIN are still DO / WAIT / MONITOR and carry the same
+    filled / solid / dashed shapes as Minu töö and the Teema page, so the
+    distinction survives greyscale (ADR 0031 §7).
+  {% endcomment %}
+  <div class="sec sec--panel">
+    <div class="nextpanel" id="jargmine-tegevus">
+      <span class="lbl">Järgmine tegevus</span>
+
+      <div class="nextpanel__row">
+        <div class="picks" id="jargmine-liik">
+          {% for choice in action_form.kind %}
+            <label class="pick modepick mchip--{{ choice.data.value|lower }}">
+              {{ choice.tag }}<span class="pick__name">{{ choice.choice_label|upper }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        <label class="grp nextpanel__text">
+          <span class="visually-hidden">{{ action_form.text.label }}</span>
+          {{ action_form.text }}
+        </label>
+      </div>
+      {% if action_form.text.errors %}
+        <span class="err">{{ action_form.text.errors|first }}</span>
+      {% endif %}
+
+      {% comment %}
+        The stored meaning, on the row with the date rather than one disclosure
+        further down. It derives from the kind — DO → Tähtaeg, WAIT → Oodatav
+        aeg, MONITOR → Vaatan üle — and stops deriving the moment somebody picks
+        one, because the model genuinely permits combinations the derivation
+        does not produce: a DO whose date is a rough month is recorded as an
+        expectation, not a deadline (app/workflow/enums.py).
+      {% endcomment %}
+      <div class="nextpanel__row">
+        <div class="picks" id="jargmine-tahendus" data-derive-from="jargmine-liik">
+          {% for choice in action_form.date_semantics %}
+            <label class="pick">{{ choice.tag }}<span class="pick__name">{{ choice.choice_label }}</span></label>
+          {% endfor %}
+        </div>
+        <label class="grp nextpanel__date">
+          <span class="visually-hidden">{{ action_form.target_date.label }}</span>
+          {{ action_form.target_date }}
+        </label>
+      </div>
+      {% if action_form.target_date.errors %}
+        <span class="err">{{ action_form.target_date.errors|first }}</span>
+      {% elif action_form.date_semantics.errors %}
+        <span class="err">{{ action_form.date_semantics.errors|first }}</span>
+      {% elif action_form.kind.errors %}
+        <span class="err">{{ action_form.kind.errors|first }}</span>
+      {% endif %}
+
+      {% comment %}
+        No second Vastutaja. The initial step inherits the owner chosen in
+        section 4 — the view hands it in, because the Matter does not exist yet
+        when this form is read (app/matters/views.py).
+      {% endcomment %}
+    </div>
+  </div>
+
+  <div class="acts">
+    {% comment %}
+      Inactive rather than `disabled`: a disabled button is unfocusable and
+      announces nothing, so a keyboard user meets a control that is not there.
+      The server refuses a blank title regardless.
+    {% endcomment %}
+    <button class="btn btn--primary" type="submit" data-requires="id_title">Loo teema</button>
+    <a class="btn btn--quiet" href="{% url 'matters:matter_list' %}">Loobu</a>
+    <span class="acts__note">Ülejäänud andmeid saab lisada ka hiljem teema lehel.</span>
+  </div>
+</form>
 {% endblock %}

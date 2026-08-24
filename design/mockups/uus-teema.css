@@ -93,7 +93,7 @@
 
 .lbl--err { color: var(--status-danger); }
 
-/* A fieldset carrying a chip group: no border, no padding, and the legend is
+/* A fieldset carrying a pick group: no border, no padding, and the legend is
    the same micro-label. `display: contents` would drop the legend from the
    accessibility tree in some engines, so the reset is explicit instead. */
 .grp {
@@ -174,7 +174,7 @@
 }
 
 /* ==================================================================== *
- * The chip
+ * The pick
  *
  * One control, two behaviours. `input[type=radio]` where the model holds one
  * value, `input[type=checkbox]` where it holds several — the shape of the
@@ -182,25 +182,25 @@
  * than by CSS.
  *
  * The input is visually hidden but focusable and hit-testable: it covers the
- * label, so clicking the chip *is* clicking the input. A 1px `pointer-events:
+ * label, so clicking the pick *is* clicking the input. A 1px `pointer-events:
  * none` box was the earlier approach and made clicks land wherever the label
- * happened to be (static/js — the same trap the composer's mode chips hit).
+ * happened to be (static/js — the same trap the composer's mode picks hit).
  * ==================================================================== */
 
-.chips {
+.picks {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-15);
   align-items: center;
 }
 
-.chip {
+.pick {
   position: relative;
   display: inline-flex;
   align-items: center;
 }
 
-.chip input {
+.pick input {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -210,11 +210,11 @@
   cursor: pointer;
 }
 
-.chip__name {
+.pick__name {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-1);
-  /* 3px/11px. The vertical value is off the 4px scale on purpose: a 4px chip is
+  /* 3px/11px. The vertical value is off the 4px scale on purpose: a 4px pick is
      26px tall and eight rows of them is 40px of air the form does not have. */
   padding: 3px 11px;
   border-radius: var(--radius-sm);
@@ -229,44 +229,44 @@
     background var(--motion-duration-fast) var(--motion-easing-standard);
 }
 
-.chip:hover .chip__name { border-color: var(--border-strong); }
+.pick:hover .pick__name { border-color: var(--border-strong); }
 
-.chip input:checked + .chip__name {
+.pick input:checked + .pick__name {
   background: var(--accent-soft);
   border-color: var(--accent-border);
   color: var(--text-primary);
   font-weight: var(--typography-weight-semibold);
 }
 
-.chip input:focus-visible + .chip__name {
+.pick input:focus-visible + .pick__name {
   outline: 2px solid var(--accent-link);
   outline-offset: 2px;
 }
 
 /* Multi-select only. The × says "this one comes off", which a checked radio
    must not say — you replace a radio, you do not clear it. */
-.chip__x {
+.pick__x {
   color: var(--accent-link);
   font-size: var(--typography-size-meta-sm);
   display: none;
 }
 
-.chip input[type="checkbox"]:checked + .chip__name .chip__x { display: inline; }
+.pick input[type="checkbox"]:checked + .pick__name .pick__x { display: inline; }
 
 /* `Muu` keeps its dashed border when it is checked. It is selected *and* it is
    still the control that revealed the text field below the row, and losing the
    dash on selection would make it indistinguishable from a governed area — the
-   one thing this chip must never look like (master specification 11.2: nothing
+   one thing this pick must never look like (master specification 11.2: nothing
    here creates taxonomy). */
-.chip--muu input:checked + .chip__name {
+.pick--muu input:checked + .pick__name {
   border-style: dashed;
   border-color: var(--accent-link);
 }
 
 /* Dashed always means "this opens something optional" — the long-tail picker,
    Muu, and nothing else. Borrowed from the Teema page, where the rail's `+`
-   chip and the SharePoint rows already use it. */
-.chip--more .chip__name,
+   pick and the SharePoint rows already use it. */
+.pick--more .pick__name,
 .chip--open {
   border-style: dashed;
   border-color: var(--border-strong);
@@ -275,15 +275,15 @@
 }
 
 /* ==================================================================== *
- * The workflow chip — TEEN / OOTAN / JÄLGIN
+ * The workflow pick — TEEN / OOTAN / JÄLGIN
  *
- * Deliberately NOT the selection chip. It is the vocabulary Minu töö and the
+ * Deliberately NOT the selection pick. It is the vocabulary Minu töö and the
  * Teema page already use, and it has to read as the same object here: caps,
  * 700, tracked, and the fill / solid / dashed triad that survives greyscale
  * (ADR 0031 §7, master specification 18.8).
  * ==================================================================== */
 
-.mchip .chip__name {
+.modepick .pick__name {
   padding: 3px 12px;
   border-radius: var(--radius-sm);
   font-size: var(--typography-size-label);
@@ -296,21 +296,21 @@
 
 /* Unselected, JÄLGIN keeps its dashed border — the one shape difference that
    survives both states. */
-.mchip--monitor .chip__name { border-style: dashed; }
+.modepick--monitor .pick__name { border-style: dashed; }
 
-.mchip--do input:checked + .chip__name {
+.modepick--do input:checked + .pick__name {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
   color: var(--text-inverse);
 }
 
-.mchip--wait input:checked + .chip__name {
+.modepick--wait input:checked + .pick__name {
   background: var(--surface-selected);
   border-color: var(--accent-link);
   color: var(--text-primary);
 }
 
-.mchip--monitor input:checked + .chip__name {
+.modepick--monitor input:checked + .pick__name {
   background: var(--surface-selected);
   border-color: var(--accent-link);
   border-style: dashed;
@@ -505,7 +505,7 @@
 
 /* Nothing stacks at 1024. Measured at that width the content column is 976px,
    which leaves the summary 636px beside a 320px note, the file field 644px
-   beside two 146px dates, and the sender chips 710px beside a 246px owner
+   beside two 146px dates, and the sender picks 710px beside a 246px owner
    column — every one of them comfortable. Stacking there would add ~250px of
    height to buy nothing, and the brief's "the main action should not end up
    several screens away" is the constraint that matters at this width.
