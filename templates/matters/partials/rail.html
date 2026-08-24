@@ -194,7 +194,9 @@ whose addressee nobody recorded should look short, not incomplete.
     {% if matter.closed_at %}
       <p class="railcard__row">
         <span class="railcard__key">Suletud</span>
-        <span class="railcard__value--date">{{ matter.closed_at|date:"j.n.Y" }}</span>
+        <span class="railcard__value--date">
+          <time datetime="{{ matter.closed_at|date:'c' }}">{{ matter.closed_at|date:"j.n.Y" }}</time>
+        </span>
       </p>
       {% if matter.disposition %}
         <p class="railcard__row">

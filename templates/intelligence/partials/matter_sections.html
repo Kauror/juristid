@@ -127,7 +127,9 @@ because a plan that changed is part of the file's history.
             {% if record.confirmed_by %}
               <span class="muted">
                 Kinnitas {{ record.confirmed_by.display_name }}
-                {{ record.confirmed_at|date:"j.n.Y" }}
+                <time datetime="{{ record.confirmed_at|date:'c' }}">
+                  {{ record.confirmed_at|date:"j.n.Y" }}
+                </time>
               </span>
             {% endif %}
           </span>

@@ -341,13 +341,19 @@ finds again (§23.5).
                 <span class="sharepointrow__meta">
                   {% if document.sharepoint_site_id %}{{ document.sharepoint_site_id }} · {% endif %}
                   {% if document.sharepoint_observed_at %}
-                    muudetud SharePointis {{ document.sharepoint_observed_at|date:"j.n.Y" }}
+                    muudetud SharePointis
+                    <time datetime="{{ document.sharepoint_observed_at|date:'c' }}">
+                      {{ document.sharepoint_observed_at|date:"j.n.Y" }}
+                    </time>
                   {% else %}elav fail{% endif %}
                 </span>
                 <span class="sharepointrow__spacer"></span>
                 {% if document.created_by %}
-                  <span class="muted">lisas {{ document.created_by.get_short_name }}
-                    · {{ document.created_at|date:"j.n.Y" }}</span>
+                  <span class="muted">lisas {{ document.created_by.get_short_name }} ·
+                    <time datetime="{{ document.created_at|date:'c' }}">
+                      {{ document.created_at|date:"j.n.Y" }}
+                    </time>
+                  </span>
                 {% endif %}
               </p>
             {% empty %}
