@@ -104,6 +104,11 @@ from app.workflow.services import (
 PAGE_SIZE = 25
 TIMELINE_PAGE_SIZE = 30
 
+#: The private note's form prefix. It shares a field name with the composer —
+#: both are called `body` — and two elements with the same id on one page make
+#: every label ambiguous for a screen reader and for a browser test.
+NOTE_PREFIX = "markmed"
+
 
 def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
     """Fetch a Matter the signed-in user is allowed to read, or 404.
@@ -974,14 +979,18 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE, only=timeline_only
     )
     engagements = selectors.matter_engagements(matter, request.user)
+    current_action = current_next_action(matter)
+    # The register's own `JÄRGMISEKS`, and only where no structured action
+    # exists. Read here rather than in the template so the page cannot start
+    # asking the database a question of its own — and read *conditionally*,
+    # because on a Matter that has a real next step neither answer is rendered
+    # and both are a query for nothing (ADR 0021).
+    source_instruction = "" if current_action else source_instruction_for(matter)
     return {
         "matter": matter,
-        "current_action": current_next_action(matter),
-        # The register's own `JÄRGMISEKS`, shown only where no structured action
-        # exists. Read here rather than in the template so the page cannot start
-        # asking the database a question of its own (ADR 0021).
-        "source_instruction": source_instruction_for(matter),
-        "source_snapshot": snapshot_label(),
+        "current_action": current_action,
+        "source_instruction": source_instruction,
+        "source_snapshot": snapshot_label() if source_instruction else "",
         "timeline_items": items,
         "timeline_has_more": has_more,
         "timeline_count": len(items) + (1 if has_more else 0),
@@ -1019,13 +1028,22 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
 def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
     context = _overview_context(request, matter)
-    context.update(_header_context(request, matter))
+    intelligence = context["intelligence"]
+    context.update(
+        _header_context(
+            request,
+            matter,
+            milestones=[*intelligence.upcoming_dates, *intelligence.past_dates],
+        )
+    )
     context["tab"] = "teema"
     context["nav_active"] = "teemad"
     return render(request, "matters/matter_detail.html", context)
 
 
-def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
+def _header_context(
+    request: HttpRequest, matter: Matter, *, milestones: Any = None
+) -> dict[str, Any]:
     return {
         "matter": matter,
         # No `submission_count`. The tab that displayed it is gone, and a count
@@ -1053,13 +1071,20 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "matter_policy_areas": list(matter.policy_areas.all()),
         # The one deadline the header shows, chosen by the rule in §5.5 rather
         # than by the template picking whichever field is non-empty.
-        "active_deadline": selectors.active_deadline(matter, request.user),
+        # `milestones` when the caller has already read them, which the Matter
+        # page has: `Olulised tähtajad` renders from the same rows.
+        "active_deadline": selectors.active_deadline(matter, request.user, milestones=milestones),
         "summary_form": BriefSummaryForm(initial={"brief_summary": matter.brief_summary}),
         # The rail travels with the header — it is on all three Matter surfaces
         # — so the private note and the write flag are read here rather than
         # three times over.
+        # Prefixed, because the composer's own field is called `body` too and
+        # two `id="id_body"` on one page break every `for=` on both of them —
+        # the composer's textarea was announcing itself as "Tegevuse kirjeldus
+        # Märkmed".
         "note_form": PersonalNoteForm(
-            initial={"body": personal_note_for(matter=matter, author=request.user)}
+            prefix=NOTE_PREFIX,
+            initial={"body": personal_note_for(matter=matter, author=request.user)},
         ),
         "can_write": may_write_business_content(request.user),
         "today": timezone.localdate(),
@@ -1228,7 +1253,14 @@ def _render_overview(request: HttpRequest, matter: Matter, status: int = 200) ->
     never show different pictures of the same save.
     """
     context = _overview_context(request, matter)
-    context.update(_header_context(request, matter))
+    intelligence = context["intelligence"]
+    context.update(
+        _header_context(
+            request,
+            matter,
+            milestones=[*intelligence.upcoming_dates, *intelligence.past_dates],
+        )
+    )
     return render(request, "matters/partials/overview.html", context, status=status)
 
 
@@ -1607,7 +1639,7 @@ def save_note(request: HttpRequest, pk: Any) -> HttpResponse:
     appear anywhere else on the page (Teema redesign §22.4).
     """
     matter = get_visible_matter(request, pk)
-    form = PersonalNoteForm(request.POST)
+    form = PersonalNoteForm(request.POST, prefix=NOTE_PREFIX)
     if not form.is_valid():
         return HttpResponse(status=400)
     try:

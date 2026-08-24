@@ -8,6 +8,29 @@
  * (master specification 17.7).
  */
 (function () {
+  /* ---- A refused save must say why --------------------------------------
+   * Every 400 this application returns from an HTMX endpoint carries the
+   * re-rendered surface with the reason on it: the composer with its field
+   * error and the text still in the box, the engagement form with what was
+   * typed. htmx 2 does not swap 4xx by default, which means the server
+   * explains itself and the page silently discards the explanation — somebody
+   * presses Salvesta and nothing whatsoever happens.
+   *
+   * Only 400 and 422. A 404 is the authorization answer this application gives
+   * for a record somebody may not touch, and swapping Django's error page into
+   * a fragment target would be worse than ignoring it.
+   *
+   * `defer` on both scripts, htmx first, so the global is here.
+   */
+  if (window.htmx && window.htmx.config) {
+    window.htmx.config.responseHandling = [
+      { code: "204", swap: false },
+      { code: "[23]..", swap: true },
+      { code: "4(00|22)", swap: true, error: true },
+      { code: "[45]..", swap: false, error: true },
+    ];
+  }
+
   "use strict";
 
   /* ---- Ctrl/Cmd+K focuses the global search ------------------------------
@@ -342,9 +365,15 @@
      * block belongs to the `.choiceset` that precedes it under the same
      * parent. */
     scope.querySelectorAll(".periodfields").forEach(function (fields) {
-      var chooser = fields.parentElement
-        ? fields.parentElement.querySelector(".choiceset")
-        : null;
+      /* The *nearest preceding* `.choiceset`, walked backwards. Jõustumine has
+         two of them in one parent — "what is known about the date" comes
+         before "how exact is it" — and taking the first match paired the
+         period groups with the wrong question, which hid the date field
+         entirely and made the form unusable. */
+      var chooser = fields.previousElementSibling;
+      while (chooser && !chooser.classList.contains("choiceset")) {
+        chooser = chooser.previousElementSibling;
+      }
       if (chooser) {
         bindOnePeriodControl(scope, fields, chooser);
       }

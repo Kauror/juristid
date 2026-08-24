@@ -81,7 +81,7 @@ def test_several_policy_areas_can_be_chosen(signed_in, specialist):
 # -- ordering ---------------------------------------------------------------
 
 
-def test_policy_areas_are_offered_in_the_reviewed_order(signed_in):
+def test_policy_areas_are_offered_in_the_reviewed_order(signed_in, specialist):
     """The department sequenced these twenty-three; the form shows that order.
 
     It replaces an ordering by usage frequency, which existed because nine
@@ -93,14 +93,19 @@ def test_policy_areas_are_offered_in_the_reviewed_order(signed_in):
     """
     from app.taxonomy.vocabulary import selectable_policy_areas
 
-    body = signed_in.get(CREATE).content.decode()
-    offered = [
-        name for name in (area.name_et for area in selectable_policy_areas()) if name in body
-    ]
-    positions = [body.index(name) for name in offered]
+    expected = [area.name_et for area in selectable_policy_areas()]
+    assert expected, "the governed vocabulary is empty"
 
-    assert offered, "the create form offers no Valdkonnad at all"
-    assert positions == sorted(positions), "the Valdkonnad are not in reviewed order"
+    offered = [
+        str(label)
+        for _value, label in MatterCreateForm(viewer=specialist).fields["policy_areas"].choices
+    ]
+    assert offered == expected
+
+    # And the page renders one control per offered area, so the order somebody
+    # sees is the order the form declares.
+    body = signed_in.get(CREATE).content.decode()
+    assert body.count('name="policy_areas"') == len(expected)
 
 
 def test_restricted_work_does_not_shape_the_order_somebody_else_sees(specialist, other_specialist):

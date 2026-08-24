@@ -745,7 +745,13 @@ def test_the_engagement_line_shows_type_and_date_not_an_invented_count(signed_in
         actor=specialist,
     )
 
-    assert "vastajat" not in _detail(signed_in, matter)
+    body = _detail(signed_in, matter)
+    # Scoped to the collapsed line. The composer's outcome box quotes a survey
+    # result as its placeholder, which is copy rather than data.
+    line = body[body.index("accordion__summary") : body.index("accordion__body")]
+
+    assert "Küsitlus" in line
+    assert "vastajat" not in line
     assert not any(field.name == "response_count" for field in MatterEngagement._meta.get_fields())
 
 
@@ -1015,7 +1021,7 @@ def test_two_people_keep_two_notes(normal_matter, specialist, other_specialist):
 def test_a_note_autosaves_and_swaps_nothing(signed_in, normal_matter, specialist):
     response = signed_in.post(
         reverse("matters:save_note", kwargs={"pk": normal_matter.pk}),
-        {"body": "Küsi üle, kas kvartaalne sagedus on direktiivi nõue."},
+        {"markmed-body": "Küsi üle, kas kvartaalne sagedus on direktiivi nõue."},
         headers={"HX-Request": "true"},
     )
 

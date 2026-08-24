@@ -293,7 +293,12 @@ class ActiveDeadline:
         return self.days_remaining == 0 and not self.is_past
 
 
-def active_deadline(matter: Matter, user: Any, today: date | None = None) -> ActiveDeadline | None:
+def active_deadline(
+    matter: Matter,
+    user: Any,
+    today: date | None = None,
+    milestones: Any = None,
+) -> ActiveDeadline | None:
     """The single most relevant deadline, or nothing at all.
 
     Two rules, in order (Teema redesign §5.5):
@@ -318,6 +323,12 @@ def active_deadline(matter: Matter, user: Any, today: date | None = None) -> Act
     Cancelled milestones are excluded: an expectation somebody called off is
     history, not a commitment. A period is "past" only once its **last** day is
     behind us, which is why an approximate date is compared on ``period_end``.
+
+    ``milestones`` is for the one caller that has already read them: the Matter
+    page renders `Olulised tähtajad` from the same rows, and asking the same
+    table the same question twice per request is a query for an answer already
+    in memory. Anything passed here must already be authorization-scoped —
+    which is why the parameter is not the default.
     """
     from app.intelligence.enums import FactStatus
     from app.intelligence.models import MatterImportantDate
@@ -335,12 +346,15 @@ def active_deadline(matter: Matter, user: Any, today: date | None = None) -> Act
             )
         )
 
-    milestones = (
-        MatterImportantDate.objects.filter(matter=matter, status=FactStatus.ACTIVE)
-        .visible_to(user)
-        .only("date_value", "period_end", "date_precision", "title")
-    )
+    if milestones is None:
+        milestones = (
+            MatterImportantDate.objects.filter(matter=matter, status=FactStatus.ACTIVE)
+            .visible_to(user)
+            .only("date_value", "period_end", "date_precision", "title")
+        )
     for record in milestones:
+        if record.status != FactStatus.ACTIVE:
+            continue
         candidates.append((record.date_value, record.period_end, record.title, record.display_date))
 
     if not candidates:

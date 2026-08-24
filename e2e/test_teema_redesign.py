@@ -204,6 +204,13 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     page.locator("[data-composer-submit]").click()
     page.wait_for_load_state("networkidle")
 
+    # A refused save leaves the page exactly as it was, which is
+    # indistinguishable from one that did nothing — so the refusal is checked
+    # here, where its message is still on screen, rather than inferred three
+    # assertions later from a Matter that is still open.
+    expect(page.locator(".formerror")).to_have_count(0)
+    expect(page.locator(".composer .field__error")).to_have_count(0)
+
     # -- E. the closed Matter -------------------------------------------
     page.goto(url)
     expect(page.locator(".badge--closed")).to_be_visible()
@@ -258,6 +265,9 @@ def test_evidence_and_working_references_look_like_opposites(page, base_url):
     working = page.locator("#toodokumendid")
     expect(working).not_to_have_attribute("open", "")
     working.locator(".accordion__head").click()
+    # The form is a shared panel, revealed rather than always open: three
+    # controls point at it and there is one of it.
+    working.locator(".disclosure-chip", has_text="+ SharePointi viide").click()
     page.locator("#sharepointi-viide").locator("#id_title").fill("Arvamuse_töödokument.docx")
     page.locator("#sharepointi-viide").locator("#id_web_url").fill(
         "https://example.invalid/sites/oigus/arvamus.docx"
@@ -317,7 +327,7 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
 
     # The visible equivalent is beside the hint.
     page.goto(url)
-    expect(page.locator(".composer__hint")).to_be_visible()
+    expect(page.locator(".composer .composer__hint")).to_be_visible()
     expect(page.locator("[data-composer-submit]")).to_be_visible()
 
 

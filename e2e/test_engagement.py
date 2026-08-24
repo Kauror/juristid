@@ -29,7 +29,7 @@ def open_kaasamine(page):
     not a labelled section announcing an absence — so every test that works
     inside it has to open it first (Teema redesign §14, §24).
     """
-    section = open_kaasamine(page)
+    section = page.locator("#kaasamine")
     if section.get_attribute("open") is None:
         section.locator(".accordion__head").click()
     return section

@@ -1825,7 +1825,8 @@ p.formnote {
   font-weight: var(--typography-weight-bold);
 }
 
-.composer__hint {
+.composer__hint,
+.keyhint {
   font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
 }

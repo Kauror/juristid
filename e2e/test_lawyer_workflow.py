@@ -93,8 +93,11 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     assert re.fullmatch(r"\d{4}_\d+", reference), reference
 
     expect(page.locator(".nextrow__text")).to_have_text("Koosta ja saada koja arvamus")
-    expect(page.locator(".nextaction .mode--do")).to_be_visible()
-    expect(page.locator(".nextaction").get_by_text("Tähtaeg", exact=False).first).to_be_visible()
+    expect(page.locator(".nextrow .modechip--do")).to_be_visible()
+    # A TEEN date is a deadline and prints as a bare date — the row says which
+    # of the three meanings it carries by the chip beside it, not by a label
+    # repeated on every line (Teema redesign §8.2).
+    expect(page.locator(".nextrow__date")).to_be_visible()
     screenshots(page, "03-teema-ulevaade")
 
     matter_url = page.url
