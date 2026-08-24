@@ -323,6 +323,95 @@ def test_at_1024_the_rail_folds_under_and_nothing_scrolls_sideways(page, base_ur
 
 
 # ---------------------------------------------------------------------------
+# The QA correction round
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("width", [1440, 1280, 1024])
+def test_muuda_teemat_fits_every_width_the_department_uses(page, base_url, width):
+    """The edit page at the three widths this is used at.
+
+    No screenshot: the assertion is that nothing scrolls sideways and that every
+    control is reachable, which is what a person actually notices. A baseline
+    would say the same thing less precisely and would have to be regenerated
+    whenever a label changed (Teema QA §11).
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    matter_url = open_matter(page, base_url)
+
+    page.get_by_role("link", name="Muuda teemat").click()
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_role("heading", name="Muuda teemat")).to_be_visible()
+
+    assert not document_overflows(page), f"the edit page scrolled sideways at {width}px"
+
+    # Every field is on the page and inside it. The date pair and the
+    # owner/stage/track row are a grid that stacks when a column would fall
+    # below 16rem, so this is the check that the stacking actually happens
+    # rather than the row overflowing (static/css/app.css, `.fieldrow`).
+    page_width = page.evaluate("() => document.documentElement.clientWidth")
+    for field in ("#id_title", "#id_owner", "#id_received_date", "#id_response_deadline"):
+        box = page.locator(field).bounding_box()
+        assert box is not None, f"{field} is not rendered at {width}px"
+        assert box["x"] >= -1, f"{field} starts off the left edge at {width}px"
+        assert box["x"] + box["width"] <= page_width + 1, f"{field} runs off at {width}px"
+
+    # Loobu goes back to the Matter without saving.
+    page.get_by_role("link", name="Loobu").click()
+    page.wait_for_load_state("networkidle")
+    assert page.url.rstrip("/") == matter_url.rstrip("/")
+
+
+def test_muuda_teemat_saves_the_whole_record_at_once(page, base_url):
+    """One form, one save, and the Matter page says the new facts back."""
+    sign_in(page, base_url, MARTIN)
+    url = create_matter(page, base_url, "Vale pealkiri, mis parandatakse")
+
+    page.get_by_role("link", name="Muuda teemat").click()
+    page.wait_for_load_state("networkidle")
+
+    page.fill("#id_title", "Parandatud pealkiri")
+    page.fill("#id_brief_summary", "Mida see ettevõtete jaoks tähendab.")
+    page.fill("#id_response_deadline", _future(21))
+    page.get_by_role("button", name="Salvesta").click()
+    page.wait_for_load_state("networkidle")
+
+    assert page.url.rstrip("/") == url.rstrip("/")
+    expect(page.get_by_role("heading", name="Parandatud pealkiri")).to_be_visible()
+    expect(page.locator(".summary__text")).to_contain_text("Mida see ettevõtete jaoks tähendab.")
+
+    # And the provenance the page showed was read-only: no control posted it.
+    page.get_by_role("link", name="Muuda teemat").click()
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_text("Muutumatu")).to_be_visible()
+    expect(page.locator("[name='origin']")).to_have_count(0)
+
+
+def test_minu_too_is_one_dated_list(page, base_url):
+    """All three modes in one chronological list, each saying what it is."""
+    sign_in(page, base_url, MARTIN)
+    page.goto(f"{base_url}/minu-too/")
+    page.wait_for_load_state("networkidle")
+
+    expect(page.get_by_role("heading", name="Ootan ja kontrollin")).to_have_count(0)
+    rows = page.locator(".workrow")
+    if not rows.count():
+        pytest.skip("the seeded world gives this persona no scheduled work")
+
+    # Every row carries a mode chip, so no row's date is ambiguous.
+    assert rows.count() == page.locator(".workrow .mode").count()
+
+    # And the bands run forwards in time down the page.
+    tops = [
+        page.locator(f".workgroup--{key}").first.bounding_box()["y"]
+        for key in ("passed", "today", "soon", "later", "undated")
+        if page.locator(f".workgroup--{key}").count()
+    ]
+    assert tops == sorted(tops), "the work bands are out of chronological order"
+
+
+# ---------------------------------------------------------------------------
 # Keyboard and focus
 # ---------------------------------------------------------------------------
 
