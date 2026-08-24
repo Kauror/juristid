@@ -21,6 +21,7 @@ from app.intelligence.services import add_important_date
 from app.matters import work_items as wi
 from app.matters.my_work import build_my_work
 from app.matters.services import assign_matter, create_matter
+from app.workflow.dates import period_bounds
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 from app.workflow.services import set_next_action
 
@@ -196,14 +197,20 @@ def test_an_important_deadline_period_is_not_late_until_its_last_day(specialist,
     manufacturing a failure out of a precision the source never claimed.
     """
     matter = _matter(specialist)
+    # A real quarter, not an invented span: the service validates that the
+    # period matches the precision, and a test that worked around that would be
+    # asserting against a shape the product cannot create.
+    start, end = period_bounds(today, DatePrecision.QUARTER)
     add_important_date(
         matter=matter,
         title="Konsultatsiooniring",
-        date_value=today - timedelta(days=10),
-        period_end=today + timedelta(days=20),
+        date_value=start,
+        period_end=end,
+        date_precision=DatePrecision.QUARTER,
         actor=specialist,
     )
 
+    assert start <= today <= end
     assert build_my_work(specialist, today=today).overdue == 0
 
 

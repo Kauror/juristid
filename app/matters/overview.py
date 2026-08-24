@@ -48,6 +48,7 @@ from app.audit.models import ChangeEvent
 from app.core.dates import format_estonian_date
 from app.matters import work_items as wi
 from app.matters.models import Entry, Matter, MatterEngagement
+from app.matters.register_filters import register_population
 from app.matters.selectors import MISSING
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
@@ -1009,13 +1010,13 @@ def _department_figures(
     user: Any, today: date, items: list[wi.WorkItem], pop: Populations | None = None
 ) -> list[Figure]:
     horizon = today + timedelta(days=DEADLINE_HORIZON_DAYS)
-    upcoming = [
-        item
-        for item in real_deadlines(items)
-        if item.when is not None and today <= item.when <= horizon
-    ]
     people = _populations(user, pop)
     month = ESTONIAN_MONTHS_IN[today.month - 1]
+    deadline_params = {
+        **_OPEN_FULL,
+        "tahtaeg_alates": format_estonian_date(today),
+        "tahtaeg_kuni": format_estonian_date(horizon),
+    }
     sent = people.submissions.filter(
         status=SubmissionStatus.SENT, sent_at__year=today.year, sent_at__month=today.month
     ).count()
@@ -1044,13 +1045,13 @@ def _department_figures(
         ),
         Figure(
             "deadlines",
-            len(upcoming),
-            f"tähtaega {DEADLINE_HORIZON_DAYS} päeva jooksul",
-            _teemad(
-                **_OPEN_FULL,
-                tahtaeg_alates=format_estonian_date(today),
-                tahtaeg_kuni=format_estonian_date(horizon),
-            ),
+            # Counted *through* the register's own filter pipeline rather than
+            # beside it, so the figure and the list it opens are one query. The
+            # wording says which deadline this is: the department watches other
+            # dates too, and `Tähtajad` below shows them.
+            register_population(user, deadline_params, today=today).count(),
+            f"arvamuse tähtaega {DEADLINE_HORIZON_DAYS} päeva jooksul",
+            _teemad(**deadline_params),
         ),
         Figure(
             "submissions",

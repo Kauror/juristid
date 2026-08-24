@@ -112,12 +112,12 @@ traffic: a feed that reports a deadline corrected by a day is an audit log, and
 an audit log is not read.
 {% endcomment %}
 <section class="ovsection" aria-label="Viimane tegevus">
-  <details class="disclosure" open>
-    <summary class="disclosure__trigger">
-      <span class="disclosure__label">Viimane tegevus</span>
-      <span class="disclosure__meta">kogu osakond · viimane kuu</span>
+  <details class="foldout" open>
+    <summary class="foldout__trigger">
+      <span class="foldout__label">Viimane tegevus</span>
+      <span class="foldout__meta">kogu osakond · viimane kuu</span>
     </summary>
-    <div class="disclosure__body">
+    <div class="foldout__body">
       <nav class="feedfilter" aria-label="Tegevuse liik">
         {% for key, label in feed_filters %}
           <a class="feedfilter__item{% if key == page.feed_filter %} is-active{% endif %}"

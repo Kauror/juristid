@@ -9,6 +9,7 @@ page worth less than nothing to the person who has to act on it.
 
 from __future__ import annotations
 
+import datetime
 from datetime import timedelta
 
 import pytest
@@ -30,6 +31,31 @@ from tests import factories
 pytestmark = pytest.mark.django_db
 
 OVERVIEW = "matters:overview"
+
+
+def _sent(matter, *, title: str, sent):
+    """A canonical sent Submission, with the evidence its state requires.
+
+    The database refuses a sent submission without a final version — a sent
+    opinion with no text is an unverifiable claim about what Koda argued — so
+    this supplies one rather than working around the constraint.
+    """
+    from app.documents.services import add_evidence_version
+
+    document = factories.DocumentFactory(matter=matter)
+    version = add_evidence_version(
+        document=document,
+        content=f"%PDF-1.4\n{title}".encode(),
+        original_filename="naidis.pdf",
+        mime_type="application/pdf",
+    )
+    return factories.SubmissionFactory(
+        matter=matter,
+        title=title,
+        status=SubmissionStatus.SENT,
+        sent_at=datetime.datetime.combine(sent, datetime.time(9, 0), tzinfo=datetime.UTC),
+        final_version=version,
+    )
 
 
 @pytest.fixture
@@ -335,7 +361,7 @@ def test_only_canonical_sent_submissions_count_as_opinions(department_head, spec
     matter = create_matter(
         title="Arvamusega teema", owner=specialist, reference_year=2026, actor=specialist
     )
-    factories.SubmissionFactory(matter=matter, status=SubmissionStatus.SENT, sent_at=timezone.now())
+    _sent(matter, title="Selle kuu arvamus", sent=today)
     factories.SubmissionFactory(matter=matter, status=SubmissionStatus.DRAFT)
     # An archive row, which is what the historical corpus looks like here.
     factories.ArchiveMatterFactory(title="Ajalooline kiri", record_mode=RecordMode.ARCHIVE)
@@ -425,15 +451,8 @@ def test_the_month_filter_narrows_the_sent_list(client, department_head, special
     matter = create_matter(
         title="Arvamusega teema", owner=specialist, reference_year=2026, actor=specialist
     )
-    factories.SubmissionFactory(
-        matter=matter, title="Selle kuu arvamus", status=SubmissionStatus.SENT, sent_at=now
-    )
-    factories.SubmissionFactory(
-        matter=matter,
-        title="Eelmise aasta arvamus",
-        status=SubmissionStatus.SENT,
-        sent_at=now - timedelta(days=400),
-    )
+    _sent(matter, title="Selle kuu arvamus", sent=now.date())
+    _sent(matter, title="Eelmise aasta arvamus", sent=now.date() - timedelta(days=400))
     client.force_login(department_head)
 
     url = f"{reverse('submissions:sent')}?aasta={now.year}&kuu={now.month}"

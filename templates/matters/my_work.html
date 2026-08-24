@@ -97,16 +97,16 @@ Nothing on this page is anybody else's work.
       {% endif %}
 
       <section class="workband workband--entries" aria-label="Minu viimased sissekanded">
-        <details class="disclosure">
-          <summary class="disclosure__trigger">
-            <span class="disclosure__label">Minu viimased sissekanded</span>
+        <details class="foldout">
+          <summary class="foldout__trigger">
+            <span class="foldout__label">Minu viimased sissekanded</span>
             {% if work.last_entry %}
-              <span class="disclosure__meta">viimane {{ work.last_entry.occurred_at|date:"j.n" }} kell {{ work.last_entry.occurred_at|date:"H:i" }}</span>
+              <span class="foldout__meta">viimane {{ work.last_entry.occurred_at|date:"j.n" }} kell {{ work.last_entry.occurred_at|date:"H:i" }}</span>
             {% else %}
-              <span class="disclosure__meta">sissekandeid ei ole</span>
+              <span class="foldout__meta">sissekandeid ei ole</span>
             {% endif %}
           </summary>
-          <div class="disclosure__body">
+          <div class="foldout__body">
             {% for entry in work.entries %}
               <a class="entryline" href="{% url 'matters:matter_detail' pk=entry.matter.pk %}">
                 <span class="entryline__when">{{ entry.occurred_at|date:"j.n" }}</span>

@@ -6686,9 +6686,9 @@ p.factsection__none {
   color: var(--text-primary);
 }
 
-/* ---- disclosures --------------------------------------------------- */
+/* ---- foldouts: a disclosure that is not a card --------------------------------------------------- */
 
-.disclosure__trigger {
+.foldout__trigger {
   list-style: none;
   cursor: pointer;
   display: flex;
@@ -6696,37 +6696,37 @@ p.factsection__none {
   gap: var(--spacing-25);
 }
 
-.disclosure__trigger::-webkit-details-marker {
+.foldout__trigger::-webkit-details-marker {
   display: none;
 }
 
-.disclosure__trigger::before {
+.foldout__trigger::before {
   content: "\25B8";
   color: var(--text-muted);
   font-size: var(--typography-size-label);
 }
 
-.disclosure[open] > .disclosure__trigger::before {
+.foldout[open] > .foldout__trigger::before {
   content: "\25BE";
 }
 
-.disclosure__trigger:focus-visible {
+.foldout__trigger:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset-width);
 }
 
-.disclosure__label {
+.foldout__label {
   font-size: 14px;
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);
 }
 
-.disclosure__meta {
+.foldout__meta {
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
 }
 
-.disclosure__body {
+.foldout__body {
   padding-top: var(--spacing-25);
   display: flex;
   flex-direction: column;
@@ -6760,6 +6760,12 @@ p.factsection__none {
   text-overflow: ellipsis;
 }
 
+
+/* The entries foldout closes the left column, so it carries no bottom rule —
+   the page ends there. */
+.workband--entries {
+  border-bottom: none;
+}
 /* ---- the rail ------------------------------------------------------ */
 
 .railblock {

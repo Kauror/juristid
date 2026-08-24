@@ -115,7 +115,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # and on what else this persona is carrying. What must be true is that the
     # step is on the page, in a row, saying which mode it is (Teema QA §3).
     page.locator(".topnav__link", has_text="Minu töö").click()
-    row = page.locator(".workrow").filter(has_text="Koosta ja saada koja arvamus")
+    row = page.locator(".workrow2").filter(has_text="Koosta ja saada koja arvamus")
     expect(row).to_have_count(1)
     expect(row.locator(".mode--do")).to_be_visible()
     expect(page.get_by_text(MATTER_TITLE).first).to_be_visible()
@@ -174,7 +174,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # chip that says what the date means (Teema QA §3).
     page.locator(".topnav__link", has_text="Minu töö").click()
     expect(page.get_by_role("heading", name="Ootan ja kontrollin")).to_have_count(0)
-    row = page.locator(".workrow").filter(has_text="Ootan ministeeriumi uut sõnastust")
+    row = page.locator(".workrow2").filter(has_text="Ootan ministeeriumi uut sõnastust")
     expect(row).to_have_count(1)
     expect(row.locator(".mode--wait")).to_be_visible()
 
