@@ -306,13 +306,20 @@ def test_at_1024_the_rail_folds_under_and_nothing_scrolls_sideways(page, base_ur
     assert rail["y"] >= main["y"] + main["height"] - 1, "the rail did not fold under the content"
     assert not document_overflows(page)
 
-    # The reading order is unchanged and the composer is in the same place
-    # relative to it: after the next step, before the position.
+    # The reading order of the main column is unchanged: the next step, then
+    # the composer, then the chronology.
     order = [
         page.locator(selector).first.bounding_box()["y"]
-        for selector in (".nextrow", ".composer", "#koja-seisukoht", "#ajajoon")
+        for selector in (".nextrow", ".composer", "#ajajoon")
     ]
     assert order == sorted(order), "the reading order changed at 1024px"
+
+    # `Koja seisukoht` is a rail fact now, so at this width it arrives with the
+    # rail — under the whole main column rather than inside it. That is the
+    # point of folding the rail rather than reflowing its cards into the
+    # content (Teema QA §1).
+    position = page.locator("#koja-seisukoht").first.bounding_box()
+    assert position["y"] >= rail["y"] - 1, "the position card left the rail at 1024px"
 
 
 # ---------------------------------------------------------------------------

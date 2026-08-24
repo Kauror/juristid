@@ -24,9 +24,11 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
+from app.intelligence.forms import EffectiveDateForm
 from app.matters import selectors
 from app.matters.forms import (
     ComposerForm,
+    EngagementForm,
     IncomingIntakeForm,
     MatterCreateForm,
     MatterEditForm,
@@ -35,7 +37,7 @@ from app.matters.forms import (
 from app.matters.models import Matter
 from app.matters.services import assign_matter, set_policy_areas, set_position
 from app.taxonomy.models import PolicyArea
-from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
+from app.workflow.enums import ActionKind, ActionStatus, DateSemantics, Disposition
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
 from tests import factories
@@ -106,7 +108,10 @@ def test_the_rail_travels_to_every_matter_surface(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
     set_position(matter=matter, position_summary="Koda toetab.", actor=specialist)
 
-    for name in ("matters:matter_detail", "matters:matter_documents"):
+    # The two surfaces that carry the rail. Dokumendid is deliberately
+    # full-width with no rail at all — browsing forty files is the task that tab
+    # exists for (templates/matters/matter_documents.html).
+    for name in ("matters:matter_detail", "matters:matter_position"):
         body = _body(signed_in.get(reverse(name, kwargs={"pk": matter.pk})))
         assert "railposition__text" in body, name
 
@@ -133,6 +138,9 @@ def test_the_matter_page_offers_a_visible_edit_action(signed_in, specialist):
 
 def test_the_edit_page_offers_every_editable_fact(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
+    # Sildid renders a control only when the governed vocabulary has something
+    # in it; an empty vocabulary is a sentence, not an empty fieldset.
+    factories.TagFactory()
     body = _body(signed_in.get(_edit_url(matter)))
 
     for field in (
@@ -510,10 +518,8 @@ def test_a_do_action_dated_inside_the_horizon_is_never_swallowed(specialist):
         (MatterCreateForm, "received_date"),
         (MatterCreateForm, "response_deadline"),
         (ComposerForm, "occurred_on"),
-        (ComposerForm, "next_date"),
-        (ComposerForm, "deadline_date"),
-        (ComposerForm, "final_sent_on"),
         (IncomingIntakeForm, "received_date"),
+        (EngagementForm, "occurred_on"),
     ],
 )
 def test_a_fresh_date_box_starts_on_today(form_class, field):
@@ -541,6 +547,54 @@ def test_today_is_recorded_as_now_and_not_as_midnight(normal_matter, specialist)
     form = ComposerForm({"body": "Märkus"})
     assert form.is_valid(), form.errors
     assert form.as_service_kwargs()["occurred_at"] is None
+
+
+@pytest.mark.parametrize(
+    ("form_class", "field"),
+    [
+        (ComposerForm, "next_date"),
+        (ComposerForm, "deadline_date"),
+        (ComposerForm, "final_sent_on"),
+        (EffectiveDateForm, "exact_date"),
+    ],
+)
+def test_a_date_box_whose_emptiness_is_a_signal_never_defaults(form_class, field):
+    """The limit of §5, and the browser lane is what found it.
+
+    A date box defaults to today when the box is the only thing it says. These
+    four are read for *emptiness*:
+
+    * `next_date` — a TEEN with no date is the one combination the domain
+      refuses, and a default answers that refusal with a deadline nobody chose;
+    * `deadline_date` — the same control, which also offers a quarter;
+    * `final_sent_on` — a send date with no chosen file is an opinion claimed
+      without its evidence, so a default refuses every ordinary closure;
+    * `PeriodForm.exact_date` — `Jõustub üldises korras` means the date is not
+      known, and a form carrying one is refused.
+
+    A default in any of them does not save typing. It states a fact nobody gave.
+    """
+    assert form_class()[field].initial is None
+
+
+def test_a_closure_without_a_sent_opinion_is_accepted(normal_matter, specialist):
+    """What the `final_sent_on` default broke, end to end."""
+    form = ComposerForm(
+        {
+            "body": "Menetlus lõppes.",
+            "close_matter": "on",
+            "disposition": Disposition.COMPLETED,
+            "closure_reason": "Seadus jõustus muutmata kujul.",
+        }
+    )
+    assert form.is_valid(), form.errors
+
+
+def test_a_teen_without_a_date_is_still_refused(normal_matter):
+    """And what the `next_date` default broke."""
+    form = ComposerForm({"body": "Koosta arvamus", "next_kind": ActionKind.DO})
+    assert not form.is_valid()
+    assert "Tähtajaline tegevus vajab kuupäeva." in str(form.errors)
 
 
 def test_the_edit_page_invents_no_date_for_a_matter_that_has_none(specialist):
@@ -579,7 +633,10 @@ def test_mode_chip_selection_is_carried_by_colour_not_by_opacity():
     css = _static_css()
     chips = css[css.index(".modeselect__option {") :]
 
-    assert "opacity" not in chips.split("/* -- the composer")[0]
+    # The declaration, not the word: the rule above these lines explains in
+    # prose why opacity was the wrong tool, and a naive substring search finds
+    # its own documentation.
+    assert "opacity:" not in chips.split("/* -- the composer")[0]
     for mode in ("do", "wait", "monitor", "none"):
         rule = f".modeselect__option .modechip__input:checked + .modechip--{mode}"
         assert rule in chips, mode
@@ -622,9 +679,11 @@ def test_the_composer_does_not_offer_a_second_kaasamine(signed_in, normal_matter
 
 
 def test_the_composer_form_has_no_engagement_fields():
-    form = ComposerForm()
-    assert not [name for name in form.fields if name.startswith("engagement")]
-    assert "engagement" not in ComposerForm({"body": "Märkus"}).as_service_kwargs()
+    assert not [name for name in ComposerForm().fields if name.startswith("engagement")]
+
+    bound = ComposerForm({"body": "Märkus"})
+    assert bound.is_valid(), bound.errors
+    assert "engagement" not in bound.as_service_kwargs()
 
 
 def test_the_one_kaasamine_path_still_works(signed_in, normal_matter, specialist):

@@ -813,15 +813,22 @@ def _precision_fields(prefix: str, *, date_label: str) -> dict[str, forms.Field]
     stops matching the first.
     """
     return {
+        #: **No `initial`**, unlike almost every other date box in the product,
+        #: and the exception is deliberate.
+        #:
+        #: A TEEN with no date is the one combination the domain refuses — a
+        #: deadline that cannot be met, missed or planned against. Pre-filling
+        #: today turns that refusal into a silent assertion that the work is due
+        #: today, which is not what the person said and is worse than being
+        #: asked. The browser lane caught it: the save that used to be refused
+        #: started succeeding with a date nobody chose
+        #: (e2e/test_lawyer_workflow.py).
+        #:
+        #: The same control serves `Oluline tähtaeg`, where today is rarely the
+        #: answer either, and where the person may mean a quarter rather than a
+        #: day. One control, one rule.
         f"{prefix}_date": EstonianDateField(
-            label=date_label,
-            required=False,
-            widget=EstonianDateInput(),
-            # Today on an unbound form. Harmless in a hidden group: neither the
-            # next step nor the deadline is written unless the person chose a
-            # mode or typed a title, so a pre-filled date creates nothing on its
-            # own (Teema QA §5.2).
-            initial=timezone.localdate,
+            label=date_label, required=False, widget=EstonianDateInput()
         ),
         f"{prefix}_precision": forms.ChoiceField(
             label="Täpsus",
@@ -1012,11 +1019,13 @@ class ComposerForm(forms.Form):
         max_length=400,
         widget=forms.TextInput(attrs={"class": "field__input"}),
     )
+    #: No `initial`, for the same reason the period control has none: `clean`
+    #: reads this field's emptiness. A title, a recipient or a date with no
+    #: chosen file is refused as an opinion claimed without its evidence — so a
+    #: default here refuses every ordinary closure that is not also recording a
+    #: sent opinion, which is most of them (Teema redesign §17, §20).
     final_sent_on = EstonianDateField(
-        label="Saatmise kuupäev",
-        required=False,
-        widget=EstonianDateInput(),
-        initial=timezone.localdate,
+        label="Saatmise kuupäev", required=False, widget=EstonianDateInput()
     )
     final_recipients = forms.ModelMultipleChoiceField(
         label="Saaja",

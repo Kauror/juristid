@@ -114,16 +114,39 @@ into no band at all and vanished from the page. The register's own parser
 produces exactly that combination for a source naming a vague month. Banding now
 reads the date and nothing else.
 
-### 5. A date box starts on today
+### 5. A date box starts on today — when the box is the only thing it says
 
-Every date control in the product now pre-fills with the current date, except
-one. `initial` fills an unbound form only, so a posted value always wins, a
-validation error keeps what was typed, and a deliberately cleared date stays
-cleared.
+`Saabus`, `Arvamuse tähtaeg`, `Toimus`, the Kaasamine date, the intake date and
+the header's `+ Tähtaeg` all pre-fill with the current date. `initial` fills an
+unbound form only, so a posted value always wins, a validation error keeps what
+was typed, and a deliberately cleared date stays cleared.
 
-The exception is `Muuda teemat`, which is always opened on a Matter that already
-exists: there a default would only ever apply where a date is genuinely empty,
-and pre-filling today would state a fact nobody gave.
+**Four date boxes deliberately keep no default**, and this is the more important
+half of the decision. A form that reads a field's *emptiness* as a signal cannot
+have that field defaulted, because there a default does not save typing — it
+states a fact nobody gave:
+
+- the composer's period control (`next_date`, `deadline_date`) — a TEEN with no
+  date is the one combination the domain refuses, being a deadline that cannot
+  be met, missed or planned against. A default answers that refusal with a
+  deadline nobody chose. The same control also offers a month, a quarter and a
+  year, and a day pre-filled while somebody means "III kvartal" is noise in the
+  one control whose whole job is to say how precisely a date is known;
+- `final_sent_on` — a send date with no chosen file is an opinion claimed
+  without its evidence, which the form refuses. Defaulted, it refused every
+  ordinary closure that was not also recording a sent opinion;
+- `PeriodForm.exact_date` — `Jõustub üldises korras` means the date is *not
+  known*, and a form carrying one is refused. Defaulted, that save refused
+  itself.
+
+All four were found by the browser lane after the first, broader implementation
+was pushed. They are named here rather than quietly narrowed because the
+distinction is the rule, not the exception list: **default a date box only when
+nothing reads its emptiness.**
+
+`Muuda teemat` has no default for a different reason. It is always opened on a
+Matter that already exists, so a default would only apply where a date is
+genuinely empty — and there, pre-filling today would state a fact nobody gave.
 
 `Toimus` = today is recorded as *now*, not as midnight. The box is pre-filled, so
 leaving it alone is the ordinary case, and stamping 00:00 on something written at

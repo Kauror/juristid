@@ -135,8 +135,17 @@ def test_a_passed_review_is_not_counted_as_late(specialist):
 
 
 def test_an_undated_action_has_its_own_band(specialist):
+    # Not DO + DEADLINE: a deadline with no date cannot be met, missed or
+    # planned against, and the domain refuses one (app/workflow/services.py).
+    # Every other combination may legitimately have no date at all.
     matter = factories.MatterFactory(owner=specialist)
-    set_next_action(matter=matter, text="Millalgi", actor=specialist)
+    set_next_action(
+        matter=matter,
+        text="Millalgi",
+        kind=ActionKind.MONITOR,
+        date_semantics=DateSemantics.REVIEW_ON,
+        actor=specialist,
+    )
     groups = _bands(specialist)
     assert [action.matter_id for action in groups["undated"].actions] == [matter.id]
     assert groups["later"].count == 0

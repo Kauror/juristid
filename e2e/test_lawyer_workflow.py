@@ -51,7 +51,10 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # -- Minu töö is the personal queue ----------------------------------
     page.locator(".topnav__link", has_text="Minu töö").click()
     expect(page.get_by_role("heading", name="Minu töö")).to_be_visible()
-    expect(page.get_by_role("heading", name="Ootan ja kontrollin")).to_be_visible()
+    # One dated list, not two columns. `Järgmine samm puudub` is beside it and
+    # deliberately not in it: an absence has no position in time (Teema QA §3).
+    expect(page.get_by_role("heading", name="Ootan ja kontrollin")).to_have_count(0)
+    expect(page.get_by_role("heading", name="Järgmine samm puudub")).to_be_visible()
     expect(page.get_by_role("heading", name="Minu aktiivsed teemad")).to_be_visible()
     screenshots(page, "01-minu-too")
 
@@ -351,8 +354,12 @@ def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(pa
     page.locator(".composer__body").fill("See tekst peab alles jääma.")
     # No date meaning chosen: TEEN derives to *Tähtaeg*, and a deadline with no
     # date is still the one combination the server refuses. Left unstated on
-    # purpose — this is the path a lawyer who never opens the disclosure takes.
+    # purpose — this is the path a lawyer who never opens the disclosure takes,
+    # and it is why the period control is the one date box in the product that
+    # does *not* pre-fill with today: a default would answer this refusal with a
+    # deadline nobody chose (app/matters/forms.py, `_precision_fields`).
     page.locator("#next_kind_DO").check(force=True)
+    expect(page.locator("#id_next_date")).to_have_value("")
     page.locator("[data-composer-submit]").click()
 
     expect(page.get_by_text("Tähtajaline tegevus vajab kuupäeva.")).to_be_visible()

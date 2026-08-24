@@ -19,7 +19,6 @@ from datetime import date
 from typing import Any, cast
 
 from django import forms
-from django.utils import timezone
 
 from app.core.widgets import EstonianDateField, EstonianDateInput
 from app.intelligence.enums import EffectiveDateKind
@@ -87,12 +86,14 @@ class PeriodForm(forms.Form):
         initial=DatePrecision.EXACT,
         widget=forms.RadioSelect(attrs={"class": "precision__radio"}),
     )
-    #: Today on a fresh form. An edit passes its stored value through the form's
-    #: own `initial` dict (`initial_for`), which wins over a field default, so
-    #: reopening a 2019 milestone still shows 2019 (Teema QA §5.2).
-    exact_date = EstonianDateField(
-        label="Kuupäev", required=False, widget=DATE_WIDGET, initial=timezone.localdate
-    )
+    #: No `initial`. `EffectiveDateForm._period_was_filled` reads this field's
+    #: emptiness to enforce the rule that a kind saying the date is *not known*
+    #: must not carry one — so a default would make every `Jõustub üldises
+    #: korras` save refuse itself. The precision control also offers a month, a
+    #: quarter, a half-year and a year, and a day pre-filled in the exact box
+    #: while somebody means "III kvartal" is noise in the one control whose
+    #: whole job is to say how precisely the date is known (Teema QA §5.2).
+    exact_date = EstonianDateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
     month = forms.ChoiceField(
         label="Kuu", choices=(("", "—"), *MONTH_CHOICES), required=False, widget=SELECT_WIDGET
     )
