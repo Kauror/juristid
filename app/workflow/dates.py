@@ -29,6 +29,7 @@ from __future__ import annotations
 import calendar
 from datetime import date
 
+from app.core.dates import format_estonian_date
 from app.workflow.enums import ESTONIAN_MONTHS, ROMAN_QUARTERS, DatePrecision
 
 #: Roman numerals for the two halves of a year, indexed from zero.
@@ -159,7 +160,7 @@ def format_at_precision(value: date | None, precision: str) -> str:
         return f"{ROMAN_QUARTERS[(value.month - 1) // 3]} kvartal {value.year}"
     if precision == DatePrecision.MONTH:
         return f"{ESTONIAN_MONTHS[value.month - 1]} {value.year}"
-    return value.strftime("%d.%m.%Y")
+    return format_estonian_date(value)
 
 
 def is_approximate(precision: str) -> bool:

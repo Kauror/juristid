@@ -45,7 +45,7 @@ about the save that just happened.
           <span class="sectionlabel__count">{{ incoming_documents|length }}</span>
         </h2>
         <p class="cardnote">
-          {% if matter.received_date %}{{ matter.received_date|date:"d.m.Y" }}{% endif %}
+          {% if matter.received_date %}{{ matter.received_date|date:"j.n.Y" }}{% endif %}
           {% if matter.source_organisations.all %} · {% include "matters/partials/senders.html" with matter=matter %}{% endif %}
         </p>
         <ul class="filelist">
@@ -117,7 +117,8 @@ about the save that just happened.
                     hx-target="#ulevaade" hx-swap="outerHTML">
                 {% csrf_token %}
                 <label class="visually-hidden" for="jargmine-ulevaatus">Järgmine ülevaatus</label>
-                <input class="field__input field__input--compact" type="date"
+                <input class="field__input field__input--compact dateinput"
+                       type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true"
                        id="jargmine-ulevaatus" name="next_review_date">
                 <button class="button button--quiet" type="submit">Vaatasin üle</button>
               </form>

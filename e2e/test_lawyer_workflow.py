@@ -26,7 +26,14 @@ MATTER_TITLE = "Pakendiseaduse muutmise eelnõu"
 
 
 def _future(days: int) -> str:
-    return (date.today() + timedelta(days=days)).isoformat()
+    """A date the way the application now reads and writes one: `7.9.2026`.
+
+    ISO would still parse — the field accepts both — but a browser test that
+    typed ISO would not be exercising what a lawyer types
+    (app/core/dates.py).
+    """
+    on = date.today() + timedelta(days=days)
+    return f"{on.day}.{on.month}.{on.year}"
 
 
 def test_the_whole_lawyer_workflow(page, base_url, screenshots):
@@ -63,14 +70,18 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.get_by_role("checkbox", name="Näidisministeerium").check()
 
     page.locator("summary", has_text="Täpsusta teema andmeid").click()
-    page.locator("#id_stage").select_option(label="Kooskõlastusringil")
-    page.locator("#id_track").select_option(label="Riigisisene")
+    # Hetkeseis and Menetlusliik are visible radio chips now, not dropdowns:
+    # each holds one value, and the control says so (Agent-UI brief 5.1).
+    page.get_by_role("radio", name="Kooskõlastusringil", exact=True).check()
+    page.get_by_role("radio", name="Riigisisene", exact=True).check()
     page.locator("#id_response_deadline").fill(_future(21))
 
-    page.locator("summary", has_text="Määra kohe Järgmiseks").click()
+    page.locator("summary", has_text="Järgmine tegevus").first.click()
     page.locator("#id_next-text").fill("Koosta ja saada koja arvamus")
-    page.locator("#id_next-kind").select_option("DO")
-    page.locator("#id_next-date_semantics").select_option("DEADLINE")
+    # The kind is a card, and the date meaning is derived from it rather than
+    # asked as a second question. DEADLINE is what DO derives to
+    # (app/workflow/enums.py, `default_date_semantics`).
+    page.locator('input[name="next-kind"][value="DO"]').check()
     page.locator("#id_next-target_date").fill(_future(14))
     screenshots(page, "02-uus-teema")
 
@@ -114,6 +125,11 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator("#komposer-manus")).to_be_hidden()
     page.locator("#id_next_text").fill("Ootan ministeeriumi uut sõnastust")
     page.locator("#next_kind_WAIT").check(force=True)
+    # The stored date meaning derives from the kind now, and OOTAN derives to
+    # *Oodatav*. This scenario wants the other one a WAIT may legitimately
+    # carry, so it opens the disclosure and says so — which is the override path
+    # the model still permits and the UI still offers (app/workflow/enums.py).
+    page.locator("summary", has_text="Täpsusta, mida kuupäev tähendab").first.click()
     page.locator("#id_next_date_semantics").select_option("REVIEW_ON")
     page.locator("#id_next_target_date").fill(_future(7))
     screenshots(page, "04-komposer")
@@ -294,8 +310,10 @@ def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(pa
     page.locator(".composer__body").fill("See tekst peab alles jääma.")
     page.locator("#id_update_next_action").check()
     page.locator("#id_next_text").fill("Tähtajaline tegevus ilma kuupäevata")
+    # No date meaning chosen: TEEN derives to *Tähtaeg*, and a deadline with no
+    # date is still the one combination the server refuses. Left unstated on
+    # purpose — this is the path a lawyer who never opens the disclosure takes.
     page.locator("#next_kind_DO").check(force=True)
-    page.locator("#id_next_date_semantics").select_option("DEADLINE")
     page.get_by_role("button", name="Salvesta sissekanne").click()
 
     expect(page.get_by_text("Tähtajaline tegevus vajab kuupäeva.")).to_be_visible()

@@ -31,7 +31,7 @@ from app.workflow.models import NextAction
 @pytest.mark.parametrize(
     ("value", "precision", "expected"),
     [
-        (date(2026, 9, 27), DatePrecision.EXACT, "27.09.2026"),
+        (date(2026, 9, 27), DatePrecision.EXACT, "27.9.2026"),
         (date(2026, 9, 1), DatePrecision.MONTH, "september 2026"),
         (date(2026, 1, 1), DatePrecision.QUARTER, "I kvartal 2026"),
         (date(2026, 4, 1), DatePrecision.QUARTER, "II kvartal 2026"),
@@ -42,7 +42,7 @@ from app.workflow.models import NextAction
         (date(2028, 1, 1), DatePrecision.YEAR, "2028"),
         # INFERRED records *where the value came from*, not that the day is
         # uncertain, so it renders as the day it is.
-        (date(2026, 9, 27), DatePrecision.INFERRED, "27.09.2026"),
+        (date(2026, 9, 27), DatePrecision.INFERRED, "27.9.2026"),
     ],
 )
 def test_a_date_is_written_at_the_precision_it_was_known_to(value, precision, expected):

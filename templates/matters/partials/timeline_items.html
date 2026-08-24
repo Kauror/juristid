@@ -27,7 +27,7 @@ record, not professional chronology (master specification 16.5).
           {% endif %}
           <span class="entrytype">{{ item.entry.get_kind_display }}</span>
           <time datetime="{{ item.entry.occurred_at|date:'c' }}">
-            {{ item.entry.occurred_at|date:"d.m.Y H:i" }}
+            {{ item.entry.occurred_at|date:"j.n.Y H:i" }}
           </time>
           {% if item.entry.organisation %}<span>{{ item.entry.organisation.name }}</span>{% endif %}
           {% if item.entry.was_edited %}
@@ -48,7 +48,7 @@ record, not professional chronology (master specification 16.5).
       <p class="entrycard__meta">
         <span class="submissionevent__label">Väljasaadetud · arvamus</span>
         <time datetime="{{ item.event.occurred_at|date:'c' }}">
-          {{ item.event.occurred_at|date:"d.m.Y H:i" }}
+          {{ item.event.occurred_at|date:"j.n.Y H:i" }}
         </time>
         {% if item.event.actor %}
           <span class="entrycard__author">{{ item.event.actor.display_name }}</span>
@@ -67,7 +67,7 @@ record, not professional chronology (master specification 16.5).
       <span class="systemevent__dot" aria-hidden="true"></span>
       <span class="systemevent__type">{{ item.event.get_event_type_display }}</span>
       <time datetime="{{ item.event.occurred_at|date:'c' }}">
-        {{ item.event.occurred_at|date:"d.m.Y H:i" }}
+        {{ item.event.occurred_at|date:"j.n.Y H:i" }}
       </time>
       {% if item.event.actor %}<span>{{ item.event.actor.display_name }}</span>{% endif %}
       {% if item.event.summary %}<span>· {{ item.event.summary }}</span>{% endif %}

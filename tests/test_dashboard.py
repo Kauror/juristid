@@ -14,7 +14,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.enums import Visibility
-from app.matters import dashboard
+from app.matters import dashboard, selectors
 from app.matters.enums import RecordMode
 from app.matters.services import create_matter
 from app.workflow.enums import ActionKind, DateSemantics
@@ -189,9 +189,19 @@ def test_archive_matters_are_not_counted_as_active(db, specialist) -> None:
     assert _card(specialist, "active").count == 0
 
 
-def test_a_matter_without_a_next_action_is_reported(db, specialist) -> None:
-    create_matter(title="Vaikne teema", owner=specialist, reference_year=2026)
-    assert _card(specialist, "no_action").count == 1
+def test_a_matter_without_a_next_action_is_still_findable(db, specialist) -> None:
+    """The *Järgmine tegevus puudub* card is gone; the condition is not.
+
+    With almost no historical record carrying a structured next action, the
+    card measured how far the cutover had got rather than a problem anybody can
+    act on. Removing it is only safe because the population is still one query
+    away — which is what this asserts (app/matters/dashboard.py).
+    """
+    matter = create_matter(title="Vaikne teema", owner=specialist, reference_year=2026)
+
+    assert "no_action" not in {card.key for card in dashboard.summary_cards(specialist)}
+    assert matter in dashboard.without_next_action(specialist)
+    assert matter in selectors.matters_without_next_action(specialist)
 
 
 def test_an_unassigned_matter_is_reported(db, specialist) -> None:

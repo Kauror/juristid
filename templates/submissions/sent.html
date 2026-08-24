@@ -116,9 +116,9 @@
                 {% endcomment %}
                 {% if submission.sent_at %}
                   {% if submission.sent_at_precision == "DATE" %}
-                    {{ submission.sent_at|date:"d.m.Y" }}
+                    {{ submission.sent_at|date:"j.n.Y" }}
                   {% else %}
-                    {{ submission.sent_at|date:"d.m.Y H:i" }}
+                    {{ submission.sent_at|date:"j.n.Y H:i" }}
                   {% endif %}
                 {% else %}
                   <span class="table__missing">—</span>

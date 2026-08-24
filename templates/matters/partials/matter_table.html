@@ -123,7 +123,7 @@ list by.
               </span>
             {% elif matter.response_deadline %}
               <span class="datemeaning">Arvamuse tähtaeg</span>
-              <span class="dateline dateline--deadline">{{ matter.response_deadline|date:"d.m.Y" }}</span>
+              <span class="dateline dateline--deadline">{{ matter.response_deadline|date:"j.n.Y" }}</span>
             {% else %}
               <span class="muted">—</span>
             {% endif %}
@@ -144,7 +144,7 @@ list by.
             {% with activity=matter|last_activity %}
               {% if activity %}
                 <span class="muted" title="{{ activity.label }}">
-                  {{ activity.occurred_on|date:"d.m.Y" }}
+                  {{ activity.occurred_on|date:"j.n.Y" }}
                 </span>
               {% else %}
                 <span class="muted">—</span>

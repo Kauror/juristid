@@ -72,13 +72,13 @@ def test_an_exact_milestone_can_be_added_in_a_few_fields(page, base_url):
     page.wait_for_load_state("networkidle")
     page.get_by_label("Mis on oodata").fill("Riigikogu esimene lugemine")
     page.get_by_label("Täpne kuupäev").check()
-    page.get_by_label("Kuupäev", exact=True).fill("2030-03-14")
+    page.get_by_label("Kuupäev", exact=True).fill("14.3.2030")
     page.get_by_role("button", name="Salvesta").click()
     page.wait_for_load_state("networkidle")
 
     watched = section(page, "Olulised tähtajad")
     expect(watched.get_by_text("Riigikogu esimene lugemine")).to_be_visible()
-    expect(watched.get_by_text("14.03.2030")).to_be_visible()
+    expect(watched.get_by_text("14.3.2030")).to_be_visible()
 
 
 def test_a_quarter_is_captured_and_rendered_as_a_quarter(page, base_url, screenshots):

@@ -125,7 +125,7 @@ unchanged — this moves the control, not the write.
         <details class="inlineedit">
           <summary class="inlineedit__trigger">
             {% if matter.response_deadline %}
-              <span class="metafield__value--deadline">{{ matter.response_deadline|date:"d.m.Y" }}</span>
+              <span class="metafield__value--deadline">{{ matter.response_deadline|date:"j.n.Y" }}</span>
             {% else %}<span class="muted">—</span>{% endif %}
             <span class="inlineedit__caret" aria-hidden="true">▾</span>
           </summary>
@@ -133,8 +133,9 @@ unchanged — this moves the control, not the write.
                 hx-post="{% url 'matters:update_field' pk=matter.pk field='response_deadline' %}"
                 hx-target="#teema-pais" hx-swap="outerHTML">
             {% csrf_token %}
-            <input class="field__input field__input--compact" type="date" name="response_deadline"
-                   aria-label="Arvamuse tähtaeg" value="{{ matter.response_deadline|date:'Y-m-d' }}">
+            <input class="field__input field__input--compact dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true"
+                   name="response_deadline" aria-label="Arvamuse tähtaeg"
+                   value="{{ matter.response_deadline|date:'j.n.Y' }}">
             <button class="button button--quiet button--tiny" type="submit"
                     aria-label="Salvesta tähtaja muudatus">Salvesta</button>
           </form>
@@ -234,7 +235,7 @@ unchanged — this moves the control, not the write.
       <dd class="metafield__value">
         <details class="inlineedit">
           <summary class="inlineedit__trigger">
-            {% if matter.received_date %}{{ matter.received_date|date:"d.m.Y" }}
+            {% if matter.received_date %}{{ matter.received_date|date:"j.n.Y" }}
             {% else %}<span class="muted">—</span>{% endif %}
             <span class="inlineedit__caret" aria-hidden="true">▾</span>
           </summary>
@@ -242,8 +243,9 @@ unchanged — this moves the control, not the write.
                 hx-post="{% url 'matters:update_field' pk=matter.pk field='received_date' %}"
                 hx-target="#teema-pais" hx-swap="outerHTML">
             {% csrf_token %}
-            <input class="field__input field__input--compact" type="date" name="received_date"
-                   aria-label="Saabumise kuupäev" value="{{ matter.received_date|date:'Y-m-d' }}">
+            <input class="field__input field__input--compact dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true"
+                   name="received_date" aria-label="Saabumise kuupäev"
+                   value="{{ matter.received_date|date:'j.n.Y' }}">
             <button class="button button--quiet button--tiny" type="submit"
                     aria-label="Salvesta saabumise kuupäeva muudatus">Salvesta</button>
           </form>

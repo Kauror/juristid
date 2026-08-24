@@ -184,6 +184,26 @@ localStorage (Stage-2E.1 brief 12).
             </select>
           </label>
 
+          {% comment %}
+            The drafting step, as the register recorded it. A control of its own
+            rather than a value on "Järgmine tegevus": a Matter can carry a next
+            action and an unsent opinion at the same time, and they answer
+            different questions (app/matters/register_filters.py, ADR 0021).
+
+            It exists here because the Ülevaade card opens it. A dimension a KPI
+            can set and the panel cannot is a filter somebody can arrive at and
+            never reproduce.
+          {% endcomment %}
+          <label class="field">
+            <span class="field__label">Arvamus</span>
+            <select class="field__input" name="arvamus">
+              <option value="">Kõik</option>
+              {% for value, label in opinion_options %}
+                <option value="{{ value }}" {% if filters.arvamus == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
           <label class="field">
             <span class="field__label">Materjalid</span>
             <select class="field__input" name="materjalid">
@@ -217,11 +237,11 @@ localStorage (Stage-2E.1 brief 12).
             <legend class="field__label">Saabumise kuupäev</legend>
             <label class="daterange__end">
               <span class="field__help">Alates</span>
-              <input class="field__input" type="date" name="saabus_alates" value="{{ filters.saabus_alates }}">
+              <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="saabus_alates" value="{{ filters.saabus_alates }}">
             </label>
             <label class="daterange__end">
               <span class="field__help">Kuni</span>
-              <input class="field__input" type="date" name="saabus_kuni" value="{{ filters.saabus_kuni }}">
+              <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="saabus_kuni" value="{{ filters.saabus_kuni }}">
             </label>
           </fieldset>
 
@@ -229,11 +249,11 @@ localStorage (Stage-2E.1 brief 12).
             <legend class="field__label">Arvamuse tähtaeg</legend>
             <label class="daterange__end">
               <span class="field__help">Alates</span>
-              <input class="field__input" type="date" name="tahtaeg_alates" value="{{ filters.tahtaeg_alates }}">
+              <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="tahtaeg_alates" value="{{ filters.tahtaeg_alates }}">
             </label>
             <label class="daterange__end">
               <span class="field__help">Kuni</span>
-              <input class="field__input" type="date" name="tahtaeg_kuni" value="{{ filters.tahtaeg_kuni }}">
+              <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="tahtaeg_kuni" value="{{ filters.tahtaeg_kuni }}">
             </label>
           </fieldset>
 

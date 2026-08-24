@@ -106,6 +106,30 @@ ESTONIAN_MONTHS: tuple[str, ...] = (
 ROMAN_QUARTERS: tuple[str, ...] = ("I", "II", "III", "IV")
 
 
+#: What an action's date means when nobody says otherwise.
+#:
+#: Derived, not fixed: the model genuinely permits more than one meaning per
+#: kind and the register's own parser uses that — a DO whose source text names a
+#: vague month is recorded as DO + EXPECTED_AROUND, not as a deadline
+#: (app/legacy_import/register_next_actions.py). So this is the *default* a form
+#: may apply when the field was left alone, and the explicit choice stays
+#: available behind a disclosure rather than being deleted (Agent-UI brief 9.4).
+#:
+#: The three pairs are the ones the parser and the seeded worlds already use:
+#: something Koda must do has a deadline; something Koda is waiting for has an
+#: expectation; something Koda is watching has a review date.
+DEFAULT_DATE_SEMANTICS: dict[str, str] = {
+    ActionKind.DO.value: DateSemantics.DEADLINE.value,
+    ActionKind.WAIT.value: DateSemantics.EXPECTED_AROUND.value,
+    ActionKind.MONITOR.value: DateSemantics.REVIEW_ON.value,
+}
+
+
+def default_date_semantics(kind: str) -> str:
+    """The date meaning to store for ``kind`` when none was chosen."""
+    return DEFAULT_DATE_SEMANTICS.get(kind, DateSemantics.DEADLINE.value)
+
+
 #: Only this combination can be genuinely overdue.
 OVERDUE_KIND = ActionKind.DO
 OVERDUE_SEMANTICS = DateSemantics.DEADLINE

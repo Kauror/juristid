@@ -36,6 +36,16 @@ job with `E2E_UPDATE_BASELINES=1` and commit what lands in the artifact.
 A missing baseline skips rather than fails, so a new scenario does not turn the
 build red before anybody has had a chance to look at what it captured. A missing
 baseline is reported by name.
+
+One trap worth knowing before adding a browser test
+---------------------------------------------------
+This step runs *after* the functional browser suite, against the same database,
+so every Matter that suite creates is in these renderings. A new test that files
+a Matter therefore lengthens the register, the dashboard's attention table and
+Minu töö — and nine baselines go red for a reason that has nothing to do with
+CSS. That is worth the coupling (the alternative is a second seeded world nobody
+keeps in step), but it means "the visual suite failed" should be read against
+what changed in the functional suite before anybody goes looking at stylesheets.
 """
 
 from __future__ import annotations
@@ -91,7 +101,13 @@ CLOCK_DEPENDENT = [
     # painted mask rectangles across the rows underneath and three register
     # baselines came back with obscured rows. Masks can damage a page, so a mask
     # selector is as much a thing to review as the page itself.
-    '.createform input[type="date"]',
+    #
+    # `.dateinput` rather than `input[type=date]`: the native control is gone
+    # from the ordinary UI, because it renders in the browser's locale and put
+    # `mm/dd/yyyy` on an Estonian form (app/core/widgets.py). A mask selector
+    # that stopped matching would not fail — it would silently unmask a value
+    # that changes daily, and every baseline would go red the next morning.
+    ".createform .dateinput",
     "time",
 ]
 

@@ -280,9 +280,16 @@ def test_a_chip_shows_a_name_rather_than_a_key(signed_in, specialist):
 
 
 def test_a_date_chip_reads_the_way_estonians_write_dates(signed_in):
-    response = signed_in.get(REGISTER, {"saabus_alates": "2024-03-07"})
-    values = {chip["name"]: chip["value"] for chip in response.context["active_filters"]}
-    assert values["saabus_alates"] == "07.03.2024"
+    """`7.3.2024`, whichever way the parameter arrived.
+
+    Both spellings are asserted because both reach this view: the control now
+    submits Estonian, and every link written before it carries ISO
+    (app/core/dates.py).
+    """
+    for arrived_as in ("2024-03-07", "7.3.2024", "07.03.2024"):
+        response = signed_in.get(REGISTER, {"saabus_alates": arrived_as})
+        values = {chip["name"]: chip["value"] for chip in response.context["active_filters"]}
+        assert values["saabus_alates"] == "7.3.2024", arrived_as
 
 
 # ---------------------------------------------------------------------------

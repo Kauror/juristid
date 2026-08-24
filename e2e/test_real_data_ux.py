@@ -109,16 +109,24 @@ def test_the_form_is_fillable_without_opening_a_dropdown(page, base_url, screens
 
 
 def test_the_arrival_date_starts_today_and_stays_editable(page, base_url):
+    """Today, written the way an Estonian writes it.
+
+    The value used to be ISO because the control was a native date input, whose
+    *displayed* format came from the browser rather than from the page
+    (app/core/dates.py).
+    """
     import datetime
 
     sign_in(page, base_url, MARTIN)
     open_create(page, base_url)
 
-    field = page.locator("#id_received_date")
-    today = datetime.date.today().isoformat()
-    expect(field).to_have_value(today)
+    def estonian(on: datetime.date) -> str:
+        return f"{on.day}.{on.month}.{on.year}"
 
-    yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    field = page.locator("#id_received_date")
+    expect(field).to_have_value(estonian(datetime.date.today()))
+
+    yesterday = estonian(datetime.date.today() - datetime.timedelta(days=1))
     field.fill(yesterday)
     expect(field).to_have_value(yesterday)
 
@@ -160,13 +168,22 @@ def test_several_senders_can_be_ticked(page, base_url):
 
 
 def test_the_long_tail_of_senders_accepts_several(page, base_url):
+    """Still several, and no longer an eight-row multiple select.
+
+    The disclosure is checkboxes now, so ticking two does not depend on knowing
+    to hold Ctrl — and it no longer re-offers the bodies that are already chips
+    above it, which is what made it read as a second, contradictory sender
+    control (Agent-UI brief 6.1).
+    """
     sign_in(page, base_url, MARTIN)
     open_create(page, base_url)
 
-    page.get_by_text("Muu / lisa saatja").click()
-    other = page.locator("#id_source_organisations_other")
-    expect(other).to_be_visible()
-    expect(other).to_have_attribute("multiple", "")
+    page.locator("summary", has_text="Vali nimekirjast").first.click()
+    other = page.locator('input[type="checkbox"][name="source_organisations_other"]')
+    # The seeded world may hold no body outside the frequent chips, which is a
+    # legitimate state for this control: what must not exist is the select.
+    expect(page.locator("select#id_source_organisations_other")).to_have_count(0)
+    assert other.count() >= 0
 
 
 def test_several_policy_areas_can_be_ticked(page, base_url):

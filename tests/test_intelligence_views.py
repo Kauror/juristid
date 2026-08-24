@@ -56,7 +56,11 @@ def test_the_calendar_renders_an_approximate_period_as_a_period(signed_in, speci
 
     body = _text(signed_in.get(reverse(IMPORTANT_DATES), {"suund": "koik"}))
     assert "II kvartal 2030" in body
+    # Both spellings: the application writes `1.4.2030` now, and a test that
+    # only refused the padded form would stop catching the invented day
+    # (app/core/dates.py).
     assert "01.04.2030" not in body
+    assert "1.4.2030" not in body
 
 
 def test_the_calendar_labels_a_commencement_as_one(signed_in, specialist):

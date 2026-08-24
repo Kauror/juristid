@@ -353,4 +353,4 @@ def test_the_summary_card_keeps_its_own_fixed_horizon(client, specialist) -> Non
             .cards
         }
         assert cards["deadlines"].count == 1, period
-        assert cards["deadlines"].label == "Tähtajad 7 päeva jooksul"
+        assert cards["deadlines"].label == "Arvamuse tähtaeg 7 päeva jooksul"

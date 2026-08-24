@@ -32,6 +32,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.utils import timezone
 
+from app.core.dates import format_estonian_date
 from app.reporting.selectors.snapshots import capture
 
 
@@ -67,7 +68,7 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"{on:%d.%m.%Y}: {total} aktiivset teemat "
+                f"{format_estonian_date(on)}: {total} aktiivset teemat "
                 f"({created} uut kirjet, {updated} värskendatud)."
             )
         )

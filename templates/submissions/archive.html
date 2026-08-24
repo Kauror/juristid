@@ -111,7 +111,7 @@
             <tr>
               <td class="table__date">
                 {% if row.document_date %}
-                  <time datetime="{{ row.document_date|date:'Y-m-d' }}">{{ row.document_date|date:"d.m.Y" }}</time>
+                  <time datetime="{{ row.document_date|date:'Y-m-d' }}">{{ row.document_date|date:"j.n.Y" }}</time>
                 {% else %}
                   <span class="table__missing">—</span>
                 {% endif %}
