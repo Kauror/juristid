@@ -189,8 +189,9 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator("#koja-seisukoht")).to_have_count(1)
     expect(page.locator(".positionblock")).to_have_count(0)
 
-    # The formal Submission workflow is a quiet link, never a tab.
-    page.get_by_role("link", name="Arvamused →").click()
+    # The formal Submission workflow is a quiet link in the rail, never a tab.
+    # `Loe edasi` now, because there is a position to read on.
+    page.locator("#koja-seisukoht .railposition__more").click()
     page.locator("summary", has_text="Uus arvamus").click()
     page.locator("#id_title").fill("Koja arvamus pakendiseaduse eelnõule")
     page.locator("#id_kind").select_option("FORMAL_OPINION")
