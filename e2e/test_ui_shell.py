@@ -392,8 +392,10 @@ def test_next_action_modes_differ_in_shape_as_well_as_colour(page, base_url):
     styles = page.evaluate(
         """() => {
             const seen = {};
-            for (const chip of document.querySelectorAll('.mode')) {
-              const kind = [...chip.classList].find(c => c.startsWith('mode--'));
+            for (const chip of document.querySelectorAll('.mode, .modechip')) {
+              const kind = [...chip.classList].find(
+                c => c.startsWith('mode--') || c.startsWith('modechip--')
+              );
               const s = getComputedStyle(chip);
               seen[kind] = {
                 text: chip.textContent.trim(),
@@ -405,10 +407,14 @@ def test_next_action_modes_differ_in_shape_as_well_as_colour(page, base_url):
         }"""
     )
     assert styles, "no mode chips rendered"
-    if "mode--monitor" in styles:
-        assert styles["mode--monitor"]["style"] == "dashed", "JÄLGIN lost its dashed outline"
-    if "mode--wait" in styles:
-        assert styles["mode--wait"]["style"] == "solid", "OOTAN lost its outline"
+    # Both vocabularies, because the register still uses `.mode` and the Teema
+    # row uses `.modechip`. The rule is one rule and neither may lose it.
+    for dashed in ("mode--monitor", "modechip--monitor"):
+        if dashed in styles:
+            assert styles[dashed]["style"] == "dashed", "JÄLGIN lost its dashed outline"
+    for solid in ("mode--wait", "modechip--wait"):
+        if solid in styles:
+            assert styles[solid]["style"] == "solid", "OOTAN lost its outline"
     for kind, chip in styles.items():
         assert chip["text"], f"{kind} rendered without its label"
 
@@ -530,7 +536,7 @@ def test_the_matter_rail_sits_beside_or_below_but_never_over(page, base_url, wid
     page.set_viewport_size({"width": width, "height": height})
     open_first_matter(page, base_url)
 
-    main = page.locator(".mattermain").bounding_box()
+    main = page.locator(".teemamain").bounding_box()
     rail = page.locator(".rail").bounding_box()
     beside = rail["x"] >= main["x"] + main["width"] - 1
     below = rail["y"] >= main["y"] + main["height"] - 1
@@ -559,14 +565,21 @@ def test_the_composer_starts_as_one_field(page, base_url):
     expect(field).not_to_have_css("height", collapsed)
 
 
-def test_the_intelligence_sections_do_not_shout_when_they_are_empty(page, base_url):
-    """Three empty sections are three lines, not three boxes."""
+def test_the_intelligence_sections_do_not_render_when_they_are_empty(page, base_url):
+    """Not three lines. Nothing at all, and one quiet add row instead.
+
+    Three headings each announcing an absence, with an add button beside each,
+    is what the redesign removed: on a Matter nobody had touched it was about
+    forty per cent of the page telling the reader that nothing existed
+    (Teema redesign §3, §24).
+    """
     sign_in(page, base_url, SANDRA)
     open_first_matter(page, base_url)
 
     for section in page.locator(".factsection").all():
-        if section.locator(".factsection__none").count():
-            assert section.bounding_box()["height"] <= 80, "an empty fact section is a wall"
+        assert section.locator(".factsection__none").count() == 0, (
+            "an empty fact section is still being rendered"
+        )
 
 
 # ---------------------------------------------------------------------------

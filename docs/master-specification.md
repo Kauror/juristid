@@ -93,7 +93,7 @@ Material changes from v1.1:
 10. **Advocacy outcome and attribution are separated.** Whether the result matches Koda's ask and how strongly Koda can claim influence are independent dimensions.
 11. **History is simplified to three durable layers:** authored `Entry`, append-only `ChangeEvent`, and `SecurityAuditEvent`.
 12. **Exact framework/runtime versions move to ADRs.** The master locks architectural characteristics and required capabilities, not incidental patch/minor versions.
-13. **The three-part Matter workspace is retained deliberately:** `Ülevaade`, `Seisukoht ja kaasamine`, `Dokumendid`. The advocacy/consultation view remains lightweight in MVP because it is core Chamber work.
+13. **The Matter workspace is two tabs:** `Teema` and `Dokumendid`. The position and the consultation record are core Chamber work and are therefore in the main view where they are read, not behind a tab somebody has to click to find out whether anything is there. Superseded the three-part workspace on 2026-08-24 (ADR 0030).
 14. **The editor is simplified without becoming plain text.** MVP supports clean Word/Outlook paste, links, lists, emphasis and simple comparison tables.
 15. **Dark mode remains the primary Koda CVI expression but the design system is dark-mode-first, not structurally dark-only.**
 
@@ -302,6 +302,12 @@ Historical joins preserve raw identifiers and use deterministic IDs/tokens, cont
 **Earlier tension:** the second review suggested collapsing to two tabs.
 
 **Version 1.2:** retain `Ülevaade`, `Seisukoht ja kaasamine`, `Dokumendid`; keep the middle tab intentionally lightweight in MVP.
+
+**Settled 2026-08-24, by the approved Teema redesign:** two tabs, `Teema` and
+`Dokumendid`. The second review was right, and the reason the middle tab stayed
+"lightweight" for three stages is that its content belongs in the reading flow:
+a lawyer should not have to navigate to discover whether Koda has a position.
+The formal Submission workflow keeps a page and loses its tab (ADR 0030).
 
 ### Rich text
 
@@ -765,10 +771,26 @@ Charts never replace underlying lists. Every metric shows its population/coverag
 The Matter page remains deliberately simple:
 
 ```text
-Ülevaade | Seisukoht ja kaasamine | Dokumendid
+Teema | Dokumendid · N
 ```
 
-`Ülevaade` is the default working surface and chronology. `Seisukoht ja kaasamine` is retained in MVP because member evidence and outbound position formation are central Chamber work, but it is lightweight until Phase 2. `Dokumendid` separates evidence from collaborative working documents.
+`Teema` is the whole working surface: the situation, the position, the
+consultation record, the sent opinions and the chronology, in the order a lawyer
+reads them. `Dokumendid` separates immutable evidence from collaborative working
+documents, and exists as a tab because browsing forty files is a genuinely
+different task from understanding an issue.
+
+Reading order on `Teema`, and nothing renders that holds nothing:
+
+1. `JÄRGMISEKS` — always visible, never collapsed.
+2. `TEGEVUSE KIRJELDUS` — the composer, and the surface the page exists for.
+3. `Koja seisukoht` — read-first, edited in place.
+4. `Kaasamine` — a collapsed row that grows when engagement exists.
+5. `Saadetud arvamused` — only when a canonical sent Submission exists.
+6. `Ajajoon` — collapsed. It is the file's memory, not its front page.
+
+See ADR 0030 for the decisions this rests on, including why one composer save
+produces one timeline event without any canonical record being suppressed.
 
 ## 8.2 Header
 

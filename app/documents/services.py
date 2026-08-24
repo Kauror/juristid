@@ -146,6 +146,67 @@ def create_document(
     return document
 
 
+#: The URL schemes a working reference may point at. The same two the
+#: engagement link accepts, and for the same reason: anything else is either
+#: unopenable or an attempt to smuggle a script into somebody's browser.
+WORKING_REFERENCE_SCHEMES = ("http", "https")
+
+
+@transaction.atomic
+def link_working_document(
+    *,
+    matter: Matter,
+    title: str,
+    web_url: str,
+    created_by: Any = None,
+    item_id: str = "",
+    site_path: str = "",
+) -> Document:
+    """Point at a living working file, without pretending it is evidence.
+
+    A `Document` with `role=WORKING_DOCUMENT` and a SharePoint URL, which is
+    exactly what the model has always been able to hold — the only thing that
+    was missing was a way for a person to create one. Nothing about it is
+    evidence: no bytes are captured, no checksum exists, `current_version` stays
+    null, and `has_working_document` is what the Dokumendid tab reads to render
+    it dashed and marked as living rather than solid and authoritative
+    (master specification 8.6, 15.3; Teema redesign §23.3).
+
+    `item_id` is the SharePoint item identifier when somebody has it. It is
+    optional because the ordinary way a lawyer gets one of these links is by
+    copying it out of the browser, and demanding an internal identifier they
+    would have to go and look up is how a control stops being used. What it is
+    *not* is decoration: `has_working_document` reads `sharepoint_item_id`, so a
+    row created without one is stamped with a deterministic placeholder derived
+    from the URL rather than left to read as an evidence document with no file.
+    """
+    from urllib.parse import urlsplit
+
+    clean_title = (title or "").strip()
+    if not clean_title:
+        raise DomainError("Töödokument vajab nime.")
+
+    url = (web_url or "").strip()
+    parts = urlsplit(url)
+    if parts.scheme.lower() not in WORKING_REFERENCE_SCHEMES:
+        raise DomainError("Viide peab algama http:// või https:// aadressiga.")
+    if not parts.netloc:
+        raise DomainError("Viide peab sisaldama veebiaadressi.")
+
+    identifier = (item_id or "").strip() or f"url:{hashlib.sha256(url.encode()).hexdigest()[:32]}"
+
+    return create_document(
+        matter=matter,
+        title=clean_title[:400],
+        role=DocumentRole.WORKING_DOCUMENT,
+        created_by=created_by,
+        sharepoint_web_url=url[:1000],
+        sharepoint_item_id=identifier[:200],
+        sharepoint_site_id=(site_path or "").strip()[:200],
+        sharepoint_observed_at=timezone.now(),
+    )
+
+
 @transaction.atomic
 def add_evidence_version(
     *,

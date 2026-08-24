@@ -8,13 +8,16 @@ later from an importer or a scheduled job (master specification 12.4).
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
+from app.audit.operations import composer_operation
 from app.audit.services import record_change_event
 from app.core.enums import Visibility, validate_visibility_override
 from app.core.errors import DomainError
@@ -35,6 +38,7 @@ from app.matters.models import (
     EntryRevision,
     Matter,
     MatterEngagement,
+    MatterPersonalNote,
     MatterReferenceSequence,
 )
 from app.workflow.enums import Disposition, Track
@@ -588,6 +592,105 @@ def set_position(
 
 
 @transaction.atomic
+def set_brief_summary(*, matter: Matter, value: str, actor: Any = None) -> Matter:
+    """Record — or clear — the plain-language `Lühikokkuvõte`.
+
+    The one field the redesign added, and the one thing on the page a formal
+    title cannot supply: what this Matter means for the companies affected.
+
+    Audited like every other substantive edit, and audited *without its text*.
+    The summary is a working description somebody will rewrite as the file
+    develops; copying each version into an audit row would turn the history
+    into a second, unmanaged copy of a field whose whole point is that it stays
+    current (Teema redesign §6.1).
+    """
+    cleaned = (value or "").strip()
+    if cleaned == matter.brief_summary:
+        return matter
+
+    was_empty = not matter.brief_summary
+    matter.brief_summary = cleaned
+    matter.save(update_fields=["brief_summary", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.MATTER_BRIEF_SUMMARY_SET,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        payload={"created": was_empty and bool(cleaned), "cleared": not cleaned},
+    )
+    return matter
+
+
+def personal_note_for(*, matter: Matter, author: Any) -> str:
+    """One person's private note on one Matter, or an empty string.
+
+    Read by user, never by visibility: there is no product surface that shows a
+    colleague's notes, so there is no reader here but the author
+    (app/matters/models.py, `MatterPersonalNote`).
+    """
+    if author is None or not getattr(author, "is_authenticated", False):
+        return ""
+    record = MatterPersonalNote.objects.filter(matter=matter, author=author).first()
+    return record.body if record is not None else ""
+
+
+def save_personal_note(*, matter: Matter, author: Any, body: str) -> MatterPersonalNote:
+    """Autosave a private draft.
+
+    Writes no `ChangeEvent` on purpose, and is the only write in the product
+    that does not. It is not a business change: nothing downstream reads it, no
+    statistic counts it, it never appears on the timeline and it is not
+    evidence. Recording every autosave of somebody's scratch paper as
+    authoritative history would bury the history it sits beside
+    (Teema redesign §22.4).
+    """
+    if author is None or not getattr(author, "is_authenticated", False):
+        raise DomainError("Märkmeid saab salvestada ainult sisselogitud kasutaja.")
+    record, _created = MatterPersonalNote.objects.update_or_create(
+        matter=matter,
+        author=author,
+        defaults={"body": body or ""},
+    )
+    return record
+
+
+@transaction.atomic
+def set_policy_areas(*, matter: Matter, policy_areas: Sequence[Any], actor: Any = None) -> Matter:
+    """Replace the Matter's Valdkonnad with the chosen set.
+
+    Inline from the Teema header, so filing a Matter correctly no longer means
+    opening an edit page. The set is replaced whole rather than diffed, because
+    that is what the control posts: an unticked checkbox is simply absent, so
+    "none of them" and "this POST is about something else" would otherwise be
+    indistinguishable — which is why the endpoint names the field in its URL.
+
+    Retired areas are not removed here. A Matter filed years ago under
+    `Halduskoormus` keeps it, because the header's control is seeded from the
+    Matter's *current* areas plus the offered vocabulary, and unticking one is a
+    decision somebody makes deliberately (Teema redesign §7.2).
+    """
+    chosen = list(policy_areas)
+    before = {area.pk for area in matter.policy_areas.all()}
+    after = {area.pk for area in chosen}
+    if before == after:
+        return matter
+
+    matter.policy_areas.set(chosen)
+    record_change_event(
+        event_type=ChangeEventType.MATTER_POLICY_AREAS_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=", ".join(area.name_et for area in chosen)[:200],
+        payload={
+            "added": sorted(str(pk) for pk in after - before),
+            "removed": sorted(str(pk) for pk in before - after),
+        },
+    )
+    return matter
+
+
+@transaction.atomic
 def set_policy_area_other(*, matter: Matter, value: str, actor: Any = None) -> Matter:
     """Record — or clear — the free-text area beside the canonical ones.
 
@@ -824,7 +927,12 @@ def update_engagement(
 
 @transaction.atomic
 def close_matter(
-    *, matter: Matter, disposition: str, actor: Any = None, reason: str = ""
+    *,
+    matter: Matter,
+    disposition: str,
+    actor: Any = None,
+    reason: str = "",
+    successor: Matter | None = None,
 ) -> Matter:
     """Stop active work on the Matter, for a stated reason.
 
@@ -832,9 +940,21 @@ def close_matter(
     different question from where the external process stands. An act can enter
     into force with the file still open, and a file can close while the
     procedure continues elsewhere.
+
+    ``successor`` is the `Järglane`: the Matter this one's work continues under.
+    Accepted only with ``Disposition.SUPERSEDED``, because that is the one
+    closure reason that asserts a continuation — attaching a successor to
+    "Algataja loobus" would record a claim nobody made. It is a real
+    relationship rather than a sentence in ``reason``, so "what became of this
+    file" is a question a query can answer (Teema redesign §16).
     """
     if disposition not in Disposition.values:
         raise DomainError(f"Tundmatu lõpetamise põhjus {disposition!r}.")
+    if successor is not None:
+        if disposition != Disposition.SUPERSEDED:
+            raise DomainError("Järglase saab määrata ainult siis, kui töö jätkub teise teema all.")
+        if successor.pk == matter.pk:
+            raise DomainError("Teema ei saa jätkuda iseenda all.")
 
     # The same lock set_next_action takes, in the same order. Whichever
     # transaction reaches the Matter row first wins: a closure that lands first
@@ -851,6 +971,7 @@ def close_matter(
     matter.disposition_reason = reason
     matter.closed_at = timezone.now()
     matter.closed_by = actor
+    matter.superseded_by = successor
     matter.save(
         update_fields=[
             "is_open",
@@ -858,6 +979,7 @@ def close_matter(
             "disposition_reason",
             "closed_at",
             "closed_by",
+            "superseded_by",
             "updated_at",
         ]
     )
@@ -871,7 +993,10 @@ def close_matter(
         actor=actor,
         obj=matter,
         summary=reason[:200],
-        payload={"disposition": disposition},
+        payload={
+            "disposition": disposition,
+            "successor": str(successor.pk) if successor is not None else None,
+        },
     )
     return matter
 
@@ -886,6 +1011,11 @@ def reopen_matter(*, matter: Matter, actor: Any = None, reason: str = "") -> Mat
     matter.disposition_reason = ""
     matter.closed_at = None
     matter.closed_by = None
+    # The successor goes with the closure that asserted it. A reopened Matter
+    # is current work again, and "this continues under 2026_14" is a statement
+    # about a file that has stopped — leaving it behind would have the register
+    # claiming both at once.
+    matter.superseded_by = None
     matter.save(
         update_fields=[
             "is_open",
@@ -893,6 +1023,7 @@ def reopen_matter(*, matter: Matter, actor: Any = None, reason: str = "") -> Mat
             "disposition_reason",
             "closed_at",
             "closed_by",
+            "superseded_by",
             "updated_at",
         ]
     )
@@ -1334,6 +1465,26 @@ def edit_entry(*, entry: Entry, body: str, actor: Any = None) -> Entry:
     return locked
 
 
+@dataclass
+class ComposerResult:
+    """Everything one professional update wrote, and the id that ties it.
+
+    Returned rather than a tuple because a save can now produce six things and
+    a caller unpacking positionally would silently take the wrong one the day a
+    seventh is added.
+    """
+
+    operation_id: uuid.UUID
+    entry: Entry | None = None
+    document: Any = None
+    action: Any = None
+    important_date: Any = None
+    engagement: MatterEngagement | None = None
+    submission: Any = None
+    work_victory: Any = None
+    closed: bool = False
+
+
 @transaction.atomic
 def compose_update(
     *,
@@ -1345,52 +1496,173 @@ def compose_update(
     organisation: Any = None,
     next_action: dict[str, Any] | None = None,
     attachment: Any = None,
-) -> tuple[Entry | None, Any]:
-    """The unified composer: one save, one transaction.
+    attachment_role: str = DocumentRole.OTHER,
+    important_date: dict[str, Any] | None = None,
+    engagement: dict[str, Any] | None = None,
+    closure: dict[str, Any] | None = None,
+) -> ComposerResult:
+    """The unified composer: one save, one transaction, one professional update.
 
     This is the adoption feature. A routine update today means editing an Excel
-    row and then writing the same thing into a OneNote page; here it is one box,
-    one optional change to `Järgmiseks`, and one save.
+    row and then writing the same thing into a OneNote page; here it is one box
+    and one save, and everything else the same action happened to involve — a
+    file, the next step, a deadline somebody announced, the consultation that
+    informed it, the decision to close — rides along with it.
 
-    Atomicity is the substance of it, not a technicality. If the entry saved and
-    the action did not, the lawyer would believe both landed while the work
-    queue quietly disagreed with the record.
+    **Atomicity is the substance of it, not a technicality.** If the entry
+    saved and the action did not, the lawyer would believe both landed while the
+    work queue quietly disagreed with the record. Everything below happens
+    inside one transaction, so a refusal anywhere leaves the Matter exactly as
+    it was.
+
+    **Order matters in one place.** Closure runs last, because
+    :func:`close_matter` ends the open next action and refuses a Matter that is
+    already shut — so a save that both set a next step and closed would
+    otherwise leave an instruction on a closed file, and one that closed before
+    capturing evidence would have the evidence refused.
+
+    **Every sub-action goes through its own service.** Nothing here writes a
+    model field: the deadline is ``add_important_date``, the consultation is
+    ``add_engagement``, the closure is :func:`close_matter`, the sent opinion is
+    the canonical Submission workflow. Their invariants, their audit rows and
+    their authorization checks are unchanged, which is the point — a unified
+    surface is not a unified rule set (Teema redesign §11, §34).
+
+    **One operation identifier ties the audit rows together**, so the human
+    timeline can render one line for one action without a single canonical
+    record being suppressed or merged (``app/audit/operations.py``).
     """
-    if not body.strip() and not next_action and attachment is None:
-        raise DomainError("Täida sissekanne või järgmiseks.")
+    wants_something = bool(
+        body.strip()
+        or next_action
+        or attachment is not None
+        or important_date
+        or engagement
+        or closure
+    )
+    if not wants_something:
+        raise DomainError("Täida sissekanne või vali, mida veel salvestada.")
 
-    entry = None
-    if body.strip():
-        entry = add_entry(
+    with composer_operation() as operation_id:
+        result = ComposerResult(operation_id=operation_id)
+
+        if body.strip():
+            result.entry = add_entry(
+                matter=matter,
+                body=body,
+                author=author,
+                kind=kind,
+                occurred_at=occurred_at,
+                organisation=organisation,
+            )
+
+        if attachment is not None:
+            # An attachment is evidence like any other: same immutability, same
+            # checksum, same provenance. It is captured inside this transaction,
+            # so a failed save leaves neither the note nor the file behind.
+            #
+            # The role is chosen in the upload control before the file is
+            # committed, never repaired afterwards — a document filed as "Muu"
+            # because the form asked too late is a document nobody finds
+            # (Teema redesign §23.5).
+            upload = read_upload(attachment)
+            result.document = create_document(
+                matter=matter,
+                title=upload.filename,
+                role=attachment_role,
+                created_by=author,
+            )
+            add_evidence_version(
+                document=result.document,
+                content=upload.content,
+                original_filename=upload.filename,
+                mime_type=upload.mime_type,
+                uploaded_by=author,
+            )
+
+        if important_date:
+            from app.intelligence.services import add_important_date
+
+            result.important_date = add_important_date(
+                matter=matter, actor=author, **important_date
+            )
+
+        if engagement:
+            result.engagement = add_engagement(matter=matter, actor=author, **engagement)
+
+        if next_action:
+            result.action = set_next_action(matter=matter, actor=author, **next_action)
+
+        if closure:
+            _apply_closure(matter=matter, author=author, result=result, closure=closure)
+
+        return result
+
+
+def _apply_closure(
+    *,
+    matter: Matter,
+    author: Any,
+    result: ComposerResult,
+    closure: dict[str, Any],
+) -> None:
+    """Finish the Matter, with whatever the person recorded alongside it.
+
+    Split out because the closure half of a composer save is four decisions,
+    not one, and each has a rule of its own:
+
+    * the **final opinion** is a canonical ``Submission`` or it is nothing. It
+      is created, given the exact evidence that went out, and marked sent
+      through the existing workflow — which refuses to mark anything sent
+      without a final version, refuses evidence belonging to another Matter and
+      refuses evidence less restricted than the submission itself. A PDF is not
+      an opinion and a filename is not a sent date (Teema redesign §17, §20).
+    * the **work victory** goes through the same door the Matter page's own
+      control already uses, so this feature broadens nobody's authorization and
+      the department head's review of *imported* candidates is untouched
+      (Teema redesign §18).
+    * **closure itself** runs last, and ends the open next action through the
+      existing lifecycle service rather than deleting it.
+    """
+    from app.intelligence.services import add_confirmed_work_victory
+    from app.submissions.services import (
+        create_submission,
+        mark_submission_sent,
+        select_final_evidence,
+    )
+
+    final_opinion = closure.get("final_opinion")
+    if final_opinion:
+        submission = create_submission(
             matter=matter,
-            body=body,
-            author=author,
-            kind=kind,
-            occurred_at=occurred_at,
-            organisation=organisation,
+            title=final_opinion["title"],
+            actor=author,
+            recipients=list(final_opinion.get("recipients") or []),
+            channel=final_opinion.get("channel", ""),
+            reference=final_opinion.get("reference", ""),
+        )
+        select_final_evidence(
+            submission=submission,
+            version=final_opinion["final_version"],
+            actor=author,
+        )
+        result.submission = mark_submission_sent(
+            submission=submission,
+            actor=author,
+            sent_at=final_opinion.get("sent_at"),
+            channel=final_opinion.get("channel", ""),
+            reference=final_opinion.get("reference", ""),
         )
 
-    if attachment is not None:
-        # An attachment is evidence like any other: same immutability, same
-        # checksum, same provenance. It is captured inside this transaction, so
-        # a failed save leaves neither the note nor the file behind.
-        upload = read_upload(attachment)
-        document = create_document(
-            matter=matter,
-            title=upload.filename,
-            role=DocumentRole.OTHER,
-            created_by=author,
-        )
-        add_evidence_version(
-            document=document,
-            content=upload.content,
-            original_filename=upload.filename,
-            mime_type=upload.mime_type,
-            uploaded_by=author,
-        )
+    victory = closure.get("work_victory")
+    if victory:
+        result.work_victory = add_confirmed_work_victory(matter=matter, actor=author, **victory)
 
-    action = None
-    if next_action:
-        action = set_next_action(matter=matter, actor=author, **next_action)
-
-    return entry, action
+    close_matter(
+        matter=matter,
+        disposition=closure["disposition"],
+        actor=author,
+        reason=closure.get("reason", ""),
+        successor=closure.get("successor"),
+    )
+    result.closed = True

@@ -1,19 +1,27 @@
 {% extends "base.html" %}
-{% block title %}Seisukoht · {{ matter.display_reference }} · {{ application_name }}{% endblock %}
+{% block title %}Arvamused · {{ matter.display_reference }} · {{ application_name }}{% endblock %}
 
 {% comment %}
-Stage 1 fills the position and the submissions. Kaasamine is Stage-2 work and is
-left visibly absent with an explanation rather than mocked up: a placeholder that
-looks like a feature invites people to record evidence somewhere that cannot
-keep it.
+`Arvamused` on one Matter — no longer a tab.
+
+The Matter has exactly two tabs, and the position and the engagement both moved
+into the main Teema view where they are read. What stays here is the formal
+Submission workflow: drafting an opinion, giving it the exact evidence that went
+out, marking it sent, withdrawing it — acts that carry recipients, a channel and
+a reference, and that are not the routine capture the composer exists for. It is
+reached from the position block and the sent-opinion strip, not from the tab row
+(Teema redesign §3, §17, §20).
+
+The position form stays too, because somebody who came here to record a sent
+opinion is usually the same person about to write down what Koda argued.
 {% endcomment %}
 
 {% block content %}
-<div class="page">
+<div class="teema">
   {% include "matters/partials/header.html" %}
 
-  <div class="matterlayout">
-    <div class="mattermain">
+  <div class="teemagrid">
+    <div class="teemamain teemamain--padded">
       {% include "matters/partials/matter_banner.html" %}
 
       {% comment %}
@@ -158,23 +166,7 @@ keep it.
       {% endif %}
     </div>
 
-    <aside class="rail" aria-label="Kaasamine">
-      <div class="railcard">
-        <span class="railcard__label">Kaasamine</span>
-        <div class="notyet">
-          <p>Liikmete kaasamise kirjed valmivad 2. etapis.</p>
-          <p>
-            Seni hoia kaasamise tõendid
-            <a href="{% url 'matters:matter_documents' pk=matter.pk %}">dokumentide all</a>
-            ja kirjelda käiku sissekannetes.
-          </p>
-        </div>
-        <p class="field__help">
-          Kaasamise arvnäitajaid ei ole siin meelega: kontaktide ja vastuste arvud on eraldi
-          vaatlused ning neist ei tohi tuletada vastamismäära.
-        </p>
-      </div>
-    </aside>
+    {% include "matters/partials/rail.html" %}
   </div>
 </div>
 {% endblock %}

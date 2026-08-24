@@ -1,17 +1,24 @@
 {% comment %}
-The unified composer.
+`TEGEVUSE KIRJELDUS` — the primary surface of the whole application.
 
-Collapsed it is one field: "Kirjuta sissekanne…". Everything else appears only
-when it is wanted — the entry type, an organisation, and the Järgmiseks block
-behind a toggle. That is the adoption argument: a routine update has to be
-faster than editing a spreadsheet row and then writing the same thing into a
-OneNote page.
+One box, three optional chips, and four quiet disclosures. Everything a lawyer
+records after a meeting goes in here and saves once: what happened, what
+happens next, the file they were handed, the deadline they were told about, the
+consultation that informed it, and — when the work is finished — the closure
+itself.
 
-The whole save is one POST and one transaction. Entry and Järgmiseks land
-together or not at all.
+**There is no separate next-step field.** The wording of the next step is the
+description, verbatim. Two boxes asking the same question in different words is
+the duplicate data entry this product exists to remove, and a system that split
+one sentence into two by guessing would be inventing the register's content
+(Teema redesign §9.1).
+
+**One save, one professional update.** The POST goes to one service inside one
+transaction; it may write six canonical records and the timeline shows one line
+(app/matters/services.py, app/audit/operations.py).
 {% endcomment %}
-<section class="composer" aria-labelledby="komposer-heading">
-  <h2 class="visually-hidden" id="komposer-heading">Lisa sissekanne</h2>
+<section class="composer" id="teema-koostaja" aria-labelledby="koostaja-pealkiri">
+  <h2 class="visually-hidden" id="koostaja-pealkiri">Lisa tegevuse kirjeldus</h2>
 
   {% if composer_error %}
     <p class="formerror" role="alert">{{ composer_error }}</p>
@@ -22,47 +29,151 @@ together or not at all.
 
   <form data-composer
         hx-post="{% url 'matters:compose' pk=matter.pk %}"
-        hx-target="#ulevaade"
+        hx-target="#teema-vaade"
         hx-swap="outerHTML"
         hx-encoding="multipart/form-data">
     {% csrf_token %}
 
-    <div class="composer__top">
-      <span class="avatar avatar--composer" aria-hidden="true">{{ user.initials }}</span>
-      <label class="visually-hidden" for="{{ composer_form.body.id_for_label }}">Sissekanne</label>
-      {{ composer_form.body }}
-    </div>
-
+    <span class="composer__label">Tegevuse kirjeldus</span>
+    <label class="visually-hidden" for="{{ composer_form.body.id_for_label }}">
+      Tegevuse kirjeldus
+    </label>
+    {{ composer_form.body }}
     {% if composer_form.body.errors %}
-      <p class="field__error composer__error">{{ composer_form.body.errors|first }}</p>
+      <p class="field__error">{{ composer_form.body.errors|first }}</p>
     {% endif %}
 
-    <div class="composer__meta">
-      <label class="field field--inline">
-        <span class="visually-hidden">Sissekande liik</span>
-        {{ composer_form.kind }}
+    {% comment %}
+      MIS EDASI? Choosing one of the three is what writes a next step; choosing
+      none saves the description as an entry and nothing else. Radios rather
+      than a checkbox plus a select, because the question is genuinely
+      three-valued and the answer carries a different date meaning each time.
+    {% endcomment %}
+    <div class="composer__next">
+      <span class="composer__sublabel" id="mis-edasi">Mis edasi?</span>
+      <div class="modeselect" role="radiogroup" aria-labelledby="mis-edasi" id="koostaja-liik">
+        {% for value, label in composer_form.next_kind.field.choices %}
+          {% if value %}
+            <span class="modeselect__option">
+              <input type="radio" class="modechip__input" name="next_kind"
+                     id="next_kind_{{ value }}" value="{{ value }}"
+                     {% if composer_form.next_kind.value == value %}checked{% endif %}>
+              <label class="modechip modechip--{{ value|lower }} modechip--choice"
+                     for="next_kind_{{ value }}">{{ label|upper }}</label>
+            </span>
+          {% endif %}
+        {% endfor %}
+        {% comment %}
+          The way back to "no change". Without it, choosing a mode by mistake
+          could not be undone without reloading the page — and a radio group
+          with no neutral option is a control that cannot say "leave it alone".
+        {% endcomment %}
+        <span class="modeselect__option">
+          <input type="radio" class="modechip__input" name="next_kind" id="next_kind_none"
+                 value="" {% if not composer_form.next_kind.value %}checked{% endif %}>
+          <label class="modechip modechip--none modechip--choice" for="next_kind_none">
+            Ei muuda
+          </label>
+        </span>
+      </div>
+
+      <label class="composer__date">
+        <span class="visually-hidden">{{ composer_form.next_date.label }}</span>
+        {{ composer_form.next_date }}
       </label>
+      {% if composer_form.next_date.errors %}
+        <p class="field__error">{{ composer_form.next_date.errors|first }}</p>
+      {% endif %}
 
-      <button type="button" class="disclosure-chip" data-reveals="komposer-lisavaljad">
-        + Organisatsioon
-      </button>
-      <button type="button" class="disclosure-chip" data-reveals="komposer-manus">
-        📎 Manus
-      </button>
-
-      <span class="disclosure-chip disclosure-chip--toggle" data-toggle-chip>
-        <input type="checkbox"
-               name="update_next_action"
-               id="id_update_next_action"
-               data-toggles="jargmiseks-valjad"
-               {% if composer_form.update_next_action.value %}checked{% endif %}>
-        <label for="id_update_next_action">✓ Muudan Järgmiseks</label>
-      </span>
+      {% comment %}
+        Approximate timing, behind a disclosure. `JÄLGIN` genuinely means
+        "september 2026" or "III kvartal 2026" more often than it means a day,
+        and storing 1 September as though somebody had committed to it would
+        manufacture certainty the source never had. The control asks for the
+        period; `app.workflow.dates` turns it into the anchor the database
+        stores, and nobody types an anchor (Teema redesign §9.2).
+      {% endcomment %}
+      <details class="disclosure disclosure--inline">
+        <summary class="disclosure__summary">Ligikaudne aeg</summary>
+        <div class="disclosure__body">
+          <fieldset class="choiceset">
+            <legend class="visually-hidden">Kuupäeva täpsus</legend>
+            {% for choice in composer_form.next_precision %}
+              <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
+            {% endfor %}
+          </fieldset>
+          <div class="periodfields">
+            <div class="periodfields__group" data-precision="MONTH">
+              {% include "intelligence/partials/field.html" with field=composer_form.next_month %}
+            </div>
+            <div class="periodfields__group" data-precision="QUARTER">
+              {% include "intelligence/partials/field.html" with field=composer_form.next_quarter %}
+            </div>
+            <div class="periodfields__group" data-precision="HALF_YEAR">
+              {% include "intelligence/partials/field.html" with field=composer_form.next_half %}
+            </div>
+            <div class="periodfields__group" data-precision="MONTH QUARTER HALF_YEAR YEAR">
+              {% include "intelligence/partials/field.html" with field=composer_form.next_year %}
+            </div>
+          </div>
+          {% comment %}
+            The stored date meaning, one level deeper still. It derives from the
+            chosen mode when left alone; the model permits pairs the derivation
+            does not produce, and the register's own parser uses them
+            (app/workflow/enums.py, Teema redesign §9.3).
+          {% endcomment %}
+          {% include "intelligence/partials/field.html" with field=composer_form.next_date_semantics %}
+        </div>
+      </details>
     </div>
 
-    <div class="composer__optional" id="komposer-lisavaljad" hidden>
+    {% comment %}
+      Progressive actions. All quiet, all dashed, all expanding in place — no
+      modal, no second page. `+ Lõpeta teema` is visually last and behind a
+      divider, because finishing a file is not a routine capture.
+    {% endcomment %}
+    <div class="composer__actions">
+      <button type="button" class="disclosure-chip" data-reveals="koostaja-manus">+ Manus</button>
+      <button type="button" class="disclosure-chip" data-reveals="koostaja-tahtaeg">
+        + Oluline tähtaeg
+      </button>
+      <button type="button" class="disclosure-chip" data-reveals="koostaja-kaasamine">
+        + Kaasamine
+      </button>
+      <span class="composer__divider" aria-hidden="true"></span>
+      <button type="button" class="disclosure-chip disclosure-chip--last"
+              data-reveals="koostaja-lopetamine">+ Lõpeta teema</button>
+      <span class="composer__spacer"></span>
+      <span class="composer__hint">
+        <kbd class="key">Ctrl</kbd> + <kbd class="key">Enter</kbd>
+      </span>
+      <button class="button button--primary" type="submit" data-composer-submit
+              data-label-default="Salvesta" data-label-closing="Lõpeta teema">Salvesta</button>
+    </div>
+
+    <div class="composer__optional" id="koostaja-manus" hidden>
+      {% comment %}
+        The role is asked here, with the file, and never afterwards. A document
+        captured as "Muu" because the form asked too late is a document nobody
+        finds again (Teema redesign §23.5).
+      {% endcomment %}
       <label class="field">
-        <span class="field__label">Organisatsioon</span>
+        <span class="field__label">Fail</span>
+        {{ composer_form.attachment }}
+      </label>
+      <label class="field">
+        <span class="field__label">Roll</span>
+        {{ composer_form.attachment_role }}
+        <span class="field__help">
+          Salvestatakse muutumatu tõendina selle teema dokumentide alla.
+        </span>
+      </label>
+      <label class="field">
+        <span class="field__label">Sissekande liik</span>
+        {{ composer_form.kind }}
+      </label>
+      <label class="field">
+        <span class="field__label">Asutus</span>
         {{ composer_form.organisation }}
       </label>
       <label class="field">
@@ -71,99 +182,104 @@ together or not at all.
       </label>
     </div>
 
-    <div class="composer__optional" id="komposer-manus" hidden>
-      <label class="field">
-        <span class="field__label">Manus</span>
-        {{ composer_form.attachment }}
-        <span class="field__help">
-          Manus salvestatakse muutumatu tõendina selle teema dokumentide alla.
-        </span>
-      </label>
-    </div>
-
-    <div class="composer__next" id="jargmiseks-valjad" hidden>
-      <span class="nextaction__label">Uus järgmine samm</span>
-
-      <div class="modeselect" role="group" aria-label="Tegevuse liik" id="komposer-liik">
-        {% for value, label in composer_form.next_kind.field.choices %}
-          <span class="modeselect__option">
-            <input type="radio" name="next_kind" id="next_kind_{{ value }}" value="{{ value }}"
-                   {% if composer_form.next_kind.value == value or not composer_form.next_kind.value and value == 'DO' %}checked{% endif %}>
-            <label class="modeselect__label" for="next_kind_{{ value }}">{{ label }}</label>
-          </span>
-        {% endfor %}
-      </div>
+    <div class="composer__optional" id="koostaja-tahtaeg" hidden>
       {% comment %}
-        The one sentence that keeps this apart from Arvamuse tähtaeg. They are
-        two different dates about two different things, and a composer that
-        offered them as interchangeable is what made people ask which one to
-        use (Agent-UI brief 10).
+        An important deadline is an external milestone — a consultation ending,
+        a transposition date — and it is not the next step. They may share a
+        day and remain different facts, which is why they are two controls and
+        two records (Teema redesign §13).
       {% endcomment %}
-      <p class="field__help">
-        Mis selle teemaga järgmisena juhtub. Arvamuse esitamise tähtaeg on
-        eraldi, teema päises.
-      </p>
-
-      <label class="field">
-        <span class="visually-hidden">Järgmiseks</span>
-        {{ composer_form.next_text }}
-      </label>
-      {% if composer_form.next_text.errors %}
-        <p class="field__error">{{ composer_form.next_text.errors|first }}</p>
-      {% endif %}
-
-      <div class="composer__optional composer__optional--flush">
-        <label class="field field--inline">
-          {% comment %}
-            The label follows the chosen kind, because that is the question a
-            lawyer is actually answering. Swapped by app.js; without scripting
-            it reads "Kuupäev", which is true for all three.
-          {% endcomment %}
-          <span class="field__label field__label--plain" data-datelabel-for="komposer-liik"
-                data-label-do="Tähtaeg:"
-                data-label-wait="Millal arengut oodata:"
-                data-label-monitor="Millal uuesti vaatan:">Kuupäev:</span>
-          {{ composer_form.next_target_date }}
-        </label>
-        <label class="field field--inline">
-          <span class="field__label field__label--plain">Täpsus:</span>
-          {{ composer_form.next_date_precision }}
-        </label>
-      </div>
-      {% if composer_form.next_target_date.errors %}
-        <p class="field__error">{{ composer_form.next_target_date.errors|first }}</p>
-      {% endif %}
-
-      {% comment %}
-        The stored meaning, moved behind a disclosure rather than removed. It
-        derives from the chosen kind when left alone, and the model genuinely
-        permits pairs the derivation does not produce — the register's own
-        parser records a DO with a vague month as an expectation, not a deadline
-        (app/workflow/enums.py, `default_date_semantics`).
-      {% endcomment %}
+      {% include "intelligence/partials/field.html" with field=composer_form.deadline_title %}
+      {% include "intelligence/partials/field.html" with field=composer_form.deadline_date %}
       <details class="disclosure disclosure--inline">
-        <summary class="disclosure__summary">Täpsusta, mida kuupäev tähendab</summary>
+        <summary class="disclosure__summary">Ligikaudne aeg</summary>
         <div class="disclosure__body">
-          <label class="field field--inline">
-            <span class="field__label field__label--plain">Tähendus:</span>
-            {{ composer_form.next_date_semantics }}
-          </label>
+          <fieldset class="choiceset">
+            <legend class="visually-hidden">Tähtaja täpsus</legend>
+            {% for choice in composer_form.deadline_precision %}
+              <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
+            {% endfor %}
+          </fieldset>
+          <div class="periodfields">
+            <div class="periodfields__group" data-precision="MONTH">
+              {% include "intelligence/partials/field.html" with field=composer_form.deadline_month %}
+            </div>
+            <div class="periodfields__group" data-precision="QUARTER">
+              {% include "intelligence/partials/field.html" with field=composer_form.deadline_quarter %}
+            </div>
+            <div class="periodfields__group" data-precision="HALF_YEAR">
+              {% include "intelligence/partials/field.html" with field=composer_form.deadline_half %}
+            </div>
+            <div class="periodfields__group" data-precision="MONTH QUARTER HALF_YEAR YEAR">
+              {% include "intelligence/partials/field.html" with field=composer_form.deadline_year %}
+            </div>
+          </div>
         </div>
       </details>
-
-      <p class="nextaction__note">
-        OOTAN-i ja JÄLGIN-i kuupäev on ülevaatamise, mitte tähtaja kuupäev — möödumine
-        ei muuda sammu hiljaks. Ligikaudse aja jaoks vali täpsuseks kuu või kvartal.
-      </p>
     </div>
 
-    <div class="composer__foot">
-      <span class="composer__hint">
-        <kbd class="key">Ctrl</kbd> + <kbd class="key">Enter</kbd> salvestab
-      </span>
-      <span class="composer__actions">
-        <button class="button button--primary" type="submit">Salvesta sissekanne</button>
-      </span>
+    <div class="composer__optional" id="koostaja-kaasamine" hidden>
+      {% include "matters/partials/engagement_composer_fields.html" with form=composer_form %}
+    </div>
+
+    <div class="composer__optional composer__optional--closing" id="koostaja-lopetamine" hidden>
+      {% comment %}
+        Finishing the Matter, inside the composer rather than in a sidebar
+        panel. Closing is something a lawyer does at the end of a professional
+        update — usually the same one that records the final opinion — and a
+        separate box in the rail made it look like an administrative setting
+        (Teema redesign §15).
+      {% endcomment %}
+      <label class="composer__closing-toggle">
+        <input type="checkbox" name="close_matter" id="id_close_matter"
+               data-closes-matter
+               {% if composer_form.close_matter.value %}checked{% endif %}>
+        <span>Lõpeta see teema</span>
+      </label>
+      <p class="field__help">
+        Sulgemine tähendab, et Koda ei tegele teemaga enam aktiivselt. See on eraldi
+        otsus menetluse etapist — jõustunud akt ei sulge teemat automaatselt.
+        Kehtiv järgmine samm lõpetatakse koos teemaga.
+      </p>
+      {% include "intelligence/partials/field.html" with field=composer_form.disposition %}
+      {% include "intelligence/partials/field.html" with field=composer_form.closure_reason %}
+      {% include "intelligence/partials/field.html" with field=composer_form.successor %}
+
+      <fieldset class="composer__group">
+        <legend class="composer__sublabel">Lõpparvamus</legend>
+        <p class="field__help">
+          Valikuline. Täida ainult siis, kui Koda tegelikult saatis arvamuse välja —
+          see loob kanoonilise arvamuse koos täpse saadetud failiga.
+        </p>
+        {% include "intelligence/partials/field.html" with field=composer_form.final_version %}
+        {% include "intelligence/partials/field.html" with field=composer_form.final_title %}
+        {% include "intelligence/partials/field.html" with field=composer_form.final_sent_on %}
+        <div class="field">
+          <span class="field__label">{{ composer_form.final_recipients.label }}</span>
+          <div class="checkitems">
+            {% for choice in composer_form.final_recipients %}
+              <label class="checkitem">{{ choice.tag }}
+                <span class="checkitem__name">{{ choice.choice_label }}</span>
+              </label>
+            {% endfor %}
+          </div>
+          {% for error in composer_form.final_recipients.errors %}
+            <span class="field__error">{{ error }}</span>
+          {% endfor %}
+        </div>
+        {% include "intelligence/partials/field.html" with field=composer_form.final_channel %}
+        {% include "intelligence/partials/field.html" with field=composer_form.final_reference %}
+      </fieldset>
+
+      <fieldset class="composer__group">
+        <legend class="composer__sublabel">Töövõit</legend>
+        <p class="field__help">
+          Valikuline. Kirjuta, mida Koda selle teemaga saavutas — see läheb osakonna
+          töövõitude hulka.
+        </p>
+        {% include "intelligence/partials/field.html" with field=composer_form.victory_title %}
+        {% include "intelligence/partials/field.html" with field=composer_form.victory_detail %}
+      </fieldset>
     </div>
   </form>
 </section>

@@ -16,7 +16,7 @@ central authorization boundary, the design-token foundation, the architecture
 decisions and the CI pipeline that keeps them honest.
 
 **Stage 1 — complete, merged.** The core lawyer workflow, and there is a real
-production UI: Minu töö, Saabunud, Teemad, the Matter page with its three tabs,
+production UI: Minu töö, Saabunud, Teemad, the Matter page,
 the unified Sissekanne composer, `Järgmiseks` next actions, Submissions with
 immutable final evidence, and global search — all in the Koda CVI dark-mode
 interface.
@@ -43,6 +43,15 @@ resources, a case-file rendering that keeps each file inside the narrative that
 introduces it, an operator queue for the matches a person still has to settle,
 and Cloudflare Access as the production authenticator. See
 [ADR 0015](docs/adr/0015-historical-corpus-integration.md).
+
+**Teema workspace redesign — implemented.** The approved Matter-page redesign:
+two tabs instead of three, a plain-language `Lühikokkuvõte`, an always-visible
+one-line `Järgmiseks`, one composer that records an entry, a file, the next
+step, a deadline, a consultation and a closure in one save — and one line in the
+chronology for it, with every underlying audit fact intact. The twenty-three
+reviewed `Valdkonnad` replace the nine public focus areas as the working
+vocabulary, without a single existing classification being remapped. See
+[ADR 0030](docs/adr/0030-teema-workspace-redesign.md).
 
 **Stage 2E — implemented on a feature branch, pending integration.** Statistics,
 reporting and data quality: a code-defined, versioned metric catalogue, a

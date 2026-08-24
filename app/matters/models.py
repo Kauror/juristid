@@ -258,6 +258,31 @@ class Matter(BaseModel):
         related_name="closed_matters",
         verbose_name="sulges",
     )
+    #: `Järglane` — the Matter this one's work continues under.
+    #:
+    #: ``Disposition.SUPERSEDED`` has always been able to say *that* a file
+    #: continued elsewhere; nothing could say *where*. So the answer lived in a
+    #: closure comment, which no query can follow: opening a 2019 Matter and
+    #: asking what became of it meant reading a paragraph and then searching the
+    #: register by hand for a title somebody half-remembered.
+    #:
+    #: One nullable self-reference, written only by :func:`close_matter` when
+    #: the person closing names a successor, and read by the Matter page's
+    #: `Seotud` block in both directions (`supersedes` is the predecessor side).
+    #:
+    #: ``PROTECT``, so a successor cannot be deleted out from under the record
+    #: pointing at it. Never inferred: the register's own
+    #: ``continues_under_reference`` is imported free text about a reference
+    #: somebody typed, and resolving it to a row would manufacture a
+    #: relationship the source never asserted (Teema redesign §16).
+    superseded_by = models.ForeignKey(
+        "self",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="supersedes",
+        verbose_name="jätkub teemana",
+    )
 
     # -- dates -------------------------------------------------------------
     received_date = models.DateField(null=True, blank=True, verbose_name="saabus")
@@ -266,6 +291,24 @@ class Matter(BaseModel):
     )
 
     # -- substance ---------------------------------------------------------
+    #: What this Matter is actually about, in the words a member would use.
+    #:
+    #: A formal legislative title is frequently a bad description of the
+    #: business issue: "Käibemaksuseaduse muutmise seaduse eelnõu" says nothing
+    #: about the four hundred companies that would gain a quarterly reporting
+    #: duty. This is the two or three sentences that do, and it is the largest
+    #: body text on the Matter page for that reason.
+    #:
+    #: Deliberately not `position_summary`, not `rationale_summary` and not the
+    #: first `Entry`. Those answer *what Koda thinks*, *why*, and *what happened
+    #: on a given day*; this answers *what is this*, which none of them can be
+    #: made to mean without corrupting it. Optional, never backfilled, and blank
+    #: on every historical row until somebody writes one (Teema redesign §6).
+    brief_summary = models.TextField(
+        blank=True,
+        verbose_name="lühikokkuvõte",
+        help_text="Mida see teema ettevõtjatele tähendab. Kaks kuni kolm lauset tavakeeles.",
+    )
     position_summary = models.TextField(blank=True, verbose_name="Koja seisukoht")
     rationale_summary = models.TextField(blank=True, verbose_name="põhjendus")
 
@@ -325,6 +368,13 @@ class Matter(BaseModel):
             models.CheckConstraint(
                 condition=models.Q(visibility__in=[Visibility.NORMAL, Visibility.RESTRICTED]),
                 name="matters_visibility_vocabulary",
+            ),
+            # A Matter cannot continue under itself. The form refuses it first,
+            # but a chain that closes on one row would make "what became of
+            # this" a question with no answer and an infinite one at once.
+            models.CheckConstraint(
+                condition=~models.Q(superseded_by=models.F("id")),
+                name="matters_not_superseded_by_itself",
             ),
             # The same reasoning as the visibility constraint above. A value
             # outside the vocabulary reads as neither REAL nor TEST: it
@@ -782,3 +832,66 @@ class MatterEngagement(VisibilityInheritingModel):
             return []
         labels = [part for part in host.split(".") if part and part != "www"]
         return [host, *labels[:-1]] if len(labels) > 1 else [host]
+
+
+class MatterPersonalNote(BaseModel):
+    """`Märkmed` — one person's private scratch pad about one Matter.
+
+    A phone number, a name to check, a reminder to read something before the
+    committee sits. Today that lives on paper and in a personal OneNote page,
+    and the reason it never reached the file is that everything the file offers
+    is *published*: an `Entry` is dated, attributed and permanent, and nobody
+    writes "ask Liina whether this is a directive requirement" into a
+    professional chronology.
+
+    So this is deliberately the opposite of every other record here.
+
+    **Private, and privately queried.** It is scoped by user, not by
+    `visible_to`: no colleague, no department head and no administrator reads it
+    through the ordinary product, because there is no ordinary product surface
+    that lists somebody else's notes. It is not a
+    `VisibilityInheritingModel` — inheriting the Matter's visibility would make
+    it *readable by whoever may read the Matter*, which is exactly wrong.
+
+    **Not business history.** It writes no `ChangeEvent`, appears on no
+    timeline, is not indexed for search, is not evidence, and is not exported.
+    Autosaving a draft is not a business change and recording each keystroke's
+    worth of it as one would drown the audit trail it belongs beside.
+
+    **Not a second Matter field.** One row per person per Matter, so two lawyers
+    working the same file never overwrite each other, and so the Matter's own
+    columns keep meaning what they say (Teema redesign §22.4).
+    """
+
+    matter = models.ForeignKey(
+        Matter,
+        on_delete=models.CASCADE,
+        related_name="personal_notes",
+        verbose_name="teema",
+    )
+    #: CASCADE, unlike almost every other person reference in the schema. Those
+    #: are PROTECT because they are attribution — who assigned, who sent, who
+    #: closed — and business history must not lose its author. This is not
+    #: attribution: it is the person's own scratch paper, and it has no meaning
+    #: once they are gone.
+    author = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="matter_personal_notes",
+        verbose_name="kasutaja",
+    )
+    body = models.TextField(blank=True, verbose_name="märkmed")
+
+    class Meta:
+        verbose_name = "isiklik märkmik"
+        verbose_name_plural = "isiklikud märkmikud"
+        ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["matter", "author"],
+                name="matters_one_personal_note_per_person",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.author_id} @ {self.matter_id}"

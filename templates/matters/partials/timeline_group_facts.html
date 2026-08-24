@@ -1,0 +1,47 @@
+{% comment %}
+The canonical facts one professional update produced, under the line describing
+it.
+
+Not a second timeline and not an audit dump: one short line per record, saying
+what the save actually wrote. A next step shows its mode and its date, because
+that is the thing somebody scrolling back is looking for; a deadline, a
+consultation and a captured file each say what they are.
+
+The `ENTRY_ADDED` event that names the operation is never here — the note above
+is the richer of the two, and printing both would tell a reader the same thing
+twice (app/matters/timeline.py).
+{% endcomment %}
+{% if item.is_grouped %}
+  <ul class="groupfacts">
+    {% for event in item.events %}
+      {% if event.event_type == "NEXT_ACTION_SET" %}
+        <li class="groupfacts__row">
+          <span class="modechip modechip--{{ event.payload.kind|lower }} modechip--tiny">
+            {{ event.payload.kind }}
+          </span>
+          <span>{{ event.summary }}</span>
+        </li>
+      {% elif event.event_type == "EVIDENCE_VERSION_ADDED" %}
+        <li class="groupfacts__row">
+          <span class="badge badge--evidence">Tõend</span>
+          <span>{{ event.summary }}</span>
+        </li>
+      {% elif event.event_type == "IMPORTANT_DATE_ADDED" %}
+        <li class="groupfacts__row">
+          <span class="groupfacts__kind">Oluline tähtaeg</span>
+          <span>{{ event.summary }}</span>
+        </li>
+      {% elif event.event_type == "ENGAGEMENT_ADDED" %}
+        <li class="groupfacts__row">
+          <span class="groupfacts__kind">Kaasamine</span>
+          <span>{{ event.summary }}</span>
+        </li>
+      {% elif event.event_type == "MATTER_CLOSED" %}
+        <li class="groupfacts__row">
+          <span class="groupfacts__kind">Teema suletud</span>
+          {% if event.summary %}<span>{{ event.summary }}</span>{% endif %}
+        </li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+{% endif %}

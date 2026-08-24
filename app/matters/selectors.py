@@ -273,6 +273,97 @@ def matter_engagements(matter: Matter, user: Any) -> list[Any]:
     )
 
 
+@dataclass(frozen=True)
+class ActiveDeadline:
+    """The one deadline the Matter header shows.
+
+    A rendered answer rather than a model: `label` is what the date *is*,
+    `display` is how it reads at the precision it was recorded to, and
+    `days_remaining` is how the header prints " · N p". Nothing here is stored.
+    """
+
+    label: str
+    value: date
+    display: str
+    is_past: bool
+    days_remaining: int
+
+    @property
+    def is_today(self) -> bool:
+        return self.days_remaining == 0 and not self.is_past
+
+
+def active_deadline(matter: Matter, user: Any, today: date | None = None) -> ActiveDeadline | None:
+    """The single most relevant deadline, or nothing at all.
+
+    Two rules, in order (Teema redesign §5.5):
+
+    1. the nearest deadline still ahead of us;
+    2. failing that, the nearest one behind us.
+
+    And when the Matter has neither, this returns ``None`` and the header slot
+    disappears rather than printing an em dash. A row of labels with no values
+    is what made the old header read as a data-quality problem.
+
+    **Two sources, deliberately.** ``Matter.response_deadline`` is the date by
+    which Koda's own opinion is due, and it is the commonest deadline on the
+    whole register. ``MatterImportantDate`` is everything else the department
+    watches. A rule that read only one of them would leave most Matters looking
+    undated.
+
+    **Not the ``NextAction`` date.** That is what Koda does next; a review date
+    on a WAIT is not a deadline and must never be rendered as one
+    (master specification 18.8).
+
+    Cancelled milestones are excluded: an expectation somebody called off is
+    history, not a commitment. A period is "past" only once its **last** day is
+    behind us, which is why an approximate date is compared on ``period_end``.
+    """
+    from app.intelligence.enums import FactStatus
+    from app.intelligence.models import MatterImportantDate
+
+    day = today or timezone.localdate()
+    candidates: list[tuple[date, date, str, str]] = []
+
+    if matter.response_deadline is not None:
+        candidates.append(
+            (
+                matter.response_deadline,
+                matter.response_deadline,
+                "Arvamuse tähtaeg",
+                format_estonian_date(matter.response_deadline),
+            )
+        )
+
+    milestones = (
+        MatterImportantDate.objects.filter(matter=matter, status=FactStatus.ACTIVE)
+        .visible_to(user)
+        .only("date_value", "period_end", "date_precision", "title")
+    )
+    for record in milestones:
+        candidates.append((record.date_value, record.period_end, record.title, record.display_date))
+
+    if not candidates:
+        return None
+
+    upcoming = [row for row in candidates if row[1] >= day]
+    pool = upcoming or candidates
+    # Nearest first among the upcoming; nearest *last* among the past, which is
+    # the most recent one — the same "closest to today" rule read backwards.
+    anchor_value, period_end, label, display = (
+        min(pool, key=lambda row: (row[0], row[1]))
+        if upcoming
+        else max(pool, key=lambda row: (row[1], row[0]))
+    )
+    return ActiveDeadline(
+        label=label,
+        value=anchor_value,
+        display=display,
+        is_past=period_end < day,
+        days_remaining=(anchor_value - day).days,
+    )
+
+
 def current_action_of(matter: Matter) -> NextAction | None:
     """Read the prefetched open action, falling back to a query if absent."""
     prefetched = getattr(matter, "open_actions", None)

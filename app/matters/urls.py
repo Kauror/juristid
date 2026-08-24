@@ -15,6 +15,12 @@ urlpatterns = [
     # have one (app/matters/views.py, `_wants_fragment`).
     path("teemad/asutused/", views.organisation_choices, name="organisation_choices"),
     path("teemad/<uuid:pk>/", views.matter_detail, name="matter_detail"),
+    # `Arvamused` on one Matter. No longer a tab — the Matter has exactly two —
+    # but still a destination, reached from the position block and the sent-
+    # opinion strip on the main view. It is where a formal Submission is
+    # drafted, given its exact evidence, sent and withdrawn: acts that carry
+    # recipients, a channel and a reference, and that are not the routine
+    # capture the composer exists for (Teema redesign §3, §17, §20).
     path("teemad/<uuid:pk>/seisukoht/", views.matter_position, name="matter_position"),
     path("teemad/<uuid:pk>/dokumendid/", views.matter_documents, name="matter_documents"),
     # HTMX surfaces
@@ -37,6 +43,13 @@ urlpatterns = [
         name="review_action",
     ),
     path("teemad/<uuid:pk>/vali/<str:field>/", views.update_field, name="update_field"),
+    path("teemad/<uuid:pk>/luhikokkuvote/", views.update_summary, name="update_summary"),
+    path("teemad/<uuid:pk>/markmed/", views.save_note, name="save_note"),
+    path(
+        "teemad/<uuid:pk>/dokumendid/toodokument/",
+        views.add_working_document,
+        name="add_working_document",
+    ),
     path("teemad/<uuid:pk>/andmeklass/", views.set_data_class, name="set_data_class"),
     path("teemad/<uuid:pk>/ajalugu/", views.timeline_page, name="timeline_page"),
     # Full-page posts

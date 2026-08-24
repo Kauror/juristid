@@ -17,6 +17,15 @@ class ChangeEventType(models.TextChoices):
     MATTER_ORGANISATION_CHANGED = "MATTER_ORGANISATION_CHANGED", "Asutus muudetud"
     MATTER_DATE_CHANGED = "MATTER_DATE_CHANGED", "Kuupäev muudetud"
     MATTER_POSITION_UPDATED = "MATTER_POSITION_UPDATED", "Seisukohta täiendatud"
+    # The plain-language `Lühikokkuvõte`. Its own event, for the same reason
+    # MATTER_POLICY_AREA_OTHER_SET has one: it is not a position, not a stage
+    # and not taxonomy, and a history that called it "seisukohta täiendatud"
+    # would describe a change that did not happen (Teema redesign §6.1).
+    MATTER_BRIEF_SUMMARY_SET = "MATTER_BRIEF_SUMMARY_SET", "Lühikokkuvõte muudetud"
+    # Which Valdkonnad a Matter is filed under. Distinct from the free-text
+    # `Muu valdkond` beside it: this one moves canonical taxonomy relations that
+    # every statistic is cut along, and the payload names the rows that moved.
+    MATTER_POLICY_AREAS_CHANGED = "MATTER_POLICY_AREAS_CHANGED", "Valdkonnad muudetud"
     # Stage 2E.1. Its own event rather than a reused one: the free-text area
     # is not a position, not a stage and not taxonomy, and a timeline that
     # called it any of those would be describing a change that did not happen.

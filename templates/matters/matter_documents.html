@@ -3,199 +3,326 @@
 {% block title %}Dokumendid · {{ matter.display_reference }} · {{ application_name }}{% endblock %}
 
 {% comment %}
-Evidence and working documents are shown apart and look different on purpose.
-Immutable evidence reads as authoritative — solid, green-bordered, with its
-checksum. A SharePoint working file is dashed and marked as living: it is not
-evidence until a specific version has been captured
-(master specification 8.6, 15.3).
+The file workspace — the only second tab a Matter has.
+
+Two groups, and they look like opposites on purpose. `Failid` are immutable
+evidence: solid rows, a version number, a size, the person who captured them,
+and the sent opinion marked ★ LÕPLIK. `Töödokumendid` are living SharePoint
+links: dashed, arrowed, captioned with when SharePoint last saw them, and
+explicitly not proof of anything (master specification 8.6, 15.3;
+Teema redesign §23).
+
+Upload asks for the role *with* the file, before anything is committed. A
+document filed as "Muu" because the form asked afterwards is a document nobody
+finds again (§23.5).
 {% endcomment %}
 
 {% block content %}
-<div class="page">
+<div class="teema">
   {% include "matters/partials/header.html" %}
 
-  <div class="matterlayout">
-    <div class="mattermain">
+  <div class="teemagrid">
+    <div class="teemamain teemamain--padded">
       {% include "matters/partials/matter_banner.html" %}
 
-      <section aria-labelledby="toendid-heading">
-        <h2 class="sectionlabel" id="toendid-heading">
-          Tõendid
-          <span class="sectionlabel__count">{{ evidence_documents|length }}</span>
-        </h2>
-        <p class="cardnote">Muutumatud originaalid. Baidid ei muutu kunagi — parandus on uus versioon.</p>
-
-        {% if evidence_documents %}
-          {% comment %}
-            The evidence frame carries the same tone the detail page's
-            `card--evidence` does, and every row with a stored file leads with
-            the Tõend chip: canonical evidence must read as materially
-            different from the living SharePoint files below, and the
-            difference must not depend on which section the reader noticed
-            (master specification 8.6, 15.3).
-          {% endcomment %}
-          <div class="tablewrap tablewrap--evidence">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th scope="col">Pealkiri</th>
-                  <th scope="col">Roll</th>
-                  <th scope="col">Fail</th>
-                  <th scope="col">Suurus</th>
-                  <th scope="col">Versioone</th>
-                  <th scope="col">Sisu</th>
-                  <th scope="col">Lisatud</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for document in evidence_documents %}
-                  <tr>
-                    <td class="table__title">
-                      <a href="{% url 'documents:document_detail' pk=document.pk %}">{{ document.title }}</a>
-                      {% if document.is_restricted %}
-                        <span class="badge badge--restricted">Piiratud</span>
-                      {% endif %}
-                    </td>
-                    <td>{{ document.get_role_display }}</td>
-                    <td>
-                      {% if document.current_version %}
-                        <span class="badge badge--evidence">Tõend</span>
-                        <a href="{% url 'documents:download' pk=document.current_version.pk %}">
-                          {{ document.current_version.original_filename }}
-                        </a>
-                      {% else %}
-                        <span class="table__missing">Tõendit ei ole</span>
-                      {% endif %}
-                    </td>
-                    <td class="table__date">
-                      {% if document.current_version %}
-                        {{ document.current_version.size_bytes|filesizeformat }}
-                      {% else %}—{% endif %}
-                    </td>
-                    <td class="table__date">{{ document.versions.count }}</td>
-                    <td>
-                      {% comment %}
-                        The processing state in words, never the enum. A lawyer
-                        should not have to learn that NOT_APPLICABLE means the
-                        format has no text worth extracting (Stage-2B brief 35).
-                      {% endcomment %}
-                      {% if document.current_version %}
-                        <span class="statechip statechip--{{ document.current_version.extraction_state|extraction_tone }}">
-                          {{ document.current_version.extraction_state|extraction_label }}
-                        </span>
-                        {% if document.current_version.extraction_state == "DONE" %}
-                          <a class="quietlink" href="{% url 'documents:document_detail' pk=document.pk %}">Vaata sisu</a>
-                        {% endif %}
-                      {% else %}—{% endif %}
-                    </td>
-                    <td class="table__date">
-                      <span class="muted">{{ document.created_at|date:"j.n.Y" }}</span>
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <p class="empty">Tõendeid ei ole veel lisatud.</p>
+      {% comment %}
+        Filters live in the query string, like the register's: a filtered view
+        is a link somebody can send. `GET` with no scripting required.
+      {% endcomment %}
+      <form class="doctoolbar" method="get" action="{% url 'matters:matter_documents' pk=matter.pk %}">
+        <label class="field field--inline">
+          <span class="visually-hidden">Otsi failinime järgi</span>
+          <input class="field__input field__input--compact" type="search" name="otsi"
+                 value="{{ document_filters.otsi }}" placeholder="Otsi failinime järgi…">
+        </label>
+        <label class="field field--inline">
+          <span class="visually-hidden">Roll</span>
+          <select class="field__input field__input--compact" name="roll" data-autosubmit>
+            <option value="">Roll — kõik</option>
+            {% for value, label in document_roles %}
+              <option value="{{ value }}" {% if document_filters.roll == value %}selected{% endif %}>
+                {{ label }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="field field--inline">
+          <span class="visually-hidden">Aasta</span>
+          <select class="field__input field__input--compact" name="aasta" data-autosubmit>
+            <option value="">Aasta — kõik</option>
+            {% for year in document_years %}
+              <option value="{{ year }}" {% if document_filters.aasta == year|stringformat:"s" %}selected{% endif %}>
+                {{ year }}
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="button button--quiet button--tiny" type="submit">Otsi</button>
+        {% if document_filters_active %}
+          <a class="quietlink" href="{% url 'matters:matter_documents' pk=matter.pk %}">Tühjenda</a>
         {% endif %}
-
-        {% if historical %}
-          {% comment %}
-            Historical source pages sit above the upload form and below the
-            evidence table, because that is the order somebody reads this tab
-            in: what is here, where it came from, and only then how to add more
-            (Stage-2D brief 30).
-          {% endcomment %}
-          <section class="card card--derived" aria-labelledby="ajalooline-heading">
-            <h2 class="sectionlabel" id="ajalooline-heading">
-              Ajalooline OneNote
-              <span class="sectionlabel__count">{{ historical.page_count }}</span>
-            </h2>
-            <p class="cardnote">
-              Selle teemaga seotud OneNote'i lehed. Materjalid on lehe enda
-              järjekorras, koos teksti ja failidega, nagu need kirjutati.
-            </p>
-            <ul class="filelist">
-              {% for link in historical.links %}
-                <li class="filelist__item">
-                  <a href="{% url 'legacy_import:source_page' pk=link.pk %}">
-                    {{ link.source_page.title|default:"Nimetu leht" }}
-                  </a>
-                  <span class="filelist__meta">
-                    {{ link.source_page.source_section }}
-                    · {{ link.source_page.file_count }} faili
-                    · {{ link.get_match_method_display }}
-                  </span>
-                </li>
-              {% endfor %}
-            </ul>
-          </section>
+        <span class="doctoolbar__spacer"></span>
+        {% if can_write %}
+          <button class="button button--primary" type="button" data-reveals="lae-dokument">
+            ↑ Lae dokument
+          </button>
         {% endif %}
+      </form>
 
-        {% comment %}
-          Open by default and labelled "dokument", not "tõend". A lawyer
-          attaching a ministry's PDF should not have to know the system's
-          internal word for immutable evidence to find the upload field. The
-          semantics underneath are unchanged: every file is still captured as
-          an immutable version with its own checksum.
-        {% endcomment %}
-        <details class="disclosure" open>
-          <summary class="disclosure__summary">+ Lisa dokument</summary>
-          <form class="form" method="post" enctype="multipart/form-data"
+      {% if can_write %}
+        <div class="uploadpanel" id="lae-dokument" hidden>
+          <form class="stackform" method="post" enctype="multipart/form-data"
                 action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
             {% csrf_token %}
             <div class="formgrid">
               <label class="field">
-                <span class="field__label">Pealkiri</span>
-                <input class="field__input" type="text" name="title" maxlength="400"
-                       placeholder="Jäta tühjaks, et kasutada failinime">
+                <span class="field__label">Fail</span>
+                <input class="field__input" type="file" name="upload" required>
+                <span class="field__help">
+                  Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud.
+                </span>
               </label>
               <label class="field">
                 <span class="field__label">Roll</span>
-                <select class="field__input" name="role">
+                <select class="field__input" name="role" required>
                   {% for value, label in document_roles %}
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
+                <span class="field__help">Vali enne salvestamist — pärast on see parandus.</span>
               </label>
               <label class="field">
-                <span class="field__label">Fail</span>
-                <input class="field__input" type="file" name="upload" required>
-                <span class="field__help">Lubatud on tavalised dokumendi-, e-kirja- ja pildivormingud.</span>
+                <span class="field__label">Pealkiri</span>
+                <input class="field__input" type="text" name="title" maxlength="400"
+                       placeholder="Jäta tühjaks, et kasutada failinime">
               </label>
             </div>
             <div class="form__actions">
               <button class="button button--primary" type="submit">Salvesta dokument</button>
             </div>
           </form>
-        </details>
-      </section>
+        </div>
+      {% endif %}
 
-      <section aria-labelledby="toodokumendid-heading">
-        <h2 class="sectionlabel" id="toodokumendid-heading">
-          Töödokumendid
-          <span class="sectionlabel__count">{{ working_documents|length }}</span>
-        </h2>
-        <p class="cardnote">
-          Muudetavad SharePointi failid. Need ei ole tõendid enne, kui täpne versioon on jäädvustatud.
-        </p>
-
-        {% for document in working_documents %}
-          <p class="sharepointrow">
-            <span class="badge">Töödokument — SharePoint</span>
-            <a href="{{ document.sharepoint_web_url }}" rel="noopener noreferrer">
-              {{ document.title }} ↗
+      {% if not evidence_documents and not working_documents %}
+        {% comment %}
+          One centred card, not an empty table under an empty heading beside a
+          second empty heading (Teema redesign §23.4).
+        {% endcomment %}
+        <div class="docempty">
+          {% if document_filters_active %}
+            <p class="docempty__text">Ükski dokument ei vasta valitud filtritele.</p>
+            <a class="button button--quiet" href="{% url 'matters:matter_documents' pk=matter.pk %}">
+              Tühjenda filtrid
             </a>
-            <span class="muted">elav fail</span>
-            {% if document.sharepoint_observed_at %}
-              <span class="muted">· viimati nähtud {{ document.sharepoint_observed_at|date:"j.n.Y" }}</span>
+          {% else %}
+            <p class="docempty__text">Sellel teemal ei ole veel dokumente.</p>
+            {% if can_write %}
+              <div class="docempty__actions">
+                <button class="button button--primary" type="button" data-reveals="lae-dokument">
+                  ↑ Lae dokument
+                </button>
+                <button class="button button--quiet" type="button" data-reveals="sharepointi-viide">
+                  + SharePointi viide
+                </button>
+              </div>
             {% endif %}
-          </p>
-        {% empty %}
-          <p class="empty">Töödokumente ei ole seotud.</p>
-        {% endfor %}
-      </section>
+          {% endif %}
+        </div>
+      {% else %}
+        {% if evidence_documents %}
+          <section class="docsection" aria-labelledby="failid-heading">
+            <div class="docsection__head">
+              <h2 class="docsection__title" id="failid-heading">Failid</h2>
+              <span class="docsection__count">{{ evidence_total }} faili</span>
+            </div>
+            <p class="cardnote">
+              Muutumatud originaalid. Baidid ei muutu kunagi — parandus on uus versioon.
+            </p>
+
+            <div class="tablewrap tablewrap--evidence">
+              <table class="table doctable">
+                <thead>
+                  <tr>
+                    <th scope="col">Fail</th>
+                    <th scope="col">Roll</th>
+                    <th scope="col">Kuupäev</th>
+                    <th scope="col">Versioon</th>
+                    <th scope="col">Maht</th>
+                    <th scope="col">Lisas</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for document in evidence_documents %}
+                    {% comment %}
+                      A restricted document a reader may not open never reaches
+                      this template — `Document.objects.visible_to` filters it
+                      out — so a PIIRATUD row here is one they *may* see, and
+                      the chip says so rather than masking it. Nothing about a
+                      file they may not see is rendered at all: not the name,
+                      not the size, not a placeholder row admitting it exists
+                      (Teema redesign §23.2, §34).
+                    {% endcomment %}
+                    <tr class="{% if document.role == 'KODA_SUBMISSION_FINAL' %}doctable__row--final{% endif %}">
+                      <td class="table__title">
+                        {% if document.role == "KODA_SUBMISSION_FINAL" %}
+                          <span class="badge badge--final">★ Lõplik</span>
+                        {% endif %}
+                        {% if document.is_restricted %}
+                          <span class="badge badge--restricted">Piiratud</span>
+                        {% endif %}
+                        <a href="{% url 'documents:document_detail' pk=document.pk %}">
+                          {% if document.current_version %}
+                            {{ document.current_version.original_filename }}
+                          {% else %}{{ document.title }}{% endif %}
+                        </a>
+                      </td>
+                      <td>{{ document.get_role_display }}</td>
+                      <td class="table__date">{{ document.created_at|date:"j.n.Y" }}</td>
+                      <td>
+                        {% if document.versions.count > 1 %}
+                          <details class="versions">
+                            <summary class="versions__trigger">
+                              v{{ document.current_version.version_number }} ▾
+                            </summary>
+                            <div class="versions__body">
+                              <p class="versions__note">
+                                Versioonid — vanemad jäävad alles, midagi ei kirjutata üle
+                              </p>
+                              {% for version in document.versions.all|dictsortreversed:"version_number" %}
+                                <p class="versions__row">
+                                  <span>v{{ version.version_number }}</span>
+                                  <span class="table__date">{{ version.acquired_at|date:"j.n.Y" }}</span>
+                                  <span class="table__date">{{ version.size_bytes|filesizeformat }}</span>
+                                  {% if version.pk == document.current_version_id %}
+                                    <span class="versions__current">praegune</span>
+                                  {% else %}
+                                    <a href="{% url 'documents:download' pk=version.pk %}">Ava</a>
+                                  {% endif %}
+                                </p>
+                              {% endfor %}
+                            </div>
+                          </details>
+                        {% elif document.current_version %}
+                          v{{ document.current_version.version_number }}
+                        {% else %}
+                          <span class="table__missing">—</span>
+                        {% endif %}
+                      </td>
+                      <td class="table__date">
+                        {% if document.current_version %}
+                          {{ document.current_version.size_bytes|filesizeformat }}
+                        {% else %}<span class="table__missing">—</span>{% endif %}
+                      </td>
+                      <td>
+                        {% if document.created_by %}{{ document.created_by.get_short_name }}
+                        {% else %}<span class="muted">—</span>{% endif %}
+                        <span class="doctable__actions">
+                          {% if document.current_version %}
+                            <a class="button button--secondary button--tiny"
+                               href="{% url 'documents:open' pk=document.current_version.pk %}">Ava</a>
+                            <a class="quietlink"
+                               href="{% url 'documents:download' pk=document.current_version.pk %}"
+                               aria-label="Laadi alla {{ document.title }}">↓</a>
+                          {% endif %}
+                          {% if can_write %}
+                            <a class="quietlink"
+                               href="{% url 'documents:document_detail' pk=document.pk %}"
+                               aria-label="Halda dokumenti {{ document.title }}">⋯</a>
+                          {% endif %}
+                        </span>
+                      </td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+            {% if evidence_hidden %}
+              <a class="button button--quiet"
+                 href="?{% if document_filters.otsi %}otsi={{ document_filters.otsi|urlencode }}&amp;{% endif %}{% if document_filters.roll %}roll={{ document_filters.roll }}&amp;{% endif %}{% if document_filters.aasta %}aasta={{ document_filters.aasta }}&amp;{% endif %}koik=1">
+                Näita rohkem · {{ evidence_hidden }}
+              </a>
+            {% endif %}
+          </section>
+        {% endif %}
+
+        {% comment %}
+          Working documents are an accordion, closed by default. They are living
+          references somebody consults while drafting, not the record of what
+          Koda sent, and giving them the same weight as evidence is exactly the
+          confusion the two styles exist to prevent.
+        {% endcomment %}
+        <details class="accordion accordion--working" id="toodokumendid">
+          <summary class="accordion__head">
+            <span class="accordion__caret" aria-hidden="true"></span>
+            <h2 class="accordion__title">Töödokumendid</h2>
+            <span class="accordion__summary">
+              {% if working_documents %}
+                {{ working_documents|length }} viidet · SharePointi failid
+              {% else %}
+                Viiteid ei ole
+              {% endif %}
+            </span>
+            <span class="accordion__spacer"></span>
+            {% if can_write %}<span class="accordion__action">+ SharePointi viide</span>{% endif %}
+          </summary>
+          <div class="accordion__body">
+            {% for document in working_documents %}
+              <p class="sharepointrow">
+                <span class="badge badge--sharepoint">SharePoint</span>
+                <a href="{{ document.sharepoint_web_url }}" target="_blank" rel="noopener noreferrer">
+                  {{ document.title }} ↗
+                </a>
+                <span class="sharepointrow__meta">
+                  {% if document.sharepoint_site_id %}{{ document.sharepoint_site_id }} · {% endif %}
+                  {% if document.sharepoint_observed_at %}
+                    muudetud SharePointis {{ document.sharepoint_observed_at|date:"j.n.Y" }}
+                  {% else %}elav fail{% endif %}
+                </span>
+                <span class="sharepointrow__spacer"></span>
+                {% if document.created_by %}
+                  <span class="muted">lisas {{ document.created_by.get_short_name }}
+                    · {{ document.created_at|date:"j.n.Y" }}</span>
+                {% endif %}
+              </p>
+            {% empty %}
+              <p class="empty">Töödokumente ei ole seotud.</p>
+            {% endfor %}
+
+            {% if can_write %}
+              <div class="uploadpanel" id="sharepointi-viide">
+                <form class="stackform" method="post"
+                      action="{% url 'matters:add_working_document' pk=matter.pk %}">
+                  {% csrf_token %}
+                  <p class="field__help">
+                    Viide elavale failile. Baite ei salvestata ja see ei ole tõend selle kohta,
+                    mida Koda välja saatis — selleks lae fail üles ülalpool.
+                  </p>
+                  {% include "intelligence/partials/field.html" with field=working_document_form.title %}
+                  {% include "intelligence/partials/field.html" with field=working_document_form.web_url %}
+                  {% include "intelligence/partials/field.html" with field=working_document_form.site_path %}
+                  <button class="button button--quiet button--tiny" type="submit">
+                    Lisa viide
+                  </button>
+                </form>
+              </div>
+            {% endif %}
+          </div>
+        </details>
+      {% endif %}
+
+      {% if historical %}
+        <section class="historicalrow">
+          <span class="rowlabel">Ajalooline OneNote</span>
+          <span class="historicalrow__summary">
+            {{ historical.page_count }} lehte · {{ historical.file_count }} faili
+          </span>
+          <span class="historicalrow__spacer"></span>
+          <a class="quietlink" href="{% url 'legacy_import:source_page' pk=historical.first.pk %}">
+            Vaata ajaloolist materjali →
+          </a>
+        </section>
+      {% endif %}
     </div>
 
     {% include "matters/partials/rail.html" %}

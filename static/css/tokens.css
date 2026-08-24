@@ -26,7 +26,9 @@
   /* ---- primitives: graphite-derived dark ramp ---------------------- */
   --primitive-neutral-1000: #07090c;
   --primitive-neutral-950: #0b0e12;
+  --primitive-neutral-920: #0e1216; /* the facts rail: quieter than the canvas */
   --primitive-neutral-900: #101418;
+  --primitive-neutral-880: #131b21; /* capture surfaces, faintly brand-shifted */
   --primitive-neutral-850: #14191f;
   --primitive-neutral-800: #171c22;
   --primitive-neutral-750: #1b2129;
@@ -136,6 +138,14 @@
   --surface-hover: var(--primitive-neutral-750);
   --surface-selected: var(--primitive-brand-900);
   --surface-backdrop: rgba(4, 6, 8, 0.62);
+  /* Where work is captured rather than read: the Järgmiseks row, the composer,
+     the private note. One step warmer than the canvas and faintly shifted
+     towards the brand hue, so the surfaces a lawyer types into read as one
+     band without any of them being a card (Teema redesign §4). */
+  --surface-capture: var(--primitive-neutral-880);
+  /* The facts rail: quieter than the canvas, because it is looked up rather
+     than read. */
+  --surface-rail: var(--primitive-neutral-920);
 
   --border-subtle: var(--primitive-neutral-700);
   --border-default: var(--primitive-neutral-600);
@@ -203,6 +213,8 @@
   --surface-hover: #eef2f6;
   --surface-selected: #e2f2fa;
   --surface-backdrop: rgba(16, 20, 24, 0.32);
+  --surface-capture: #eef4f8;
+  --surface-rail: #eef1f4;
 
   --border-subtle: #e2e7ec;
   --border-default: #d3dae1;

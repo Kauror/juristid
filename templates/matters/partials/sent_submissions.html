@@ -1,0 +1,40 @@
+{% comment %}
+`Saadetud arvamused` — the compact strip, rendered only when there is one.
+
+A canonical `Submission` in status SENT is Koda's formal written opinion: it
+carries the exact file that went out, the day it went, and who it went to. Three
+facts, one line each, and a link to the evidence.
+
+**Only SENT, and only canonical.** A draft is not something Koda sent. Neither
+are the 767 letters in the historical opinion archive, which are files the
+department holds rather than submissions anybody recorded sending — they keep
+their own surface, precisely so this strip cannot claim otherwise
+(Teema redesign §20).
+
+Absent entirely when nothing has been sent. The invitation to record one lives
+where the act happens: in the composer's closure block, or on the Arvamused
+page for an opinion sent mid-file.
+{% endcomment %}
+{% if sent_submissions %}
+  <section class="sentstrip" aria-labelledby="saadetud-arvamused-pealkiri">
+    <span class="rowlabel" id="saadetud-arvamused-pealkiri">Saadetud arvamused</span>
+    <ul class="sentstrip__list">
+      {% for submission in sent_submissions %}
+        <li class="sentstrip__row">
+          <span class="sentstrip__date">{{ submission.sent_at|date:"j.n.Y" }}</span>
+          <span class="sentstrip__to">
+            {% for row in submission.recipient_rows.all %}
+              {% if row.role == "ADDRESSEE" %}{{ row.organisation.name }}{% if not forloop.last %}, {% endif %}{% endif %}
+            {% empty %}<span class="muted">saaja märkimata</span>{% endfor %}
+          </span>
+          <span class="sentstrip__title">{{ submission.title }}</span>
+          <span class="sentstrip__spacer"></span>
+          {% if submission.final_version %}
+            <a class="sentstrip__link"
+               href="{% url 'documents:download' pk=submission.final_version.pk %}">Ava PDF</a>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </section>
+{% endif %}

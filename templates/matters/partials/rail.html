@@ -1,42 +1,228 @@
 {% comment %}
-The facts rail: compact supporting facts that would clutter the header but are
-worth having in view. Not a wall of every database field — less common metadata
-stays behind the tabs (master specification 8.7).
+The facts rail: information that is *looked up*, never read.
+
+Four blocks, in the order somebody reaches for them: what kind of record this is
+and where it came from, what it is tagged with, what it is related to, and the
+reader's own private notes.
+
+What is deliberately not here: the owner, the state and the active deadline,
+which are already in the header and would be two answers to one question; and
+`Koja seisukoht`, which lives in the main reading flow now — a rail copy of it
+would be the same paragraph twice on one screen (Teema redesign §22).
+
+Empty optional rows are omitted rather than printed with an em dash. A Matter
+whose addressee nobody recorded should look short, not incomplete.
 {% endcomment %}
 <aside class="rail" id="teema-andmed" aria-label="Teema andmed">
   <div class="railcard">
     <span class="railcard__label">Teema andmed</span>
+
+    {% comment %}
+      Four facts that used to be in the header band, where they competed with
+      the four a lawyer actually reads at a glance. They are looked up rather
+      than read, so they are here — and they are still edited where they are
+      shown, because opening an edit page to correct an addressee is exactly
+      what the redesign removes (Teema redesign §22.1, §26).
+
+      A row with no value is a quiet "+ Lisa" rather than an em dash beside a
+      label. The old band printed six labels over six dashes on a Matter that
+      had just been created, which reads as a data-quality report rather than
+      as a new file.
+    {% endcomment %}
     <p class="railcard__row">
       <span class="railcard__key">Menetlusliik</span>
-      <span>{% if matter.track %}{{ matter.get_track_display }}{% else %}<span class="muted">—</span>{% endif %}</span>
+      <span class="railcard__editable">
+        {% if can_write %}
+          <details class="inlineedit">
+            <summary class="inlineedit__trigger">
+              {% if matter.track %}<span class="railcard__value">{{ matter.get_track_display }}</span>
+              {% else %}<span class="railcard__add">+ Lisa</span>{% endif %}
+            </summary>
+            <form class="inlineedit__form inlineform"
+                  hx-post="{% url 'matters:update_field' pk=matter.pk field='track' %}"
+                  hx-target="#teema-andmed" hx-swap="outerHTML">
+              {% csrf_token %}
+              <select class="field__input field__input--compact" name="track"
+                      aria-label="Menetlusliik" data-autosubmit>
+                <option value="">—</option>
+                {% for value, label in tracks %}
+                  <option value="{{ value }}" {% if matter.track == value %}selected{% endif %}>
+                    {{ label }}
+                  </option>
+                {% endfor %}
+              </select>
+              <button class="button button--quiet button--tiny" type="submit"
+                      aria-label="Salvesta menetlusliigi muudatus">Salvesta</button>
+            </form>
+          </details>
+        {% elif matter.track %}
+          <span class="railcard__value">{{ matter.get_track_display }}</span>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </span>
     </p>
+
     <p class="railcard__row">
-      <span class="railcard__key">Kirje liik</span>
-      <span>{{ matter.get_record_mode_display }}</span>
+      {% comment %} KELLELT and KELLELE are different facts, never merged. {% endcomment %}
+      <span class="railcard__key">Kellelt</span>
+      <span class="railcard__editable">
+        {% if can_write %}
+          <details class="inlineedit">
+            <summary class="inlineedit__trigger" title="{{ matter.sender_names }}">
+              {% if matter.source_organisations.all %}
+                <span class="railcard__value">{% include "matters/partials/senders.html" with matter=matter %}</span>
+              {% else %}<span class="railcard__add">+ Lisa</span>{% endif %}
+            </summary>
+            {% comment %}
+              Checkboxes, and no `data-autosubmit`. The sender set is edited as
+              a whole and submitted once: a control that posted on every tick
+              would write the intermediate set, so replacing one sender with
+              another would pass through "no senders at all" and leave that in
+              the audit trail as a change somebody made (Agent-E brief 34).
+
+              An unticked-everything submit is how the set is cleared. That is
+              unambiguous only because the endpoint names the field it is
+              editing in its URL — an HTML form omits unchecked boxes entirely,
+              so on a shared endpoint "clear them all" and "this POST is about
+              something else" would arrive identically.
+            {% endcomment %}
+            <form class="inlineedit__form inlineform inlineform--stacked"
+                  hx-post="{% url 'matters:update_field' pk=matter.pk field='source_organisations' %}"
+                  hx-target="#teema-andmed" hx-swap="outerHTML">
+              {% csrf_token %}
+              <fieldset class="inlineform__group">
+                <legend class="visually-hidden">Algatajad või saatjad</legend>
+                {% for organisation in organisations %}
+                  <label class="checkitem">
+                    <input class="checkitem__input" type="checkbox"
+                           name="source_organisations" value="{{ organisation.pk }}"
+                           {% if organisation.pk in selected_sender_ids %}checked{% endif %}>
+                    <span class="checkitem__name">{{ organisation.name }}</span>
+                  </label>
+                {% endfor %}
+              </fieldset>
+              <button class="button button--quiet button--tiny" type="submit"
+                      aria-label="Salvesta saatjate muudatus">Salvesta</button>
+            </form>
+          </details>
+        {% elif matter.source_organisations.all %}
+          <span class="railcard__value">{% include "matters/partials/senders.html" with matter=matter %}</span>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </span>
     </p>
+
     <p class="railcard__row">
-      <span class="railcard__key">Aruandlusaasta</span>
-      <span>{% if matter.reporting_year %}{{ matter.reporting_year }}{% else %}<span class="muted">—</span>{% endif %}</span>
+      <span class="railcard__key">Kellele</span>
+      <span class="railcard__editable">
+        {% if can_write %}
+          <details class="inlineedit">
+            <summary class="inlineedit__trigger">
+              {% if matter.addressee_organisation %}
+                <span class="railcard__value">{{ matter.addressee_organisation.name }}</span>
+              {% else %}<span class="railcard__add">+ Lisa</span>{% endif %}
+            </summary>
+            <form class="inlineedit__form inlineform"
+                  hx-post="{% url 'matters:update_field' pk=matter.pk field='addressee_organisation' %}"
+                  hx-target="#teema-andmed" hx-swap="outerHTML">
+              {% csrf_token %}
+              <select class="field__input field__input--compact" name="addressee_organisation"
+                      aria-label="Adressaat" data-autosubmit>
+                <option value="">—</option>
+                {% for organisation in organisations %}
+                  <option value="{{ organisation.pk }}"
+                          {% if matter.addressee_organisation_id == organisation.pk %}selected{% endif %}>
+                    {{ organisation.name }}
+                  </option>
+                {% endfor %}
+              </select>
+              <button class="button button--quiet button--tiny" type="submit"
+                      aria-label="Salvesta adressaadi muudatus">Salvesta</button>
+            </form>
+          </details>
+        {% elif matter.addressee_organisation %}
+          <span class="railcard__value">{{ matter.addressee_organisation.name }}</span>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </span>
     </p>
-    {% if matter.closed_at %}
+
+    <p class="railcard__row">
+      <span class="railcard__key">Saabus</span>
+      <span class="railcard__editable">
+        {% if can_write %}
+          <details class="inlineedit">
+            <summary class="inlineedit__trigger">
+              {% if matter.received_date %}
+                <span class="railcard__value railcard__value--date">{{ matter.received_date|date:"j.n.Y" }}</span>
+              {% else %}<span class="railcard__add">+ Lisa</span>{% endif %}
+            </summary>
+            <form class="inlineedit__form inlineform"
+                  hx-post="{% url 'matters:update_field' pk=matter.pk field='received_date' %}"
+                  hx-target="#teema-andmed" hx-swap="outerHTML">
+              {% csrf_token %}
+              <label class="field">
+                <span class="field__label field__label--plain">Saabumise kuupäev</span>
+                <input class="field__input field__input--compact dateinput" type="text"
+                       inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                       data-datepicker="true" name="received_date"
+                       value="{{ matter.received_date|date:'j.n.Y' }}">
+              </label>
+              <button class="button button--quiet button--tiny" type="submit"
+                      aria-label="Salvesta saabumise kuupäeva muudatus">Salvesta</button>
+            </form>
+          </details>
+        {% elif matter.received_date %}
+          <span class="railcard__value railcard__value--date">{{ matter.received_date|date:"j.n.Y" }}</span>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </span>
+    </p>
+
+    {% if matter.reporting_year %}
       <p class="railcard__row">
-        <span class="railcard__key">Suletud</span>
-        <span>{{ matter.closed_at|date:"j.n.Y" }}</span>
+        <span class="railcard__key">Aruandlusaasta</span>
+        <span>{{ matter.reporting_year }}</span>
       </p>
     {% endif %}
     {% comment %}
-      The class is always shown and the control is one disclosure behind it.
-      Both directions are ordinary: a development record created without
-      ticking the box is the common case, and a real matter opened while
-      demonstrating the system happens too. An imported register row is offered
-      no control at all — the service and the database both refuse TEST on one,
-      and a disabled control the reader cannot use is worse than none
-      (Agent-C brief 12, 18).
+      Kirje liik is shown only when it is not the ordinary one. Every current
+      Matter is FULL, and a row saying so on every page is a row nobody reads.
     {% endcomment %}
-    <p class="railcard__row">
-      <span class="railcard__key">Andmeklass</span>
-      <span>{{ matter.get_data_class_display }}</span>
-    </p>
+    {% if matter.record_mode != "FULL" %}
+      <p class="railcard__row">
+        <span class="railcard__key">Kirje liik</span>
+        <span>{{ matter.get_record_mode_display }}</span>
+      </p>
+    {% endif %}
+    {% if matter.closed_at %}
+      <p class="railcard__row">
+        <span class="railcard__key">Suletud</span>
+        <span class="railcard__value--date">{{ matter.closed_at|date:"j.n.Y" }}</span>
+      </p>
+      {% if matter.disposition %}
+        <p class="railcard__row">
+          <span class="railcard__key">Põhjus</span>
+          <span>{{ matter.get_disposition_display }}</span>
+        </p>
+      {% endif %}
+      {% if matter.closed_by %}
+        <p class="railcard__row">
+          <span class="railcard__key">Sulges</span>
+          <span>{{ matter.closed_by.display_name }}</span>
+        </p>
+      {% endif %}
+    {% endif %}
+    {% comment %}
+      The class is always shown and the control is one disclosure behind it.
+      Both directions are ordinary: a development record created without ticking
+      the box is the common case, and a real matter opened while demonstrating
+      the system happens too. An imported register row is offered no control at
+      all — the service and the database both refuse TEST on one, and a disabled
+      control the reader cannot use is worse than none (Agent-C brief 12, 18).
+    {% endcomment %}
+    {% if matter.is_test_data or matter.origin == "NATIVE" %}
+      <p class="railcard__row">
+        <span class="railcard__key">Andmeklass</span>
+        <span>{{ matter.get_data_class_display }}</span>
+      </p>
+    {% endif %}
     {% if matter.origin == "NATIVE" %}
       <details class="disclosure disclosure--inline">
         <summary class="disclosure__summary">
@@ -60,31 +246,32 @@ stays behind the tabs (master specification 8.7).
     {% endif %}
   </div>
 
-  {% if matter.policy_areas.all or matter.tags.all or matter.policy_area_other %}
-    <div class="railcard">
-      <span class="railcard__label">Valdkonnad ja sildid</span>
-      <p class="railcard__row railcard__row--tags">
-        {% for area in matter.policy_areas.all %}<span class="tag">{{ area.name_et }}</span>{% endfor %}
-        {% for tag in matter.tags.all %}<span class="tag">{{ tag.name_et }}</span>{% endfor %}
-      </p>
+  {% comment %}
+    Sildid, and only Sildid. Valdkonnad are in the header meta line where they
+    are edited; showing them here too would suggest the two vocabularies are
+    one list, which is the confusion the taxonomy is built to avoid
+    (Teema redesign §22.2).
+  {% endcomment %}
+  <div class="railcard">
+    <span class="railcard__label">Sildid</span>
+    <p class="railcard__row railcard__row--tags">
+      {% for tag in matter.tags.all %}<span class="tag">{{ tag.name_et }}</span>{% empty %}
+        <span class="muted">Silte ei ole.</span>
+      {% endfor %}
+    </p>
+    {% if matter.policy_area_other %}
       {% comment %}
         Free text, and shown as free text. Deliberately not styled as a `tag`
-        chip beside the canonical ones: it is what somebody wrote when none of
-        them fitted, no statistic counts it, and dressing it up as taxonomy is
-        exactly the confusion the field exists to avoid (Stage-2E.1 brief 20).
+        chip beside the canonical ones: it is what somebody wrote when no
+        Valdkond fitted, no statistic counts it, and dressing it up as taxonomy
+        is exactly the confusion the field exists to avoid (Stage-2E.1 brief 20).
       {% endcomment %}
-      {% if matter.policy_area_other %}
-        <p class="railcard__row">
-          <span class="railcard__key">Muu valdkond</span>
-          <span>{{ matter.policy_area_other }}</span>
-        </p>
-      {% endif %}
-      {% comment %}
-        Editable after the fact, like every other recorded fact. It is common
-        for a matter to be filed under "Muu" on the day it arrives and to gain a
-        real PolicyArea a week later, at which point the note wants clearing —
-        so an empty submission is a valid one (Stage-2E.1 brief 20).
-      {% endcomment %}
+      <p class="railcard__row">
+        <span class="railcard__key">Muu valdkond</span>
+        <span>{{ matter.policy_area_other }}</span>
+      </p>
+    {% endif %}
+    {% if can_write %}
       <details class="disclosure disclosure--inline">
         <summary class="disclosure__summary">
           {% if matter.policy_area_other %}Muuda muud valdkonda{% else %}Lisa muu valdkond{% endif %}
@@ -103,61 +290,72 @@ stays behind the tabs (master specification 8.7).
           <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
         </form>
       </details>
-    </div>
-  {% else %}
-    <div class="railcard">
-      <span class="railcard__label">Valdkonnad ja sildid</span>
-      <p class="railcard__row"><span class="muted">Valdkondi ei ole määratud.</span></p>
-      <details class="disclosure disclosure--inline">
-        <summary class="disclosure__summary">Lisa muu valdkond</summary>
-        <form class="inlineform disclosure__body"
-              hx-post="{% url 'matters:update_field' pk=matter.pk field='policy_area_other' %}"
-              hx-target="#teema-andmed" hx-swap="outerHTML">
-          {% csrf_token %}
-          <label class="field">
-            <span class="visually-hidden">Muu valdkond</span>
-            <input class="field__input field__input--compact" type="text"
-                   name="policy_area_other" maxlength="400"
-                   placeholder="Millisesse valdkonda see kuulub?">
-          </label>
-          <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
-        </form>
-      </details>
-    </div>
-  {% endif %}
+    {% endif %}
+  </div>
 
-  {% if matter.collaborators.all %}
+  {% comment %}
+    Seotud — the canonical relations, in both directions. `supersedes` is the
+    reverse of `superseded_by`, so a Matter that continued somebody else's work
+    says so without anything being stored twice (app/matters/models.py).
+  {% endcomment %}
+  {% if matter.superseded_by or matter.supersedes.all or matter.collaborators.all %}
     <div class="railcard">
-      <span class="railcard__label">Kaastöötajad</span>
+      <span class="railcard__label">Seotud</span>
+      {% for earlier in matter.supersedes.all %}
+        <p class="railcard__row">
+          <span class="railcard__key">Eelnev teema</span>
+          <a href="{% url 'matters:matter_detail' pk=earlier.pk %}">
+            {{ earlier.display_reference|default:earlier.title|truncatechars:40 }} →
+          </a>
+        </p>
+      {% endfor %}
+      {% if matter.superseded_by %}
+        <p class="railcard__row">
+          <span class="railcard__key">Jätkub teemana</span>
+          <a href="{% url 'matters:matter_detail' pk=matter.superseded_by.pk %}">
+            {{ matter.superseded_by.display_reference|default:matter.superseded_by.title|truncatechars:40 }} →
+          </a>
+        </p>
+      {% endif %}
       {% for person in matter.collaborators.all %}
-        <p class="railcard__row"><span>{{ person.display_name }}</span></p>
+        <p class="railcard__row">
+          <span class="railcard__key">Kaastöötaja</span>
+          <span>{{ person.display_name }}</span>
+        </p>
       {% endfor %}
     </div>
   {% endif %}
 
-  {% if matter.is_open %}
-    <details class="disclosure">
-      <summary class="disclosure__summary">Sulge teema</summary>
-      <p class="field__help">
-        Sulgemine tähendab, et Koda ei tegele teemaga enam aktiivselt. See on eraldi otsus
-        menetluse etapist — jõustunud akt ei sulge teemat automaatselt.
-      </p>
-      <form class="form" method="post" action="{% url 'matters:close' pk=matter.pk %}">
+  {% comment %}
+    `Märkmed` — the reader's own scratch pad, and the only thing on this page
+    that is not business history. It autosaves, it is private to whoever is
+    signed in, it never reaches the timeline and it is not evidence. The two
+    captions say all three, because a box on a shared record has to say who can
+    see it before anybody will use it (Teema redesign §22.4).
+  {% endcomment %}
+  {% if user.is_authenticated %}
+    <div class="railcard railcard--note">
+      <span class="railcard__label">
+        Märkmed <span class="railcard__hint">ainult sulle nähtav mustand</span>
+      </span>
+      <form class="railnote"
+            hx-post="{% url 'matters:save_note' pk=matter.pk %}"
+            hx-trigger="input changed delay:900ms from:find textarea"
+            hx-swap="none">
         {% csrf_token %}
-        <label class="field">
-          <span class="field__label">Lõpetamise põhjus</span>
-          <select class="field__input" name="disposition" required>
-            {% for value, label in dispositions %}
-              <option value="{{ value }}">{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-        <label class="field">
-          <span class="field__label">Selgitus</span>
-          <textarea class="field__input" name="reason" rows="2"></textarea>
-        </label>
-        <button class="button button--danger" type="submit">Sulge teema</button>
+        <label class="visually-hidden" for="{{ note_form.body.id_for_label }}">Märkmed</label>
+        {{ note_form.body }}
+        {% comment %}
+          A visible save button beside the autosave, because every shortcut and
+          every implicit behaviour in this product has a control somebody can
+          press. A person who does not trust an invisible save needs a way to
+          be sure (master specification 22.3).
+        {% endcomment %}
+        <div class="railnote__foot">
+          <span class="railcard__hint">Salvestub automaatselt · ei lähe ajajoonele</span>
+          <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
+        </div>
       </form>
-    </details>
+    </div>
   {% endif %}
 </aside>
