@@ -5166,12 +5166,22 @@ p.factsection__none {
   justify-content: center;
 }
 
+/* The real control, invisible and covering its chip.
+ *
+ * Not a 1px `pointer-events: none` box: with that, a click on the input passes
+ * through to whatever happens to be underneath, so whether the radio changed
+ * depended on where the label had landed — the browser suite failed on it
+ * intermittently. Covering the option means clicking the chip *is* clicking
+ * the input, which is what both a person and a test are trying to do. */
 .modechip__input {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
   opacity: 0;
-  pointer-events: none;
+  cursor: pointer;
+  z-index: 1;
 }
 
 .modeselect {
