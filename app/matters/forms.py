@@ -43,6 +43,23 @@ from app.workflow.enums import (
 from app.workflow.models import StageVocabulary
 
 
+def _entry_moment(value: date | None) -> datetime | None:
+    """When an entry happened, given the day somebody chose.
+
+    Today means *now*. The box is pre-filled with today, so leaving it alone is
+    the ordinary case, and turning that into midnight would stamp 00:00 on
+    something written at half past two — a small untruth on every routine save.
+    Passing ``None`` lets `add_entry` record the actual moment.
+
+    Any other day is that day, at its start. Somebody writing up Friday's
+    meeting on Monday knows the day and not the hour, and the chronology sorts
+    by day with a deterministic tie-break behind it (app/matters/models.py).
+    """
+    if value is None or value == timezone.localdate():
+        return None
+    return _as_datetime(value)
+
+
 def _as_datetime(value: date | None) -> datetime | None:
     """A chosen day, as the aware midnight the submission stores.
 
@@ -273,7 +290,10 @@ class MatterCreateForm(forms.Form):
         initial=timezone.localdate,
     )
     response_deadline = EstonianDateField(
-        label="Arvamuse tähtaeg", required=False, widget=DATE_WIDGET
+        label="Arvamuse tähtaeg",
+        required=False,
+        widget=DATE_WIDGET,
+        initial=timezone.localdate,
     )
     policy_areas = forms.ModelMultipleChoiceField(
         label="Valdkonnad",
@@ -398,6 +418,186 @@ class MatterCreateForm(forms.Form):
             self.frequent_senders = []
 
 
+class MatterEditForm(forms.Form):
+    """`Muuda teemat` — the whole record on one page.
+
+    The redesign replaced the edit page with inline controls in the header and
+    the rail, on the argument that changing an owner should not mean
+    re-submitting every other value. That argument still holds for changing one
+    field, and the inline controls stay.
+
+    It does not hold for the case hands-on QA found: correcting a Matter that
+    was filed wrongly. Then somebody is looking at five wrong facts at once, and
+    clicking five separate controls in two different regions of the page — each
+    with its own save, each re-rendering something — is not five small edits. It
+    is one job the page refused to admit was one job. This form is that job:
+    read the record, fix it, save once.
+
+    **Only the fields a person may decide.** Deliberately absent: the Matter's
+    reference and register identity, its origin, the imported source reference,
+    every provenance and audit field, and the data class. Some of those are
+    immutable facts about where the record came from; the rest have their own
+    deliberate surface. A field is not editable here merely because the column
+    exists (Teema QA §2.2).
+
+    **Nothing here writes.** Each value goes to the named service that already
+    owns it — `set_matter_title`, `set_brief_summary`, `assign_matter`,
+    `set_policy_areas`, `set_organisations`, `set_matter_dates`, `set_tags` and
+    the rest — so one page cannot become a second way to change a Matter that
+    the audit trail does not know about (this module's opening rule).
+    """
+
+    title = forms.CharField(
+        label="Pealkiri",
+        max_length=1000,
+        widget=forms.TextInput(attrs={"class": "field__input field__input--prominent"}),
+    )
+    brief_summary = forms.CharField(
+        label="Lühikokkuvõte",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "field__input", "rows": "3"}),
+        help_text="Mida see teema puudutatud ettevõtete jaoks tähendab.",
+    )
+    owner = UserChoiceField(
+        label="Vastutaja",
+        queryset=User.objects.none(),
+        required=False,
+        widget=SELECT_WIDGET,
+        # Named, and offered: unlike Uus teema, an edit page must be able to
+        # take an owner *off* a Matter. That is the whole reason somebody opens
+        # it — to correct what is on the record (Agent-UI brief 5.1).
+        empty_label="Määramata",
+    )
+    stage = forms.ModelChoiceField(
+        label="Hetkeseis",
+        queryset=StageVocabulary.objects.none(),
+        required=False,
+        empty_label="Määramata",
+        widget=SELECT_WIDGET,
+    )
+    track = forms.ChoiceField(
+        label="Menetlusliik",
+        choices=[("", "Määramata"), *Track.choices],
+        required=False,
+        widget=SELECT_WIDGET,
+    )
+    policy_areas = forms.ModelMultipleChoiceField(
+        label="Valdkonnad",
+        queryset=PolicyArea.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
+    )
+    policy_area_other = forms.CharField(
+        label="Muu valdkond",
+        max_length=400,
+        required=False,
+        widget=TEXT_WIDGET,
+        help_text="Vabatekst. Siit ei teki uut valdkonda ega silti.",
+    )
+    source_organisations = forms.ModelMultipleChoiceField(
+        label="Kellelt",
+        queryset=Organisation.objects.none(),
+        required=False,
+        widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "8"}),
+        help_text="Kellelt teema tuli. Saatjaid võib olla mitu.",
+    )
+    addressee_organisation = forms.ModelChoiceField(
+        label="Kellele",
+        queryset=Organisation.objects.none(),
+        required=False,
+        empty_label="Määramata",
+        widget=SELECT_WIDGET,
+        help_text="Kellele Koda vastab. Eraldi fakt saatjast.",
+    )
+    #: No `initial=timezone.localdate` on either date, unlike every other date
+    #: box in the product. This form is always opened on a Matter that already
+    #: exists and its `initial` dict carries that Matter's real values, so a
+    #: field-level default would only ever apply where a date is genuinely
+    #: empty — and there, pre-filling today would invent a fact nobody stated
+    #: (Teema QA §5.2).
+    received_date = EstonianDateField(label="Saabus", required=False, widget=DATE_WIDGET)
+    response_deadline = EstonianDateField(
+        label="Arvamuse tähtaeg", required=False, widget=DATE_WIDGET
+    )
+    tags = forms.ModelMultipleChoiceField(
+        label="Sildid",
+        queryset=Tag.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
+    )
+    visibility = forms.ChoiceField(
+        label="Nähtavus",
+        choices=Visibility.choices,
+        required=False,
+        widget=SELECT_WIDGET,
+        help_text="Piiratud teemat näevad ainult vastutaja ja osalejad.",
+    )
+
+    def __init__(self, *args: Any, matter: Matter | None = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.matter = matter
+
+        set_choices(self, "owner", active_users())
+        set_choices(self, "stage", active_stages())
+        organisations = Organisation.objects.order_by("name")
+        set_choices(self, "source_organisations", organisations)
+        set_choices(self, "addressee_organisation", organisations)
+        set_choices(self, "tags", Tag.objects.filter(is_active=True).order_by("name_et"))
+
+        # Validation accepts the whole vocabulary; only the *offered* list is
+        # narrowed. A Matter filed years ago under a since-retired area keeps
+        # it, and correcting this Matter's title must not silently drop its
+        # filing — which is exactly what a queryset limited to the current 23
+        # would do on save (Teema redesign §7.2).
+        set_choices(self, "policy_areas", PolicyArea.objects.all())
+        offered = list(offered_policy_areas())
+        if matter is not None:
+            known = {area.pk for area in offered}
+            offered += [area for area in matter.policy_areas.all() if area.pk not in known]
+        areas = cast(Any, self.fields["policy_areas"])
+        areas.choices = [(area.pk, area.name_et) for area in offered]
+        #: The retired areas this Matter carries. The template says so rather
+        #: than showing a ticked box that looks like every other one.
+        self.retired_area_ids = {
+            area.pk for area in offered if not getattr(area, "is_active", True)
+        }
+
+    def clean_title(self) -> str:
+        value = (self.cleaned_data.get("title") or "").strip()
+        if not value:
+            raise forms.ValidationError("Teemal peab olema pealkiri.")
+        return value
+
+    def clean_visibility(self) -> str:
+        # Blank is not a value here. An unrecognised POST must not quietly
+        # un-restrict a Matter somebody deliberately restricted.
+        value = self.cleaned_data.get("visibility") or ""
+        if not value and self.matter is not None:
+            return self.matter.visibility
+        return value or Visibility.NORMAL
+
+
+def edit_initial(matter: Matter) -> dict[str, Any]:
+    """The Matter's current values, in the shape `MatterEditForm` reads."""
+    return {
+        "title": matter.title,
+        "brief_summary": matter.brief_summary,
+        "owner": matter.owner_id,
+        "stage": matter.stage_id,
+        "track": matter.track,
+        "policy_areas": [area.pk for area in matter.policy_areas.all()],
+        "policy_area_other": matter.policy_area_other,
+        "source_organisations": [
+            organisation.pk for organisation in matter.source_organisations.all()
+        ],
+        "addressee_organisation": matter.addressee_organisation_id,
+        "received_date": matter.received_date,
+        "response_deadline": matter.response_deadline,
+        "tags": [tag.pk for tag in matter.tags.all()],
+        "visibility": matter.visibility,
+    }
+
+
 class NextActionForm(forms.Form):
     """`Järgmiseks`, including what its date actually means.
 
@@ -455,7 +655,13 @@ class NextActionForm(forms.Form):
         required=False,
         widget=SELECT_WIDGET,
     )
-    target_date = EstonianDateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
+    #: Today, because that is the answer nearly every time and nobody should have
+    #: to type it. `initial` only ever fills an *unbound* form, so a POSTed value
+    #: always wins, a validation error keeps what was typed, and a date somebody
+    #: deliberately cleared stays cleared (Teema QA §5.2).
+    target_date = EstonianDateField(
+        label="Kuupäev", required=False, widget=DATE_WIDGET, initial=timezone.localdate
+    )
     responsible = UserChoiceField(
         label="Kes selle eest vastutab?",
         queryset=User.objects.none(),
@@ -607,6 +813,20 @@ def _precision_fields(prefix: str, *, date_label: str) -> dict[str, forms.Field]
     stops matching the first.
     """
     return {
+        #: **No `initial`**, unlike almost every other date box in the product,
+        #: and the exception is deliberate.
+        #:
+        #: A TEEN with no date is the one combination the domain refuses — a
+        #: deadline that cannot be met, missed or planned against. Pre-filling
+        #: today turns that refusal into a silent assertion that the work is due
+        #: today, which is not what the person said and is worse than being
+        #: asked. The browser lane caught it: the save that used to be refused
+        #: started succeeding with a date nobody chose
+        #: (e2e/test_lawyer_workflow.py).
+        #:
+        #: The same control serves `Oluline tähtaeg`, where today is rarely the
+        #: answer either, and where the person may mean a quarter rather than a
+        #: day. One control, one rule.
         f"{prefix}_date": EstonianDateField(
             label=date_label, required=False, widget=EstonianDateInput()
         ),
@@ -650,9 +870,14 @@ class ComposerForm(forms.Form):
     an opinion and been handed a PDF; the system should take that in one
     sentence and one save, not as four forms on three screens.
 
-    So this form is one required-ish textarea and five optional groups, each
+    So this form is one required-ish textarea and four optional groups, each
     hidden behind a quiet control until somebody wants it: an attachment, an
-    important deadline, a consultation, the next step, and closing the file.
+    important deadline, the next step, and closing the file.
+
+    **No consultation here.** `Kaasamine` has one entry point and it is the
+    section below, which shows what is already on the file while you add to it.
+    Two controls for one act is how the same consultation gets recorded twice.
+    `compose_update` still accepts `engagement=`; this form no longer sends it.
 
     **There is no separate next-step text field, and that is the point.**
     "Kirjelda, mis tegid ja mida teed edasi" already contains the wording; a
@@ -704,7 +929,9 @@ class ComposerForm(forms.Form):
     #: Monday knows which day it was and does not know the hour, and the
     #: chronology sorts by day — `add_entry` stamps the current moment when
     #: this is left empty, which is the ordinary case.
-    occurred_on = EstonianDateField(label="Toimus", required=False, widget=DATE_WIDGET)
+    occurred_on = EstonianDateField(
+        label="Toimus", required=False, widget=DATE_WIDGET, initial=timezone.localdate
+    )
     organisation = forms.ModelChoiceField(
         label="Asutus", queryset=Organisation.objects.none(), required=False, widget=SELECT_WIDGET
     )
@@ -756,46 +983,6 @@ class ComposerForm(forms.Form):
         ),
     )
 
-    # -- + Kaasamine -------------------------------------------------------
-    engagement_kind = forms.ChoiceField(
-        label="Kaasamise liik",
-        choices=ENGAGEMENT_CHOICES,
-        initial=EngagementKind.SURVEY.value,
-        required=False,
-        widget=forms.RadioSelect(attrs={"class": "modechip__input"}),
-    )
-    engagement_title = forms.CharField(
-        label="Kaasamise pealkiri",
-        required=False,
-        max_length=500,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input",
-                "placeholder": "Näiteks: liikmete küsitlus aruandluskoormuse kohta",
-            }
-        ),
-    )
-    engagement_date = EstonianDateField(
-        label="Kaasamise kuupäev", required=False, widget=EstonianDateInput()
-    )
-    engagement_url = forms.CharField(
-        label="Seo dokument või link",
-        required=False,
-        widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "https://…"}),
-    )
-    engagement_note = forms.CharField(
-        label="Tulemus lühidalt",
-        required=False,
-        widget=forms.Textarea(
-            attrs={
-                "class": "field__input",
-                "rows": "2",
-                "placeholder": "Valikuline — nt «38 vastajat peab kvartaalset sagedust "
-                "ebaproportsionaalseks»",
-            }
-        ),
-    )
-
     # -- + Lõpeta teema ----------------------------------------------------
     close_matter = forms.BooleanField(label="Lõpeta teema", required=False)
     disposition = forms.ChoiceField(
@@ -832,6 +1019,11 @@ class ComposerForm(forms.Form):
         max_length=400,
         widget=forms.TextInput(attrs={"class": "field__input"}),
     )
+    #: No `initial`, for the same reason the period control has none: `clean`
+    #: reads this field's emptiness. A title, a recipient or a date with no
+    #: chosen file is refused as an opinion claimed without its evidence — so a
+    #: default here refuses every ordinary closure that is not also recording a
+    #: sent opinion, which is most of them (Teema redesign §17, §20).
     final_sent_on = EstonianDateField(
         label="Saatmise kuupäev", required=False, widget=EstonianDateInput()
     )
@@ -906,16 +1098,14 @@ class ComposerForm(forms.Form):
         body = (cleaned.get("body") or "").strip()
         mode = cleaned.get("next_kind") or ""
         wants_deadline = bool((cleaned.get("deadline_title") or "").strip())
-        wants_engagement = bool((cleaned.get("engagement_title") or "").strip())
         wants_closure = bool(cleaned.get("close_matter"))
         has_file = bool(cleaned.get("attachment"))
 
-        if not (body or mode or wants_deadline or wants_engagement or wants_closure or has_file):
+        if not (body or mode or wants_deadline or wants_closure or has_file):
             raise forms.ValidationError("Kirjelda tegevust või vali, mida veel salvestada.")
 
         self._clean_next_action(cleaned, body=body, mode=mode)
         self._clean_deadline(cleaned, wanted=wants_deadline)
-        self._clean_engagement(cleaned, wanted=wants_engagement)
         self._clean_closure(cleaned, wanted=wants_closure)
         return cleaned
 
@@ -962,30 +1152,6 @@ class ComposerForm(forms.Form):
             "date_value": anchor,
             "period_end": end,
             "date_precision": precision,
-        }
-
-    def _clean_engagement(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
-        if not wanted:
-            cleaned["engagement_kwargs"] = None
-            return
-        # Imported here rather than at module scope: `app.matters.services`
-        # imports this module for its forms, and a top-level import would close
-        # the circle. The same rule the service enforces, reported beside the
-        # box somebody typed into.
-        from app.matters.services import normalize_engagement_url
-
-        kind = cleaned.get("engagement_kind") or EngagementKind.OTHER.value
-        try:
-            url = normalize_engagement_url(cleaned.get("engagement_url"))
-        except DomainError as error:
-            self.add_error("engagement_url", str(error))
-            return
-        cleaned["engagement_kwargs"] = {
-            "kind": kind,
-            "title": (cleaned.get("engagement_title") or "").strip(),
-            "url": url,
-            "note": (cleaned.get("engagement_note") or "").strip(),
-            "occurred_on": cleaned.get("engagement_date"),
         }
 
     def _clean_closure(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
@@ -1061,13 +1227,12 @@ class ComposerForm(forms.Form):
         return {
             "body": self.cleaned_data.get("body") or "",
             "kind": self.cleaned_data.get("kind") or EntryKind.NOTE,
-            "occurred_at": _as_datetime(self.cleaned_data.get("occurred_on")),
+            "occurred_at": _entry_moment(self.cleaned_data.get("occurred_on")),
             "organisation": self.cleaned_data.get("organisation"),
             "attachment": self.cleaned_data.get("attachment"),
             "attachment_role": self.cleaned_data.get("attachment_role") or DocumentRole.OTHER,
             "next_action": self.cleaned_data.get("next_action_kwargs"),
             "important_date": self.cleaned_data.get("important_date_kwargs"),
-            "engagement": self.cleaned_data.get("engagement_kwargs"),
             "closure": self.cleaned_data.get("closure_kwargs"),
         }
 
@@ -1162,9 +1327,15 @@ class EngagementForm(forms.Form):
         widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "https://…"}),
         help_text="Vabatahtlik. Kampaanial ei pruugi püsivat avalikku aadressi olla.",
     )
-    #: No `initial`. The record may be about a consultation from 2019, and a
-    #: date box pre-filled with today is answered by pressing save (brief 38).
-    occurred_on = EstonianDateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
+    #: Today. The original argument against it was that a record may be about a
+    #: consultation from 2019 and a pre-filled box is answered by pressing save
+    #: (Agent-F brief 38). Hands-on QA settled it the other way: the overwhelming
+    #: case is recording something that just happened, and re-typing today's date
+    #: every time is the friction people actually complained about. Backdating is
+    #: one edit; typing today is every time.
+    occurred_on = EstonianDateField(
+        label="Kuupäev", required=False, widget=DATE_WIDGET, initial=timezone.localdate
+    )
     note = forms.CharField(
         label="Märkus",
         required=False,
@@ -1331,7 +1502,9 @@ class IncomingIntakeForm(forms.Form):
         widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "6"}),
         help_text="Saatjaid võib olla mitu.",
     )
-    received_date = EstonianDateField(label="Saabus", required=False, widget=DATE_WIDGET)
+    received_date = EstonianDateField(
+        label="Saabus", required=False, widget=DATE_WIDGET, initial=timezone.localdate
+    )
     response_deadline = EstonianDateField(
         label="Arvamuse tähtaeg", required=False, widget=DATE_WIDGET
     )

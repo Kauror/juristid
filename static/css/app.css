@@ -423,8 +423,17 @@
   color: var(--status-danger);
 }
 
-.sectionlabel--later {
+.sectionlabel--later,
+.sectionlabel--undated {
   color: var(--text-muted);
+}
+
+/* The band that holds both a missed deadline and a review that has come round.
+   Deliberately *not* danger: the band contains both, and colouring the heading
+   red would say every row in it is late. The rows say which is which
+   (master specification 18.8). */
+.sectionlabel--passed {
+  color: var(--status-warning);
 }
 
 .card {
@@ -742,6 +751,13 @@ p.formnote {
   border-left: 2px solid var(--status-danger);
 }
 
+/* A passed review date is warning, never danger. The list is one list now, so
+   this distinction is the whole guard against a ministry that has not replied
+   reading as something somebody is late with (master specification 18.8). */
+.workrow--review {
+  border-left: 2px solid var(--status-warning);
+}
+
 .workrow__datecell {
   min-width: 0;
 }
@@ -760,6 +776,31 @@ p.formnote {
 .workrow__date--overdue {
   color: var(--status-danger);
   font-weight: var(--typography-weight-bold);
+}
+
+.workrow__date--review {
+  color: var(--status-warning);
+  font-weight: var(--typography-weight-bold);
+}
+
+/* The date and the mode chip on one line, so the chip reads as qualifying the
+   date rather than as a second fact beside it. `flex-wrap` because a 66px
+   column and a three-letter chip do not always fit on one line at 1024. */
+.workrow__dateline {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-1);
+  flex-wrap: wrap;
+}
+
+/* The flag and the stage badge share the row's third column, so adding a flag
+   did not mean re-cutting a grid other surfaces share. */
+.workrow__marks {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 /* `overflow: hidden` does nothing to an inline box, so these were declaring a
@@ -789,13 +830,15 @@ p.formnote {
 }
 
 /* "Later" is deliberately dimmer: it is real work, just not now. */
-.workgroup--later .workrow__action {
+.workgroup--later .workrow__action,
+.workgroup--undated .workrow__action {
   font-size: var(--typography-size-base);
   font-weight: var(--typography-weight-regular);
   color: var(--text-body);
 }
 
-.workgroup--later .workrow__datecell {
+.workgroup--later .workrow__datecell,
+.workgroup--undated .workrow__datecell {
   min-width: 0;
 }
 
@@ -803,52 +846,10 @@ p.formnote {
    and `--overdue` at equal specificity and quietly won, so every date on Minu
    töö rendered in the same neutral colour and "täna" and "üle tähtaja" carried
    no colour signal at all. */
-.workgroup--later .workrow__date {
+.workgroup--later .workrow__date,
+.workgroup--undated .workrow__date {
   font-weight: var(--typography-weight-medium);
   color: var(--text-secondary);
-}
-
-.waitrow {
-  padding: var(--spacing-25) var(--spacing-35);
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  text-decoration: none;
-  color: inherit;
-}
-
-.waitrow:last-child {
-  border-bottom: none;
-}
-
-.waitrow:hover {
-  background: var(--surface-hover);
-}
-
-.waitrow__head {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  flex-wrap: wrap;
-}
-
-.waitrow__text {
-  display: block;
-  font-size: var(--typography-size-base);
-  font-weight: var(--typography-weight-medium);
-  min-width: 0;
-}
-
-/* Two lines, both clipped: the wait column is narrow and a wrapped title costs
-   the reader a row they would otherwise have skimmed past. */
-.waitrow__matter {
-  display: block;
-  font-size: var(--typography-size-meta-sm);
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .attentionrow {
@@ -3636,6 +3637,17 @@ a.barchart__row:hover {
   max-width: 32rem;
 }
 
+/* Two or three short fields on one line, and one per line as soon as they stop
+   fitting. `auto-fit` rather than a breakpoint: the rule is "when a field would
+   be narrower than 16rem, stack", which is the actual constraint — a media
+   query would have to guess it from a viewport width and would be wrong inside
+   the narrow page column. */
+.fieldrow {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: var(--spacing-3);
+}
+
 .field--narrow {
   max-width: 16rem;
 }
@@ -5195,14 +5207,49 @@ p.factsection__none {
   display: inline-flex;
 }
 
-/* Unselected chips are quiet; the chosen one takes its mode's full styling.
-   Without this every option would look chosen. */
+/* Selected has to be obvious at a glance, and opacity is not obvious.
+ *
+ * The first version dimmed the unselected chips to 0.55 and left the chosen one
+ * at 1. On a dark surface that is a difference hands-on QA could not see: two
+ * greys, one slightly greyer. Selection now changes the *background* and the
+ * *border*, and the shape semantics survive the change — TEEN stays filled,
+ * OOTAN stays solid-bordered, JÄLGIN stays dashed — because shape is what
+ * carries the meaning for a reader who cannot separate the colours at all
+ * (master specification 18.8, Teema redesign §30).
+ */
 .modeselect__option .modechip--choice {
-  opacity: 0.55;
+  background: var(--surface-elevated);
+  border-color: var(--border-control);
+  color: var(--text-muted);
 }
 
-.modeselect__option .modechip__input:checked + .modechip--choice {
-  opacity: 1;
+/* TEEN: the brand fill it has everywhere else. */
+.modeselect__option .modechip__input:checked + .modechip--do {
+  background: var(--accent-primary);
+  border: 1px solid var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+/* OOTAN: brand-soft ground, bright border, bright text — and still solid. */
+.modeselect__option .modechip__input:checked + .modechip--wait {
+  background: var(--surface-selected);
+  border: 1px solid var(--accent-link);
+  color: var(--text-primary);
+}
+
+/* JÄLGIN: the same treatment, and still dashed. */
+.modeselect__option .modechip__input:checked + .modechip--monitor {
+  background: var(--surface-selected);
+  border: 1px dashed var(--accent-link);
+  color: var(--text-primary);
+}
+
+/* "Ei muuda" is neutral on purpose: unmistakably chosen, and unmistakably not
+   one of the three modes. No brand colour anywhere near it. */
+.modeselect__option .modechip__input:checked + .modechip--none {
+  background: var(--surface-hover);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
 }
 
 .modeselect__option .modechip__input:focus-visible + .modechip--choice {
@@ -5328,73 +5375,8 @@ p.factsection__none {
 
 /* -- Koja seisukoht --------------------------------------------------- */
 
-.positionblock {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-  padding: var(--spacing-35) var(--spacing-8);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.positionblock__body {
-  max-width: 92ch;
-}
-
-.positionblock__edit {
-  display: block;
-}
-
-.positionblock__trigger {
-  list-style: none;
-  cursor: pointer;
-}
-
-.positionblock__trigger::-webkit-details-marker {
-  display: none;
-}
-
-.positionblock__edit[open] .positionblock__trigger {
-  display: none;
-}
-
-.positionblock__text {
-  margin: 0;
-  font-size: var(--typography-size-base);
-  line-height: 1.55;
-  color: var(--text-body);
-}
-
-.positionblock__rationale {
-  margin: var(--spacing-1) 0 0;
-  font-size: var(--typography-size-meta);
-  line-height: 1.55;
-  color: var(--text-muted);
-}
-
-.positionblock__action {
-  font-size: 12.5px;
-  font-weight: var(--typography-weight-semibold);
-  color: var(--accent-link);
-}
-
 /* The empty state is one line. An absence that occupies a screen is what made
    the old page read as mostly missing data. */
-.positionblock__none {
-  font-size: 12.5px;
-  color: var(--text-muted);
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--spacing-2);
-  flex-wrap: wrap;
-}
-
-.positionblock__evidence {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  font-size: var(--typography-size-meta);
-}
-
 /* -- accordions: Kaasamine, Ajajoon, Töödokumendid -------------------- */
 
 .accordion {
@@ -5505,60 +5487,6 @@ p.factsection__none {
 }
 
 /* -- Saadetud arvamused ----------------------------------------------- */
-
-.sentstrip {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-15);
-  padding: var(--spacing-35) var(--spacing-8);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.sentstrip__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-}
-
-.sentstrip__row {
-  display: flex;
-  align-items: baseline;
-  gap: var(--spacing-25);
-  font-size: 12.5px;
-  color: var(--text-body);
-  flex-wrap: wrap;
-}
-
-.sentstrip__date {
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
-  flex: none;
-}
-
-.sentstrip__to {
-  color: var(--text-primary);
-  font-weight: var(--typography-weight-medium);
-}
-
-.sentstrip__title {
-  color: var(--text-muted);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.sentstrip__spacer {
-  flex: 1;
-}
-
-.sentstrip__link {
-  flex: none;
-  font-weight: var(--typography-weight-semibold);
-}
 
 /* -- historical material row ------------------------------------------ */
 
@@ -5961,11 +5889,6 @@ p.factsection__none {
 
 /* The way to the Submission workflow: present on every Matter, prominent on
    none. */
-.positionblock__manage {
-  font-size: var(--typography-size-meta);
-  align-self: flex-start;
-}
-
 /* An editable fact in the rail. Same affordance as the header meta line — a
    dashed underline that strengthens on hover — at the rail's smaller scale. */
 .railcard__editable {
@@ -6050,6 +5973,27 @@ p.factsection__none {
   border-bottom-color: var(--accent-link);
 }
 
+/* `Muuda teemat`, pushed to the end of the breadcrumb line.
+
+   `margin-left: auto` here rather than on `.headmenu`, because this is the
+   first thing in the right-hand group and the ⋯ menu follows it; putting the
+   auto margin on both would open a gap between them.
+
+   The colour override is load-bearing: `.matterhead__crumbs a` paints every
+   link in the row muted with no border, which is right for a breadcrumb and
+   wrong for a button sitting in the same row. */
+.matterhead__edit {
+  margin-left: auto;
+  flex: none;
+  color: var(--text-secondary);
+  border-color: var(--border-control);
+}
+
+.matterhead__crumbs a.matterhead__edit:hover {
+  color: var(--text-primary);
+  background: var(--surface-hover);
+}
+
 /* The header's secondary-action menu. Same disclosure mechanics as the top
    bar's "Veel", at the header's scale. */
 .headmenu {
@@ -6059,7 +6003,7 @@ p.factsection__none {
   display: inline-flex;
   align-items: center;
   position: relative;
-  margin-left: var(--spacing-2);
+  margin-left: var(--spacing-1);
   flex: none;
 }
 
@@ -6161,4 +6105,52 @@ p.factsection__none {
   display: flex;
   flex-direction: column;
   min-width: 0;
+}
+
+/* ====================================================================
+ * Koja seisukoht, in the facts rail
+ *
+ * Read-first reference at 300px: what Koda argued and the file that says so.
+ * The redesign gave this a full-width main-column band; hands-on QA moved it
+ * back to the rail the mockup put it in, and the band went with it.
+ * ==================================================================== */
+
+.railposition__text {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-body);
+  text-wrap: pretty;
+}
+
+.railposition__none {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.railposition__more {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  align-self: flex-start;
+}
+
+.railposition__opinion {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding-top: var(--spacing-1);
+}
+
+.railposition__file {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-15);
+  font-size: var(--typography-size-meta);
+  min-width: 0;
+}
+
+.railposition__file a {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

@@ -1,11 +1,15 @@
 {% comment %}
 `TEGEVUSE KIRJELDUS` — the primary surface of the whole application.
 
-One box, three optional chips, and four quiet disclosures. Everything a lawyer
+One box, three mode chips, and three quiet disclosures. Everything a lawyer
 records after a meeting goes in here and saves once: what happened, what
-happens next, the file they were handed, the deadline they were told about, the
-consultation that informed it, and — when the work is finished — the closure
-itself.
+happens next, the file they were handed, the deadline they were told about,
+and — when the work is finished — the closure itself.
+
+**No `+ Kaasamine` here.** There is one place a consultation is recorded and it
+is the Kaasamine section below, which shows what is already on the file while
+you add to it. Two entry points for one act is how two people record the same
+consultation twice.
 
 **There is no separate next-step field.** The wording of the next step is the
 description, verbatim. Two boxes asking the same question in different words is
@@ -137,9 +141,6 @@ transaction; it may write six canonical records and the timeline shows one line
       <button type="button" class="disclosure-chip" data-reveals="koostaja-tahtaeg">
         + Oluline tähtaeg
       </button>
-      <button type="button" class="disclosure-chip" data-reveals="koostaja-kaasamine">
-        + Kaasamine
-      </button>
       <span class="composer__divider" aria-hidden="true"></span>
       <button type="button" class="disclosure-chip disclosure-chip--last"
               data-reveals="koostaja-lopetamine">+ Lõpeta teema</button>
@@ -216,10 +217,6 @@ transaction; it may write six canonical records and the timeline shows one line
           </div>
         </div>
       </details>
-    </div>
-
-    <div class="composer__optional" id="koostaja-kaasamine" hidden>
-      {% include "matters/partials/engagement_composer_fields.html" with form=composer_form %}
     </div>
 
     <div class="composer__optional composer__optional--closing" id="koostaja-lopetamine" hidden>

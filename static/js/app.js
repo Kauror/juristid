@@ -539,10 +539,25 @@
     next.textContent = "›";
     next.setAttribute("aria-label", "Järgmine kuu");
 
-    previous.addEventListener("click", function () {
+    /* `stopPropagation`, and it is load-bearing rather than defensive.
+     *
+     * `buildCalendar` starts by emptying the panel, which detaches the very
+     * button that was clicked. The click then carries on to the document, where
+     * the outside-close check asks whether the wrapper contains `event.target`
+     * — and a detached node is contained by nothing, so the answer was false
+     * and the panel closed the instant it had been rebuilt. Somebody clicking
+     * "next month" saw the calendar vanish.
+     *
+     * Keeping the event inside the calendar is the honest fix: navigating a
+     * month is not a click outside the calendar and should never have been
+     * offered to a listener whose job is to notice one. The document listener
+     * is hardened separately, so neither depends on the other. */
+    previous.addEventListener("click", function (event) {
+      event.stopPropagation();
       buildCalendar(panel, input, new Date(visible.getFullYear(), visible.getMonth() - 1, 1));
     });
-    next.addEventListener("click", function () {
+    next.addEventListener("click", function (event) {
+      event.stopPropagation();
       buildCalendar(panel, input, new Date(visible.getFullYear(), visible.getMonth() + 1, 1));
     });
 
@@ -655,13 +670,38 @@
           input.focus();
         }
       });
-      document.addEventListener("click", function (event) {
-        if (!panel.hidden && !wrap.contains(event.target)) {
-          closePicker(panel);
-        }
-      });
     });
   }
+
+  /* One outside-close for every date picker on the page, not one per input.
+   *
+   * Two reasons. Each picker used to add its own document listener, so a page
+   * that swapped in date fields several times accumulated a listener per field
+   * ever rendered, most of them holding a detached panel.
+   *
+   * And containment is read from the event's composed path rather than from the
+   * live tree. The path is captured when the event is dispatched, so it still
+   * names the calendar even if the handler that ran first has since replaced
+   * the node that was clicked — which is exactly what month navigation does.
+   * `contains()` is the fallback for anything that does not implement it. */
+  function clickedInside(event, element) {
+    if (typeof event.composedPath === "function") {
+      return event.composedPath().indexOf(element) !== -1;
+    }
+    return element.contains(event.target);
+  }
+
+  document.addEventListener("click", function (event) {
+    document.querySelectorAll(".datepicker__panel").forEach(function (panel) {
+      if (panel.hidden) {
+        return;
+      }
+      var wrap = panel.closest(".datepicker");
+      if (wrap && !clickedInside(event, wrap)) {
+        closePicker(panel);
+      }
+    });
+  });
 
   /* ---- Narrowing a long list of chips ------------------------------------
    * One search box over one already-rendered checkbox list. No request, no

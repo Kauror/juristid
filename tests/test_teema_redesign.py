@@ -1021,9 +1021,16 @@ def test_a_pdf_alone_never_creates_a_submission(normal_matter, specialist):
     assert not Submission.objects.filter(matter=normal_matter).exists()
 
 
-def test_the_sent_strip_renders_only_canonical_sent_opinions(signed_in, specialist, organisation):
+def test_the_rail_shows_only_a_canonical_sent_opinion(signed_in, specialist, organisation):
+    """The sent opinion reaches the main view — once, in the rail.
+
+    The redesign put it in a full-width strip of its own under the position
+    block, which said the same thing the position said, a second time and
+    further down. Hands-on QA collapsed both into one rail block: what Koda
+    argued, and the file that says so (Teema QA §1.2).
+    """
     matter = factories.MatterFactory(owner=specialist)
-    assert "Saadetud arvamused" not in _detail(signed_in, matter)
+    assert "railposition__opinion" not in _detail(signed_in, matter)
 
     version = _evidence(matter, specialist)
     compose_update(
@@ -1041,18 +1048,20 @@ def test_the_sent_strip_renders_only_canonical_sent_opinions(signed_in, speciali
     )
 
     body = _detail(signed_in, matter)
-    assert "Saadetud arvamused" in body
-    assert organisation.name in body
-    assert "Ava PDF" in body
+    assert "railposition__opinion" in body
+    assert "Koja_arvamus.pdf" in body
+    # And nothing else on the page says it a second time.
+    assert "sentstrip" not in body
+    assert body.count("Koja seisukoht") == 1
 
 
-def test_a_draft_submission_is_not_on_the_strip(signed_in, specialist):
+def test_a_draft_submission_never_reaches_the_rail(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
     factories.SubmissionFactory(matter=matter, title="Mustand", status=SubmissionStatus.DRAFT)
 
     body = _detail(signed_in, matter)
 
-    assert "Saadetud arvamused" not in body
+    assert "railposition__opinion" not in body
 
 
 # ---------------------------------------------------------------------------

@@ -10,10 +10,14 @@ The order is the redesign's, and each row earns its place:
 
 1. `JÄRGMISEKS` — the answer to the only question everyone always has.
 2. The composer — the surface the page exists for.
-3. `Koja seisukoht` — the second question anybody asks about a file.
-4. `Kaasamine` — collapsed, one line when nothing exists.
-5. `Saadetud arvamused` — only when at least one canonical opinion went out.
-6. `Ajajoon` — collapsed. It is the file's memory, not its front page.
+3. `Kaasamine` — collapsed, one line when nothing exists.
+4. `Ajajoon` — collapsed. It is the file's memory, not its front page.
+
+`Koja seisukoht` is in the facts rail, where hands-on QA put it back: a
+read-first summary belongs in 300px, and a full-width band for two sentences
+pushed the work down the page. The sent opinion appears there too, and as an
+event in `Ajajoon` — it was previously in both the rail and a main-column strip,
+which is the same fact twice on one screen.
 
 There are no permanently visible empty sections. A Matter with no summary, no
 next step, no engagement and no opinion renders as a short, deliberate page
@@ -29,11 +33,7 @@ next step, no engagement and no opinion renders as a short, deliberate page
       {% include "matters/partials/composer.html" %}
     {% endif %}
 
-    {% include "matters/partials/position.html" %}
-
     {% include "matters/partials/engagement.html" %}
-
-    {% include "matters/partials/sent_submissions.html" %}
 
     {% comment %}
       Olulised tähtajad, Jõustumine and Töövõidud: structured facts recorded

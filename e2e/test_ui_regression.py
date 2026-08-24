@@ -100,7 +100,7 @@ CLOCK_DEPENDENT = [
     # and every baseline goes red the next morning.
     ".metaline__item--deadline .inlineedit__trigger",
     ".nextrow__date",
-    ".sentstrip__date",
+    ".railposition__opinion time",
     # Only the timeline's summary. It always reads "N kirjet · viimane <date>";
     # Kaasamine's and Töödokumendid's summaries are content and must stay in
     # the baseline.
@@ -272,9 +272,15 @@ def test_matter_in_a_special_state(page, base_url):
 
 
 def test_matter_opinions(page, base_url):
-    """`Arvamused` on one Matter — reached from the position block, not a tab."""
+    """`Arvamused` on one Matter — reached from the facts rail, not a tab.
+
+    The link moved with the position card. It is `Loe edasi` when there is a
+    position to read on and `Lisa seisukoht` when there is not, because one
+    destination serving two situations should say which one it is in
+    (templates/matters/partials/position_rail.html).
+    """
     open_matter(page, base_url, OPEN_TITLE)
-    page.get_by_role("link", name="Arvamused →").click()
+    page.locator("#koja-seisukoht .railposition__more").click()
     page.wait_for_load_state("networkidle")
     compare("teema-seisukoht", capture(page, "teema-seisukoht"))
 
@@ -282,12 +288,14 @@ def test_matter_opinions(page, base_url):
 def test_matter_composer_expanded(page, base_url):
     """Every progressive disclosure open at once.
 
-    The one state a screenshot is genuinely better at than an assertion: five
+    The one state a screenshot is genuinely better at than an assertion: three
     optional blocks, each of which is a form, and the question is whether the
     composer still reads as one surface when a lawyer has opened all of them.
     """
     open_matter(page, base_url, OPEN_TITLE)
-    for chip in ("+ Manus", "+ Oluline tähtaeg", "+ Kaasamine", "+ Lõpeta teema"):
+    # Three, not four. `+ Kaasamine` is gone: Kaasamine has one path and it is
+    # its own section (Teema QA §8).
+    for chip in ("+ Manus", "+ Oluline tähtaeg", "+ Lõpeta teema"):
         page.locator(".disclosure-chip", has_text=chip).click()
     page.wait_for_timeout(120)
     compare("teema-koostaja", capture(page, "teema-koostaja", clip_to=".composer"))

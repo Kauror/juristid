@@ -41,66 +41,120 @@ def _days(offset: int):
 # -- Minu töö ---------------------------------------------------------------
 
 
-def test_do_actions_are_banded_by_real_urgency(specialist):
-    overdue = factories.MatterFactory(owner=specialist)
+def _bands(user):
+    return {group.key: group for group in selectors.my_work_timeline(user)}
+
+
+def test_work_is_banded_by_date_not_by_mode(specialist):
+    passed = factories.MatterFactory(owner=specialist)
     today = factories.MatterFactory(owner=specialist)
     soon = factories.MatterFactory(owner=specialist)
     later = factories.MatterFactory(owner=specialist)
 
-    for matter, day in ((overdue, -3), (today, 0), (soon, 3), (later, 40)):
+    for matter, day in ((passed, -3), (today, 0), (soon, 3), (later, 40)):
         set_next_action(
             matter=matter, text="Koosta arvamus", actor=specialist, target_date=_days(day)
         )
 
-    groups = {group.key: group for group in selectors.my_do_groups(specialist)}
-    assert [action.matter_id for action in groups["overdue"].actions] == [overdue.id]
+    groups = _bands(specialist)
+    assert [action.matter_id for action in groups["passed"].actions] == [passed.id]
     assert [action.matter_id for action in groups["today"].actions] == [today.id]
     assert [action.matter_id for action in groups["soon"].actions] == [soon.id]
     assert [action.matter_id for action in groups["later"].actions] == [later.id]
 
 
-def test_waiting_actions_never_appear_in_the_do_list(specialist):
-    matter = factories.MatterFactory(owner=specialist)
+def test_waiting_and_monitoring_are_in_the_same_list(specialist):
+    """The QA correction: one list, banded by date, whatever the mode.
+
+    The split columns made a lawyer read two lists and merge them in their head.
+    """
+    doing = factories.MatterFactory(owner=specialist)
+    waiting = factories.MatterFactory(owner=specialist)
+    monitoring = factories.MatterFactory(owner=specialist)
+
+    set_next_action(matter=doing, text="Teen", actor=specialist, target_date=_days(2))
     set_next_action(
-        matter=matter,
+        matter=waiting,
         text="Ootan ministeeriumi",
         kind=ActionKind.WAIT,
         date_semantics=DateSemantics.REVIEW_ON,
-        target_date=_days(-5),
+        target_date=_days(3),
         actor=specialist,
     )
-    groups = selectors.my_do_groups(specialist)
-    assert sum(group.count for group in groups) == 0
-    assert len(selectors.my_waiting_actions(specialist)) == 1
-
-
-def test_review_due_waiting_actions_come_first(specialist):
-    due = factories.MatterFactory(owner=specialist)
-    future = factories.MatterFactory(owner=specialist)
     set_next_action(
-        matter=future,
-        text="Hiljem",
+        matter=monitoring,
+        text="Jälgin",
         kind=ActionKind.MONITOR,
         date_semantics=DateSemantics.REVIEW_ON,
-        target_date=_days(30),
+        target_date=_days(4),
         actor=specialist,
     )
+
+    soon = _bands(specialist)["soon"]
+    assert [action.matter_id for action in soon.actions] == [doing.id, waiting.id, monitoring.id]
+
+
+def test_a_do_action_without_deadline_semantics_still_appears(specialist):
+    """The band that used to swallow it.
+
+    `overdue`, `today` and `soon` each required DEADLINE semantics while `later`
+    required a date beyond the horizon, so a DO dated inside the next week with
+    any other semantics fell into no band at all and vanished from the page —
+    which is exactly what the register's own parser produces for a vague month
+    (Teema QA §4).
+    """
+    matter = factories.MatterFactory(owner=specialist)
     set_next_action(
-        matter=due,
-        text="Juba üle vaadata",
+        matter=matter,
+        text="Eeldatavasti augustis",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.EXPECTED_AROUND,
+        target_date=_days(5),
+        actor=specialist,
+    )
+    assert [action.matter_id for action in _bands(specialist)["soon"].actions] == [matter.id]
+
+
+def test_a_passed_review_is_not_counted_as_late(specialist):
+    """One list does not mean one vocabulary. Only DO + DEADLINE is overdue."""
+    late = factories.MatterFactory(owner=specialist)
+    review = factories.MatterFactory(owner=specialist)
+    set_next_action(matter=late, text="Tähtaeg", actor=specialist, target_date=_days(-2))
+    set_next_action(
+        matter=review,
+        text="Ootan vastust",
         kind=ActionKind.WAIT,
         date_semantics=DateSemantics.REVIEW_ON,
-        target_date=_days(-1),
+        target_date=_days(-2),
         actor=specialist,
     )
-    waiting = selectors.my_waiting_actions(specialist)
-    assert waiting[0].matter_id == due.id
+
+    passed = _bands(specialist)["passed"]
+    assert passed.count == 2
+    assert selectors.overdue_count(passed.actions) == 1
+
+
+def test_an_undated_action_has_its_own_band(specialist):
+    # Not DO + DEADLINE: a deadline with no date cannot be met, missed or
+    # planned against, and the domain refuses one (app/workflow/services.py).
+    # Every other combination may legitimately have no date at all.
+    matter = factories.MatterFactory(owner=specialist)
+    set_next_action(
+        matter=matter,
+        text="Millalgi",
+        kind=ActionKind.MONITOR,
+        date_semantics=DateSemantics.REVIEW_ON,
+        actor=specialist,
+    )
+    groups = _bands(specialist)
+    assert [action.matter_id for action in groups["undated"].actions] == [matter.id]
+    assert groups["later"].count == 0
 
 
 def test_another_persons_actions_are_not_mine(specialist, other_specialist):
     matter = factories.MatterFactory(owner=other_specialist)
     set_next_action(matter=matter, text="Nende töö", actor=other_specialist, target_date=_days(1))
-    assert sum(group.count for group in selectors.my_do_groups(specialist)) == 0
+    assert sum(group.count for group in selectors.my_work_timeline(specialist)) == 0
 
 
 def test_attention_flags_an_active_matter_without_a_next_action(specialist):

@@ -86,6 +86,13 @@ class PeriodForm(forms.Form):
         initial=DatePrecision.EXACT,
         widget=forms.RadioSelect(attrs={"class": "precision__radio"}),
     )
+    #: No `initial`. `EffectiveDateForm._period_was_filled` reads this field's
+    #: emptiness to enforce the rule that a kind saying the date is *not known*
+    #: must not carry one — so a default would make every `Jõustub üldises
+    #: korras` save refuse itself. The precision control also offers a month, a
+    #: quarter, a half-year and a year, and a day pre-filled in the exact box
+    #: while somebody means "III kvartal" is noise in the one control whose
+    #: whole job is to say how precisely the date is known (Teema QA §5.2).
     exact_date = EstonianDateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
     month = forms.ChoiceField(
         label="Kuu", choices=(("", "—"), *MONTH_CHOICES), required=False, widget=SELECT_WIDGET

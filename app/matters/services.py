@@ -32,6 +32,7 @@ from app.matters.enums import (
     MatterDataClass,
     MatterOrigin,
     RecordMode,
+    TagAssignmentSource,
 )
 from app.matters.models import (
     Entry,
@@ -40,8 +41,10 @@ from app.matters.models import (
     MatterEngagement,
     MatterPersonalNote,
     MatterReferenceSequence,
+    TagAssignment,
 )
-from app.workflow.enums import Disposition, Track
+from app.workflow.enums import ActionStatus, Disposition, Track
+from app.workflow.models import NextAction
 from app.workflow.services import end_open_action_for_closure, set_next_action
 
 #: Distinguishes "leave this field alone" from "set this field to None".
@@ -338,6 +341,28 @@ def assign_matter(
     matter.owner = owner
     matter.save(update_fields=["owner", "updated_at"])
 
+    # The open next step follows the file, when it was following the file.
+    #
+    # `set_next_action` defaults `responsible` to the Matter's owner, so an
+    # action nobody named a person for is the *owner's* action. Handing the
+    # Matter over used to leave that action pointing at the previous owner: the
+    # new owner opened `Minu töö` and their own file's next step was not there,
+    # while somebody who no longer owns it still had it in their queue. That is
+    # the "TEEN with a future date does not show up" report.
+    #
+    # Only when the responsible person *is* the previous owner. Somebody
+    # deliberately made responsible for one step on a colleague's file stays
+    # responsible — reassigning that would be the system overruling a decision
+    # a person made (Teema QA §4).
+    moved = None
+    if previous is not None:
+        moved = NextAction.objects.filter(
+            matter=matter, status=ActionStatus.OPEN, responsible=previous
+        ).first()
+        if moved is not None:
+            moved.responsible = owner
+            moved.save(update_fields=["responsible", "updated_at"])
+
     record_change_event(
         event_type=ChangeEventType.MATTER_ASSIGNED,
         matter=matter,
@@ -347,6 +372,10 @@ def assign_matter(
         payload={
             "from_name": getattr(previous, "display_name", None),
             "to_name": getattr(owner, "display_name", None),
+            # Named in the payload rather than raised as a second event: one
+            # thing happened — the file changed hands — and the step going with
+            # it is part of that, not a separate decision somebody made.
+            "next_action_moved": str(moved.pk) if moved is not None else None,
             **(provenance or {}),
         },
     )
@@ -618,6 +647,116 @@ def set_brief_summary(*, matter: Matter, value: str, actor: Any = None) -> Matte
         obj=matter,
         payload={"created": was_empty and bool(cleaned), "cleared": not cleaned},
     )
+    return matter
+
+
+@transaction.atomic
+def set_matter_title(*, matter: Matter, value: str, actor: Any = None) -> Matter:
+    """Rename a Matter.
+
+    Editable, and deliberately not editable inline in the header. A rename is
+    the one change most likely to make a colleague think they are looking at a
+    different file, so it belongs on the edit page beside the rest of the
+    record, where somebody is already deciding what this Matter *is*.
+
+    The title is required and stays required: a Matter with no name cannot be
+    found, cited or handed over, and `create_matter` refuses one for the same
+    reason (specification 3.8). Trimmed and capped exactly as creation trims and
+    caps it, in one place, because two callers normalising a string two ways is
+    how the same value starts comparing unequal to itself.
+
+    Unlike `Lühikokkuvõte`, the audit payload carries both strings. The summary
+    is a working description somebody rewrites as the file develops; the title
+    is the handle everything else refers to, and the old one is how a person
+    finds a Matter again after it stopped being called what they remember
+    (Teema QA §2.4).
+
+    What this does **not** touch: the reference, the register identity, the
+    origin, or any imported provenance. A rename is a rename.
+    """
+    cleaned = (value or "").strip()
+    if not cleaned:
+        raise DomainError("Teemal peab olema pealkiri.")
+    cleaned = cleaned[:1000]
+    if cleaned == matter.title:
+        return matter
+
+    previous = matter.title
+    matter.title = cleaned
+    matter.save(update_fields=["title", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.MATTER_TITLE_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=cleaned[:200],
+        payload={"previous": previous, "current": cleaned},
+    )
+    return matter
+
+
+@transaction.atomic
+def set_tags(*, matter: Matter, tags: Sequence[Any], actor: Any = None) -> Matter:
+    """Replace the Matter's Sildid with the chosen set.
+
+    The set is replaced whole rather than diffed, like `set_policy_areas`,
+    because that is what a checkbox list posts: an unticked box is simply
+    absent.
+
+    Two things this keeps that a plain `.set()` would quietly destroy.
+
+    **Provenance.** A `TagAssignment` records *how* a tag got there — by hand,
+    from the import, or from an approved rule — and who confirmed it. Rewriting
+    the whole set every save would restamp an imported assignment as manual and
+    lose the day somebody confirmed it, so assignments that survive the edit are
+    left completely alone; only genuine additions and removals are written.
+
+    **The one-event-per-change rule.** Adding two tags and removing one is three
+    facts, and the timeline records three: `TAG_ASSIGNED` and `TAG_REMOVED`
+    already exist for exactly this and there is no combined event to invent.
+
+    Nothing here creates a `Tag`. The vocabulary is governed elsewhere and an
+    edit page is not where new taxonomy gets invented (master specification
+    11.2, 21.2).
+    """
+    chosen = {tag.pk: tag for tag in tags}
+    existing = {
+        assignment.tag_id: assignment
+        for assignment in TagAssignment.objects.filter(matter=matter).select_related("tag")
+    }
+
+    for tag_id, assignment in existing.items():
+        if tag_id in chosen:
+            continue
+        name = assignment.tag.name_et
+        assignment.delete()
+        record_change_event(
+            event_type=ChangeEventType.TAG_REMOVED,
+            matter=matter,
+            actor=actor,
+            obj=matter,
+            summary=name[:200],
+            payload={"tag": str(tag_id)},
+        )
+
+    for tag_id, tag in chosen.items():
+        if tag_id in existing:
+            continue
+        TagAssignment.objects.create(
+            matter=matter,
+            tag=tag,
+            source=TagAssignmentSource.MANUAL,
+            confirmed_by=actor if getattr(actor, "is_authenticated", False) else None,
+            confirmed_at=timezone.now(),
+        )
+        record_change_event(
+            event_type=ChangeEventType.TAG_ASSIGNED,
+            matter=matter,
+            actor=actor,
+            obj=matter,
+            summary=tag.name_et[:200],
+            payload={"tag": str(tag_id)},
+        )
     return matter
 
 

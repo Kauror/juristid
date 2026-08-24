@@ -72,7 +72,18 @@ rather than read.
       it is a decision about the record, and it belongs beside the chip that
       announces it (Teema redesign §4, §5.1).
     {% endcomment %}
+    {% comment %}
+      `Muuda teemat`, visible rather than in the ⋯ menu.
+
+      The inline controls are still there and are still the fastest way to
+      change one fact. What hands-on QA found is that there was no way at all to
+      correct a Matter that was filed wrongly in several fields at once — and
+      the action that answers "this record is wrong" cannot be the one action
+      hidden behind a glyph (Teema QA §2.1).
+    {% endcomment %}
     {% if can_write %}
+      <a class="button button--quiet button--tiny matterhead__edit"
+         href="{% url 'matters:matter_edit' pk=matter.pk %}">Muuda teemat</a>
       <details class="headmenu">
         <summary class="headmenu__trigger" aria-label="Rohkem tegevusi">⋯</summary>
         <div class="headmenu__panel">
@@ -276,9 +287,15 @@ rather than read.
             {% csrf_token %}
             <label class="field">
               <span class="field__label field__label--plain">Arvamuse tähtaeg</span>
+              {% comment %}
+                Pre-filled with today, like every other new date control. It is
+                a suggestion in an unsaved box: nothing is written until this
+                form is submitted (Teema QA §5).
+              {% endcomment %}
               <input class="field__input field__input--compact dateinput" type="text"
                      inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                     data-datepicker="true" name="response_deadline" value="">
+                     data-datepicker="true" name="response_deadline"
+                     value="{{ today|date:'j.n.Y' }}">
             </label>
             <button class="button button--quiet button--tiny" type="submit"
                     aria-label="Salvesta tähtaeg">Salvesta</button>

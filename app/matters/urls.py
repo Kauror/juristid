@@ -23,6 +23,10 @@ urlpatterns = [
     # capture the composer exists for (Teema redesign §3, §17, §20).
     path("teemad/<uuid:pk>/seisukoht/", views.matter_position, name="matter_position"),
     path("teemad/<uuid:pk>/dokumendid/", views.matter_documents, name="matter_documents"),
+    # `Muuda teemat`. A full page rather than a fragment: it edits the whole
+    # record in one transaction, so a partial swap would be describing something
+    # the save does not do (app/matters/views.py, `matter_edit`).
+    path("teemad/<uuid:pk>/muuda/", views.matter_edit, name="matter_edit"),
     # HTMX surfaces
     path("teemad/<uuid:pk>/sissekanne/", views.compose, name="compose"),
     path("teemad/<uuid:pk>/jargmiseks/", views.set_action, name="set_action"),

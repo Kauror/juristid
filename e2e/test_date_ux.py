@@ -147,6 +147,66 @@ def test_picking_a_day_writes_an_estonian_date_into_the_box(page, base_url):
     assert value.startswith("15."), value
 
 
+def test_the_calendar_survives_month_navigation(page, base_url):
+    """The reported defect: one click on ‹ or › and the calendar vanished.
+
+    `buildCalendar` empties the panel before redrawing it, which detaches the
+    very button that was clicked. The click then reached the document, where the
+    outside-close check asked whether the wrapper still contained
+    `event.target` — and a detached node is contained by nothing, so the panel
+    closed the instant it had been rebuilt.
+
+    Only a browser can see this: the handler order, the detachment and the
+    bubbling are all real DOM behaviour (Teema QA §6).
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    picker = picker_for(page, "#id_received_date")
+    picker.locator(".datepicker__trigger").click()
+    panel = picker.locator(".datepicker__panel")
+    expect(panel).to_be_visible()
+
+    first = panel.locator(".datepicker__title").inner_text()
+
+    # Forward, and the panel is still open on a different month.
+    panel.get_by_role("button", name="Järgmine kuu").click()
+    expect(panel).to_be_visible()
+    assert panel.locator(".datepicker__title").inner_text() != first
+
+    # Back twice, still open, and now a month before where it started.
+    panel.get_by_role("button", name="Eelmine kuu").click()
+    panel.get_by_role("button", name="Eelmine kuu").click()
+    expect(panel).to_be_visible()
+    assert panel.locator(".datepicker__title").inner_text() != first
+
+    # And a day in the navigated month is still pickable, which is the thing
+    # the defect actually prevented.
+    panel.locator(".datepicker__day", has_text=re.compile(r"^12$")).first.click()
+    expect(panel).to_be_hidden()
+    assert page.locator("#id_received_date").input_value().startswith("12.")
+
+
+def test_clicking_outside_still_closes_the_calendar(page, base_url):
+    """The behaviour the fix must not have removed.
+
+    One delegated document listener replaced one listener per input, and it
+    reads containment from the event's composed path rather than from the live
+    tree. Both halves have to hold: navigating stays inside, and clicking the
+    page genuinely outside still closes.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    picker = picker_for(page, "#id_received_date")
+    picker.locator(".datepicker__trigger").click()
+    panel = picker.locator(".datepicker__panel")
+    expect(panel).to_be_visible()
+
+    page.locator("#id_title").click()
+    expect(panel).to_be_hidden()
+
+
 def test_the_calendar_closes_on_escape(page, base_url):
     """A floating panel that stays open until its own button is clicked again
     is the disclosure people report as stuck."""
