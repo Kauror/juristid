@@ -52,6 +52,20 @@ pytestmark = pytest.mark.django_db
 
 
 def run(phase: str, archive, **extra) -> str:
+    """One phase of `opinion_archive`, with the gate `apply` now requires.
+
+    `apply` will not run without the digest of the plan a person reviewed, so
+    these tests compute it the way an operator does — from the plan built off
+    the same archive, immediately before applying. What they are about is the
+    catalogue/apply relationship, not the gate; supplying the digest keeps them
+    about that.
+    """
+    if phase == "apply" and "expect_plan_sha256" not in extra:
+        from app.legacy_import.opinion_apply_gate import plan_digest
+
+        extra["expect_plan_sha256"] = plan_digest(
+            build_plan(archive_path=archive, kodadash_path=None)
+        )
     out = io.StringIO()
     call_command(
         "opinion_archive",

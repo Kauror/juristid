@@ -40,7 +40,6 @@ from typing import Any
 from django.db import transaction
 
 from app.legacy_import.opinion_archive import OpinionSubmissionImport
-from app.legacy_import.opinion_enums import RecipientBasis
 from app.submissions.enums import RecipientRole
 
 
@@ -128,13 +127,14 @@ def resolve_recipients(
                 organisation=resolution.value,
                 defaults={"role": RecipientRole.ADDRESSEE, "note": raw[:200]},
             )
-            # The basis moves; `recipient_raw` never does. One says how the link
-            # came to be believed, the other is what the source wrote, and a
-            # backfill that rewrote the second would destroy the evidence it
-            # used to make the first.
-            if row.recipient_basis == RecipientBasis.UNRESOLVED:
-                row.recipient_basis = RecipientBasis.REVIEWED_MAPPING
-                row.save(update_fields=["recipient_basis", "updated_at"])
+            # Purely additive: no field on the provenance row is touched.
+            #
+            # `recipient_basis` says where the *string* came from — the register's
+            # KELLELE column, an outgoing email, the opinion itself — and
+            # resolving that string to an Organisation years later does not
+            # change where it came from. Whether it resolved is answered by the
+            # SubmissionRecipient now existing beside it, which is a fact rather
+            # than a relabelling of an older one.
 
     if report.examined and not report.resolved:
         report.notes.append(

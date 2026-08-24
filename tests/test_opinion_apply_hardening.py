@@ -78,17 +78,24 @@ def register_matter(*, year: int, number: int, title: str, sent: str | None, cou
 
 
 def strict_pair(number: int = 21, *, sent: str | None = "2024-04-10"):
+    """A register row and an archive file matching on three exact signals.
+
+    The title carries the number, because the archive refuses two entries at one
+    path and the path is built from the date, the recipient and the title — so
+    two pairs that differed only in their register number produced one filename.
+    """
+    title = f"Näidisregistri seaduse {number}. muutmise seadus"
     matter = register_matter(
         year=2024,
         number=number,
-        title="Näidisregistri seaduse muutmise seadus",
+        title=title,
         sent=sent,
         counterparty="Näidisministeerium",
     )
     item = syn.opinion(
         date="2024-04-10",
         recipient="Näidisministeerium",
-        title="Arvamus näidisregistri seaduse muutmise kohta",
+        title=f"Arvamus näidisregistri seaduse {number}. muutmise kohta",
         marker=f"harden-{number}",
     )
     return matter, item
@@ -104,6 +111,25 @@ def archive_path(tmp_path):
 
 def plan_for(archive):
     return build_plan(archive_path=archive, kodadash_path=None)
+
+
+def _entry_for(candidate):
+    """One plan row pointing at a candidate, for the conflicts scan to judge."""
+    from app.legacy_import.opinion_plan import SubmissionPlan
+
+    return SubmissionPlan(
+        sha256=candidate.item.sha256,
+        relative_path=candidate.item.archive_relative_path,
+        matter_id=candidate.matter_id or factories.ArchiveMatterFactory().pk,
+        kind="FORMAL_OPINION",
+        title="Arvamus",
+        sent_date=datetime.date(2024, 4, 10),
+        sent_date_basis=SentDateBasis.EXCEL_OUT_DATE,
+        recipient_raw="Näidisministeerium",
+        recipient_basis=RecipientBasis.EXCEL_ADDRESSEE,
+        match_class=candidate.match_class,
+        candidate_id=candidate.pk,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -253,9 +279,10 @@ def test_a_rejected_candidate_blocks_its_own_plan(archive_path):
     candidate.state = OpinionCandidateState.REJECTED
     candidate.save(update_fields=["state", "updated_at"])
 
+    # Built explicitly: the planner correctly declines to plan a rejected
+    # candidate, so the shape the scan exists for has to be constructed.
     plan = plan_for(archive)
-    for entry in plan.submissions:
-        entry.candidate_id = candidate.pk
+    plan.submissions = [_entry_for(candidate)]
 
     reasons = {conflict.reason for conflict in scan_conflicts(plan)}
     assert "CANDIDATE_REJECTED" in reasons
@@ -273,8 +300,7 @@ def test_a_candidate_claiming_applied_with_no_provenance_is_a_conflict(archive_p
     candidate.save(update_fields=["state", "updated_at"])
 
     plan = plan_for(archive)
-    for entry in plan.submissions:
-        entry.candidate_id = candidate.pk
+    plan.submissions = [_entry_for(candidate)]
 
     reasons = {conflict.reason for conflict in scan_conflicts(plan)}
     assert "CANDIDATE_APPLIED_WITHOUT_PROVENANCE" in reasons
@@ -390,9 +416,11 @@ def test_resolution_is_retryable_once_the_reference_data_improves(archive_path):
     assert SubmissionRecipient.objects.count() == 1
 
     imported = OpinionSubmissionImport.objects.get()
-    # The basis moves; the evidence does not.
+    # Neither moves. `recipient_basis` says where the *string* came from, and
+    # resolving it later does not change that; whether it resolved is answered
+    # by the SubmissionRecipient now existing beside it.
     assert imported.recipient_raw == "Näidisministeerium"
-    assert imported.recipient_basis == RecipientBasis.REVIEWED_MAPPING
+    assert imported.recipient_basis == RecipientBasis.EXCEL_ADDRESSEE
 
 
 def test_a_second_resolution_pass_is_a_no_op(archive_path):
