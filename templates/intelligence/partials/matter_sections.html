@@ -5,6 +5,14 @@ Substantive operational information, not technical metadata, so they sit in the
 main column with `Järgmiseks` and the chronology rather than behind a tab
 (Stage-2G brief 36).
 
+**A section renders only when it holds something.** These three, plus Kaasamine,
+used to occupy about forty per cent of the page saying that nothing existed —
+three headings, three sentences reporting an absence and three add buttons, on
+every Matter, whether or not anybody had ever recorded a milestone. The empty
+case is now one quiet row of add affordances at the bottom, and `Oluline
+tähtaeg` is not even there because the composer offers it beside the note it
+belongs to (Teema redesign §3, §24).
+
 Every write leaves this page: the forms are their own small server-rendered
 pages under `app.intelligence`, which POST and come back to the anchor they came
 from. That keeps this app out of the Matter view's rendering entirely
@@ -14,12 +22,10 @@ Nothing here is deleted. A cancelled expectation stays visible and marked,
 because a plan that changed is part of the file's history.
 {% endcomment %}
 
+{% if intelligence.has_dates %}
 <section class="factsection" id="olulised-tahtajad" aria-labelledby="teema-tahtajad-heading">
   <div class="factsection__head">
     <h2 class="sectionlabel" id="teema-tahtajad-heading">Olulised tähtajad</h2>
-    {% if not intelligence.has_dates %}
-      <p class="factsection__none">Olulisi tähtaegu pole lisatud.</p>
-    {% endif %}
     {% if can_write %}
       <a class="button button--quiet button--tiny"
          href="{% url 'intelligence:add_important_date' matter_id=matter.pk %}">+ Lisa oluline tähtaeg</a>
@@ -37,13 +43,12 @@ because a plan that changed is part of the file's history.
     </ul>
   {% endif %}
 </section>
+{% endif %}
 
+{% if intelligence.has_effective_dates %}
 <section class="factsection" id="joustumine" aria-labelledby="teema-joustumine-heading">
   <div class="factsection__head">
     <h2 class="sectionlabel" id="teema-joustumine-heading">Jõustumine</h2>
-    {% if not intelligence.has_effective_dates %}
-      <p class="factsection__none">Jõustumise infot pole lisatud.</p>
-    {% endif %}
     {% if can_write %}
       <a class="button button--quiet button--tiny"
          href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}">+ Lisa jõustumine</a>
@@ -84,13 +89,12 @@ because a plan that changed is part of the file's history.
     </ul>
   {% endif %}
 </section>
+{% endif %}
 
+{% if intelligence.has_work_victories %}
 <section class="factsection" id="toovoidud" aria-labelledby="teema-toovoidud-heading">
   <div class="factsection__head">
     <h2 class="sectionlabel" id="teema-toovoidud-heading">Töövõidud</h2>
-    {% if not intelligence.has_work_victories %}
-      <p class="factsection__none">Töövõite ega kandidaate pole lisatud.</p>
-    {% endif %}
     {% if can_write %}
       {% comment %}
         "Lisa töövõit", because that is what the button does: a colleague who
@@ -123,7 +127,9 @@ because a plan that changed is part of the file's history.
             {% if record.confirmed_by %}
               <span class="muted">
                 Kinnitas {{ record.confirmed_by.display_name }}
-                {{ record.confirmed_at|date:"j.n.Y" }}
+                <time datetime="{{ record.confirmed_at|date:'c' }}">
+                  {{ record.confirmed_at|date:"j.n.Y" }}
+                </time>
               </span>
             {% endif %}
           </span>
@@ -146,3 +152,25 @@ because a plan that changed is part of the file's history.
     </ul>
   {% endif %}
 </section>
+{% endif %}
+
+{% comment %}
+The empty case, once, at the bottom: one quiet row instead of three headings
+announcing three absences. `Oluline tähtaeg` is deliberately absent from it —
+the composer offers that one beside the note it belongs to, which is where
+somebody learns about a milestone in the first place (Teema redesign §3, §13).
+{% endcomment %}
+{% if can_write and matter.is_open %}
+  {% if not intelligence.has_effective_dates or not intelligence.has_work_victories %}
+    <div class="addrow">
+      {% if not intelligence.has_effective_dates %}
+        <a class="disclosure-chip"
+           href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}">+ Jõustumine</a>
+      {% endif %}
+      {% if not intelligence.has_work_victories %}
+        <a class="disclosure-chip"
+           href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}">+ Töövõit</a>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endif %}

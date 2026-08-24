@@ -92,9 +92,12 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     reference = page.locator(".matterhead__crumbs .reference").inner_text().strip()
     assert re.fullmatch(r"\d{4}_\d+", reference), reference
 
-    expect(page.locator(".nextaction__text")).to_have_text("Koosta ja saada koja arvamus")
-    expect(page.locator(".nextaction .mode--do")).to_be_visible()
-    expect(page.locator(".nextaction").get_by_text("Tähtaeg", exact=False).first).to_be_visible()
+    expect(page.locator(".nextrow__text")).to_have_text("Koosta ja saada koja arvamus")
+    expect(page.locator(".nextrow .modechip--do")).to_be_visible()
+    # A TEEN date is a deadline and prints as a bare date — the row says which
+    # of the three meanings it carries by the chip beside it, not by a label
+    # repeated on every line (Teema redesign §8.2).
+    expect(page.locator(".nextrow__date")).to_be_visible()
     screenshots(page, "03-teema-ulevaade")
 
     matter_url = page.url
@@ -109,42 +112,45 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # -- Scenario B: one composer save, two changes ----------------------
     page.goto(matter_url)
 
-    # The composer starts as one field. Everything optional is out of the way
-    # until it is asked for — that is the adoption argument, not decoration.
-    expect(page.locator("#jargmiseks-valjad")).to_be_hidden()
-    expect(page.locator("#komposer-lisavaljad")).to_be_hidden()
-    expect(page.locator("#komposer-manus")).to_be_hidden()
+    # The composer is one field and three chips. Everything else is out of the
+    # way until it is asked for — that is the adoption argument, not decoration.
+    expect(page.locator("#koostaja-manus")).to_be_hidden()
+    expect(page.locator("#koostaja-tahtaeg")).to_be_hidden()
+    expect(page.locator("#koostaja-kaasamine")).to_be_hidden()
+    expect(page.locator("#koostaja-lopetamine")).to_be_hidden()
 
-    page.locator(".composer__body").fill(
-        "Kohtumine ministeeriumiga. Ministeerium lubas saata järgmise nädala jooksul uue sõnastuse."
-    )
-    page.locator("#id_kind").select_option("MEETING")
-    page.locator("#id_update_next_action").check()
-    # Revealing one optional block must not reveal the others.
-    expect(page.locator("#jargmiseks-valjad")).to_be_visible()
-    expect(page.locator("#komposer-manus")).to_be_hidden()
-    page.locator("#id_next_text").fill("Ootan ministeeriumi uut sõnastust")
+    # There is no second box asking for the next step's wording. The
+    # description *is* the next step, which is the redesign's central claim.
+    expect(page.locator("[name='next_text']")).to_have_count(0)
+
+    page.locator(".composer__body").fill("Ootan ministeeriumi uut sõnastust")
     page.locator("#next_kind_WAIT").check(force=True)
-    # The stored date meaning derives from the kind now, and OOTAN derives to
-    # *Oodatav*. This scenario wants the other one a WAIT may legitimately
-    # carry, so it opens the disclosure and says so — which is the override path
-    # the model still permits and the UI still offers (app/workflow/enums.py).
-    page.locator("summary", has_text="Täpsusta, mida kuupäev tähendab").first.click()
-    page.locator("#id_next_date_semantics").select_option("REVIEW_ON")
-    page.locator("#id_next_target_date").fill(_future(7))
+    # Revealing one optional block must not reveal the others.
+    page.locator(".disclosure-chip", has_text="+ Manus").click()
+    expect(page.locator("#koostaja-manus")).to_be_visible()
+    expect(page.locator("#koostaja-lopetamine")).to_be_hidden()
+    page.locator("#id_kind").select_option("MEETING")
+    page.locator("#id_next_date").fill(_future(7))
     screenshots(page, "04-komposer")
 
-    page.get_by_role("button", name="Salvesta sissekanne").click()
+    page.locator("[data-composer-submit]").click()
 
     # Both halves landed, and the surface agrees with itself.
-    expect(page.locator(".nextaction__text")).to_have_text("Ootan ministeeriumi uut sõnastust")
-    expect(page.locator(".nextaction .mode--wait")).to_be_visible()
-    expect(page.locator(".timeline").get_by_text("Ministeerium lubas saata")).to_be_visible()
-    expect(page.locator(".nextaction").get_by_text("Vaatan üle").first).to_be_visible()
+    expect(page.locator(".nextrow__text")).to_have_text("Ootan ministeeriumi uut sõnastust")
+    expect(page.locator(".nextrow .modechip--wait")).to_be_visible()
+    # A WAIT date is a review date and is labelled as one, never as a deadline.
+    expect(page.locator(".nextrow__date")).to_contain_text("vaatan üle")
     # The superseded DO must no longer be presented as the current action.
-    expect(page.locator(".nextaction").get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
-    # Exactly one meeting entry: no ghost duplicate from the same save.
-    expect(page.locator(".entrycard").filter(has_text="Kohtumine")).to_have_count(1)
+    expect(page.locator(".nextrow").get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
+
+    # The chronology is collapsed by default: a Matter opens on what to do
+    # next, not on its history.
+    timeline = page.locator("#ajajoon")
+    expect(timeline).not_to_have_attribute("open", "")
+    timeline.locator(".accordion__head").click()
+    # One professional update, one line — and the sentence says what was done.
+    expect(timeline.get_by_text("lisas märkuse ja määras järgmise sammu")).to_be_visible()
+    expect(page.locator(".entrycard").filter(has_text="Ootan ministeeriumi")).to_have_count(1)
     screenshots(page, "05-komposer-jarel")
 
     # The Matter has moved from Teen to Ootan / kontrollin.
@@ -153,14 +159,18 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(waiting.get_by_text("Ootan ministeeriumi uut sõnastust")).to_be_visible()
 
     # -- Scenario C: a formal opinion with its exact evidence ------------
+    #
+    # `Koja seisukoht` is written where it is read, in the main Teema flow.
+    # There is no tab for it any more, and no page change.
     page.goto(matter_url)
-    page.locator(".tabs__tab", has_text="Seisukoht ja kaasamine").click()
-    expect(page.get_by_role("heading", name="Koja seisukoht")).to_be_visible()
-
+    page.locator("#koja-seisukoht summary", has_text="Lisa seisukoht").click()
     page.locator("#id_position_summary").fill("Koda ei toeta pakendiaktsiisi kavandatud tõusu.")
     page.locator("#id_rationale_summary").fill("Liikmete hinnangul kasvab halduskoormus.")
-    page.get_by_role("button", name="Salvesta seisukoht").click()
+    page.locator("#koja-seisukoht").get_by_role("button", name="Salvesta").click()
+    expect(page.locator(".positionblock__text")).to_contain_text("Koda ei toeta")
 
+    # The formal Submission workflow is a quiet link, never a tab.
+    page.get_by_role("link", name="Arvamused →").click()
     page.locator("summary", has_text="Uus arvamus").click()
     page.locator("#id_title").fill("Koja arvamus pakendiseaduse eelnõule")
     page.locator("#id_kind").select_option("FORMAL_OPINION")
@@ -202,28 +212,39 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # Two submissions under one Matter is the ordinary case, not a workaround.
     expect(page.locator(".submission")).to_have_count(2)
 
+    # -- The sent opinion reaches the main view --------------------------
+    page.goto(matter_url)
+    strip = page.locator(".sentstrip")
+    expect(strip).to_be_visible()
+    expect(strip.get_by_text("Näidisministeerium")).to_be_visible()
+    expect(strip.get_by_role("link", name="Ava PDF").first).to_be_visible()
+
     # -- Documents ------------------------------------------------------
     page.locator(".tabs__tab", has_text="Dokumendid").click()
-    expect(page.get_by_role("heading", name="Tõendid")).to_be_visible()
+    expect(page.get_by_role("heading", name="Failid")).to_be_visible()
     expect(page.get_by_text("koja-arvamus.pdf").first).to_be_visible()
-    expect(page.get_by_role("heading", name="Töödokumendid")).to_be_visible()
+    # Working references are an accordion, closed, and visibly not evidence.
+    working = page.locator("#toodokumendid")
+    expect(working).not_to_have_attribute("open", "")
+    expect(working.get_by_text("Töödokumendid")).to_be_visible()
     screenshots(page, "07-dokumendid")
 
     # -- Timeline order --------------------------------------------------
     page.goto(matter_url)
+    page.locator("#ajajoon .accordion__head").click()
     # innerText reports the rendered text, and these labels are uppercased by
     # CSS, so the comparison is case-insensitive.
     kinds = [
         kind.lower()
         for kind in page.locator(
-            ".entrytype, .systemevent__type, .submissionevent__label"
+            ".entrycard__did, .entrytype, .systemevent__type, .submissionevent__label"
         ).all_inner_texts()
     ]
-    assert any("kohtumine" in kind for kind in kinds), kinds
+    assert any("märkuse" in kind for kind in kinds), kinds
     assert any("saadetud" in kind for kind in kinds), kinds
     # Newest first: the send happened after the meeting was written up.
     assert next(i for i, k in enumerate(kinds) if "saadetud" in k) < next(
-        i for i, k in enumerate(kinds) if "kohtumine" in k
+        i for i, k in enumerate(kinds) if "märkuse" in k
     )
 
     # -- Teemad ----------------------------------------------------------
@@ -308,20 +329,18 @@ def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(pa
     page.get_by_role("link", name="Tavaline avatud teema kõigile nähtav").click()
 
     page.locator(".composer__body").fill("See tekst peab alles jääma.")
-    page.locator("#id_update_next_action").check()
-    page.locator("#id_next_text").fill("Tähtajaline tegevus ilma kuupäevata")
     # No date meaning chosen: TEEN derives to *Tähtaeg*, and a deadline with no
     # date is still the one combination the server refuses. Left unstated on
     # purpose — this is the path a lawyer who never opens the disclosure takes.
     page.locator("#next_kind_DO").check(force=True)
-    page.get_by_role("button", name="Salvesta sissekanne").click()
+    page.locator("[data-composer-submit]").click()
 
     expect(page.get_by_text("Tähtajaline tegevus vajab kuupäeva.")).to_be_visible()
     # Neither half was applied.
     expect(page.locator(".entrycard").filter(has_text="See tekst peab alles jääma")).to_have_count(
         0
     )
-    expect(page.locator(".nextaction").get_by_text("Jälgi menetluse käiku")).to_be_visible()
+    expect(page.locator(".nextrow").get_by_text("Jälgi menetluse käiku")).to_be_visible()
 
 
 class TestRestrictedMatterIsUnreachable:

@@ -1,6 +1,14 @@
 {% comment %}
-One timeline projection over authored entries and selected change events, in
-three shapes:
+One timeline projection over authored entries and selected change events.
+
+The redesign's rule is one line per professional action, so an item that came
+out of a composer save renders as a single card carrying its sentence — "Marko
+lisas märkuse ja määras järgmise sammu" — and, underneath, the note and the
+next step it produced. Every underlying `ChangeEvent` still exists and still
+says exactly what it said; the grouping is presentation, and no canonical record
+is suppressed or merged (Teema redesign §11.1, app/matters/timeline.py).
+
+Standalone rows keep the three shapes they had:
 
 * an authored entry is a card, because a person wrote it;
 * a system event is a one-line muted row, because the system recorded it;
@@ -25,7 +33,11 @@ record, not professional chronology (master specification 16.5).
           {% if item.entry.author %}
             <span class="entrycard__author">{{ item.entry.author.display_name }}</span>
           {% endif %}
-          <span class="entrytype">{{ item.entry.get_kind_display }}</span>
+          {% if item.summary_sentence %}
+            <span class="entrycard__did">{{ item.summary_sentence }}</span>
+          {% else %}
+            <span class="entrytype">{{ item.entry.get_kind_display }}</span>
+          {% endif %}
           <time datetime="{{ item.entry.occurred_at|date:'c' }}">
             {{ item.entry.occurred_at|date:"j.n.Y H:i" }}
           </time>
@@ -40,6 +52,7 @@ record, not professional chronology (master specification 16.5).
           been through the allowlist.
         {% endcomment %}
         <div class="richtext">{{ item.entry.body|safe }}</div>
+        {% include "matters/partials/timeline_group_facts.html" with item=item %}
       </div>
     </article>
 
@@ -60,6 +73,33 @@ record, not professional chronology (master specification 16.5).
           Saaja: {{ item.event.payload.addressees|join:", " }}
         </p>
       {% endif %}
+      {% include "matters/partials/timeline_group_facts.html" with item=item %}
+    </article>
+
+  {% elif item.is_grouped %}
+    {% comment %}
+      A composer save that wrote no note — a closure, or a next step set from
+      the row above. One line saying what the person did, and the facts it
+      produced under it. It is a card rather than a muted system row because a
+      person did it, which is exactly the distinction the muted rows exist to
+      make.
+    {% endcomment %}
+    <article class="entrycard entrycard--facts">
+      <span class="avatar avatar--composer" aria-hidden="true">
+        {% if item.event.actor %}{{ item.event.actor.initials }}{% else %}··{% endif %}
+      </span>
+      <div class="entrycard__body">
+        <p class="entrycard__meta">
+          {% if item.event.actor %}
+            <span class="entrycard__author">{{ item.event.actor.display_name }}</span>
+          {% endif %}
+          <span class="entrycard__did">{{ item.summary_sentence }}</span>
+          <time datetime="{{ item.event.occurred_at|date:'c' }}">
+            {{ item.event.occurred_at|date:"j.n.Y H:i" }}
+          </time>
+        </p>
+        {% include "matters/partials/timeline_group_facts.html" with item=item %}
+      </div>
     </article>
 
   {% else %}
@@ -79,9 +119,9 @@ record, not professional chronology (master specification 16.5).
 
 {% if timeline_has_more %}
   <button type="button" class="button button--quiet"
-          hx-get="{% url 'matters:timeline_page' pk=matter.pk %}?nihe={{ next_offset }}"
+          hx-get="{% url 'matters:timeline_page' pk=matter.pk %}?nihe={{ next_offset }}&amp;ajajoon={{ timeline_only|default:'koik' }}"
           hx-target="this"
           hx-swap="outerHTML">
-    Näita varasemat
+    Näita varasemaid
   </button>
 {% endif %}

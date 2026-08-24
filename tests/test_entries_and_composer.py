@@ -180,7 +180,7 @@ def test_an_entry_can_be_more_restrictive_than_its_matter(
 
 def test_composer_saves_entry_and_next_action_together(normal_matter, specialist):
     review_date = timezone.localdate() + timedelta(days=7)
-    entry, action = compose_update(
+    result = compose_update(
         matter=normal_matter,
         author=specialist,
         body="<p>Kohtumine ministeeriumiga.</p>",
@@ -193,23 +193,21 @@ def test_composer_saves_entry_and_next_action_together(normal_matter, specialist
         },
     )
 
-    assert entry is not None
-    assert action is not None
-    assert current_next_action(normal_matter) == action
-    assert action.kind == ActionKind.WAIT
-    assert action.target_date == review_date
+    assert result.entry is not None
+    assert result.action is not None
+    assert current_next_action(normal_matter) == result.action
+    assert result.action.kind == ActionKind.WAIT
+    assert result.action.target_date == review_date
 
 
 def test_composer_accepts_an_entry_alone(normal_matter, specialist):
-    entry, action = compose_update(
-        matter=normal_matter, author=specialist, body="<p>Lihtsalt märkus.</p>"
-    )
-    assert entry is not None
-    assert action is None
+    result = compose_update(matter=normal_matter, author=specialist, body="<p>Lihtsalt märkus.</p>")
+    assert result.entry is not None
+    assert result.action is None
 
 
 def test_composer_accepts_a_next_action_alone(normal_matter, specialist):
-    entry, action = compose_update(
+    result = compose_update(
         matter=normal_matter,
         author=specialist,
         next_action={
@@ -218,8 +216,8 @@ def test_composer_accepts_a_next_action_alone(normal_matter, specialist):
             "target_date": timezone.localdate() + timedelta(days=3),
         },
     )
-    assert entry is None
-    assert action is not None
+    assert result.entry is None
+    assert result.action is not None
 
 
 def test_composer_refuses_an_empty_save(normal_matter, specialist):
@@ -255,7 +253,7 @@ def test_a_failing_entry_leaves_the_action_untouched(normal_matter, specialist):
             "kind": ActionKind.DO,
             "target_date": timezone.localdate() + timedelta(days=3),
         },
-    )[1]
+    ).action
 
     with pytest.raises(RuntimeError):
         with mock.patch(

@@ -1797,16 +1797,6 @@ p.formnote {
   color: var(--text-muted);
 }
 
-.composer__meta {
-  padding: var(--spacing-2) var(--spacing-4);
-  display: flex;
-  gap: var(--spacing-2);
-  align-items: center;
-  flex-wrap: wrap;
-  border-top: 1px solid var(--border-subtle);
-  margin-top: var(--spacing-2);
-}
-
 /* Optional fields hide behind a dashed "+" until they are wanted. */
 .disclosure-chip {
   display: inline-flex;
@@ -1828,34 +1818,6 @@ p.formnote {
   border-color: var(--text-secondary);
 }
 
-/* The toggle chip is a real checkbox wearing the chip: full footprint, so it is
-   clickable and focusable, with the tick state carried by the chip itself. */
-.disclosure-chip--toggle {
-  position: relative;
-  padding: 0;
-}
-
-.disclosure-chip--toggle input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.disclosure-chip--toggle label {
-  display: block;
-  padding: 3px 10px;
-  cursor: pointer;
-}
-
-.disclosure-chip--toggle input:focus-visible ~ label {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset-width);
-}
-
 .disclosure-chip.is-active {
   color: var(--accent-link);
   background: var(--status-info-soft);
@@ -1863,43 +1825,10 @@ p.formnote {
   font-weight: var(--typography-weight-bold);
 }
 
-.composer__optional {
-  padding: 0 var(--spacing-4) var(--spacing-2);
-  display: flex;
-  gap: var(--spacing-3);
-  flex-wrap: wrap;
-}
-
-.composer__next {
-  margin: var(--spacing-15) var(--spacing-4) var(--spacing-3);
-  background: var(--surface-panel);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-card);
-  padding: var(--spacing-3) var(--spacing-35);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-25);
-}
-
-.composer__foot {
-  padding: var(--spacing-25) var(--spacing-4);
-  border-top: 1px solid var(--border-subtle);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-3);
-  flex-wrap: wrap;
-}
-
-.composer__hint {
+.composer__hint,
+.keyhint {
   font-size: var(--typography-size-meta-sm);
   color: var(--text-muted);
-}
-
-.composer__actions {
-  margin-left: auto;
-  display: flex;
-  gap: var(--spacing-2);
-  align-items: center;
 }
 
 .key {
@@ -1907,49 +1836,6 @@ p.formnote {
   border: 1px solid var(--border-control);
   border-radius: var(--radius-chip);
   padding: 0 4px;
-}
-
-/* Segmented DO / WAIT / MONITOR selector inside the composer. */
-.modeselect {
-  display: flex;
-  gap: var(--spacing-2);
-}
-
-.modeselect__option {
-  position: relative;
-}
-
-.modeselect__option input {
-  position: absolute;
-  opacity: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  cursor: pointer;
-}
-
-.modeselect__label {
-  display: block;
-  font-size: var(--typography-size-meta);
-  font-weight: var(--typography-weight-bold);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-control);
-  padding: 4px 14px;
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.modeselect__option input:checked + .modeselect__label {
-  color: var(--text-primary);
-  background: var(--surface-selected);
-  border-color: var(--accent-border);
-}
-
-.modeselect__option input:focus-visible + .modeselect__label {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset-width);
 }
 
 /* ====================================================================
@@ -4303,9 +4189,6 @@ p.factsection__none {
   padding: 0 var(--spacing-4);
 }
 
-.composer__optional--flush {
-  padding: 0;
-}
 
 .filterbar--spaced {
   margin-bottom: var(--spacing-3);
@@ -4906,4 +4789,1376 @@ p.factsection__none {
 
 .choicecard:has(input:checked) .choicecard__hint {
   color: var(--text-secondary);
+}
+
+/* ====================================================================
+ * The Teema workspace
+ *
+ * The Matter page is a stack of full-bleed rows separated by hairlines, not a
+ * column of cards in a gutter. That is the whole visual argument of the
+ * redesign: a card says "here is a widget about a subsystem", and a row says
+ * "here is the next thing to read". The old page had seven cards, four of them
+ * announcing that nothing existed.
+ *
+ * Everything below is dark-mode only and reads its values from the semantic
+ * token layer. No raw hexes: a light theme is a different token file, not a
+ * different component (docs/adr/0009).
+ * ==================================================================== */
+
+/* The page bleeds to the edges of `.app__main`, which carries 24px/32px of
+   padding. Negative margins rather than changing the shell, because the
+   register and the dashboards still want that gutter. */
+.teema {
+  margin: calc(var(--spacing-6) * -1) calc(var(--spacing-8) * -1)
+    calc(var(--spacing-10) * -1);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.teema .matterhead {
+  margin: 0;
+  gap: var(--spacing-25);
+  padding: var(--spacing-4) var(--spacing-8) 0;
+}
+
+.teema .matterhead__title {
+  font-size: 21px;
+  letter-spacing: var(--typography-tracking-title);
+  /* 76ch, so a formal legislative title wraps where a reader's eye can follow
+     it rather than running the width of a 1440px screen. */
+  max-width: 76ch;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+/* -- the meta line ---------------------------------------------------- */
+
+/* One line of four facts, not a grid of labelled cells. The label is inline
+   and muted, the value is the thing you read. */
+.metaline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2) 22px;
+  align-items: baseline;
+  padding-top: 1px;
+}
+
+.metaline__item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-15);
+  font-size: 12.5px;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.metaline__label {
+  flex: none;
+}
+
+.metaline__value {
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+  /* The edit affordance: a dashed underline that strengthens on hover. It has
+     to read as information first and as a control only when somebody reaches
+     for it. */
+  border-bottom: 1px dashed var(--border-strong);
+  padding-bottom: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 32ch;
+}
+
+.metaline__value--deadline {
+  color: var(--status-warning);
+  border-bottom-color: var(--status-warning-border);
+  font-variant-numeric: tabular-nums;
+}
+
+.metaline .inlineedit__trigger:hover .metaline__value {
+  border-bottom-style: solid;
+  border-bottom-color: var(--text-secondary);
+}
+
+.metaline .inlineedit__trigger:hover .metaline__value--deadline {
+  border-bottom-color: var(--status-warning);
+}
+
+/* A Valdkond the department has retired, still ticked on an old Matter. It is
+   offered so that correcting one field never silently drops the filing, and it
+   is marked so nobody reads it as a current option. */
+.checkitem--retired .checkitem__name {
+  color: var(--text-muted);
+}
+
+.checkitem__note {
+  font-size: var(--typography-size-label);
+  color: var(--text-muted);
+  font-style: italic;
+  margin-left: var(--spacing-1);
+}
+
+/* -- Lühikokkuvõte ---------------------------------------------------- */
+
+/* No heading, no card. The largest body text on the page, directly under the
+   facts, because the formal title is usually a poor description of the
+   business issue. */
+.summary {
+  padding: var(--spacing-15) 0 var(--spacing-1);
+  max-width: 96ch;
+}
+
+.summary__edit {
+  display: block;
+}
+
+.summary__trigger {
+  list-style: none;
+  cursor: pointer;
+  display: block;
+}
+
+.summary__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.summary__text {
+  margin: 0;
+  font-size: var(--typography-size-lg);
+  line-height: 1.6;
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+
+.summary__action {
+  font-size: 12.5px;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--accent-link);
+  white-space: nowrap;
+  margin-left: var(--spacing-2);
+}
+
+.summary__trigger:hover .summary__action {
+  color: var(--accent-hover);
+}
+
+/* The empty state is one dashed line, not a box. A Matter nobody has
+   summarised yet should look short, not unfinished. */
+.summary__prompt {
+  display: inline-block;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  border-bottom: 1px dashed var(--border-strong);
+  padding-bottom: 1px;
+}
+
+.summary__trigger:hover .summary__prompt {
+  color: var(--text-secondary);
+  border-bottom-color: var(--text-secondary);
+}
+
+.summary__edit[open] .summary__trigger {
+  display: none;
+}
+
+.summary__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  max-width: 96ch;
+  padding-top: var(--spacing-1);
+}
+
+.summary__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.inlineedit__area {
+  width: 100%;
+  font-size: var(--typography-size-lg);
+  line-height: 1.6;
+}
+
+/* -- the grid --------------------------------------------------------- */
+
+.teemagrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-items: start;
+  min-width: 0;
+}
+
+.teemamain {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* The Dokumendid tab is a normal padded column rather than a row stack. */
+.teemamain--padded {
+  padding: var(--spacing-5) var(--spacing-8) var(--spacing-8);
+  gap: var(--spacing-5);
+}
+
+/* Section label shared by every row-level block. */
+.rowlabel {
+  margin: 0;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  flex: none;
+}
+
+/* -- JÄRGMISEKS ------------------------------------------------------- */
+
+/* One line, always visible, never collapsed. It is the answer to the only
+   question everyone opening a file always has. */
+.nextrow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-35);
+  flex-wrap: wrap;
+  padding: var(--spacing-35) var(--spacing-8);
+  background: var(--surface-capture);
+  border-top: 1px solid var(--border-control);
+}
+
+.nextrow__label {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  flex: none;
+}
+
+/* The unset state is a warning, not an error. A Matter with no next step is a
+   file drifting, which is worth noticing and is not a failure. */
+.nextrow__label--warning {
+  color: var(--status-warning);
+}
+
+.nextrow__text {
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-medium);
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.nextrow__text--source {
+  font-size: var(--typography-size-base);
+  color: var(--text-body);
+}
+
+.nextrow__source-label,
+.nextrow__snapshot {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-chip);
+  padding: 1px 6px;
+  flex: none;
+}
+
+.nextrow__date {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  flex: none;
+}
+
+/* Only TEEN + deadline can be late. */
+.nextrow__date--overdue {
+  color: var(--status-danger);
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* A passed review date is warning-level and never danger: waiting on a
+   ministry is not a failure (master specification 18.8). */
+.nextrow__date--review {
+  color: var(--status-warning);
+}
+
+.nextrow__empty {
+  font-size: var(--typography-size-row);
+  color: var(--text-secondary);
+}
+
+.nextrow__spacer {
+  flex: 1;
+}
+
+.nextrow--overdue {
+  box-shadow: inset 2px 0 0 0 var(--status-danger);
+}
+
+.nextrow--closed .nextrow__empty {
+  color: var(--text-muted);
+}
+
+/* -- mode chips ------------------------------------------------------- */
+
+/* Shape carries the meaning, colour never alone: filled, solid outline,
+   dashed outline. A reader who cannot separate the hues still reads three
+   different shapes and three different words. */
+.modechip {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: 0.05em;
+  border-radius: var(--radius-chip);
+  padding: 2px 8px;
+  white-space: nowrap;
+  text-transform: uppercase;
+  flex: none;
+}
+
+.modechip--do {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border: 1px solid var(--accent-primary);
+}
+
+.modechip--wait {
+  color: var(--text-secondary);
+  border: 1px solid var(--border-strong);
+}
+
+.modechip--monitor {
+  color: var(--text-muted);
+  border: 1px dashed var(--border-strong);
+}
+
+.modechip--none,
+.modechip--plain {
+  color: var(--text-secondary);
+  border: 1px solid var(--border-control);
+  text-transform: none;
+  letter-spacing: normal;
+  font-weight: var(--typography-weight-semibold);
+}
+
+.modechip--tiny {
+  font-size: var(--typography-size-chip-sm);
+  padding: 1px 6px;
+}
+
+/* As a control: the label is the chip and the radio is visually hidden but
+   still focusable, so the keyboard ring lands on something visible. */
+/* As a control the chip is a control: 30px, so it meets the target size every
+   button on this page meets. The read-only chip beside it keeps the mockup's
+   compact height, because nobody clicks it (Teema redesign §8.1, §30). */
+.modechip--choice {
+  cursor: pointer;
+  padding: 4px 12px;
+  min-height: 30px;
+  justify-content: center;
+}
+
+/* The real control, invisible and covering its chip.
+ *
+ * Not a 1px `pointer-events: none` box: with that, a click on the input passes
+ * through to whatever happens to be underneath, so whether the radio changed
+ * depended on where the label had landed — the browser suite failed on it
+ * intermittently. Covering the option means clicking the chip *is* clicking
+ * the input, which is what both a person and a test are trying to do. */
+.modechip__input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.modeselect {
+  display: inline-flex;
+  gap: var(--spacing-15);
+  flex-wrap: wrap;
+}
+
+.modeselect__option {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Unselected chips are quiet; the chosen one takes its mode's full styling.
+   Without this every option would look chosen. */
+.modeselect__option .modechip--choice {
+  opacity: 0.55;
+}
+
+.modeselect__option .modechip__input:checked + .modechip--choice {
+  opacity: 1;
+}
+
+.modeselect__option .modechip__input:focus-visible + .modechip--choice {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+/* -- the composer ----------------------------------------------------- */
+
+.teema .composer {
+  background: var(--surface-capture);
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 2px solid var(--accent-primary);
+  border-radius: 0;
+  padding: var(--spacing-4) var(--spacing-8) 18px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-25);
+}
+
+.composer__label {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--accent-link);
+  text-transform: uppercase;
+}
+
+.composer__sublabel {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  flex: none;
+}
+
+.teema .composer__body {
+  width: 100%;
+  min-height: 62px;
+  background: var(--surface-base);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  padding: 11px 14px;
+  font-size: var(--typography-size-row);
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.composer__next {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-25);
+  flex-wrap: wrap;
+}
+
+.composer__date .dateinput {
+  width: 150px;
+  border-style: dashed;
+}
+
+.composer__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-35);
+  flex-wrap: wrap;
+}
+
+.composer__divider {
+  width: 1px;
+  height: 14px;
+  background: var(--border-control);
+  flex: none;
+}
+
+.composer__spacer {
+  flex: 1;
+}
+
+/* `+ Lõpeta teema` is visually last and quieter than its neighbours: finishing
+   a file is not a routine capture. */
+.disclosure-chip--last {
+  color: var(--text-muted);
+}
+
+.composer__optional {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-25);
+  padding: var(--spacing-3) 0 0;
+  border-top: 1px solid var(--border-subtle);
+  max-width: 46rem;
+}
+
+.composer__optional[hidden] {
+  display: none;
+}
+
+.composer__optional--closing {
+  border-top-color: var(--status-warning-border);
+}
+
+.composer__closing-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.composer__group {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: var(--spacing-3);
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+/* -- Koja seisukoht --------------------------------------------------- */
+
+.positionblock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding: var(--spacing-35) var(--spacing-8);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.positionblock__body {
+  max-width: 92ch;
+}
+
+.positionblock__edit {
+  display: block;
+}
+
+.positionblock__trigger {
+  list-style: none;
+  cursor: pointer;
+}
+
+.positionblock__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.positionblock__edit[open] .positionblock__trigger {
+  display: none;
+}
+
+.positionblock__text {
+  margin: 0;
+  font-size: var(--typography-size-base);
+  line-height: 1.55;
+  color: var(--text-body);
+}
+
+.positionblock__rationale {
+  margin: var(--spacing-1) 0 0;
+  font-size: var(--typography-size-meta);
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.positionblock__action {
+  font-size: 12.5px;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--accent-link);
+}
+
+/* The empty state is one line. An absence that occupies a screen is what made
+   the old page read as mostly missing data. */
+.positionblock__none {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+.positionblock__evidence {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+}
+
+/* -- accordions: Kaasamine, Ajajoon, Töödokumendid -------------------- */
+
+.accordion {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.accordion__head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-35);
+  padding: 11px var(--spacing-8);
+  cursor: pointer;
+  list-style: none;
+  min-height: 30px;
+}
+
+.accordion__head::-webkit-details-marker {
+  display: none;
+}
+
+.accordion__head:hover {
+  background: var(--surface-hover);
+}
+
+.accordion__head:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset-width) * -1);
+}
+
+/* A caret drawn in CSS rather than a glyph in the markup, so a screen reader
+   reads the label and not "black right-pointing small triangle". */
+.accordion__caret {
+  flex: none;
+  width: 0;
+  height: 0;
+  border-left: 5px solid var(--text-secondary);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform var(--motion-duration-fast) var(--motion-easing-standard);
+}
+
+.accordion[open] > .accordion__head .accordion__caret {
+  transform: rotate(90deg);
+}
+
+.accordion__label {
+  margin: 0;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  flex: none;
+  min-width: 132px;
+}
+
+.accordion__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  flex: none;
+}
+
+.accordion__summary {
+  font-size: 12.5px;
+  color: var(--text-body);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accordion__summary--empty {
+  color: var(--text-muted);
+}
+
+.accordion__spacer {
+  flex: 1;
+}
+
+.accordion__action {
+  font-size: 12.5px;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  flex: none;
+}
+
+.accordion__head:hover .accordion__action {
+  color: var(--accent-link);
+}
+
+.accordion__body {
+  padding: var(--spacing-1) var(--spacing-8) 18px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-25);
+}
+
+.accordion--timeline .accordion__body {
+  gap: var(--spacing-2);
+}
+
+.factrow__note {
+  font-size: var(--typography-size-meta);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+/* -- Saadetud arvamused ----------------------------------------------- */
+
+.sentstrip {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-15);
+  padding: var(--spacing-35) var(--spacing-8);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.sentstrip__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.sentstrip__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-25);
+  font-size: 12.5px;
+  color: var(--text-body);
+  flex-wrap: wrap;
+}
+
+.sentstrip__date {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  flex: none;
+}
+
+.sentstrip__to {
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-medium);
+}
+
+.sentstrip__title {
+  color: var(--text-muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sentstrip__spacer {
+  flex: 1;
+}
+
+.sentstrip__link {
+  flex: none;
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* -- historical material row ------------------------------------------ */
+
+.historicalrow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-35);
+  padding: var(--spacing-3) var(--spacing-8);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 12.5px;
+}
+
+.historicalrow__summary {
+  color: var(--text-body);
+}
+
+.historicalrow__spacer {
+  flex: 1;
+}
+
+/* -- grouped timeline facts ------------------------------------------- */
+
+/* What one professional update actually wrote, under the sentence describing
+   it. One short line per canonical record — not a second timeline, and not an
+   audit dump. */
+.groupfacts {
+  list-style: none;
+  margin: var(--spacing-15) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.groupfacts__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.groupfacts__kind {
+  font-size: var(--typography-size-chip-sm);
+  font-weight: var(--typography-weight-heavy);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-chip);
+  padding: 1px 6px;
+  flex: none;
+}
+
+.entrycard__did {
+  color: var(--text-secondary);
+}
+
+.entrycard--facts {
+  background: var(--surface-panel);
+}
+
+/* -- the rail --------------------------------------------------------- */
+
+.teema .rail {
+  background: var(--surface-rail);
+  border-left: 1px solid var(--border-default);
+  padding: 18px 20px var(--spacing-8);
+  gap: 18px;
+  align-self: stretch;
+}
+
+.teema .railcard {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  gap: var(--spacing-15);
+}
+
+.teema .railcard__row {
+  font-size: 12.5px;
+  align-items: baseline;
+}
+
+.teema .railcard__key {
+  min-width: 96px;
+  flex: none;
+}
+
+.railcard__value--date {
+  font-variant-numeric: tabular-nums;
+}
+
+.railcard__hint {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-regular);
+  letter-spacing: normal;
+  color: var(--text-muted);
+  text-transform: none;
+}
+
+/* The private note. Its own surface tone, so it reads as a different kind of
+   thing from the facts above it — those are the record, this is scrap paper. */
+.railnote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-15);
+}
+
+.railnote__area {
+  width: 100%;
+  min-height: 118px;
+  background: var(--surface-capture);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-body);
+  resize: vertical;
+}
+
+.railnote__area:empty,
+.railnote__area:placeholder-shown {
+  border-style: dashed;
+}
+
+/* The focus ring stays. This is a plain textarea in a rail, not a borderless
+   field inside a card that shows focus for it (tests/test_ui_contract.py). */
+.railnote__area:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+  border-color: var(--accent-primary);
+}
+
+.railnote__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  justify-content: space-between;
+}
+
+/* -- Dokumendid ------------------------------------------------------- */
+
+.doctoolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-25);
+  flex-wrap: wrap;
+}
+
+.doctoolbar__spacer {
+  flex: 1;
+}
+
+.uploadpanel {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-panel);
+  padding: var(--spacing-35);
+}
+
+.uploadpanel[hidden] {
+  display: none;
+}
+
+.docsection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.docsection__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-25);
+}
+
+.docsection__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.docsection__count {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* The sent opinion is tinted and badged, because "which of these forty files
+   is the one Koda actually sent" is the question this table exists to answer
+   instantly. */
+.doctable__row--final {
+  background: var(--status-success-soft);
+}
+
+.badge--final {
+  color: var(--status-success);
+  border: 1px solid var(--status-success-border);
+  background: transparent;
+}
+
+/* A working reference looks like the opposite of evidence: dashed, arrowed,
+   and captioned with the fact that it keeps changing. */
+.badge--sharepoint {
+  color: var(--text-secondary);
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+}
+
+.doctable__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-left: var(--spacing-2);
+  opacity: 0;
+  transition: opacity var(--motion-duration-fast) var(--motion-easing-standard);
+}
+
+.doctable tbody tr:hover .doctable__actions,
+.doctable tbody tr:focus-within .doctable__actions {
+  opacity: 1;
+}
+
+.versions__trigger {
+  cursor: pointer;
+  color: var(--accent-link);
+  font-weight: var(--typography-weight-semibold);
+  font-size: var(--typography-size-meta);
+  list-style: none;
+}
+
+.versions__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.versions__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding-top: var(--spacing-1);
+}
+
+.versions__note {
+  margin: 0;
+  font-size: var(--typography-size-label);
+  color: var(--text-muted);
+}
+
+.versions__row {
+  margin: 0;
+  display: flex;
+  gap: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.versions__current {
+  color: var(--status-success);
+}
+
+.docempty {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-panel);
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-25);
+}
+
+.docempty__text {
+  margin: 0;
+  font-size: var(--typography-size-base);
+  color: var(--text-secondary);
+}
+
+.docempty__actions {
+  display: flex;
+  gap: var(--spacing-25);
+}
+
+.sharepointrow__meta {
+  font-size: var(--typography-size-label);
+  color: var(--text-muted);
+}
+
+.sharepointrow__spacer {
+  flex: 1;
+}
+
+/* -- restricted chip beside the title --------------------------------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font-size: var(--typography-size-chip-sm);
+  font-weight: var(--typography-weight-heavy);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: var(--radius-chip);
+  padding: 2px 7px;
+  white-space: nowrap;
+}
+
+.chip--restricted {
+  background: var(--status-warning-soft);
+  border: 1px solid var(--status-warning-border);
+  color: var(--status-warning);
+}
+
+/* ====================================================================
+ * Teema — narrower viewports
+ *
+ * At 1366 and 1280 the rail keeps its 300px and the main column absorbs the
+ * difference. Below roughly 1080 the rail moves under the content and the
+ * reading order is unchanged, because it is already last in the DOM — the
+ * grid never reordered it, precisely so that this breakpoint is a layout
+ * change and not a content change (Teema redesign §31).
+ * ==================================================================== */
+
+@media (max-width: 1100px) {
+  .teemagrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .teema .rail {
+    border-left: 0;
+    border-top: 1px solid var(--border-default);
+    padding: var(--spacing-4) var(--spacing-8) var(--spacing-8);
+  }
+}
+
+@media (max-width: 720px) {
+  .teema {
+    margin-left: calc(var(--spacing-4) * -1);
+    margin-right: calc(var(--spacing-4) * -1);
+  }
+
+  .teema .matterhead,
+  .nextrow,
+  .teema .composer,
+  .positionblock,
+  .sentstrip,
+  .historicalrow,
+  .accordion__head,
+  .accordion__body,
+  .teema .rail,
+  .teemamain--padded {
+    padding-left: var(--spacing-4);
+    padding-right: var(--spacing-4);
+  }
+
+  .metaline__value {
+    max-width: 24ch;
+  }
+}
+
+/* The empty case for the structured facts: one quiet row of add affordances,
+   in place of three headings each announcing that nothing exists. */
+.addrow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-35);
+  flex-wrap: wrap;
+  padding: var(--spacing-3) var(--spacing-8);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* The fact sections are rows on the Teema page like everything else, not cards
+   floating in a gutter. */
+.teemamain > .factsection {
+  padding: var(--spacing-35) var(--spacing-8);
+  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--spacing-2);
+}
+
+/* Banners are rows on the Teema page, so they align with everything else in the
+   stack rather than sitting inside a gutter that no longer exists. */
+.teemamain > .banner {
+  border-radius: 0;
+  border-left-width: 3px;
+  border-right: 0;
+  border-top: 0;
+  margin: 0;
+  padding: var(--spacing-3) var(--spacing-8);
+}
+
+.teemamain--padded > .banner {
+  border-radius: var(--radius-card);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--border-strong);
+  padding: var(--spacing-25) var(--spacing-35);
+}
+
+/* The way to the Submission workflow: present on every Matter, prominent on
+   none. */
+.positionblock__manage {
+  font-size: var(--typography-size-meta);
+  align-self: flex-start;
+}
+
+/* An editable fact in the rail. Same affordance as the header meta line — a
+   dashed underline that strengthens on hover — at the rail's smaller scale. */
+.railcard__editable {
+  min-width: 0;
+}
+
+.railcard__value {
+  color: var(--text-body);
+  border-bottom: 1px dashed var(--border-strong);
+  padding-bottom: 1px;
+}
+
+.rail .inlineedit__trigger:hover .railcard__value {
+  border-bottom-style: solid;
+  border-bottom-color: var(--text-secondary);
+}
+
+/* An empty optional fact is an invitation, not an em dash. */
+.railcard__add {
+  color: var(--text-muted);
+  border-bottom: 1px dashed var(--border-strong);
+  padding-bottom: 1px;
+}
+
+.rail .inlineedit__trigger:hover .railcard__add {
+  color: var(--accent-link);
+  border-bottom-color: var(--accent-link);
+}
+
+/* Working references get a quieter head than the chronology: they are a
+   reference list, not a second half of the page. */
+.accordion--working .accordion__title {
+  color: var(--text-secondary);
+}
+
+/* A secondary button: elevated fill, strong border, ordinary text. Used where
+   an action is real but is not the page's primary one — "✓ Tehtud" beside the
+   next step, "Ava" on a document row. */
+.button--secondary {
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text-primary);
+}
+
+.button--secondary:hover {
+  border-color: var(--text-secondary);
+}
+
+/* The header's deadline slot. Its own modifier because the visual suite masks
+   it by name: the digits change daily and the label beside them must not. */
+.metaline__item--deadline {
+  font-variant-numeric: tabular-nums;
+}
+
+/* An open Matter with no next step. Warning-toned, never danger: a file
+   drifting is worth noticing and is not a failure. */
+.nextrow--unset {
+  box-shadow: inset 2px 0 0 0 var(--status-warning);
+}
+
+/* The private note sits apart from the facts above it — those are the record,
+   this is scrap paper. */
+.railcard--note {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--spacing-3);
+}
+
+/* The version disclosure inside a document row. */
+.versions {
+  display: inline-block;
+}
+
+/* An absent deadline is an invitation, not a label over an em dash. */
+.metaline__add {
+  color: var(--text-muted);
+  border-bottom: 1px dashed var(--border-strong);
+  padding-bottom: 1px;
+}
+
+.metaline .inlineedit__trigger:hover .metaline__add {
+  color: var(--accent-link);
+  border-bottom-color: var(--accent-link);
+}
+
+/* The header's secondary-action menu. Same disclosure mechanics as the top
+   bar's "Veel", at the header's scale. */
+.headmenu {
+  /* Inline-flex, not the block a <details> defaults to: it sits at the end of
+     the breadcrumb line beside the state pill, and as a block it pushed itself
+     onto a line of its own and the title down with it. */
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  margin-left: var(--spacing-2);
+  flex: none;
+}
+
+.headmenu__trigger {
+  list-style: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px var(--spacing-1);
+  border-radius: var(--radius-chip);
+}
+
+.headmenu__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.headmenu__trigger:hover {
+  color: var(--text-primary);
+}
+
+.headmenu__trigger:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+.headmenu__panel {
+  position: absolute;
+  top: 24px;
+  right: 0;
+  z-index: 40;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-menu);
+  padding: var(--spacing-3);
+}
+
+.headmenu__label {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* The chronology's Kõik / Sissekanded / Sündmused control. A segmented group of
+   quiet buttons rather than a select: three options that fit on one line are
+   faster to read than a dropdown that hides two of them. */
+.timelinefilter {
+  display: inline-flex;
+  gap: var(--spacing-1);
+  align-self: flex-start;
+}
+
+.timelinefilter__option {
+  min-height: 30px;
+  padding: var(--spacing-1) var(--spacing-25);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: none;
+  font-family: inherit;
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.timelinefilter__option:hover {
+  color: var(--text-primary);
+  border-color: var(--border-control);
+}
+
+.timelinefilter__option.is-active {
+  color: var(--text-primary);
+  background: var(--surface-selected);
+  border-color: var(--accent-border);
+}
+
+.timelinefilter__option:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+/* The extraction state, under a document's name rather than in a column. */
+.doctable__state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-left: var(--spacing-2);
+}
+
+/* The Dokumendid tab: one column, full width, no rail. */
+.teemadocs {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }

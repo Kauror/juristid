@@ -209,7 +209,7 @@ def test_the_matter_page_shows_the_register_instruction(applied, client) -> None
     body = response.content.decode()
 
     assert response.status_code == 200
-    assert "Järgmiseks (Excelist)" in body
+    assert "Excelist" in body
     assert "Sünteetiline registri juhis." in body
 
 
@@ -241,7 +241,7 @@ def test_a_structured_action_replaces_the_source_instruction(applied, client) ->
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
     assert "Sünteetiline struktuurne samm." in body
-    assert "Järgmiseks (Excelist)" not in body
+    assert "Excelist" not in body
 
 
 def test_the_page_no_longer_explains_how_the_importer_works(applied, client) -> None:
@@ -266,7 +266,7 @@ def test_the_page_no_longer_explains_how_the_importer_works(applied, client) -> 
 
     # The half that is useful, kept.
     assert "Sünteetiline registri juhis." in body
-    assert "Järgmiseks (Excelist)" in body
+    assert "Excelist" in body
 
     # The half that was a lecture, gone.
     assert "Registri tekst" not in body
@@ -289,6 +289,6 @@ def test_the_shown_instruction_carries_no_date_or_overdue_state(applied, client)
     client.force_login(applied.people.head)
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
-    assert "Järgmiseks (Excelist)" in body
+    assert "Excelist" in body
     assert "Tähtaeg möödas" not in body
     assert not NextAction.objects.filter(matter=matter).exists()

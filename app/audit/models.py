@@ -45,6 +45,25 @@ class ChangeEvent(AppendOnlyModel):
     # Free-text business content stays in its own record; the payload carries
     # identifiers and small scalar before/after values, not copied narrative.
     payload = models.JSONField(default=dict, blank=True)
+    #: Which single professional action produced this row.
+    #:
+    #: One composer save can legitimately write a note, capture a file, set the
+    #: next step, record a consultation and close the Matter. Five canonical
+    #: facts, five audit rows — and a timeline that renders five lines for one
+    #: thing a person did, which is the noise that stops a chronology being
+    #: read.
+    #:
+    #: The answer is not to write fewer rows. It is to say which of them belong
+    #: together, once, at the moment they are written, so the presentation layer
+    #: never has to guess from timestamps. Rows written outside a composer save
+    #: leave it null and stand alone, exactly as they do today; nothing is
+    #: merged retroactively and no existing row changes (Teema redesign §11.1).
+    operation_id = models.UUIDField(
+        null=True,
+        blank=True,
+        db_index=True,
+        verbose_name="tegevuse tunnus",
+    )
 
     class Meta:
         verbose_name = "muudatussündmus"

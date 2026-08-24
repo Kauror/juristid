@@ -1,0 +1,43 @@
+{% comment %}
+`Lühikokkuvõte` — the plain-language answer to "what is this actually about".
+
+No heading, no card, no section. A paragraph directly under the meta line, in
+the largest body text on the page, with the edit control as a quiet link at the
+end of the sentence it edits. A label above it would make two sentences of
+plain Estonian look like a database field, which is the one thing this must not
+read as (Teema redesign §6).
+
+The empty state is a single dashed line rather than an empty box, because a
+Matter nobody has summarised yet should look short, not unfinished.
+{% endcomment %}
+<div class="summary" id="teema-luhikokkuvote">
+  {% if can_write %}
+    <details class="summary__edit">
+      <summary class="summary__trigger">
+        {% if matter.brief_summary %}
+          <p class="summary__text">{{ matter.brief_summary|linebreaksbr }}<span class="summary__action">Muuda</span></p>
+        {% else %}
+          <span class="summary__prompt">+ Mida see teema ettevõtjatele tähendab? (2–3 lauset)</span>
+        {% endif %}
+      </summary>
+      <form class="summary__form"
+            hx-post="{% url 'matters:update_summary' pk=matter.pk %}"
+            hx-target="#teema-pais" hx-swap="outerHTML">
+        {% csrf_token %}
+        <label class="visually-hidden" for="{{ summary_form.brief_summary.id_for_label }}">
+          Lühikokkuvõte
+        </label>
+        {{ summary_form.brief_summary }}
+        <div class="summary__foot">
+          <span class="keyhint">
+            <kbd class="key">Ctrl</kbd> + <kbd class="key">Enter</kbd> salvestab ·
+            <kbd class="key">Esc</kbd> katkestab
+          </span>
+          <button class="button button--primary button--tiny" type="submit">Salvesta</button>
+        </div>
+      </form>
+    </details>
+  {% elif matter.brief_summary %}
+    <p class="summary__text">{{ matter.brief_summary|linebreaksbr }}</p>
+  {% endif %}
+</div>

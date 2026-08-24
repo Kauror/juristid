@@ -1,0 +1,55 @@
+{% comment %}
+`Ajajoon` — closed by default.
+
+The chronology is the file's memory and it is the least urgent thing on the
+page: somebody opening a Matter wants to know what it is and what to do next,
+and a Matter with two hundred entries used to answer neither because the history
+started at the fold. Collapsed, it is one line that says how much there is and
+when it last moved.
+
+Nothing is fetched eagerly that the collapsed row does not need: the first page
+is rendered inside the `<details>` and everything older comes from
+`timeline_page` when somebody asks for it (Teema redesign §21, §39).
+{% endcomment %}
+<details class="accordion accordion--timeline" id="ajajoon">
+  <summary class="accordion__head">
+    <span class="accordion__caret" aria-hidden="true"></span>
+    <h2 class="accordion__title">Ajajoon</h2>
+    <span class="accordion__summary">
+      {% if timeline_items %}
+        {% with newest=timeline_items.0 %}
+          {{ timeline_count }} kirjet{% if timeline_has_more %}+{% endif %}
+          · viimane {{ newest.occurred_at|date:"j.n.Y" }}
+          {% if newest.entry.author %}, {{ newest.entry.author.display_name }}
+          {% elif newest.event.actor %}, {{ newest.event.actor.display_name }}{% endif %}
+        {% endwith %}
+      {% else %}
+        Ajajoon on tühi
+      {% endif %}
+    </span>
+    <span class="accordion__spacer"></span>
+    <span class="accordion__action">Ava ajajoon</span>
+  </summary>
+
+  <div class="accordion__body">
+    {% comment %}
+      The `Kõik ▾` control. Inside the body rather than in the head, because a
+      control inside a <summary> toggles the disclosure it sits in before its
+      own handler runs. It swaps the list and leaves the accordion open.
+    {% endcomment %}
+    <div class="timelinefilter" role="group" aria-label="Ajajoone filter">
+      {% for value, label in timeline_filters %}
+        <button class="timelinefilter__option {% if timeline_only == value %}is-active{% endif %}"
+                type="button"
+                {% if timeline_only == value %}aria-pressed="true"{% else %}aria-pressed="false"{% endif %}
+                hx-get="{% url 'matters:timeline_page' pk=matter.pk %}?ajajoon={{ value }}"
+                hx-target="#ajalugu-loend"
+                hx-swap="innerHTML">{{ label }}</button>
+      {% endfor %}
+    </div>
+
+    <div id="ajalugu-loend">
+      {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter timeline_only=timeline_only %}
+    </div>
+  </div>
+</details>

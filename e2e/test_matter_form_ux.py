@@ -13,7 +13,7 @@ from __future__ import annotations
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, sign_in
+from e2e.conftest import MARTIN, go_to, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -214,7 +214,7 @@ def test_the_next_action_block_is_still_optional(page, base_url):
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator(".nextaction")).to_contain_text("Järgmine samm on määramata")
+    expect(page.locator(".nextrow")).to_contain_text("Järgmine samm on määramata")
 
 
 def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
@@ -231,9 +231,15 @@ def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    responsible = page.locator(".nextaction__responsible")
-    expect(responsible).to_be_visible()
-    assert responsible.inner_text().strip(), "the next action has nobody responsible for it"
+    # The row itself no longer prints the responsible person: on a Matter page
+    # the owner is already in the header meta line, and repeating it beside the
+    # step was one of the six values the row was carrying instead of the
+    # sentence (Teema redesign §8). The service still assigns one, which is what
+    # this test is actually about, so it is checked where it is visible: the
+    # step appears in that person's own Minu töö queue.
+    expect(page.locator(".nextrow__text")).to_have_text("Jälgi menetluse käiku")
+    go_to(page, "Minu töö")
+    expect(page.get_by_text("Jälgi menetluse käiku").first).to_be_visible()
 
 
 # ---------------------------------------------------------------------------

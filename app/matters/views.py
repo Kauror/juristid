@@ -37,6 +37,7 @@ from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
+from app.documents.services import link_working_document
 from app.documents.uploads import UploadRejected
 from app.intelligence.selectors import matter_intelligence
 from app.legacy_import.register_display import (
@@ -46,9 +47,9 @@ from app.legacy_import.register_display import (
 )
 from app.matters import register_filters, selectors
 from app.matters.dashboard import DEADLINE_WINDOW_PARAM, build_dashboard, deadline_window
-from app.matters.entry_enums import EntryKind
 from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.forms import (
+    BriefSummaryForm,
     CloseMatterForm,
     ComposerForm,
     EngagementForm,
@@ -56,7 +57,9 @@ from app.matters.forms import (
     MatterCreateForm,
     MatterFieldForm,
     NextActionForm,
+    PersonalNoteForm,
     PositionForm,
+    WorkingDocumentForm,
 )
 from app.matters.intake import register_incoming, validate_uploads
 from app.matters.models import Matter, MatterEngagement
@@ -68,22 +71,27 @@ from app.matters.services import (
     close_matter,
     compose_update,
     create_matter,
+    personal_note_for,
     reopen_matter,
+    save_personal_note,
+    set_brief_summary,
     set_matter_data_class,
     set_matter_dates,
     set_matter_visibility,
     set_organisations,
     set_policy_area_other,
+    set_policy_areas,
     set_position,
     update_engagement,
 )
-from app.matters.timeline import matter_timeline
+from app.matters.timeline import TIMELINE_FILTER_ALL, TIMELINE_FILTERS, matter_timeline
 from app.organisations.models import Organisation
 from app.search import services as search_services
-from app.submissions.enums import RecipientRole
+from app.submissions.enums import RecipientRole, SubmissionStatus
 from app.submissions.forms import SubmissionCreateForm
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
+from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow.enums import ActionKind, Disposition, Track
 from app.workflow.models import NextAction, StageVocabulary
 from app.workflow.services import (
@@ -96,6 +104,11 @@ from app.workflow.services import (
 PAGE_SIZE = 25
 TIMELINE_PAGE_SIZE = 30
 
+#: The private note's form prefix. It shares a field name with the composer —
+#: both are called `body` — and two elements with the same id on one page make
+#: every label ambiguous for a screen reader and for a browser test.
+NOTE_PREFIX = "markmed"
+
 
 def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
     """Fetch a Matter the signed-in user is allowed to read, or 404.
@@ -105,8 +118,16 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
     """
     queryset = (
         Matter.objects.visible_to(request.user)
-        .select_related("owner", "stage", "addressee_organisation")
-        .prefetch_related("source_organisations", "policy_areas", "tags", "collaborators")
+        .select_related("owner", "stage", "addressee_organisation", "superseded_by")
+        .prefetch_related(
+            "source_organisations",
+            "policy_areas",
+            "tags",
+            "collaborators",
+            # `Seotud` reads the successor chain in both directions, and the
+            # reverse side is a relation rather than a column.
+            "supersedes",
+        )
     )
     return get_object_or_404(queryset, pk=pk)
 
@@ -656,7 +677,9 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "owners": User.objects.filter(is_active=True).order_by("display_name"),
         "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "tracks": Track.choices,
-        "policy_areas": PolicyArea.objects.filter(is_active=True).order_by("name_et"),
+        # The governed vocabulary, so the register's filter offers exactly what
+        # Uus teema and the Teema header offer (app/taxonomy/vocabulary.py).
+        "policy_areas": selectable_policy_areas(),
         "record_modes": RecordMode.choices,
         "origins": MatterOrigin.choices,
         "next_action_options": list(NEXT_ACTION_LABELS.items()),
@@ -919,53 +942,86 @@ def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-#: What arrived from outside, as opposed to what Koda produced. Shown on the
-#: overview so an incoming Matter reveals its source material immediately rather
-#: than hiding it one tab away.
-INCOMING_ROLES = (DocumentRole.INCOMING_AUTHORITY, DocumentRole.ORIGINAL_EMAIL)
+def _sent_submissions(request: HttpRequest, matter: Matter) -> list[Submission]:
+    """Canonical sent opinions, for the compact strip on the main view.
 
-
-def _incoming_documents(request: HttpRequest, matter: Matter) -> list[Document]:
-    """Source material for this Matter, authorized like everything else.
-
-    Scoped through ``Document.objects.visible_to`` rather than the Matter's own
-    relation, so a document restricted more tightly than its Matter stays
-    invisible to someone who may read the Matter itself.
+    Only SENT, and only through the submission's own visibility. A draft is not
+    something Koda sent, and a historical archive letter is not a canonical
+    submission — the archive keeps its own surface precisely so the Matter page
+    cannot claim an opinion went out that nobody recorded going out
+    (Teema redesign §20).
     """
     return list(
-        Document.objects.visible_to(request.user)
-        .filter(matter=matter, role__in=INCOMING_ROLES)
-        .select_related("current_version")
-        .order_by("created_at")[:20]
+        Submission.objects.filter(matter=matter, status=SubmissionStatus.SENT)
+        .visible_to(request.user)
+        .select_related("final_version", "sent_by")
+        .prefetch_related("recipient_rows__organisation")
+        .order_by("-sent_at")[:5]
     )
 
 
+def _timeline_filter(request: HttpRequest) -> str:
+    """Which slice of the chronology the reader asked for.
+
+    A query-string value, like every other filter in this product, so a
+    filtered chronology is a link somebody can send. An unknown value falls
+    back to everything rather than to nothing: a hand-edited URL should show
+    too much, never silently hide the file's history.
+    """
+    value = (request.GET.get("ajajoon") or "").strip()
+    known = {key for key, _label in TIMELINE_FILTERS}
+    return value if value in known else TIMELINE_FILTER_ALL
+
+
 def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
-    items, has_more = matter_timeline(matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE)
+    timeline_only = _timeline_filter(request)
+    items, has_more = matter_timeline(
+        matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE, only=timeline_only
+    )
+    engagements = selectors.matter_engagements(matter, request.user)
+    current_action = current_next_action(matter)
+    # The register's own `JÄRGMISEKS`, and only where no structured action
+    # exists. Read here rather than in the template so the page cannot start
+    # asking the database a question of its own — and read *conditionally*,
+    # because on a Matter that has a real next step neither answer is rendered
+    # and both are a query for nothing (ADR 0021).
+    source_instruction = "" if current_action else source_instruction_for(matter)
     return {
         "matter": matter,
-        "current_action": current_next_action(matter),
-        # The register's own `JÄRGMISEKS`, shown only where no structured action
-        # exists. Read here rather than in the template so the page cannot start
-        # asking the database a question of its own (ADR 0021).
-        "source_instruction": source_instruction_for(matter),
-        "source_snapshot": snapshot_label(),
+        "current_action": current_action,
+        "source_instruction": source_instruction,
+        "source_snapshot": snapshot_label() if source_instruction else "",
         "timeline_items": items,
         "timeline_has_more": has_more,
-        "composer_form": ComposerForm(),
-        "incoming_documents": _incoming_documents(request, matter),
+        "timeline_count": len(items) + (1 if has_more else 0),
+        "timeline_only": timeline_only,
+        "timeline_filters": TIMELINE_FILTERS,
+        "composer_form": ComposerForm(matter=matter, viewer=request.user),
+        # `summary_form` and `note_form` are deliberately absent: the header
+        # context carries them, it is merged over this one, and reading the
+        # private note twice per page is two queries for one answer.
+        "position_form": PositionForm(
+            initial={
+                "position_summary": matter.position_summary,
+                "rationale_summary": matter.rationale_summary,
+            }
+        ),
         "historical": _historical_context(matter, request.user),
         # Stage 2G's structured facts. Read through their own selector, which
-        # scopes them like every other child record; the write controls are
-        # routed to `app.intelligence` rather than rendered from here, so this
-        # view knows nothing about how they are captured.
+        # scopes them like every other child record.
         "intelligence": matter_intelligence(matter, request.user),
         # `Kaasamine`. Read here for the same reason as everything else on this
         # dict: the template must not be able to start querying.
-        "engagements": selectors.matter_engagements(matter, request.user),
+        "engagements": engagements,
+        "engagement_count": len(engagements),
         "engagement_form": EngagementForm(),
         "engagement_error": "",
         "engagement_editing": None,
+        # Collapsed by default, and open on the render that follows a write.
+        # Adding a consultation and watching the section it went into fold shut
+        # is the one moment a reader needs to see the list (Teema redesign §14).
+        "engagement_open": False,
+        "sent_submissions": _sent_submissions(request, matter),
         "can_write": may_write_business_content(request.user),
         "can_review_victory": may_review_work_victory(request.user),
         "today": timezone.localdate(),
@@ -976,18 +1032,26 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
 def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
     context = _overview_context(request, matter)
-    context.update(_header_context(request, matter))
-    context["tab"] = "ulevaade"
+    intelligence = context["intelligence"]
+    context.update(
+        _header_context(
+            request,
+            matter,
+            milestones=[*intelligence.upcoming_dates, *intelligence.past_dates],
+        )
+    )
+    context["tab"] = "teema"
     context["nav_active"] = "teemad"
     return render(request, "matters/matter_detail.html", context)
 
 
-def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
+def _header_context(
+    request: HttpRequest, matter: Matter, *, milestones: Any = None
+) -> dict[str, Any]:
     return {
         "matter": matter,
-        "submission_count": Submission.objects.filter(matter=matter)
-        .visible_to(request.user)
-        .count(),
+        # No `submission_count`. The tab that displayed it is gone, and a count
+        # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
         "dispositions": Disposition.choices,
         "owners": User.objects.filter(is_active=True).order_by("display_name"),
@@ -1000,18 +1064,46 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "selected_sender_ids": matter.source_organisation_ids,
         "tracks": Track.choices,
         "visibilities": Visibility.choices,
-        "current_action": current_next_action(matter),
+        # No `current_action` either. The header band no longer shows the next
+        # step — the Järgmiseks row does — and the overview context reads it
+        # once for both.
+        # The governed vocabulary plus whatever this Matter already carries, so
+        # a file classified years ago under a retired area still shows it and
+        # can still be corrected (app/taxonomy/vocabulary.py).
+        "policy_area_choices": selectable_policy_areas(),
+        "selected_policy_area_ids": {area.pk for area in matter.policy_areas.all()},
+        "matter_policy_areas": list(matter.policy_areas.all()),
+        # The one deadline the header shows, chosen by the rule in §5.5 rather
+        # than by the template picking whichever field is non-empty.
+        # `milestones` when the caller has already read them, which the Matter
+        # page has: `Olulised tähtajad` renders from the same rows.
+        "active_deadline": selectors.active_deadline(matter, request.user, milestones=milestones),
+        "summary_form": BriefSummaryForm(initial={"brief_summary": matter.brief_summary}),
+        # The rail travels with the header — it is on all three Matter surfaces
+        # — so the private note and the write flag are read here rather than
+        # three times over.
+        # Prefixed, because the composer's own field is called `body` too and
+        # two `id="id_body"` on one page break every `for=` on both of them —
+        # the composer's textarea was announcing itself as "Tegevuse kirjeldus
+        # Märkmed".
+        "note_form": PersonalNoteForm(
+            prefix=NOTE_PREFIX,
+            initial={"body": personal_note_for(matter=matter, author=request.user)},
+        ),
+        "can_write": may_write_business_content(request.user),
         "today": timezone.localdate(),
     }
 
 
 @login_required
 def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
-    """Seisukoht ja kaasamine.
+    """`Arvamused` on one Matter.
 
-    Stage 1 fills the position and the submissions. Consultation (`Kaasamine`)
-    is Stage-2 work and is left visibly absent rather than mocked up, because a
-    placeholder that looks like a feature is worse than an honest gap.
+    No longer a tab: the Matter has exactly two, and both the position and the
+    engagement moved into the main Teema view where they are read. What stays
+    here is the formal Submission workflow — drafting, giving an opinion its
+    exact evidence, marking it sent, withdrawing it — reached from the position
+    block and the sent-opinion strip (Teema redesign §3, §17).
     """
     matter = get_visible_matter(request, pk)
     submissions = list(
@@ -1048,7 +1140,9 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
     context = _header_context(request, matter)
     context.update(
         {
-            "tab": "seisukoht",
+            # No tab is current here. The two tab links still render, and
+            # neither is highlighted, because this page is not one of them.
+            "tab": "arvamused",
             "nav_active": "teemad",
             "position_form": PositionForm(
                 initial={
@@ -1082,8 +1176,24 @@ def _historical_context(matter: Any, user: Any) -> dict:
     return historical_summary(matter, user)
 
 
+#: How many evidence rows the Dokumendid table renders before it offers
+#: "Näita rohkem". A file with forty documents is real; forty rows above the
+#: fold is not what somebody opening the tab is looking for.
+DOCUMENT_PAGE_SIZE = 12
+
+
 @login_required
 def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
+    """The file workspace: immutable evidence, then living working references.
+
+    The two are queried together and split in Python — one query, one ordering
+    — because `has_working_document` is a property of the row rather than a
+    column, and the tab has to be able to say how many of each there are before
+    it decides what to render.
+
+    Filename search, role and year are ordinary query-string filters, like the
+    register's: a filtered view is a link somebody can send.
+    """
     matter = get_visible_matter(request, pk)
     documents = (
         Document.objects.filter(matter=matter)
@@ -1092,14 +1202,43 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
         .prefetch_related("versions")
         .order_by("-created_at")
     )
+
+    term = (request.GET.get("otsi") or "").strip()
+    role = (request.GET.get("roll") or "").strip()
+    year = (request.GET.get("aasta") or "").strip()
+    if term:
+        documents = documents.filter(
+            Q(title__icontains=term) | Q(current_version__original_filename__icontains=term)
+        )
+    if role in DocumentRole.values:
+        documents = documents.filter(role=role)
+    if year.isdigit():
+        documents = documents.filter(created_at__year=int(year))
+
+    rows = list(documents)
+    evidence = [document for document in rows if not document.has_working_document]
+    working = [document for document in rows if document.has_working_document]
+    show_all = request.GET.get("koik") == "1"
+    visible_evidence = evidence if show_all else evidence[:DOCUMENT_PAGE_SIZE]
+
     context = _header_context(request, matter)
     context.update(
         {
             "tab": "dokumendid",
             "nav_active": "teemad",
-            "evidence_documents": [doc for doc in documents if not doc.has_working_document],
-            "working_documents": [doc for doc in documents if doc.has_working_document],
+            "evidence_documents": visible_evidence,
+            "evidence_total": len(evidence),
+            "evidence_hidden": max(len(evidence) - len(visible_evidence), 0),
+            "working_documents": working,
             "document_roles": DocumentRole.choices,
+            # Only the years this Matter actually has files from. A dropdown
+            # offering ten empty years is a dropdown that teaches people the
+            # filter does not work.
+            "document_years": sorted({document.created_at.year for document in rows}, reverse=True),
+            "document_filters": {"otsi": term, "roll": role, "aasta": year},
+            "document_filters_active": bool(term or role or year),
+            "working_document_form": WorkingDocumentForm(),
+            "can_write": may_write_business_content(request.user),
             "historical": _historical_context(matter, request.user),
         }
     )
@@ -1111,14 +1250,28 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
-def _render_overview(request: HttpRequest, matter: Matter, status: int = 200) -> HttpResponse:
+def _render_overview(
+    request: HttpRequest,
+    matter: Matter,
+    status: int = 200,
+    *,
+    engagement_open: bool = False,
+) -> HttpResponse:
     """Re-render the whole overview column.
 
     One render from one set of queries, so `Järgmiseks` and the timeline can
     never show different pictures of the same save.
     """
     context = _overview_context(request, matter)
-    context.update(_header_context(request, matter))
+    intelligence = context["intelligence"]
+    context.update(
+        _header_context(
+            request,
+            matter,
+            milestones=[*intelligence.upcoming_dates, *intelligence.past_dates],
+        )
+    )
+    context["engagement_open"] = engagement_open
     return render(request, "matters/partials/overview.html", context, status=status)
 
 
@@ -1127,7 +1280,14 @@ def _render_overview(request: HttpRequest, matter: Matter, status: int = 200) ->
 def compose(request: HttpRequest, pk: Any) -> HttpResponse:
     """The unified composer save. Entry and `Järgmiseks` land together."""
     matter = get_visible_matter(request, pk)
-    form = ComposerForm(request.POST, request.FILES)
+    # Every sub-action the composer can perform is business content, and the
+    # unified surface does not unify the permission: the same check the
+    # engagement and closure endpoints make is made here, once, before anything
+    # is parsed (Teema redesign §34).
+    if not may_write_business_content(request.user):
+        raise Http404("Sissekandeid saab lisada ainult sisu muutmise õigusega.")
+
+    form = ComposerForm(request.POST, request.FILES, matter=matter, viewer=request.user)
 
     if not form.is_valid():
         context = _overview_context(request, matter)
@@ -1136,16 +1296,7 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
         return render(request, "matters/partials/overview.html", context, status=400)
 
     try:
-        compose_update(
-            matter=matter,
-            author=request.user,
-            body=form.cleaned_data.get("body") or "",
-            kind=form.cleaned_data.get("kind") or EntryKind.NOTE,
-            occurred_at=form.cleaned_data.get("occurred_at"),
-            organisation=form.cleaned_data.get("organisation"),
-            next_action=form.next_action_kwargs(),
-            attachment=form.cleaned_data.get("attachment"),
-        )
+        result = compose_update(matter=matter, author=request.user, **form.as_service_kwargs())
     except (DomainError, UploadRejected) as error:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))
@@ -1154,7 +1305,7 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
         return render(request, "matters/partials/overview.html", context, status=400)
 
     matter.refresh_from_db()
-    return _render_overview(request, matter)
+    return _render_overview(request, matter, engagement_open=result.engagement is not None)
 
 
 @login_required
@@ -1182,7 +1333,7 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
     except DomainError as error:
         return _overview_with_engagement_error(request, matter, form, str(error))
 
-    return _render_overview(request, matter)
+    return _render_overview(request, matter, engagement_open=True)
 
 
 @login_required
@@ -1219,7 +1370,7 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
             request, matter, form, str(error), editing=engagement.pk
         )
 
-    return _render_overview(request, matter)
+    return _render_overview(request, matter, engagement_open=True)
 
 
 def _overview_with_engagement_error(
@@ -1235,6 +1386,7 @@ def _overview_with_engagement_error(
     context["engagement_form"] = form
     context["engagement_error"] = error
     context["engagement_editing"] = editing
+    context["engagement_open"] = True
     return render(request, "matters/partials/overview.html", context, status=400)
 
 
@@ -1317,6 +1469,7 @@ FIELD_SERVICES = {
     "response_deadline",
     "visibility",
     "policy_area_other",
+    "policy_areas",
 }
 
 
@@ -1362,6 +1515,11 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
             )
         elif field == "policy_area_other":
             set_policy_area_other(matter=matter, value=value or "", actor=request.user)
+        elif field == "policy_areas":
+            # `list(...)` rather than the queryset, for the same reason the
+            # sender set uses one: an empty POST means "none of them", which is
+            # a decision somebody made, not a field they left alone.
+            set_policy_areas(matter=matter, policy_areas=list(value or []), actor=request.user)
     except DomainError as error:
         context = _header_context(request, matter)
         context["field_error"] = str(error)
@@ -1376,7 +1534,18 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
 
 #: Fields whose control is not in the header band. `_header_context` already
 #: carries everything the rail reads, so one context serves both.
-_FIELD_SURFACES = {"policy_area_other": "matters/partials/rail.html"}
+#:
+#: The redesign moved four of them: Menetlusliik, Kellelt, Kellele and Saabus
+#: are looked-up facts rather than glance facts, so they are edited in the rail
+#: where they are now shown. Swapping the header for one of them would leave the
+#: value on screen unchanged while claiming it had saved (Teema redesign §22.1).
+_FIELD_SURFACES = {
+    "policy_area_other": "matters/partials/rail.html",
+    "track": "matters/partials/rail.html",
+    "source_organisations": "matters/partials/rail.html",
+    "addressee_organisation": "matters/partials/rail.html",
+    "received_date": "matters/partials/rail.html",
+}
 
 
 @login_required
@@ -1415,7 +1584,18 @@ def set_data_class(request: HttpRequest, pk: Any) -> HttpResponse:
 @login_required
 @require_http_methods(["POST"])
 def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Koja seisukoht`, edited where it is read.
+
+    The position lives in the main Teema flow now, so an HTMX post swaps that
+    surface and stays on the page. A non-HTMX post — the Arvamused page, or a
+    browser with scripting off — still redirects, because there the form is
+    somewhere else and swapping a fragment into it would replace the wrong
+    thing (Teema redesign §19, §26.1).
+    """
     matter = get_visible_matter(request, pk)
+    if not may_write_business_content(request.user):
+        raise Http404("Seisukohta saab muuta ainult sisu muutmise õigusega.")
+
     form = PositionForm(request.POST)
     if form.is_valid():
         set_position(
@@ -1424,14 +1604,98 @@ def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
             rationale_summary=form.cleaned_data["rationale_summary"],
             actor=request.user,
         )
+        if request.headers.get("HX-Request"):
+            matter.refresh_from_db()
+            return _render_overview(request, matter)
         messages.success(request, "Seisukoht on salvestatud.")
     return redirect("matters:matter_position", pk=matter.pk)
 
 
 @login_required
 @require_http_methods(["POST"])
+def update_summary(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Lühikokkuvõte`, edited in place under the meta line.
+
+    Its own endpoint rather than another `update_field` case: the summary is a
+    paragraph rather than a value on the facts strip, it has its own form and
+    its own audit event, and it re-renders the header band it sits in.
+    """
+    matter = get_visible_matter(request, pk)
+    if not may_write_business_content(request.user):
+        raise Http404("Lühikokkuvõtet saab muuta ainult sisu muutmise õigusega.")
+
+    form = BriefSummaryForm(request.POST)
+    if not form.is_valid():
+        context = _header_context(request, matter)
+        context["summary_form"] = form
+        context["field_error"] = "Vigane väärtus."
+        return render(request, "matters/partials/header.html", context, status=400)
+
+    set_brief_summary(
+        matter=matter, value=form.cleaned_data.get("brief_summary") or "", actor=request.user
+    )
+    matter.refresh_from_db()
+    context = _header_context(request, matter)
+    context["summary_form"] = BriefSummaryForm(initial={"brief_summary": matter.brief_summary})
+    return render(request, "matters/partials/header.html", context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def save_note(request: HttpRequest, pk: Any) -> HttpResponse:
+    """Autosave the private `Märkmed` draft.
+
+    Returns 204 and swaps nothing. The person is mid-sentence: replacing the
+    textarea they are typing into would move their cursor, and there is nothing
+    to show them anyway — the note is theirs, it is not history, and it does not
+    appear anywhere else on the page (Teema redesign §22.4).
+    """
+    matter = get_visible_matter(request, pk)
+    form = PersonalNoteForm(request.POST, prefix=NOTE_PREFIX)
+    if not form.is_valid():
+        return HttpResponse(status=400)
+    try:
+        save_personal_note(
+            matter=matter, author=request.user, body=form.cleaned_data.get("body") or ""
+        )
+    except DomainError:
+        return HttpResponse(status=400)
+    return HttpResponse(status=204)
+
+
+@login_required
+@require_http_methods(["POST"])
+def add_working_document(request: HttpRequest, pk: Any) -> HttpResponse:
+    """Reference a living SharePoint file from the Dokumendid tab."""
+    matter = get_visible_matter(request, pk)
+    if not may_write_business_content(request.user):
+        raise Http404("Töödokumenti saab lisada ainult sisu muutmise õigusega.")
+
+    form = WorkingDocumentForm(request.POST)
+    if form.is_valid():
+        try:
+            link_working_document(
+                matter=matter,
+                title=form.cleaned_data["title"],
+                web_url=form.cleaned_data["web_url"],
+                site_path=form.cleaned_data.get("site_path") or "",
+                created_by=request.user,
+            )
+            messages.success(request, "Töödokumendi viide on lisatud.")
+        except DomainError as error:
+            messages.error(request, str(error))
+    else:
+        messages.error(request, "Kontrolli töödokumendi nime ja aadressi.")
+    return redirect("matters:matter_documents", pk=matter.pk)
+
+
+@login_required
+@require_http_methods(["POST"])
 def close(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
+    if not may_write_business_content(request.user):
+        raise Http404("Teemat saab sulgeda ainult sisu muutmise õigusega.")
+
     form = CloseMatterForm(request.POST)
     if form.is_valid():
         try:
@@ -1468,8 +1732,9 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
     except ValueError:
         offset = 0
 
+    only = _timeline_filter(request)
     items, has_more = matter_timeline(
-        matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE, offset=offset
+        matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE, offset=offset, only=only
     )
     return render(
         request,
@@ -1479,6 +1744,7 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "timeline_items": items,
             "timeline_has_more": has_more,
             "next_offset": offset + TIMELINE_PAGE_SIZE,
+            "timeline_only": only,
         },
     )
 

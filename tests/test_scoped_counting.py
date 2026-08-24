@@ -20,7 +20,7 @@ from django.urls import reverse
 
 from app.core.enums import Visibility
 from app.matters import dashboard
-from app.matters.forms import organisations_by_usage, policy_areas_by_usage
+from app.matters.forms import offered_policy_areas, organisations_by_usage
 from app.matters.models import Matter
 from tests import factories
 
@@ -144,21 +144,24 @@ def test_every_drill_through_opens_the_list_its_bar_counted(shared_world, client
 # -- the pickers -----------------------------------------------------------
 
 
-def test_policy_area_ordering_counts_matters_not_collaborator_rows(shared_world, specialist):
-    """The checkbox order is derived from use, so use has to be counted once.
+def test_policy_area_ordering_is_the_reviewed_order_and_not_usage(db, specialist):
+    """The Valdkonnad list no longer reorders itself under the reader.
 
-    Ordering is not a number anybody reads, which is exactly why an inflated
-    one survives: the list simply comes out in a slightly wrong order for
-    everybody except the department head.
+    Ordering by how often each area is used was a workaround for nine broad
+    headings sorted by an admin field. With the twenty-three working labels the
+    department itself sequenced, a stable order is learnable and a
+    self-rearranging one is not — and an order derived from usage was also a
+    channel through which the existence of restricted work could be inferred
+    from a checkbox list (app/taxonomy/vocabulary.py, Teema redesign §7.1).
     """
-    quiet = factories.PolicyAreaFactory(key="vaikne", name_et="Vaikne valdkond")
+    quiet = factories.PolicyAreaFactory(key="vaikne", name_et="Vaikne valdkond", sort_order=5)
+    busy = factories.PolicyAreaFactory(key="kasutatud", name_et="Kasutatud", sort_order=900)
     for _ in range(3):
-        factories.MatterFactory(owner=specialist).policy_areas.add(quiet)
+        factories.MatterFactory(owner=specialist).policy_areas.add(busy)
 
-    ordered = [area.key for area in policy_areas_by_usage(specialist)]
-    busy = shared_world["area"]
+    ordered = [area.key for area in offered_policy_areas()]
 
-    # Three matters beat two, and would have lost to 2 × 3 collaborator rows.
+    # Sort order wins, however much the other one is used.
     assert ordered.index(quiet.key) < ordered.index(busy.key)
 
 

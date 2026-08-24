@@ -1,21 +1,29 @@
 {% comment %}
-The Matter header band: identity, state, the facts that matter at a glance, and
-the tabs.
+The Matter header band: identity, state, the four facts that matter at a
+glance, the plain-language summary, and the two tabs.
+
+Reading order is the redesign's: what is this (reference and title), who owns
+it and where it stands (the meta line), what it means for the companies
+affected (the summary). The formal title is frequently a bad description of the
+business issue, which is why the summary sits directly under it in the largest
+body text on the page and carries no heading of its own — a label above two
+sentences would make them look like a field rather than the answer
+(Teema redesign §5, §6).
 
 Core facts are editable in place. The affordance is a dashed underline that
 strengthens on hover, so the strip reads as information first and as a form only
-when someone reaches for it — changing an owner should not mean opening an edit
-page and re-submitting every other value.
-
-That is what this file now does. It previously rendered all six controls open at
-once, which turned the band into a two-row wall of selects and Salvesta buttons
-about 150px tall, above the title's own two lines: the page opened on a form
-rather than on the Matter. Each fact is now its value, and the control it edits
-is one disclosure behind it. Every POST target, field name and HTMX swap is
-unchanged — this moves the control, not the write.
+when somebody reaches for it. Every fact that is not in the four — Kellelt,
+Kellele, Saabus, Menetlusliik — moved to the facts rail, where it is looked up
+rather than read.
 {% endcomment %}
 <header class="matterhead" id="teema-pais">
-  <p class="matterhead__crumbs">
+  {% comment %}
+    A div, not a paragraph. The ⋯ menu is a <details>, and a <details> start
+    tag inside an open <p> makes the parser close the paragraph — so the menu
+    landed on a line of its own under the breadcrumb and pushed the title down
+    with it. Exactly the trap `matter_banner.html` documents for <form>.
+  {% endcomment %}
+  <div class="matterhead__crumbs">
     <a href="{% url 'matters:matter_list' %}">Teemad</a>
     <span aria-hidden="true">/</span>
     {% if matter.display_reference %}
@@ -25,12 +33,19 @@ unchanged — this moves the control, not the write.
     {% endif %}
 
     <span class="matterhead__state">
+      {% comment %}
+        State is legible without colour: a dot *and* the word. A reader who
+        cannot tell #4fbf95 from #3d4954 still reads AVATUD (Teema redesign §5.3).
+      {% endcomment %}
       {% if matter.is_open %}
         <span class="badge badge--state badge--open">
           <span class="badge__dot" aria-hidden="true"></span>Avatud
         </span>
       {% else %}
-        <span class="badge badge--state badge--closed">Suletud</span>
+        <span class="badge badge--state badge--closed">
+          <span class="badge__dot" aria-hidden="true"></span>
+          {% if matter.record_mode == "ARCHIVE" %}Arhiiv{% else %}Suletud{% endif %}
+        </span>
       {% endif %}
       {% if matter.is_test_data %}
         {% comment %}
@@ -41,218 +56,239 @@ unchanged — this moves the control, not the write.
         {% endcomment %}
         <span class="badge badge--test">TEST</span>
       {% endif %}
-      {% if matter.record_mode == "ARCHIVE" %}
+      {% if matter.record_mode == "ARCHIVE" and matter.is_open %}
         <span class="badge badge--archive">Arhiiv</span>
       {% endif %}
-      {% if matter.is_restricted %}
-        <span class="badge badge--restricted">🔒 Piiratud</span>
-      {% endif %}
     </span>
-  </p>
 
-  <h1 class="matterhead__title">{{ matter.title }}</h1>
+    {% comment %}
+      The one secondary-action slot the header has. Everything a lawyer does
+      daily is somewhere it can be read; what lands here is the rest — today,
+      who may see this file.
+
+      `Nähtavus` had a service, an endpoint and a form field and no control at
+      all, so a Matter could only be restricted from the Django admin. It is
+      here rather than in the rail because it is not a fact somebody looks up:
+      it is a decision about the record, and it belongs beside the chip that
+      announces it (Teema redesign §4, §5.1).
+    {% endcomment %}
+    {% if can_write %}
+      <details class="headmenu">
+        <summary class="headmenu__trigger" aria-label="Rohkem tegevusi">⋯</summary>
+        <div class="headmenu__panel">
+          <span class="headmenu__label">Nähtavus</span>
+          <form class="inlineform"
+                hx-post="{% url 'matters:update_field' pk=matter.pk field='visibility' %}"
+                hx-target="#teema-pais" hx-swap="outerHTML">
+            {% csrf_token %}
+            <select class="field__input field__input--compact" name="visibility"
+                    aria-label="Nähtavus" data-autosubmit>
+              {% for value, label in visibilities %}
+                <option value="{{ value }}" {% if matter.visibility == value %}selected{% endif %}>
+                  {{ label }}
+                </option>
+              {% endfor %}
+            </select>
+            <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
+          </form>
+          <p class="field__help">
+            Piiratud teemat näevad ainult vastutaja, kaastöötajad ja osakonnajuht.
+            Sissekanded, arvamused ja tõendid pärivad sama piirangu.
+          </p>
+        </div>
+      </details>
+    {% endif %}
+  </div>
+
+  <h1 class="matterhead__title">
+    {{ matter.title }}
+    {% comment %}
+      The restriction chip sits beside the title rather than in the state slot,
+      because it answers a different question: the state says whether work is
+      live, this says who may see it. It carries the label as well as the
+      colour, and it never carries a reason — a chip explaining *why* a Matter
+      is restricted would leak the thing the restriction protects
+      (Teema redesign §5.3, §34).
+    {% endcomment %}
+    {% if matter.is_restricted %}
+      <span class="chip chip--restricted">🔒 Piiratud</span>
+    {% endif %}
+  </h1>
 
   {% if field_error %}
     <p class="formerror" role="alert">{{ field_error }}</p>
   {% endif %}
 
-  <dl class="metastrip">
-    <div class="metafield">
-      <dt class="metafield__label">Hetkeseis</dt>
-      <dd class="metafield__value">
-        <details class="inlineedit">
-          <summary class="inlineedit__trigger">
-            {% if matter.stage %}{{ matter.stage.label_et }}{% else %}<span class="muted">—</span>{% endif %}
-            <span class="inlineedit__caret" aria-hidden="true">▾</span>
-          </summary>
-          <form class="inlineedit__form inlineform"
-                hx-post="{% url 'matters:update_field' pk=matter.pk field='stage' %}"
-                hx-target="#teema-pais" hx-swap="outerHTML">
-            {% csrf_token %}
-            <select class="field__input field__input--compact" name="stage"
-                    aria-label="Hetkeseis" data-autosubmit>
-              <option value="">—</option>
-              {% for stage in stages %}
-                <option value="{{ stage.pk }}" {% if matter.stage_id == stage.pk %}selected{% endif %}>
-                  {{ stage.label_et }}
-                </option>
-              {% endfor %}
-            </select>
-            <button class="button button--quiet button--tiny" type="submit"
-                    aria-label="Salvesta hetkeseisu muudatus">Salvesta</button>
-          </form>
-        </details>
-      </dd>
-    </div>
+  <div class="metaline">
+    <span class="metaline__item">
+      <span class="metaline__label">Vastutaja</span>
+      <details class="inlineedit">
+        <summary class="inlineedit__trigger">
+          {% if matter.owner %}<span class="metaline__value" title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
+          {% else %}<span class="metaline__value metafield__missing">Määramata</span>{% endif %}
+        </summary>
+        <form class="inlineedit__form inlineform"
+              hx-post="{% url 'matters:update_field' pk=matter.pk field='owner' %}"
+              hx-target="#teema-pais" hx-swap="outerHTML">
+          {% csrf_token %}
+          <select class="field__input field__input--compact" name="owner"
+                  aria-label="Vastutaja" data-autosubmit>
+            <option value="">Määramata</option>
+            {% for person in owners %}
+              <option value="{{ person.pk }}" {% if matter.owner_id == person.pk %}selected{% endif %}>
+                {{ person.get_short_name }}
+              </option>
+            {% endfor %}
+          </select>
+          <button class="button button--quiet button--tiny" type="submit"
+                  aria-label="Salvesta vastutaja muudatus">Salvesta</button>
+        </form>
+      </details>
+    </span>
 
-    <div class="metafield">
-      <dt class="metafield__label">Vastutaja</dt>
-      <dd class="metafield__value">
-        <details class="inlineedit">
-          {% comment %}
-            Short name on the strip, full name in the tooltip. The facts strip
-            is one line of values and a full name is the widest of them; who a
-            colleague is stays reachable without spending the row on it.
-          {% endcomment %}
-          <summary class="inlineedit__trigger">
-            {% if matter.owner %}<span title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
-            {% else %}<span class="metafield__missing">Määramata</span>{% endif %}
-            <span class="inlineedit__caret" aria-hidden="true">▾</span>
-          </summary>
-          <form class="inlineedit__form inlineform"
-                hx-post="{% url 'matters:update_field' pk=matter.pk field='owner' %}"
-                hx-target="#teema-pais" hx-swap="outerHTML">
-            {% csrf_token %}
-            <select class="field__input field__input--compact" name="owner"
-                    aria-label="Vastutaja" data-autosubmit>
-              <option value="">Määramata</option>
-              {% for person in owners %}
-                <option value="{{ person.pk }}" {% if matter.owner_id == person.pk %}selected{% endif %}>
-                  {{ person.get_short_name }}
-                </option>
-              {% endfor %}
-            </select>
-            <button class="button button--quiet button--tiny" type="submit"
-                    aria-label="Salvesta vastutaja muudatus">Salvesta</button>
-          </form>
-        </details>
-      </dd>
-    </div>
+    <span class="metaline__item">
+      <span class="metaline__label">Valdkond</span>
+      <details class="inlineedit">
+        <summary class="inlineedit__trigger">
+          {% if matter_policy_areas %}
+            <span class="metaline__value">{% for area in matter_policy_areas %}{{ area.name_et }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>
+          {% else %}<span class="metaline__value metafield__missing">Määramata</span>{% endif %}
+        </summary>
+        {% comment %}
+          Checkboxes and one submit, like the sender set and for the same
+          reason: the control replaces the whole set, so a box that posted on
+          every tick would write the intermediate state and leave "no valdkond
+          at all" in the audit trail as a change somebody made.
 
-    <div class="metafield metafield--date">
-      <dt class="metafield__label">Arvamuse tähtaeg</dt>
-      <dd class="metafield__value">
+          The list is the governed vocabulary — one source, shared with Uus
+          teema, the register filter and the reporting filters. A retired area
+          this Matter already carries is appended below it, so correcting the
+          owner of an old file never silently drops its filing
+          (app/taxonomy/vocabulary.py, Teema redesign §7).
+        {% endcomment %}
+        <form class="inlineedit__form inlineform inlineform--stacked"
+              hx-post="{% url 'matters:update_field' pk=matter.pk field='policy_areas' %}"
+              hx-target="#teema-pais" hx-swap="outerHTML">
+          {% csrf_token %}
+          <fieldset class="inlineform__group">
+            <legend class="visually-hidden">Valdkonnad</legend>
+            {% for area in policy_area_choices %}
+              <label class="checkitem">
+                <input class="checkitem__input" type="checkbox"
+                       name="policy_areas" value="{{ area.pk }}"
+                       {% if area.pk in selected_policy_area_ids %}checked{% endif %}>
+                <span class="checkitem__name">{{ area.name_et }}</span>
+              </label>
+            {% endfor %}
+            {% for area in matter_policy_areas %}
+              {% if not area.is_active %}
+                <label class="checkitem checkitem--retired">
+                  <input class="checkitem__input" type="checkbox"
+                         name="policy_areas" value="{{ area.pk }}" checked>
+                  <span class="checkitem__name">{{ area.name_et }}
+                    <span class="checkitem__note">varasem valdkond</span>
+                  </span>
+                </label>
+              {% endif %}
+            {% endfor %}
+          </fieldset>
+          <button class="button button--quiet button--tiny" type="submit"
+                  aria-label="Salvesta valdkondade muudatus">Salvesta</button>
+        </form>
+      </details>
+    </span>
+
+    <span class="metaline__item">
+      <span class="metaline__label">Hetkeseis</span>
+      <details class="inlineedit">
+        <summary class="inlineedit__trigger">
+          {% if matter.stage %}<span class="metaline__value">{{ matter.stage.label_et }}</span>
+          {% else %}<span class="metaline__value metafield__missing">—</span>{% endif %}
+          <span class="inlineedit__caret" aria-hidden="true">▾</span>
+        </summary>
+        <form class="inlineedit__form inlineform"
+              hx-post="{% url 'matters:update_field' pk=matter.pk field='stage' %}"
+              hx-target="#teema-pais" hx-swap="outerHTML">
+          {% csrf_token %}
+          <select class="field__input field__input--compact" name="stage"
+                  aria-label="Hetkeseis" data-autosubmit>
+            <option value="">—</option>
+            {% for stage in stages %}
+              <option value="{{ stage.pk }}" {% if matter.stage_id == stage.pk %}selected{% endif %}>
+                {{ stage.label_et }}
+              </option>
+            {% endfor %}
+          </select>
+          <button class="button button--quiet button--tiny" type="submit"
+                  aria-label="Salvesta hetkeseisu muudatus">Salvesta</button>
+        </form>
+      </details>
+    </span>
+
+    {% comment %}
+      One deadline, chosen by the rule in `selectors.active_deadline`: nearest
+      future, else nearest past. When the Matter has neither, the slot is simply
+      not here — a label with an em dash beside it is what made the old band
+      read as a data-quality report (Teema redesign §5.5).
+
+      The value carries its own label as a tooltip, because "31.08.2026" alone
+      does not say whether it is Koda's own submission deadline or a milestone
+      somebody is watching.
+    {% endcomment %}
+    {% if active_deadline %}
+      <span class="metaline__item metaline__item--deadline">
+        <span class="metaline__label">Tähtaeg</span>
         <details class="inlineedit">
           <summary class="inlineedit__trigger">
-            {% if matter.response_deadline %}
-              <span class="metafield__value--deadline">{{ matter.response_deadline|date:"j.n.Y" }}</span>
-            {% else %}<span class="muted">—</span>{% endif %}
-            <span class="inlineedit__caret" aria-hidden="true">▾</span>
+            <span class="metaline__value metaline__value--deadline"
+                  title="{{ active_deadline.label }}">{{ active_deadline.display }}{% if not active_deadline.is_past %}{% if active_deadline.days_remaining <= 60 %} · {{ active_deadline.days_remaining }} p{% endif %}{% endif %}</span>
           </summary>
           <form class="inlineedit__form inlineform"
                 hx-post="{% url 'matters:update_field' pk=matter.pk field='response_deadline' %}"
                 hx-target="#teema-pais" hx-swap="outerHTML">
             {% csrf_token %}
-            <input class="field__input field__input--compact dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true"
-                   name="response_deadline" aria-label="Arvamuse tähtaeg"
-                   value="{{ matter.response_deadline|date:'j.n.Y' }}">
+            <label class="field">
+              <span class="field__label field__label--plain">Arvamuse tähtaeg</span>
+              <input class="field__input field__input--compact dateinput" type="text"
+                     inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                     data-datepicker="true" name="response_deadline"
+                     value="{{ matter.response_deadline|date:'j.n.Y' }}">
+            </label>
             <button class="button button--quiet button--tiny" type="submit"
                     aria-label="Salvesta tähtaja muudatus">Salvesta</button>
           </form>
         </details>
-      </dd>
-    </div>
-
-    <div class="metafield">
-      {% comment %} KELLELT and KELLELE are different facts, never merged. {% endcomment %}
-      <dt class="metafield__label">Kellelt</dt>
-      <dd class="metafield__value">
-        <details class="inlineedit">
-          {% comment %}
-            The band clips a long value to one line, as it does for every other
-            fact here — it has a height contract and a Matter page that opened
-            on a 150px wall of controls is what that contract exists to prevent.
-            A list clipped mid-name is harder to read than a clipped name, so
-            the complete list is always on the tooltip and always one click
-            away in the editor below — and unclipped wherever the page has room
-            for it, in the Saabunud materjalid note and in every register table.
-          {% endcomment %}
-          <summary class="inlineedit__trigger" title="{{ matter.sender_names }}">
-            <span class="inlineedit__value">
-              {% if matter.source_organisations.all %}
-                {% include "matters/partials/senders.html" with matter=matter %}
-              {% else %}<span class="muted">—</span>{% endif %}
-            </span>
-            <span class="inlineedit__caret" aria-hidden="true">▾</span>
-          </summary>
-          {% comment %}
-            Checkboxes, and no `data-autosubmit`. The sender set is edited as a
-            whole and submitted once: a control that posted on every tick would
-            write the intermediate set, so replacing one sender with another
-            would pass through "no senders at all" and leave that in the audit
-            trail as a change somebody made (Agent-E brief 34).
-
-            An unticked-everything submit is how the set is cleared. That is
-            unambiguous only because the endpoint names the field it is editing
-            in its URL — an HTML form omits unchecked boxes entirely, so on a
-            shared endpoint "clear them all" and "this POST is about something
-            else" would arrive identically.
-          {% endcomment %}
-          <form class="inlineedit__form inlineform inlineform--stacked"
-                hx-post="{% url 'matters:update_field' pk=matter.pk field='source_organisations' %}"
-                hx-target="#teema-pais" hx-swap="outerHTML">
-            {% csrf_token %}
-            <fieldset class="inlineform__group">
-              <legend class="visually-hidden">Algatajad või saatjad</legend>
-              {% for organisation in organisations %}
-                <label class="checkitem">
-                  <input class="checkitem__input" type="checkbox"
-                         name="source_organisations" value="{{ organisation.pk }}"
-                         {% if organisation.pk in selected_sender_ids %}checked{% endif %}>
-                  <span class="checkitem__name">{{ organisation.name }}</span>
-                </label>
-              {% endfor %}
-            </fieldset>
-            <button class="button button--quiet button--tiny" type="submit"
-                    aria-label="Salvesta saatjate muudatus">Salvesta</button>
-          </form>
-        </details>
-      </dd>
-    </div>
-
-    <div class="metafield">
-      <dt class="metafield__label">Kellele</dt>
-      <dd class="metafield__value">
+      </span>
+    {% elif can_write %}
+      {% comment %}
+        A Matter with no deadline at all still needs a way to gain one. A quiet
+        invitation rather than a label over an em dash, which is what made the
+        old band read as a data-quality report (Teema redesign §5.5, §24).
+      {% endcomment %}
+      <span class="metaline__item">
         <details class="inlineedit">
           <summary class="inlineedit__trigger">
-            {% if matter.addressee_organisation %}{{ matter.addressee_organisation.name }}
-            {% else %}<span class="muted">—</span>{% endif %}
-            <span class="inlineedit__caret" aria-hidden="true">▾</span>
+            <span class="metaline__add">+ Tähtaeg</span>
           </summary>
           <form class="inlineedit__form inlineform"
-                hx-post="{% url 'matters:update_field' pk=matter.pk field='addressee_organisation' %}"
+                hx-post="{% url 'matters:update_field' pk=matter.pk field='response_deadline' %}"
                 hx-target="#teema-pais" hx-swap="outerHTML">
             {% csrf_token %}
-            <select class="field__input field__input--compact" name="addressee_organisation"
-                    aria-label="Adressaat" data-autosubmit>
-              <option value="">—</option>
-              {% for organisation in organisations %}
-                <option value="{{ organisation.pk }}"
-                        {% if matter.addressee_organisation_id == organisation.pk %}selected{% endif %}>
-                  {{ organisation.name }}
-                </option>
-              {% endfor %}
-            </select>
+            <label class="field">
+              <span class="field__label field__label--plain">Arvamuse tähtaeg</span>
+              <input class="field__input field__input--compact dateinput" type="text"
+                     inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                     data-datepicker="true" name="response_deadline" value="">
+            </label>
             <button class="button button--quiet button--tiny" type="submit"
-                    aria-label="Salvesta adressaadi muudatus">Salvesta</button>
+                    aria-label="Salvesta tähtaeg">Salvesta</button>
           </form>
         </details>
-      </dd>
-    </div>
+      </span>
+    {% endif %}
+  </div>
 
-    <div class="metafield metafield--date">
-      <dt class="metafield__label">Saabus</dt>
-      <dd class="metafield__value">
-        <details class="inlineedit">
-          <summary class="inlineedit__trigger">
-            {% if matter.received_date %}{{ matter.received_date|date:"j.n.Y" }}
-            {% else %}<span class="muted">—</span>{% endif %}
-            <span class="inlineedit__caret" aria-hidden="true">▾</span>
-          </summary>
-          <form class="inlineedit__form inlineform"
-                hx-post="{% url 'matters:update_field' pk=matter.pk field='received_date' %}"
-                hx-target="#teema-pais" hx-swap="outerHTML">
-            {% csrf_token %}
-            <input class="field__input field__input--compact dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true"
-                   name="received_date" aria-label="Saabumise kuupäev"
-                   value="{{ matter.received_date|date:'j.n.Y' }}">
-            <button class="button button--quiet button--tiny" type="submit"
-                    aria-label="Salvesta saabumise kuupäeva muudatus">Salvesta</button>
-          </form>
-        </details>
-      </dd>
-    </div>
-  </dl>
+  {% include "matters/partials/summary.html" %}
 
   {% include "matters/partials/tabs.html" %}
 </header>

@@ -267,6 +267,11 @@ def indexed_text_for(matter: Matter) -> dict[str, str]:
         "body_text": " ".join(
             part
             for part in (
+                # The plain-language summary first. It is what somebody who
+                # remembers a Matter by what it *was about* rather than by its
+                # formal title will type, and it is frequently the only text on
+                # the record written in those words (Teema redesign §6.2).
+                matter.brief_summary,
                 matter.position_summary,
                 matter.rationale_summary,
                 _engagement_text_for(matter),

@@ -304,16 +304,45 @@ def test_the_page_publishes_no_rate_or_ranking(signed_in, specialist):
 # -- the Matter page --------------------------------------------------------
 
 
-def test_the_matter_page_shows_all_three_sections(signed_in, specialist):
+def test_an_empty_section_does_not_render_at_all(signed_in, specialist):
+    """The redesign's rule: no permanently visible empty sections.
+
+    These three headings, each over a sentence reporting an absence and an add
+    button, used to occupy about forty per cent of a new Matter's page. What
+    replaces them is one quiet row of add affordances, and `Oluline tähtaeg` is
+    not even in that — the composer offers it beside the note it belongs to
+    (Teema redesign §3, §24).
+    """
     matter = factories.MatterFactory(owner=specialist)
     body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
 
+    assert 'id="olulised-tahtajad"' not in body
+    assert 'id="joustumine"' not in body
+    assert 'id="toovoidud"' not in body
+    assert "Olulisi tähtaegu pole lisatud." not in body
+    assert "Jõustumise infot pole lisatud." not in body
+    assert "Töövõite ega kandidaate pole lisatud." not in body
+    # The one quiet row that replaces all three.
+    assert "+ Jõustumine" in body
+    assert "+ Töövõit" in body
+
+
+def test_a_populated_section_still_renders(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    add_important_date(
+        matter=matter,
+        title="Kooskõlastusringi lõpp",
+        date_value=timezone.localdate() + timedelta(days=10),
+        period_end=timezone.localdate() + timedelta(days=10),
+        actor=specialist,
+    )
+    body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+
     assert 'id="olulised-tahtajad"' in body
-    assert 'id="joustumine"' in body
-    assert 'id="toovoidud"' in body
-    assert "Olulisi tähtaegu pole lisatud." in body
-    assert "Jõustumise infot pole lisatud." in body
-    assert "Töövõite ega kandidaate pole lisatud." in body
+    assert "Kooskõlastusringi lõpp" in body
+    # The two that are still empty stay away.
+    assert 'id="joustumine"' not in body
+    assert 'id="toovoidud"' not in body
 
 
 def test_the_matter_page_marks_a_cancelled_milestone(signed_in, specialist):

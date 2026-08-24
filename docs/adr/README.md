@@ -38,6 +38,7 @@ consequences and reversibility.
 | [0027](0027-matter-engagement.md) | `Kaasamine` is a pointer to outreach, not an engagement system | Accepted |
 | [0028](0028-development-archive-workspace-access.md) | The archive is readable behind the shared gate; the register is not | Accepted |
 | [0029](0029-reference-data-foundation.md) | Reference data is governed, additive, and never invented from source strings | Accepted |
+| [0030](0030-teema-workspace-redesign.md) | The Teema workspace: one page, two tabs, and one save per professional update | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -61,3 +62,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0027 — Wave 2 Kaasamine: how members and stakeholders were asked
 - 0028 — the development archive workspace: who may read the corpus behind the shared gate, and why that is not the register
 - 0029 — the reviewed reference-data baseline: nine policy areas, the core public institutions, and why no backfill yet
+- 0030 — the approved Teema workspace redesign: two tabs, one composer save, grouped-not-merged history, and the twenty-three working Valdkonnad

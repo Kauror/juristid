@@ -22,6 +22,19 @@ from app.core.management.commands.seed_e2e_data import RESTRICTED_TITLE
 from e2e.conftest import SANDRA, sign_in
 
 
+def open_kaasamine(page):
+    """Open the Kaasamine accordion, which is closed on arrival.
+
+    A Matter that nobody has consulted anybody about costs one quiet line now,
+    not a labelled section announcing an absence — so every test that works
+    inside it has to open it first (Teema redesign §14, §24).
+    """
+    section = page.locator("#kaasamine")
+    if section.get_attribute("open") is None:
+        section.locator(".accordion__head").click()
+    return section
+
+
 def open_scratch_matter(page, base_url: str) -> None:
     """Sandra's restricted Matter — writable by her, and never screenshotted."""
     page.goto(f"{base_url}/teemad/?olek=koik&q=Konfidentsiaalne")
@@ -39,7 +52,7 @@ def test_the_kaasamine_section_is_on_the_matter_page(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    section = page.locator("#kaasamine")
+    section = open_kaasamine(page)
     expect(section).to_be_visible()
     expect(section.get_by_role("heading", name="Kaasamine")).to_be_visible()
     # Collapsed until asked for: the section is read far more often than written.
@@ -51,10 +64,13 @@ def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    page.locator("#kaasamine").get_by_text("+ Lisa kaasamine").click()
+    open_kaasamine(page).get_by_text("+ Lisa kaasamine").click()
     expect(add_form(page).locator('input[name="title"]')).to_be_visible()
 
-    add_form(page).locator('select[name="kind"]').select_option("WEB_CALL")
+    # The three approved options. `WEB_CALL` is still a valid stored value and
+    # every historical row carrying it still reads; the creation control does
+    # not offer it (Teema redesign §14).
+    add_form(page).locator('select[name="kind"]').select_option("SURVEY")
     add_form(page).locator('input[name="title"]').fill("Liikmete kaasamiskutse")
     add_form(page).locator('input[name="url"]').fill("https://www.koda.ee/kaasamine/naidis")
     add_form(page).locator('input[name="occurred_on"]').fill("15.9.2026")
@@ -62,10 +78,14 @@ def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     add_form(page).get_by_role("button", name="Lisa kaasamine").click()
 
     # The swap replaces the overview column; the row is there without a reload.
-    section = page.locator("#kaasamine")
-    expect(section.get_by_text("Liikmete kaasamiskutse", exact=True)).to_be_visible()
-    expect(section.get_by_text("15.9.2026")).to_be_visible()
-    expect(section.get_by_text("www.koda.ee")).to_be_visible()
+    # Scoped to the row, not to the section. The collapsed line summarises the
+    # latest engagement — type, title and date — so a section-wide text locator
+    # now matches the summary as well as the row it summarises.
+    section = open_kaasamine(page)
+    row = section.locator(".factrow").first
+    expect(row.get_by_text("Liikmete kaasamiskutse", exact=True)).to_be_visible()
+    expect(row.get_by_text("15.9.2026")).to_be_visible()
+    expect(row.get_by_text("www.koda.ee")).to_be_visible()
 
     # And correcting it edits the same record rather than adding a second.
     # Scoped to the row itself: `has=` on a section-rooted locator matched the
@@ -81,7 +101,7 @@ def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     row_form.get_by_role("button", name="Salvesta").click()
 
     expect(
-        page.locator("#kaasamine").get_by_text("Liikmete kaasamiskutse — parandatud")
+        page.locator("#kaasamine .factrow").first.get_by_text("Liikmete kaasamiskutse — parandatud")
     ).to_be_visible()
     assert page.locator("#kaasamine .factrow").count() == before
 
@@ -91,7 +111,7 @@ def test_an_engagement_link_never_opens_without_noopener(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    page.locator("#kaasamine").get_by_text("+ Lisa kaasamine").click()
+    open_kaasamine(page).get_by_text("+ Lisa kaasamine").click()
     add_form(page).locator('input[name="title"]').fill("Väline küsitlus")
     add_form(page).locator('input[name="url"]').fill("https://survey.example.invalid/s/1")
     add_form(page).get_by_role("button", name="Lisa kaasamine").click()

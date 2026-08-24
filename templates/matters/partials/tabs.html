@@ -1,18 +1,19 @@
 {% comment %}
-Three first-class areas, kept apart deliberately. Evidence, position and
-chronology are different kinds of work; collapsing them would hide the one a
-lawyer is not currently looking at (master specification 8.1).
+Two tabs, and that is the whole Matter-level navigation.
+
+`Teema` is understanding the issue and recording work; `Dokumendid` is browsing
+and managing files. They are genuinely different tasks, and the file list is the
+only thing on the record that can legitimately run to forty rows.
+
+Everything that used to be a third tab is now in the main view where it is read:
+`Koja seisukoht` in the reading flow, `Kaasamine` as an accordion, sent opinions
+as a compact strip. A tab per database concern is what made a lawyer navigate to
+find out whether anything had happened (Teema redesign §3).
 {% endcomment %}
 <nav class="tabs" aria-label="Teema vaated">
-  <a class="tabs__tab {% if tab == 'ulevaade' %}is-active{% endif %}"
-     {% if tab == 'ulevaade' %}aria-current="page"{% endif %}
-     href="{% url 'matters:matter_detail' pk=matter.pk %}">Ülevaade</a>
-  <a class="tabs__tab {% if tab == 'seisukoht' %}is-active{% endif %}"
-     {% if tab == 'seisukoht' %}aria-current="page"{% endif %}
-     href="{% url 'matters:matter_position' pk=matter.pk %}">
-    Seisukoht ja kaasamine
-    {% if submission_count %}<span class="tabs__count">· {{ submission_count }}</span>{% endif %}
-  </a>
+  <a class="tabs__tab {% if tab == 'teema' %}is-active{% endif %}"
+     {% if tab == 'teema' %}aria-current="page"{% endif %}
+     href="{% url 'matters:matter_detail' pk=matter.pk %}">Teema</a>
   <a class="tabs__tab {% if tab == 'dokumendid' %}is-active{% endif %}"
      {% if tab == 'dokumendid' %}aria-current="page"{% endif %}
      href="{% url 'matters:matter_documents' pk=matter.pk %}">

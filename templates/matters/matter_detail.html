@@ -1,8 +1,15 @@
 {% extends "base.html" %}
 {% block title %}{{ matter.display_reference }} {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
+{% comment %}
+The Matter page bleeds to the edges of the main column rather than sitting in
+the centred `.page` container the register uses. That is what the design asks
+for and it is what the layout needs: the header band, the JÄRGMISEKS row and the
+composer are full-width surfaces separated by hairlines, and a card floating in
+a gutter would turn a workspace back into a dashboard (Teema redesign §4).
+{% endcomment %}
 {% block content %}
-<div class="page">
+<div class="teema">
   {% include "matters/partials/header.html" %}
   {% include "matters/partials/overview.html" %}
 </div>

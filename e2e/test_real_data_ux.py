@@ -222,9 +222,12 @@ def test_two_ticked_areas_both_survive_the_save(page, base_url):
     page.get_by_role("button", name="Loo teema").click()
 
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
-    tags = page.locator(".tag").all_inner_texts()
+    # The header's Valdkond value, not `.tag`: Sildid and Valdkonnad are two
+    # vocabularies and the redesign stopped showing them as one list
+    # (Teema redesign §22.2).
+    tags = page.locator(".metaline__item .metaline__value").all_inner_texts()
     for name in chosen:
-        assert name in [tag.strip() for tag in tags], f"{name} missing from {tags}"
+        assert any(name in tag for tag in tags), f"{name} missing from {tags}"
 
 
 def test_muu_reveals_its_own_text_field(page, base_url):

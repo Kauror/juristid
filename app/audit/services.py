@@ -8,6 +8,7 @@ from typing import Any
 from django.db import models
 
 from app.audit.models import ChangeEvent, SecurityAuditEvent
+from app.audit.operations import current_operation_id
 
 
 def _object_reference(instance: models.Model | None) -> tuple[str, uuid.UUID | None]:
@@ -39,6 +40,10 @@ def record_change_event(
         object_id=object_id,
         summary=summary,
         payload=payload or {},
+        # Read from the execution context rather than taken as an argument, so
+        # that a service three calls deep inside a composer save cannot forget
+        # to pass it on (app/audit/operations.py).
+        operation_id=current_operation_id(),
     )
 
 

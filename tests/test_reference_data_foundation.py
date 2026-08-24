@@ -47,31 +47,56 @@ from app.taxonomy.models import PolicyArea, Tag
 from app.taxonomy.reference_data import (
     POLICY_AREA_SOURCE_PUBLISHER,
     POLICY_AREA_SOURCE_TITLE,
-    POLICY_AREA_SOURCE_URL,
+    POLICY_AREA_SOURCE_V1_TITLE,
+    POLICY_AREA_SOURCE_V1_URL,
     POLICY_AREA_SOURCE_VERIFIED_ON,
     REFERENCE_POLICY_AREA_KEYS,
     REFERENCE_POLICY_AREA_VERSION,
     REFERENCE_POLICY_AREAS_V1,
+    RETIRED_POLICY_AREA_KEYS_V1,
 )
 
 pytestmark = pytest.mark.django_db
 
-MIGRATION = importlib.import_module("app.taxonomy.migrations.0002_reference_policy_areas")
+#: Version 1.0's migration, kept addressable so the frozen-baseline guard can
+#: also prove the *earlier* baseline was not edited after the fact.
+MIGRATION_V1 = importlib.import_module("app.taxonomy.migrations.0002_reference_policy_areas")
+MIGRATION = importlib.import_module("app.taxonomy.migrations.0003_working_policy_area_vocabulary")
 
-#: The nine Koda publishes, in page order. Written out rather than derived from
-#: the manifest: a test that reads the same tuple it is checking would agree
-#: with any edit, including a wrong one.
+#: The twenty-three the department works to, in the order it gave them. Written
+#: out rather than derived from the manifest: a test that reads the same tuple
+#: it is checking would agree with any edit, including a wrong one.
 EXPECTED = [
-    ("maksud", "Maksud", 10),
-    ("toojoud", "Tööjõud", 20),
-    ("keskkond", "Keskkond", 30),
-    ("energeetika", "Energeetika", 40),
-    ("halduskoormus", "Halduskoormus", 50),
-    ("aus-konkurents", "Aus konkurents", 60),
-    ("arioigus", "Äriõigus", 70),
+    ("maksejouetus", "Maksejõuetus", 10),
+    ("raamatupidamine", "Raamatupidamine", 20),
+    ("intellektuaalomand", "Intellektuaalomand", 30),
+    ("toetusmeetmed", "Toetusmeetmed", 40),
+    ("koalitsioonilepped", "Koalitsioonilepped", 50),
+    ("oigusloome", "Õigusloome", 60),
+    ("energeetika", "Energeetika", 70),
     ("riigihanked", "Riigihanked", 80),
-    ("haridus-ettevotlikkus", "Haridus ja ettevõtlikkus", 90),
+    ("haridus", "Haridus", 90),
+    ("tarbijakaitse", "Tarbijakaitse", 100),
+    ("alkohol-tubakas", "Alkohol, tubakas", 110),
+    ("digiteemad", "Digiteemad", 120),
+    ("finantsoigus-rahapesu", "Finantsõigus, rahapesu", 130),
+    ("ehitus", "Ehitus", 140),
+    ("arioigus", "Äriõigus", 150),
+    ("valistoojoud", "Välistööjõud", 160),
+    ("maksud-ja-toll", "Maksud ja toll", 170),
+    ("toosuhted-tookeskkond", "Töösuhted, töökeskkond", 180),
+    ("keskkond", "Keskkond", 190),
+    ("muud-teemad", "Muud teemad", 200),
+    ("eli-oiguse-ulevotmine", "ELi õiguse ülevõtmine", 210),
+    ("olulised-tahtajad", "Olulised tähtajad", 220),
+    ("arengukavad-strateegiad", "Arengukavad, strateegiad", 230),
 ]
+
+#: The four names that appear in both the retired nine and the working
+#: twenty-three. Their rows carry over untouched — same key, same primary key,
+#: same relations — which is the whole reason those four are not in
+#: `RETIRED_POLICY_AREA_KEYS_V1`.
+CARRIED_OVER = ["energeetika", "riigihanked", "arioigus", "keskkond"]
 
 #: The provisional keys that are *not* also canonical ones. `keskkond` and
 #: `energeetika` appear in both lists and are the same concept under the same
@@ -86,10 +111,69 @@ PROVISIONAL_KEYS = {key for key, _ in PROVISIONAL_POLICY_AREAS} - set(REFERENCE_
 # ---------------------------------------------------------------------------
 
 
-def test_the_nine_reviewed_areas_are_in_a_migrated_database():
+def test_the_twenty_three_working_areas_are_in_a_migrated_database():
     rows = list(PolicyArea.objects.filter(key__in=[key for key, *_ in EXPECTED]))
     assert {row.key for row in rows} == {key for key, *_ in EXPECTED}
-    assert len(rows) == 9
+    assert len(rows) == 23
+
+
+def test_the_offered_vocabulary_is_exactly_the_twenty_three_in_order():
+    """One governed list, and it is what every surface offers.
+
+    The set *and* the order: the department sequenced these, and a control that
+    rearranged them would be answering a question nobody asked
+    (app/taxonomy/vocabulary.py, Teema redesign §7, §7.1).
+    """
+    from app.taxonomy.vocabulary import selectable_policy_areas
+
+    assert [area.name_et for area in selectable_policy_areas()] == [
+        name for _key, name, _order in EXPECTED
+    ]
+
+
+def test_the_retired_areas_keep_their_rows_and_stop_being_offered():
+    """Deactivated, never remapped and never deleted.
+
+    "Maksud" is not "Maksud ja toll" and "Haridus ja ettevõtlikkus" is not
+    "Haridus". There is no reviewed equivalence between any retired label and
+    any new one, so nothing guesses at one — the rows stay, the relations stay,
+    and only `is_active` moves (Teema redesign §7.2).
+    """
+    retired = PolicyArea.objects.filter(key__in=RETIRED_POLICY_AREA_KEYS_V1)
+
+    assert retired.count() == len(RETIRED_POLICY_AREA_KEYS_V1)
+    assert not retired.filter(is_active=True).exists()
+
+    offered = {area.key for area in PolicyArea.objects.filter(is_active=True)}
+    assert offered.isdisjoint(set(RETIRED_POLICY_AREA_KEYS_V1))
+
+
+def test_the_four_shared_names_keep_their_identity():
+    """The rows every existing relation points at are not touched.
+
+    Including the seventy-one applied from the OneNote filing structure: they
+    hang off these primary keys, and a migration that had deleted and recreated
+    the rows would have taken all of them with it.
+    """
+    for key in CARRIED_OVER:
+        area = PolicyArea.objects.get(key=key)
+        assert area.is_active
+        assert key not in RETIRED_POLICY_AREA_KEYS_V1
+
+
+def test_no_retired_area_shares_a_name_with_a_working_one():
+    """The refusal that makes "no remapping" checkable rather than asserted.
+
+    If a retired label and a new one ever spelled the same thing, somebody would
+    eventually merge them — and that merge would be the fuzzy migration this
+    whole arrangement exists to refuse.
+    """
+    working = {name.casefold() for _key, name, _order in EXPECTED}
+    retired = {
+        area.name_et.casefold()
+        for area in PolicyArea.objects.filter(key__in=RETIRED_POLICY_AREA_KEYS_V1)
+    }
+    assert working & retired == set()
 
 
 def test_names_and_order_are_exactly_the_reviewed_ones():
@@ -101,7 +185,7 @@ def test_names_and_order_are_exactly_the_reviewed_ones():
 
 def test_every_reviewed_area_is_active():
     keys = [key for key, *_ in EXPECTED]
-    assert PolicyArea.objects.filter(key__in=keys, is_active=True).count() == 9
+    assert PolicyArea.objects.filter(key__in=keys, is_active=True).count() == 23
 
 
 def test_every_reviewed_area_carries_a_definition():
@@ -125,26 +209,51 @@ def test_the_manifest_and_the_frozen_migration_baseline_agree():
     ]
     assert frozen == live
 
+    # And the retired list the migration acts on is the manifest's, not a
+    # second opinion about which of the nine carried over.
+    assert list(MIGRATION.RETIRED) == list(RETIRED_POLICY_AREA_KEYS_V1)
+
+
+def test_version_ones_frozen_baseline_is_still_its_own():
+    """The earlier migration must keep describing the earlier vocabulary.
+
+    It runs first on every fresh database, and if somebody "updated" it to the
+    new manifest then version 1.0 would never have existed — and the four rows
+    that carried over would be created by whichever migration ran first, which
+    is exactly the ambiguity the frozen copies exist to prevent.
+    """
+    assert len(MIGRATION_V1.BASELINE) == 9
+    assert {key for key, *_ in MIGRATION_V1.BASELINE} == {
+        "maksud",
+        "toojoud",
+        "keskkond",
+        "energeetika",
+        "halduskoormus",
+        "aus-konkurents",
+        "arioigus",
+        "riigihanked",
+        "haridus-ettevotlikkus",
+    }
+
 
 def test_the_business_source_is_recorded():
-    """Where the nine came from, checkable by a reviewer rather than by code.
+    """Where the twenty-three came from, checkable by a reviewer, not by code.
 
-    Nothing at runtime reads koda.ee — a reworded marketing page must not
-    reclassify a decade of filing — so the provenance lives here and in the ADR.
+    Nothing at runtime reads a source: changing this vocabulary is a code change
+    with a migration behind it, reviewed like any other. The provenance lives
+    here and in the ADR so a reviewer can check the claim.
     """
-    assert POLICY_AREA_SOURCE_PUBLISHER == "Eesti Kaubandus-Tööstuskoda"
-    assert "Millega tegeleme" in POLICY_AREA_SOURCE_TITLE
-    assert POLICY_AREA_SOURCE_URL.startswith("https://www.koda.ee/")
-    assert POLICY_AREA_SOURCE_VERIFIED_ON == "2026-08-23"
-    assert REFERENCE_POLICY_AREA_VERSION == "1.0"
+    assert POLICY_AREA_SOURCE_PUBLISHER.startswith("Eesti Kaubandus-Tööstuskoda")
+    assert "Teema redesign" in POLICY_AREA_SOURCE_TITLE
+    assert POLICY_AREA_SOURCE_VERIFIED_ON == "2026-08-24"
+    assert REFERENCE_POLICY_AREA_VERSION == "2.0"
 
 
-def test_the_longer_public_headings_are_traceable():
-    """Three page headings are sentences; the database keeps the concept."""
-    headings = {area.key: area.public_heading for area in REFERENCE_POLICY_AREAS_V1}
-    assert headings["halduskoormus"] == "Võitlus halduskoormusega"
-    assert headings["aus-konkurents"] == "Aus konkurentsikeskkond"
-    assert headings["haridus-ettevotlikkus"] == "Hariduse ja ettevõtlikkuse edendamine"
+def test_the_earlier_vocabularys_provenance_is_kept():
+    """Version 1.0's nine are still in the database; where they came from must
+    still be answerable."""
+    assert "Millega tegeleme" in POLICY_AREA_SOURCE_V1_TITLE
+    assert POLICY_AREA_SOURCE_V1_URL.startswith("https://www.koda.ee/")
 
 
 def test_no_tag_vocabulary_is_seeded():
@@ -169,11 +278,11 @@ def test_seeding_again_creates_nothing():
 
 def test_a_renamed_key_fails_closed():
     """Never silently rename: every Matter filed under it would move."""
-    PolicyArea.objects.filter(key="maksud").update(name_et="Maksundus ja toll")
+    PolicyArea.objects.filter(key="maksud-ja-toll").update(name_et="Maksundus")
 
     with pytest.raises(RuntimeError) as failure:
         MIGRATION.seed(global_apps, None)
-    assert "maksud" in str(failure.value)
+    assert "maksud-ja-toll" in str(failure.value)
 
 
 def test_a_name_taken_under_another_key_fails_closed():
@@ -205,8 +314,24 @@ def test_reverse_removes_only_pristine_unused_rows():
     try:
         assert not PolicyArea.objects.filter(key__in=REFERENCE_POLICY_AREA_KEYS).exists()
     finally:
-        _migrate_taxonomy_to(("taxonomy", "0002_reference_policy_areas"))
-    assert PolicyArea.objects.filter(key__in=REFERENCE_POLICY_AREA_KEYS).count() == 9
+        _migrate_taxonomy_to(("taxonomy", "0003_working_policy_area_vocabulary"))
+    assert PolicyArea.objects.filter(key__in=REFERENCE_POLICY_AREA_KEYS).count() == 23
+
+
+def test_reverse_puts_the_retired_areas_back_on_the_offered_list():
+    """Rolling the code back means version 1.0's vocabulary is offered again.
+
+    The rows were never deleted, so this is one flag going the other way — and
+    it has to, or a rollback would leave the older code offering nothing where
+    it used to offer nine.
+    """
+    MIGRATION.unseed(global_apps, None)
+    try:
+        assert PolicyArea.objects.filter(
+            key__in=RETIRED_POLICY_AREA_KEYS_V1, is_active=True
+        ).count() == len(RETIRED_POLICY_AREA_KEYS_V1)
+    finally:
+        MIGRATION.seed(global_apps, None)
 
 
 def test_reverse_never_takes_a_classified_area_with_it(specialist):
@@ -214,21 +339,25 @@ def test_reverse_never_takes_a_classified_area_with_it(specialist):
     from app.matters.services import create_matter
 
     matter = create_matter(title="Aktsiisimuudatus", actor=specialist)
-    area = PolicyArea.objects.get(key="maksud")
+    area = PolicyArea.objects.get(key="maksud-ja-toll")
     matter.policy_areas.add(area)
 
     MIGRATION.unseed(global_apps, None)
-
-    assert PolicyArea.objects.filter(key="maksud").exists()
-    assert matter.policy_areas.filter(key="maksud").exists()
+    try:
+        assert PolicyArea.objects.filter(key="maksud-ja-toll").exists()
+        assert matter.policy_areas.filter(key="maksud-ja-toll").exists()
+    finally:
+        MIGRATION.seed(global_apps, None)
 
 
 def test_reverse_leaves_a_row_somebody_edited():
-    PolicyArea.objects.filter(key="energeetika").update(description="Meie oma sõnastus.")
+    PolicyArea.objects.filter(key="ehitus").update(description="Meie oma sõnastus.")
 
     MIGRATION.unseed(global_apps, None)
-
-    assert PolicyArea.objects.filter(key="energeetika").exists()
+    try:
+        assert PolicyArea.objects.filter(key="ehitus").exists()
+    finally:
+        MIGRATION.seed(global_apps, None)
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +379,9 @@ def test_the_development_seed_does_not_create_a_second_vocabulary(settings):
     call_command("seed_dev_data", verbosity=0)
 
     assert not PolicyArea.objects.filter(key__in=PROVISIONAL_KEYS).exists()
-    assert PolicyArea.objects.count() == 9
+    # The nine version-1.0 rows are still here — four active, five retired —
+    # beside the nineteen the working vocabulary added.
+    assert PolicyArea.objects.count() == 28
 
 
 def test_the_development_seed_classifies_with_the_canonical_areas(settings):
@@ -363,7 +494,7 @@ def test_a_plan_on_an_empty_database_proposes_every_institution():
     assert len(plan.organisations_to_create) == len(PUBLIC_REFERENCE_ORGANISATIONS)
     assert not plan.organisations_present
     # Policy areas are already there: they came with the schema.
-    assert len(plan.areas_present) == 9
+    assert len(plan.areas_present) == 23
     assert not plan.areas_missing
 
 
@@ -406,7 +537,7 @@ def test_the_plan_command_json_names_tags_as_unmanaged(capsys):
     out = capsys.readouterr().out
     payload = json.loads(out[: out.rindex("}") + 1])
     assert payload["tags"] == "not managed by this baseline"
-    assert payload["policy_areas"]["present"] == 9
+    assert payload["policy_areas"]["present"] == 23
     assert payload["plan_sha256"] == build_reference_plan().digest()
 
 
@@ -517,14 +648,14 @@ def test_apply_refuses_when_a_name_means_two_rows():
 
 def test_apply_never_creates_a_policy_area():
     """The vocabulary has one write path, and it is the migration."""
-    PolicyArea.objects.filter(key="maksud").delete()
+    PolicyArea.objects.filter(key="maksud-ja-toll").delete()
 
     plan = build_reference_plan()
-    assert [f.key for f in plan.areas_missing] == ["maksud"]
+    assert [f.key for f in plan.areas_missing] == ["maksud-ja-toll"]
 
     apply_reference_plan(expected_sha256=plan.digest())
 
-    assert not PolicyArea.objects.filter(key="maksud").exists()
+    assert not PolicyArea.objects.filter(key="maksud-ja-toll").exists()
 
 
 def test_apply_never_creates_a_tag():
@@ -554,7 +685,7 @@ def test_verify_passes_on_a_complete_baseline():
     apply_reference_plan(expected_sha256=build_reference_plan().digest())
     report = verify_reference_data()
     assert report.ok, report.problems
-    assert report.policy_areas_present == 9
+    assert report.policy_areas_present == 23
     assert report.organisations_present == len(PUBLIC_REFERENCE_ORGANISATIONS)
 
 

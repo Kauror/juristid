@@ -8,6 +8,7 @@ by adding another view (master specification 12.4, 23.4).
 
 from __future__ import annotations
 
+from datetime import date, datetime, time
 from typing import Any, cast
 
 from django import forms
@@ -18,12 +19,20 @@ from app.accounts.models import User
 from app.core.authorization import scoped_count
 from app.core.enums import Visibility
 from app.core.errors import DomainError
+from app.core.richtext import plain_text
 from app.core.widgets import EstonianDateField, EstonianDateInput
+from app.documents.enums import DocumentRole
+from app.documents.models import Document, DocumentVersion
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, MatterDataClass
+from app.matters.models import Matter
 from app.organisations.models import Organisation
 from app.taxonomy.models import PolicyArea, Tag
+from app.taxonomy.vocabulary import selectable_policy_areas
+from app.workflow.dates import MAX_YEAR, MIN_YEAR, InvalidPeriod, bounds_for
 from app.workflow.enums import (
+    ESTONIAN_MONTHS,
+    ROMAN_QUARTERS,
     ActionKind,
     DatePrecision,
     DateSemantics,
@@ -32,6 +41,20 @@ from app.workflow.enums import (
     default_date_semantics,
 )
 from app.workflow.models import StageVocabulary
+
+
+def _as_datetime(value: date | None) -> datetime | None:
+    """A chosen day, as the aware midnight the submission stores.
+
+    `Submission.sent_at` is a moment, and a person recording that an opinion
+    went out on the 12th knows the day and not the hour. Midnight in the
+    department's own timezone is the honest reading of that day; using
+    `timezone.now()` instead would silently stamp today onto a letter sent last
+    month.
+    """
+    if value is None:
+        return None
+    return timezone.make_aware(datetime.combine(value, time.min))
 
 
 class UserChoiceField(forms.ModelChoiceField):
@@ -80,40 +103,21 @@ def active_stages() -> Any:
     return StageVocabulary.objects.filter(is_active=True).order_by("sort_order", "label_et")
 
 
-def policy_areas_by_usage(viewer: Any) -> list[PolicyArea]:
-    """Active policy areas, most-used first.
+def offered_policy_areas() -> list[PolicyArea]:
+    """The Valdkonnad a person may choose, in the department's reviewed order.
 
-    Ordered by how often the department actually files under them, because a
-    list ordered by an admin's `sort_order` puts Keskkond below something used
-    twice in 2013 and makes people hunt.
+    One line, because the decision is not this function's to make: the governed
+    vocabulary is `app.taxonomy.vocabulary.selectable_policy_areas` and every
+    surface that offers a choice reads it, so Uus teema, the Teema header, the
+    register filter and the reporting filters cannot drift apart
+    (Teema redesign §7.1).
 
-    Counted only over Matters the *viewer* may read. An area's popularity is
-    derived from records, and deriving it from records somebody cannot see would
-    let the order of a checkbox list disclose that restricted work exists
-    (Stage-2E.1 brief 19).
+    It replaces an ordering by usage frequency. That existed because nine broad
+    headings sorted by an admin's `sort_order` made people hunt; with the
+    twenty-three working labels the department itself sequenced, a stable order
+    is learnable and a self-rearranging one is not.
     """
-    from app.matters.models import Matter
-
-    usage = (
-        Matter.objects.visible_to(viewer)
-        .filter(policy_areas__isnull=False)
-        # `order_by()` with no arguments, before the grouping. `Matter.Meta`
-        # sets a default ordering, and Django adds ordering columns to the
-        # GROUP BY — which silently turns one row per area into one row per
-        # (area, created_at) and makes every count 1. It looks like the usage
-        # data is missing rather than like a bug.
-        .order_by()
-        .values("policy_areas")
-        # Distinct *Matters* per area. `Count("policy_areas")` counted the join
-        # rows the visibility predicate produces, so an area used on files with
-        # several collaborators floated to the top of the list for a specialist
-        # and stayed put for the department head (app/core/authorization.py).
-        .annotate(total=scoped_count())
-    )
-    counts = {row["policy_areas"]: row["total"] for row in usage}
-    areas = list(PolicyArea.objects.filter(is_active=True))
-    areas.sort(key=lambda area: (-counts.get(area.pk, 0), area.sort_order, area.name_et))
-    return areas
+    return list(selectable_policy_areas())
 
 
 def organisations_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
@@ -367,20 +371,14 @@ class MatterCreateForm(forms.Form):
         set_choices(self, "source_organisations", everything)
         set_choices(self, "source_organisations_other", everything)
 
-        set_choices(
-            self,
-            "policy_areas",
-            PolicyArea.objects.filter(is_active=True).order_by("sort_order", "name_et"),
-        )
+        set_choices(self, "policy_areas", selectable_policy_areas())
 
         # Ordering is a presentation concern, so it is applied to the rendered
         # choices rather than to the validating queryset.
         if viewer is not None:
             # `fields[...]` is typed as the base Field, which has no `choices`.
             # These two are ChoiceFields by construction a few lines above.
-            areas = cast(Any, self.fields["policy_areas"])
             senders = cast(Any, self.fields["source_organisations"])
-            areas.choices = [(area.pk, area.name_et) for area in policy_areas_by_usage(viewer)]
             self.frequent_senders = organisations_by_usage(viewer)
             senders.choices = [
                 (organisation.pk, organisation.name) for organisation in self.frequent_senders
@@ -508,120 +506,569 @@ class NextActionForm(forms.Form):
         }
 
 
-class ComposerForm(forms.Form):
-    """The unified composer: one entry, optionally one new `Järgmiseks`.
+#: The Valdkonnad-free part of the composer's period control, shared by the
+#: next step and the important deadline. Both ask the same question — how
+#: exactly is this date known — and both answer it with `app.workflow.dates`,
+#: so a quarter typed into either normalises to the same anchor.
+COMPOSER_PRECISION_CHOICES: tuple[tuple[str, str], ...] = (
+    (DatePrecision.EXACT.value, "Täpne kuupäev"),
+    (DatePrecision.MONTH.value, "Kuu täpsusega"),
+    (DatePrecision.QUARTER.value, "Kvartali täpsusega"),
+    (DatePrecision.HALF_YEAR.value, "Poolaasta täpsusega"),
+    (DatePrecision.YEAR.value, "Aasta täpsusega"),
+)
 
-    Both halves are optional individually and at least one is required, so the
-    same box serves "just note this down" and "note this down and here is what
-    happens next" without the user choosing a mode first.
+MONTH_CHOICES: tuple[tuple[str, str], ...] = tuple(
+    (str(number), name.capitalize()) for number, name in enumerate(ESTONIAN_MONTHS, start=1)
+)
+QUARTER_CHOICES: tuple[tuple[str, str], ...] = tuple(
+    (str(number), f"{numeral} kvartal") for number, numeral in enumerate(ROMAN_QUARTERS, start=1)
+)
+HALF_CHOICES: tuple[tuple[str, str], ...] = (("1", "I poolaasta"), ("2", "II poolaasta"))
+
+#: What a person may choose when recording a new `Kaasamine`.
+#:
+#: Three, not four. `WEB_CALL` is still a valid stored value and every
+#: historical row carrying it still reads correctly — nothing is renamed and no
+#: record is rewritten — but it is not offered for new work, because the
+#: department settled on these three words and a fourth option nobody picks is
+#: a fourth way for two people to file the same thing differently
+#: (Teema redesign §14).
+ENGAGEMENT_CHOICES: tuple[tuple[str, str], ...] = (
+    (EngagementKind.SURVEY.value, "Küsitlus"),
+    (EngagementKind.EMAIL_CAMPAIGN.value, "Otsepostitus"),
+    (EngagementKind.OTHER.value, "Muu"),
+)
+
+#: The closure reasons the composer offers, in the order they are read.
+#:
+#: A subset of `Disposition`, chosen so that every option is a sentence
+#: somebody would actually say about a finished file. `DUPLICATE` is deliberately
+#: absent: merging two records is data management and belongs to whoever is
+#: cleaning up, not to the lawyer finishing the work (Teema redesign §15.1).
+CLOSURE_CHOICES: tuple[tuple[str, str], ...] = (
+    (Disposition.COMPLETED.value, "Jõustus või töö lõppes"),
+    (Disposition.INITIATIVE_WITHDRAWN.value, "Eelnõu või algatus lõpetati"),
+    (Disposition.RESPONSE_COMPLETE.value, "Vastus esitatud ja järeltegevus tehtud"),
+    (Disposition.MONITORING_STOPPED.value, "Koda ei tegele edasi"),
+    (Disposition.NO_POSITION_FORMED.value, "Seisukohta ei kujundatud"),
+    (Disposition.SUPERSEDED.value, "Jätkub teise teema all"),
+    (Disposition.OTHER.value, "Muu"),
+)
+
+
+def _period_anchor(form: forms.Form, prefix: str) -> tuple[date | None, date | None, str]:
+    """Turn one prefixed precision group into an anchor, an end and a precision.
+
+    The composer carries two of these groups at once — the next step's date and
+    an important deadline's — so they cannot each be a `PeriodForm`. What they
+    share instead is `app.workflow.dates.bounds_for`, which is the thing that
+    actually matters: a quarter entered here and a quarter entered on the
+    Olulised tähtajad form must produce the same stored anchor, or the same
+    period would sort into two places (Stage-2G brief 49).
     """
 
+    def value(name: str) -> int | None:
+        raw = form.cleaned_data.get(f"{prefix}_{name}")
+        return int(raw) if raw not in (None, "") else None
+
+    precision = form.cleaned_data.get(f"{prefix}_precision") or DatePrecision.EXACT.value
+    exact = form.cleaned_data.get(f"{prefix}_date")
+    if precision == DatePrecision.EXACT.value and exact is None:
+        return None, None, precision
+
+    field_for_precision = {
+        DatePrecision.EXACT.value: f"{prefix}_date",
+        DatePrecision.MONTH.value: f"{prefix}_month",
+        DatePrecision.QUARTER.value: f"{prefix}_quarter",
+        DatePrecision.HALF_YEAR.value: f"{prefix}_half",
+        DatePrecision.YEAR.value: f"{prefix}_year",
+    }
+    try:
+        start, end = bounds_for(
+            precision,
+            exact_date=exact,
+            year=value("year"),
+            month=value("month"),
+            quarter=value("quarter"),
+            half=value("half"),
+        )
+    except InvalidPeriod as error:
+        form.add_error(field_for_precision.get(precision, f"{prefix}_date"), str(error))
+        return None, None, precision
+    return start, end, precision
+
+
+def _precision_fields(prefix: str, *, date_label: str) -> dict[str, forms.Field]:
+    """One precision group, named for the thing it dates.
+
+    Built rather than declared because the composer needs two identical groups
+    under different prefixes, and copying twenty lines is how the second copy
+    stops matching the first.
+    """
+    return {
+        f"{prefix}_date": EstonianDateField(
+            label=date_label, required=False, widget=EstonianDateInput()
+        ),
+        f"{prefix}_precision": forms.ChoiceField(
+            label="Täpsus",
+            choices=COMPOSER_PRECISION_CHOICES,
+            initial=DatePrecision.EXACT.value,
+            required=False,
+            widget=forms.RadioSelect(attrs={"class": "precision__radio"}),
+        ),
+        f"{prefix}_month": forms.ChoiceField(
+            label="Kuu", choices=(("", "—"), *MONTH_CHOICES), required=False, widget=SELECT_WIDGET
+        ),
+        f"{prefix}_quarter": forms.ChoiceField(
+            label="Kvartal",
+            choices=(("", "—"), *QUARTER_CHOICES),
+            required=False,
+            widget=SELECT_WIDGET,
+        ),
+        f"{prefix}_half": forms.ChoiceField(
+            label="Poolaasta",
+            choices=(("", "—"), *HALF_CHOICES),
+            required=False,
+            widget=SELECT_WIDGET,
+        ),
+        f"{prefix}_year": forms.IntegerField(
+            label="Aasta",
+            required=False,
+            min_value=MIN_YEAR,
+            max_value=MAX_YEAR,
+            widget=forms.NumberInput(attrs={"class": "field__input field__input--compact"}),
+        ),
+    }
+
+
+class ComposerForm(forms.Form):
+    """`TEGEVUSE KIRJELDUS` — one box, and everything else on demand.
+
+    The redesign's central claim is that recording professional work is *one*
+    act. A lawyer comes back from a meeting having agreed a deadline, promised
+    an opinion and been handed a PDF; the system should take that in one
+    sentence and one save, not as four forms on three screens.
+
+    So this form is one required-ish textarea and five optional groups, each
+    hidden behind a quiet control until somebody wants it: an attachment, an
+    important deadline, a consultation, the next step, and closing the file.
+
+    **There is no separate next-step text field, and that is the point.**
+    "Kirjelda, mis tegid ja mida teed edasi" already contains the wording; a
+    second box asking for it again is the duplicate data entry the whole
+    product exists to remove. Choosing TEEN, OOTAN or JÄLGIN turns the
+    description into the next step's text, verbatim — no NLP, no sentence
+    splitting, no summarisation. What somebody wrote is what the register says
+    (Teema redesign §9.1).
+
+    **A mode is what decides whether a next step is written**, rather than a
+    checkbox beside one. With no mode chosen, the save is an entry and nothing
+    else.
+    """
+
+    use_required_attribute = False
+
     body = forms.CharField(
-        label="Sissekanne",
+        label="Tegevuse kirjeldus",
         required=False,
         widget=forms.Textarea(
             attrs={
                 "class": "composer__body",
-                "rows": "4",
-                "placeholder": "Kirjuta sissekanne…",
+                "rows": "3",
+                "placeholder": "Kirjelda, mis tegid ja mida teed edasi…",
                 "data-richtext": "true",
             }
         ),
     )
+    #: Kept, and kept quiet. The entry kind is a real distinction in the
+    #: chronology — a meeting is not a note — but it is not a question worth
+    #: asking before somebody has written anything, so it defaults to Märkus
+    #: and lives inside the attachment/meta disclosure.
     kind = forms.ChoiceField(
-        label="Liik", choices=EntryKind.choices, initial=EntryKind.NOTE, widget=SELECT_WIDGET
-    )
-    occurred_at = forms.DateTimeField(
-        label="Toimus",
+        label="Liik",
+        choices=EntryKind.choices,
+        initial=EntryKind.NOTE,
         required=False,
-        widget=forms.DateTimeInput(attrs={"type": "datetime-local", "class": "field__input"}),
-        input_formats=["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"],
+        widget=SELECT_WIDGET,
     )
+    #: An Estonian date box, like every other date in this application.
+    #:
+    #: It was a native `datetime-local`, which renders in the *browser's*
+    #: locale: a lawyer on a US-English Windows saw `mm/dd/yyyy` on an
+    #: otherwise Estonian form, with no way to know it would read 7.9.2026 as
+    #: the 9th of July. That is the whole class of defect `app/core/dates.py`
+    #: exists to prevent, and this control had been missed by it.
+    #:
+    #: A day rather than a minute. Somebody writing up Friday's meeting on
+    #: Monday knows which day it was and does not know the hour, and the
+    #: chronology sorts by day — `add_entry` stamps the current moment when
+    #: this is left empty, which is the ordinary case.
+    occurred_on = EstonianDateField(label="Toimus", required=False, widget=DATE_WIDGET)
     organisation = forms.ModelChoiceField(
         label="Asutus", queryset=Organisation.objects.none(), required=False, widget=SELECT_WIDGET
     )
+
+    # -- + Manus -----------------------------------------------------------
     attachment = forms.FileField(
         label="Manus",
         required=False,
         widget=forms.ClearableFileInput(attrs={"class": "field__input"}),
-        help_text="Salvestatakse muutumatu tõendina teema dokumentide alla.",
+    )
+    #: Asked with the file, never after it. A document filed as "Muu" because
+    #: the form asked too late is a document nobody finds again
+    #: (Teema redesign §23.5).
+    attachment_role = forms.ChoiceField(
+        label="Roll",
+        choices=DocumentRole.choices,
+        initial=DocumentRole.OTHER,
+        required=False,
+        widget=SELECT_WIDGET,
     )
 
-    update_next_action = forms.BooleanField(
-        label="Muuda ka Järgmiseks", required=False, widget=forms.CheckboxInput()
+    # -- MIS EDASI? --------------------------------------------------------
+    #: Blank is a real answer: it means the next step is unchanged.
+    next_kind = forms.ChoiceField(
+        label="Mis edasi?",
+        choices=(("", "Ei muuda"), *ActionKind.choices),
+        required=False,
+        widget=forms.RadioSelect(attrs={"class": "modechip__input"}),
     )
-    next_text = forms.CharField(
-        label="Järgmiseks",
+    #: The stored meaning, behind a disclosure and never required. It derives
+    #: from the chosen mode when left alone, and the model genuinely permits
+    #: pairs the derivation does not produce — the register's own parser records
+    #: a DO whose source names a vague month as an expectation, not a deadline
+    #: (app/workflow/enums.py, Teema redesign §9.3).
+    next_date_semantics = forms.ChoiceField(
+        label="Mida kuupäev täpselt tähendab",
+        choices=(("", "Tuleneb valikust"), *DateSemantics.choices),
+        required=False,
+        widget=SELECT_WIDGET,
+    )
+
+    # -- + Oluline tähtaeg -------------------------------------------------
+    deadline_title = forms.CharField(
+        label="Mis on oodata",
         required=False,
         max_length=2000,
         widget=forms.TextInput(
-            attrs={"class": "field__input", "placeholder": "Mida teed, ootad või jälgid?"}
+            attrs={"class": "field__input", "placeholder": "Näiteks: eelnõu kooskõlastusring"}
         ),
     )
-    next_kind = forms.ChoiceField(
-        label="Liik",
-        choices=ActionKind.choices,
-        initial=ActionKind.DO,
+
+    # -- + Kaasamine -------------------------------------------------------
+    engagement_kind = forms.ChoiceField(
+        label="Kaasamise liik",
+        choices=ENGAGEMENT_CHOICES,
+        initial=EngagementKind.SURVEY.value,
         required=False,
-        widget=SELECT_WIDGET,
+        widget=forms.RadioSelect(attrs={"class": "modechip__input"}),
     )
-    #: Left blank it derives from `next_kind`, like the field it mirrors on
-    #: `NextActionForm`. One derivation rule, in one place
-    #: (app/workflow/enums.py, `default_date_semantics`).
-    next_date_semantics = forms.ChoiceField(
-        label="Mida kuupäev täpselt tähendab",
-        choices=DateSemantics.choices,
+    engagement_title = forms.CharField(
+        label="Kaasamise pealkiri",
         required=False,
-        widget=SELECT_WIDGET,
+        max_length=500,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input",
+                "placeholder": "Näiteks: liikmete küsitlus aruandluskoormuse kohta",
+            }
+        ),
     )
-    next_target_date = EstonianDateField(label="Kuupäev", required=False, widget=DATE_WIDGET)
-    next_date_precision = forms.ChoiceField(
-        label="Täpsus",
-        choices=DatePrecision.choices,
-        initial=DatePrecision.EXACT,
+    engagement_date = EstonianDateField(
+        label="Kaasamise kuupäev", required=False, widget=EstonianDateInput()
+    )
+    engagement_url = forms.CharField(
+        label="Seo dokument või link",
         required=False,
-        widget=SELECT_WIDGET,
-        help_text="Ligikaudse aja jaoks vali kuu või kvartal.",
+        widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "https://…"}),
+    )
+    engagement_note = forms.CharField(
+        label="Tulemus lühidalt",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input",
+                "rows": "2",
+                "placeholder": "Valikuline — nt «38 vastajat peab kvartaalset sagedust "
+                "ebaproportsionaalseks»",
+            }
+        ),
     )
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    # -- + Lõpeta teema ----------------------------------------------------
+    close_matter = forms.BooleanField(label="Lõpeta teema", required=False)
+    disposition = forms.ChoiceField(
+        label="Põhjus",
+        choices=CLOSURE_CHOICES,
+        required=False,
+        widget=SELECT_WIDGET,
+    )
+    closure_reason = forms.CharField(
+        label="Tulemus",
+        required=False,
+        widget=forms.Textarea(
+            attrs={"class": "field__input", "rows": "2", "placeholder": "Mis lõpuks juhtus?"}
+        ),
+    )
+    successor = forms.ModelChoiceField(
+        label="Järglane",
+        queryset=Matter.objects.none(),
+        required=False,
+        widget=SELECT_WIDGET,
+    )
+    #: The final opinion is a canonical Submission or it is nothing. This picks
+    #: the exact evidence that went out from the files already on the Matter;
+    #: a submission cannot be marked sent without one (Teema redesign §17).
+    final_version = forms.ModelChoiceField(
+        label="Lõpparvamuse fail",
+        queryset=DocumentVersion.objects.none(),
+        required=False,
+        widget=SELECT_WIDGET,
+    )
+    final_title = forms.CharField(
+        label="Lõpparvamuse pealkiri",
+        required=False,
+        max_length=400,
+        widget=forms.TextInput(attrs={"class": "field__input"}),
+    )
+    final_sent_on = EstonianDateField(
+        label="Saatmise kuupäev", required=False, widget=EstonianDateInput()
+    )
+    final_recipients = forms.ModelMultipleChoiceField(
+        label="Saaja",
+        queryset=Organisation.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
+    )
+    final_channel = forms.CharField(
+        label="Kanal",
+        required=False,
+        max_length=200,
+        widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "Näiteks: EIS"}),
+    )
+    final_reference = forms.CharField(
+        label="Viide",
+        required=False,
+        max_length=200,
+        widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "Toimiku number"}),
+    )
+    victory_title = forms.CharField(
+        label="Töövõit",
+        required=False,
+        max_length=2000,
+        widget=forms.TextInput(
+            attrs={"class": "field__input", "placeholder": "Mida Koda saavutas?"}
+        ),
+    )
+    victory_detail = forms.CharField(
+        label="Töövõidu selgitus",
+        required=False,
+        widget=forms.Textarea(attrs={"class": "field__input", "rows": "2"}),
+    )
+
+    def __init__(self, *args: Any, matter: Any = None, viewer: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        for prefix, label in (("next", "Kuupäev"), ("deadline", "Kuupäev")):
+            self.fields.update(_precision_fields(prefix, date_label=label))
         set_choices(self, "organisation", Organisation.objects.order_by("name"))
+        set_choices(self, "final_recipients", Organisation.objects.order_by("name"))
+        self.matter = matter
+        if matter is None:
+            return
+
+        # Both querysets go through `visible_to`, and that is a security
+        # boundary rather than a convenience.
+        #
+        # A crafted POST naming a Matter this person may not see would tell them
+        # a restricted file with that id exists — the same disclosure
+        # `get_visible_matter` returns 404 to avoid. And binding a document they
+        # may not read as a submission's final evidence would then print its
+        # filename, its size and its SHA-256 to everybody who can see the
+        # submission: exactly the defect fixed once already in
+        # `app.submissions.views.attach_evidence`, which is why the version
+        # queryset filters through `Document.objects.visible_to` rather than on
+        # `document__matter` alone. A child override only ever restricts
+        # further, so the Matter-only filter is not the same question.
+        set_choices(self, "successor", Matter.objects.visible_to(viewer).exclude(pk=matter.pk))
+        set_choices(
+            self,
+            "final_version",
+            DocumentVersion.objects.filter(
+                document__in=Document.objects.visible_to(viewer).filter(matter=matter)
+            ).select_related("document"),
+        )
+
+    # -- validation --------------------------------------------------------
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
         body = (cleaned.get("body") or "").strip()
-        wants_action = cleaned.get("update_next_action")
+        mode = cleaned.get("next_kind") or ""
+        wants_deadline = bool((cleaned.get("deadline_title") or "").strip())
+        wants_engagement = bool((cleaned.get("engagement_title") or "").strip())
+        wants_closure = bool(cleaned.get("close_matter"))
+        has_file = bool(cleaned.get("attachment"))
 
-        if not body and not wants_action:
-            raise forms.ValidationError("Kirjuta sissekanne või muuda Järgmiseks.")
+        if not (body or mode or wants_deadline or wants_engagement or wants_closure or has_file):
+            raise forms.ValidationError("Kirjelda tegevust või vali, mida veel salvestada.")
 
-        if wants_action:
-            if not (cleaned.get("next_text") or "").strip():
-                self.add_error("next_text", "Järgmiseks vajab teksti.")
-            kind = cleaned.get("next_kind") or ActionKind.DO
-            semantics = cleaned.get("next_date_semantics") or default_date_semantics(kind)
-            cleaned["next_date_semantics"] = semantics
-            if (
-                kind == ActionKind.DO
-                and semantics == DateSemantics.DEADLINE
-                and cleaned.get("next_target_date") is None
-            ):
-                self.add_error("next_target_date", "Tähtajaline tegevus vajab kuupäeva.")
+        self._clean_next_action(cleaned, body=body, mode=mode)
+        self._clean_deadline(cleaned, wanted=wants_deadline)
+        self._clean_engagement(cleaned, wanted=wants_engagement)
+        self._clean_closure(cleaned, wanted=wants_closure)
         return cleaned
 
-    def next_action_kwargs(self) -> dict[str, Any] | None:
-        if not self.cleaned_data.get("update_next_action"):
-            return None
+    def _clean_next_action(self, cleaned: dict[str, Any], *, body: str, mode: str) -> None:
+        if not mode:
+            cleaned["next_action_kwargs"] = None
+            return
+
+        # The wording comes from the description, exactly as it was typed. The
+        # entry stores sanitised HTML and a next action is a plain sentence, so
+        # the tags come off and nothing else does.
+        text = plain_text(body).strip()
+        if not text:
+            self.add_error(
+                "body",
+                "Kirjelda, mida teed või ootad — sellest saab järgmise sammu sõnastus.",
+            )
+            return
+
+        anchor, _end, precision = _period_anchor(self, "next")
+        semantics = cleaned.get("next_date_semantics") or default_date_semantics(mode)
+        if mode == ActionKind.DO and semantics == DateSemantics.DEADLINE and anchor is None:
+            self.add_error("next_date", "Tähtajaline tegevus vajab kuupäeva.")
+            return
+
+        cleaned["next_action_kwargs"] = {
+            "text": text[:2000],
+            "kind": mode,
+            "date_semantics": semantics,
+            "target_date": anchor,
+            "date_precision": precision,
+        }
+
+    def _clean_deadline(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
+        if not wanted:
+            cleaned["important_date_kwargs"] = None
+            return
+        anchor, end, precision = _period_anchor(self, "deadline")
+        if anchor is None or end is None:
+            self.add_error("deadline_date", "Oluline tähtaeg vajab kuupäeva või perioodi.")
+            return
+        cleaned["important_date_kwargs"] = {
+            "title": (cleaned.get("deadline_title") or "").strip(),
+            "date_value": anchor,
+            "period_end": end,
+            "date_precision": precision,
+        }
+
+    def _clean_engagement(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
+        if not wanted:
+            cleaned["engagement_kwargs"] = None
+            return
+        # Imported here rather than at module scope: `app.matters.services`
+        # imports this module for its forms, and a top-level import would close
+        # the circle. The same rule the service enforces, reported beside the
+        # box somebody typed into.
+        from app.matters.services import normalize_engagement_url
+
+        kind = cleaned.get("engagement_kind") or EngagementKind.OTHER.value
+        try:
+            url = normalize_engagement_url(cleaned.get("engagement_url"))
+        except DomainError as error:
+            self.add_error("engagement_url", str(error))
+            return
+        cleaned["engagement_kwargs"] = {
+            "kind": kind,
+            "title": (cleaned.get("engagement_title") or "").strip(),
+            "url": url,
+            "note": (cleaned.get("engagement_note") or "").strip(),
+            "occurred_on": cleaned.get("engagement_date"),
+        }
+
+    def _clean_closure(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
+        if not wanted:
+            cleaned["closure_kwargs"] = None
+            return
+
+        disposition = cleaned.get("disposition") or ""
+        if not disposition:
+            self.add_error("disposition", "Vali, miks teema lõpeb.")
+            return
+
+        successor = cleaned.get("successor")
+        if disposition == Disposition.SUPERSEDED and successor is None:
+            self.add_error("successor", "Vali teema, mille all töö jätkub.")
+            return
+        if disposition != Disposition.SUPERSEDED and successor is not None:
+            self.add_error(
+                "successor",
+                "Järglase saab määrata ainult siis, kui töö jätkub teise teema all.",
+            )
+            return
+
+        closure: dict[str, Any] = {
+            "disposition": disposition,
+            "reason": (cleaned.get("closure_reason") or "").strip(),
+            "successor": successor,
+        }
+
+        version = cleaned.get("final_version")
+        recipients = list(cleaned.get("final_recipients") or [])
+        title = (cleaned.get("final_title") or "").strip()
+        sent_on = cleaned.get("final_sent_on")
+        # An opinion is claimed only when somebody chose the file that went out.
+        # Everything else about it is then required, because a sent submission
+        # with no recipient and no date is a claim the record cannot support —
+        # and a PDF on its own is not a sent opinion (Teema redesign §17, §20).
+        if version is not None:
+            if not title:
+                self.add_error("final_title", "Lõpparvamus vajab pealkirja.")
+            if not recipients:
+                self.add_error("final_recipients", "Märgi, kellele arvamus saadeti.")
+            if sent_on is None:
+                self.add_error("final_sent_on", "Märgi, millal arvamus saadeti.")
+            if not self.errors:
+                closure["final_opinion"] = {
+                    "title": title,
+                    "final_version": version,
+                    "recipients": recipients,
+                    "sent_at": _as_datetime(sent_on),
+                    "channel": (cleaned.get("final_channel") or "").strip(),
+                    "reference": (cleaned.get("final_reference") or "").strip(),
+                }
+        elif title or recipients or sent_on:
+            self.add_error(
+                "final_version",
+                "Vali saadetud fail — ilma täpse tõendita ei saa arvamust saadetuks märkida.",
+            )
+
+        victory_title = (cleaned.get("victory_title") or "").strip()
+        if victory_title:
+            closure["work_victory"] = {
+                "title": victory_title,
+                "detail": (cleaned.get("victory_detail") or "").strip(),
+            }
+
+        cleaned["closure_kwargs"] = closure
+
+    # -- what the service is called with -----------------------------------
+
+    def as_service_kwargs(self) -> dict[str, Any]:
+        """Everything :func:`app.matters.services.compose_update` needs."""
         return {
-            "text": self.cleaned_data["next_text"],
-            "kind": self.cleaned_data["next_kind"] or ActionKind.DO,
-            "date_semantics": (
-                self.cleaned_data["next_date_semantics"]
-                or default_date_semantics(self.cleaned_data.get("next_kind") or ActionKind.DO)
-            ),
-            "target_date": self.cleaned_data.get("next_target_date"),
-            "date_precision": self.cleaned_data.get("next_date_precision") or DatePrecision.EXACT,
+            "body": self.cleaned_data.get("body") or "",
+            "kind": self.cleaned_data.get("kind") or EntryKind.NOTE,
+            "occurred_at": _as_datetime(self.cleaned_data.get("occurred_on")),
+            "organisation": self.cleaned_data.get("organisation"),
+            "attachment": self.cleaned_data.get("attachment"),
+            "attachment_role": self.cleaned_data.get("attachment_role") or DocumentRole.OTHER,
+            "next_action": self.cleaned_data.get("next_action_kwargs"),
+            "important_date": self.cleaned_data.get("important_date_kwargs"),
+            "engagement": self.cleaned_data.get("engagement_kwargs"),
+            "closure": self.cleaned_data.get("closure_kwargs"),
         }
 
 
@@ -656,6 +1103,12 @@ class MatterFieldForm(forms.Form):
     # legitimate value here — it is how somebody clears a note that turned out
     # to belong under a real PolicyArea after all (Stage-2E.1 brief 20).
     policy_area_other = forms.CharField(max_length=400, required=False)
+    # The governed vocabulary, edited in the header where the value is shown.
+    # A multiple field for the same reason `source_organisations` is one: the
+    # control replaces the whole set, and an untouched checkbox posts nothing.
+    policy_areas = forms.ModelMultipleChoiceField(
+        queryset=PolicyArea.objects.none(), required=False
+    )
     # `required=False` like every other field on this form: one POST carries
     # one field, so demanding this one would refuse every other inline edit.
     # An absent or empty value is still refused — by the service, which knows
@@ -670,6 +1123,11 @@ class MatterFieldForm(forms.Form):
         set_choices(self, "stage", active_stages())
         set_choices(self, "source_organisations", Organisation.objects.order_by("name"))
         set_choices(self, "addressee_organisation", Organisation.objects.order_by("name"))
+        # The offered vocabulary *plus* whatever this Matter already carries.
+        # Validation would otherwise refuse a save that merely left a retired
+        # area ticked, which would make correcting one field on an old Matter
+        # impossible without silently dropping its filing (Teema redesign §7.2).
+        set_choices(self, "policy_areas", PolicyArea.objects.all())
 
 
 class EngagementForm(forms.Form):
@@ -682,10 +1140,13 @@ class EngagementForm(forms.Form):
     (Agent-F brief 39).
     """
 
+    #: The three approved options, not the whole enum. `WEB_CALL` stays a valid
+    #: stored value and every historical row carrying it still reads correctly;
+    #: it is simply not offered for new work (Teema redesign §14).
     kind = forms.ChoiceField(
         label="Liik",
-        choices=EngagementKind.choices,
-        initial=EngagementKind.WEB_CALL,
+        choices=ENGAGEMENT_CHOICES,
+        initial=EngagementKind.SURVEY.value,
         widget=SELECT_WIDGET,
     )
     title = forms.CharField(
@@ -741,6 +1202,83 @@ class PositionForm(forms.Form):
         label="Põhjendus",
         required=False,
         widget=forms.Textarea(attrs={"class": "field__input", "rows": "5"}),
+    )
+
+
+class BriefSummaryForm(forms.Form):
+    """`Lühikokkuvõte`, edited where it is read.
+
+    One field, no heading, no page. Blank is a legitimate submission: a summary
+    somebody wrote before understanding the file is one they may want to remove
+    rather than replace (Teema redesign §6, §26.1).
+    """
+
+    brief_summary = forms.CharField(
+        label="Lühikokkuvõte",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input inlineedit__area",
+                "rows": "3",
+                "placeholder": "Mida see teema ettevõtjatele tähendab? (2–3 lauset)",
+            }
+        ),
+    )
+
+
+class PersonalNoteForm(forms.Form):
+    """`Märkmed` — the private scratch pad, autosaved.
+
+    Plain text and nothing else: no sanitiser, no rich text, no formatting
+    toolbar. It is never rendered as HTML, never indexed, never exported, and
+    never shown to anybody but its author (Teema redesign §22.4).
+    """
+
+    body = forms.CharField(
+        label="Märkmed",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "railnote__area",
+                "rows": "6",
+                "placeholder": "Vabad märkmed…",
+            }
+        ),
+    )
+
+
+class WorkingDocumentForm(forms.Form):
+    """A living SharePoint file, referenced and never captured.
+
+    Deliberately not an upload. What this records is *where the working file
+    lives*, which is the opposite of evidence: the bytes keep changing, nobody
+    checksums them, and presenting the link as proof of what Koda sent is the
+    one confusion the documents workspace exists to prevent
+    (master specification 8.6; Teema redesign §23.3).
+    """
+
+    title = forms.CharField(
+        label="Nimi",
+        max_length=400,
+        widget=forms.TextInput(
+            attrs={"class": "field__input", "placeholder": "Näiteks: Arvamuse töödokument.docx"}
+        ),
+    )
+    web_url = forms.CharField(
+        label="SharePointi aadress",
+        max_length=1000,
+        widget=forms.TextInput(
+            attrs={"class": "field__input", "placeholder": "https://…sharepoint.com/…"}
+        ),
+    )
+    site_path = forms.CharField(
+        label="Asukoht",
+        max_length=200,
+        required=False,
+        widget=forms.TextInput(
+            attrs={"class": "field__input", "placeholder": "Näiteks: Õigusosakond / KMS 2026"}
+        ),
+        help_text="Valikuline. Aitab lugejal aru saada, kus fail SharePointis asub.",
     )
 
 

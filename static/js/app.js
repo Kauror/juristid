@@ -8,6 +8,29 @@
  * (master specification 17.7).
  */
 (function () {
+  /* ---- A refused save must say why --------------------------------------
+   * Every 400 this application returns from an HTMX endpoint carries the
+   * re-rendered surface with the reason on it: the composer with its field
+   * error and the text still in the box, the engagement form with what was
+   * typed. htmx 2 does not swap 4xx by default, which means the server
+   * explains itself and the page silently discards the explanation — somebody
+   * presses Salvesta and nothing whatsoever happens.
+   *
+   * Only 400 and 422. A 404 is the authorization answer this application gives
+   * for a record somebody may not touch, and swapping Django's error page into
+   * a fragment target would be worse than ignoring it.
+   *
+   * `defer` on both scripts, htmx first, so the global is here.
+   */
+  if (window.htmx && window.htmx.config) {
+    window.htmx.config.responseHandling = [
+      { code: "204", swap: false },
+      { code: "[23]..", swap: true },
+      { code: "4(00|22)", swap: true, error: true },
+      { code: "[45]..", swap: false, error: true },
+    ];
+  }
+
   "use strict";
 
   /* ---- Ctrl/Cmd+K focuses the global search ------------------------------
@@ -110,6 +133,41 @@
     }
   });
 
+  /* ---- Inline editors: Ctrl/Cmd+Enter saves, Esc cancels -----------------
+   * Every edit in the Matter workflow happens where the value is shown, inside
+   * a <details> that opened in place. The two keys behave the same in all of
+   * them — the summary, the position, an engagement — because a shortcut that
+   * works in one box and not the next is a shortcut nobody trusts. Both have a
+   * visible click equivalent beside them (master specification 22.3).
+   *
+   * Delegated, so it costs nothing per editor and survives every HTMX swap.
+   */
+  document.addEventListener("keydown", function (event) {
+    if (!event.target.closest) {
+      return;
+    }
+    var form = event.target.closest("details form");
+    if (!form || event.target.closest("form[data-composer]")) {
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      form.requestSubmit();
+      return;
+    }
+    if (event.key === "Escape") {
+      var holder = form.closest("details");
+      if (holder && holder.open) {
+        event.preventDefault();
+        holder.open = false;
+        var trigger = holder.querySelector("summary");
+        if (trigger) {
+          trigger.focus();
+        }
+      }
+    }
+  });
+
   /* ---- Progressive disclosure --------------------------------------------
    * Two kinds. A "reveals" button shows an optional block; a "toggles"
    * checkbox does the same but its state is submitted with the form, which is
@@ -185,6 +243,83 @@
         }
       });
     });
+
+    /* "Muuda" and "Määra allpool ↓" on the Järgmiseks row send the reader to
+       the composer rather than opening a second editor for the same value.
+       There is exactly one place a next step is written, and a competing inline
+       form would be a competing implementation of the same domain call
+       (Teema redesign §26.3). */
+    scope.querySelectorAll("[data-focus]").forEach(function (trigger) {
+      if (!once(trigger, "Focus")) {
+        return;
+      }
+      trigger.addEventListener("click", function () {
+        var target = document.getElementById(trigger.getAttribute("data-focus"));
+        if (!target) {
+          return;
+        }
+        /* `prefers-reduced-motion` is honoured by asking for "auto", which the
+           browser resolves against the user's own setting. */
+        target.scrollIntoView({ block: "center", behavior: "auto" });
+        /* Not `input` in general: every form here opens with a hidden CSRF
+           token, and it is the first match in document order. */
+        var box = target.querySelector(
+          "textarea, select, input:not([type=hidden])"
+        );
+        if (box) {
+          box.focus();
+        }
+      });
+    });
+
+    /* The composer's primary button says what the save will actually do. A
+       button reading "Salvesta" that closes the file is the one thing a
+       destructive-ish action must never look like (Teema redesign §15). */
+    scope.querySelectorAll("[data-closes-matter]").forEach(function (toggle) {
+      if (!once(toggle, "Closes")) {
+        return;
+      }
+      var form = toggle.form;
+      var submit = form ? form.querySelector("[data-composer-submit]") : null;
+      if (!submit) {
+        return;
+      }
+      var sync = function () {
+        submit.textContent = toggle.checked
+          ? submit.getAttribute("data-label-closing")
+          : submit.getAttribute("data-label-default");
+        submit.classList.toggle("button--danger", toggle.checked);
+      };
+      toggle.addEventListener("change", sync);
+      sync();
+    });
+
+    /* The private note saves itself and says so. `beforeunload` covers the one
+       case the debounce cannot: somebody types a line and closes the tab
+       inside the delay window. */
+    scope.querySelectorAll(".railnote").forEach(function (form) {
+      if (!once(form, "Note")) {
+        return;
+      }
+      var box = form.querySelector("textarea");
+      if (!box) {
+        return;
+      }
+      var saved = box.value;
+      window.addEventListener("beforeunload", function () {
+        if (box.value === saved) {
+          return;
+        }
+        var body = new FormData(form);
+        var url = form.getAttribute("hx-post");
+        if (url && navigator.sendBeacon) {
+          navigator.sendBeacon(url, body);
+        }
+      });
+      form.addEventListener("htmx:afterRequest", function () {
+        saved = box.value;
+      });
+    });
   }
 
   /* ---- Menus close the way people expect --------------------------------
@@ -193,7 +328,7 @@
    * it. Delegated, so it costs nothing per menu and survives every swap.
    */
   document.addEventListener("click", function (event) {
-    document.querySelectorAll("details.topnav__more[open]").forEach(function (menu) {
+    document.querySelectorAll("details.topnav__more[open], details.headmenu[open]").forEach(function (menu) {
       if (!menu.contains(event.target)) {
         menu.open = false;
       }
@@ -221,14 +356,31 @@
    * (app/intelligence/forms.py, Stage-2G brief 7, 49).
    */
   function bindPeriodFields(scope) {
-    if (!scope || !scope.querySelector) {
+    if (!scope || !scope.querySelectorAll) {
       return;
     }
-    var fields = scope.querySelector("#perioodi-valjad");
-    var chooser = scope.querySelector("#tapsuse-valik");
-    if (!fields || !chooser) {
-      return;
-    }
+    /* Every precision control on the page, not one addressed by id. The
+     * composer carries two of them at once — the next step's date and an
+     * important deadline's — so the pairing is structural: a `.periodfields`
+     * block belongs to the `.choiceset` that precedes it under the same
+     * parent. */
+    scope.querySelectorAll(".periodfields").forEach(function (fields) {
+      /* The *nearest preceding* `.choiceset`, walked backwards. Jõustumine has
+         two of them in one parent — "what is known about the date" comes
+         before "how exact is it" — and taking the first match paired the
+         period groups with the wrong question, which hid the date field
+         entirely and made the form unusable. */
+      var chooser = fields.previousElementSibling;
+      while (chooser && !chooser.classList.contains("choiceset")) {
+        chooser = chooser.previousElementSibling;
+      }
+      if (chooser) {
+        bindOnePeriodControl(scope, fields, chooser);
+      }
+    });
+  }
+
+  function bindOnePeriodControl(scope, fields, chooser) {
     /* Jõustumine asks a question before the precision one: a commencement that
      * happens "üldises korras" has no date to be precise about, so the whole
      * control goes away rather than sitting there inviting a fabricated day. */

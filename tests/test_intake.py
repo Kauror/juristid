@@ -249,15 +249,26 @@ def test_the_dashboard_sees_it_immediately(client, specialist) -> None:
     assert after == before + 1
 
 
-def test_the_matter_page_shows_the_incoming_files(client, specialist) -> None:
+def test_the_documents_tab_shows_the_incoming_files(client, specialist) -> None:
+    """The arriving files are on Dokumendid, not at the top of the Teema page.
+
+    `SAABUNUD MATERJALID` used to be the first block a reader saw. The arriving
+    document has a date and an author, so it belongs to the chronology and to
+    the file workspace; a third copy of it above everything else pushed the
+    question the page exists to answer below the fold (Teema redesign §3).
+    """
     client.force_login(specialist)
     _post(client, [_file("eelnou.pdf", PDF), _file("lisa.xlsx", XLSX)], title="Saadetis")
     matter = Matter.objects.get(title="Saadetis")
 
-    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
-    assert "Saabunud materjalid" in body
-    assert "eelnou.pdf" in body
-    assert "lisa.xlsx" in body
+    main = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    assert "Saabunud materjalid" not in main
+
+    documents = client.get(
+        reverse("matters:matter_documents", kwargs={"pk": matter.pk})
+    ).content.decode()
+    assert "eelnou.pdf" in documents
+    assert "lisa.xlsx" in documents
 
 
 def test_title_only_matter_creation_still_works(client, specialist) -> None:

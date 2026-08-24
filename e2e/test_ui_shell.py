@@ -392,8 +392,10 @@ def test_next_action_modes_differ_in_shape_as_well_as_colour(page, base_url):
     styles = page.evaluate(
         """() => {
             const seen = {};
-            for (const chip of document.querySelectorAll('.mode')) {
-              const kind = [...chip.classList].find(c => c.startsWith('mode--'));
+            for (const chip of document.querySelectorAll('.mode, .modechip')) {
+              const kind = [...chip.classList].find(
+                c => c.startsWith('mode--') || c.startsWith('modechip--')
+              );
               const s = getComputedStyle(chip);
               seen[kind] = {
                 text: chip.textContent.trim(),
@@ -405,10 +407,14 @@ def test_next_action_modes_differ_in_shape_as_well_as_colour(page, base_url):
         }"""
     )
     assert styles, "no mode chips rendered"
-    if "mode--monitor" in styles:
-        assert styles["mode--monitor"]["style"] == "dashed", "JÄLGIN lost its dashed outline"
-    if "mode--wait" in styles:
-        assert styles["mode--wait"]["style"] == "solid", "OOTAN lost its outline"
+    # Both vocabularies, because the register still uses `.mode` and the Teema
+    # row uses `.modechip`. The rule is one rule and neither may lose it.
+    for dashed in ("mode--monitor", "modechip--monitor"):
+        if dashed in styles:
+            assert styles[dashed]["style"] == "dashed", "JÄLGIN lost its dashed outline"
+    for solid in ("mode--wait", "modechip--wait"):
+        if solid in styles:
+            assert styles[solid]["style"] == "solid", "OOTAN lost its outline"
     for kind, chip in styles.items():
         assert chip["text"], f"{kind} rendered without its label"
 
@@ -471,16 +477,20 @@ def test_the_matter_header_is_a_band_of_facts_not_a_form(page, base_url):
     page.set_viewport_size({"width": 1440, "height": 900})
     open_first_matter(page, base_url)
 
-    strip = page.locator(".metastrip")
+    strip = page.locator(".metaline")
     expect(strip).to_be_visible()
-    assert strip.bounding_box()["height"] <= 64, "the facts strip is taller than two lines"
+    # One line of four facts now, not a grid of six labelled cells.
+    assert strip.bounding_box()["height"] <= 48, "the facts line is taller than one line"
     # Visible, not present: the controls are in the DOM behind their
     # disclosures, which is the point — they are reachable without being what
     # the band shows.
-    expect(page.locator(".metastrip select:visible")).to_have_count(0)
+    expect(page.locator(".metaline select:visible")).to_have_count(0)
 
+    # The band also carries the plain-language summary now, which is the
+    # largest body text on the page and the reason the formal title is not the
+    # only description a reader gets (Teema redesign §6).
     header = page.locator(".matterhead").bounding_box()
-    assert header["height"] <= 260, "the Matter header takes a quarter of the viewport"
+    assert header["height"] <= 300, "the Matter header takes a third of the viewport"
 
 
 def test_an_inline_edit_opens_the_real_control_without_moving_the_page(page, base_url):
@@ -530,7 +540,7 @@ def test_the_matter_rail_sits_beside_or_below_but_never_over(page, base_url, wid
     page.set_viewport_size({"width": width, "height": height})
     open_first_matter(page, base_url)
 
-    main = page.locator(".mattermain").bounding_box()
+    main = page.locator(".teemamain").bounding_box()
     rail = page.locator(".rail").bounding_box()
     beside = rail["x"] >= main["x"] + main["width"] - 1
     below = rail["y"] >= main["y"] + main["height"] - 1
@@ -550,7 +560,10 @@ def test_the_composer_starts_as_one_field(page, base_url):
     field = page.locator(".composer__body")
     expect(field).to_be_visible()
     collapsed = field.evaluate("element => getComputedStyle(element).height")
-    assert float(collapsed.removesuffix("px")) <= 48, f"the composer rests at {collapsed}"
+    # 62px is the design's resting height for the capture box, and it is the
+    # difference between "note this down" and "fill in this form" — three lines
+    # of an Estonian sentence rather than one (Teema redesign §9).
+    assert float(collapsed.removesuffix("px")) <= 72, f"the composer rests at {collapsed}"
 
     field.click()
     expect(page.locator(".composer:focus-within")).to_have_count(1)
@@ -559,14 +572,21 @@ def test_the_composer_starts_as_one_field(page, base_url):
     expect(field).not_to_have_css("height", collapsed)
 
 
-def test_the_intelligence_sections_do_not_shout_when_they_are_empty(page, base_url):
-    """Three empty sections are three lines, not three boxes."""
+def test_the_intelligence_sections_do_not_render_when_they_are_empty(page, base_url):
+    """Not three lines. Nothing at all, and one quiet add row instead.
+
+    Three headings each announcing an absence, with an add button beside each,
+    is what the redesign removed: on a Matter nobody had touched it was about
+    forty per cent of the page telling the reader that nothing existed
+    (Teema redesign §3, §24).
+    """
     sign_in(page, base_url, SANDRA)
     open_first_matter(page, base_url)
 
     for section in page.locator(".factsection").all():
-        if section.locator(".factsection__none").count():
-            assert section.bounding_box()["height"] <= 80, "an empty fact section is a wall"
+        assert section.locator(".factsection__none").count() == 0, (
+            "an empty fact section is still being rendered"
+        )
 
 
 # ---------------------------------------------------------------------------

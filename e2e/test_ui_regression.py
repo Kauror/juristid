@@ -93,7 +93,19 @@ CLOCK_DEPENDENT = [
     ".workrow__date",
     ".factrow__date",
     ".table__lastactivity .muted",
-    ".metafield--date .inlineedit__trigger",
+    # The Teema header's one deadline, the Järgmiseks row's date, the sent
+    # strip's dates and the accordions' "N kirjet · viimane <date>" summaries.
+    # The redesign moved every one of these, and a mask selector that stops
+    # matching does not fail — it silently unmasks a value that changes daily,
+    # and every baseline goes red the next morning.
+    ".metaline__item--deadline .inlineedit__trigger",
+    ".nextrow__date",
+    ".sentstrip__date",
+    # Only the timeline's summary. It always reads "N kirjet · viimane <date>";
+    # Kaasamine's and Töödokumendid's summaries are content and must stay in
+    # the baseline.
+    ".accordion--timeline .accordion__summary",
+    ".railcard__value--date",
     # A date control's value renders in the control, and the create form's
     # Saabus defaults to today. Scoped to that form: unscoped, the selector also
     # matched the register's filter inputs, which sit inside a *closed*
@@ -259,9 +271,45 @@ def test_matter_in_a_special_state(page, base_url):
     compare("teema-arhiiv", capture(page, "teema-arhiiv"))
 
 
-def test_matter_position(page, base_url):
-    open_matter(page, base_url, OPEN_TITLE, tab="Seisukoht ja kaasamine")
+def test_matter_opinions(page, base_url):
+    """`Arvamused` on one Matter — reached from the position block, not a tab."""
+    open_matter(page, base_url, OPEN_TITLE)
+    page.get_by_role("link", name="Arvamused →").click()
+    page.wait_for_load_state("networkidle")
     compare("teema-seisukoht", capture(page, "teema-seisukoht"))
+
+
+def test_matter_composer_expanded(page, base_url):
+    """Every progressive disclosure open at once.
+
+    The one state a screenshot is genuinely better at than an assertion: five
+    optional blocks, each of which is a form, and the question is whether the
+    composer still reads as one surface when a lawyer has opened all of them.
+    """
+    open_matter(page, base_url, OPEN_TITLE)
+    for chip in ("+ Manus", "+ Oluline tähtaeg", "+ Kaasamine", "+ Lõpeta teema"):
+        page.locator(".disclosure-chip", has_text=chip).click()
+    page.wait_for_timeout(120)
+    compare("teema-koostaja", capture(page, "teema-koostaja", clip_to=".composer"))
+
+
+def test_matter_closed(page, base_url):
+    """A closed Matter: readable past, no writable next step, no composer."""
+    signed_in(page, base_url, "/teemad/?olek=suletud")
+    link = page.locator(".table__titlelink").first
+    if not link.count():
+        pytest.skip("the seeded world holds no closed Matter")
+    page.goto(f"{base_url}{link.get_attribute('href')}")
+    page.wait_for_load_state("networkidle")
+    compare("teema-suletud", capture(page, "teema-suletud"))
+
+
+def test_matter_at_1024(page, base_url):
+    """The rail folds under the content and the reading order does not change."""
+    open_matter(page, base_url, OPEN_TITLE)
+    page.set_viewport_size({"width": 1024, "height": 900})
+    page.wait_for_load_state("networkidle")
+    compare("teema-1024", capture(page, "teema-1024"))
 
 
 def test_matter_documents(page, base_url):

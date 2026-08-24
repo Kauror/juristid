@@ -81,17 +81,31 @@ def test_several_policy_areas_can_be_chosen(signed_in, specialist):
 # -- ordering ---------------------------------------------------------------
 
 
-def test_policy_areas_are_ordered_by_how_often_they_are_used(specialist):
-    rare = factories.PolicyAreaFactory(name_et="Harv", sort_order=1)
-    common = factories.PolicyAreaFactory(name_et="Sage", sort_order=99)
+def test_policy_areas_are_offered_in_the_reviewed_order(signed_in, specialist):
+    """The department sequenced these twenty-three; the form shows that order.
 
-    for _ in range(3):
-        factories.MatterFactory(owner=specialist).policy_areas.add(common)
-    factories.MatterFactory(owner=specialist).policy_areas.add(rare)
+    It replaces an ordering by usage frequency, which existed because nine
+    broad headings sorted by an admin field made people hunt. With a working
+    vocabulary somebody can learn, a list that rearranges itself under the
+    reader is worse than one that does not — and the usage order was also a
+    derivation from records, which is a thing an ordering should not be
+    (app/taxonomy/vocabulary.py, Teema redesign §7.1).
+    """
+    from app.taxonomy.vocabulary import selectable_policy_areas
 
-    form = MatterCreateForm(viewer=specialist)
-    labels = [str(label) for _, label in form.fields["policy_areas"].choices]
-    assert labels.index("Sage") < labels.index("Harv")
+    expected = [area.name_et for area in selectable_policy_areas()]
+    assert expected, "the governed vocabulary is empty"
+
+    offered = [
+        str(label)
+        for _value, label in MatterCreateForm(viewer=specialist).fields["policy_areas"].choices
+    ]
+    assert offered == expected
+
+    # And the page renders one control per offered area, so the order somebody
+    # sees is the order the form declares.
+    body = signed_in.get(CREATE).content.decode()
+    assert body.count('name="policy_areas"') == len(expected)
 
 
 def test_restricted_work_does_not_shape_the_order_somebody_else_sees(specialist, other_specialist):
