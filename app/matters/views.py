@@ -55,11 +55,13 @@ from app.matters.forms import (
     EngagementForm,
     IncomingIntakeForm,
     MatterCreateForm,
+    MatterEditForm,
     MatterFieldForm,
     NextActionForm,
     PersonalNoteForm,
     PositionForm,
     WorkingDocumentForm,
+    edit_initial,
 )
 from app.matters.intake import register_incoming, validate_uploads
 from app.matters.models import Matter, MatterEngagement
@@ -77,11 +79,13 @@ from app.matters.services import (
     set_brief_summary,
     set_matter_data_class,
     set_matter_dates,
+    set_matter_title,
     set_matter_visibility,
     set_organisations,
     set_policy_area_other,
     set_policy_areas,
     set_position,
+    set_tags,
     update_engagement,
 )
 from app.matters.timeline import TIMELINE_FILTER_ALL, TIMELINE_FILTERS, matter_timeline
@@ -172,8 +176,8 @@ def overview(request: HttpRequest) -> HttpResponse:
 @login_required
 def my_work(request: HttpRequest) -> HttpResponse:
     today = timezone.localdate()
-    do_groups = selectors.my_do_groups(request.user, today)
-    waiting = selectors.my_waiting_actions(request.user, today)
+    work_groups = selectors.my_work_timeline(request.user, today)
+    scheduled = [action for group in work_groups for action in group.actions]
     attention = selectors.my_attention_items(request.user, today)
     active = selectors.my_active_matters(request.user)[:PAGE_SIZE]
     without_action = list(
@@ -185,10 +189,12 @@ def my_work(request: HttpRequest) -> HttpResponse:
         "matters/my_work.html",
         {
             "today": today,
-            "do_groups": do_groups,
-            "do_total": sum(group.count for group in do_groups),
-            "waiting": waiting,
-            "waiting_due": [action for action in waiting if action.is_due_for_review(today)],
+            # One list, banded by date. The summary counts it once: an action is
+            # in exactly one band, and "late" counts only what genuinely is
+            # (app/matters/selectors.py).
+            "work_groups": work_groups,
+            "work_total": len(scheduled),
+            "work_overdue": selectors.overdue_count(scheduled, today),
             "attention": attention,
             # One row per Matter, several reasons inside it. The flat list stays
             # in the context because the count in the heading is a count of
@@ -942,21 +948,31 @@ def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _sent_submissions(request: HttpRequest, matter: Matter) -> list[Submission]:
-    """Canonical sent opinions, for the compact strip on the main view.
+def _position_opinion(request: HttpRequest, matter: Matter) -> Submission | None:
+    """The latest canonical sent opinion, for the rail's `Koja seisukoht`.
 
-    Only SENT, and only through the submission's own visibility. A draft is not
-    something Koda sent, and a historical archive letter is not a canonical
-    submission — the archive keeps its own surface precisely so the Matter page
-    cannot claim an opinion went out that nobody recorded going out
-    (Teema redesign §20).
+    One, not five. The rail states the current position and the file that says
+    so; the full list of everything Koda ever sent is the Arvamused surface, and
+    every send is an event on the chronology. A main-column strip repeating the
+    same latest opinion beside a rail block showing it was the same fact twice
+    on one screen, which is what hands-on QA objected to.
+
+    Only SENT, only with its exact final evidence, and only through the
+    submission's own visibility. A draft is not something Koda sent, and a
+    historical archive letter is not a canonical submission — the archive keeps
+    its own surface precisely so the Matter page cannot claim an opinion went
+    out that nobody recorded going out.
     """
-    return list(
-        Submission.objects.filter(matter=matter, status=SubmissionStatus.SENT)
+    return (
+        Submission.objects.filter(
+            matter=matter,
+            status=SubmissionStatus.SENT,
+            final_version__isnull=False,
+        )
         .visible_to(request.user)
-        .select_related("final_version", "sent_by")
-        .prefetch_related("recipient_rows__organisation")
-        .order_by("-sent_at")[:5]
+        .select_related("final_version")
+        .order_by("-sent_at")
+        .first()
     )
 
 
@@ -1000,12 +1016,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `summary_form` and `note_form` are deliberately absent: the header
         # context carries them, it is merged over this one, and reading the
         # private note twice per page is two queries for one answer.
-        "position_form": PositionForm(
-            initial={
-                "position_summary": matter.position_summary,
-                "rationale_summary": matter.rationale_summary,
-            }
-        ),
         "historical": _historical_context(matter, request.user),
         # Stage 2G's structured facts. Read through their own selector, which
         # scopes them like every other child record.
@@ -1021,7 +1031,6 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # Adding a consultation and watching the section it went into fold shut
         # is the one moment a reader needs to see the list (Teema redesign §14).
         "engagement_open": False,
-        "sent_submissions": _sent_submissions(request, matter),
         "can_write": may_write_business_content(request.user),
         "can_review_victory": may_review_work_victory(request.user),
         "today": timezone.localdate(),
@@ -1091,6 +1100,9 @@ def _header_context(
             initial={"body": personal_note_for(matter=matter, author=request.user)},
         ),
         "can_write": may_write_business_content(request.user),
+        # The rail renders on every Matter surface, so what the rail reads is
+        # read here rather than three times over.
+        "position_opinion": _position_opinion(request, matter),
         "today": timezone.localdate(),
     }
 
@@ -1296,7 +1308,7 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
         return render(request, "matters/partials/overview.html", context, status=400)
 
     try:
-        result = compose_update(matter=matter, author=request.user, **form.as_service_kwargs())
+        compose_update(matter=matter, author=request.user, **form.as_service_kwargs())
     except (DomainError, UploadRejected) as error:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))
@@ -1305,7 +1317,7 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
         return render(request, "matters/partials/overview.html", context, status=400)
 
     matter.refresh_from_db()
-    return _render_overview(request, matter, engagement_open=result.engagement is not None)
+    return _render_overview(request, matter)
 
 
 @login_required
@@ -1474,6 +1486,130 @@ FIELD_SERVICES = {
 
 
 @login_required
+@require_http_methods(["GET", "POST"])
+def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Muuda teemat` — the whole record, edited once.
+
+    The inline controls in the header and the rail stay, and remain the right
+    tool for changing one field. This page is for the other case: a Matter that
+    was filed wrongly, where five facts are wrong at once and five separate
+    inline saves is one job pretending to be five (Teema QA §2).
+
+    **One transaction.** Either every field on the form is applied or none is.
+    A half-saved correction is worse than a refused one: it leaves a record
+    stating a combination of facts nobody chose, and a timeline claiming
+    somebody chose it.
+
+    **One service per field.** Nothing here writes a model attribute; every
+    value goes through the named service that already owns that fact, so each
+    change is audited exactly as it is when made inline, and a title change on
+    an unchanged owner writes one event rather than thirteen — every service
+    returns early when the value it was given is the value already there.
+    """
+    matter = get_visible_matter(request, pk)
+    if not may_write_business_content(request.user):
+        # 404, matching `get_visible_matter`: a reader who may not write should
+        # not learn that an edit surface exists for this Matter.
+        raise Http404("Teemat saab muuta ainult sisu muutmise õigusega.")
+
+    if request.method == "GET":
+        form = MatterEditForm(initial=edit_initial(matter), matter=matter)
+        return render(request, "matters/matter_edit.html", _edit_context(request, matter, form))
+
+    form = MatterEditForm(request.POST, matter=matter)
+    if not form.is_valid():
+        # The bound form is re-rendered, so everything typed is still there.
+        return render(
+            request,
+            "matters/matter_edit.html",
+            _edit_context(request, matter, form),
+            status=400,
+        )
+
+    data = form.cleaned_data
+    try:
+        with transaction.atomic():
+            set_matter_title(matter=matter, value=data["title"], actor=request.user)
+            set_brief_summary(
+                matter=matter, value=data.get("brief_summary") or "", actor=request.user
+            )
+            assign_matter(matter=matter, owner=data.get("owner"), actor=request.user)
+            change_stage(matter=matter, stage=data.get("stage"), actor=request.user)
+            change_track(matter=matter, track=data.get("track") or "", actor=request.user)
+            # `list(...)` rather than the queryset on both set-valued fields,
+            # so an empty POST arrives as "none of them" — a decision somebody
+            # made — and never as the sentinel that means "leave them alone"
+            # (app/matters/services.py, `_UNSET`).
+            set_organisations(
+                matter=matter,
+                source_organisations=list(data.get("source_organisations") or []),
+                addressee_organisation=data.get("addressee_organisation"),
+                actor=request.user,
+            )
+            set_matter_dates(
+                matter=matter,
+                received_date=data.get("received_date"),
+                response_deadline=data.get("response_deadline"),
+                actor=request.user,
+            )
+            set_policy_areas(
+                matter=matter, policy_areas=list(data.get("policy_areas") or []), actor=request.user
+            )
+            set_policy_area_other(
+                matter=matter, value=data.get("policy_area_other") or "", actor=request.user
+            )
+            set_tags(matter=matter, tags=list(data.get("tags") or []), actor=request.user)
+            set_matter_visibility(
+                matter=matter,
+                visibility=data.get("visibility") or Visibility.NORMAL,
+                actor=request.user,
+            )
+    except DomainError as error:
+        form.add_error(None, str(error))
+        matter.refresh_from_db()
+        return render(
+            request,
+            "matters/matter_edit.html",
+            _edit_context(request, matter, form),
+            status=400,
+        )
+
+    messages.success(request, "Teema andmed on salvestatud.")
+    return redirect("matters:matter_detail", pk=matter.pk)
+
+
+def _edit_context(request: HttpRequest, matter: Matter, form: Any) -> dict[str, Any]:
+    return {
+        "matter": matter,
+        "form": form,
+        # Named here rather than derived in the template: the page states, in
+        # words, which facts about this Matter it will not let anybody change,
+        # so their absence reads as a decision rather than as an omission
+        # (Teema QA §2.2).
+        "immutable_facts": _immutable_facts(matter),
+    }
+
+
+def _immutable_facts(matter: Matter) -> list[tuple[str, str]]:
+    """What the edit page shows and refuses to edit.
+
+    Provenance, not fields. Where a record came from is not somebody's to
+    decide, and the reference is what every other system cites this Matter by.
+    """
+    facts: list[tuple[str, str]] = []
+    if matter.display_reference:
+        facts.append(("Viide", matter.display_reference))
+    facts.append(("Päritolu", matter.get_origin_display()))
+    reference = matter.source_references.order_by("created_at").first()
+    if reference is not None:
+        where = reference.source_file_name or reference.source_system
+        if reference.source_row_number:
+            where = f"{where}, rida {reference.source_row_number}"
+        facts.append(("Algallikas", where))
+    return facts
+
+
+@login_required
 @require_http_methods(["POST"])
 def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     """Inline header edits. One field, one service call, one re-render."""
@@ -1584,13 +1720,13 @@ def set_data_class(request: HttpRequest, pk: Any) -> HttpResponse:
 @login_required
 @require_http_methods(["POST"])
 def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`Koja seisukoht`, edited where it is read.
+    """`Koja seisukoht`, written on the Arvamused surface.
 
-    The position lives in the main Teema flow now, so an HTMX post swaps that
-    surface and stays on the page. A non-HTMX post — the Arvamused page, or a
-    browser with scripting off — still redirects, because there the form is
-    somewhere else and swapping a fragment into it would replace the wrong
-    thing (Teema redesign §19, §26.1).
+    The redesign put an inline editor for it in the main Teema flow; hands-on QA
+    moved the whole block to the facts rail, where a 300px column has no room
+    for a pair of textareas and no business holding them. The rail states the
+    position and links here; this is where it is written, beside the opinion it
+    was argued in.
     """
     matter = get_visible_matter(request, pk)
     if not may_write_business_content(request.user):
@@ -1604,9 +1740,6 @@ def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
             rationale_summary=form.cleaned_data["rationale_summary"],
             actor=request.user,
         )
-        if request.headers.get("HX-Request"):
-            matter.refresh_from_db()
-            return _render_overview(request, matter)
         messages.success(request, "Seisukoht on salvestatud.")
     return redirect("matters:matter_position", pk=matter.pk)
 

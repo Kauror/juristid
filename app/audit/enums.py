@@ -12,6 +12,15 @@ class ChangeEventType(models.TextChoices):
 
     MATTER_CREATED = "MATTER_CREATED", "Teema loodud"
     MATTER_ASSIGNED = "MATTER_ASSIGNED", "Teema määratud"
+    # The Matter's own name. Its own event rather than a reused one, for the
+    # reason every other field here has its own: the title is what everybody
+    # navigates and cites by, so a rename is the one change most likely to make
+    # a colleague think they are looking at a different file — and a history
+    # that called it "hetkeseis muudetud" could not answer who renamed it. The
+    # payload carries both strings, unlike `Lühikokkuvõte`, because the old
+    # title is how somebody finds a Matter again after it stopped being called
+    # what they remember (Teema QA §2.4).
+    MATTER_TITLE_CHANGED = "MATTER_TITLE_CHANGED", "Pealkiri muudetud"
     MATTER_STAGE_CHANGED = "MATTER_STAGE_CHANGED", "Hetkeseis muudetud"
     MATTER_TRACK_CHANGED = "MATTER_TRACK_CHANGED", "Menetlusliik muudetud"
     MATTER_ORGANISATION_CHANGED = "MATTER_ORGANISATION_CHANGED", "Asutus muudetud"

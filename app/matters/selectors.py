@@ -8,6 +8,7 @@ would not catch (master specification 5.2).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
@@ -401,7 +402,7 @@ def visible_actions(user: Any) -> QuerySet[NextAction]:
 
 @dataclass(frozen=True)
 class WorkGroup:
-    """One band of the Teen list. Bands are ordered by urgency, not by date."""
+    """One band of the work timeline, ordered by when it needs attention."""
 
     key: str
     label: str
@@ -412,60 +413,72 @@ class WorkGroup:
         return len(self.actions)
 
 
-def my_do_groups(user: Any, today: date | None = None) -> list[WorkGroup]:
-    """DO actions for one person, banded by real urgency.
+def my_work_timeline(user: Any, today: date | None = None) -> list[WorkGroup]:
+    """Everything assigned to one person, in one list, ordered by its date.
 
-    Only DO + DEADLINE can be late, so only those appear as overdue. A DO
-    without a deadline is real work with no date attached and belongs at the
-    end rather than in a false urgency band.
+    The redesign split this in two: DO actions banded by urgency on the left,
+    WAIT and MONITOR in a separate column on the right. Hands-on QA rejected
+    the split, and the reason is the one organising question this page exists to
+    answer:
+
+        **when do I need to care about this again?**
+
+    That question has one answer per action and it is a date, whatever the mode.
+    A ministry's answer expected on Thursday and an opinion due on Thursday are
+    both Thursday's problem, and putting them in two columns made a lawyer read
+    two lists and merge them in their head.
+
+    So: one chronological list of every open action this person is responsible
+    for, in five bands.
+
+    **The mode still means what it meant.** The date says *where* the action
+    belongs in time; the chip says *what the date means*, and the presentation
+    layer keeps them apart — only DO + DEADLINE is ever described as late.
+    Unifying the list is not unifying the vocabulary (master specification
+    18.8).
+
+    **The old banding had a hole**, which is the other half of the reported
+    defect. `overdue`, `today` and `soon` each required `date_semantics =
+    DEADLINE`, while `later` required a date beyond the horizon or none at all —
+    so a DO carrying any other semantics, dated inside the next seven days, was
+    in no band at all and vanished from the page. The register's own parser
+    produces exactly that combination: a DO whose source names a vague month is
+    recorded as an expectation, not a deadline
+    (app/legacy_import/register_next_actions.py). Banding now reads the date and
+    nothing else.
     """
     today = today or timezone.localdate()
     horizon = today + timedelta(days=HORIZON_DAYS)
 
-    mine = visible_actions(user).filter(responsible=user, kind=ActionKind.DO)
+    mine = visible_actions(user).filter(responsible=user)
 
-    deadline = Q(date_semantics=DateSemantics.DEADLINE)
-    overdue = list(mine.filter(deadline, target_date__lt=today).order_by("target_date"))
-    today_actions = list(mine.filter(deadline, target_date=today).order_by("matter__title"))
+    dated = mine.filter(target_date__isnull=False)
+    past = list(dated.filter(target_date__lt=today).order_by("target_date"))
+    now = list(dated.filter(target_date=today).order_by("matter__title"))
     soon = list(
-        mine.filter(deadline, target_date__gt=today, target_date__lte=horizon).order_by(
-            "target_date"
-        )
+        dated.filter(target_date__gt=today, target_date__lte=horizon).order_by("target_date")
     )
-    later = list(
-        mine.filter(Q(target_date__gt=horizon) | Q(target_date__isnull=True)).order_by(
-            "target_date"
-        )
-    )
+    later = list(dated.filter(target_date__gt=horizon).order_by("target_date"))
+    undated = list(mine.filter(target_date__isnull=True).order_by("matter__title"))
 
     return [
-        WorkGroup("overdue", "Tähtaeg möödas", overdue),
-        WorkGroup("today", "Täna", today_actions),
+        WorkGroup("passed", "Tähtaeg või ülevaatus möödas", past),
+        WorkGroup("today", "Täna", now),
         WorkGroup("soon", f"Järgmise {HORIZON_DAYS} päeva jooksul", soon),
-        WorkGroup("later", "Hiljem või tähtajata", later),
+        WorkGroup("later", "Hiljem", later),
+        WorkGroup("undated", "Kuupäevata", undated),
     ]
 
 
-def my_waiting_actions(user: Any, today: date | None = None) -> list[NextAction]:
-    """WAIT and MONITOR actions, review-due first.
+def overdue_count(actions: Sequence[NextAction], today: date | None = None) -> int:
+    """How many of these are genuinely late.
 
-    These are never described as overdue. Waiting for a ministry is the normal
-    state of a great deal of this work, and labelling it as a missed task would
-    make the whole list untrustworthy (master specification 18.8).
+    Only DO + DEADLINE. The page's summary line has to be able to say "two are
+    late" without counting a ministry that has not replied yet, which is not
+    lateness and must never be presented as it (master specification 18.8).
     """
-    today = today or timezone.localdate()
-    actions = list(
-        visible_actions(user)
-        .filter(responsible=user, kind__in=(ActionKind.WAIT, ActionKind.MONITOR))
-        .order_by("target_date", "matter__title")
-    )
-    return sorted(
-        actions,
-        key=lambda action: (
-            not action.is_due_for_review(today),
-            action.target_date or date.max,
-        ),
-    )
+    day = today or timezone.localdate()
+    return sum(1 for action in actions if action.is_overdue(day))
 
 
 def matters_without_next_action(user: Any) -> QuerySet[Matter]:
@@ -584,7 +597,7 @@ def my_attention_items(user: Any, today: date | None = None) -> list[AttentionIt
             )
         )
 
-    # Deliberately no "overdue NextAction" item. `my_do_groups` already leads
+    # Deliberately no "overdue NextAction" item. `my_work_timeline` already leads
     # Minu töö with a *Tähtaeg möödas* band built from exactly those actions,
     # and repeating them here would make the same task look like two problems.
 

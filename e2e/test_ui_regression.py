@@ -100,7 +100,7 @@ CLOCK_DEPENDENT = [
     # and every baseline goes red the next morning.
     ".metaline__item--deadline .inlineedit__trigger",
     ".nextrow__date",
-    ".sentstrip__date",
+    ".railposition__opinion time",
     # Only the timeline's summary. It always reads "N kirjet · viimane <date>";
     # Kaasamine's and Töödokumendid's summaries are content and must stay in
     # the baseline.

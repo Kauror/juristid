@@ -105,7 +105,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # It reaches Minu töö straight away.
     page.locator(".topnav__link", has_text="Minu töö").click()
     expect(
-        page.locator(".workcolumn").first.get_by_text("Koosta ja saada koja arvamus")
+        page.locator(".workgroup").first.get_by_text("Koosta ja saada koja arvamus")
     ).to_be_visible()
     expect(page.get_by_text(MATTER_TITLE).first).to_be_visible()
 
@@ -116,8 +116,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # way until it is asked for — that is the adoption argument, not decoration.
     expect(page.locator("#koostaja-manus")).to_be_hidden()
     expect(page.locator("#koostaja-tahtaeg")).to_be_hidden()
-    expect(page.locator("#koostaja-kaasamine")).to_be_hidden()
     expect(page.locator("#koostaja-lopetamine")).to_be_hidden()
+    # And `+ Kaasamine` is not among them. Kaasamine has exactly one path — its
+    # own section, with the fields the record actually needs — and a second,
+    # thinner one in the composer was two ways to create the same thing
+    # (Teema QA §8).
+    expect(page.locator("#koostaja-kaasamine")).to_have_count(0)
+    expect(page.locator(".disclosure-chip", has_text="+ Kaasamine")).to_have_count(0)
 
     # There is no second box asking for the next step's wording. The
     # description *is* the next step, which is the redesign's central claim.
@@ -153,21 +158,33 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator(".entrycard").filter(has_text="Ootan ministeeriumi")).to_have_count(1)
     screenshots(page, "05-komposer-jarel")
 
-    # The Matter has moved from Teen to Ootan / kontrollin.
+    # The Matter is now OOTAN — and it is still in the one list, banded by its
+    # date rather than moved to a column of its own. The row carries the mode
+    # chip that says what the date means (Teema QA §3).
     page.locator(".topnav__link", has_text="Minu töö").click()
-    waiting = page.locator("section", has=page.get_by_role("heading", name="Ootan ja kontrollin"))
-    expect(waiting.get_by_text("Ootan ministeeriumi uut sõnastust")).to_be_visible()
+    expect(page.get_by_role("heading", name="Ootan ja kontrollin")).to_have_count(0)
+    row = page.locator(".workrow").filter(has_text="Ootan ministeeriumi uut sõnastust")
+    expect(row).to_have_count(1)
+    expect(row.locator(".mode--wait")).to_be_visible()
 
     # -- Scenario C: a formal opinion with its exact evidence ------------
     #
-    # `Koja seisukoht` is written where it is read, in the main Teema flow.
-    # There is no tab for it any more, and no page change.
+    # The rail states the position and links to where it is written. A 300px
+    # read-first column has no room for two textareas and no business holding
+    # them (Teema QA §1).
     page.goto(matter_url)
-    page.locator("#koja-seisukoht summary", has_text="Lisa seisukoht").click()
+    page.locator("#koja-seisukoht").get_by_role("link", name="Lisa seisukoht").click()
     page.locator("#id_position_summary").fill("Koda ei toeta pakendiaktsiisi kavandatud tõusu.")
     page.locator("#id_rationale_summary").fill("Liikmete hinnangul kasvab halduskoormus.")
-    page.locator("#koja-seisukoht").get_by_role("button", name="Salvesta").click()
-    expect(page.locator(".positionblock__text")).to_contain_text("Koda ei toeta")
+    page.locator(".positionpanel").get_by_role("button", name="Salvesta seisukoht").click()
+
+    # Saved, and read back from the rail on the main view.
+    page.goto(matter_url)
+    expect(page.locator(".railposition__text")).to_contain_text("Koda ei toeta")
+    # Exactly one Koja seisukoht on the page. The full-width block the redesign
+    # put in the main column is gone, not duplicated into the rail.
+    expect(page.locator("#koja-seisukoht")).to_have_count(1)
+    expect(page.locator(".positionblock")).to_have_count(0)
 
     # The formal Submission workflow is a quiet link, never a tab.
     page.get_by_role("link", name="Arvamused →").click()
@@ -213,11 +230,14 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator(".submission")).to_have_count(2)
 
     # -- The sent opinion reaches the main view --------------------------
+    #
+    # Once, in the rail beside the position it argued. The separate sent-opinion
+    # strip in the main column said the same thing a second time (Teema QA §1.2).
     page.goto(matter_url)
-    strip = page.locator(".sentstrip")
-    expect(strip).to_be_visible()
-    expect(strip.get_by_text("Näidisministeerium")).to_be_visible()
-    expect(strip.get_by_role("link", name="Ava PDF").first).to_be_visible()
+    opinion = page.locator(".railposition__opinion")
+    expect(opinion).to_be_visible()
+    expect(opinion.get_by_text("koja-arvamus.pdf")).to_be_visible()
+    expect(page.locator(".sentstrip")).to_have_count(0)
 
     # -- Documents ------------------------------------------------------
     page.locator(".tabs__tab", has_text="Dokumendid").click()

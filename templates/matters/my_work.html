@@ -3,12 +3,19 @@
 {% block title %}Minu töö · {{ application_name }}{% endblock %}
 
 {% comment %}
-Minu töö answers one question: what must I do, wait for or check now.
+Minu töö answers one question: **when do I need to care about this again?**
 
-The two columns are separated because their dates mean different things. Left is
-work with deadlines, banded by real urgency. Right is waiting and checking,
-where a passed date means "ready to look at", never "late" — plus the Matters
-that have gone quiet because nothing was planned next.
+That has one answer per action and it is a date, whatever the mode. So there is
+one chronological list of everything assigned to this person — TEEN, OOTAN and
+JÄLGIN together — banded by when it comes up. The chip on each row says what the
+date means; only a DO with a deadline is ever described as late.
+
+The split columns this replaces made a lawyer read two lists and merge them in
+their head, which is the merge the page should be doing for them.
+
+Beside it, and deliberately not in it: the Matters with no next step at all.
+That is a different condition — an absence rather than a date — and folding it
+into a dated list would give it a position in time it does not have.
 {% endcomment %}
 
 {% block content %}
@@ -17,14 +24,14 @@ that have gone quiet because nothing was planned next.
     <h1 class="pagehead__title">Minu töö</h1>
     <span class="pagehead__context"><time datetime="{{ today|date:'Y-m-d' }}">{{ today|date:"l, j. F Y" }}</time></span>
     <span class="pagehead__summary">
-      {{ do_total }} tegemist · {{ waiting|length }} kontrollimist ·
+      {{ work_total }} ajastatud sammu{% if work_overdue %} · {{ work_overdue }} üle tähtaja{% endif %} ·
       {{ active_count }} avatud teemat
     </span>
   </div>
 
   <div class="worklayout">
     <div class="workcolumn">
-      {% for group in do_groups %}
+      {% for group in work_groups %}
         {% if group.actions %}
           <section class="workgroup workgroup--{{ group.key }}"
                    aria-label="{{ group.label }}">
@@ -32,64 +39,30 @@ that have gone quiet because nothing was planned next.
               {{ group.label }}
               <span class="sectionlabel__count">{{ group.count }}</span>
             </h2>
-            <div class="card {% if group.key == 'later' %}card--quiet{% endif %}">
+            <div class="card {% if group.key == 'later' or group.key == 'undated' %}card--quiet{% endif %}">
               {% for action in group.actions %}
                 {% include "matters/partials/work_row.html" with action=action today=today %}
               {% endfor %}
             </div>
+            {% if group.key == 'passed' %}
+              <p class="cardnote">
+                Ootamine ei ole hilinemine: OOTAN-i ja JÄLGIN-i kuupäev tähendab
+                «vaatan üle», mitte tähtaega.
+              </p>
+            {% endif %}
           </section>
         {% endif %}
       {% endfor %}
 
-      {% if not do_total %}
-        <section class="workgroup" aria-label="Teen">
-          <h2 class="sectionlabel">Teen</h2>
-          <p class="empty">Ühtegi tähtajalist tegevust ei ole sulle määratud.</p>
+      {% if not work_total %}
+        <section class="workgroup" aria-label="Ajastatud sammud">
+          <h2 class="sectionlabel">Ajastatud sammud</h2>
+          <p class="empty">Ühtegi järgmist sammu ei ole sulle määratud.</p>
         </section>
       {% endif %}
     </div>
 
     <div class="workcolumn">
-      <section class="workgroup" aria-label="Ootan ja kontrollin">
-        <h2 class="sectionlabel">
-          Ootan ja kontrollin
-          <span class="sectionlabel__count">{{ waiting|length }}</span>
-        </h2>
-        {% if waiting %}
-          <div class="card">
-            {% for action in waiting %}
-              <a class="waitrow" href="{% url 'matters:matter_detail' pk=action.matter.pk %}">
-                <span class="waitrow__head">
-                  <span class="mode mode--{{ action.kind|lower }}">{{ action.get_kind_display }}</span>
-                  {% if action.target_date %}
-                    <span class="dateline {% if action.is_approximate %}dateline--approximate{% endif %}">
-                      {{ action.date_label|upper }} · {{ action.display_date }}
-                    </span>
-                    {% if action.is_due_for_review %}
-                      <span class="flag flag--review">Ülevaatus möödas</span>
-                    {% endif %}
-                  {% else %}
-                    <span class="dateline">Kuupäevata</span>
-                  {% endif %}
-                </span>
-                <span class="waitrow__text">{{ action.text }}</span>
-                <span class="waitrow__matter">
-                  {% if action.matter.display_reference %}
-                    <span class="reference">{{ action.matter.display_reference }}</span> ·
-                  {% endif %}
-                  {{ action.matter.title }}
-                </span>
-              </a>
-            {% endfor %}
-          </div>
-          <p class="cardnote">
-            Ootamine ei ole hilinemine: kuupäev tähendab «vaatan üle», mitte tähtaega.
-          </p>
-        {% else %}
-          <p class="empty">Midagi ei ole ootel ega jälgimisel.</p>
-        {% endif %}
-      </section>
-
       <section class="workgroup" aria-label="Järgmine samm puudub">
         <h2 class="sectionlabel">
           Järgmine samm puudub

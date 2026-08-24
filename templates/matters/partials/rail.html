@@ -1,14 +1,17 @@
 {% comment %}
 The facts rail: information that is *looked up*, never read.
 
-Four blocks, in the order somebody reaches for them: what kind of record this is
-and where it came from, what it is tagged with, what it is related to, and the
-reader's own private notes.
+Five blocks, in the order somebody reaches for them: what kind of record this is
+and where it came from, what it is tagged with, what Koda argued, what it is
+related to, and the reader's own private notes.
 
 What is deliberately not here: the owner, the state and the active deadline,
-which are already in the header and would be two answers to one question; and
-`Koja seisukoht`, which lives in the main reading flow now — a rail copy of it
-would be the same paragraph twice on one screen (Teema redesign §22).
+which are already in the header and would be two answers to one question.
+
+`Koja seisukoht` is here rather than in the main column. The redesign moved it
+out; hands-on QA moved it back, and QA is right — it is read-first reference,
+not a work surface, and a full-width band for two sentences pushed the composer
+and the chronology down the page.
 
 Empty optional rows are omitted rather than printed with an em dash. A Matter
 whose addressee nobody recorded should look short, not incomplete.
@@ -160,10 +163,15 @@ whose addressee nobody recorded should look short, not incomplete.
               {% csrf_token %}
               <label class="field">
                 <span class="field__label field__label--plain">Saabumise kuupäev</span>
+                {% comment %}
+                  The stored date when there is one, today when there is not —
+                  an edit keeps what it is editing, and a new fact starts from
+                  the answer it nearly always has (Teema QA §5.2).
+                {% endcomment %}
                 <input class="field__input field__input--compact dateinput" type="text"
                        inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
                        data-datepicker="true" name="received_date"
-                       value="{{ matter.received_date|date:'j.n.Y' }}">
+                       value="{% if matter.received_date %}{{ matter.received_date|date:'j.n.Y' }}{% else %}{{ today|date:'j.n.Y' }}{% endif %}">
               </label>
               <button class="button button--quiet button--tiny" type="submit"
                       aria-label="Salvesta saabumise kuupäeva muudatus">Salvesta</button>
@@ -294,6 +302,8 @@ whose addressee nobody recorded should look short, not incomplete.
       </details>
     {% endif %}
   </div>
+
+  {% include "matters/partials/position_rail.html" %}
 
   {% comment %}
     Seotud — the canonical relations, in both directions. `supersedes` is the

@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}Muuda teemat · {{ application_name }}{% endblock %}
+
+{% comment %}
+  `Muuda teemat` — the whole record on one page.
+
+  The inline controls in the Teema header and rail are still the right tool for
+  changing one field. This page is for the other case: a Matter filed wrongly,
+  where several facts are wrong at once and clicking five separate controls in
+  two regions of the page is one job pretending to be five.
+
+  One form, one save, one transaction. Either every field applies or none does
+  (app/matters/views.py, `matter_edit`).
+
+  What it deliberately does not offer is stated on the page rather than merely
+  left out: the reference, the origin and the imported source are facts about
+  where this record came from, not decisions anybody makes today (Teema QA §2.2).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Muuda teemat</h1>
+    <span class="pagehead__context">
+      {% if matter.display_reference %}<span class="reference">{{ matter.display_reference }}</span> · {% endif %}
+      {{ matter.title }}
+    </span>
+  </div>
+
+  <form class="form createform" method="post"
+        action="{% url 'matters:matter_edit' pk=matter.pk %}">
+    {% csrf_token %}
+
+    {% if form.non_field_errors %}
+      <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
+    {% endif %}
+
+    <label class="field">
+      <span class="field__label">{{ form.title.label }}</span>
+      {{ form.title }}
+      {% if form.title.errors %}<span class="field__error">{{ form.title.errors|first }}</span>{% endif %}
+    </label>
+
+    <label class="field">
+      <span class="field__label">{{ form.brief_summary.label }}</span>
+      {{ form.brief_summary }}
+      <span class="field__help">{{ form.brief_summary.help_text }}</span>
+      {% if form.brief_summary.errors %}<span class="field__error">{{ form.brief_summary.errors|first }}</span>{% endif %}
+    </label>
+
+    <div class="fieldrow">
+      <label class="field">
+        <span class="field__label">{{ form.owner.label }}</span>
+        {{ form.owner }}
+        {% if form.owner.errors %}<span class="field__error">{{ form.owner.errors|first }}</span>{% endif %}
+      </label>
+
+      <label class="field">
+        <span class="field__label">{{ form.stage.label }}</span>
+        {{ form.stage }}
+        {% if form.stage.errors %}<span class="field__error">{{ form.stage.errors|first }}</span>{% endif %}
+      </label>
+
+      <label class="field">
+        <span class="field__label">{{ form.track.label }}</span>
+        {{ form.track }}
+        {% if form.track.errors %}<span class="field__error">{{ form.track.errors|first }}</span>{% endif %}
+      </label>
+    </div>
+
+    <fieldset class="field">
+      <legend class="field__label">{{ form.policy_areas.label }}</legend>
+      {% comment %}
+        The governed vocabulary, plus whatever this Matter already carries. A
+        Matter filed years ago under a since-retired area keeps it and shows it
+        marked as retired, so correcting the title cannot silently drop the
+        filing — and unticking one stays a decision somebody makes deliberately
+        (Teema redesign §7.2).
+      {% endcomment %}
+      <div class="checkitems">
+        {% for choice in form.policy_areas %}
+          {% if choice.data.value in form.retired_area_ids %}
+            <label class="checkitem checkitem--retired">
+              {{ choice.tag }}
+              <span class="checkitem__name">{{ choice.choice_label }}<span class="checkitem__note">kasutusest väljas</span></span>
+            </label>
+          {% else %}
+            <label class="checkitem">
+              {{ choice.tag }}
+              <span class="checkitem__name">{{ choice.choice_label }}</span>
+            </label>
+          {% endif %}
+        {% endfor %}
+      </div>
+      {% if form.policy_areas.errors %}<span class="field__error">{{ form.policy_areas.errors|first }}</span>{% endif %}
+    </fieldset>
+
+    <label class="field">
+      <span class="field__label">{{ form.policy_area_other.label }}</span>
+      {{ form.policy_area_other }}
+      <span class="field__help">{{ form.policy_area_other.help_text }}</span>
+      {% if form.policy_area_other.errors %}<span class="field__error">{{ form.policy_area_other.errors|first }}</span>{% endif %}
+    </label>
+
+    <div class="fieldrow">
+      <label class="field">
+        <span class="field__label">{{ form.source_organisations.label }}</span>
+        {{ form.source_organisations }}
+        <span class="field__help">{{ form.source_organisations.help_text }}</span>
+        {% if form.source_organisations.errors %}<span class="field__error">{{ form.source_organisations.errors|first }}</span>{% endif %}
+      </label>
+
+      <label class="field">
+        <span class="field__label">{{ form.addressee_organisation.label }}</span>
+        {{ form.addressee_organisation }}
+        <span class="field__help">{{ form.addressee_organisation.help_text }}</span>
+        {% if form.addressee_organisation.errors %}<span class="field__error">{{ form.addressee_organisation.errors|first }}</span>{% endif %}
+      </label>
+    </div>
+
+    <div class="fieldrow">
+      <label class="field">
+        <span class="field__label">{{ form.received_date.label }}</span>
+        {{ form.received_date }}
+        {% if form.received_date.errors %}<span class="field__error">{{ form.received_date.errors|first }}</span>{% endif %}
+      </label>
+
+      <label class="field">
+        <span class="field__label">{{ form.response_deadline.label }}</span>
+        {{ form.response_deadline }}
+        {% if form.response_deadline.errors %}<span class="field__error">{{ form.response_deadline.errors|first }}</span>{% endif %}
+      </label>
+    </div>
+
+    <fieldset class="field">
+      <legend class="field__label">{{ form.tags.label }}</legend>
+      <div class="checkitems">
+        {% for choice in form.tags %}
+          <label class="checkitem">
+            {{ choice.tag }}
+            <span class="checkitem__name">{{ choice.choice_label }}</span>
+          </label>
+        {% empty %}
+          <p class="field__help">Sildivalikut ei ole veel loodud.</p>
+        {% endfor %}
+      </div>
+      {% if form.tags.errors %}<span class="field__error">{{ form.tags.errors|first }}</span>{% endif %}
+    </fieldset>
+
+    <label class="field">
+      <span class="field__label">{{ form.visibility.label }}</span>
+      {{ form.visibility }}
+      <span class="field__help">{{ form.visibility.help_text }}</span>
+      {% if form.visibility.errors %}<span class="field__error">{{ form.visibility.errors|first }}</span>{% endif %}
+    </label>
+
+    {% comment %}
+      Stated, not hidden. These are facts about where the record came from, and
+      a page that simply omitted them would read as an oversight rather than as
+      the rule it is.
+    {% endcomment %}
+    {% if immutable_facts %}
+      <section class="card card--quiet" aria-label="Muutumatud andmed">
+        <h2 class="sectionlabel">Muutumatu</h2>
+        {% for label, value in immutable_facts %}
+          <p class="railcard__row">
+            <span class="railcard__key">{{ label }}</span>
+            <span class="railcard__value">{{ value }}</span>
+          </p>
+        {% endfor %}
+        <p class="cardnote">
+          Päritolu ja algallikas ütlevad, kust see kirje tuli. Neid ei muudeta —
+          uus tõlgendus lisatakse, vana ei kirjutata üle.
+        </p>
+      </section>
+    {% endif %}
+
+    <div class="form__actions">
+      <button class="button button--primary" type="submit">Salvesta</button>
+      <a class="button button--quiet" href="{% url 'matters:matter_detail' pk=matter.pk %}">Loobu</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
