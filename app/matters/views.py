@@ -1017,6 +1017,10 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "engagement_form": EngagementForm(),
         "engagement_error": "",
         "engagement_editing": None,
+        # Collapsed by default, and open on the render that follows a write.
+        # Adding a consultation and watching the section it went into fold shut
+        # is the one moment a reader needs to see the list (Teema redesign §14).
+        "engagement_open": False,
         "sent_submissions": _sent_submissions(request, matter),
         "can_write": may_write_business_content(request.user),
         "can_review_victory": may_review_work_victory(request.user),
@@ -1246,7 +1250,13 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
 # ---------------------------------------------------------------------------
 
 
-def _render_overview(request: HttpRequest, matter: Matter, status: int = 200) -> HttpResponse:
+def _render_overview(
+    request: HttpRequest,
+    matter: Matter,
+    status: int = 200,
+    *,
+    engagement_open: bool = False,
+) -> HttpResponse:
     """Re-render the whole overview column.
 
     One render from one set of queries, so `Järgmiseks` and the timeline can
@@ -1261,6 +1271,7 @@ def _render_overview(request: HttpRequest, matter: Matter, status: int = 200) ->
             milestones=[*intelligence.upcoming_dates, *intelligence.past_dates],
         )
     )
+    context["engagement_open"] = engagement_open
     return render(request, "matters/partials/overview.html", context, status=status)
 
 
@@ -1285,7 +1296,7 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
         return render(request, "matters/partials/overview.html", context, status=400)
 
     try:
-        compose_update(matter=matter, author=request.user, **form.as_service_kwargs())
+        result = compose_update(matter=matter, author=request.user, **form.as_service_kwargs())
     except (DomainError, UploadRejected) as error:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))
@@ -1294,7 +1305,7 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
         return render(request, "matters/partials/overview.html", context, status=400)
 
     matter.refresh_from_db()
-    return _render_overview(request, matter)
+    return _render_overview(request, matter, engagement_open=result.engagement is not None)
 
 
 @login_required
@@ -1322,7 +1333,7 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
     except DomainError as error:
         return _overview_with_engagement_error(request, matter, form, str(error))
 
-    return _render_overview(request, matter)
+    return _render_overview(request, matter, engagement_open=True)
 
 
 @login_required
@@ -1359,7 +1370,7 @@ def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) ->
             request, matter, form, str(error), editing=engagement.pk
         )
 
-    return _render_overview(request, matter)
+    return _render_overview(request, matter, engagement_open=True)
 
 
 def _overview_with_engagement_error(
@@ -1375,6 +1386,7 @@ def _overview_with_engagement_error(
     context["engagement_form"] = form
     context["engagement_error"] = error
     context["engagement_editing"] = editing
+    context["engagement_open"] = True
     return render(request, "matters/partials/overview.html", context, status=400)
 
 

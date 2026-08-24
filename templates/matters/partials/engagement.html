@@ -19,7 +19,7 @@ sentence, so the line shows the type and the date instead — which the model do
 know (Teema redesign §14.2).
 {% endcomment %}
 <details class="accordion" id="kaasamine"
-         {% if engagement_error %}open{% endif %}>
+         {% if engagement_open %}open{% endif %}>
   <summary class="accordion__head">
     <span class="accordion__caret" aria-hidden="true"></span>
     <h2 class="accordion__label">Kaasamine{% if engagement_count %} · {{ engagement_count }}{% endif %}</h2>

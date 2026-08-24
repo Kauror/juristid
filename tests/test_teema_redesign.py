@@ -798,6 +798,63 @@ def test_closing_from_the_composer_ends_the_open_step(normal_matter, specialist)
     assert NextAction.objects.filter(matter=normal_matter).count() == 1
 
 
+def test_the_composer_view_closes_a_matter(signed_in, normal_matter, specialist):
+    """The whole closure path, through the form the browser actually posts.
+
+    `compose_update` has its own tests, and they pass a Python dict. This one
+    goes through `ComposerForm` with the field set a browser sends — every
+    optional group present and empty, the closure group filled — because the
+    parsing between those two is where a closure can be quietly dropped and
+    the save still return 200.
+    """
+    set_next_action(
+        matter=normal_matter,
+        text="Esitan arvamuse",
+        kind=ActionKind.DO,
+        target_date=timezone.localdate() + timedelta(days=3),
+        actor=specialist,
+    )
+
+    response = signed_in.post(
+        reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
+        {
+            "body": "<p>Menetlus lõppes; töö on tehtud.</p>",
+            "kind": "NOTE",
+            "attachment_role": DocumentRole.OTHER,
+            "next_kind": "",
+            "next_date": "",
+            "next_precision": DatePrecision.EXACT,
+            "next_date_semantics": "",
+            "deadline_title": "",
+            "deadline_date": "",
+            "deadline_precision": DatePrecision.EXACT,
+            "engagement_kind": EngagementKind.SURVEY,
+            "engagement_title": "",
+            "engagement_date": "",
+            "engagement_url": "",
+            "engagement_note": "",
+            "close_matter": "on",
+            "disposition": Disposition.COMPLETED,
+            "closure_reason": "Seadus jõustus muutmata kujul.",
+            "successor": "",
+            "final_version": "",
+            "final_title": "",
+            "final_sent_on": "",
+            "final_channel": "",
+            "final_reference": "",
+            "victory_title": "",
+            "victory_detail": "",
+        },
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200, response.content.decode()[:4000]
+    normal_matter.refresh_from_db()
+    assert not normal_matter.is_open, "the composer save did not close the Matter"
+    assert normal_matter.disposition == Disposition.COMPLETED
+    assert current_next_action(normal_matter) is None
+
+
 def test_a_successor_is_a_real_relationship(normal_matter, specialist):
     successor = factories.MatterFactory(owner=specialist)
 

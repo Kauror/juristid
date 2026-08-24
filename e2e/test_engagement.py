@@ -64,10 +64,13 @@ def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    page.locator("#kaasamine").get_by_text("+ Lisa kaasamine").click()
+    open_kaasamine(page).get_by_text("+ Lisa kaasamine").click()
     expect(add_form(page).locator('input[name="title"]')).to_be_visible()
 
-    add_form(page).locator('select[name="kind"]').select_option("WEB_CALL")
+    # The three approved options. `WEB_CALL` is still a valid stored value and
+    # every historical row carrying it still reads; the creation control does
+    # not offer it (Teema redesign §14).
+    add_form(page).locator('select[name="kind"]').select_option("SURVEY")
     add_form(page).locator('input[name="title"]').fill("Liikmete kaasamiskutse")
     add_form(page).locator('input[name="url"]').fill("https://www.koda.ee/kaasamine/naidis")
     add_form(page).locator('input[name="occurred_on"]').fill("15.9.2026")
@@ -104,7 +107,7 @@ def test_an_engagement_link_never_opens_without_noopener(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    page.locator("#kaasamine").get_by_text("+ Lisa kaasamine").click()
+    open_kaasamine(page).get_by_text("+ Lisa kaasamine").click()
     add_form(page).locator('input[name="title"]').fill("Väline küsitlus")
     add_form(page).locator('input[name="url"]').fill("https://survey.example.invalid/s/1")
     add_form(page).get_by_role("button", name="Lisa kaasamine").click()

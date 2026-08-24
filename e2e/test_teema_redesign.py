@@ -201,13 +201,16 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     page.locator("#id_disposition").select_option("COMPLETED")
     page.locator("#id_closure_reason").fill("Seadus jõustus muutmata kujul.")
     page.locator(".composer__body").fill("Menetlus lõppes; töö on tehtud.")
-    page.locator("[data-composer-submit]").click()
+    # The server's own answer, not what the page looks like afterwards. A save
+    # that is refused and a save that quietly did nothing leave an identical
+    # screen, and the difference is the whole question here.
+    with page.expect_response(
+        lambda response: "/sissekanne/" in response.url and response.request.method == "POST"
+    ) as caught:
+        page.locator("[data-composer-submit]").click()
+    saved = caught.value
+    assert saved.status == 200, f"the closure save was refused: {saved.status}"
     page.wait_for_load_state("networkidle")
-
-    # A refused save leaves the page exactly as it was, which is
-    # indistinguishable from one that did nothing — so the refusal is checked
-    # here, where its message is still on screen, rather than inferred three
-    # assertions later from a Matter that is still open.
     expect(page.locator(".formerror")).to_have_count(0)
     expect(page.locator(".composer .field__error")).to_have_count(0)
 
