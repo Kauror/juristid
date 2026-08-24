@@ -106,10 +106,15 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     matter_url = page.url
 
     # It reaches Minu töö straight away.
+    #
+    # Somewhere in the one list, not in a nominated band: the list is banded by
+    # date now, so which band a step lands in depends on the date it was given
+    # and on what else this persona is carrying. What must be true is that the
+    # step is on the page, in a row, saying which mode it is (Teema QA §3).
     page.locator(".topnav__link", has_text="Minu töö").click()
-    expect(
-        page.locator(".workgroup").first.get_by_text("Koosta ja saada koja arvamus")
-    ).to_be_visible()
+    row = page.locator(".workrow").filter(has_text="Koosta ja saada koja arvamus")
+    expect(row).to_have_count(1)
+    expect(row.locator(".mode--do")).to_be_visible()
     expect(page.get_by_text(MATTER_TITLE).first).to_be_visible()
 
     # -- Scenario B: one composer save, two changes ----------------------

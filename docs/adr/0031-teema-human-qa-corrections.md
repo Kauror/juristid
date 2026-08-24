@@ -176,10 +176,15 @@ per-input listeners it replaces also leaked, one per date field ever rendered.
 
 The composer's chips showed their unselected state as `opacity: 0.55` against a
 selected `1`. On the dark surface that is two greys, one slightly greyer.
-Selection changes the background and the border now, every label is painted at
-full strength, and the shape semantics survive the change: TEEN filled, OOTAN
-solid-bordered, JÄLGIN dashed, before selection and after it. Shape is what
-carries the meaning for a reader who cannot separate the colours at all.
+Selection changes the background and the border now, and every label is painted
+at full strength, unselected and selected alike.
+
+Selected, each mode keeps the shape it has everywhere else in the product: TEEN
+the brand fill, OOTAN a solid bright border, JÄLGIN the same treatment and still
+dashed, and `Ei muuda` neutral with no brand colour near it. Unselected, the
+three share a quiet resting state and JÄLGIN keeps its dashed border — the one
+shape difference that survives both states. Shape, not colour, is what carries
+the meaning for a reader who cannot separate the colours at all.
 
 ### 8. `Kaasamine` has exactly one path
 
