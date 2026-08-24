@@ -301,7 +301,7 @@
    * it. Delegated, so it costs nothing per menu and survives every swap.
    */
   document.addEventListener("click", function (event) {
-    document.querySelectorAll("details.topnav__more[open]").forEach(function (menu) {
+    document.querySelectorAll("details.topnav__more[open], details.headmenu[open]").forEach(function (menu) {
       if (!menu.contains(event.target)) {
         menu.open = false;
       }

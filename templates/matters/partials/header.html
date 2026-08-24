@@ -54,6 +54,44 @@ rather than read.
         <span class="badge badge--archive">Arhiiv</span>
       {% endif %}
     </span>
+
+    {% comment %}
+      The one secondary-action slot the header has. Everything a lawyer does
+      daily is somewhere it can be read; what lands here is the rest — today,
+      who may see this file.
+
+      `Nähtavus` had a service, an endpoint and a form field and no control at
+      all, so a Matter could only be restricted from the Django admin. It is
+      here rather than in the rail because it is not a fact somebody looks up:
+      it is a decision about the record, and it belongs beside the chip that
+      announces it (Teema redesign §4, §5.1).
+    {% endcomment %}
+    {% if can_write %}
+      <details class="headmenu">
+        <summary class="headmenu__trigger" aria-label="Rohkem tegevusi">⋯</summary>
+        <div class="headmenu__panel">
+          <span class="headmenu__label">Nähtavus</span>
+          <form class="inlineform"
+                hx-post="{% url 'matters:update_field' pk=matter.pk field='visibility' %}"
+                hx-target="#teema-pais" hx-swap="outerHTML">
+            {% csrf_token %}
+            <select class="field__input field__input--compact" name="visibility"
+                    aria-label="Nähtavus" data-autosubmit>
+              {% for value, label in visibilities %}
+                <option value="{{ value }}" {% if matter.visibility == value %}selected{% endif %}>
+                  {{ label }}
+                </option>
+              {% endfor %}
+            </select>
+            <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
+          </form>
+          <p class="field__help">
+            Piiratud teemat näevad ainult vastutaja, kaastöötajad ja osakonnajuht.
+            Sissekanded, arvamused ja tõendid pärivad sama piirangu.
+          </p>
+        </div>
+      </details>
+    {% endif %}
   </p>
 
   <h1 class="matterhead__title">
@@ -212,6 +250,32 @@ rather than read.
             </label>
             <button class="button button--quiet button--tiny" type="submit"
                     aria-label="Salvesta tähtaja muudatus">Salvesta</button>
+          </form>
+        </details>
+      </span>
+    {% elif can_write %}
+      {% comment %}
+        A Matter with no deadline at all still needs a way to gain one. A quiet
+        invitation rather than a label over an em dash, which is what made the
+        old band read as a data-quality report (Teema redesign §5.5, §24).
+      {% endcomment %}
+      <span class="metaline__item">
+        <details class="inlineedit">
+          <summary class="inlineedit__trigger">
+            <span class="metaline__add">+ Tähtaeg</span>
+          </summary>
+          <form class="inlineedit__form inlineform"
+                hx-post="{% url 'matters:update_field' pk=matter.pk field='response_deadline' %}"
+                hx-target="#teema-pais" hx-swap="outerHTML">
+            {% csrf_token %}
+            <label class="field">
+              <span class="field__label field__label--plain">Arvamuse tähtaeg</span>
+              <input class="field__input field__input--compact dateinput" type="text"
+                     inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                     data-datepicker="true" name="response_deadline" value="">
+            </label>
+            <button class="button button--quiet button--tiny" type="submit"
+                    aria-label="Salvesta tähtaeg">Salvesta</button>
           </form>
         </details>
       </span>

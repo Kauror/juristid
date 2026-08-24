@@ -31,7 +31,25 @@ is rendered inside the `<details>` and everything older comes from
     <span class="accordion__action">Ava ajajoon</span>
   </summary>
 
-  <div class="accordion__body" id="ajalugu-loend">
-    {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter %}
+  <div class="accordion__body">
+    {% comment %}
+      The `Kõik ▾` control. Inside the body rather than in the head, because a
+      control inside a <summary> toggles the disclosure it sits in before its
+      own handler runs. It swaps the list and leaves the accordion open.
+    {% endcomment %}
+    <div class="timelinefilter" role="group" aria-label="Ajajoone filter">
+      {% for value, label in timeline_filters %}
+        <button class="timelinefilter__option {% if timeline_only == value %}is-active{% endif %}"
+                type="button"
+                {% if timeline_only == value %}aria-pressed="true"{% else %}aria-pressed="false"{% endif %}
+                hx-get="{% url 'matters:timeline_page' pk=matter.pk %}?ajajoon={{ value }}"
+                hx-target="#ajalugu-loend"
+                hx-swap="innerHTML">{{ label }}</button>
+      {% endfor %}
+    </div>
+
+    <div id="ajalugu-loend">
+      {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter timeline_only=timeline_only %}
+    </div>
   </div>
 </details>

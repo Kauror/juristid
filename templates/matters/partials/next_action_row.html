@@ -58,7 +58,7 @@ alone (Teema redesign §8):
       <form hx-post="{% url 'matters:complete_action' pk=matter.pk action_id=current_action.pk %}"
             hx-target="#teema-vaade" hx-swap="outerHTML">
         {% csrf_token %}
-        <button class="button button--secondary button--tiny" type="submit">✓ Tehtud</button>
+        <button class="button button--secondary" type="submit">✓ Tehtud</button>
       </form>
       {% comment %}
         "Muuda" focuses the composer rather than opening a second editor for the
@@ -66,7 +66,7 @@ alone (Teema redesign §8):
         the box the page is built around — a separate inline form here would be
         a competing implementation of the same domain call (Teema redesign §26.3).
       {% endcomment %}
-      <button class="button button--quiet button--tiny" type="button"
+      <button class="button button--quiet" type="button"
               data-focus="teema-koostaja">Muuda</button>
     {% endif %}
   </div>
@@ -91,7 +91,7 @@ alone (Teema redesign §8):
     {% endif %}
     <span class="nextrow__spacer"></span>
     {% if can_write %}
-      <button class="button button--quiet button--tiny" type="button"
+      <button class="button button--quiet" type="button"
               data-focus="teema-koostaja">Määra allpool ↓</button>
     {% endif %}
   </div>

@@ -22,7 +22,7 @@ from app.core.errors import DomainError
 from app.core.richtext import plain_text
 from app.core.widgets import EstonianDateField, EstonianDateInput
 from app.documents.enums import DocumentRole
-from app.documents.models import DocumentVersion
+from app.documents.models import Document, DocumentVersion
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, MatterDataClass
 from app.matters.models import Matter
@@ -860,23 +860,37 @@ class ComposerForm(forms.Form):
         widget=forms.Textarea(attrs={"class": "field__input", "rows": "2"}),
     )
 
-    def __init__(self, *args: Any, matter: Any = None, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, matter: Any = None, viewer: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         for prefix, label in (("next", "Kuupäev"), ("deadline", "Kuupäev")):
             self.fields.update(_precision_fields(prefix, date_label=label))
         set_choices(self, "organisation", Organisation.objects.order_by("name"))
         set_choices(self, "final_recipients", Organisation.objects.order_by("name"))
         self.matter = matter
-        if matter is not None:
-            # The successor is any *other* Matter; the evidence is any version
-            # already captured on *this* one. Both querysets are what validation
-            # enforces, so a crafted post cannot name a file from another file.
-            set_choices(self, "successor", Matter.objects.exclude(pk=matter.pk))
-            set_choices(
-                self,
-                "final_version",
-                DocumentVersion.objects.filter(document__matter=matter).select_related("document"),
-            )
+        if matter is None:
+            return
+
+        # Both querysets go through `visible_to`, and that is a security
+        # boundary rather than a convenience.
+        #
+        # A crafted POST naming a Matter this person may not see would tell them
+        # a restricted file with that id exists — the same disclosure
+        # `get_visible_matter` returns 404 to avoid. And binding a document they
+        # may not read as a submission's final evidence would then print its
+        # filename, its size and its SHA-256 to everybody who can see the
+        # submission: exactly the defect fixed once already in
+        # `app.submissions.views.attach_evidence`, which is why the version
+        # queryset filters through `Document.objects.visible_to` rather than on
+        # `document__matter` alone. A child override only ever restricts
+        # further, so the Matter-only filter is not the same question.
+        set_choices(self, "successor", Matter.objects.visible_to(viewer).exclude(pk=matter.pk))
+        set_choices(
+            self,
+            "final_version",
+            DocumentVersion.objects.filter(
+                document__in=Document.objects.visible_to(viewer).filter(matter=matter)
+            ).select_related("document"),
+        )
 
     # -- validation --------------------------------------------------------
 

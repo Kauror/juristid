@@ -84,7 +84,7 @@ from app.matters.services import (
     set_position,
     update_engagement,
 )
-from app.matters.timeline import matter_timeline
+from app.matters.timeline import TIMELINE_FILTER_ALL, TIMELINE_FILTERS, matter_timeline
 from app.organisations.models import Organisation
 from app.search import services as search_services
 from app.submissions.enums import RecipientRole, SubmissionStatus
@@ -113,8 +113,16 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
     """
     queryset = (
         Matter.objects.visible_to(request.user)
-        .select_related("owner", "stage", "addressee_organisation")
-        .prefetch_related("source_organisations", "policy_areas", "tags", "collaborators")
+        .select_related("owner", "stage", "addressee_organisation", "superseded_by")
+        .prefetch_related(
+            "source_organisations",
+            "policy_areas",
+            "tags",
+            "collaborators",
+            # `Seotud` reads the successor chain in both directions, and the
+            # reverse side is a relation rather than a column.
+            "supersedes",
+        )
     )
     return get_object_or_404(queryset, pk=pk)
 
@@ -947,8 +955,24 @@ def _sent_submissions(request: HttpRequest, matter: Matter) -> list[Submission]:
     )
 
 
+def _timeline_filter(request: HttpRequest) -> str:
+    """Which slice of the chronology the reader asked for.
+
+    A query-string value, like every other filter in this product, so a
+    filtered chronology is a link somebody can send. An unknown value falls
+    back to everything rather than to nothing: a hand-edited URL should show
+    too much, never silently hide the file's history.
+    """
+    value = (request.GET.get("ajajoon") or "").strip()
+    known = {key for key, _label in TIMELINE_FILTERS}
+    return value if value in known else TIMELINE_FILTER_ALL
+
+
 def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
-    items, has_more = matter_timeline(matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE)
+    timeline_only = _timeline_filter(request)
+    items, has_more = matter_timeline(
+        matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE, only=timeline_only
+    )
     engagements = selectors.matter_engagements(matter, request.user)
     return {
         "matter": matter,
@@ -961,7 +985,9 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "timeline_items": items,
         "timeline_has_more": has_more,
         "timeline_count": len(items) + (1 if has_more else 0),
-        "composer_form": ComposerForm(matter=matter),
+        "timeline_only": timeline_only,
+        "timeline_filters": TIMELINE_FILTERS,
+        "composer_form": ComposerForm(matter=matter, viewer=request.user),
         "summary_form": BriefSummaryForm(initial={"brief_summary": matter.brief_summary}),
         "position_form": PositionForm(
             initial={
@@ -1218,7 +1244,7 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
     if not may_write_business_content(request.user):
         raise Http404("Sissekandeid saab lisada ainult sisu muutmise õigusega.")
 
-    form = ComposerForm(request.POST, request.FILES, matter=matter)
+    form = ComposerForm(request.POST, request.FILES, matter=matter, viewer=request.user)
 
     if not form.is_valid():
         context = _overview_context(request, matter)
@@ -1662,8 +1688,9 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
     except ValueError:
         offset = 0
 
+    only = _timeline_filter(request)
     items, has_more = matter_timeline(
-        matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE, offset=offset
+        matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE, offset=offset, only=only
     )
     return render(
         request,
@@ -1673,6 +1700,7 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "timeline_items": items,
             "timeline_has_more": has_more,
             "next_offset": offset + TIMELINE_PAGE_SIZE,
+            "timeline_only": only,
         },
     )
 

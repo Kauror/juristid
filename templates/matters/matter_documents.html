@@ -70,6 +70,13 @@ finds again (§23.5).
       </form>
 
       {% if can_write %}
+        {% comment %}
+          Both add panels sit here, under the toolbar, and both start hidden.
+          They are revealed from the toolbar, from the empty card and from the
+          Töödokumendid accordion — one panel per thing to add, however many
+          controls point at it. Rendering the SharePoint form inside the
+          accordion made the empty state's button hide a form nobody could see.
+        {% endcomment %}
         <div class="uploadpanel" id="lae-dokument" hidden>
           <form class="stackform" method="post" enctype="multipart/form-data"
                 action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
@@ -100,6 +107,21 @@ finds again (§23.5).
             <div class="form__actions">
               <button class="button button--primary" type="submit">Salvesta dokument</button>
             </div>
+          </form>
+        </div>
+
+        <div class="uploadpanel" id="sharepointi-viide" hidden>
+          <form class="stackform" method="post"
+                action="{% url 'matters:add_working_document' pk=matter.pk %}">
+            {% csrf_token %}
+            <p class="field__help">
+              Viide elavale failile. Baite ei salvestata ja see ei ole tõend selle kohta,
+              mida Koda välja saatis — selleks lae fail üles ülalpool.
+            </p>
+            {% include "intelligence/partials/field.html" with field=working_document_form.title %}
+            {% include "intelligence/partials/field.html" with field=working_document_form.web_url %}
+            {% include "intelligence/partials/field.html" with field=working_document_form.site_path %}
+            <button class="button button--quiet button--tiny" type="submit">Lisa viide</button>
           </form>
         </div>
       {% endif %}
@@ -180,7 +202,7 @@ finds again (§23.5).
                       <td>{{ document.get_role_display }}</td>
                       <td class="table__date">{{ document.created_at|date:"j.n.Y" }}</td>
                       <td>
-                        {% if document.versions.count > 1 %}
+                        {% if document.versions.all|length > 1 %}
                           <details class="versions">
                             <summary class="versions__trigger">
                               v{{ document.current_version.version_number }} ▾
@@ -264,6 +286,11 @@ finds again (§23.5).
               {% endif %}
             </span>
             <span class="accordion__spacer"></span>
+            {% comment %}
+              A hint, not a control. A <button> inside a <summary> toggles the
+              disclosure it sits in before its own handler runs, so the real
+              control is the first thing inside the panel.
+            {% endcomment %}
             {% if can_write %}<span class="accordion__action">+ SharePointi viide</span>{% endif %}
           </summary>
           <div class="accordion__body">
@@ -290,22 +317,9 @@ finds again (§23.5).
             {% endfor %}
 
             {% if can_write %}
-              <div class="uploadpanel" id="sharepointi-viide">
-                <form class="stackform" method="post"
-                      action="{% url 'matters:add_working_document' pk=matter.pk %}">
-                  {% csrf_token %}
-                  <p class="field__help">
-                    Viide elavale failile. Baite ei salvestata ja see ei ole tõend selle kohta,
-                    mida Koda välja saatis — selleks lae fail üles ülalpool.
-                  </p>
-                  {% include "intelligence/partials/field.html" with field=working_document_form.title %}
-                  {% include "intelligence/partials/field.html" with field=working_document_form.web_url %}
-                  {% include "intelligence/partials/field.html" with field=working_document_form.site_path %}
-                  <button class="button button--quiet button--tiny" type="submit">
-                    Lisa viide
-                  </button>
-                </form>
-              </div>
+              <button class="disclosure-chip" type="button" data-reveals="sharepointi-viide">
+                + SharePointi viide
+              </button>
             {% endif %}
           </div>
         </details>

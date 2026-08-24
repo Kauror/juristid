@@ -154,8 +154,30 @@ def _verbs_for(entry: Entry | None, events: list[ChangeEvent]) -> tuple[str, ...
     return tuple(verbs)
 
 
+#: What the chronology's `Kõik ▾` control offers.
+#:
+#: Two axes and nothing finer. "What did people write" and "what happened to the
+#: file" are the two questions somebody scrolling six months of work actually
+#: has; a filter per event type would be a filter nobody reads
+#: (Teema redesign §21).
+TIMELINE_FILTER_ALL = "koik"
+TIMELINE_FILTER_ENTRIES = "sissekanded"
+TIMELINE_FILTER_EVENTS = "sundmused"
+
+TIMELINE_FILTERS: tuple[tuple[str, str], ...] = (
+    (TIMELINE_FILTER_ALL, "Kõik"),
+    (TIMELINE_FILTER_ENTRIES, "Sissekanded"),
+    (TIMELINE_FILTER_EVENTS, "Sündmused"),
+)
+
+
 def matter_timeline(
-    *, matter: Matter, user: Any, limit: int = 50, offset: int = 0
+    *,
+    matter: Matter,
+    user: Any,
+    limit: int = 50,
+    offset: int = 0,
+    only: str = TIMELINE_FILTER_ALL,
 ) -> tuple[list[TimelineItem], bool]:
     """Return one page of the timeline, newest first.
 
@@ -164,17 +186,23 @@ def matter_timeline(
     scoped to this Matter, which the caller has already proven the user may
     read.
 
+    ``only`` filters what is *shown*, never what is grouped: a save that wrote
+    a note and set the next step is one action, and the entry filter shows it
+    with its facts rather than tearing it in half.
+
     Returns the page and whether more items exist.
     """
     # Fetch one extra of each so "is there more" needs no second count query.
     window = offset + limit + 1
 
-    entries = list(
-        Entry.objects.filter(matter=matter)
-        .visible_to(user)
-        .select_related("author", "organisation")
-        .chronological()[:window]
-    )
+    entries: list[Entry] = []
+    if only != TIMELINE_FILTER_EVENTS:
+        entries = list(
+            Entry.objects.filter(matter=matter)
+            .visible_to(user)
+            .select_related("author", "organisation")
+            .chronological()[:window]
+        )
 
     # ENTRY_ADDED is fetched and not rendered. It is the only thing that says
     # which operation an entry belongs to — the Entry table carries no such
@@ -262,6 +290,9 @@ def matter_timeline(
     # then the time-sortable id. Without the last two, two things written in the
     # same minute could swap places between page loads and pagination could
     # repeat or skip a line.
+    if only == TIMELINE_FILTER_ENTRIES:
+        items = [item for item in items if item.is_entry]
+
     items.sort(key=lambda item: (item.occurred_at, item.created_at, item.sort_key), reverse=True)
 
     page = items[offset : offset + limit]

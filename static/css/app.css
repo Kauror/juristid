@@ -5154,9 +5154,14 @@ p.factsection__none {
 
 /* As a control: the label is the chip and the radio is visually hidden but
    still focusable, so the keyboard ring lands on something visible. */
+/* As a control the chip is a control: 30px, so it meets the target size every
+   button on this page meets. The read-only chip beside it keeps the mockup's
+   compact height, because nobody clicks it (Teema redesign §8.1, §30). */
 .modechip--choice {
   cursor: pointer;
   padding: 4px 12px;
+  min-height: 30px;
+  justify-content: center;
 }
 
 .modechip__input {
@@ -6018,4 +6023,108 @@ p.factsection__none {
 /* The version disclosure inside a document row. */
 .versions {
   display: inline-block;
+}
+
+/* An absent deadline is an invitation, not a label over an em dash. */
+.metaline__add {
+  color: var(--text-muted);
+  border-bottom: 1px dashed var(--border-strong);
+  padding-bottom: 1px;
+}
+
+.metaline .inlineedit__trigger:hover .metaline__add {
+  color: var(--accent-link);
+  border-bottom-color: var(--accent-link);
+}
+
+/* The header's secondary-action menu. Same disclosure mechanics as the top
+   bar's "Veel", at the header's scale. */
+.headmenu {
+  position: relative;
+  margin-left: var(--spacing-2);
+}
+
+.headmenu__trigger {
+  list-style: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px var(--spacing-1);
+  border-radius: var(--radius-chip);
+}
+
+.headmenu__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.headmenu__trigger:hover {
+  color: var(--text-primary);
+}
+
+.headmenu__trigger:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+.headmenu__panel {
+  position: absolute;
+  top: 24px;
+  right: 0;
+  z-index: 40;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-menu);
+  padding: var(--spacing-3);
+}
+
+.headmenu__label {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* The chronology's Kõik / Sissekanded / Sündmused control. A segmented group of
+   quiet buttons rather than a select: three options that fit on one line are
+   faster to read than a dropdown that hides two of them. */
+.timelinefilter {
+  display: inline-flex;
+  gap: var(--spacing-1);
+  align-self: flex-start;
+}
+
+.timelinefilter__option {
+  min-height: 30px;
+  padding: var(--spacing-1) var(--spacing-25);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: none;
+  font-family: inherit;
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.timelinefilter__option:hover {
+  color: var(--text-primary);
+  border-color: var(--border-control);
+}
+
+.timelinefilter__option.is-active {
+  color: var(--text-primary);
+  background: var(--surface-selected);
+  border-color: var(--accent-border);
+}
+
+.timelinefilter__option:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
 }

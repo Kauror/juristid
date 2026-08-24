@@ -101,7 +101,10 @@ CLOCK_DEPENDENT = [
     ".metaline__item--deadline .inlineedit__trigger",
     ".nextrow__date",
     ".sentstrip__date",
-    ".accordion__summary",
+    # Only the timeline's summary. It always reads "N kirjet · viimane <date>";
+    # Kaasamine's and Töödokumendid's summaries are content and must stay in
+    # the baseline.
+    ".accordion--timeline .accordion__summary",
     ".railcard__value--date",
     # A date control's value renders in the control, and the create form's
     # Saabus defaults to today. Scoped to that form: unscoped, the selector also
