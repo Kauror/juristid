@@ -47,13 +47,14 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.dates import format_estonian_date
 from app.matters import work_items as wi
+from app.matters.activity import activity_of, annotate_last_activity
 from app.matters.models import Entry, Matter, MatterEngagement
 from app.matters.register_filters import register_population
 from app.matters.selectors import MISSING
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
-from app.workflow.enums import ESTONIAN_MONTHS, ActionKind
+from app.workflow.enums import ActionKind
 
 # ---------------------------------------------------------------------------
 # Scopes
@@ -330,7 +331,9 @@ def intervention_rows(
                 InterventionRow(
                     reason=REASON_IMPORTANT if not item.is_action else REASON_OVERDUE,
                     value=f"{item.days_late} p üle",
-                    meaning=f"{item.meaning} {item.display_date}",
+                    # Compact, because the cell is 96px and the meaning must be
+                    # readable in full: a truncated meaning is a bare date.
+                    meaning=f"{item.meaning} {_short(item.period_end or item.when)}",
                     matter=item.matter,
                     detail=item.text,
                     owner=item.responsible,
@@ -350,22 +353,28 @@ def intervention_rows(
                 )
             )
 
-    quiet = (
-        people.quiet.filter(owner__isnull=False)
-        .select_related("owner", "stage")
-        .order_by("updated_at")[:INTERVENTION_LIMIT]
-    )
+    quiet = annotate_last_activity(
+        people.quiet.filter(owner__isnull=False).select_related("owner", "stage"),
+        people.user,
+    ).order_by("updated_at")[:INTERVENTION_LIMIT]
     for matter in quiet:
-        silent = (today - matter.updated_at.date()).days
+        # `activity_of` reads the annotations and never queries, so a capped
+        # list costs one query rather than one per row. It returns None where
+        # nothing is known, and a row that says so is better than one that
+        # invents a number.
+        activity = activity_of(matter)
+        since = activity.occurred_on if activity else None
         rows.append(
             InterventionRow(
                 reason=REASON_NO_ACTION,
                 value="sammuta",
-                meaning=f"{silent} P VAIKUST",
+                meaning=f"{(today - since).days} P VAIKUST"
+                if since
+                else "VIIMANE TEGEVUS TEADMATA",
                 matter=matter,
                 detail="järgmine samm määramata",
                 owner=matter.owner,
-                sort_on=matter.updated_at.date(),
+                sort_on=since or matter.updated_at.date(),
             )
         )
 
@@ -753,6 +762,16 @@ class AreaRow:
         return _teemad(**_OPEN_FULL, valdkond=self.key, vastutaja=MISSING)
 
 
+def _initials(display_name: str) -> str:
+    """Mirrors ``User.initials`` for a name read off a ``values()`` projection."""
+    parts = [part for part in (display_name or "").split() if part]
+    if len(parts) >= 2:
+        return (parts[0][:1] + parts[-1][:1]).upper()
+    if parts:
+        return parts[0][:2].upper()
+    return "—"
+
+
 def _area_counts(queryset: QuerySet[Matter]) -> dict[str, int]:
     grouped = (
         Matter.objects.filter(pk__in=queryset.values("pk"))
@@ -798,7 +817,14 @@ def area_rows(
         if not key:
             continue
         owners.setdefault(key, []).append(
-            {"pk": row["owner_id"], "name": row["owner__display_name"]}
+            {
+                "pk": row["owner_id"],
+                "name": row["owner__display_name"],
+                # The same two letters the avatar carries everywhere else. The
+                # User model owns this rule; a template slicing one character
+                # off a first name is a second rule that drifts from it.
+                "initials": _initials(row["owner__display_name"]),
+            }
         )
 
     active = {area.key: area for area in PolicyArea.objects.filter(is_active=True)}
@@ -1152,7 +1178,7 @@ def build_overview(
                 .count(),
             ),
             CountRow(
-                label=f"Esitatud arvamusi {ESTONIAN_MONTHS[today.month - 1]}",
+                label=f"Esitatud arvamusi {ESTONIAN_MONTHS_IN[today.month - 1]}",
                 count=people.submissions.filter(
                     status=SubmissionStatus.SENT,
                     sent_at__year=today.year,

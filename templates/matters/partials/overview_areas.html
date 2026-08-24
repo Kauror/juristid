@@ -42,7 +42,7 @@ empty rows: the information survives without twenty-three blank lines.
           </span>
           <span class="arearow__owners">
             {% if row.owners %}
-              {% for owner in row.owners %}<span class="avatar avatar--sm" title="{{ owner.name }}">{{ owner.name|slice:":1"|upper }}</span>{% endfor %}
+              {% for owner in row.owners %}<span class="avatar avatar--sm" title="{{ owner.name }}">{{ owner.initials }}</span>{% endfor %}
             {% else %}
               {% comment %}
                 Only when the area has open work and *nobody at all* owns any of

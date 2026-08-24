@@ -193,15 +193,21 @@ class WorkItem:
     def short_date(self) -> str:
         """The value the date cell prints — the honest one, not always a day.
 
-        ``10 p üle`` for something late, ``täna`` for today, ``26.08`` for an
-        exact date this year, and the stored period verbatim for anything
-        recorded to a month or a quarter.
+        ``10 p üle`` for something genuinely late, a bare ``9 p`` for a review
+        that has merely come round, ``täna`` for today, ``26.08`` for an exact
+        date this year, and the stored period verbatim for anything recorded to
+        a month or a quarter.
+
+        The word *üle* appears only where something was actually missed. A
+        ministry that has not replied is not over anything, and one word is the
+        whole difference between "you failed" and "have a look at this"
+        (master specification 18.8).
         """
         if self.when is None:
             return "—"
         late = self.days_late
         if late:
-            return f"{late} p üle"
+            return f"{late} p üle" if self.is_overdue else f"{late} p"
         if self.when == self.today:
             return "täna"
         if self.display_date and self._is_approximate:

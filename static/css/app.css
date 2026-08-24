@@ -6460,7 +6460,9 @@ p.factsection__none {
   flex: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: 86px minmax(0, 1fr) 150px;
+  /* 96 rather than the mockup's 86: OLULINE TÄHTAEG is a real value and the
+     narrower cell could not hold it on two lines either. */
+  grid-template-columns: 96px minmax(0, 1fr) 150px;
   gap: var(--spacing-35);
   align-items: center;
   padding: 9px var(--spacing-3);
@@ -6515,17 +6517,19 @@ p.factsection__none {
 
 /* Status is never colour alone: every coloured row also states its meaning
    and its lateness in words. */
+/* Wraps rather than ellipsising. An elided meaning is a bare date, which is
+   the one thing a row on these pages may never be: OLULINE TÄHTAEG and
+   TÄHTAEG 14.08 mean different things and «OLULINE TÄHT…» means neither. */
 .workrow2__meaning,
 .teamrow__meaning,
 .interrow__meaning {
   font-size: 10.5px;
   font-weight: var(--typography-weight-semibold);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
+  line-height: 1.25;
   color: var(--text-muted);
   text-transform: uppercase;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 
 .workrow2__body,
@@ -7413,5 +7417,77 @@ p.factsection__none {
   .ovbody__rail {
     border-left: none;
     border-top: 1px solid var(--border-default);
+  }
+}
+
+/* ---- 860 and below: the shell's own padding changes, so the bleed must ----
+ *
+ * `.app__main` drops to `--spacing-3` here, and a full-bleed section pulling
+ * itself out by `--spacing-6` then hangs 12px past the viewport on both sides.
+ * That is a horizontal scrollbar on every page of this design, and it is
+ * invisible in a screenshot — which is why e2e measures scrollWidth instead.
+ */
+@media (max-width: 860px) {
+  .page--work,
+  .page--overview {
+    margin-left: calc(var(--spacing-3) * -1);
+    margin-right: calc(var(--spacing-3) * -1);
+    margin-top: calc(var(--spacing-4) * -1);
+    margin-bottom: calc(var(--spacing-8) * -1);
+  }
+
+  .workhead,
+  .ovhead,
+  .seis,
+  .workband,
+  .ovsection,
+  .personblock {
+    padding-left: var(--spacing-3);
+    padding-right: var(--spacing-3);
+  }
+
+  .railblock {
+    padding-left: var(--spacing-3);
+    padding-right: var(--spacing-3);
+  }
+
+  /* Fixed columns cannot survive a phone, and dropping a column would drop
+     what a date means. The table keeps its shape and scrolls inside its own
+     box, so the page around it does not. */
+  .areatable {
+    overflow-x: auto;
+  }
+
+  .areatable__head,
+  .arearow__summary {
+    min-width: 640px;
+  }
+
+  /* The rows are grids of fixed cells; below this width they become two lines
+     rather than a sideways scroll, because a work row is read, not scanned. */
+  .workrow2__link,
+  .teamrow__link,
+  .interrow__link,
+  .deadlinerow,
+  .arealine,
+  .feedrow,
+  .entryline {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
+  .workrow2__stage,
+  .teamrow__stage,
+  .interrow__stage,
+  .deadlinerow__owner {
+    display: none;
+  }
+
+  .deadlinegroup {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .deadlinegroup__more {
+    grid-column: 1;
   }
 }
