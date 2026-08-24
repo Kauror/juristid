@@ -198,6 +198,25 @@ finds again (§23.5).
                             {{ document.current_version.original_filename }}
                           {% else %}{{ document.title }}{% endif %}
                         </a>
+                        {% comment %}
+                          Whether this file's text has been extracted, under the
+                          name rather than in a column of its own. The design's
+                          six columns are the six a lawyer scans; this is a
+                          state they consult about one row, and "Vaata sisu" is
+                          the only way from here to the text a search matched
+                          (Stage-2B brief 35).
+                        {% endcomment %}
+                        {% if document.current_version %}
+                          <span class="doctable__state">
+                            <span class="statechip statechip--{{ document.current_version.extraction_state|extraction_tone }}">
+                              {{ document.current_version.extraction_state|extraction_label }}
+                            </span>
+                            {% if document.current_version.extraction_state == "DONE" %}
+                              <a class="quietlink"
+                                 href="{% url 'documents:document_detail' pk=document.pk %}">Vaata sisu</a>
+                            {% endif %}
+                          </span>
+                        {% endif %}
                       </td>
                       <td>{{ document.get_role_display }}</td>
                       <td class="table__date">{{ document.created_at|date:"j.n.Y" }}</td>
@@ -326,8 +345,8 @@ finds again (§23.5).
       {% endif %}
 
       {% if historical %}
-        <section class="historicalrow">
-          <span class="rowlabel">Ajalooline OneNote</span>
+        <section class="historicalrow" aria-labelledby="ajalooline-heading">
+          <h2 class="rowlabel" id="ajalooline-heading">Ajalooline OneNote</h2>
           <span class="historicalrow__summary">
             {{ historical.page_count }} lehte · {{ historical.file_count }} faili
           </span>

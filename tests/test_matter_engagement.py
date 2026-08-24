@@ -549,8 +549,36 @@ def test_a_matter_page_costs_no_query_per_engagement(signed_in, specialist):
 
 
 def _post_add(client, matter, **data):
-    payload = {"kind": EngagementKind.WEB_CALL, "title": "Kaasamiskutse", **data}
+    """Post the add form, using a kind the *form* offers.
+
+    `WEB_CALL` is still a valid stored value and every historical row carrying
+    it still reads correctly — but the creation control offers three options
+    now, and a form that accepted a fourth would be a form that does not mean
+    what it shows (Teema redesign §14).
+    """
+    payload = {"kind": EngagementKind.SURVEY, "title": "Kaasamiskutse", **data}
     return client.post(reverse("matters:add_engagement", kwargs={"pk": matter.pk}), payload)
+
+
+def test_the_add_form_refuses_a_kind_it_does_not_offer(signed_in, specialist):
+    """The three approved options are the vocabulary, not a suggestion."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _post_add(signed_in, matter, kind=EngagementKind.WEB_CALL)
+
+    assert response.status_code == 400
+    assert not MatterEngagement.objects.filter(matter=matter).exists()
+
+
+def test_a_legacy_kind_stays_creatable_through_the_service(specialist):
+    """An importer, a migration or a correction is not the creation form."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    record = add_engagement(
+        matter=matter, kind=EngagementKind.WEB_CALL, title="Vana kutse", actor=specialist
+    )
+
+    assert record.kind == EngagementKind.WEB_CALL
 
 
 def test_adding_through_the_page_saves_the_record(signed_in, specialist):

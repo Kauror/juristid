@@ -988,15 +988,14 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "timeline_only": timeline_only,
         "timeline_filters": TIMELINE_FILTERS,
         "composer_form": ComposerForm(matter=matter, viewer=request.user),
-        "summary_form": BriefSummaryForm(initial={"brief_summary": matter.brief_summary}),
+        # `summary_form` and `note_form` are deliberately absent: the header
+        # context carries them, it is merged over this one, and reading the
+        # private note twice per page is two queries for one answer.
         "position_form": PositionForm(
             initial={
                 "position_summary": matter.position_summary,
                 "rationale_summary": matter.rationale_summary,
             }
-        ),
-        "note_form": PersonalNoteForm(
-            initial={"body": personal_note_for(matter=matter, author=request.user)}
         ),
         "historical": _historical_context(matter, request.user),
         # Stage 2G's structured facts. Read through their own selector, which
@@ -1029,9 +1028,8 @@ def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
 def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     return {
         "matter": matter,
-        "submission_count": Submission.objects.filter(matter=matter)
-        .visible_to(request.user)
-        .count(),
+        # No `submission_count`. The tab that displayed it is gone, and a count
+        # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
         "dispositions": Disposition.choices,
         "owners": User.objects.filter(is_active=True).order_by("display_name"),
@@ -1044,7 +1042,9 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "selected_sender_ids": matter.source_organisation_ids,
         "tracks": Track.choices,
         "visibilities": Visibility.choices,
-        "current_action": current_next_action(matter),
+        # No `current_action` either. The header band no longer shows the next
+        # step — the Järgmiseks row does — and the overview context reads it
+        # once for both.
         # The governed vocabulary plus whatever this Matter already carries, so
         # a file classified years ago under a retired area still shows it and
         # can still be corrected (app/taxonomy/vocabulary.py).

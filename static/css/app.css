@@ -5007,6 +5007,7 @@ p.factsection__none {
 
 /* Section label shared by every row-level block. */
 .rowlabel {
+  margin: 0;
   font-size: var(--typography-size-label);
   font-weight: var(--typography-weight-bold);
   letter-spacing: var(--typography-tracking-label);
@@ -5429,6 +5430,7 @@ p.factsection__none {
 }
 
 .accordion__label {
+  margin: 0;
   font-size: var(--typography-size-label);
   font-weight: var(--typography-weight-bold);
   letter-spacing: var(--typography-tracking-label);
@@ -6127,4 +6129,12 @@ p.factsection__none {
 .timelinefilter__option:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset-width);
+}
+
+/* The extraction state, under a document's name rather than in a column. */
+.doctable__state {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-left: var(--spacing-2);
 }

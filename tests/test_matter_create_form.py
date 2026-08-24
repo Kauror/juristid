@@ -81,17 +81,26 @@ def test_several_policy_areas_can_be_chosen(signed_in, specialist):
 # -- ordering ---------------------------------------------------------------
 
 
-def test_policy_areas_are_ordered_by_how_often_they_are_used(specialist):
-    rare = factories.PolicyAreaFactory(name_et="Harv", sort_order=1)
-    common = factories.PolicyAreaFactory(name_et="Sage", sort_order=99)
+def test_policy_areas_are_offered_in_the_reviewed_order(signed_in):
+    """The department sequenced these twenty-three; the form shows that order.
 
-    for _ in range(3):
-        factories.MatterFactory(owner=specialist).policy_areas.add(common)
-    factories.MatterFactory(owner=specialist).policy_areas.add(rare)
+    It replaces an ordering by usage frequency, which existed because nine
+    broad headings sorted by an admin field made people hunt. With a working
+    vocabulary somebody can learn, a list that rearranges itself under the
+    reader is worse than one that does not — and the usage order was also a
+    derivation from records, which is a thing an ordering should not be
+    (app/taxonomy/vocabulary.py, Teema redesign §7.1).
+    """
+    from app.taxonomy.vocabulary import selectable_policy_areas
 
-    form = MatterCreateForm(viewer=specialist)
-    labels = [str(label) for _, label in form.fields["policy_areas"].choices]
-    assert labels.index("Sage") < labels.index("Harv")
+    body = signed_in.get(CREATE).content.decode()
+    offered = [
+        name for name in (area.name_et for area in selectable_policy_areas()) if name in body
+    ]
+    positions = [body.index(name) for name in offered]
+
+    assert offered, "the create form offers no Valdkonnad at all"
+    assert positions == sorted(positions), "the Valdkonnad are not in reviewed order"
 
 
 def test_restricted_work_does_not_shape_the_order_somebody_else_sees(specialist, other_specialist):

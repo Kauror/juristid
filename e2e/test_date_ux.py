@@ -180,7 +180,10 @@ def test_a_typed_estonian_date_is_saved(page, base_url):
     page.wait_for_load_state("networkidle")
 
     # The Matter page shows both dates back, in the same format they were typed.
-    body = page.locator(".metafield--date").all_inner_texts()
+    # Saabus is a rail fact now and the one active deadline is in the header
+    # meta line. Both are dates the page renders in Estonian, which is what
+    # this is about (Teema redesign §5.4, §22.1).
+    body = page.locator(".railcard__value--date, .metaline__value--deadline").all_inner_texts()
     assert any("7.9.2026" in text for text in body), body
     assert any("23.8.2026" in text for text in body), body
 
@@ -195,7 +198,9 @@ def test_a_padded_estonian_date_is_accepted_too(page, base_url):
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    assert "7.9.2026" in " ".join(page.locator(".metafield--date").all_inner_texts())
+    assert "7.9.2026" in " ".join(
+        page.locator(".railcard__value--date, .metaline__value--deadline").all_inner_texts()
+    )
 
 
 def test_an_impossible_date_is_refused_in_estonian(page, base_url):

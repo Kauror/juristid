@@ -28,7 +28,7 @@ because a plan that changed is part of the file's history.
     <h2 class="sectionlabel" id="teema-tahtajad-heading">Olulised tähtajad</h2>
     {% if can_write %}
       <a class="button button--quiet button--tiny"
-         href="{% url 'intelligence:add_important_date' matter_id=matter.pk %}">+ Lisa</a>
+         href="{% url 'intelligence:add_important_date' matter_id=matter.pk %}">+ Lisa oluline tähtaeg</a>
     {% endif %}
   </div>
 
@@ -51,7 +51,7 @@ because a plan that changed is part of the file's history.
     <h2 class="sectionlabel" id="teema-joustumine-heading">Jõustumine</h2>
     {% if can_write %}
       <a class="button button--quiet button--tiny"
-         href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}">+ Lisa</a>
+         href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}">+ Lisa jõustumine</a>
     {% endif %}
   </div>
 

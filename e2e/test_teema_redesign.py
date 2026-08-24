@@ -155,7 +155,7 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
     for index in range(12):
         page.goto(url)
         page.locator(".composer__body").fill(f"Sissekanne number {index} sünteetilises maailmas.")
-        page.get_by_role("button", name="Salvesta", exact=True).click()
+        page.locator("[data-composer-submit]").click()
         page.wait_for_load_state("networkidle")
 
     page.goto(url)
@@ -185,7 +185,7 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     page.locator(".composer__body").fill("Esitan Koja arvamuse ministeeriumile.")
     page.locator("#next_kind_DO").check(force=True)
     page.locator("#id_next_date").fill(_future(5))
-    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.locator("[data-composer-submit]").click()
     page.wait_for_load_state("networkidle")
     expect(page.locator(".nextrow .modechip--do")).to_be_visible()
 
@@ -247,8 +247,12 @@ def test_evidence_and_working_references_look_like_opposites(page, base_url):
     page.wait_for_load_state("networkidle")
 
     page.goto(f"{url}dokumendid/")
-    expect(page.get_by_text("eelnou.pdf").first).to_be_visible()
-    expect(page.get_by_text("Saabunud ametlik dokument").first).to_be_visible()
+    # Scoped to the table: "Saabunud ametlik dokument" is also an <option> in
+    # the role filter and in the upload form, and an unscoped text locator finds
+    # the hidden one first.
+    row = page.locator(".doctable tbody tr").first
+    expect(row).to_contain_text("eelnou.pdf")
+    expect(row).to_contain_text("Saabunud ametlik dokument")
 
     # A SharePoint reference is not evidence, and does not look like it.
     working = page.locator("#toodokumendid")
@@ -305,7 +309,7 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     url = create_matter(page, base_url, "Klaviatuuri brauserikatse")
 
     page.locator(".composer__body").fill("Salvestatud klaviatuurilt.")
-    page.locator(".composer__body").press("Control+Enter")
+    page.locator(".composer__body").press("ControlOrMeta+Enter")
     page.wait_for_load_state("networkidle")
 
     page.locator("#ajajoon .accordion__head").click()

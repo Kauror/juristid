@@ -835,6 +835,7 @@ def test_reopening_clears_the_successor(normal_matter, specialist):
         actor=specialist,
     )
 
+    normal_matter.refresh_from_db()
     reopen_matter(matter=normal_matter, actor=specialist)
 
     normal_matter.refresh_from_db()
@@ -1163,7 +1164,8 @@ def test_the_upload_form_asks_for_the_role_before_committing(signed_in, speciali
 
     body = _body(signed_in.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk})))
 
-    upload_form = body[body.index("upload_evidence") : body.index("Salvesta dokument")]
+    action = reverse("documents:upload_evidence", kwargs={"matter_id": matter.pk})
+    upload_form = body[body.index(action) : body.index("Salvesta dokument")]
     assert 'name="upload"' in upload_form
     assert 'name="role"' in upload_form
 

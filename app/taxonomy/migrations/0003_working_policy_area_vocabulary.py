@@ -236,6 +236,17 @@ RETIRED = [
 ]
 
 
+#: Where version 1.0 put the four names both vocabularies contain. Frozen, so
+#: the reverse restores what the earlier migration actually seeded rather than
+#: what today's manifest happens to say.
+CARRIED_OVER_V1_ORDER = {
+    "keskkond": 30,
+    "energeetika": 40,
+    "arioigus": 70,
+    "riigihanked": 80,
+}
+
+
 def _same_name(left: str, right: str) -> bool:
     return " ".join(left.split()).casefold() == " ".join(right.split()).casefold()
 
@@ -273,11 +284,21 @@ def seed(apps, schema_editor):
             )
 
     for key, name, description, sort_order in BASELINE:
-        if key in by_key:
-            # Matches by identity: one of the four that carried over. Left
-            # exactly as it is — its description and sort order are somebody's
+        current = by_key.get(key)
+        if current is not None:
+            # One of the four that carried over. Its identity and its
+            # description are left exactly as they are — those are somebody's
             # to edit, and topping them up here would make a re-run a quiet
             # content change.
+            #
+            # `sort_order` is the exception, and it has to be: it is not
+            # content, it is where the department put the label in the list it
+            # reviewed. Leaving Energeetika at 40 would sort it between
+            # Toetusmeetmed and Koalitsioonilepped, in a control whose whole
+            # premise is that the order is the one people were shown.
+            if current.sort_order != sort_order:
+                current.sort_order = sort_order
+                current.save(update_fields=["sort_order"])
             continue
         PolicyArea.objects.create(
             key=key,
@@ -295,12 +316,14 @@ def seed(apps, schema_editor):
 def unseed(apps, schema_editor):
     """Undo what this migration did, and only where undoing is safe.
 
-    Two halves. The nineteen rows it created go if they are pristine and
-    nothing points at them — a delete that cascaded through
+    Three halves, if that were a thing. The nineteen rows it created go if they
+    are pristine and nothing points at them — a delete that cascaded through
     ``Matter.policy_areas`` would take somebody's filing with it, which is a
-    far worse outcome than a rollback leaving unused rows behind. And the five
+    far worse outcome than a rollback leaving unused rows behind. The five
     retired rows go back to active, because rolling the code back means version
-    1.0's vocabulary is the one being offered again.
+    1.0's vocabulary is the one being offered again. And the four that carried
+    over get their version-1.0 ``sort_order`` back, for the same reason this
+    migration moved it.
     """
     PolicyArea = apps.get_model("taxonomy", "PolicyArea")
 
@@ -316,6 +339,9 @@ def unseed(apps, schema_editor):
         )
         if pristine:
             area.delete()
+
+    for key, sort_order in CARRIED_OVER_V1_ORDER.items():
+        PolicyArea.objects.filter(key=key).update(sort_order=sort_order)
 
     PolicyArea.objects.filter(key__in=RETIRED).update(is_active=True)
 

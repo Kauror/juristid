@@ -477,16 +477,20 @@ def test_the_matter_header_is_a_band_of_facts_not_a_form(page, base_url):
     page.set_viewport_size({"width": 1440, "height": 900})
     open_first_matter(page, base_url)
 
-    strip = page.locator(".metastrip")
+    strip = page.locator(".metaline")
     expect(strip).to_be_visible()
-    assert strip.bounding_box()["height"] <= 64, "the facts strip is taller than two lines"
+    # One line of four facts now, not a grid of six labelled cells.
+    assert strip.bounding_box()["height"] <= 48, "the facts line is taller than one line"
     # Visible, not present: the controls are in the DOM behind their
     # disclosures, which is the point — they are reachable without being what
     # the band shows.
-    expect(page.locator(".metastrip select:visible")).to_have_count(0)
+    expect(page.locator(".metaline select:visible")).to_have_count(0)
 
+    # The band also carries the plain-language summary now, which is the
+    # largest body text on the page and the reason the formal title is not the
+    # only description a reader gets (Teema redesign §6).
     header = page.locator(".matterhead").bounding_box()
-    assert header["height"] <= 260, "the Matter header takes a quarter of the viewport"
+    assert header["height"] <= 300, "the Matter header takes a third of the viewport"
 
 
 def test_an_inline_edit_opens_the_real_control_without_moving_the_page(page, base_url):
@@ -556,7 +560,10 @@ def test_the_composer_starts_as_one_field(page, base_url):
     field = page.locator(".composer__body")
     expect(field).to_be_visible()
     collapsed = field.evaluate("element => getComputedStyle(element).height")
-    assert float(collapsed.removesuffix("px")) <= 48, f"the composer rests at {collapsed}"
+    # 62px is the design's resting height for the capture box, and it is the
+    # difference between "note this down" and "fill in this form" — three lines
+    # of an Estonian sentence rather than one (Teema redesign §9).
+    assert float(collapsed.removesuffix("px")) <= 72, f"the composer rests at {collapsed}"
 
     field.click()
     expect(page.locator(".composer:focus-within")).to_have_count(1)

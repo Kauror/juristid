@@ -21,8 +21,8 @@ know (Teema redesign §14.2).
 <details class="accordion" id="kaasamine"
          {% if engagement_error %}open{% endif %}>
   <summary class="accordion__head">
-    <span class="accordion__label">Kaasamine{% if engagement_count %} · {{ engagement_count }}{% endif %}</span>
     <span class="accordion__caret" aria-hidden="true"></span>
+    <h2 class="accordion__label">Kaasamine{% if engagement_count %} · {{ engagement_count }}{% endif %}</h2>
     {% if engagements %}
       {% with latest=engagements.0 %}
         <span class="accordion__summary">

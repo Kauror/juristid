@@ -92,7 +92,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     reference = page.locator(".matterhead__crumbs .reference").inner_text().strip()
     assert re.fullmatch(r"\d{4}_\d+", reference), reference
 
-    expect(page.locator(".nextaction__text")).to_have_text("Koosta ja saada koja arvamus")
+    expect(page.locator(".nextrow__text")).to_have_text("Koosta ja saada koja arvamus")
     expect(page.locator(".nextaction .mode--do")).to_be_visible()
     expect(page.locator(".nextaction").get_by_text("Tähtaeg", exact=False).first).to_be_visible()
     screenshots(page, "03-teema-ulevaade")
@@ -130,7 +130,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.locator("#id_next_date").fill(_future(7))
     screenshots(page, "04-komposer")
 
-    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.locator("[data-composer-submit]").click()
 
     # Both halves landed, and the surface agrees with itself.
     expect(page.locator(".nextrow__text")).to_have_text("Ootan ministeeriumi uut sõnastust")
@@ -330,7 +330,7 @@ def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(pa
     # date is still the one combination the server refuses. Left unstated on
     # purpose — this is the path a lawyer who never opens the disclosure takes.
     page.locator("#next_kind_DO").check(force=True)
-    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.locator("[data-composer-submit]").click()
 
     expect(page.get_by_text("Tähtajaline tegevus vajab kuupäeva.")).to_be_visible()
     # Neither half was applied.

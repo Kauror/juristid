@@ -22,6 +22,19 @@ from app.core.management.commands.seed_e2e_data import RESTRICTED_TITLE
 from e2e.conftest import SANDRA, sign_in
 
 
+def open_kaasamine(page):
+    """Open the Kaasamine accordion, which is closed on arrival.
+
+    A Matter that nobody has consulted anybody about costs one quiet line now,
+    not a labelled section announcing an absence — so every test that works
+    inside it has to open it first (Teema redesign §14, §24).
+    """
+    section = open_kaasamine(page)
+    if section.get_attribute("open") is None:
+        section.locator(".accordion__head").click()
+    return section
+
+
 def open_scratch_matter(page, base_url: str) -> None:
     """Sandra's restricted Matter — writable by her, and never screenshotted."""
     page.goto(f"{base_url}/teemad/?olek=koik&q=Konfidentsiaalne")
@@ -39,7 +52,7 @@ def test_the_kaasamine_section_is_on_the_matter_page(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    section = page.locator("#kaasamine")
+    section = open_kaasamine(page)
     expect(section).to_be_visible()
     expect(section.get_by_role("heading", name="Kaasamine")).to_be_visible()
     # Collapsed until asked for: the section is read far more often than written.
@@ -62,7 +75,7 @@ def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     add_form(page).get_by_role("button", name="Lisa kaasamine").click()
 
     # The swap replaces the overview column; the row is there without a reload.
-    section = page.locator("#kaasamine")
+    section = open_kaasamine(page)
     expect(section.get_by_text("Liikmete kaasamiskutse", exact=True)).to_be_visible()
     expect(section.get_by_text("15.9.2026")).to_be_visible()
     expect(section.get_by_text("www.koda.ee")).to_be_visible()

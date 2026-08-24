@@ -278,11 +278,11 @@ def test_seeding_again_creates_nothing():
 
 def test_a_renamed_key_fails_closed():
     """Never silently rename: every Matter filed under it would move."""
-    PolicyArea.objects.filter(key="maksud").update(name_et="Maksundus ja toll")
+    PolicyArea.objects.filter(key="maksud-ja-toll").update(name_et="Maksundus")
 
     with pytest.raises(RuntimeError) as failure:
         MIGRATION.seed(global_apps, None)
-    assert "maksud" in str(failure.value)
+    assert "maksud-ja-toll" in str(failure.value)
 
 
 def test_a_name_taken_under_another_key_fails_closed():
@@ -494,7 +494,7 @@ def test_a_plan_on_an_empty_database_proposes_every_institution():
     assert len(plan.organisations_to_create) == len(PUBLIC_REFERENCE_ORGANISATIONS)
     assert not plan.organisations_present
     # Policy areas are already there: they came with the schema.
-    assert len(plan.areas_present) == 9
+    assert len(plan.areas_present) == 23
     assert not plan.areas_missing
 
 
@@ -537,7 +537,7 @@ def test_the_plan_command_json_names_tags_as_unmanaged(capsys):
     out = capsys.readouterr().out
     payload = json.loads(out[: out.rindex("}") + 1])
     assert payload["tags"] == "not managed by this baseline"
-    assert payload["policy_areas"]["present"] == 9
+    assert payload["policy_areas"]["present"] == 23
     assert payload["plan_sha256"] == build_reference_plan().digest()
 
 
@@ -648,14 +648,14 @@ def test_apply_refuses_when_a_name_means_two_rows():
 
 def test_apply_never_creates_a_policy_area():
     """The vocabulary has one write path, and it is the migration."""
-    PolicyArea.objects.filter(key="maksud").delete()
+    PolicyArea.objects.filter(key="maksud-ja-toll").delete()
 
     plan = build_reference_plan()
-    assert [f.key for f in plan.areas_missing] == ["maksud"]
+    assert [f.key for f in plan.areas_missing] == ["maksud-ja-toll"]
 
     apply_reference_plan(expected_sha256=plan.digest())
 
-    assert not PolicyArea.objects.filter(key="maksud").exists()
+    assert not PolicyArea.objects.filter(key="maksud-ja-toll").exists()
 
 
 def test_apply_never_creates_a_tag():
@@ -685,7 +685,7 @@ def test_verify_passes_on_a_complete_baseline():
     apply_reference_plan(expected_sha256=build_reference_plan().digest())
     report = verify_reference_data()
     assert report.ok, report.problems
-    assert report.policy_areas_present == 9
+    assert report.policy_areas_present == 23
     assert report.organisations_present == len(PUBLIC_REFERENCE_ORGANISATIONS)
 
 

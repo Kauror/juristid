@@ -238,7 +238,11 @@
         /* `prefers-reduced-motion` is honoured by asking for "auto", which the
            browser resolves against the user's own setting. */
         target.scrollIntoView({ block: "center", behavior: "auto" });
-        var box = target.querySelector("textarea, input, select");
+        /* Not `input` in general: every form here opens with a hidden CSRF
+           token, and it is the first match in document order. */
+        var box = target.querySelector(
+          "textarea, select, input:not([type=hidden])"
+        );
         if (box) {
           box.focus();
         }
