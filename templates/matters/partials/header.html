@@ -17,7 +17,13 @@ Kellele, Saabus, Menetlusliik — moved to the facts rail, where it is looked up
 rather than read.
 {% endcomment %}
 <header class="matterhead" id="teema-pais">
-  <p class="matterhead__crumbs">
+  {% comment %}
+    A div, not a paragraph. The ⋯ menu is a <details>, and a <details> start
+    tag inside an open <p> makes the parser close the paragraph — so the menu
+    landed on a line of its own under the breadcrumb and pushed the title down
+    with it. Exactly the trap `matter_banner.html` documents for <form>.
+  {% endcomment %}
+  <div class="matterhead__crumbs">
     <a href="{% url 'matters:matter_list' %}">Teemad</a>
     <span aria-hidden="true">/</span>
     {% if matter.display_reference %}
@@ -92,7 +98,7 @@ rather than read.
         </div>
       </details>
     {% endif %}
-  </p>
+  </div>
 
   <h1 class="matterhead__title">
     {{ matter.title }}

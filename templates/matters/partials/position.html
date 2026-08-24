@@ -97,7 +97,14 @@ Three states, deliberately different sizes:
           <a href="{% url 'documents:download' pk=latest.final_version.pk %}">
             {{ latest.final_version.original_filename }} ↗
           </a>
-          <span class="muted">arvamuse kuupäev {{ latest.sent_at|date:"j.n.Y" }}</span>
+          {% comment %}
+            A <time>, because that is the element the visual suite masks. The
+            day an opinion went out is a real fact and a moving one in the
+            seeded world.
+          {% endcomment %}
+          <span class="muted">arvamuse kuupäev
+            <time datetime="{{ latest.sent_at|date:'c' }}">{{ latest.sent_at|date:"j.n.Y" }}</time>
+          </span>
         </span>
       {% endif %}
     {% endwith %}
