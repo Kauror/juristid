@@ -1,0 +1,141 @@
+{% comment %}
+The facts rail: label, rows, one link. Looked up rather than read, which is why
+it is a quieter surface than the canvas beside it.
+
+Koormus is **inventory, never workload**. A count of open files says nothing
+about effort — one can be a two-line monitoring note and the next a year of
+consultation — and the two numbers on each line answer two different questions:
+open Matters is ownership, overdue work is responsibility. They are printed side
+by side, not summed, because summing them would produce a score
+(master specification 18.8).
+{% endcomment %}
+
+{% if page.is_department or page.is_team %}
+  <section class="railblock" aria-label="Koormus">
+    <h2 class="railblock__label">Koormus <span class="railblock__hint">avatud · üle</span></h2>
+    {% for person in page.loads %}
+      <a class="loadrow" href="{{ person.url }}">
+        <span class="avatar avatar--sm">{{ person.initials }}</span>
+        <span class="loadrow__name">{{ person.name }}</span>
+        <span class="loadrow__open">{{ person.open_count }}</span>
+        <span class="loadrow__overdue{% if person.overdue %} loadrow__overdue--bad{% endif %}">
+          {% if person.overdue %}{{ person.overdue }}{% else %}—{% endif %}
+        </span>
+      </a>
+    {% empty %}
+      <p class="railblock__empty">Kedagi ei ole kirjas.</p>
+    {% endfor %}
+    {% if page.unassigned %}
+      <a class="loadrow loadrow--unassigned" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;vastutaja=puudub">
+        <span class="loadrow__name">Vastutajata</span>
+        <span class="loadrow__open">{{ page.unassigned }}</span>
+        <span class="loadrow__overdue"></span>
+      </a>
+    {% endif %}
+  </section>
+{% endif %}
+
+{% if page.is_department %}
+  {% comment %}
+    The bar is decoration on top of a number, never the carrier of it: a
+    monochrome print of this page must still be readable.
+  {% endcomment %}
+  <section class="railblock" aria-label="Valdkonnad">
+    <h2 class="railblock__label">Valdkonnad</h2>
+    {% for row in page.area_rail %}
+      <a class="arearail" href="{{ row.url }}">
+        <span class="arearail__name">{{ row.label }}</span>
+        <span class="arearail__count">{{ row.count }}</span>
+      </a>
+    {% endfor %}
+    <a class="railblock__more" href="?vaade=valdkonniti">Kõik valdkonnad →</a>
+  </section>
+{% endif %}
+
+{% if page.is_department or page.is_team %}
+  <section class="railblock" aria-label="Uued teemad">
+    <h2 class="railblock__label">Uued teemad</h2>
+    {% for row in page.incoming %}
+      <a class="railrow" href="{{ row.url }}">
+        <span class="railrow__key">{{ row.label }}</span>
+        <span class="railrow__value{% if row.tone %} railrow__value--{{ row.tone }}{% endif %}">{{ row.count }}</span>
+      </a>
+    {% endfor %}
+    <a class="railblock__more" href="{% url 'matters:inbox' %}">Ava Saabunud →</a>
+  </section>
+{% endif %}
+
+{% if page.is_team %}
+  <section class="railblock" aria-label="Tiimi tähtajad">
+    <h2 class="railblock__label">Tiimi tähtajad</h2>
+    {% for group in page.deadlines %}
+      <span class="railrow">
+        <span class="railrow__key">{{ group.label }}</span>
+        <span class="railrow__value">{{ group.count }}</span>
+      </span>
+    {% endfor %}
+  </section>
+
+  <section class="railblock" aria-label="Tiimi tegevus">
+    <h2 class="railblock__label">Tiimi tegevus</h2>
+    {% for row in page.team_activity %}
+      <span class="railrow">
+        <span class="railrow__key">{{ row.label }}</span>
+        <span class="railrow__value">{{ row.count }}</span>
+      </span>
+    {% endfor %}
+  </section>
+{% endif %}
+
+{% if page.is_areas %}
+  <section class="railblock" aria-label="Vastutajata valdkonnad">
+    <h2 class="railblock__label railblock__label--warning">Vastutajata valdkonnad</h2>
+    {% for row in page.unowned_areas %}
+      <a class="railrow" href="{{ row.unassigned_url }}">
+        <span class="railrow__key">{{ row.name }}</span>
+        <span class="railrow__value">{{ row.open_count }}</span>
+      </a>
+    {% empty %}
+      <p class="railblock__empty">Igal avatud teemasid kandval valdkonnal on vastutaja.</p>
+    {% endfor %}
+    {% if page.unowned_areas %}
+      {% comment %}
+        There is no Valdkond-owner field in this product, so this cannot mean
+        "assign an owner to the area". It means what it can honestly mean: open
+        the Matters in these areas that have nobody's name on them (§20).
+      {% endcomment %}
+      <a class="railblock__more" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;vastutaja=puudub">Määra vastutajad →</a>
+    {% endif %}
+  </section>
+
+  <section class="railblock" aria-label="Kõige aktiivsemad asutused">
+    <h2 class="railblock__label">Kõige aktiivsemad asutused</h2>
+    {% for row in page.organisations %}
+      <a class="railrow" href="{{ row.url }}">
+        <span class="railrow__key">{{ row.label }}</span>
+        <span class="railrow__value">{{ row.count }}</span>
+      </a>
+    {% empty %}
+      <p class="railblock__empty">Ühtegi saatjat ei ole kirjas.</p>
+    {% endfor %}
+  </section>
+{% endif %}
+
+{% if page.is_department or page.is_areas %}
+  <section class="railblock" aria-label="Aruandlus">
+    <h2 class="railblock__label">Aruandlus</h2>
+    {% for row in page.reporting %}
+      {% if row.url %}
+        <a class="railrow" href="{{ row.url }}">
+          <span class="railrow__key">{{ row.label }}</span>
+          <span class="railrow__value">{{ row.count }}</span>
+        </a>
+      {% else %}
+        <span class="railrow">
+          <span class="railrow__key">{{ row.label }}</span>
+          <span class="railrow__value">{{ row.count }}</span>
+        </span>
+      {% endif %}
+    {% endfor %}
+  </section>
+{% endif %}

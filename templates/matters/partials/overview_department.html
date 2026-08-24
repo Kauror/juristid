@@ -1,0 +1,145 @@
+{% comment %}
+Kogu osakond — where the department is losing time right now.
+
+`Vajab sekkumist` is the hero list and the reason the page exists: one list
+mixing every kind of trouble, sorted by how much of it there is, each row owned
+by a name or visibly owned by nobody. Four short lists — overdue here, stalled
+there — would be four places to look for one answer.
+
+An unowned Matter is never silently omitted. It is on nobody's personal list by
+definition, which is exactly why it has to be on this one.
+{% endcomment %}
+
+<section class="ovsection" aria-label="Vajab sekkumist">
+  <div class="ovsection__head">
+    <h2 class="ovsection__title">Vajab sekkumist</h2>
+    {% if page.intervention_filter %}
+      <span class="ovsection__meta">{{ page.intervention_total }} · {{ page.intervention_label }}</span>
+      <span class="ovsection__spacer"></span>
+      <a class="ovsection__link" href="?vaade=osakond">Näita kõiki põhjuseid →</a>
+    {% else %}
+      <span class="ovsection__meta">{{ page.intervention_total }} teemat · järjestatud kiireloomulisuse järgi</span>
+      <span class="ovsection__spacer"></span>
+      <a class="ovsection__link" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL">Ava registris →</a>
+    {% endif %}
+  </div>
+
+  <div class="ovsection__rows">
+    {% for row in page.intervention_preview %}
+      <div class="interrow interrow--{{ row.tone }}">
+        <a class="interrow__link" href="{{ row.url }}">
+          <span class="interrow__reason">
+            <span class="interrow__value interrow__value--{{ row.tone }}">{{ row.value }}</span>
+            <span class="interrow__meaning">{{ row.meaning }}</span>
+          </span>
+          <span class="interrow__body">
+            <span class="interrow__title">
+              {% if row.matter.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ row.matter.title }}
+            </span>
+            <span class="interrow__detail">
+              {% if row.matter.display_reference %}<span class="reference">{{ row.matter.display_reference }}</span> · {% endif %}{{ row.detail }}
+            </span>
+          </span>
+          <span class="interrow__stage">{{ row.stage_label }}</span>
+          <span class="interrow__owner">
+            {% if row.is_ownerless %}
+              <span class="interrow__assign">Määra →</span>
+            {% else %}
+              {{ row.owner_name }}
+            {% endif %}
+          </span>
+        </a>
+        <details class="rowmenu">
+          <summary class="rowmenu__trigger" aria-label="Rea tegevused">⋯</summary>
+          <div class="rowmenu__menu">
+            <a class="rowmenu__item" href="{{ row.url }}">Ava teema</a>
+            {% if row.is_ownerless %}
+              <a class="rowmenu__item" href="{{ row.url }}#vastutaja">Määra vastutaja</a>
+            {% endif %}
+          </div>
+        </details>
+      </div>
+    {% empty %}
+      <p class="workempty">Praegu ei vaja ükski teema sekkumist.</p>
+    {% endfor %}
+  </div>
+
+  {% if page.intervention_remaining %}
+    <p class="ovsection__more">
+      <a href="?vaade=osakond&amp;sekkumine=hilinenud">Näita kõiki {{ page.intervention_total }}</a>
+    </p>
+  {% endif %}
+</section>
+
+{% comment %}
+Only what the department may honestly call a deadline: DO deadlines and
+Olulised tähtajad. A WAIT's expected date is not a commitment anybody made and
+belongs in the intervention list above, where it reads as "look at this again"
+(master specification 18.8).
+{% endcomment %}
+<section class="ovsection" aria-label="Tähtajad">
+  <div class="ovsection__head">
+    <h2 class="ovsection__title">Tähtajad</h2>
+  </div>
+  {% for group in page.deadlines %}
+    <div class="deadlinegroup">
+      <span class="deadlinegroup__label">{{ group.label|upper }} · {{ group.count }}</span>
+      <div class="deadlinegroup__rows">
+        {% for item in group.preview %}
+          <a class="deadlinerow" href="{{ item.matter_url }}">
+            <span class="deadlinerow__when">{% if item.when == today %}täna{% else %}{{ item.short_date }}{% endif %}</span>
+            <span class="deadlinerow__title">
+              {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter.title }}
+            </span>
+            <span class="deadlinerow__owner{% if not item.responsible %} deadlinerow__owner--none{% endif %}">{{ item.responsible_name }}</span>
+          </a>
+        {% empty %}
+          <p class="railblock__empty">Tähtaegu ei ole.</p>
+        {% endfor %}
+      </div>
+      {% if group.remaining %}
+        <p class="deadlinegroup__more">
+          <a href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;jarjestus=deadline">Näita ülejäänud {{ group.remaining }}</a>
+        </p>
+      {% endif %}
+    </div>
+  {% endfor %}
+</section>
+
+{% comment %}
+The department's last month as one-liners. Professional chronology, not audit
+traffic: a feed that reports a deadline corrected by a day is an audit log, and
+an audit log is not read.
+{% endcomment %}
+<section class="ovsection" aria-label="Viimane tegevus">
+  <details class="disclosure" open>
+    <summary class="disclosure__trigger">
+      <span class="disclosure__label">Viimane tegevus</span>
+      <span class="disclosure__meta">kogu osakond · viimane kuu</span>
+    </summary>
+    <div class="disclosure__body">
+      <nav class="feedfilter" aria-label="Tegevuse liik">
+        {% for key, label in feed_filters %}
+          <a class="feedfilter__item{% if key == page.feed_filter %} is-active{% endif %}"
+             href="?vaade=osakond&amp;voog={{ key }}">{{ label }}</a>
+        {% endfor %}
+      </nav>
+      {% for item in page.feed %}
+        <div class="feedrow">
+          <span class="feedrow__when">{{ item.when|date:"j.n H:i" }}</span>
+          <span class="avatar avatar--sm">{{ item.initials }}</span>
+          <span class="feedrow__text">
+            <strong>{{ item.actor_name }}</strong> {{ item.verb }}
+            {% if item.matter %}
+              · <a href="{{ item.url }}">
+                {% if item.matter.is_restricted %}<span aria-label="Piiratud teema">🔒</span>{% else %}{{ item.matter.display_reference|default:item.matter.title }}{% endif %}
+              </a>
+            {% endif %}
+          </span>
+        </div>
+      {% empty %}
+        <p class="railblock__empty">Viimase kuu jooksul ei ole tegevusi kirjas.</p>
+      {% endfor %}
+    </div>
+  </details>
+</section>

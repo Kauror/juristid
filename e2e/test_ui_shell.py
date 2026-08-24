@@ -247,12 +247,13 @@ def open_overview(page, base_url: str, query: str = "") -> None:
     page.wait_for_load_state("networkidle")
 
 
-def test_the_overview_leads_with_dates_then_arrivals_then_attention(page, base_url):
+def test_the_overview_leads_with_intervention_then_deadlines_then_activity(page, base_url):
     """Priority order, read off the rendered document rather than the template.
 
     A section can move without its source moving — a grid, an include, an
-    override — so the order is taken from where the headings actually are on
-    the page.
+    override — so the order is taken from where the sections actually are on the
+    page. *Vajab sekkumist* is first because it is the reason a department head
+    opens this page at all.
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": 1440, "height": 900})
@@ -260,67 +261,73 @@ def test_the_overview_leads_with_dates_then_arrivals_then_attention(page, base_u
 
     order = page.evaluate(
         "() => Array.from("
-        "  document.querySelectorAll('.dashgrid__main h2[id]')"
-        ").map(node => node.id)"
+        "  document.querySelectorAll('.ovbody__main section[aria-label]')"
+        ").map(node => node.getAttribute('aria-label'))"
     )
-    assert order == ["tahtajad-heading", "saabunud-heading", "tahelepanu-heading"], order
+    assert order == ["Vajab sekkumist", "Tähtajad", "Viimane tegevus"], order
 
 
-def test_the_attention_queue_says_what_it_wants(page, base_url):
+def test_the_intervention_queue_says_what_it_wants(page, base_url):
+    """ "Tähelepanu" named a topic. "Vajab sekkumist" names something to do."""
     sign_in(page, base_url, SANDRA)
     open_overview(page, base_url)
 
-    expect(page.get_by_role("heading", name="Vajab tähelepanu")).to_be_visible()
+    expect(page.get_by_role("heading", name="Vajab sekkumist")).to_be_visible()
 
 
-def test_the_deadline_period_is_a_keyboard_reachable_set_of_links(page, base_url):
+def test_the_scope_is_a_keyboard_reachable_set_of_links(page, base_url):
     """Links and a GET, not a script.
 
-    A custom dropdown would take the period away from the keyboard, from the
-    back button and from anybody who pastes the URL into a chat.
+    A client-side tab strip would take the scope away from the keyboard, from
+    the back button and from anybody who pastes the URL into a chat.
     """
     sign_in(page, base_url, SANDRA)
     open_overview(page, base_url)
 
-    control = page.get_by_role("navigation", name="Tähtaegade periood")
+    control = page.get_by_role("navigation", name="Ülevaate ulatus")
     expect(control).to_be_visible()
-    expect(control.get_by_role("link")).to_have_count(5)
-    expect(control.locator("[aria-current='true']")).to_have_text("14 päeva")
+    expect(control.get_by_role("link")).to_have_count(3)
+    expect(control.locator("[aria-current='page']")).to_have_text("Kogu osakond")
 
-    control.get_by_role("link", name="30 päeva").click()
+    control.get_by_role("link", name="Valdkonniti").click()
     page.wait_for_load_state("networkidle")
 
-    assert "tahtajad=30" in page.url
+    assert "vaade=valdkonniti" in page.url
     expect(
-        page.get_by_role("navigation", name="Tähtaegade periood").locator("[aria-current='true']")
-    ).to_have_text("30 päeva")
+        page.get_by_role("navigation", name="Ülevaate ulatus").locator("[aria-current='page']")
+    ).to_have_text("Valdkonniti")
 
 
-def test_the_selected_period_survives_the_back_button(page, base_url):
+def test_the_selected_scope_survives_the_back_button(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_overview(page, base_url, "?tahtajad=koik")
-    open_overview(page, base_url, "?tahtajad=7")
+    open_overview(page, base_url, "?vaade=tiim")
+    open_overview(page, base_url, "?vaade=valdkonniti")
 
     page.go_back()
     page.wait_for_load_state("networkidle")
 
     expect(
-        page.get_by_role("navigation", name="Tähtaegade periood").locator("[aria-current='true']")
-    ).to_have_text("Kõik")
+        page.get_by_role("navigation", name="Ülevaate ulatus").locator("[aria-current='page']")
+    ).to_have_text("Minu tiim")
 
 
-def test_a_nonsense_period_shows_the_default_rather_than_an_error(page, base_url):
+def test_a_nonsense_scope_shows_the_default_rather_than_an_error(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_overview(page, base_url, "?tahtajad=jama")
+    open_overview(page, base_url, "?vaade=jama")
 
     expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
     expect(
-        page.get_by_role("navigation", name="Tähtaegade periood").locator("[aria-current='true']")
-    ).to_have_text("14 päeva")
+        page.get_by_role("navigation", name="Ülevaate ulatus").locator("[aria-current='page']")
+    ).to_have_text("Kogu osakond")
 
 
 def test_no_work_surface_still_spends_a_column_on_the_reference(page, base_url):
-    """Teemad, Minu töö, Saabunud and Ülevaade, in a real browser."""
+    """Teemad, Minu töö, Saabunud and Ülevaade, in a real browser.
+
+    Two of the four render no table at all since the work-surface rebuild, which
+    is the strongest possible form of "no reference column"; the assertion holds
+    either way and is kept on all four so a table coming back is noticed.
+    """
     sign_in(page, base_url, SANDRA)
     for path in ("/teemad/", "/minu-too/", "/saabunud/", "/ulevaade/"):
         page.goto(f"{base_url}{path}")
@@ -438,8 +445,8 @@ def test_an_overdue_deadline_is_coloured_and_a_passed_review_is_not(page, base_u
               return el ? getComputedStyle(el).color : null;
             };
             return {
-              overdue: pick('.workrow__date--overdue'),
-              review: pick('.flag--review'),
+              overdue: pick('.workrow2__date--overdue'),
+              review: pick('.workrow2__date--review'),
               neutral: getComputedStyle(document.body).color,
             };
         }"""

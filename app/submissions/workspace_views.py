@@ -77,6 +77,7 @@ def sent(request: HttpRequest) -> HttpResponse:
     filters = SentFilters(
         query=request.GET.get("q", "").strip(),
         year=request.GET.get("aasta", "").strip(),
+        month=request.GET.get("kuu", "").strip(),
         status=request.GET.get("olek", SubmissionStatus.SENT).strip(),
         kind=request.GET.get("liik", "").strip(),
         recipient_id=request.GET.get("saaja", "").strip(),

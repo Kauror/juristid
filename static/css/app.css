@@ -6154,3 +6154,1258 @@ p.factsection__none {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ====================================================================
+ * Minu töö and Ülevaade — the banded work surfaces
+ *
+ * Both pages are full-bleed bands rather than a column of cards: a header
+ * band, a rule, sections separated by rules, and a quieter rail down the
+ * right. The negative margin is what lets a section rule reach the edge of
+ * the viewport while `.app__main` keeps its padding for every other page —
+ * the same idiom `.matterhead` already uses.
+ *
+ * No cards inside cards. A card is a boundary, and a page made of boundaries
+ * reads as a wall of tiles rather than as one list somebody can scan.
+ * ==================================================================== */
+
+.page--work,
+.page--overview {
+  max-width: none;
+  gap: 0;
+  margin: calc(var(--spacing-6) * -1) calc(var(--spacing-8) * -1)
+    calc(var(--spacing-10) * -1);
+}
+
+/* ---- headers ------------------------------------------------------- */
+
+.workhead,
+.ovhead {
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border-default);
+  padding: var(--spacing-4) var(--spacing-8) var(--spacing-35);
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-35);
+  flex-wrap: wrap;
+}
+
+.workhead__title,
+.ovhead__title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-title);
+}
+
+.workhead__date,
+.ovhead__date {
+  font-size: var(--typography-size-base);
+  color: var(--text-muted);
+}
+
+.workhead__spacer,
+.ovhead__spacer {
+  flex: 1;
+}
+
+.workhead__summary {
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+}
+
+.workhead__figure {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.workhead__figure--danger {
+  color: var(--status-danger);
+}
+
+.workhead__figure--warning {
+  color: var(--status-warning);
+}
+
+/* ---- Ülevaade scope tabs: links, never a client-side tab strip ------ */
+
+.ovtabs {
+  display: flex;
+  gap: var(--spacing-1);
+}
+
+.ovtabs__tab {
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-medium);
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 5px var(--spacing-3);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+}
+
+.ovtabs__tab:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.ovtabs__tab.is-active {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* ---- the Seis strip: numbers on one line, not tiles ---------------- */
+
+.seis {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-6);
+  padding: var(--spacing-35) var(--spacing-8);
+  border-bottom: 1px solid var(--border-default);
+  flex-wrap: wrap;
+}
+
+.seis__label {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+}
+
+.seis__spacer {
+  flex: 1;
+}
+
+.seis__figure {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius-sm);
+}
+
+.seis__figure:hover .seis__caption {
+  color: var(--text-primary);
+}
+
+.seis__number {
+  font-size: 19px;
+  font-weight: var(--typography-weight-bold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.seis__number--danger {
+  color: var(--status-danger);
+}
+
+.seis__number--warning {
+  color: var(--status-warning);
+}
+
+.seis__caption {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+/* ---- body grids ---------------------------------------------------- */
+
+.worklayout2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 372px;
+  align-items: start;
+}
+
+.ovbody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  align-items: start;
+}
+
+.worklayout2__main,
+.ovbody__main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.worklayout2__rail,
+.ovbody__rail {
+  background: var(--surface-rail);
+  border-left: 1px solid var(--border-default);
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---- bands and sections: rules, not cards -------------------------- */
+
+.workband,
+.ovsection {
+  padding: 15px var(--spacing-8) 17px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.workband__head,
+.ovsection__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-25);
+}
+
+.workband__spacer,
+.ovsection__spacer {
+  flex: 1;
+}
+
+.workband__title,
+.ovsection__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.workband__title--ule_tahtaja {
+  color: var(--status-danger);
+}
+
+.workband__title--ulevaatamiseks_kups,
+.workband__title--tana {
+  color: var(--status-warning);
+}
+
+.workband__title--hiljem {
+  color: var(--text-body);
+}
+
+.workband__count,
+.ovsection__meta {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.workband--hiljem {
+  background: var(--surface-panel);
+}
+
+.workband__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.workband__note,
+.ovnote {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.workband__more a,
+.ovsection__more a,
+.ovsection__link,
+.deadlinegroup__more a {
+  font-size: var(--typography-size-meta);
+  color: var(--accent-link);
+  text-decoration: none;
+}
+
+.workband__more,
+.ovsection__more {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-3);
+}
+
+.workempty {
+  margin: 0;
+  font-size: var(--typography-size-base);
+  color: var(--text-secondary);
+}
+
+/* ---- the work row -------------------------------------------------- */
+
+.workrow2 {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+}
+
+.workrow2:hover {
+  background: var(--surface-hover);
+}
+
+/* Overdue carries a danger left edge as well as a danger date and the word.
+   A passed review date is warning, never danger: the list is one list, so this
+   distinction is the whole guard against a ministry that has not replied
+   reading as something somebody is late with. */
+.workrow2--overdue {
+  border-left: 2px solid var(--status-danger);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.workrow2--review {
+  border-left: 2px solid var(--status-warning);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.workrow2__link {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr) 150px;
+  gap: var(--spacing-35);
+  align-items: center;
+  padding: 9px var(--spacing-3);
+  text-decoration: none;
+  color: inherit;
+}
+
+.workrow2__link:focus-visible,
+.teamrow__link:focus-visible,
+.interrow__link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset-width) * -1);
+}
+
+.workrow2__datecell,
+.teamrow__datecell,
+.interrow__reason {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.workrow2__date,
+.teamrow__date,
+.interrow__value {
+  font-size: var(--typography-size-sm);
+  font-weight: var(--typography-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-body);
+}
+
+.workrow2__date--today,
+.teamrow__date--today {
+  color: var(--status-warning);
+  font-weight: var(--typography-weight-bold);
+}
+
+.workrow2__date--overdue,
+.teamrow__date--overdue,
+.interrow__value--danger {
+  color: var(--status-danger);
+  font-weight: var(--typography-weight-bold);
+}
+
+.workrow2__date--review,
+.teamrow__date--review,
+.interrow__value--warning {
+  color: var(--status-warning);
+  font-weight: var(--typography-weight-bold);
+}
+
+/* Status is never colour alone: every coloured row also states its meaning
+   and its lateness in words. */
+.workrow2__meaning,
+.teamrow__meaning,
+.interrow__meaning {
+  font-size: 10.5px;
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workrow2__body,
+.teamrow__body,
+.interrow__body {
+  min-width: 0;
+}
+
+.workrow2__action,
+.teamrow__title,
+.interrow__title {
+  display: block;
+  font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workrow2__matter,
+.teamrow__detail,
+.interrow__detail {
+  display: block;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.workrow2__stage,
+.teamrow__stage,
+.interrow__stage {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- the row overflow menu: a real disclosure, not a decorative glyph */
+
+.rowmenu {
+  position: relative;
+  flex: none;
+  width: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rowmenu__trigger {
+  list-style: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: var(--typography-size-base);
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.rowmenu__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.rowmenu__trigger:hover {
+  color: var(--text-primary);
+  background: var(--surface-elevated);
+}
+
+.rowmenu__trigger:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+.rowmenu__menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 20;
+  min-width: 168px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+  padding: var(--spacing-1);
+  display: flex;
+  flex-direction: column;
+}
+
+.rowmenu__item {
+  padding: 6px var(--spacing-25);
+  font-size: var(--typography-size-meta);
+  color: var(--text-body);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.rowmenu__item:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+/* ---- the range and sort pickers ------------------------------------ */
+
+.rangepicker {
+  position: relative;
+}
+
+.rangepicker__trigger {
+  list-style: none;
+  cursor: pointer;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  padding: 3px var(--spacing-2);
+}
+
+.rangepicker__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.rangepicker__trigger:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+.rangepicker__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 180px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+  padding: var(--spacing-1);
+  display: flex;
+  flex-direction: column;
+}
+
+.rangepicker__item {
+  padding: 6px var(--spacing-25);
+  font-size: var(--typography-size-meta);
+  color: var(--text-body);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+
+.rangepicker__item:hover {
+  background: var(--surface-hover);
+}
+
+.rangepicker__item.is-active {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+/* ---- disclosures --------------------------------------------------- */
+
+.disclosure__trigger {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-25);
+}
+
+.disclosure__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.disclosure__trigger::before {
+  content: "\25B8";
+  color: var(--text-muted);
+  font-size: var(--typography-size-label);
+}
+
+.disclosure[open] > .disclosure__trigger::before {
+  content: "\25BE";
+}
+
+.disclosure__trigger:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+.disclosure__label {
+  font-size: 14px;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.disclosure__meta {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.disclosure__body {
+  padding-top: var(--spacing-25);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.entryline {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: var(--spacing-25);
+  padding: 5px var(--spacing-2);
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius-sm);
+  font-size: var(--typography-size-meta);
+}
+
+.entryline:hover {
+  background: var(--surface-hover);
+}
+
+.entryline__when {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.entryline__matter {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- the rail ------------------------------------------------------ */
+
+.railblock {
+  padding: 15px var(--spacing-5) 17px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.railblock__label {
+  margin: 0;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+}
+
+.railblock__label--warning {
+  color: var(--status-warning);
+}
+
+.railblock__count,
+.railblock__hint {
+  font-weight: var(--typography-weight-regular);
+  letter-spacing: normal;
+  color: var(--text-muted);
+  text-transform: none;
+  margin-left: auto;
+}
+
+.railblock__empty {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.railblock__more {
+  font-size: var(--typography-size-meta);
+  color: var(--accent-link);
+  text-decoration: none;
+}
+
+.quietrow {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.quietrow:last-of-type {
+  border-bottom: none;
+}
+
+.quietrow__title {
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-medium);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.quietrow__title:hover {
+  color: var(--accent-link);
+}
+
+.quietrow__meta,
+.quietrow__source {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+.quietrow__sourcetext {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quietrow__cta {
+  color: var(--accent-link);
+  text-decoration: none;
+  margin-left: auto;
+}
+
+.undatedrow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  text-decoration: none;
+  color: inherit;
+}
+
+.undatedrow:last-of-type {
+  border-bottom: none;
+}
+
+.undatedrow__action {
+  font-size: var(--typography-size-base);
+  color: var(--text-body);
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+}
+
+.undatedrow__matter {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.loadrow,
+.railrow,
+.arearail {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--text-body);
+  text-decoration: none;
+  padding: 3px 0;
+}
+
+.loadrow:hover,
+.railrow:hover,
+.arearail:hover {
+  color: var(--text-primary);
+}
+
+.loadrow__name,
+.railrow__key,
+.arearail__name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.loadrow__open,
+.loadrow__overdue,
+.railrow__value,
+.arearail__count {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--typography-weight-semibold);
+  min-width: 26px;
+  text-align: right;
+}
+
+.loadrow__overdue {
+  color: var(--text-muted);
+}
+
+.loadrow__overdue--bad {
+  color: var(--status-danger);
+}
+
+.loadrow--unassigned .loadrow__name,
+.loadrow--unassigned .loadrow__open {
+  color: var(--status-warning);
+}
+
+.railrow__value--warning {
+  color: var(--status-warning);
+}
+
+/* ---- Vajab sekkumist ----------------------------------------------- */
+
+.ovsection__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.interrow {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface-raised);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.interrow:hover {
+  background: var(--surface-hover);
+}
+
+.interrow--danger {
+  border-left: 2px solid var(--status-danger);
+}
+
+.interrow--warning {
+  border-left: 2px solid var(--status-warning);
+}
+
+.interrow__link {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 132px 116px;
+  gap: var(--spacing-35);
+  align-items: center;
+  padding: 9px var(--spacing-3);
+  text-decoration: none;
+  color: inherit;
+}
+
+.interrow__owner {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.interrow__assign {
+  color: var(--accent-link);
+}
+
+/* ---- Tähtajad ------------------------------------------------------ */
+
+.deadlinegroup {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: var(--spacing-35);
+  align-items: start;
+  padding: var(--spacing-2) 0;
+}
+
+.deadlinegroup__label {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+}
+
+.deadlinegroup__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.deadlinegroup__more {
+  grid-column: 2;
+  margin: var(--spacing-1) 0 0;
+}
+
+.deadlinerow {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) 132px;
+  gap: var(--spacing-25);
+  padding: 4px var(--spacing-2);
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius-sm);
+  font-size: var(--typography-size-meta);
+}
+
+.deadlinerow:hover {
+  background: var(--surface-hover);
+}
+
+.deadlinerow__when {
+  color: var(--text-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.deadlinerow__title,
+.deadlinerow__owner {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deadlinerow__owner {
+  color: var(--text-muted);
+}
+
+.deadlinerow__owner--none {
+  color: var(--status-warning);
+}
+
+/* ---- the activity feed --------------------------------------------- */
+
+.feedfilter {
+  display: flex;
+  gap: var(--spacing-1);
+  padding-bottom: var(--spacing-2);
+}
+
+.feedfilter__item {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 2px var(--spacing-2);
+  border-radius: var(--radius-sm);
+}
+
+.feedfilter__item.is-active {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.feedrow {
+  display: grid;
+  grid-template-columns: 74px 20px minmax(0, 1fr);
+  gap: var(--spacing-2);
+  align-items: center;
+  padding: 4px 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-body);
+}
+
+.feedrow__when {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.feedrow__text {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- Minu tiim ----------------------------------------------------- */
+
+.personblock {
+  padding: 15px var(--spacing-8) 17px;
+  border-bottom: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.personblock__head {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-25);
+  flex-wrap: wrap;
+}
+
+.personblock__name {
+  margin: 0;
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.personblock__counts {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.personblock__counts a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.personblock__bad {
+  color: var(--status-danger);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.personblock__warn {
+  color: var(--status-warning);
+}
+
+.personblock__good {
+  color: var(--status-success);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.personblock__spacer {
+  flex: 1;
+}
+
+.personblock__link {
+  font-size: var(--typography-size-meta);
+  color: var(--accent-link);
+  text-decoration: none;
+}
+
+.personblock__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.personblock__footer {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.teamrow {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface-raised);
+  border-left: 2px solid var(--border-control);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.teamrow:hover {
+  background: var(--surface-hover);
+}
+
+.teamrow--overdue {
+  border-left-color: var(--status-danger);
+}
+
+.teamrow--review {
+  border-left-color: var(--status-warning);
+}
+
+.teamrow__link {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) 150px;
+  gap: var(--spacing-35);
+  align-items: center;
+  padding: 9px var(--spacing-3);
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ---- Valdkonniti --------------------------------------------------- */
+
+.areatable {
+  display: flex;
+  flex-direction: column;
+}
+
+.areatable__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px 84px 108px 128px;
+  gap: var(--spacing-25);
+  padding: 6px var(--spacing-3);
+  border-bottom: 1px solid var(--border-default);
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.areatable__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.areatable__num a {
+  color: var(--text-body);
+  text-decoration: none;
+  font-weight: var(--typography-weight-semibold);
+}
+
+.areatable__danger {
+  color: var(--status-danger);
+}
+
+.areatable__warning {
+  color: var(--status-warning);
+}
+
+/* Never a red zero. A zero is the absence of a problem, and painting it in the
+   colour reserved for problems is a false alarm the reader learns to ignore. */
+.areatable__zero {
+  color: var(--text-muted);
+}
+
+.arearow {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.arearow__summary {
+  list-style: none;
+  cursor: pointer;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px 84px 108px 128px;
+  gap: var(--spacing-25);
+  align-items: center;
+  padding: 8px var(--spacing-3);
+  font-size: var(--typography-size-base);
+}
+
+.arearow__summary::-webkit-details-marker {
+  display: none;
+}
+
+.arearow__summary:hover {
+  background: var(--surface-hover);
+}
+
+.arearow__summary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: calc(var(--focus-ring-offset-width) * -1);
+}
+
+.arearow__name {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+.arearow__caret::before {
+  content: "\25B8";
+  color: var(--text-muted);
+  font-size: var(--typography-size-label);
+}
+
+.arearow[open] .arearow__caret::before {
+  content: "\25BE";
+}
+
+.arearow__owners {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.arearow__unowned {
+  font-size: var(--typography-size-meta);
+  color: var(--status-warning);
+  text-decoration: none;
+}
+
+.arearow__body {
+  padding: var(--spacing-2) var(--spacing-3) var(--spacing-35) var(--spacing-6);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--surface-panel);
+}
+
+.arearow__more {
+  font-size: var(--typography-size-meta);
+  color: var(--accent-link);
+  text-decoration: none;
+  padding-top: var(--spacing-1);
+}
+
+.arealine {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) 150px 52px;
+  gap: var(--spacing-25);
+  padding: 4px var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  text-decoration: none;
+  color: inherit;
+  border-radius: var(--radius-sm);
+}
+
+.arealine:hover {
+  background: var(--surface-hover);
+}
+
+.arealine__title,
+.arealine__stage {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arealine__stage {
+  color: var(--text-muted);
+}
+
+.arealine__date {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.arealine__date--overdue {
+  color: var(--status-danger);
+}
+
+.badge--quiet {
+  color: var(--text-muted);
+  border-color: var(--border-control);
+}
+
+/* ---- 1280: the rail narrows, nothing is dropped -------------------- */
+
+@media (max-width: 1400px) {
+  .page--work,
+  .page--overview {
+    margin-left: calc(var(--spacing-6) * -1);
+    margin-right: calc(var(--spacing-6) * -1);
+  }
+
+  .workhead,
+  .ovhead,
+  .seis,
+  .workband,
+  .ovsection,
+  .personblock {
+    padding-left: var(--spacing-6);
+    padding-right: var(--spacing-6);
+  }
+
+  .worklayout2,
+  .ovbody {
+    grid-template-columns: minmax(0, 1fr) 300px;
+  }
+
+  .seis {
+    gap: var(--spacing-5);
+  }
+
+  /* The date meaning never goes; the stage column does. Solving width by
+     dropping what a date means would remove the one thing that makes the row
+     safe to read. */
+  .interrow__link {
+    grid-template-columns: 96px minmax(0, 1fr) 116px;
+  }
+
+  .interrow__stage {
+    display: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .worklayout2,
+  .ovbody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .worklayout2__rail,
+  .ovbody__rail {
+    border-left: none;
+    border-top: 1px solid var(--border-default);
+  }
+}

@@ -1,171 +1,191 @@
 {% extends "base.html" %}
-{% load register_source matter_activity %}
+{% load register_source %}
 {% block title %}Minu töö · {{ application_name }}{% endblock %}
 
 {% comment %}
-Minu töö answers one question: **when do I need to care about this again?**
+Minu töö answers one question: **what do I have to do or check now?**
 
-That has one answer per action and it is a date, whatever the mode. So there is
-one chronological list of everything assigned to this person — TEEN, OOTAN and
-JÄLGIN together — banded by when it comes up. The chip on each row says what the
-date means; only a DO with a deadline is ever described as late.
+The unit is a work item, not a Matter: a file with a deadline this week and a
+milestone next month appears twice, in the two places it needs attention. The
+date decides where a row sits in time; the mode chip beside it says what the
+date means. Only a DO with a deadline — and an Oluline tähtaeg, which is a real
+commitment — is ever red.
 
-The split columns this replaces made a lawyer read two lists and merge them in
-their head, which is the merge the page should be doing for them.
+No dated work is exiled to the rail. An earlier design put future OOTAN and
+JÄLGIN in blocks on the right, which made a lawyer read two lists and merge them
+in their head; that merge is the whole job of this page. The rail holds only
+what has no honest place on a timeline: a Matter nobody has given a next step,
+and an action nobody has dated.
 
-Beside it, and deliberately not in it: the Matters with no next step at all.
-That is a different condition — an absence rather than a date — and folding it
-into a dated list would give it a position in time it does not have.
+Nothing on this page is anybody else's work.
 {% endcomment %}
 
 {% block content %}
-<div class="page">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Minu töö</h1>
-    <span class="pagehead__context"><time datetime="{{ today|date:'Y-m-d' }}">{{ today|date:"l, j. F Y" }}</time></span>
-    <span class="pagehead__summary">
-      {{ work_total }} ajastatud sammu{% if work_overdue %} · {{ work_overdue }} üle tähtaja{% endif %} ·
-      {{ active_count }} avatud teemat
+<div class="page page--work">
+  <div class="workhead">
+    <h1 class="workhead__title">Minu töö</h1>
+    <span class="workhead__date">
+      <time datetime="{{ today|date:'Y-m-d' }}">{{ today|date:"l, j. F Y" }}</time>
+    </span>
+    <span class="workhead__spacer"></span>
+    {% comment %}
+      Never a zero. "0 üle tähtaja" is a warning about nothing, and a page that
+      cries wolf every morning is a page people stop reading.
+    {% endcomment %}
+    <span class="workhead__summary">
+      {{ work.open_matters }} avatud teemat
+      {% if work.overdue %} · <span class="workhead__figure workhead__figure--danger">{{ work.overdue }} üle tähtaja</span>{% endif %}
+      {% if work.week %} · <span class="workhead__figure workhead__figure--warning">{{ work.week }} tähtaega sel nädalal</span>{% endif %}
+      {% if work.quiet_total %} · <span class="workhead__figure">{{ work.quiet_total }} järgmise tegevuseta</span>{% endif %}
     </span>
   </div>
 
-  <div class="worklayout">
-    <div class="workcolumn">
-      {% for group in work_groups %}
-        {% if group.actions %}
-          <section class="workgroup workgroup--{{ group.key }}"
-                   aria-label="{{ group.label }}">
-            <h2 class="sectionlabel sectionlabel--{{ group.key }}">
-              {{ group.label }}
-              <span class="sectionlabel__count">{{ group.count }}</span>
-            </h2>
-            <div class="card {% if group.key == 'later' or group.key == 'undated' %}card--quiet{% endif %}">
-              {% for action in group.actions %}
-                {% include "matters/partials/work_row.html" with action=action today=today %}
-              {% endfor %}
-            </div>
-            {% if group.key == 'passed' %}
-              <p class="cardnote">
-                Ootamine ei ole hilinemine: OOTAN-i ja JÄLGIN-i kuupäev tähendab
-                «vaatan üle», mitte tähtaega.
-              </p>
+  <div class="worklayout2">
+    <div class="worklayout2__main">
+      {% for band in work.bands %}
+        <section class="workband workband--{{ band.key }}" aria-label="{{ band.label }}">
+          <div class="workband__head">
+            <h2 class="workband__title workband__title--{{ band.key }}">{{ band.label }}</h2>
+            <span class="workband__count">{{ band.count }} tegevust</span>
+            {% if band.key == 'hiljem' %}
+              <span class="workband__spacer"></span>
+              {% comment %}
+                The range control. In the URL, so the window a lawyer chose
+                survives a refresh and can be pasted to a colleague.
+              {% endcomment %}
+              <details class="rangepicker">
+                <summary class="rangepicker__trigger">{{ work.horizon.label }} ▾</summary>
+                <div class="rangepicker__menu">
+                  {% for option in work.horizons %}
+                    <a class="rangepicker__item{% if option.active %} is-active{% endif %}"
+                       href="?{{ option.query }}">{{ option.label }}</a>
+                  {% endfor %}
+                </div>
+              </details>
             {% endif %}
-          </section>
-        {% endif %}
-      {% endfor %}
-
-      {% if not work_total %}
-        <section class="workgroup" aria-label="Ajastatud sammud">
-          <h2 class="sectionlabel">Ajastatud sammud</h2>
-          <p class="empty">Ühtegi järgmist sammu ei ole sulle määratud.</p>
-        </section>
-      {% endif %}
-    </div>
-
-    <div class="workcolumn">
-      <section class="workgroup" aria-label="Järgmine samm puudub">
-        <h2 class="sectionlabel">
-          Järgmine samm puudub
-          <span class="sectionlabel__count">{{ without_next_action|length }}</span>
-        </h2>
-        {% if without_next_action %}
-          <div class="card">
-            {% for matter in without_next_action %}
-              <div class="attentionrow">
-                <a class="attentionrow__title"
-                   href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
-                {% comment %}
-                  Where the register's own sentence exists, it is the context a
-                  lawyer needs in order to set the step — shown quietly and
-                  labelled as Excel's, never restyled as a structured action:
-                  these Matters are in this section precisely because no
-                  structured NextAction exists (ADR 0021).
-                {% endcomment %}
-                {% with instruction=source_instructions|get_item:matter.pk %}
-                  {% if instruction %}
-                    <span class="attentionrow__source">
-                      <span class="table__sourcelabel">Excelist{% if source_snapshot %} · {{ source_snapshot }}{% endif %}</span>
-                      <span class="attentionrow__sourcetext" title="{{ instruction }}">{{ instruction }}</span>
-                    </span>
-                  {% endif %}
-                {% endwith %}
-                <span class="attentionrow__meta">
-                  {% if matter.display_reference %}
-                    <span class="reference">{{ matter.display_reference }}</span> ·
-                  {% endif %}
-                  {% with activity=matter|last_activity %}
-                    {% if activity %}
-                      viimane tegevus
-                      <time datetime="{{ activity.occurred_on|date:'c' }}"
-                            title="{{ activity.label }}">{{ activity.occurred_on|date:"j.n.Y" }}</time>
-                    {% else %}
-                      viimane tegevus <span class="muted">—</span>
-                    {% endif %}
-                  {% endwith %}
-                  <a class="attentionrow__cta"
-                     href="{% url 'matters:matter_detail' pk=matter.pk %}">Määra järgmine samm →</a>
-                </span>
-              </div>
+          </div>
+          <div class="workband__rows">
+            {% for item in band.items %}
+              {% include "matters/partials/work_item_row.html" with item=item today=today %}
             {% endfor %}
           </div>
-        {% else %}
-          <p class="empty">Kõigil avatud teemadel on järgmine samm määratud.</p>
+          {% if band.key == 'hiljem' and work.beyond_horizon %}
+            <p class="workband__more">
+              <a href="?kuni=koik">Näita kaugemaid tähtaegu ({{ work.beyond_horizon }})</a>
+            </p>
+          {% endif %}
+          {% if band.key == 'ulevaatamiseks_kups' %}
+            <p class="workband__note">
+              Ootamine ei ole hilinemine: OOTAN-i ja JÄLGIN-i kuupäev tähendab
+              «vaatan üle», mitte tähtaega.
+            </p>
+          {% endif %}
+        </section>
+      {% endfor %}
+
+      {% if not work.has_work %}
+        {% comment %}
+          One calm line, not five empty groups. A quiet morning should look like
+          a quiet morning rather than a data-quality problem.
+        {% endcomment %}
+        <section class="workband" aria-label="Tähtajaline töö">
+          <p class="workempty">
+            Täna ei ole ühtegi tähtajalist tegevust.
+            <a href="{% url 'matters:matter_list' %}?ulatus=minu&amp;olek=avatud">Vaata oma teemasid</a>.
+          </p>
+        </section>
+      {% endif %}
+
+      <section class="workband workband--entries" aria-label="Minu viimased sissekanded">
+        <details class="disclosure">
+          <summary class="disclosure__trigger">
+            <span class="disclosure__label">Minu viimased sissekanded</span>
+            {% if work.last_entry %}
+              <span class="disclosure__meta">viimane {{ work.last_entry.occurred_at|date:"j.n" }} kell {{ work.last_entry.occurred_at|date:"H:i" }}</span>
+            {% else %}
+              <span class="disclosure__meta">sissekandeid ei ole</span>
+            {% endif %}
+          </summary>
+          <div class="disclosure__body">
+            {% for entry in work.entries %}
+              <a class="entryline" href="{% url 'matters:matter_detail' pk=entry.matter.pk %}">
+                <span class="entryline__when">{{ entry.occurred_at|date:"j.n" }}</span>
+                <span class="entryline__matter">
+                  {% if entry.matter.display_reference %}<span class="reference">{{ entry.matter.display_reference }}</span> · {% endif %}{{ entry.matter.title }}
+                </span>
+              </a>
+            {% empty %}
+              <p class="workempty">Sa ei ole veel sissekandeid teinud.</p>
+            {% endfor %}
+          </div>
+        </details>
+      </section>
+    </div>
+
+    <aside class="worklayout2__rail" aria-label="Kuupäevata töö">
+      {% comment %}
+        A stalled Matter must not disappear merely because it carries no date.
+        This is the one attention state that cannot be derived from a timeline,
+        and it is first in the rail for that reason.
+      {% endcomment %}
+      <section class="railblock" aria-label="Järgmise tegevuseta">
+        <h2 class="railblock__label railblock__label--warning">
+          Järgmise tegevuseta <span class="railblock__count">{{ work.quiet_total }}</span>
+        </h2>
+        {% for row in work.quiet %}
+          <div class="quietrow">
+            <a class="quietrow__title" href="{% url 'matters:matter_detail' pk=row.matter.pk %}">{{ row.matter.title }}</a>
+            {% with instruction=source_instructions|get_item:row.matter.pk %}
+              {% if instruction %}
+                <span class="quietrow__source">
+                  <span class="table__sourcelabel">Excelist{% if source_snapshot %} · {{ source_snapshot }}{% endif %}</span>
+                  <span class="quietrow__sourcetext" title="{{ instruction }}">{{ instruction }}</span>
+                </span>
+              {% endif %}
+            {% endwith %}
+            <span class="quietrow__meta">
+              {% if row.matter.display_reference %}<span class="reference">{{ row.matter.display_reference }}</span> · {% endif %}
+              {{ row.silence }}
+              <a class="quietrow__cta" href="{% url 'matters:matter_detail' pk=row.matter.pk %}#jargmiseks">Määra</a>
+            </span>
+          </div>
+        {% empty %}
+          <p class="railblock__empty">Kõigil avatud teemadel on järgmine tegevus määratud.</p>
+        {% endfor %}
+        {% if work.quiet_total > work.quiet|length %}
+          <a class="railblock__more"
+             href="{% url 'matters:matter_list' %}?ulatus=minu&amp;olek=avatud&amp;tegevus=puudub">Näita kõiki {{ work.quiet_total }} →</a>
         {% endif %}
       </section>
 
-      {% if attention %}
-        <section class="workgroup" aria-label="Tähelepanu">
-          <h2 class="sectionlabel sectionlabel--overdue">
-            Tähelepanu
-            <span class="sectionlabel__count">{{ attention|length }}</span>
-          </h2>
-          {% comment %}
-            One row per Matter, every reason inside it.
-
-            The panel detects several kinds of problem now — no next step and no
-            register instruction, no HETKESEIS on live work, a response deadline
-            gone by with nothing sent — and one file can carry more than one.
-            Rendering the flat list would show the same title three times and
-            make the panel look three times as alarming as the day actually is.
-
-            Each reason keeps its own explanation. A warning a lawyer cannot act
-            on, or cannot tell apart from the one above it, teaches them to
-            ignore the panel.
-          {% endcomment %}
-          <div class="card">
-            {% for group in attention_groups %}
-              <div class="attentionrow">
-                <a class="attentionrow__title"
-                   href="{% url 'matters:matter_detail' pk=group.matter.pk %}">{{ group.matter.title }}</a>
-                {% for item in group.items %}
-                  <span class="attentionrow__meta">{{ item.label }} · {{ item.detail }}</span>
-                {% endfor %}
-              </div>
-            {% endfor %}
-          </div>
-        </section>
-      {% endif %}
-    </div>
-  </div>
-
-  <section aria-label="Minu aktiivsed teemad">
-    <h2 class="sectionlabel">
-      Minu aktiivsed teemad
       {% comment %}
-        Inventory, never "workload": a count of open files says nothing about
-        effort (master specification 7.2, 18.8).
+        TEEN, OOTAN and JÄLGIN together. "No idea when" is one condition
+        whatever the mode, and three two-row lists would be three headings for
+        six facts.
       {% endcomment %}
-      <a class="sectionlabel__count"
-         href="{% url 'matters:matter_list' %}?ulatus=minu&amp;olek=avatud">{{ active_count }}</a>
-    </h2>
-    {% if active_matters %}
-      {% include "matters/partials/matter_table.html" with matters=active_matters %}
-    {% else %}
-      <p class="empty">
-        Sul ei ole avatud teemasid.
-        <a href="{% url 'matters:matter_create' %}">Loo esimene teema</a>.
-      </p>
-    {% endif %}
-  </section>
+      <section class="railblock" aria-label="Kuupäevata">
+        <h2 class="railblock__label">
+          Kuupäevata <span class="railblock__count">{{ work.undated_total }}</span>
+        </h2>
+        {% for item in work.undated %}
+          <a class="undatedrow" href="{{ item.matter_url }}">
+            <span class="undatedrow__action">
+              <span class="mode mode--{{ item.action_kind|lower }}">{{ item.action_kind_label }}</span>
+              {{ item.text }}
+            </span>
+            <span class="undatedrow__matter">
+              {% if item.reference %}<span class="reference">{{ item.reference }}</span> · {% endif %}{{ item.matter.title }}
+            </span>
+          </a>
+        {% empty %}
+          <p class="railblock__empty">Igal sinu tegevusel on kuupäev.</p>
+        {% endfor %}
+        {% if work.undated_total > work.undated|length %}
+          <a class="railblock__more"
+             href="{% url 'matters:matter_list' %}?ulatus=minu&amp;olek=avatud">Näita kõiki {{ work.undated_total }} →</a>
+        {% endif %}
+      </section>
+    </aside>
+  </div>
 </div>
 {% endblock %}

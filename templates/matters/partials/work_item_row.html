@@ -1,0 +1,65 @@
+{% comment %}
+One row of the Minu töö timeline, whatever its source.
+
+Four cells: what the date is and what it *means*, the action and the file it
+belongs to, the Matter's hetkeseis, and an overflow menu. No owner column —
+everything on this page is the reader's by definition, and an avatar on every
+row is noise.
+
+The date cell always carries its meaning in words. "27.08" alone does not tell
+anybody whether missing it matters, and TÄHTAEG, OODATAV AEG, VAATAN ÜLE and
+OLULINE TÄHTAEG are four different obligations that happen to share a column.
+
+Only a DO with a deadline, and an Oluline tähtaeg, are ever coloured or worded
+as late. A WAIT or MONITOR whose review date has passed is ripe for a look,
+which is warning-level and is not lateness (master specification 18.8).
+
+The whole row is a link to the Matter, so Enter opens it from the keyboard.
+{% endcomment %}
+<div class="workrow2{% if item.is_overdue %} workrow2--overdue{% elif item.is_review_ripe %} workrow2--review{% endif %}">
+  <a class="workrow2__link" href="{{ item.matter_url }}">
+    <span class="workrow2__datecell">
+      <span class="workrow2__date{% if item.is_overdue %} workrow2__date--overdue{% elif item.is_review_ripe %} workrow2__date--review{% elif item.when == today %} workrow2__date--today{% endif %}">{{ item.short_date }}</span>
+      <span class="workrow2__meaning">{{ item.meaning_line }}</span>
+    </span>
+
+    <span class="workrow2__body">
+      <span class="workrow2__action">
+        {% if item.is_action %}<span class="mode mode--{{ item.action_kind|lower }}">{{ item.action_kind_label }}</span>{% endif %}
+        {{ item.text }}
+      </span>
+      <span class="workrow2__matter">
+        {% if item.reference %}<span class="reference">{{ item.reference }}</span> · {% endif %}
+        {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter.title }}
+      </span>
+    </span>
+
+    <span class="workrow2__stage">{{ item.stage_label }}</span>
+  </a>
+
+  {% comment %}
+    A real disclosure rather than a decorative "⋯". The menu offers only what
+    the underlying record actually supports: an Oluline tähtaeg has no
+    completion workflow, so it is never offered a "Märgi tehtuks" that would
+    have to be invented here (§6.4).
+  {% endcomment %}
+  <details class="rowmenu">
+    <summary class="rowmenu__trigger" aria-label="Rea tegevused">⋯</summary>
+    <div class="rowmenu__menu">
+      {% if item.is_action %}
+        <a class="rowmenu__item" href="{{ item.matter_url }}#jargmiseks">Märgi tehtuks</a>
+        <a class="rowmenu__item" href="{{ item.matter_url }}#jargmiseks">Muuda</a>
+        {% if item.is_review_ripe %}
+          {% comment %}
+            "Vaatasin üle" is a real service (app/workflow/services.acknowledge_review)
+            and it needs the next review date, which is a decision rather than a
+            default. So the row links to the dated control that already exists
+            on the Matter instead of guessing a date here (§7).
+          {% endcomment %}
+          <a class="rowmenu__item" href="{{ item.matter_url }}#jargmiseks">Vaatasin üle…</a>
+        {% endif %}
+      {% endif %}
+      <a class="rowmenu__item" href="{{ item.matter_url }}">Ava teema</a>
+    </div>
+  </details>
+</div>

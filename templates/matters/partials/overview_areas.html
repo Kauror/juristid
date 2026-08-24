@@ -1,0 +1,84 @@
+{% comment %}
+Valdkonniti — where Koda actually intervenes, and which areas nobody is
+watching.
+
+The vocabulary is the governed one: every active Valdkond, plus any retired
+category that still carries an open Matter. Those legacy rows are marked
+`varasem` and are never remapped onto a current area — a Matter classified in
+2019 stays classified as it was, and quietly moving it would invent a decision
+nobody reviewed.
+
+Zero is rendered as an em dash, never as a red 0. A red zero says "nothing is
+wrong here" in the colour used for "something is wrong here".
+
+Areas with no open work are counted in the footer rather than rendered as
+empty rows: the information survives without twenty-three blank lines.
+{% endcomment %}
+
+<section class="ovsection" aria-label="Valdkonnad">
+  <div class="areatable" role="table">
+    <div class="areatable__head" role="row">
+      <span role="columnheader">Valdkond</span>
+      <span role="columnheader" class="areatable__num">Avatud</span>
+      <span role="columnheader" class="areatable__num">Üle täht.</span>
+      <span role="columnheader" class="areatable__num">Tegevuseta</span>
+      <span role="columnheader">Vastutajad</span>
+    </div>
+
+    {% for row in page.areas %}
+      <details class="arearow"{% if forloop.first %} open{% endif %}>
+        <summary class="arearow__summary" role="row">
+          <span class="arearow__name">
+            <span class="arearow__caret" aria-hidden="true"></span>
+            {{ row.name }}
+            {% if row.is_legacy %}<span class="badge badge--quiet">varasem</span>{% endif %}
+          </span>
+          <span class="areatable__num"><a href="{{ row.url }}">{{ row.open_count }}</a></span>
+          <span class="areatable__num">
+            {% if row.overdue %}<a class="areatable__danger" href="{{ row.overdue_url }}">{{ row.overdue }}</a>{% else %}<span class="areatable__zero">—</span>{% endif %}
+          </span>
+          <span class="areatable__num">
+            {% if row.no_action %}<a class="areatable__warning" href="{{ row.no_action_url }}">{{ row.no_action }}</a>{% else %}<span class="areatable__zero">—</span>{% endif %}
+          </span>
+          <span class="arearow__owners">
+            {% if row.owners %}
+              {% for owner in row.owners %}<span class="avatar avatar--sm" title="{{ owner.name }}">{{ owner.name|slice:":1"|upper }}</span>{% endfor %}
+            {% else %}
+              {% comment %}
+                Only when the area has open work and *nobody at all* owns any of
+                it. An area with five owned Matters and one unassigned one is
+                being watched, and calling it "vastutajata" would be false
+                (§19.3).
+              {% endcomment %}
+              <a class="arearow__unowned" href="{{ row.unassigned_url }}">vastutajata</a>
+            {% endif %}
+          </span>
+        </summary>
+        <div class="arearow__body">
+          {% for matter in row.matters %}
+            <a class="arealine" href="{% url 'matters:matter_detail' pk=matter.pk %}">
+              <span class="reference">{{ matter.display_reference }}</span>
+              <span class="arealine__title">
+                {% if matter.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ matter.title }}
+              </span>
+              <span class="arealine__stage">{% if matter.stage %}{{ matter.stage.label_et }}{% endif %}</span>
+              <span class="arealine__date{% if matter.response_deadline and matter.response_deadline < today %} arealine__date--overdue{% endif %}">
+                {% if matter.response_deadline %}{{ matter.response_deadline|date:"j.n" }}{% endif %}
+              </span>
+            </a>
+          {% empty %}
+            <p class="railblock__empty">Selle valdkonna teemad avanevad registris.</p>
+          {% endfor %}
+          <a class="arearow__more" href="{{ row.url }}">Näita kõiki {{ row.open_count }} teemat →</a>
+        </div>
+      </details>
+    {% empty %}
+      <p class="workempty">Ühelgi valdkonnal ei ole avatud teemasid.</p>
+    {% endfor %}
+  </div>
+
+  <p class="ovsection__more">
+    <a href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL">Näita kõiki {{ page.area_total }} valdkonda</a>
+    <span class="ovnote">{{ page.empty_areas }} valdkonnas ei ole ühtegi avatud teemat</span>
+  </p>
+</section>

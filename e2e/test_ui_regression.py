@@ -91,6 +91,22 @@ CLOCK_DEPENDENT = [
     ".app__footer",
     ".dateline",
     ".workrow__date",
+    # The rebuilt work surfaces. Every one of these renders a value derived
+    # from today — "10 p üle", "TÄHTAEG 14.08", a feed timestamp — and a mask
+    # selector that stops matching does not fail. It silently unmasks a value
+    # that changes daily, and the baseline goes red the next morning.
+    ".workrow2__date",
+    ".workrow2__meaning",
+    ".teamrow__date",
+    ".teamrow__meaning",
+    ".interrow__value",
+    ".interrow__meaning",
+    ".deadlinerow__when",
+    ".feedrow__when",
+    ".entryline__when",
+    ".arealine__date",
+    ".quietrow__meta",
+    ".disclosure__meta",
     ".factrow__date",
     ".table__lastactivity .muted",
     # The Teema header's one deadline, the Järgmiseks row's date, the sent
