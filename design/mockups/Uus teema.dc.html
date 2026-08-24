@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="et">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Uus teema — kujundus</title>
+<link rel="stylesheet" href="../../static/css/fonts.css">
+<link rel="stylesheet" href="../../static/css/tokens.css">
+<link rel="stylesheet" href="uus-teema.css">
+<style>
+  /* Only the mockup's own chrome lives here: the frame labels and the fake nav
+     strip. Nothing in this block is part of the design being handed over. */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--surface-nav);
+    font-family: var(--typography-font-sans); color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+  }
+  .doc { padding: 28px 24px 64px; display: flex; flex-direction: column; gap: 30px; }
+  .doc__head { max-width: 1140px; margin: 0 auto 6px; }
+  .doc__head h1 { font-size: 19px; font-weight: 600; margin: 0 0 6px; }
+  .doc__head p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-secondary); max-width: 760px; }
+  .fr { max-width: 1140px; width: 100%; margin: 0 auto; }
+  .fr__bar { display: flex; align-items: baseline; gap: 10px; padding: 0 0 8px; flex-wrap: wrap; }
+  .fr__tag { font: 700 11px var(--typography-font-mono); background: var(--accent-primary);
+             color: var(--text-inverse); padding: 3px 8px; border-radius: var(--radius-sm); }
+  .fr__title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+  .fr__sub { font-size: 12px; color: var(--text-muted); }
+  .fr__w { margin-left: auto; font: 400 11px var(--typography-font-mono); color: var(--text-muted); }
+  .fr__frame { display: block; border: 0; width: 100%; background: var(--surface-base); }
+  .fr__win { background: var(--surface-base); border: 1px solid var(--border-subtle);
+             border-radius: var(--radius-card); overflow: hidden; }
+  
+  .nav { display: flex; align-items: center; gap: 18px; height: 46px; padding: 0 20px;
+         background: var(--surface-nav); border-bottom: 1px solid var(--border-subtle);
+         font-size: 12.5px; color: var(--text-secondary); }
+  .nav__brand { font-weight: 700; letter-spacing: .08em; font-size: 11px; color: var(--text-primary); }
+  .nav__link--on { color: var(--text-primary); box-shadow: inset 0 -2px 0 var(--accent-primary); padding-bottom: 12px; }
+  .nav__spacer { margin-left: auto; }
+  .nav__search { border: 1px solid var(--border-control); border-radius: var(--radius-md);
+                 padding: 5px 10px; color: var(--text-muted); font-size: 12px; width: 260px;
+                 background: var(--surface-raised); }
+  .nav__cta { background: var(--accent-primary); color: var(--text-inverse); font-weight: 600;
+              font-size: 12px; padding: 6px 12px; border-radius: var(--radius-control); }
+
+  /* the component plate */
+  .pl { padding: 18px 24px 22px; display: flex; flex-direction: column; gap: 9px; }
+  .pl__row { display: grid; grid-template-columns: 132px 300px minmax(0, 1fr); align-items: center; gap: 14px; }
+  .pl__k { font-size: 12px; color: var(--text-secondary); }
+  .pl__why { font: 400 11.5px var(--typography-font-mono); color: var(--text-muted); }
+  .pl__gap { height: 8px; border-top: 1px solid var(--border-subtle); margin: 4px 0; }
+  .pl__note { margin: 8px 0 0; font-size: 12px; line-height: 1.6; color: var(--text-secondary); max-width: 860px; }
+  .pl__note code { font: 400 11.5px var(--typography-font-mono); color: var(--text-muted); }
+  .pl__note b { color: var(--text-primary); font-weight: 600; }
+  .pl__ab { display: flex; gap: 40px; margin-top: 10px; }
+  .pl__ab > div { display: flex; flex-direction: column; gap: 6px; }
+  /* Only the comparison plate ever does this. */
+  .pl__pill .chip__name { border-radius: 13px; }
+  /* Static demonstrations of two states a screenshot cannot otherwise show. */
+  .pl [data-hover] { border-color: var(--border-strong); }
+  .pl [data-focus] { outline: 2px solid var(--accent-link); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div class="doc">
+  <div class="doc__head">
+    <h1>Uus teema — kujunduse ettepanek</h1>
+    <p>Neli olekut ja üks komponendiplaat. Iga värv, samm ja raadius tuleb failist
+       <code>static/css/tokens.css</code>; vormi enda stiilid on failis
+       <code>design/mockups/uus-teema.css</code>, mille saab peaaegu muutmata üle võtta.
+       Sõnavara — 23 valdkonda, 10 hetkeseisu, 7 menetlusliiki, 15 asutust — on päris,
+       loetud repositooriumist ja tootmisest 24.08.2026.</p>
+  </div>
+  
+  <section class="fr">
+    <div class="fr__bar"><span class="fr__tag">k</span>
+      <span class="fr__title">Kiibistik</span>
+      <span class="fr__sub">üks juhtelement, kaks lubadust — ja miks töövoo kiip ei ole sama kiip</span></div>
+    <div class="fr__win"><div class="pl">
+      <div class="pl__row"><span class="pl__k">Valimata</span><span class="pl__v"><label class="chip "><input type="checkbox" name="pl-Keskkond" id="pl-Keskkond-6692" value="Keskkond"><span class="chip__name">Keskkond<span class="chip__x" aria-hidden="true">×</span></span></label></span><span class="pl__why">surface-raised · border-control · text-body</span></div>
+      <div class="pl__row"><span class="pl__k">Hõljumisel</span><span class="pl__v"><label class="chip "><input type="checkbox" name="pl-Keskkond" id="pl-Keskkond-6692" value="Keskkond"><span class="chip__name" data-hover="1">Keskkond<span class="chip__x" aria-hidden="true">×</span></span></label></span><span class="pl__why">border-strong — ainus muutus</span></div>
+      <div class="pl__row"><span class="pl__k">Valitud</span><span class="pl__v"><label class="chip "><input type="checkbox" name="pl-Keskkond" id="pl-Keskkond-6692" value="Keskkond" checked><span class="chip__name">Keskkond<span class="chip__x" aria-hidden="true">×</span></span></label></span><span class="pl__why">accent-soft · accent-border · text-primary · 600</span></div>
+      <div class="pl__row"><span class="pl__k">Fookuses</span><span class="pl__v"><label class="chip "><input type="checkbox" name="pl-Keskkond" id="pl-Keskkond-6692" value="Keskkond" checked><span class="chip__name" data-focus="1">Keskkond<span class="chip__x" aria-hidden="true">×</span></span></label></span><span class="pl__why">2px accent-link, nihe 2px — mitte kunagi eemaldatud</span></div>
+      <div class="pl__row"><span class="pl__k">Üksikvalik</span><span class="pl__v"><label class="chip "><input type="radio" name="pl-Marko" id="pl-Marko-23053" value="Marko" checked><span class="chip__name">Marko</span></label></span><span class="pl__why">raadio: × puudub, sest raadiot ei tühjendata</span></div>
+      <div class="pl__row"><span class="pl__k">Avab midagi</span><span class="pl__v"><label class="chip chim--more chip--more"><input type="checkbox" name="pl-Vali nimekirjast (10)" id="pl-Vali nimekirjast (10)-49380" value="Vali nimekirjast (10)"><span class="chip__name">Vali nimekirjast (10)</span></label></span><span class="pl__why">katkendlik ääris tähendab alati «avab valikulise osa»</span></div>
+      <div class="pl__gap"></div>
+      <div class="pl__row"><span class="pl__k">TEEN valitud</span><span class="pl__v"><label class="chip mchip mchip--do"><input type="radio" name="pl-k1" id="pl-k1-95409" value="TEEN" checked><span class="chip__name">TEEN</span></label></span><span class="pl__why">täidetud — brändivärv, tume tekst</span></div>
+      <div class="pl__row"><span class="pl__k">OOTAN valitud</span><span class="pl__v"><label class="chip mchip mchip--wait"><input type="radio" name="pl-k2" id="pl-k2-42969" value="OOTAN" checked><span class="chip__name">OOTAN</span></label></span><span class="pl__why">pidev hele ääris</span></div>
+      <div class="pl__row"><span class="pl__k">JÄLGIN valitud</span><span class="pl__v"><label class="chip mchip mchip--monitor"><input type="radio" name="pl-k3" id="pl-k3-21950" value="JÄLGIN" checked><span class="chip__name">JÄLGIN</span></label></span><span class="pl__why">sama, kuid katkendlik — kuju eristab ka halltoonis</span></div>
+      <div class="pl__row"><span class="pl__k">Töövoog valimata</span><span class="pl__v"><label class="chip mchip mchip--wait"><input type="radio" name="pl-k4" id="pl-k4-42969" value="OOTAN"><span class="chip__name">OOTAN</span></label><label class="chip mchip mchip--monitor"><input type="radio" name="pl-k5" id="pl-k5-21950" value="JÄLGIN"><span class="chip__name">JÄLGIN</span></label></span><span class="pl__why">vaikne puhkeolek; JÄLGIN jääb katkendlikuks</span></div>
+      <p class="pl__note">Töövoo kiip on 11 px / 700 / 0.06 em ja SUURTÄHTEDES; valikukiip on 12 px / 400 ja lauses. Sama nurgaraadius (4 px), sest süsteem ei kasuta pillikuju — eristab kaal ja täidetud / pidev / katkendlik kolmik, mis säilib ka värvipimedale.</p>
+      <div class="pl__gap"></div>
+      <p class="pl__note"><b>Otsustuskoht — nurgaraadius.</b> Brief soovis valikukiibile ~13 px («pillikuju»), et see eristuks kandilisest töövoo kiibist.
+         <code>tokens.css</code> ütleb aga sõnaselgelt <em>«radius: never pill except avatars»</em>, ja Teema lehe enda sildid on 4 px.
+         Allpool mõlemad, samas reas. Soovitus on <b>A</b>: eristust kannab juba kaal, suurtähed ja täidetud / pidev / katkendlik kolmik,
+         ning 13 px teeks vormi kiibist ainsa pilli kogu tootes. Kui eelistad B-d, muutub ainult <code>--radius-sm</code> → <code>13px</code> reegli
+         <code>.chip__name</code> sees.</p>
+      <div class="pl__ab">
+        <div><span class="pl__k">A · 4 px (soovitus)</span>
+          <div class="chips"><label class="chip "><input type="checkbox" name="plA-a1" id="plA-a1-6692" value="Keskkond" checked><span class="chip__name">Keskkond<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="plA-a2" id="plA-a2-22037" value="Digiteemad"><span class="chip__name">Digiteemad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip mchip mchip--do"><input type="radio" name="plA-a3" id="plA-a3-95409" value="TEEN" checked><span class="chip__name">TEEN</span></label></div></div>
+        <div><span class="pl__k">B · 13 px</span>
+          <div class="chips pl__pill"><label class="chip "><input type="checkbox" name="plB-b1" id="plB-b1-6692" value="Keskkond" checked><span class="chip__name">Keskkond<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="plB-b2" id="plB-b2-22037" value="Digiteemad"><span class="chip__name">Digiteemad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip mchip mchip--do"><input type="radio" name="plB-b3" id="plB-b3-95409" value="TEEN" checked><span class="chip__name">TEEN</span></label></div></div>
+      </div>
+    </div></div>
+  </section>
+  
+  <section class="fr">
+    <div class="fr__bar"><span class="fr__tag">8a</span>
+      <span class="fr__title">Tühi vorm — kiire sisestus</span>
+      <span class="fr__sub">ainus täidetud väli on kuupäev, mis on täna; kõik muu on nähtav, kuid mitte nõutud</span></div>
+    <div class="fr__win">
+  <div class="nav">
+    <span class="nav__brand">ÕIGUSLOOME</span>
+    <span class="nav__link">Ülevaade</span>
+    <span class="nav__link">Minu töö</span>
+    <span class="nav__link">Saabunud</span>
+    <span class="nav__link nav__link--on">Teemad</span>
+    <span class="nav__spacer"></span>
+    <span class="nav__search">Otsi teemat, viidet, asutust…</span>
+    <span class="nav__cta">+ Uus teema</span>
+  </div>
+    <form class="uus" onsubmit="return false">
+      <div class="uus__head"><h1 class="uus__title">Uus teema</h1></div>
+      
+
+      <div class="sec">
+        <label class="grp" style="display:block">
+          <span class="lbl">Pealkiri</span>
+          <input class="fld fld--title" type="text" name="8a-title" value=""
+                 placeholder="Näiteks: Pakendiseaduse muutmise eelnõu" autofocus>
+          
+        </label>
+      </div>
+
+      <div class="sec">
+        <div class="sec__grid sec__grid--summary">
+          <label class="grp" style="display:block">
+            <span class="lbl">Millest teema räägib</span>
+            <textarea class="fld fld--area" name="8a-summary" rows="3"
+                      placeholder="Mida see teema puudutatud ettevõtete jaoks tähendab ja mida Koda tahab?"></textarea>
+          </label>
+          <label class="grp" style="display:block">
+            <span class="lbl">Märkmed</span>
+            <textarea class="fld fld--area fld--notes" name="8a-notes" rows="3"></textarea>
+          </label>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec__grid sec__grid--files">
+          <div>
+            <span class="lbl">Failid</span>
+            <div class="drop">
+              <input type="file" multiple aria-label="Failid">
+              <span>või lohista siia</span>
+            </div>
+            
+          </div>
+          <label class="grp" style="display:block">
+            <span class="lbl">Saabus</span>
+            <input class="fld fld--date" type="text" name="8a-received" value="24.8.2026"
+                   placeholder="pp.kk.aaaa">
+          </label>
+          <label class="grp" style="display:block">
+            <span class="lbl">Arvamuse tähtaeg</span>
+            <input class="fld fld--date" type="text" name="8a-deadline" value="24.8.2026"
+                   placeholder="pp.kk.aaaa">
+            
+          </label>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec__grid sec__grid--who">
+          <fieldset class="grp">
+            <legend class="lbl">Vastutaja</legend>
+            <div class="chips"><label class="chip "><input type="radio" name="8a-owner" id="8a-owner-27340" value="Ireen"><span class="chip__name">Ireen</span></label><label class="chip "><input type="radio" name="8a-owner" id="8a-owner-83772" value="Kaur"><span class="chip__name">Kaur</span></label><label class="chip "><input type="radio" name="8a-owner" id="8a-owner-23053" value="Marko"><span class="chip__name">Marko</span></label><label class="chip "><input type="radio" name="8a-owner" id="8a-owner-6617" value="Sandra"><span class="chip__name">Sandra</span></label></div>
+          </fieldset>
+          
+      <fieldset class="grp">
+        <legend class="lbl">Saatja</legend>
+        <div class="chips"><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-46873" value="Rahandusministeerium"><span class="chip__name">Rahandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-71378" value="Majandus- ja Kommunikatsiooniministeerium"><span class="chip__name">Majandus- ja Kommunikatsiooniministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-69459" value="Kliimaministeerium"><span class="chip__name">Kliimaministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-15536" value="Justiits- ja Digiministeerium"><span class="chip__name">Justiits- ja Digiministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-1600" value="Euroopa Komisjon"><span class="chip__name">Euroopa Komisjon<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+        <details class="tail">
+          <summary>Vali nimekirjast (10)</summary>
+          <div class="tail__body">
+            <input class="fld tail__search" type="search" placeholder="Otsi asutust nime järgi"
+                   aria-label="Otsi asutust nime järgi">
+            <div class="chips"><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-58322" value="Euroopa Parlament"><span class="chip__name">Euroopa Parlament<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-69061" value="Haridus- ja Teadusministeerium"><span class="chip__name">Haridus- ja Teadusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-41344" value="Kaitseministeerium"><span class="chip__name">Kaitseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-43613" value="Kultuuriministeerium"><span class="chip__name">Kultuuriministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-40515" value="Regionaal- ja Põllumajandusministeerium"><span class="chip__name">Regionaal- ja Põllumajandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-54696" value="Riigikogu"><span class="chip__name">Riigikogu<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-77676" value="Siseministeerium"><span class="chip__name">Siseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-90476" value="Sotsiaalministeerium"><span class="chip__name">Sotsiaalministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-86859" value="Vabariigi Valitsus"><span class="chip__name">Vabariigi Valitsus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-sender" id="8a-sender-50182" value="Välisministeerium"><span class="chip__name">Välisministeerium<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+          </div>
+        </details>
+        <span class="note">Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla — teema vormilt uut asutust ei teki.</span>
+      </fieldset>
+        </div>
+      </div>
+
+      <div class="sec">
+        <fieldset class="grp">
+          <legend class="lbl">Valdkonnad</legend>
+          <div class="chips"><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-57782" value="Maksejõuetus"><span class="chip__name">Maksejõuetus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-64592" value="Raamatupidamine"><span class="chip__name">Raamatupidamine<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-3114" value="Intellektuaalomand"><span class="chip__name">Intellektuaalomand<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-56406" value="Toetusmeetmed"><span class="chip__name">Toetusmeetmed<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-90103" value="Koalitsioonilepped"><span class="chip__name">Koalitsioonilepped<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-74502" value="Õigusloome"><span class="chip__name">Õigusloome<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-84318" value="Energeetika"><span class="chip__name">Energeetika<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-36706" value="Riigihanked"><span class="chip__name">Riigihanked<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-38583" value="Haridus"><span class="chip__name">Haridus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-46865" value="Tarbijakaitse"><span class="chip__name">Tarbijakaitse<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-45561" value="Alkohol, tubakas"><span class="chip__name">Alkohol, tubakas<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-22037" value="Digiteemad"><span class="chip__name">Digiteemad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-27618" value="Finantsõigus, rahapesu"><span class="chip__name">Finantsõigus, rahapesu<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-16603" value="Ehitus"><span class="chip__name">Ehitus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-22259" value="Äriõigus"><span class="chip__name">Äriõigus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-64406" value="Välistööjõud"><span class="chip__name">Välistööjõud<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-27493" value="Maksud ja toll"><span class="chip__name">Maksud ja toll<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-61898" value="Töösuhted, töökeskkond"><span class="chip__name">Töösuhted, töökeskkond<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-6692" value="Keskkond"><span class="chip__name">Keskkond<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-19906" value="Muud teemad"><span class="chip__name">Muud teemad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-67164" value="ELi õiguse ülevõtmine"><span class="chip__name">ELi õiguse ülevõtmine<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-66841" value="Olulised tähtajad"><span class="chip__name">Olulised tähtajad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-area" id="8a-area-75993" value="Arengukavad, strateegiad"><span class="chip__name">Arengukavad, strateegiad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip chip--more chip--muu"><input type="checkbox" name="8a-area" id="8a-area-52214" value="Muu"><span class="chip__name">Muu</span></label></div>
+          
+        </fieldset>
+      </div>
+
+      <div class="sec">
+        <fieldset class="grp">
+          <legend class="lbl">Hetkeseis</legend>
+          <div class="chips"><label class="chip "><input type="radio" name="8a-stage" id="8a-stage-85908" value="Idee"><span class="chip__name">Idee</span></label><label class="chip "><input type="radio" name="8a-stage" id="8a-stage-50880" value="Kooskõlastusringil"><span class="chip__name">Kooskõlastusringil</span></label><label class="chip "><input type="radio" name="8a-stage" id="8a-stage-92527" value="Valitsuses"><span class="chip__name">Valitsuses</span></label><label class="chip "><input type="radio" name="8a-stage" id="8a-stage-24908" value="Riigikogus"><span class="chip__name">Riigikogus</span></label><label class="chip "><input type="radio" name="8a-stage" id="8a-stage-3971" value="Ootan jõustumist"><span class="chip__name">Ootan jõustumist</span></label><label class="chip "><input type="radio" name="8a-stage" id="8a-stage-50184" value="Jõustunud"><span class="chip__name">Jõustunud</span></label><label class="chip "><input type="radio" name="8a-stage" id="8a-stage-5351" value="Eesti seisukoht"><span class="chip__name">Eesti seisukoht</span></label><label class="chip "><input type="radio" name="8a-stage" id="8a-stage-9754" value="ELi menetluses"><span class="chip__name">ELi menetluses</span></label><label class="chip "><input type="radio" name="8a-stage" id="8a-stage-26098" value="Ootan ELi õiguse ülevõtmist"><span class="chip__name">Ootan ELi õiguse ülevõtmist</span></label><label class="chip "><input type="radio" name="8a-stage" id="8a-stage-52214" value="Muu"><span class="chip__name">Muu</span></label></div>
+        </fieldset>
+        <fieldset class="grp" style="margin-top:var(--spacing-35)">
+          <legend class="lbl">Menetlusliik</legend>
+          <div class="chips"><label class="chip "><input type="radio" name="8a-track" id="8a-track-36414" value="Riigisisene"><span class="chip__name">Riigisisene</span></label><label class="chip "><input type="radio" name="8a-track" id="8a-track-89064" value="ELi algatus"><span class="chip__name">ELi algatus</span></label><label class="chip "><input type="radio" name="8a-track" id="8a-track-67164" value="ELi õiguse ülevõtmine"><span class="chip__name">ELi õiguse ülevõtmine</span></label><label class="chip "><input type="radio" name="8a-track" id="8a-track-66013" value="Strateegia või arengukava"><span class="chip__name">Strateegia või arengukava</span></label><label class="chip "><input type="radio" name="8a-track" id="8a-track-61626" value="Koja algatus"><span class="chip__name">Koja algatus</span></label><label class="chip "><input type="radio" name="8a-track" id="8a-track-67727" value="Rakendamine või järelevalve"><span class="chip__name">Rakendamine või järelevalve</span></label><label class="chip "><input type="radio" name="8a-track" id="8a-track-52214" value="Muu"><span class="chip__name">Muu</span></label></div>
+        </fieldset>
+        <div class="sec__grid sec__grid--class" style="margin-top:var(--spacing-35)">
+          
+        <fieldset class="grp">
+          <legend class="lbl">Adressaat</legend>
+          <div class="chips"><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-46873" value="Rahandusministeerium"><span class="chip__name">Rahandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-71378" value="Majandus- ja Kommunikatsiooniministeerium"><span class="chip__name">Majandus- ja Kommunikatsiooniministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-54696" value="Riigikogu"><span class="chip__name">Riigikogu<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-86859" value="Vabariigi Valitsus"><span class="chip__name">Vabariigi Valitsus<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+          <details class="tail">
+            <summary>Vali nimekirjast (11)</summary>
+            <div class="tail__body">
+              <input class="fld tail__search" type="search" placeholder="Otsi asutust nime järgi"
+                     aria-label="Otsi adressaati nime järgi">
+              <div class="chips"><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-1600" value="Euroopa Komisjon"><span class="chip__name">Euroopa Komisjon<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-58322" value="Euroopa Parlament"><span class="chip__name">Euroopa Parlament<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-69061" value="Haridus- ja Teadusministeerium"><span class="chip__name">Haridus- ja Teadusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-15536" value="Justiits- ja Digiministeerium"><span class="chip__name">Justiits- ja Digiministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-41344" value="Kaitseministeerium"><span class="chip__name">Kaitseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-69459" value="Kliimaministeerium"><span class="chip__name">Kliimaministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-43613" value="Kultuuriministeerium"><span class="chip__name">Kultuuriministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-40515" value="Regionaal- ja Põllumajandusministeerium"><span class="chip__name">Regionaal- ja Põllumajandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-77676" value="Siseministeerium"><span class="chip__name">Siseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-90476" value="Sotsiaalministeerium"><span class="chip__name">Sotsiaalministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8a-addr" id="8a-addr-50182" value="Välisministeerium"><span class="chip__name">Välisministeerium<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+            </div>
+          </details>
+        </fieldset>
+          <fieldset class="grp">
+            <legend class="lbl">Andmeklass</legend>
+            <div class="chips">
+              <label class="chip "><input type="checkbox" name="8a-test" id="8a-test-72476" value="Testandmed"><span class="chip__name">Testandmed</span></label>
+            </div>
+          </fieldset>
+        </div>
+      </div>
+
+      <div class="sec sec--panel">
+        
+      <div class="nextpanel">
+        <span class="lbl">Järgmine tegevus</span>
+        <div class="nextpanel__row">
+          <div class="chips" role="radiogroup" aria-label="Mis laadi samm see on"><label class="chip mchip mchip--do"><input type="radio" name="8a-kind" id="8a-kind-95409" value="TEEN"><span class="chip__name">TEEN</span></label><label class="chip mchip mchip--wait"><input type="radio" name="8a-kind" id="8a-kind-42969" value="OOTAN"><span class="chip__name">OOTAN</span></label><label class="chip mchip mchip--monitor"><input type="radio" name="8a-kind" id="8a-kind-21950" value="JÄLGIN"><span class="chip__name">JÄLGIN</span></label></div>
+          <input class="fld nextpanel__text" type="text" name="8a-next-text"
+                 placeholder="Mida järgmisena teed või ootad?" value=""
+                 aria-label="Mida järgmisena teed või ootad?">
+        </div>
+        
+        <div class="nextpanel__row">
+          <div class="chips" role="radiogroup" aria-label="Mida kuupäev tähendab"><label class="chip "><input type="radio" name="8a-sem" id="8a-sem-95233" value="Tähtaeg"><span class="chip__name">Tähtaeg</span></label><label class="chip "><input type="radio" name="8a-sem" id="8a-sem-26164" value="Oodatav aeg"><span class="chip__name">Oodatav aeg</span></label><label class="chip "><input type="radio" name="8a-sem" id="8a-sem-23346" value="Vaatan üle"><span class="chip__name">Vaatan üle</span></label></div>
+          <input class="fld fld--date nextpanel__date" type="text" name="8a-next-date"
+                 placeholder="pp.kk.aaaa" value="" aria-label="Kuupäev">
+        </div>
+      </div>
+      </div>
+
+      <div class="acts">
+        <button class="btn btn--primary" type="submit"
+                aria-disabled="true">Loo teema</button>
+        <button class="btn btn--quiet" type="button">Loobu</button>
+        <span class="acts__note">Ülejäänud andmeid saab lisada ka hiljem teema lehel.</span>
+      </div>
+    </form></div>
+  </section>
+  <section class="fr">
+    <div class="fr__bar"><span class="fr__tag">8b</span>
+      <span class="fr__title">Täidetud teema</span>
+      <span class="fr__sub">pikk pealkiri, kaks saatjat, kolm valdkonda, kaks adressaati, TEEN + tähtaeg</span></div>
+    <div class="fr__win">
+  <div class="nav">
+    <span class="nav__brand">ÕIGUSLOOME</span>
+    <span class="nav__link">Ülevaade</span>
+    <span class="nav__link">Minu töö</span>
+    <span class="nav__link">Saabunud</span>
+    <span class="nav__link nav__link--on">Teemad</span>
+    <span class="nav__spacer"></span>
+    <span class="nav__search">Otsi teemat, viidet, asutust…</span>
+    <span class="nav__cta">+ Uus teema</span>
+  </div>
+    <form class="uus" onsubmit="return false">
+      <div class="uus__head"><h1 class="uus__title">Uus teema</h1></div>
+      
+
+      <div class="sec">
+        <label class="grp" style="display:block">
+          <span class="lbl">Pealkiri</span>
+          <input class="fld fld--title" type="text" name="8b-title" value="Käibemaksuseaduse muutmise seaduse eelnõu — platvormimajanduse aruandluskohustus"
+                 placeholder="Näiteks: Pakendiseaduse muutmise eelnõu">
+          
+        </label>
+      </div>
+
+      <div class="sec">
+        <div class="sec__grid sec__grid--summary">
+          <label class="grp" style="display:block">
+            <span class="lbl">Millest teema räägib</span>
+            <textarea class="fld fld--area" name="8b-summary" rows="3"
+                      placeholder="Mida see teema puudutatud ettevõtete jaoks tähendab ja mida Koda tahab?">Eelnõu paneks digiplatvormidele kvartaalse aruandluskohustuse müüjate tehingute kohta. Puudutab ligikaudu 400 liikmesettevõtet ja dubleerib andmeid, mis maksuhaldur saab juba käibedeklaratsioonist. Koda taotleb aastast aruandlussagedust ja piirmäära tõstmist 2 000 euroni.</textarea>
+          </label>
+          <label class="grp" style="display:block">
+            <span class="lbl">Märkmed</span>
+            <textarea class="fld fld--area fld--notes" name="8b-notes" rows="3">RaM kontakt: Liina (tel). Küsi üle, kas kvartaalne sagedus on direktiivi nõue või valik.</textarea>
+          </label>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec__grid sec__grid--files">
+          <div>
+            <span class="lbl">Failid</span>
+            <div class="drop">
+              <input type="file" multiple aria-label="Failid">
+              <span>või lohista siia</span>
+            </div>
+            <ul class="filelist"><li>Teataja_04_2026_21.08.pdf <b>3,7 MB</b></li><li>Liikmete_tagasiside.xlsx <b>96 KB</b></li></ul>
+          </div>
+          <label class="grp" style="display:block">
+            <span class="lbl">Saabus</span>
+            <input class="fld fld--date" type="text" name="8b-received" value="24.8.2026"
+                   placeholder="pp.kk.aaaa">
+          </label>
+          <label class="grp" style="display:block">
+            <span class="lbl">Arvamuse tähtaeg</span>
+            <input class="fld fld--date" type="text" name="8b-deadline" value="11.9.2026"
+                   placeholder="pp.kk.aaaa">
+            
+          </label>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec__grid sec__grid--who">
+          <fieldset class="grp">
+            <legend class="lbl">Vastutaja</legend>
+            <div class="chips"><label class="chip "><input type="radio" name="8b-owner" id="8b-owner-27340" value="Ireen"><span class="chip__name">Ireen</span></label><label class="chip "><input type="radio" name="8b-owner" id="8b-owner-83772" value="Kaur"><span class="chip__name">Kaur</span></label><label class="chip "><input type="radio" name="8b-owner" id="8b-owner-23053" value="Marko" checked><span class="chip__name">Marko</span></label><label class="chip "><input type="radio" name="8b-owner" id="8b-owner-6617" value="Sandra"><span class="chip__name">Sandra</span></label></div>
+          </fieldset>
+          
+      <fieldset class="grp">
+        <legend class="lbl">Saatja</legend>
+        <div class="chips"><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-46873" value="Rahandusministeerium" checked><span class="chip__name">Rahandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-71378" value="Majandus- ja Kommunikatsiooniministeerium"><span class="chip__name">Majandus- ja Kommunikatsiooniministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-69459" value="Kliimaministeerium"><span class="chip__name">Kliimaministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-15536" value="Justiits- ja Digiministeerium"><span class="chip__name">Justiits- ja Digiministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-1600" value="Euroopa Komisjon" checked><span class="chip__name">Euroopa Komisjon<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+        <details class="tail">
+          <summary>Vali nimekirjast (10)</summary>
+          <div class="tail__body">
+            <input class="fld tail__search" type="search" placeholder="Otsi asutust nime järgi"
+                   aria-label="Otsi asutust nime järgi">
+            <div class="chips"><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-58322" value="Euroopa Parlament"><span class="chip__name">Euroopa Parlament<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-69061" value="Haridus- ja Teadusministeerium"><span class="chip__name">Haridus- ja Teadusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-41344" value="Kaitseministeerium"><span class="chip__name">Kaitseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-43613" value="Kultuuriministeerium"><span class="chip__name">Kultuuriministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-40515" value="Regionaal- ja Põllumajandusministeerium"><span class="chip__name">Regionaal- ja Põllumajandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-54696" value="Riigikogu"><span class="chip__name">Riigikogu<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-77676" value="Siseministeerium"><span class="chip__name">Siseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-90476" value="Sotsiaalministeerium"><span class="chip__name">Sotsiaalministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-86859" value="Vabariigi Valitsus"><span class="chip__name">Vabariigi Valitsus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-sender" id="8b-sender-50182" value="Välisministeerium"><span class="chip__name">Välisministeerium<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+          </div>
+        </details>
+        <span class="note">Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla — teema vormilt uut asutust ei teki.</span>
+      </fieldset>
+        </div>
+      </div>
+
+      <div class="sec">
+        <fieldset class="grp">
+          <legend class="lbl">Valdkonnad</legend>
+          <div class="chips"><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-57782" value="Maksejõuetus"><span class="chip__name">Maksejõuetus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-64592" value="Raamatupidamine"><span class="chip__name">Raamatupidamine<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-3114" value="Intellektuaalomand"><span class="chip__name">Intellektuaalomand<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-56406" value="Toetusmeetmed"><span class="chip__name">Toetusmeetmed<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-90103" value="Koalitsioonilepped"><span class="chip__name">Koalitsioonilepped<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-74502" value="Õigusloome"><span class="chip__name">Õigusloome<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-84318" value="Energeetika"><span class="chip__name">Energeetika<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-36706" value="Riigihanked"><span class="chip__name">Riigihanked<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-38583" value="Haridus"><span class="chip__name">Haridus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-46865" value="Tarbijakaitse"><span class="chip__name">Tarbijakaitse<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-45561" value="Alkohol, tubakas"><span class="chip__name">Alkohol, tubakas<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-22037" value="Digiteemad" checked><span class="chip__name">Digiteemad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-27618" value="Finantsõigus, rahapesu"><span class="chip__name">Finantsõigus, rahapesu<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-16603" value="Ehitus"><span class="chip__name">Ehitus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-22259" value="Äriõigus" checked><span class="chip__name">Äriõigus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-64406" value="Välistööjõud"><span class="chip__name">Välistööjõud<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-27493" value="Maksud ja toll" checked><span class="chip__name">Maksud ja toll<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-61898" value="Töösuhted, töökeskkond"><span class="chip__name">Töösuhted, töökeskkond<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-6692" value="Keskkond"><span class="chip__name">Keskkond<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-19906" value="Muud teemad"><span class="chip__name">Muud teemad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-67164" value="ELi õiguse ülevõtmine"><span class="chip__name">ELi õiguse ülevõtmine<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-66841" value="Olulised tähtajad"><span class="chip__name">Olulised tähtajad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-area" id="8b-area-75993" value="Arengukavad, strateegiad"><span class="chip__name">Arengukavad, strateegiad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip chip--more chip--muu"><input type="checkbox" name="8b-area" id="8b-area-52214" value="Muu"><span class="chip__name">Muu</span></label></div>
+          
+        </fieldset>
+      </div>
+
+      <div class="sec">
+        <fieldset class="grp">
+          <legend class="lbl">Hetkeseis</legend>
+          <div class="chips"><label class="chip "><input type="radio" name="8b-stage" id="8b-stage-85908" value="Idee"><span class="chip__name">Idee</span></label><label class="chip "><input type="radio" name="8b-stage" id="8b-stage-50880" value="Kooskõlastusringil" checked><span class="chip__name">Kooskõlastusringil</span></label><label class="chip "><input type="radio" name="8b-stage" id="8b-stage-92527" value="Valitsuses"><span class="chip__name">Valitsuses</span></label><label class="chip "><input type="radio" name="8b-stage" id="8b-stage-24908" value="Riigikogus"><span class="chip__name">Riigikogus</span></label><label class="chip "><input type="radio" name="8b-stage" id="8b-stage-3971" value="Ootan jõustumist"><span class="chip__name">Ootan jõustumist</span></label><label class="chip "><input type="radio" name="8b-stage" id="8b-stage-50184" value="Jõustunud"><span class="chip__name">Jõustunud</span></label><label class="chip "><input type="radio" name="8b-stage" id="8b-stage-5351" value="Eesti seisukoht"><span class="chip__name">Eesti seisukoht</span></label><label class="chip "><input type="radio" name="8b-stage" id="8b-stage-9754" value="ELi menetluses"><span class="chip__name">ELi menetluses</span></label><label class="chip "><input type="radio" name="8b-stage" id="8b-stage-26098" value="Ootan ELi õiguse ülevõtmist"><span class="chip__name">Ootan ELi õiguse ülevõtmist</span></label><label class="chip "><input type="radio" name="8b-stage" id="8b-stage-52214" value="Muu"><span class="chip__name">Muu</span></label></div>
+        </fieldset>
+        <fieldset class="grp" style="margin-top:var(--spacing-35)">
+          <legend class="lbl">Menetlusliik</legend>
+          <div class="chips"><label class="chip "><input type="radio" name="8b-track" id="8b-track-36414" value="Riigisisene" checked><span class="chip__name">Riigisisene</span></label><label class="chip "><input type="radio" name="8b-track" id="8b-track-89064" value="ELi algatus"><span class="chip__name">ELi algatus</span></label><label class="chip "><input type="radio" name="8b-track" id="8b-track-67164" value="ELi õiguse ülevõtmine"><span class="chip__name">ELi õiguse ülevõtmine</span></label><label class="chip "><input type="radio" name="8b-track" id="8b-track-66013" value="Strateegia või arengukava"><span class="chip__name">Strateegia või arengukava</span></label><label class="chip "><input type="radio" name="8b-track" id="8b-track-61626" value="Koja algatus"><span class="chip__name">Koja algatus</span></label><label class="chip "><input type="radio" name="8b-track" id="8b-track-67727" value="Rakendamine või järelevalve"><span class="chip__name">Rakendamine või järelevalve</span></label><label class="chip "><input type="radio" name="8b-track" id="8b-track-52214" value="Muu"><span class="chip__name">Muu</span></label></div>
+        </fieldset>
+        <div class="sec__grid sec__grid--class" style="margin-top:var(--spacing-35)">
+          
+        <fieldset class="grp">
+          <legend class="lbl">Adressaat</legend>
+          <div class="chips"><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-46873" value="Rahandusministeerium" checked><span class="chip__name">Rahandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-71378" value="Majandus- ja Kommunikatsiooniministeerium"><span class="chip__name">Majandus- ja Kommunikatsiooniministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-54696" value="Riigikogu" checked><span class="chip__name">Riigikogu<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-86859" value="Vabariigi Valitsus"><span class="chip__name">Vabariigi Valitsus<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+          <details class="tail">
+            <summary>Vali nimekirjast (11)</summary>
+            <div class="tail__body">
+              <input class="fld tail__search" type="search" placeholder="Otsi asutust nime järgi"
+                     aria-label="Otsi adressaati nime järgi">
+              <div class="chips"><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-1600" value="Euroopa Komisjon"><span class="chip__name">Euroopa Komisjon<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-58322" value="Euroopa Parlament"><span class="chip__name">Euroopa Parlament<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-69061" value="Haridus- ja Teadusministeerium"><span class="chip__name">Haridus- ja Teadusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-15536" value="Justiits- ja Digiministeerium"><span class="chip__name">Justiits- ja Digiministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-41344" value="Kaitseministeerium"><span class="chip__name">Kaitseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-69459" value="Kliimaministeerium"><span class="chip__name">Kliimaministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-43613" value="Kultuuriministeerium"><span class="chip__name">Kultuuriministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-40515" value="Regionaal- ja Põllumajandusministeerium"><span class="chip__name">Regionaal- ja Põllumajandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-77676" value="Siseministeerium"><span class="chip__name">Siseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-90476" value="Sotsiaalministeerium"><span class="chip__name">Sotsiaalministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8b-addr" id="8b-addr-50182" value="Välisministeerium"><span class="chip__name">Välisministeerium<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+            </div>
+          </details>
+        </fieldset>
+          <fieldset class="grp">
+            <legend class="lbl">Andmeklass</legend>
+            <div class="chips">
+              <label class="chip "><input type="checkbox" name="8b-test" id="8b-test-72476" value="Testandmed"><span class="chip__name">Testandmed</span></label>
+            </div>
+          </fieldset>
+        </div>
+      </div>
+
+      <div class="sec sec--panel">
+        
+      <div class="nextpanel">
+        <span class="lbl">Järgmine tegevus</span>
+        <div class="nextpanel__row">
+          <div class="chips" role="radiogroup" aria-label="Mis laadi samm see on"><label class="chip mchip mchip--do"><input type="radio" name="8b-kind" id="8b-kind-95409" value="TEEN" checked><span class="chip__name">TEEN</span></label><label class="chip mchip mchip--wait"><input type="radio" name="8b-kind" id="8b-kind-42969" value="OOTAN"><span class="chip__name">OOTAN</span></label><label class="chip mchip mchip--monitor"><input type="radio" name="8b-kind" id="8b-kind-21950" value="JÄLGIN"><span class="chip__name">JÄLGIN</span></label></div>
+          <input class="fld nextpanel__text" type="text" name="8b-next-text"
+                 placeholder="Mida järgmisena teed või ootad?" value="Koosta ja saada Koja arvamus EIS-i kaudu"
+                 aria-label="Mida järgmisena teed või ootad?">
+        </div>
+        
+        <div class="nextpanel__row">
+          <div class="chips" role="radiogroup" aria-label="Mida kuupäev tähendab"><label class="chip "><input type="radio" name="8b-sem" id="8b-sem-95233" value="Tähtaeg" checked><span class="chip__name">Tähtaeg</span></label><label class="chip "><input type="radio" name="8b-sem" id="8b-sem-26164" value="Oodatav aeg"><span class="chip__name">Oodatav aeg</span></label><label class="chip "><input type="radio" name="8b-sem" id="8b-sem-23346" value="Vaatan üle"><span class="chip__name">Vaatan üle</span></label></div>
+          <input class="fld fld--date nextpanel__date" type="text" name="8b-next-date"
+                 placeholder="pp.kk.aaaa" value="8.9.2026" aria-label="Kuupäev">
+        </div>
+      </div>
+      </div>
+
+      <div class="acts">
+        <button class="btn btn--primary" type="submit"
+                >Loo teema</button>
+        <button class="btn btn--quiet" type="button">Loobu</button>
+        <span class="acts__note">Ülejäänud andmeid saab lisada ka hiljem teema lehel.</span>
+      </div>
+    </form></div>
+  </section>
+  <section class="fr">
+    <div class="fr__bar"><span class="fr__tag">8c</span>
+      <span class="fr__title">Servajuhtumid ja vead</span>
+      <span class="fr__sub">kaks viga korraga · pikk pealkiri · üksteist valdkonda · «Muu» tekstiga · avatud pikk nimekiri · pikk asutusenimi</span></div>
+    <div class="fr__win">
+  <div class="nav">
+    <span class="nav__brand">ÕIGUSLOOME</span>
+    <span class="nav__link">Ülevaade</span>
+    <span class="nav__link">Minu töö</span>
+    <span class="nav__link">Saabunud</span>
+    <span class="nav__link nav__link--on">Teemad</span>
+    <span class="nav__spacer"></span>
+    <span class="nav__search">Otsi teemat, viidet, asutust…</span>
+    <span class="nav__cta">+ Uus teema</span>
+  </div>
+    <form class="uus" onsubmit="return false">
+      <div class="uus__head"><h1 class="uus__title">Uus teema</h1></div>
+      <p class="formerr" role="alert"><b>Teemat ei salvestatud.</b><span>Kaks välja vajavad tähelepanu. Kõik sisestatu on alles.</span></p>
+
+      <div class="sec">
+        <label class="grp" style="display:block">
+          <span class="lbl lbl--err">Pealkiri</span>
+          <input class="fld fld--title fld--err" type="text" name="8c-title" value=""
+                 placeholder="Näiteks: Pakendiseaduse muutmise eelnõu">
+          <span class="err">Teemal peab olema pealkiri.</span>
+        </label>
+      </div>
+
+      <div class="sec">
+        <div class="sec__grid sec__grid--summary">
+          <label class="grp" style="display:block">
+            <span class="lbl">Millest teema räägib</span>
+            <textarea class="fld fld--area" name="8c-summary" rows="3"
+                      placeholder="Mida see teema puudutatud ettevõtete jaoks tähendab ja mida Koda tahab?">Eelnõu paneks digiplatvormidele kvartaalse aruandluskohustuse müüjate tehingute kohta. Puudutab ligikaudu 400 liikmesett</textarea>
+          </label>
+          <label class="grp" style="display:block">
+            <span class="lbl">Märkmed</span>
+            <textarea class="fld fld--area fld--notes" name="8c-notes" rows="3"></textarea>
+          </label>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec__grid sec__grid--files">
+          <div>
+            <span class="lbl">Failid</span>
+            <div class="drop">
+              <input type="file" multiple aria-label="Failid">
+              <span>või lohista siia</span>
+            </div>
+            
+          </div>
+          <label class="grp" style="display:block">
+            <span class="lbl">Saabus</span>
+            <input class="fld fld--date" type="text" name="8c-received" value="24.8.2026"
+                   placeholder="pp.kk.aaaa">
+          </label>
+          <label class="grp" style="display:block">
+            <span class="lbl lbl--err">Arvamuse tähtaeg</span>
+            <input class="fld fld--date fld--err" type="text" name="8c-deadline" value="31.02.2026"
+                   placeholder="pp.kk.aaaa">
+            <span class="err">Sellist kuupäeva ei ole. Kirjuta kujul pp.kk.aaaa.</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="sec__grid sec__grid--who">
+          <fieldset class="grp">
+            <legend class="lbl">Vastutaja</legend>
+            <div class="chips"><label class="chip "><input type="radio" name="8c-owner" id="8c-owner-27340" value="Ireen" checked><span class="chip__name">Ireen</span></label><label class="chip "><input type="radio" name="8c-owner" id="8c-owner-83772" value="Kaur"><span class="chip__name">Kaur</span></label><label class="chip "><input type="radio" name="8c-owner" id="8c-owner-23053" value="Marko"><span class="chip__name">Marko</span></label><label class="chip "><input type="radio" name="8c-owner" id="8c-owner-6617" value="Sandra"><span class="chip__name">Sandra</span></label></div>
+          </fieldset>
+          
+      <fieldset class="grp">
+        <legend class="lbl">Saatja</legend>
+        <div class="chips"><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-11443" value="Majandus- ja Kommunikatsiooniministeeriumi ettevõtluse ja tarbijapoliitika osakond" checked><span class="chip__name">Majandus- ja Kommunikatsiooniministeeriumi ettevõtluse ja tarbijapoliitika osakond<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-71378" value="Majandus- ja Kommunikatsiooniministeerium"><span class="chip__name">Majandus- ja Kommunikatsiooniministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-69459" value="Kliimaministeerium"><span class="chip__name">Kliimaministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-15536" value="Justiits- ja Digiministeerium"><span class="chip__name">Justiits- ja Digiministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-1600" value="Euroopa Komisjon"><span class="chip__name">Euroopa Komisjon<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-90476" value="Sotsiaalministeerium" checked><span class="chip__name">Sotsiaalministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-50182" value="Välisministeerium" checked><span class="chip__name">Välisministeerium<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+        <details class="tail" open>
+          <summary>Vali nimekirjast (9)</summary>
+          <div class="tail__body">
+            <input class="fld tail__search" type="search" placeholder="Otsi asutust nime järgi"
+                   aria-label="Otsi asutust nime järgi">
+            <div class="chips"><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-58322" value="Euroopa Parlament"><span class="chip__name">Euroopa Parlament<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-69061" value="Haridus- ja Teadusministeerium"><span class="chip__name">Haridus- ja Teadusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-41344" value="Kaitseministeerium"><span class="chip__name">Kaitseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-43613" value="Kultuuriministeerium"><span class="chip__name">Kultuuriministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-46873" value="Rahandusministeerium"><span class="chip__name">Rahandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-40515" value="Regionaal- ja Põllumajandusministeerium"><span class="chip__name">Regionaal- ja Põllumajandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-54696" value="Riigikogu"><span class="chip__name">Riigikogu<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-77676" value="Siseministeerium"><span class="chip__name">Siseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-sender" id="8c-sender-86859" value="Vabariigi Valitsus"><span class="chip__name">Vabariigi Valitsus<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+          </div>
+        </details>
+        <span class="note">Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla — teema vormilt uut asutust ei teki.</span>
+      </fieldset>
+        </div>
+      </div>
+
+      <div class="sec">
+        <fieldset class="grp">
+          <legend class="lbl">Valdkonnad</legend>
+          <div class="chips"><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-57782" value="Maksejõuetus"><span class="chip__name">Maksejõuetus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-64592" value="Raamatupidamine"><span class="chip__name">Raamatupidamine<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-3114" value="Intellektuaalomand"><span class="chip__name">Intellektuaalomand<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-56406" value="Toetusmeetmed"><span class="chip__name">Toetusmeetmed<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-90103" value="Koalitsioonilepped"><span class="chip__name">Koalitsioonilepped<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-74502" value="Õigusloome"><span class="chip__name">Õigusloome<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-84318" value="Energeetika" checked><span class="chip__name">Energeetika<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-36706" value="Riigihanked" checked><span class="chip__name">Riigihanked<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-38583" value="Haridus"><span class="chip__name">Haridus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-46865" value="Tarbijakaitse" checked><span class="chip__name">Tarbijakaitse<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-45561" value="Alkohol, tubakas"><span class="chip__name">Alkohol, tubakas<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-22037" value="Digiteemad" checked><span class="chip__name">Digiteemad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-27618" value="Finantsõigus, rahapesu" checked><span class="chip__name">Finantsõigus, rahapesu<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-16603" value="Ehitus" checked><span class="chip__name">Ehitus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-22259" value="Äriõigus" checked><span class="chip__name">Äriõigus<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-64406" value="Välistööjõud"><span class="chip__name">Välistööjõud<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-27493" value="Maksud ja toll" checked><span class="chip__name">Maksud ja toll<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-61898" value="Töösuhted, töökeskkond" checked><span class="chip__name">Töösuhted, töökeskkond<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-6692" value="Keskkond" checked><span class="chip__name">Keskkond<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-19906" value="Muud teemad"><span class="chip__name">Muud teemad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-67164" value="ELi õiguse ülevõtmine"><span class="chip__name">ELi õiguse ülevõtmine<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-66841" value="Olulised tähtajad" checked><span class="chip__name">Olulised tähtajad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-area" id="8c-area-75993" value="Arengukavad, strateegiad"><span class="chip__name">Arengukavad, strateegiad<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip chip--more chip--muu"><input type="checkbox" name="8c-area" id="8c-area-52214" value="Muu" checked><span class="chip__name">Muu</span></label></div>
+          
+        <label class="grp" style="display:block;margin-top:var(--spacing-25);max-width:420px">
+          <span class="lbl">Muu valdkond</span>
+          <input class="fld" type="text" name="8c-other" value="Platvormimajanduse aruandlus"
+                 placeholder="Millisesse valdkonda see kuulub?">
+        </label>
+        </fieldset>
+      </div>
+
+      <div class="sec">
+        <fieldset class="grp">
+          <legend class="lbl">Hetkeseis</legend>
+          <div class="chips"><label class="chip "><input type="radio" name="8c-stage" id="8c-stage-85908" value="Idee"><span class="chip__name">Idee</span></label><label class="chip "><input type="radio" name="8c-stage" id="8c-stage-50880" value="Kooskõlastusringil" checked><span class="chip__name">Kooskõlastusringil</span></label><label class="chip "><input type="radio" name="8c-stage" id="8c-stage-92527" value="Valitsuses"><span class="chip__name">Valitsuses</span></label><label class="chip "><input type="radio" name="8c-stage" id="8c-stage-24908" value="Riigikogus"><span class="chip__name">Riigikogus</span></label><label class="chip "><input type="radio" name="8c-stage" id="8c-stage-3971" value="Ootan jõustumist"><span class="chip__name">Ootan jõustumist</span></label><label class="chip "><input type="radio" name="8c-stage" id="8c-stage-50184" value="Jõustunud"><span class="chip__name">Jõustunud</span></label><label class="chip "><input type="radio" name="8c-stage" id="8c-stage-5351" value="Eesti seisukoht"><span class="chip__name">Eesti seisukoht</span></label><label class="chip "><input type="radio" name="8c-stage" id="8c-stage-9754" value="ELi menetluses"><span class="chip__name">ELi menetluses</span></label><label class="chip "><input type="radio" name="8c-stage" id="8c-stage-26098" value="Ootan ELi õiguse ülevõtmist"><span class="chip__name">Ootan ELi õiguse ülevõtmist</span></label><label class="chip "><input type="radio" name="8c-stage" id="8c-stage-52214" value="Muu"><span class="chip__name">Muu</span></label></div>
+        </fieldset>
+        <fieldset class="grp" style="margin-top:var(--spacing-35)">
+          <legend class="lbl">Menetlusliik</legend>
+          <div class="chips"><label class="chip "><input type="radio" name="8c-track" id="8c-track-36414" value="Riigisisene"><span class="chip__name">Riigisisene</span></label><label class="chip "><input type="radio" name="8c-track" id="8c-track-89064" value="ELi algatus"><span class="chip__name">ELi algatus</span></label><label class="chip "><input type="radio" name="8c-track" id="8c-track-67164" value="ELi õiguse ülevõtmine" checked><span class="chip__name">ELi õiguse ülevõtmine</span></label><label class="chip "><input type="radio" name="8c-track" id="8c-track-66013" value="Strateegia või arengukava"><span class="chip__name">Strateegia või arengukava</span></label><label class="chip "><input type="radio" name="8c-track" id="8c-track-61626" value="Koja algatus"><span class="chip__name">Koja algatus</span></label><label class="chip "><input type="radio" name="8c-track" id="8c-track-67727" value="Rakendamine või järelevalve"><span class="chip__name">Rakendamine või järelevalve</span></label><label class="chip "><input type="radio" name="8c-track" id="8c-track-52214" value="Muu"><span class="chip__name">Muu</span></label></div>
+        </fieldset>
+        <div class="sec__grid sec__grid--class" style="margin-top:var(--spacing-35)">
+          
+        <fieldset class="grp">
+          <legend class="lbl">Adressaat</legend>
+          <div class="chips"><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-46873" value="Rahandusministeerium" checked><span class="chip__name">Rahandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-71378" value="Majandus- ja Kommunikatsiooniministeerium"><span class="chip__name">Majandus- ja Kommunikatsiooniministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-54696" value="Riigikogu"><span class="chip__name">Riigikogu<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-86859" value="Vabariigi Valitsus"><span class="chip__name">Vabariigi Valitsus<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+          <details class="tail">
+            <summary>Vali nimekirjast (11)</summary>
+            <div class="tail__body">
+              <input class="fld tail__search" type="search" placeholder="Otsi asutust nime järgi"
+                     aria-label="Otsi adressaati nime järgi">
+              <div class="chips"><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-1600" value="Euroopa Komisjon"><span class="chip__name">Euroopa Komisjon<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-58322" value="Euroopa Parlament"><span class="chip__name">Euroopa Parlament<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-69061" value="Haridus- ja Teadusministeerium"><span class="chip__name">Haridus- ja Teadusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-15536" value="Justiits- ja Digiministeerium"><span class="chip__name">Justiits- ja Digiministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-41344" value="Kaitseministeerium"><span class="chip__name">Kaitseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-69459" value="Kliimaministeerium"><span class="chip__name">Kliimaministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-43613" value="Kultuuriministeerium"><span class="chip__name">Kultuuriministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-40515" value="Regionaal- ja Põllumajandusministeerium"><span class="chip__name">Regionaal- ja Põllumajandusministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-77676" value="Siseministeerium"><span class="chip__name">Siseministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-90476" value="Sotsiaalministeerium"><span class="chip__name">Sotsiaalministeerium<span class="chip__x" aria-hidden="true">×</span></span></label><label class="chip "><input type="checkbox" name="8c-addr" id="8c-addr-50182" value="Välisministeerium"><span class="chip__name">Välisministeerium<span class="chip__x" aria-hidden="true">×</span></span></label></div>
+            </div>
+          </details>
+        </fieldset>
+          <fieldset class="grp">
+            <legend class="lbl">Andmeklass</legend>
+            <div class="chips">
+              <label class="chip "><input type="checkbox" name="8c-test" id="8c-test-72476" value="Testandmed" checked><span class="chip__name">Testandmed</span></label>
+            </div>
+          </fieldset>
+        </div>
+      </div>
+
+      <div class="sec sec--panel">
+        
+      <div class="nextpanel">
+        <span class="lbl">Järgmine tegevus</span>
+        <div class="nextpanel__row">
+          <div class="chips" role="radiogroup" aria-label="Mis laadi samm see on"><label class="chip mchip mchip--do"><input type="radio" name="8c-kind" id="8c-kind-95409" value="TEEN"><span class="chip__name">TEEN</span></label><label class="chip mchip mchip--wait"><input type="radio" name="8c-kind" id="8c-kind-42969" value="OOTAN" checked><span class="chip__name">OOTAN</span></label><label class="chip mchip mchip--monitor"><input type="radio" name="8c-kind" id="8c-kind-21950" value="JÄLGIN"><span class="chip__name">JÄLGIN</span></label></div>
+          <input class="fld nextpanel__text fld--err" type="text" name="8c-next-text"
+                 placeholder="Mida järgmisena teed või ootad?" value=""
+                 aria-label="Mida järgmisena teed või ootad?">
+        </div>
+        <span class="err">Kirjuta, mida järgmisena teed või ootad — sellest saab järgmise sammu sõnastus.</span>
+        <div class="nextpanel__row">
+          <div class="chips" role="radiogroup" aria-label="Mida kuupäev tähendab"><label class="chip "><input type="radio" name="8c-sem" id="8c-sem-95233" value="Tähtaeg"><span class="chip__name">Tähtaeg</span></label><label class="chip "><input type="radio" name="8c-sem" id="8c-sem-26164" value="Oodatav aeg" checked><span class="chip__name">Oodatav aeg</span></label><label class="chip "><input type="radio" name="8c-sem" id="8c-sem-23346" value="Vaatan üle"><span class="chip__name">Vaatan üle</span></label></div>
+          <input class="fld fld--date nextpanel__date" type="text" name="8c-next-date"
+                 placeholder="pp.kk.aaaa" value="9.2026" aria-label="Kuupäev">
+        </div>
+      </div>
+      </div>
+
+      <div class="acts">
+        <button class="btn btn--primary" type="submit"
+                aria-disabled="true">Loo teema</button>
+        <button class="btn btn--quiet" type="button">Loobu</button>
+        <span class="acts__note">Ülejäänud andmeid saab lisada ka hiljem teema lehel.</span>
+      </div>
+    </form></div>
+  </section>
+  <section class="fr">
+    <div class="fr__bar"><span class="fr__tag">8d</span>
+      <span class="fr__title">Kitsam ekraan</span>
+      <span class="fr__sub">paarisread laotuvad ükshaaval · kiibid murduvad · järgmine tegevus jääb loetavaks · «Loo teema» ei kaugene</span><span class="fr__w">1024 px</span></div>
+    <div class="fr__win" style="max-width:1024px"><iframe class="fr__frame" src="uus-teema-1024.html" title="Uus teema 1024 px" width="1024" height="1360" loading="lazy"></iframe></div>
+  </section>
+</div>
+</body>
+</html>

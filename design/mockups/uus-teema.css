@@ -1,0 +1,526 @@
+/*
+ * Uus teema — the redesign, as CSS a building agent can lift almost verbatim.
+ *
+ * Every value here is a semantic token from static/css/tokens.css. Nothing in
+ * this file invents a colour, a radius or a step of the spacing scale; where a
+ * number is written literally it is because the token scale has no entry for it
+ * and the comment says so.
+ *
+ * The mockup document imports this file, so what you see rendered is what this
+ * stylesheet does — there are no inline overrides in the markup.
+ */
+
+/* ==================================================================== *
+ * The page
+ * ==================================================================== */
+
+.uus {
+  /* 1060px, not the Teema page's 1140. The Teema page spends its extra width
+     on a 300px facts rail; a form has no rail, and a single column wider than
+     this starts putting the label and the far edge of the input in different
+     saccades. */
+  max-width: 1060px;
+  margin: 0 auto;
+  padding: var(--spacing-6) var(--spacing-8) var(--spacing-10);
+}
+
+.uus__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-3);
+  padding-bottom: var(--spacing-4);
+}
+
+.uus__title {
+  font-size: var(--typography-size-page-title);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-title);
+  color: var(--text-primary);
+}
+
+/* ==================================================================== *
+ * Sections — spacing and a 1px rule, never a card
+ *
+ * The current page wraps every field in a bordered box, which gives nine
+ * concepts the same visual weight and costs ~24px of chrome each. A rule plus
+ * padding separates them for a tenth of the height and lets the type carry the
+ * hierarchy instead.
+ * ==================================================================== */
+
+.sec {
+  padding: var(--spacing-35) 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sec:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+/* The one section that is a panel. See `.nextpanel`. */
+.sec--panel {
+  padding-bottom: var(--spacing-4);
+}
+
+.sec__grid {
+  display: grid;
+  gap: var(--spacing-5);
+  align-items: start;
+}
+
+/* Section 2 — summary beside notes. */
+.sec__grid--summary { grid-template-columns: minmax(0, 1fr) 320px; }
+/* Section 3 — files, then two dates. */
+.sec__grid--files   { grid-template-columns: minmax(0, 1fr) 146px 146px; }
+/* Section 4 — owner, then senders. */
+.sec__grid--who     { grid-template-columns: 246px minmax(0, 1fr); }
+/* Section 6 — addressee, then the data class. */
+.sec__grid--class   { grid-template-columns: minmax(0, 1fr) 150px; }
+
+/* ==================================================================== *
+ * Labels and fields
+ * ==================================================================== */
+
+.lbl {
+  display: block;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--spacing-2);
+}
+
+.lbl--err { color: var(--status-danger); }
+
+/* A fieldset carrying a chip group: no border, no padding, and the legend is
+   the same micro-label. `display: contents` would drop the legend from the
+   accessibility tree in some engines, so the reset is explicit instead. */
+.grp {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.fld {
+  width: 100%;
+  background: var(--surface-base);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font: var(--typography-weight-regular) var(--typography-size-base) / var(--typography-line-normal)
+    var(--typography-font-sans);
+  padding: var(--spacing-2) var(--spacing-3);
+}
+
+.fld::placeholder { color: var(--text-muted); }
+
+.fld:focus-visible {
+  outline: 2px solid var(--accent-link);
+  outline-offset: 2px;
+  border-color: var(--accent-border);
+}
+
+/* The one field that is bigger than the others, because it is the only one
+   that has to be filled. 15px against the form's 13px is the whole signal —
+   no asterisk, no "kohustuslik" note. */
+.fld--title {
+  font-size: var(--typography-size-lg);
+  padding: var(--spacing-25) var(--spacing-35);
+}
+
+.fld--date {
+  font-variant-numeric: tabular-nums;
+  /* Dates are read as columns of digits; proportional figures make 11.09 and
+     31.08 different widths and the eye stops being able to compare them. */
+}
+
+.fld--area {
+  resize: vertical;
+  min-height: 74px;
+  line-height: var(--typography-line-body);
+}
+
+/* Märkmed. Dashed, and one step quieter in every dimension: this is scratch
+   paper beside the summary that the Teema header will publish. */
+.fld--notes {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--text-body);
+}
+
+.fld--err {
+  border-color: var(--status-danger-border);
+  box-shadow: 0 0 0 3px rgba(239, 125, 110, 0.08);
+}
+
+.err {
+  display: block;
+  margin-top: var(--spacing-15);
+  font-size: var(--typography-size-meta);
+  color: var(--status-danger);
+}
+
+/* The two helper lines that survive. Everything else the controls say
+   themselves. */
+.note {
+  display: block;
+  margin-top: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  line-height: var(--typography-line-normal);
+}
+
+/* ==================================================================== *
+ * The chip
+ *
+ * One control, two behaviours. `input[type=radio]` where the model holds one
+ * value, `input[type=checkbox]` where it holds several — the shape of the
+ * control is the promise, and the promise is enforced by the input type rather
+ * than by CSS.
+ *
+ * The input is visually hidden but focusable and hit-testable: it covers the
+ * label, so clicking the chip *is* clicking the input. A 1px `pointer-events:
+ * none` box was the earlier approach and made clicks land wherever the label
+ * happened to be (static/js — the same trap the composer's mode chips hit).
+ * ==================================================================== */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-15);
+  align-items: center;
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.chip input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.chip__name {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  /* 3px/11px. The vertical value is off the 4px scale on purpose: a 4px chip is
+     26px tall and eight rows of them is 40px of air the form does not have. */
+  padding: 3px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-control);
+  background: var(--surface-raised);
+  color: var(--text-body);
+  font-size: var(--typography-size-meta);
+  line-height: var(--typography-line-normal);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--motion-duration-fast) var(--motion-easing-standard),
+    background var(--motion-duration-fast) var(--motion-easing-standard);
+}
+
+.chip:hover .chip__name { border-color: var(--border-strong); }
+
+.chip input:checked + .chip__name {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.chip input:focus-visible + .chip__name {
+  outline: 2px solid var(--accent-link);
+  outline-offset: 2px;
+}
+
+/* Multi-select only. The × says "this one comes off", which a checked radio
+   must not say — you replace a radio, you do not clear it. */
+.chip__x {
+  color: var(--accent-link);
+  font-size: var(--typography-size-meta-sm);
+  display: none;
+}
+
+.chip input[type="checkbox"]:checked + .chip__name .chip__x { display: inline; }
+
+/* `Muu` keeps its dashed border when it is checked. It is selected *and* it is
+   still the control that revealed the text field below the row, and losing the
+   dash on selection would make it indistinguishable from a governed area — the
+   one thing this chip must never look like (master specification 11.2: nothing
+   here creates taxonomy). */
+.chip--muu input:checked + .chip__name {
+  border-style: dashed;
+  border-color: var(--accent-link);
+}
+
+/* Dashed always means "this opens something optional" — the long-tail picker,
+   Muu, and nothing else. Borrowed from the Teema page, where the rail's `+`
+   chip and the SharePoint rows already use it. */
+.chip--more .chip__name,
+.chip--open {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+/* ==================================================================== *
+ * The workflow chip — TEEN / OOTAN / JÄLGIN
+ *
+ * Deliberately NOT the selection chip. It is the vocabulary Minu töö and the
+ * Teema page already use, and it has to read as the same object here: caps,
+ * 700, tracked, and the fill / solid / dashed triad that survives greyscale
+ * (ADR 0031 §7, master specification 18.8).
+ * ==================================================================== */
+
+.mchip .chip__name {
+  padding: 3px 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-chip);
+  background: var(--surface-elevated);
+  border-color: var(--border-control);
+  color: var(--text-muted);
+}
+
+/* Unselected, JÄLGIN keeps its dashed border — the one shape difference that
+   survives both states. */
+.mchip--monitor .chip__name { border-style: dashed; }
+
+.mchip--do input:checked + .chip__name {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+.mchip--wait input:checked + .chip__name {
+  background: var(--surface-selected);
+  border-color: var(--accent-link);
+  color: var(--text-primary);
+}
+
+.mchip--monitor input:checked + .chip__name {
+  background: var(--surface-selected);
+  border-color: var(--accent-link);
+  border-style: dashed;
+  color: var(--text-primary);
+}
+
+/* ==================================================================== *
+ * Files
+ * ==================================================================== */
+
+.drop {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  min-height: 36px;
+  padding: var(--spacing-15) var(--spacing-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+.drop input[type="file"] { color: var(--text-secondary); font-size: var(--typography-size-meta); }
+
+.filelist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-15);
+  margin-top: var(--spacing-2);
+  list-style: none;
+  padding: 0;
+}
+
+.filelist li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  color: var(--text-body);
+  font-size: var(--typography-size-meta-sm);
+}
+
+.filelist b { color: var(--text-muted); font-weight: var(--typography-weight-regular); }
+
+/* ==================================================================== *
+ * The long tail
+ * ==================================================================== */
+
+.tail { margin-top: var(--spacing-2); }
+
+.tail > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 3px 11px;
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border-strong);
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+  cursor: pointer;
+  list-style: none;
+}
+
+.tail > summary::-webkit-details-marker { display: none; }
+.tail > summary:focus-visible { outline: 2px solid var(--accent-link); outline-offset: 2px; }
+.tail[open] > summary { color: var(--text-primary); border-color: var(--accent-border); }
+
+.tail__body {
+  margin-top: var(--spacing-2);
+  padding: var(--spacing-25);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+}
+
+.tail__search {
+  width: 100%;
+  max-width: 280px;
+  margin-bottom: var(--spacing-2);
+}
+
+/* ==================================================================== *
+ * Järgmine tegevus — the one panel
+ *
+ * Same treatment as the Teema page's composer, because it is the same act:
+ * saying what happens next. The blue left edge is what marks a capture surface
+ * throughout the product.
+ * ==================================================================== */
+
+.nextpanel {
+  background: var(--surface-capture);
+  border: 1px solid var(--accent-border);
+  border-left: 2px solid var(--accent-primary);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-3) var(--spacing-4) var(--spacing-35);
+}
+
+.nextpanel__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-25);
+  flex-wrap: wrap;
+}
+
+.nextpanel__row + .nextpanel__row { margin-top: var(--spacing-25); }
+
+.nextpanel__text { flex: 1 1 320px; min-width: 0; }
+
+.nextpanel__date { width: 146px; flex: none; }
+
+/* ==================================================================== *
+ * Actions
+ * ==================================================================== */
+
+.acts {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  padding-top: var(--spacing-4);
+}
+
+.btn {
+  font: var(--typography-weight-semibold) var(--typography-size-base) / 1
+    var(--typography-font-sans);
+  padding: var(--spacing-25) var(--spacing-45);
+  border-radius: var(--radius-control);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.btn:focus-visible { outline: 2px solid var(--accent-link); outline-offset: 2px; }
+
+.btn--primary { background: var(--accent-primary); color: var(--text-inverse); }
+.btn--primary:hover { background: var(--accent-hover); }
+
+/* Inactive, not `disabled`. A disabled button is not focusable and announces
+   nothing, so a keyboard user meets a control that does not exist. This one
+   stays reachable and explains itself; the server refuses a blank title
+   regardless (app/matters/forms.py). */
+.btn--primary[aria-disabled="true"] {
+  background: var(--surface-elevated);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.btn--quiet {
+  background: transparent;
+  border-color: var(--border-control);
+  color: var(--text-secondary);
+}
+
+.btn--quiet:hover { background: var(--surface-hover); color: var(--text-primary); }
+
+.acts__note {
+  margin-left: auto;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* A refused save says so once, at the top, and names how many fields. The
+   fields themselves carry the detail. */
+.formerr {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-4);
+  padding: var(--spacing-25) var(--spacing-3);
+  border: 1px solid var(--status-danger-border);
+  border-left: 2px solid var(--status-danger);
+  border-radius: var(--radius-sm);
+  background: var(--status-danger-soft);
+  color: var(--text-body);
+  font-size: var(--typography-size-base);
+}
+
+.formerr b { color: var(--status-danger); font-weight: var(--typography-weight-semibold); }
+
+/* ==================================================================== *
+ * Responsive
+ *
+ * Two rules, both expressed as "when a column would be too narrow to read",
+ * never as a device. Order is preserved in every case: the DOM order is the
+ * reading order, and nothing reflows across sections.
+ * ==================================================================== */
+
+@media (max-width: 1100px) {
+  .uus { padding-left: var(--spacing-6); padding-right: var(--spacing-6); }
+}
+
+/* Nothing stacks at 1024. Measured at that width the content column is 976px,
+   which leaves the summary 636px beside a 320px note, the file field 644px
+   beside two 146px dates, and the sender chips 710px beside a 246px owner
+   column — every one of them comfortable. Stacking there would add ~250px of
+   height to buy nothing, and the brief's "the main action should not end up
+   several screens away" is the constraint that matters at this width.
+
+   900px is where the second column genuinely stops working: the note falls
+   under 260px, where three lines become six. */
+@media (max-width: 900px) {
+  .sec__grid--summary { grid-template-columns: minmax(0, 1fr); }
+  .sec__grid--who { grid-template-columns: minmax(0, 1fr); }
+  .sec__grid--class { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The dates keep their 146px to the very end — a date box is as wide as
+   `pp.kk.aaaa` needs and no wider, at any viewport. Only the file field gives
+   up its row. */
+@media (max-width: 720px) {
+  .sec__grid--files { grid-template-columns: minmax(0, 1fr); }
+}
