@@ -47,11 +47,16 @@ Three rules bound it:
 - **Written dates only.** Exact days, Estonian month names, quarters, half-years
   and explicit `NNNN. aasta` years. A bare four-digit number is not a stated
   year. Two plausible dates mean review required — never the first, the last or
-  the nearest. A date that cannot exist (`5. kvartal`, `31.02`) stops the
-  reading rather than being ignored.
+  the nearest. A date that cannot exist (`5. kvartal`, `V kvartal`, `31.02`)
+  stops the reading rather than being ignored. Parser 1.1 adds one further
+  refusal: a date whose immediately preceding word is an entry-into-force verb
+  belongs to that clause, not to the instruction — *jõustub 1.01.2028* beside a
+  waiting verb states when an act takes effect, not when the awaited thing
+  arrives.
 - **Refusing beats guessing, and every refusal is named.** `NO_KIND`,
   `AMBIGUOUS_KIND`, `AMBIGUOUS_DATE`, `UNREADABLE_DATE`, `DO_WITHOUT_DATE`,
-  `DO_DATE_WITHOUT_DEADLINE_WORDING`, `APPROXIMATE_DEADLINE`. A report that said
+  `DO_DATE_WITHOUT_DEADLINE_WORDING`, `APPROXIMATE_DEADLINE`,
+  `DATE_GOVERNED_BY_ANOTHER_CLAUSE`. A report that said
   only "40 of 134 converted" would leave nobody able to tell a rule that is too
   strict from a corpus that is genuinely ambiguous.
 

@@ -245,6 +245,12 @@ def test_a_year_needs_the_word_aasta():
         "Ootan eelnõu 5. kvartalis 2027",
         "Ootan eelnõu 3. poolaastal 2027",
         "Ootan eelnõu 31.02.2026",
+        # The register writes periods in Roman numerals too — "II kvartalis",
+        # "I poolaasta". A guard that only understood the Arabic spelling let
+        # these through as though no period had been written at all, and the
+        # sentence converted on its verb alone.
+        "Ootan eelnõu V kvartalis 2027",
+        "Ootan eelnõu III poolaastal 2027",
     ],
 )
 def test_a_date_that_cannot_exist_stops_the_reading(source):
@@ -268,6 +274,77 @@ def test_a_period_phrase_is_one_date_and_not_two():
     parsed = parse_instruction("Ootan eelnõud 2027. aasta 2. kvartalis")
     assert parsed.verdict == Verdict.UNDERSTOOD
     assert parsed.date_precision == DatePrecision.QUARTER
+
+
+# -- a date that belongs to another clause -----------------------------------
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "Ootan Riigi Teataja linki, jõustub 1.01.2029",
+        "Vastu võetud, muudatused jõustuvad 01.11.2029, ootan linki",
+        "Jälgin menetlust, määrus jõustub 2029. aasta 2. kvartalis",
+        # Verb before the noun it commences. Estonian allows the inversion and
+        # the clause is the same one, so adjacency alone would miss it.
+        "Ootan linki, jõustuvad muudatused 01.11.2029",
+    ],
+)
+def test_an_entry_into_force_date_is_not_the_awaited_events_timing(source):
+    """When an act takes effect is not when the awaited thing arrives.
+
+    A publication link is expected within weeks of adoption; the act it
+    publishes takes effect years later. Storing the second as EXPECTED_AROUND
+    would put a claim on the department's own record that the register never
+    made — and it is the shape the register writes most often, because it
+    records entry into force beside whatever else is happening.
+    """
+    parsed = parse_instruction(source)
+    assert parsed.verdict == Verdict.REVIEW_REQUIRED
+    assert ReviewReason.DATE_GOVERNED_BY_ANOTHER_CLAUSE in parsed.review_reasons
+    assert parsed.target_date is None
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        # Entry into force with no date of its own. The quarter that follows is
+        # separated from the verb by five words and belongs to the wait.
+        ("Jõustub üldises korras. Ootan eelnõud 2029. aasta 2. kvartalis", dt.date(2029, 4, 1)),
+        # The verb comes after the date it does not govern.
+        ("Ootan eelnõud 2029. aasta 2. kvartalis, jõustub üldises korras", dt.date(2029, 4, 1)),
+        # No punctuation at all, and the waiting verb has taken the sentence
+        # over before the date arrives.
+        (
+            "Jõustub üldises korras ja ootan eelnõud 2029. aasta 2. kvartalis",
+            dt.date(2029, 4, 1),
+        ),
+    ],
+)
+def test_entry_into_force_wording_alone_refuses_nothing(source, expected):
+    """The test is what the verb governs, not whether it appears.
+
+    A bare precedence test would refuse all of these, where the register simply
+    noted the commencement rule before stating what it is waiting for. What ends
+    the entry-into-force clause is punctuation, or the next instruction verb
+    where the writer left the punctuation out.
+    """
+    parsed = parse_instruction(source)
+    assert parsed.verdict == Verdict.UNDERSTOOD
+    assert parsed.kind == ActionKind.WAIT
+    assert parsed.target_date == expected
+
+
+def test_a_dateless_entry_into_force_sentence_still_converts():
+    """No date, nothing to misattribute.
+
+    "muudatused jõustuvad üldises korras" names no day, so the wait is read
+    exactly as it would be without the clause: honest, and dateless.
+    """
+    parsed = parse_instruction("Ootan valitsusele saatmist, muudatused jõustuvad üldises korras")
+    assert parsed.verdict == Verdict.UNDERSTOOD
+    assert parsed.kind == ActionKind.WAIT
+    assert parsed.target_date is None
 
 
 # -- staleness --------------------------------------------------------------

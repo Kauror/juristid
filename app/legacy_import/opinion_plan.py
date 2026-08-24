@@ -492,10 +492,15 @@ def _plan_reviewed_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]
     """Decisions an operator already made in the review queue.
 
     The queue records; this executes. A reviewer confirming a letter was sent
-    is asserting the identity and the date the evidence could not settle, and
-    the resulting record says so — ``REVIEWED_DECISION``, never
-    ``EXCEL_OUT_DATE`` — so nobody later reads a person's judgement as a
-    register value (brief 19, 63).
+    is asserting the identity and, where they stated one, the date the evidence
+    could not settle. The record then says ``REVIEWED_DECISION``, so nobody
+    later reads a register value as a person's judgement.
+
+    Where the reviewer approved the letter without stating a date, the register
+    date is still used and the record says ``EXCEL_OUT_DATE``. Until now it said
+    ``REVIEWED_DECISION`` either way, which is the same confusion in the other
+    direction: a person's authority written onto a spreadsheet cell they never
+    looked at (brief 19, 63).
     """
     from app.legacy_import.opinion_archive import OpinionMatchCandidate, OpinionSubmissionImport
     from app.legacy_import.opinion_enums import OpinionCandidateState
@@ -524,8 +529,27 @@ def _plan_reviewed_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]
                 "ei ole selles arhiivi tõmmises."
             )
             continue
-        sent_date = candidate.reviewed_sent_date or candidate.excel_sent_date
-        if sent_date is None:
+        # The basis follows the value, always. A reviewer who approved the
+        # submission and did not state a date has not decided the date, and
+        # labelling the register's VÄLJA column as REVIEWED_DECISION would put a
+        # person's authority on a spreadsheet cell — which is exactly the
+        # confusion this basis vocabulary exists to prevent (brief 19, 63).
+        #
+        # The fallback itself is kept: an approved letter with a register date is
+        # a defensible record. What changes is that it now says so.
+        if candidate.reviewed_sent_date is not None:
+            sent_date = candidate.reviewed_sent_date
+            sent_date_basis = SentDateBasis.REVIEWED_DECISION
+        elif candidate.excel_sent_date is not None:
+            sent_date = candidate.excel_sent_date
+            sent_date_basis = SentDateBasis.EXCEL_OUT_DATE
+        else:
+            # No date from either source. A SENT submission whose date nobody
+            # can name is withheld rather than dated from something weaker.
+            plan.warnings.append(
+                f"Ülevaatusel kinnitatud fail {candidate.item.original_filename[:60]}: "
+                "saatmise kuupäeva ei ole ei ülevaatuses ega registris."
+            )
             continue
         recipient_raw, recipient_basis = _recipient_for(
             plan,
@@ -545,7 +569,7 @@ def _plan_reviewed_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]
                 kind=_kind_for(occurrence),
                 title=(occurrence.filename_title or occurrence.original_filename)[:400],
                 sent_date=sent_date,
-                sent_date_basis=SentDateBasis.REVIEWED_DECISION,
+                sent_date_basis=sent_date_basis,
                 recipient_raw=recipient_raw,
                 recipient_basis=recipient_basis,
                 match_class=candidate.match_class,

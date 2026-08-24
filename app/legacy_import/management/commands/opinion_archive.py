@@ -91,6 +91,14 @@ class Command(BaseCommand):
         parser.add_argument("--expect-archive-sha256", default="")
         parser.add_argument("--expect-kodadash-sha256", default="")
         parser.add_argument("--report", type=Path, help="Write a JSON summary here.")
+        parser.add_argument(
+            "--expect-plan-sha256",
+            default="",
+            help=(
+                "Required by apply: the digest of the plan a person reviewed. "
+                "Printed by plan and dry-run."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         phase = options["phase"]
@@ -109,9 +117,16 @@ class Command(BaseCommand):
 
         plan = self._build(options)
         if phase in {"audit", "plan"}:
+            from app.legacy_import.opinion_apply_gate import plan_digest
+
             self.stdout.write(plan.as_text())
             for finding in plan.findings:
                 self.stdout.write(f"  leid: {finding}")
+            # Printed by the phase a person reads, because it is the value they
+            # will hand back to apply. A digest an operator has to compute
+            # themselves is a digest that gets copied from the wrong run.
+            self.stdout.write("")
+            self.stdout.write(f"  plaani räsi        {plan_digest(plan)}")
             if options.get("report"):
                 self._write_report(options["report"], plan.summary())
             return None
@@ -236,12 +251,33 @@ class Command(BaseCommand):
             open_batch,
             require_unchanged_sources,
         )
+        from app.legacy_import.opinion_apply_gate import (
+            ApplyConflict,
+            PlanChanged,
+            require_no_conflicts,
+            require_reviewed_plan,
+        )
 
         try:
             require_unchanged_sources(plan)
         except OpinionApplyError as error:
             raise CommandError(str(error)) from error
 
+        # Three gates, and they ask three different questions. The sources gate
+        # asks whether the evidence moved. The plan digest asks whether *this*
+        # is the plan somebody read — recomputed here, at apply time, because
+        # "rebuild the plan and apply whatever it now says" is exactly the
+        # failure it exists to prevent. The conflict scan asks whether writing it
+        # would contradict something already recorded, and it runs on the
+        # reviewed route as well as the automatic one: a person approving a
+        # letter asserts whose it is, not that nobody else has filed it since.
+        try:
+            digest = require_reviewed_plan(plan, options.get("expect_plan_sha256", ""))
+            require_no_conflicts(plan)
+        except (PlanChanged, ApplyConflict) as error:
+            raise CommandError(str(error)) from error
+
+        self.stdout.write(f"  plaani räsi        {digest}")
         batch = open_batch(plan)
         report = apply_plan(plan, batch=batch)
         batch.finished_at = timezone.now()
