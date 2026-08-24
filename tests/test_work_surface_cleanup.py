@@ -31,7 +31,14 @@ from tests import factories
 pytestmark = pytest.mark.django_db
 
 #: Every ordinary work surface that renders a table of Matters.
-WORK_SURFACES = ("matters:matter_list", "matters:my_work", "matters:inbox", "matters:overview")
+#:
+#: Minu töö and Ülevaade are deliberately absent. Neither renders a table any
+#: more: the Minu töö / Ülevaade rebuild replaced both with rule-separated rows,
+#: and Minu töö dropped its register table outright — it is where a lawyer sees
+#: what to do next, not a place to browse. A route with no table cannot be
+#: asserted to have a well-formed one, and adding a table back to satisfy this
+#: file would be the test writing the design.
+WORK_SURFACES = ("matters:matter_list", "matters:inbox")
 
 
 class _Tables(HTMLParser):

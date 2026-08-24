@@ -33,7 +33,10 @@ pytestmark = pytest.mark.e2e
 #: made the whole test vacuous for every other route too.
 TABLE_PAGES: list[tuple[str, str, bool]] = [
     ("martin", "/teemad/?olek=koik", True),
-    ("martin", "/minu-too/", True),
+    # `/minu-too/` is deliberately absent: the work-surface rebuild replaced
+    # its tables with rule-separated rows, and a route with no table cannot
+    # be asserted to have a well-formed one. Its rows' reachability is
+    # asserted in e2e/test_work_surfaces_review.py instead.
     ("martin", "/saabunud/", True),
     ("martin", "/statistika/arvamused/", True),
     ("martin", "/statistika/materjalid/", False),

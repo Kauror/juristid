@@ -277,13 +277,16 @@ def test_the_form_survives_a_narrow_window(page, base_url, width):
 
 
 @pytest.mark.parametrize("width", [1024, 420])
-def test_the_kpi_cards_survive_a_narrow_window(page, base_url, width):
+def test_the_seis_strip_survives_a_narrow_window(page, base_url, width):
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(f"{base_url}/ulevaade/")
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator(".statcard").first).to_be_visible()
+    # The KPI cards became a one-line strip with the work-surface rebuild.
+    # What is asserted is unchanged: the figures are still there and the page
+    # still does not scroll sideways.
+    expect(page.locator(".seis__figure").first).to_be_visible()
     assert not _document_overflows(page), f"Ülevaade scrolls sideways at {width}px"
 
 

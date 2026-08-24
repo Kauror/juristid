@@ -384,9 +384,9 @@ def test_the_summary_counts_each_action_once(signed_in, specialist):
 
     response = signed_in.get(reverse("matters:my_work"))
 
-    assert response.context["work_total"] == 3
+    assert response.context["work"].total == 3
     # Only the DO with a deadline is late. The passed review is not.
-    assert response.context["work_overdue"] == 1
+    assert response.context["work"].overdue == 1
 
 
 def test_a_passed_review_is_never_worded_as_late(signed_in, specialist):
@@ -402,8 +402,11 @@ def test_a_passed_review_is_never_worded_as_late(signed_in, specialist):
 
     body = _body(signed_in.get(reverse("matters:my_work")))
 
-    assert "Ülevaatus möödas" in body
-    assert "Tähtaeg möödas" not in body
+    # The band names it, and the row states what its date means. Neither
+    # ever calls a passed review a missed deadline.
+    assert "Ülevaatamiseks küps" in body
+    assert "VAATAN ÜLE" in body
+    assert "Üle tähtaja" not in body
 
 
 def test_matters_without_a_next_step_stay_out_of_the_dated_list(signed_in, specialist):
@@ -412,8 +415,8 @@ def test_matters_without_a_next_step_stay_out_of_the_dated_list(signed_in, speci
 
     response = signed_in.get(reverse("matters:my_work"))
 
-    assert response.context["work_total"] == 0
-    assert "Järgmine samm puudub" in _body(response)
+    assert response.context["work"].total == 0
+    assert "Järgmise tegevuseta" in _body(response)
 
 
 # ---------------------------------------------------------------------------

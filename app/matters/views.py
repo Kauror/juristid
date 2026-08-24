@@ -45,8 +45,8 @@ from app.legacy_import.register_display import (
     source_instruction_for,
     source_instructions_for,
 )
+from app.matters import overview as overview_module
 from app.matters import register_filters, selectors
-from app.matters.dashboard import DEADLINE_WINDOW_PARAM, build_dashboard, deadline_window
 from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.forms import (
     BriefSummaryForm,
@@ -65,6 +65,7 @@ from app.matters.forms import (
 )
 from app.matters.intake import register_incoming, validate_uploads
 from app.matters.models import Matter, MatterEngagement
+from app.matters.my_work import HORIZON_PARAM, build_my_work, horizon_from
 from app.matters.services import (
     add_engagement,
     assign_matter,
@@ -143,31 +144,50 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
 
 @gate_required
 def overview(request: HttpRequest) -> HttpResponse:
-    """Ülevaade — the department portfolio, scoped to what this reader may see.
+    """Ülevaade — where the department stands, in three scopes behind one shell.
 
     Deliberately not Minu töö. That page answers "what do I have to do today";
-    this one answers "what is the state of the files", which is the question a
-    morning department review starts from.
+    this one answers "where is the department losing time", which is the
+    question a morning review starts from.
+
+    The scope is a URL parameter and the three tabs are ordinary links. A
+    client-side tab strip would make the department view unlinkable, which is
+    the one thing somebody covering a colleague's holiday needs to be able to
+    paste into a message.
 
     The one page that renders without a persona. In shared-gate mode somebody
-    lands here straight from the password, and the dashboard has to be worth
-    looking at before they have said who they are — so it is built for a
-    *department* scope rather than borrowed from an arbitrary person's identity.
-    That scope sees NORMAL visibility and no participation, which means nothing
-    RESTRICTED appears merely because a shared password was typed
-    (Stage-2D auth brief 6, app/core/authorization.py).
+    lands here straight from the password, and the page has to be worth looking
+    at before they have said who they are — so it is built for a *department*
+    scope rather than borrowed from an arbitrary person's identity. That scope
+    sees NORMAL visibility and no participation, so nothing RESTRICTED appears
+    merely because a shared password was typed (Stage-2D auth brief 6).
     """
-    # The deadline period comes from the URL and nowhere else, so the back
-    # button, a refresh and a pasted link all show the same table. An
-    # unrecognised value falls back to the default rather than 500ing or
-    # rendering a convincing empty list (`deadline_window`).
-    window = deadline_window(request.GET.get(DEADLINE_WINDOW_PARAM))
+    # Everything that changes what is on screen comes from the URL and nowhere
+    # else, so the back button, a refresh and a pasted link all show the same
+    # page. An unrecognised value falls back rather than 500ing or rendering a
+    # convincing empty list.
+    scope = overview_module.scope_from(request.GET.get(overview_module.SCOPE_PARAM))
+    sort = request.GET.get(overview_module.SORT_PARAM, overview_module.SORT_OPEN)
+    feed = request.GET.get(overview_module.FEED_PARAM, overview_module.FEED_ALL)
+    intervention = request.GET.get(overview_module.INTERVENTION_PARAM, "")
+    today = timezone.localdate()
     return render(
         request,
-        "matters/overview_dashboard.html",
+        "matters/overview.html",
         {
-            "dashboard": build_dashboard(viewer_for(request), window=window),
-            "today": timezone.localdate(),
+            "page": overview_module.build_overview(
+                viewer_for(request),
+                scope=scope,
+                today=today,
+                sort=sort,
+                feed_filter=feed,
+                intervention_filter=intervention,
+            ),
+            "scopes": overview_module.SCOPES,
+            "scope": scope,
+            "sort_options": overview_module.SORT_OPTIONS,
+            "feed_filters": overview_module.FEED_FILTERS,
+            "today": today,
             "nav_active": "ulevaade",
         },
     )
@@ -175,40 +195,27 @@ def overview(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def my_work(request: HttpRequest) -> HttpResponse:
+    """Minu töö — one chronological answer to "what do I do now".
+
+    Every population on the page is read once, through the shared work model, so
+    the header's counts and the bands under them come from the same list and
+    cannot disagree (app/matters/work_items.py).
+    """
     today = timezone.localdate()
-    work_groups = selectors.my_work_timeline(request.user, today)
-    scheduled = [action for group in work_groups for action in group.actions]
-    attention = selectors.my_attention_items(request.user, today)
-    active = selectors.my_active_matters(request.user)[:PAGE_SIZE]
-    without_action = list(
-        selectors.matters_without_next_action(request.user).filter(owner_id=request.user.pk)[:20]
-    )
+    horizon = horizon_from(request.GET.get(HORIZON_PARAM), today)
+    work = build_my_work(request.user, today=today, horizon=horizon)
 
     return render(
         request,
         "matters/my_work.html",
         {
             "today": today,
-            # One list, banded by date. The summary counts it once: an action is
-            # in exactly one band, and "late" counts only what genuinely is
-            # (app/matters/selectors.py).
-            "work_groups": work_groups,
-            "work_total": len(scheduled),
-            "work_overdue": selectors.overdue_count(scheduled, today),
-            "attention": attention,
-            # One row per Matter, several reasons inside it. The flat list stays
-            # in the context because the count in the heading is a count of
-            # problems, not of files.
-            "attention_groups": selectors.group_attention(attention),
-            "without_next_action": without_action,
-            "active_matters": active,
-            "active_count": selectors.my_active_matters(request.user).count(),
-            # One query for the whole page, not one per row. The shared table
-            # partial shows the register's own instruction where no structured
-            # one exists, and the "Järgmine samm puudub" rows show the same
-            # sentence as context — those Matters are, by definition, exactly
-            # the ones where only the register has anything to say (ADR 0021).
-            "source_instructions": source_instructions_for([*active, *without_action]),
+            "work": work,
+            # One query for the whole rail, not one per row. The register's own
+            # sentence is the context a lawyer needs in order to set a next
+            # step, and these Matters are by definition the ones where only the
+            # register has anything to say (ADR 0021).
+            "source_instructions": source_instructions_for([row.matter for row in work.quiet]),
             # Which approved workbook that wording is a photograph of. Excel is
             # still being edited, so an undated "Excelist" chip invites somebody
             # to act on a sentence that has since moved (ADR 0021).

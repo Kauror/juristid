@@ -68,6 +68,11 @@ class SentFilters:
 
     query: str = ""
     year: str = ""
+    #: One month inside `year`, as a number. Added so the Ulevaade figure
+    #: *N esitatud arvamust augustis* has a real list behind it rather than
+    #: sending the reader to a whole year and leaving them to count. Read-only
+    #: and only meaningful beside a year (Ulevaade brief 21).
+    month: str = ""
     status: str = SubmissionStatus.SENT
     kind: str = ""
     recipient_id: str = ""
@@ -79,6 +84,7 @@ class SentFilters:
         return bool(
             self.query
             or self.year
+            or self.month
             or self.kind
             or self.recipient_id
             or self.owner_id
@@ -135,6 +141,11 @@ def sent_queryset(user: Any, filters: SentFilters) -> QuerySet[Submission]:
         # page answers is when the letter went out, and a 2024 file answered in
         # 2026 belongs in 2026.
         rows = rows.filter(sent_at__year=int(filters.year))
+
+    if filters.month:
+        if not filters.month.isdigit() or not 1 <= int(filters.month) <= 12:
+            raise SubmissionQueryRefused("Kuu peab olema arv vahemikus 1-12.")
+        rows = rows.filter(sent_at__month=int(filters.month))
 
     if filters.kind:
         if filters.kind not in SubmissionKind.values:

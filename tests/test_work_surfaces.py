@@ -217,7 +217,7 @@ def test_my_work_page_renders_and_counts_only_visible_matters(
     assert response.status_code == 200
     body = response.content.decode()
     assert "Minu teema" in body
-    assert response.context["active_count"] == 1
+    assert response.context["work"].open_matters == 1
 
 
 def test_matter_list_paginates_and_filters(signed_in, specialist):

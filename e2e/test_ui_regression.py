@@ -91,6 +91,22 @@ CLOCK_DEPENDENT = [
     ".app__footer",
     ".dateline",
     ".workrow__date",
+    # The rebuilt work surfaces. Every one of these renders a value derived
+    # from today — "10 p üle", "TÄHTAEG 14.08", a feed timestamp — and a mask
+    # selector that stops matching does not fail. It silently unmasks a value
+    # that changes daily, and the baseline goes red the next morning.
+    # The whole reason cell, not its two children. The meaning wraps, so a mask
+    # sized to one line leaves the second peeking out — and a value that changes
+    # daily peeking past its mask turns every baseline red the next morning.
+    ".workrow2__datecell",
+    ".teamrow__datecell",
+    ".interrow__reason",
+    ".deadlinerow__when",
+    ".feedrow__when",
+    ".entryline__when",
+    ".arealine__date",
+    ".quietrow__meta",
+    ".disclosure__meta",
     ".factrow__date",
     ".table__lastactivity .muted",
     # The Teema header's one deadline, the Järgmiseks row's date, the sent
@@ -358,20 +374,23 @@ def test_watchlist(page, base_url):
 
 
 def test_dashboard(page, base_url):
-    """Ülevaade after the final-register integration.
+    """Ülevaade: the department scope after the work-surface rebuild.
 
-    The composition this locks is the one the cutover asked for: headline
-    cards that count rows, dense fixed-column tables, and a responsibility
-    rail whose rows are deliberately not links (ADR 0021). Statcard values
-    are masked — several count seeded rows whose dates are computed relative
-    to today, so the digits may move while the composition may not.
+    The composition this locks is a header band, a one-line Seis strip whose
+    every figure is a link, the intervention list, the deadline groups and the
+    activity feed — with a facts rail beside them. Dates are masked, because
+    the seeded world computes them from today; the composition may not move.
     """
     signed_in(page, base_url, "/ulevaade/")
     compare("ulevaade", capture(page, "ulevaade"))
 
 
 def test_my_work(page, base_url):
-    """Minu töö: the DO bands, the wait column, and the Excelist context line
-    on a Matter that has no structured next step."""
+    """Minu töö: one chronological timeline and the rail beside it.
+
+    Every mode shares the bands; the rail holds only what has no date. The band
+    a row lands in depends on the weekday the job runs, which is why the dates
+    themselves are masked and the bands are asserted in Python instead.
+    """
     signed_in(page, base_url, "/minu-too/")
     compare("minu-too", capture(page, "minu-too"))

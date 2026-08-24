@@ -113,7 +113,7 @@ def test_it_is_absent_from_my_work(client, other_specialist, restricted_world):
     response = client.get(reverse("matters:my_work"))
     body = response.content.decode()
     assert "Tundlik tegevus" not in body
-    assert response.context["active_count"] == 0
+    assert response.context["work"].open_matters == 0
 
 
 def test_it_is_absent_from_search_results_and_snippets(client, other_specialist, restricted_world):

@@ -1,4 +1,10 @@
-"""Ülevaade's deadline period: what each window means, and what it may not do.
+"""The deadline period: what each window means, and what it may not do.
+
+The window is what Osakonna töö renders its deadline table through. It used to
+be Ülevaade's as well; the Minu töö / Ülevaade rebuild replaced that page and
+left the arithmetic where it was, which is why this file now asserts the
+selectors rather than a rendered dashboard (tests/test_overview_scopes.py holds
+the page).
 
 The window is arithmetic on dates, which is exactly the kind of code that looks
 obviously right and is off by one. So every boundary is asserted from both
@@ -22,7 +28,6 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
-from django.urls import reverse
 from django.utils import timezone
 
 from app.core.enums import Visibility
@@ -32,8 +37,6 @@ from app.workflow.enums import ActionKind, DateSemantics
 from app.workflow.services import set_next_action
 
 pytestmark = pytest.mark.django_db
-
-OVERVIEW = "matters:overview"
 
 
 def _matter_due(owner, *, days: int, title: str):
@@ -63,51 +66,6 @@ def _action_due(owner, *, days: int, title: str, kind=ActionKind.DO, semantics=N
 def _titles(user, key: str) -> set[str]:
     window = dashboard.deadline_window(key)
     return {row.matter.title for row in dashboard.upcoming_rows(user, window=window).rows}
-
-
-# -- what the page leads with -----------------------------------------------
-
-
-def _heading_order(body: str) -> list[str]:
-    """The main column's section headings, in the order the document has them.
-
-    Positions of the heading ids in the rendered document rather than the order
-    they happen to sit in the template file: an include, a block override or a
-    grid could put them on screen in a different order than the source suggests,
-    and it is the rendered order the department reads.
-    """
-    anchors = ("tahtajad-heading", "saabunud-heading", "tahelepanu-heading")
-    found = [(body.index(f'id="{anchor}"'), anchor) for anchor in anchors]
-    return [anchor for _, anchor in sorted(found)]
-
-
-def test_the_page_leads_with_dates_then_arrivals_then_the_quality_queue(client, specialist) -> None:
-    """Priority order. The triage list is useful; it is not the morning read."""
-    client.force_login(specialist)
-    body = client.get(reverse(OVERVIEW)).content.decode()
-
-    assert _heading_order(body) == [
-        "tahtajad-heading",
-        "saabunud-heading",
-        "tahelepanu-heading",
-    ]
-
-
-def test_the_attention_section_says_what_it_wants(client, specialist) -> None:
-    """ "Tähelepanu" named a topic. "Vajab tähelepanu" names a queue."""
-    client.force_login(specialist)
-    body = client.get(reverse(OVERVIEW)).content.decode()
-
-    assert "Vajab tähelepanu" in body
-
-
-def test_the_deadline_section_is_no_longer_named_for_one_horizon(client, specialist) -> None:
-    """It was "Lähenevad tähtajad" while it could only look a fortnight ahead."""
-    client.force_login(specialist)
-    body = client.get(reverse(OVERVIEW)).content.decode()
-
-    assert "Lähenevad tähtajad" not in body
-    assert "Tähtajad" in body
 
 
 # -- the windows, from both sides of every boundary -------------------------
@@ -282,45 +240,24 @@ def test_an_unrecognised_period_falls_back_instead_of_emptying_the_page(raw) -> 
     assert dashboard.deadline_window(raw).key == dashboard.DEFAULT_DEADLINE_WINDOW.key
 
 
-def _deadline_titles(response) -> set[str]:
-    """What the deadline table itself holds.
-
-    Read off the page's own data rather than searched for in the body: a Matter
-    outside the period is still on this page, under *Hiljuti saabunud*, and a
-    substring test would call that a period that had not filtered anything.
-    """
-    return {row.matter.title for row in response.context["dashboard"].upcoming.rows}
-
-
-def test_the_page_reads_the_period_from_the_url(client, specialist) -> None:
+def test_the_default_and_the_month_window_disagree_at_twenty_days(specialist) -> None:
     _matter_due(specialist, days=20, title="Kahekümne päeva pärast")
-    client.force_login(specialist)
 
-    fortnight = client.get(reverse(OVERVIEW))
-    assert "Kahekümne päeva pärast" not in _deadline_titles(fortnight)
-
-    month = client.get(reverse(OVERVIEW), {"tahtajad": "30"})
-    assert "Kahekümne päeva pärast" in _deadline_titles(month)
+    assert "Kahekümne päeva pärast" not in _titles(specialist, "14")
+    assert "Kahekümne päeva pärast" in _titles(specialist, "30")
 
 
-def test_a_nonsense_period_still_renders_the_default_view(client, specialist) -> None:
+def test_a_nonsense_period_still_returns_the_default_window(specialist) -> None:
+    """A mistyped period must not look like an answer."""
     _matter_due(specialist, days=3, title="Kolme päeva pärast")
-    client.force_login(specialist)
 
-    response = client.get(reverse(OVERVIEW), {"tahtajad": "jama"})
-    assert response.status_code == 200
-
-    # The default view, not an empty one: a mistyped period must not look like
-    # an answer.
-    assert "Kolme päeva pärast" in _deadline_titles(response)
-    selected = [option for option in response.context["dashboard"].windows if option.active]
-    assert [option.key for option in selected] == [dashboard.DEFAULT_DEADLINE_WINDOW.key]
+    assert "Kolme päeva pärast" in _titles(specialist, "jama")
+    assert dashboard.deadline_window("jama").key == dashboard.DEFAULT_DEADLINE_WINDOW.key
 
 
-def test_every_period_link_carries_the_whole_state(client, specialist) -> None:
-    """A link, not a script: the page has to survive being pasted and reloaded."""
-    client.force_login(specialist)
-    options = client.get(reverse(OVERVIEW), {"tahtajad": "30plus"}).context["dashboard"].windows
+def test_every_period_option_carries_the_whole_state() -> None:
+    """A link, not a script: a period has to survive being pasted and reloaded."""
+    options = dashboard.window_options(dashboard.deadline_window("30plus"))
 
     assert [option.label for option in options] == [
         "7 päeva",
@@ -339,18 +276,12 @@ def test_every_period_link_carries_the_whole_state(client, specialist) -> None:
     assert [option.key for option in options if option.active] == ["30plus"]
 
 
-def test_the_summary_card_keeps_its_own_fixed_horizon(client, specialist) -> None:
+def test_the_summary_card_keeps_its_own_fixed_horizon(specialist) -> None:
     """The card is a KPI, not a view of the table. The period does not move it."""
     _matter_due(specialist, days=3, title="Nädala sees")
     _matter_due(specialist, days=25, title="Kuu sees")
-    client.force_login(specialist)
 
-    for period in ("7", "koik"):
-        cards = {
-            card.key: card
-            for card in client.get(reverse(OVERVIEW), {"tahtajad": period})
-            .context["dashboard"]
-            .cards
-        }
-        assert cards["deadlines"].count == 1, period
-        assert cards["deadlines"].label == "Arvamuse tähtaeg 7 päeva jooksul"
+    cards = {card.key: card for card in dashboard.summary_cards(specialist)}
+
+    assert cards["deadlines"].count == 1
+    assert cards["deadlines"].label == "Arvamuse tähtaeg 7 päeva jooksul"
