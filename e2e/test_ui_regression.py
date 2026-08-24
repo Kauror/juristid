@@ -95,12 +95,12 @@ CLOCK_DEPENDENT = [
     # from today — "10 p üle", "TÄHTAEG 14.08", a feed timestamp — and a mask
     # selector that stops matching does not fail. It silently unmasks a value
     # that changes daily, and the baseline goes red the next morning.
-    ".workrow2__date",
-    ".workrow2__meaning",
-    ".teamrow__date",
-    ".teamrow__meaning",
-    ".interrow__value",
-    ".interrow__meaning",
+    # The whole reason cell, not its two children. The meaning wraps, so a mask
+    # sized to one line leaves the second peeking out — and a value that changes
+    # daily peeking past its mask turns every baseline red the next morning.
+    ".workrow2__datecell",
+    ".teamrow__datecell",
+    ".interrow__reason",
     ".deadlinerow__when",
     ".feedrow__when",
     ".entryline__when",
