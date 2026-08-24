@@ -514,7 +514,6 @@ def test_a_do_action_dated_inside_the_horizon_is_never_swallowed(specialist):
 @pytest.mark.parametrize(
     ("form_class", "field"),
     [
-        (NextActionForm, "target_date"),
         (MatterCreateForm, "received_date"),
         (MatterCreateForm, "response_deadline"),
         (ComposerForm, "occurred_on"),
@@ -556,6 +555,12 @@ def test_today_is_recorded_as_now_and_not_as_midnight(normal_matter, specialist)
         (ComposerForm, "deadline_date"),
         (ComposerForm, "final_sent_on"),
         (EffectiveDateForm, "exact_date"),
+        # Moved here from the defaulting list by the Uus teema redesign. It was
+        # safe while the block sat inside a closed `<details>` — `wants_action`
+        # is driven by the text field — and stopped being safe when the block
+        # became always visible: TEEN plus a typed step and an untouched date
+        # would silently mean "due today" (design/UUS_TEEMA_HANDOFF.md §7).
+        (NextActionForm, "target_date"),
     ],
 )
 def test_a_date_box_whose_emptiness_is_a_signal_never_defaults(form_class, field):

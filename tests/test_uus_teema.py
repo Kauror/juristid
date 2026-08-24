@@ -224,7 +224,8 @@ def test_the_next_action_date_starts_blank():
     meaning something (ADR 0031 §5).
     """
     assert NextActionForm()["target_date"].initial is None
-    assert 'name="next-target_date" value=' not in NextActionForm(prefix="next").as_p()
+    # Django renders the attribute either way; what matters is that it is empty.
+    assert 'name="next-target_date" value=""' in NextActionForm(prefix="next").as_p()
 
 
 def test_a_teen_with_no_date_is_refused_rather_than_dated_today(signed_in, specialist):

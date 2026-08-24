@@ -91,24 +91,33 @@ def test_both_chip_rows_are_rendered_as_radios(signed_in, specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_the_other_sender_list_does_not_repeat_the_frequent_chips(specialist):
+def test_the_other_sender_list_does_not_repeat_the_frequent_chips(signed_in, specialist):
     """The screenshot complaint, as an assertion.
 
     "Muu / lisa saatja" reopened the same ten bodies that were already chips
     above it, which read as a second sender control contradicting the first and
     hid the one case it exists for.
+
+    The mechanism changed with the Uus teema redesign and the rule did not. It
+    used to be two fields with disjoint choice lists; it is now one field split
+    across two rows by `frequent_sender_ids`, which is a stronger guarantee — a
+    disjointness bug could put an organisation in both lists, and there is no
+    longer a second list for it to be in. Asserted against the rendered page for
+    that reason: what matters is how many controls a person is offered.
     """
     used = factories.OrganisationFactory(name="Näidisministeerium")
     unused = factories.OrganisationFactory(name="Tundmatu amet")
     factories.MatterFactory(owner=specialist).source_organisations.add(used)
 
-    form = MatterCreateForm(viewer=specialist)
-    frequent = {value for value, _ in form.fields["source_organisations"].choices}
-    rest = {value for value, _ in form.fields["source_organisations_other"].choices}
+    body = signed_in.get(CREATE).content.decode()
 
-    assert used.pk in frequent
-    assert unused.pk in rest
-    assert frequent.isdisjoint(rest)
+    for organisation in (used, unused):
+        marker = f'name="source_organisations" value="{organisation.pk}"'
+        assert body.count(marker) == 1, organisation.name
+
+    form = MatterCreateForm(viewer=specialist)
+    assert used.pk in form.frequent_sender_ids
+    assert unused.pk not in form.frequent_sender_ids
 
 
 def test_a_frequent_sender_is_still_a_valid_answer_in_the_other_control(signed_in, specialist):
@@ -230,14 +239,25 @@ def test_the_kind_is_three_visible_single_choice_cards(signed_in):
         assert f'value="{value}"' in body
 
 
-def test_the_cards_carry_the_sentence_that_makes_them_decidable(signed_in):
-    """Teen, Ootan and Jälgin are three ordinary verbs. Which one a lawyer
-    means depends on whether the next move is theirs, and the gloss is what
-    says so."""
+def test_the_kind_is_decidable_without_a_paragraph_under_each_option(signed_in):
+    """Teen, Ootan and Jälgin are three ordinary verbs, and which one a lawyer
+    means depends on whether the next move is theirs.
+
+    That used to be said by a sentence under each option. The redesign says it
+    with the three words plus the date meaning beside them — `Tähtaeg` for TEEN,
+    `Oodatav umbes` for OOTAN, `Vaatan üle` for JÄLGIN — which answers the same
+    question in the row where the choice is actually made, and does it for the
+    date as well as the kind (design/UUS_TEEMA_HANDOFF.md §7).
+
+    The glosses stay on the Teema-page composer, where there is room for them.
+    """
     body = signed_in.get(CREATE).content.decode()
-    assert "Mul endal tuleb midagi teha" in body
-    assert "Ootan infot, vastust, eelnõud või muud arengut" in body
-    assert "Vaatan teema hiljem uuesti üle" in body
+
+    for kind in ("Teen", "Ootan", "Jälgin"):
+        assert kind.upper() in body, kind
+    for meaning in ("Tähtaeg", "Oodatav umbes", "Vaatan üle"):
+        assert meaning in body, meaning
+    assert 'type="radio" name="next-date_semantics"' in body
 
 
 def test_the_date_meaning_is_no_longer_a_required_question(signed_in):
@@ -362,12 +382,23 @@ def test_a_matter_can_still_be_created_with_no_next_action_at_all(signed_in):
 
 def test_the_page_says_which_deadline_is_which(signed_in):
     """Arvamuse tähtaeg is when the opinion must go out; Järgmine tegevus is
-    what happens next with the file. The page must not leave a reader guessing
-    which box they are in."""
+    what happens next with the file, which may be a year of waiting on a
+    ministry. The page must not leave a reader guessing which box they are in.
+
+    It used to say so in a paragraph inside a disclosure. It says so
+    structurally now: the two live in different sections, under different
+    labels, and the one that is about the future is the only panel on the page.
+    Two words in two places beat three sentences in one (handoff §8).
+    """
     body = signed_in.get(CREATE).content.decode()
+
+    assert "Arvamuse tähtaeg" in body
     assert "Järgmine tegevus" in body
-    assert "Arvamuse tähtaeg on eraldi" in body
+    # In that order, and not in the same block.
+    assert body.index("Arvamuse tähtaeg") < body.index("Järgmine tegevus")
     assert "Määra kohe Järgmiseks" not in body
+    # The paragraph that used to carry this is gone, with the rest of the noise.
+    assert "Arvamuse tähtaeg on eraldi" not in body
 
 
 def test_no_ordinary_form_control_is_a_native_date_input(signed_in):
