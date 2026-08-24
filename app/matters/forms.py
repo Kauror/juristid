@@ -692,12 +692,19 @@ class ComposerForm(forms.Form):
         required=False,
         widget=SELECT_WIDGET,
     )
-    occurred_at = forms.DateTimeField(
-        label="Toimus",
-        required=False,
-        widget=forms.DateTimeInput(attrs={"type": "datetime-local", "class": "field__input"}),
-        input_formats=["%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"],
-    )
+    #: An Estonian date box, like every other date in this application.
+    #:
+    #: It was a native `datetime-local`, which renders in the *browser's*
+    #: locale: a lawyer on a US-English Windows saw `mm/dd/yyyy` on an
+    #: otherwise Estonian form, with no way to know it would read 7.9.2026 as
+    #: the 9th of July. That is the whole class of defect `app/core/dates.py`
+    #: exists to prevent, and this control had been missed by it.
+    #:
+    #: A day rather than a minute. Somebody writing up Friday's meeting on
+    #: Monday knows which day it was and does not know the hour, and the
+    #: chronology sorts by day — `add_entry` stamps the current moment when
+    #: this is left empty, which is the ordinary case.
+    occurred_on = EstonianDateField(label="Toimus", required=False, widget=DATE_WIDGET)
     organisation = forms.ModelChoiceField(
         label="Asutus", queryset=Organisation.objects.none(), required=False, widget=SELECT_WIDGET
     )
@@ -1054,7 +1061,7 @@ class ComposerForm(forms.Form):
         return {
             "body": self.cleaned_data.get("body") or "",
             "kind": self.cleaned_data.get("kind") or EntryKind.NOTE,
-            "occurred_at": self.cleaned_data.get("occurred_at"),
+            "occurred_at": _as_datetime(self.cleaned_data.get("occurred_on")),
             "organisation": self.cleaned_data.get("organisation"),
             "attachment": self.cleaned_data.get("attachment"),
             "attachment_role": self.cleaned_data.get("attachment_role") or DocumentRole.OTHER,

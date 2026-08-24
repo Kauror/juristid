@@ -44,7 +44,13 @@ Three states, deliberately different sizes:
         {% endif %}
       {% endif %}
     </div>
-  {% elif not sent_submissions %}
+  {% else %}
+    {% comment %}
+      No position text. The line says so, and the invitation to write one is
+      here whether or not an opinion has gone out — a Matter whose ★ PDF is on
+      screen and whose position has never been written down is exactly the one
+      that needs it (Teema redesign §19).
+    {% endcomment %}
     <span class="positionblock__none">
       Seisukohta ei ole.
       {% if can_write %}

@@ -6043,8 +6043,14 @@ p.factsection__none {
 /* The header's secondary-action menu. Same disclosure mechanics as the top
    bar's "Veel", at the header's scale. */
 .headmenu {
+  /* Inline-flex, not the block a <details> defaults to: it sits at the end of
+     the breadcrumb line beside the state pill, and as a block it pushed itself
+     onto a line of its own and the title down with it. */
+  display: inline-flex;
+  align-items: center;
   position: relative;
   margin-left: var(--spacing-2);
+  flex: none;
 }
 
 .headmenu__trigger {
@@ -6138,4 +6144,11 @@ p.factsection__none {
   align-items: center;
   gap: var(--spacing-2);
   margin-left: var(--spacing-2);
+}
+
+/* The Dokumendid tab: one column, full width, no rail. */
+.teemadocs {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
