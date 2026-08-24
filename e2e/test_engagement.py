@@ -78,10 +78,14 @@ def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     add_form(page).get_by_role("button", name="Lisa kaasamine").click()
 
     # The swap replaces the overview column; the row is there without a reload.
+    # Scoped to the row, not to the section. The collapsed line summarises the
+    # latest engagement — type, title and date — so a section-wide text locator
+    # now matches the summary as well as the row it summarises.
     section = open_kaasamine(page)
-    expect(section.get_by_text("Liikmete kaasamiskutse", exact=True)).to_be_visible()
-    expect(section.get_by_text("15.9.2026")).to_be_visible()
-    expect(section.get_by_text("www.koda.ee")).to_be_visible()
+    row = section.locator(".factrow").first
+    expect(row.get_by_text("Liikmete kaasamiskutse", exact=True)).to_be_visible()
+    expect(row.get_by_text("15.9.2026")).to_be_visible()
+    expect(row.get_by_text("www.koda.ee")).to_be_visible()
 
     # And correcting it edits the same record rather than adding a second.
     # Scoped to the row itself: `has=` on a section-rooted locator matched the
@@ -97,7 +101,7 @@ def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     row_form.get_by_role("button", name="Salvesta").click()
 
     expect(
-        page.locator("#kaasamine").get_by_text("Liikmete kaasamiskutse — parandatud")
+        page.locator("#kaasamine .factrow").first.get_by_text("Liikmete kaasamiskutse — parandatud")
     ).to_be_visible()
     assert page.locator("#kaasamine .factrow").count() == before
 
