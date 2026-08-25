@@ -181,7 +181,7 @@ def test_the_things_a_lawyer_reaches_for_are_on_the_bar(page, base_url, width, h
     open_register(page, base_url)
 
     viewport_width = page.viewport_size["width"]
-    for selector in ["#global-search", ".topbar__cta", ".actingas, .avatar"]:
+    for selector in ["#global-search", ".topbar__cta", ".personapill, .avatar"]:
         element = page.locator(selector).first
         expect(element).to_be_visible()
         box = element.bounding_box()
@@ -189,9 +189,10 @@ def test_the_things_a_lawyer_reaches_for_are_on_the_bar(page, base_url, width, h
             f"{selector} is outside the viewport at {width}px"
         )
 
-    # Shared-gate deployments name the selected persona; the others show an
-    # avatar. Whichever this deployment is, it has to be on the bar and legible.
-    persona = page.locator(".actingas__name")
+    # Shared-gate deployments name the selected persona on a pill that opens the
+    # switcher; the others show an avatar. Whichever this deployment is, it has
+    # to be on the bar and legible.
+    persona = page.locator(".personapill__name")
     if persona.count():
         expect(persona).to_contain_text(SANDRA.display_name.split()[0])
     else:

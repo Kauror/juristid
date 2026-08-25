@@ -40,6 +40,9 @@ consequences and reversibility.
 | [0029](0029-reference-data-foundation.md) | Reference data is governed, additive, and never invented from source strings | Accepted |
 | [0030](0030-teema-workspace-redesign.md) | The Teema workspace: one page, two tabs, and one save per professional update | Accepted |
 | [0031](0031-teema-human-qa-corrections.md) | What hands-on use changed about the Teema workspace | Accepted |
+| [0032](0032-uus-teema-redesign.md) | The approved Uus teema redesign: one screen, one chip control | Accepted |
+| [0033](0033-overview-drilldown-parity.md) | Ülevaade drill-down parity: every number opens a list of its own kind | Accepted |
+| [0034](0034-persona-candidates-and-the-top-bar-switcher.md) | Persona candidates are a role-based population, and switching happens from the bar | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -67,3 +70,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0031 — what a working session on real data changed: the position back in the rail, one dated work list, a full edit page beside the inline controls
 - 0032 — the approved Uus teema redesign: one screen, one chip control, two Valdkonnad withdrawn, and Hetkeseis explaining itself on the row
 - 0033 — Ülevaade drill-down parity: a number opens a list of its own kind, `?too=` makes the dated-work populations addressable, and "Ootab pahavarakontrolli" stops telling readers their archive might be infected
+- 0034 — who may be offered as a persona: one role-based population read by both the page and the endpoint, technical accounts excluded, and a top-bar switcher that keeps the page somebody was reading

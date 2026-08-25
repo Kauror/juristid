@@ -56,7 +56,11 @@ import pathlib
 import pytest
 
 from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, OPEN_TITLE
-from e2e.conftest import SANDRA, sign_in
+from e2e.conftest import DESKTOP_VIEWPORT, SANDRA, pass_the_gate, sign_in
+
+#: The seeded department head, mirroring `seed_e2e_data.PERSONAS`. Named here
+#: rather than looked up, because this suite has no database access.
+HEAD_NAME = "Testosakonnajuht"
 
 pytestmark = pytest.mark.e2e
 
@@ -394,3 +398,108 @@ def test_my_work(page, base_url):
     """
     signed_in(page, base_url, "/minu-too/")
     compare("minu-too", capture(page, "minu-too"))
+
+
+# ---- Vali kasutaja -------------------------------------------------------
+#
+# These six run against the *shared-gate* server, because the persona switcher
+# only exists in that mode. They are the one part of this suite whose subject is
+# an overlay, so four of them are viewport captures rather than full-page ones:
+# an absolutely-positioned popover is not inside its parent's bounding box, and
+# an element screenshot of the pill would come back without the thing being
+# reviewed on it.
+#
+# The page they are taken on is `/konto/kasutaja/`, which is the only surface in
+# the application with no clock-derived content at all. A popover captured over
+# the dashboard would carry that page's dates behind it and go red the next
+# morning for a reason that has nothing to do with the popover.
+
+#: A bar and a popover, and nothing below them worth capturing.
+BAR_VIEWPORT = {"width": 1440, "height": 420}
+
+
+def _behind_the_gate(page, gate_base_url: str, path: str = "/konto/kasutaja/"):
+    pass_the_gate(page, gate_base_url)
+    page.set_viewport_size(DESKTOP_VIEWPORT)
+    page.goto(f"{gate_base_url}{path}")
+    page.wait_for_load_state("networkidle")
+    return page
+
+
+def _open_popover(page):
+    page.locator("#persona-pill").click()
+    page.wait_for_timeout(50)
+    return page
+
+
+def test_persona_page_with_a_selected_person(page, gate_base_url):
+    """A. The list, the active row, and the dashed no-persona choice."""
+    _behind_the_gate(page, gate_base_url)
+    page.locator("button.personarow").first.click()
+    page.wait_for_load_state("networkidle")
+    page.goto(f"{gate_base_url}/konto/kasutaja/")
+    page.wait_for_load_state("networkidle")
+    compare("persona-leht-valitud", capture(page, "persona-leht-valitud"))
+
+
+def test_persona_page_with_nobody_selected(page, gate_base_url):
+    """B. The state a visitor actually lands in."""
+    _behind_the_gate(page, gate_base_url)
+    compare("persona-leht-ilma", capture(page, "persona-leht-ilma"))
+
+
+def test_persona_pill_closed(page, gate_base_url):
+    """C. The bar carrying a selected persona, popover shut."""
+    _behind_the_gate(page, gate_base_url)
+    page.locator("button.personarow").first.click()
+    page.wait_for_load_state("networkidle")
+    page.goto(f"{gate_base_url}/konto/kasutaja/")
+    page.set_viewport_size(BAR_VIEWPORT)
+    compare(
+        "persona-pill-suletud",
+        capture(page, "persona-pill-suletud", full_page=False),
+    )
+
+
+def test_persona_popover_open(page, gate_base_url):
+    """D. The popover, with the first candidate selected."""
+    _behind_the_gate(page, gate_base_url)
+    page.locator("button.personarow").first.click()
+    page.wait_for_load_state("networkidle")
+    page.goto(f"{gate_base_url}/konto/kasutaja/")
+    page.set_viewport_size(BAR_VIEWPORT)
+    _open_popover(page)
+    compare(
+        "persona-popover-avatud",
+        capture(page, "persona-popover-avatud", full_page=False),
+    )
+
+
+def test_persona_popover_active_row_follows_the_selection(page, gate_base_url):
+    """E. A *different* row carries the tick.
+
+    Distinct from D on purpose: it is what proves the active marker follows who
+    is selected rather than being pinned to the top of the list, which is the
+    defect a single popover baseline would approve.
+    """
+    _behind_the_gate(page, gate_base_url)
+    page.locator("button.personarow", has_text=HEAD_NAME).first.click()
+    page.wait_for_load_state("networkidle")
+    page.goto(f"{gate_base_url}/konto/kasutaja/")
+    page.set_viewport_size(BAR_VIEWPORT)
+    _open_popover(page)
+    compare(
+        "persona-popover-aktiivne",
+        capture(page, "persona-popover-aktiivne", full_page=False),
+    )
+
+
+def test_persona_popover_with_nobody_selected(page, gate_base_url):
+    """F. The dashed pill and the popover with no tick on a name."""
+    _behind_the_gate(page, gate_base_url)
+    page.set_viewport_size(BAR_VIEWPORT)
+    _open_popover(page)
+    compare(
+        "persona-ilma-popover",
+        capture(page, "persona-ilma-popover", full_page=False),
+    )

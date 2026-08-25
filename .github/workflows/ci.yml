@@ -258,6 +258,17 @@ jobs:
       EVIDENCE_ROOT: /tmp/juristid-evidence
       E2E_BASE_URL: http://127.0.0.1:8000
       E2E_SCREENSHOT_DIR: artifacts/screenshots
+      # A second server, same database, running the shared gate. The persona
+      # switcher exists only in that mode — the routes 404 in the other two —
+      # and converting the whole browser suite to type a password before every
+      # unrelated test would have been the alternative. One extra `runserver`
+      # is cheaper and leaves the rest of the suite exactly as it was
+      # (docs/adr/0034).
+      E2E_GATE_BASE_URL: http://127.0.0.1:8001
+      # CI-only, and long enough to satisfy `juristid.E011`. The real one is a
+      # host-side secret and is not in this repository, this image, or any
+      # Compose default.
+      E2E_GATE_PASSWORD: ci-jagatud-parool-mitte-kusagil-mujal
       # Set to "1" on a manual run to (re)generate the visual baselines. The
       # renderings land in the browser-artifacts upload; commit what you agree
       # with. Baselines have to come from this image, because font
@@ -306,6 +317,26 @@ jobs:
           done
           echo "server did not start"; exit 1
 
+      # The same code and the same data, behind the department password. It is
+      # a separate process rather than a setting flipped mid-run because
+      # `AUTH_MODE` is read per request from settings: one process cannot be
+      # both, and a suite that restarted the server between files would be
+      # slower and harder to read than a second port.
+      - name: Start the shared-gate application
+        env:
+          AUTH_MODE: shared_gate
+          JURISTID_SHARED_GATE_PASSWORD: ci-jagatud-parool-mitte-kusagil-mujal
+          DEV_LOGIN_ENABLED: "0"
+        run: |
+          nohup uv run python manage.py runserver 127.0.0.1:8001 --noreload             > artifacts/server-gate.log 2>&1 &
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:8001/healthz > /dev/null; then
+              echo "shared-gate server is up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "shared-gate server did not start"; exit 1
+
       - name: Browser workflow
         run: >-
           uv run pytest e2e --ignore=e2e/test_ui_regression.py
@@ -333,6 +364,7 @@ jobs:
             artifacts/screenshots
             artifacts/playwright
             artifacts/server.log
+            artifacts/server-gate.log
           if-no-files-found: warn
           retention-days: 14
 

@@ -7,58 +7,110 @@
   Deliberately not worded as a sign-in. "Logi sisse" would claim something this
   page cannot deliver: the shared password is already behind us, and choosing a
   name here changes which work is shown, not who the system believes is reading
-  it (Stage-2D auth brief 5).
+  it (docs/adr/0016).
 
-  The department option is first and stays available, because it is the only way
-  to see what a page looks like before anybody is selected — which is exactly
-  the state a visitor lands in.
+  The page is a list and nothing else. It used to carry an amber warning, a
+  paragraph explaining the mode, a role under every name and a subheading — and
+  the person reading it wanted one thing, which was to press a name. The
+  sentence that mattered survives in the popover footer, where it is next to the
+  control it is about instead of above a list somebody has already scrolled past
+  (Vali kasutaja brief 8, 9, 18).
+
+  The fast path is the top-bar pill. This page stays for the direct route, for
+  explicit switching, and for the no-persona landing — which is where
+  `login_required` sends a reader who opens Minu töö without having said who
+  they are.
 {% endcomment %}
 
 {% block content %}
-<div class="page page--narrow">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Vali kasutaja</h1>
-    <span class="pagehead__context">Määrab, kelle tööd rakendus näitab</span>
-  </div>
-
-  <div class="banner banner--restricted">
-    <p>
-      Kasutaja valimine ei ole autentimine. See määrab, kelle vaadet rakendus
-      näitab — <strong>Minu töö</strong>, omaniku vaated ja profiilikontekst.
-      Tegevused salvestatakse märkega, et sisenemine toimus jagatud parooliga.
+<div class="page page--persona">
+  <div class="personahead">
+    <h1 class="personahead__title">Vali kasutaja</h1>
+    <span class="personahead__spacer"></span>
+    <p class="personahead__now">
+      Praegu:
+      {% if current %}
+        <strong class="personahead__nowname">{{ current.get_short_name }}</strong>
+      {% else %}
+        <strong class="personahead__nowname">Ilma kasutajata</strong>
+      {% endif %}
     </p>
   </div>
 
-  <ul class="personalist">
-    {% for person in people %}
-      <li class="personalist__item {% if current and current.pk == person.pk %}is-current{% endif %}">
-        <form method="post" action="{% url 'accounts:act_as' %}">
-          {% csrf_token %}
-          <input type="hidden" name="user_id" value="{{ person.pk }}">
-          {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
-          <span class="avatar" aria-hidden="true">{{ person.initials }}</span>
-          <span class="personalist__name">
-            {{ person.display_name }}
-            <span class="personalist__role">{{ person.get_role_display }}</span>
-          </span>
-          {% if current and current.pk == person.pk %}
-            <span class="badge">Praegu valitud</span>
-          {% else %}
-            <button type="submit" class="button button--quiet">Vali</button>
-          {% endif %}
-        </form>
-      </li>
-    {% empty %}
-      <li class="empty">Ühtegi aktiivset kasutajat ei ole veel loodud.</li>
-    {% endfor %}
-  </ul>
+  <div class="personabody">
+    <div class="personalist">
+      <p class="personalist__label">Kasutajad · {{ people|length }}</p>
 
-  <form method="post" action="{% url 'accounts:act_as' %}" class="form__actions">
-    {% csrf_token %}
-    <input type="hidden" name="user_id" value="">
-    <button type="submit" class="button button--quiet">
-      Ilma kasutajata — ainult osakonna ülevaade
-    </button>
-  </form>
+      <div class="personalist__rows">
+        {% for person in people %}
+          {% if current and current.pk == person.pk %}
+            {# Not an action. A "Vali" that re-selects the selected person is a
+               control whose only outcome is an audit row (brief 11). #}
+            <p class="personarow personarow--current">
+              <span class="personarow__avatar personarow__avatar--current"
+                    aria-hidden="true">{{ person.initials }}</span>
+              <span class="personarow__name">{{ person.get_short_name }}</span>
+              <span class="personarow__state">Praegu valitud</span>
+            </p>
+          {% else %}
+            {% comment %}
+              The whole row is the button. Aiming at six letters on the right of
+              a 760px row is a target the design does not ask anybody to hit,
+              and a form is what makes it a POST rather than a link that mutates
+              session state on a prefetch (brief 12, 20).
+            {% endcomment %}
+            <form method="post" action="{% url 'accounts:act_as' %}">
+              {% csrf_token %}
+              <input type="hidden" name="user_id" value="{{ person.pk }}">
+              {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+              <button type="submit" class="personarow">
+                <span class="personarow__avatar" aria-hidden="true">{{ person.initials }}</span>
+                <span class="personarow__name">{{ person.get_short_name }}</span>
+                <span class="personarow__action">Vali</span>
+              </button>
+            </form>
+          {% endif %}
+        {% empty %}
+          {% comment %}
+            Nobody currently holds a department work role. Said plainly rather
+            than filled in from a wider query: the list is the department's
+            people, and widening it to "every account" to avoid an empty page is
+            exactly the shape this list exists to refuse (brief 3).
+          {% endcomment %}
+          <p class="personalist__empty">
+            Ühelgi aktiivsel kontol ei ole osakonna töörolli. Kasutajate nimekirja
+            haldab süsteemi administraator.
+          </p>
+        {% endfor %}
+      </div>
+    </div>
+
+    {% if current %}
+      {% comment %}
+        No `next` here, unlike every row above it. This page is reached with
+        `?next=/minu-too/` when somebody opened a personal surface without
+        having said whose it is — and honouring that target for a choice of
+        *nobody* would send them straight back to this page, which reads as the
+        button having done nothing. The fallback is Ülevaade, which is the
+        surface no-persona is for. The top-bar popover does carry the current
+        page, because there the whole point is not to lose it (brief 19, 23).
+      {% endcomment %}
+      <form method="post" action="{% url 'accounts:act_as' %}">
+        {% csrf_token %}
+        <input type="hidden" name="user_id" value="">
+        <button type="submit" class="personarow personarow--nobody">
+          <span class="personarow__avatar personarow__avatar--none" aria-hidden="true">—</span>
+          <span class="personarow__name">Ilma kasutajata</span>
+          <span class="personarow__action">Vali</span>
+        </button>
+      </form>
+    {% else %}
+      <p class="personarow personarow--nobody personarow--current">
+        <span class="personarow__avatar personarow__avatar--none" aria-hidden="true">—</span>
+        <span class="personarow__name">Ilma kasutajata</span>
+        <span class="personarow__state">Praegu valitud</span>
+      </p>
+    {% endif %}
+  </div>
 </div>
 {% endblock %}

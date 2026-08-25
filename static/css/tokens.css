@@ -194,6 +194,20 @@
 
   --shadow-overlay: 0 24px 64px rgba(0, 0, 0, 0.6);
   --shadow-menu: 0 12px 32px rgba(0, 0, 0, 0.45);
+  /* A popover anchored under the bar. Tighter and nearer than `--shadow-overlay`
+     — it hangs 4px below its trigger rather than floating over the page — and
+     darker than `--shadow-menu`, because it sits on `--surface-elevated` and a
+     lighter surface needs more separation from what is behind it, not less. */
+  --shadow-popover: 0 16px 44px rgba(0, 0, 0, 0.6);
+}
+
+/* The row under the pointer inside an overlay. `--surface-hover` is a step
+   *down* from the canvas, which is right on a page and wrong inside a popover:
+   the popover surface is already raised, so its hover has to be a step up or the
+   row under the pointer reads as the disabled one. */
+:root,
+:root[data-theme="dark"] {
+  --surface-overlay-hover: var(--primitive-neutral-600);
 }
 
 /* ====================================================================
@@ -257,4 +271,6 @@
 
   --shadow-overlay: 0 24px 64px rgba(16, 20, 24, 0.18);
   --shadow-menu: 0 12px 32px rgba(16, 20, 24, 0.14);
+  --shadow-popover: 0 16px 44px rgba(16, 20, 24, 0.22);
+  --surface-overlay-hover: #dde4ea;
 }

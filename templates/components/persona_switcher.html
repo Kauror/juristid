@@ -1,0 +1,110 @@
+{% comment %}
+  Whose work the application is showing, and a way to change it from anywhere.
+
+  Two decisions this partial exists to hold.
+
+  **It is a choice, not a sign-in.** Behind the shared door the name on the bar
+  is a view somebody selected, not a claim that they are that person, and the
+  footer of the popover is the one place that sentence still appears. The page
+  it replaced carried a paragraph of it above the list, which is a paragraph
+  read once and skipped forever (Vali kasutaja brief 2, 18).
+
+  **Switching does not cost the page.** Every choice is a POST carrying the
+  current path as a safe `next`, so changing whose work is on screen leaves
+  somebody where they were reading. A GET link would be wrong twice over: it
+  mutates session state, and browsers prefetch and reload them
+  (Vali kasutaja brief 19, 20).
+
+  The list is `persona_candidates` from the context processor — the same
+  population the endpoint accepts a POST against. Hiding a row here would hide
+  nothing: everybody behind the shared door can post to the switch endpoint
+  (app/accounts/selectors.py, docs/adr/0034).
+{% endcomment %}
+<div class="personaswitch">
+  {% comment %}
+    A disclosure that owns a popup: `aria-expanded` says whether it is open,
+    `aria-controls` names what it opens. The options inside stay real submit
+    buttons — no `role="menuitem"`, which would replace the semantics the
+    element genuinely has with a claim about a widget this is not. The arrow
+    keys are added by script over those buttons instead
+    (static/js/app.js, Vali kasutaja brief 26).
+  {% endcomment %}
+  <button type="button"
+          class="personapill{% if not user.is_authenticated %} personapill--none{% endif %}"
+          id="persona-pill"
+          data-persona-trigger
+          aria-haspopup="true"
+          aria-expanded="false"
+          aria-controls="persona-menu">
+    {% if user.is_authenticated %}
+      <span class="personapill__avatar" aria-hidden="true">{{ user.initials }}</span>
+      <span class="personapill__name">{{ user.get_short_name }}</span>
+      <span class="visually-hidden">— vali kasutaja</span>
+    {% else %}
+      <span class="personapill__avatar personapill__avatar--none" aria-hidden="true">—</span>
+      <span class="personapill__name personapill__name--none">Ilma kasutajata</span>
+      <span class="visually-hidden">— vali kasutaja</span>
+    {% endif %}
+    <span class="personapill__caret" aria-hidden="true"></span>
+  </button>
+
+  <div class="personamenu" id="persona-menu" role="group"
+       aria-label="Näita kelle tööd" hidden>
+    <p class="personamenu__label">Näita kelle tööd</p>
+
+    {% for person in persona_candidates %}
+      {% if current_persona_id == person.pk %}
+        {# The active row is not an action. A button that re-selects who is
+           already selected is a control whose only outcome is an audit row. #}
+        <p class="personaoption personaoption--current">
+          <span class="personaoption__avatar personaoption__avatar--current"
+                aria-hidden="true">{{ person.initials }}</span>
+          <span class="personaoption__name">{{ person.get_short_name }}</span>
+          <span class="personaoption__mark" aria-hidden="true">✓</span>
+          <span class="visually-hidden">— praegu valitud</span>
+        </p>
+      {% else %}
+        <form class="personamenu__form" method="post" action="{% url 'accounts:act_as' %}">
+          {% csrf_token %}
+          <input type="hidden" name="user_id" value="{{ person.pk }}">
+          <input type="hidden" name="next" value="{{ request.get_full_path }}">
+          <button type="submit" class="personaoption" data-persona-option>
+            <span class="personaoption__avatar" aria-hidden="true">{{ person.initials }}</span>
+            <span class="personaoption__name">{{ person.get_short_name }}</span>
+            <span class="personaoption__mark"></span>
+          </button>
+        </form>
+      {% endif %}
+    {% endfor %}
+
+    {% comment %}
+      No persona is a first-class choice, not an escape hatch: it is the state a
+      visitor lands in, and the only way to see what a page looks like before
+      anybody is selected. Same POST, same audit row (brief 13, 17).
+    {% endcomment %}
+    {% if user.is_authenticated %}
+      <form class="personamenu__form" method="post" action="{% url 'accounts:act_as' %}">
+        {% csrf_token %}
+        <input type="hidden" name="user_id" value="">
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <button type="submit" class="personaoption personaoption--nobody" data-persona-option>
+          <span class="personaoption__avatar personaoption__avatar--none"
+                aria-hidden="true">—</span>
+          <span class="personaoption__name">Ilma kasutajata</span>
+        </button>
+      </form>
+    {% else %}
+      <p class="personaoption personaoption--current personaoption--nobody">
+        <span class="personaoption__avatar personaoption__avatar--none"
+              aria-hidden="true">—</span>
+        <span class="personaoption__name">Ilma kasutajata</span>
+        <span class="personaoption__mark" aria-hidden="true">✓</span>
+        <span class="visually-hidden">— praegu valitud</span>
+      </p>
+    {% endif %}
+
+    <p class="personamenu__note">
+      Valik ei ole autentimine — see muudab ainult, kelle vaadet näidatakse.
+    </p>
+  </div>
+</div>

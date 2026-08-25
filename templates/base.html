@@ -54,9 +54,21 @@
             <a class="topnav__link {% if nav_active == 'ulevaade' %}is-active{% endif %}"
                {% if nav_active == 'ulevaade' %}aria-current="page"{% endif %}
                href="{% url 'matters:overview' %}">Ülevaade</a>
-            <a class="topnav__link {% if nav_active == 'minu_too' %}is-active{% endif %}"
-               {% if nav_active == 'minu_too' %}aria-current="page"{% endif %}
-               href="{% url 'matters:my_work' %}">Minu töö</a>
+            {% comment %}
+              Minu töö is offered only when there is a "minu". Past the shared
+              door with no persona selected there is no personal queue to show,
+              and the surface itself agrees: `login_required` sends that reader
+              to the persona page rather than inventing somebody's work for
+              them. Offering a link that can only bounce is a page telling
+              somebody to try something it knows will fail — the same reasoning
+              that keeps "+ Uus teema" off a READER's bar
+              (Vali kasutaja brief 23).
+            {% endcomment %}
+            {% if user.is_authenticated %}
+              <a class="topnav__link {% if nav_active == 'minu_too' %}is-active{% endif %}"
+                 {% if nav_active == 'minu_too' %}aria-current="page"{% endif %}
+                 href="{% url 'matters:my_work' %}">Minu töö</a>
+            {% endif %}
             <a class="topnav__link {% if nav_active == 'teemad' %}is-active{% endif %}"
                {% if nav_active == 'teemad' %}aria-current="page"{% endif %}
                href="{% url 'matters:matter_list' %}">Teemad</a>
@@ -139,24 +151,14 @@
             Named rather than reduced to an avatar, because in shared-gate mode
             this is not "you" — it is a view somebody selected, and it has to be
             obvious at a glance which one is active before anybody reads a
-            dashboard as their own (Stage-2D auth brief 7). The name is what
-            narrows last: the label above it is what goes first, then Välju
-            moves under the same disclosure the name lives in.
+            dashboard as their own (Stage-2D auth brief 7).
+
+            The pill opens the same list the full page shows, so switching costs
+            a click and not a page: somebody comparing two people's queues stays
+            on the queue (Vali kasutaja brief 14, 19).
           {% endcomment %}
           {% if shared_gate_mode %}
-            <span class="actingas">
-              {% if user.is_authenticated %}
-                <span class="actingas__label">Kasutaja</span>
-                <span class="actingas__name">{{ user.display_name }}</span>
-                <a class="button button--quiet button--tiny"
-                   href="{% url 'accounts:choose_persona' %}">Vaheta</a>
-              {% else %}
-                <span class="actingas__label">Kasutaja</span>
-                <span class="actingas__name actingas__name--none">valimata</span>
-                <a class="button button--quiet button--tiny"
-                   href="{% url 'accounts:choose_persona' %}">Vali</a>
-              {% endif %}
-            </span>
+            {% include "components/persona_switcher.html" %}
           {% elif user.is_authenticated %}
             <span class="avatar" title="{{ user.display_name }}">{{ user.initials }}</span>
           {% endif %}

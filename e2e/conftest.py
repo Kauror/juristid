@@ -20,6 +20,18 @@ BASE_URL = os.environ.get("E2E_BASE_URL", "")
 SCREENSHOT_DIR = os.environ.get("E2E_SCREENSHOT_DIR", "artifacts/screenshots")
 DESKTOP_VIEWPORT = {"width": 1440, "height": 900}
 
+#: A second server, on the same database, running `AUTH_MODE=shared_gate`.
+#:
+#: The persona switcher only exists in that mode — the routes 404 in the other
+#: two, because there is no list of people somebody may become when the
+#: deployment authenticates an individual. The rest of the browser suite runs
+#: against the synthetic sign-in, so the choice was between converting every
+#: existing test to the gate or standing up one more `runserver` beside it. One
+#: more server is a step in the workflow; converting the suite would have made
+#: every unrelated test depend on a password (docs/adr/0034).
+GATE_BASE_URL = os.environ.get("E2E_GATE_BASE_URL", "")
+GATE_PASSWORD = os.environ.get("E2E_GATE_PASSWORD", "")
+
 pytestmark = pytest.mark.skipif(not BASE_URL, reason="E2E_BASE_URL is not set")
 
 
@@ -53,6 +65,14 @@ def base_url() -> str:
     if not BASE_URL:
         pytest.skip("E2E_BASE_URL is not set")
     return BASE_URL.rstrip("/")
+
+
+@pytest.fixture(scope="session")
+def gate_base_url() -> str:
+    """The shared-gate server, or a skip that names what is missing."""
+    if not GATE_BASE_URL or not GATE_PASSWORD:
+        pytest.skip("E2E_GATE_BASE_URL and E2E_GATE_PASSWORD are not both set")
+    return GATE_BASE_URL.rstrip("/")
 
 
 @pytest.fixture(scope="session")
@@ -97,6 +117,31 @@ def sign_in(page, base_url: str, persona: Persona) -> None:
     # application is what is happening across the department, and the personal
     # queue is one click away.
     page.wait_for_url(f"{base_url}/ulevaade/")
+
+
+def pass_the_gate(page, gate_base_url: str) -> None:
+    """Type the department password, and land on the dashboard behind it.
+
+    The gate is authentication and the persona is not, which is the whole point
+    of the mode — so a persona test starts here, past the door and with nobody
+    selected, exactly as a visitor does (docs/adr/0016).
+    """
+    page.goto(f"{gate_base_url}/konto/varav/")
+    page.get_by_label("Parool", exact=False).fill(GATE_PASSWORD)
+    page.get_by_role("button", name="Sisene").click()
+    page.wait_for_load_state("networkidle")
+
+
+def navigation_targets(page) -> set[str]:
+    """Every destination the main navigation offers, by href.
+
+    Presence rather than visibility, because the bar is priority-based: the
+    reading destinations are laid out inline above 1560px and folded into the
+    "Veel" disclosure below it, so a visibility assertion at 1440px would be
+    asserting a layout decision instead of the access rule it means to check.
+    """
+    links = page.locator("nav[aria-label='Peamine'] a")
+    return {links.nth(index).get_attribute("href") or "" for index in range(links.count())}
 
 
 def sign_out(page, base_url: str) -> None:
