@@ -85,3 +85,40 @@ class EstonianDateField(forms.DateField):
         errors.update(kwargs.pop("error_messages", None) or {})
         kwargs["error_messages"] = errors
         super().__init__(**kwargs)
+
+
+class DescribedRadioSelect(forms.RadioSelect):
+    """Radios that point at the explanation rendered beside them.
+
+    The `Hetkeseis` chips on `Uus teema` carry a tooltip saying from which event
+    until which event a file sits in that stage. Sighted readers get it from
+    hover or from focus; a screen reader gets it from `aria-describedby`, and
+    nothing else on the page can supply that — the description belongs to *this
+    radio*, not to the group.
+
+    ``descriptions`` is a ``{value: text}`` mapping the form fills in, and the id
+    is derived from the option's own id, so the template that renders the bubble
+    and the attribute that points at it cannot disagree about the name. An
+    option with no description is left exactly as it was, which is what keeps
+    the named blank option ("Määramata") free of a dangling reference.
+    """
+
+    #: Set per form instance. Django deep-copies `base_fields` — widgets
+    #: included — so assigning this in `__init__` cannot leak between requests.
+    descriptions: dict[str, str]
+
+    #: How the bubble's id is built from the option's. One rule, used by the
+    #: widget and by the template.
+    DESCRIPTION_SUFFIX = "-selgitus"
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.descriptions = {}
+
+    def create_option(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        option = super().create_option(*args, **kwargs)
+        text = self.descriptions.get(str(option["value"]), "")
+        option_id = option["attrs"].get("id")
+        if text and option_id:
+            option["attrs"]["aria-describedby"] = f"{option_id}{self.DESCRIPTION_SUFFIX}"
+        return option

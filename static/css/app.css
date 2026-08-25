@@ -3574,12 +3574,17 @@ a.barchart__row:hover {
   background: var(--surface-panel);
 }
 
-/* -- Uus teema: visible choices -------------------------------------------- *
+/* -- visible choices -------------------------------------------------------- *
  *
  * The control's shape is a promise about the data. Radios where the model holds
  * one value, checkboxes where it holds several — a checkbox list for Vastutaja
- * would offer something `Matter.owner` cannot keep. Both are styled as chips;
- * neither stops being what it is (Stage-2E.1 brief 16, 19).
+ * would offer something `Matter.owner` cannot keep (Stage-2E.1 brief 16, 19).
+ *
+ * `Uus teema` no longer uses these: its controls are `.chip`, further down,
+ * which is the same rule in a smaller skin. What is left here is `Muuda
+ * teemat`, the Teema header's inline Valdkonnad editor, the composer and the
+ * rail, where a visible native box beside a full-width label is the right
+ * density and a 13px pill would not be.
  */
 
 .choicecards,
@@ -3632,6 +3637,15 @@ a.barchart__row:hover {
   margin: 0;
 }
 
+/* Andmeklass on Uus teema: the label and its box, and nothing drawn round
+   them. The bordered `.checkitem` is a control in a row of controls; this is
+   one declaration on its own. */
+.createform .checkitem--plain {
+  border: 0;
+  background: none;
+  padding: 0;
+}
+
 .checkitems__other {
   margin-top: var(--spacing-3);
   max-width: 32rem;
@@ -3670,19 +3684,14 @@ a.barchart__row:hover {
   background: none;
 }
 
-/* -- the file area --------------------------------------------------------- */
-
-.dropzone {
-  padding: var(--spacing-3);
-  border: 1px dashed var(--border-subtle);
-  border-radius: var(--radius-sm);
-  background: var(--surface-panel);
-}
-
-.dropzone.is-over {
-  border-color: var(--accent-border);
-  border-style: solid;
-}
+/* -- the file area --------------------------------------------------------- *
+ *
+ * The dropzone is `Uus teema`'s and only `Uus teema`'s, so the whole component
+ * lives with the rest of that page further down. What stood here was its
+ * earlier shape — a dashed panel wrapped round the browser's own file input —
+ * and keeping it would have meant two definitions of `.dropzone__file`, with
+ * the page getting whichever came last.
+ */
 
 .dropzone__list {
   display: grid;
@@ -3690,14 +3699,6 @@ a.barchart__row:hover {
   margin: var(--spacing-2) 0 0;
   padding: 0;
   list-style: none;
-}
-
-.dropzone__file {
-  padding: var(--spacing-1) var(--spacing-2);
-  border-left: 2px solid var(--accent-border);
-  background: var(--surface-base);
-  font-size: var(--typography-size-meta);
-  word-break: break-word;
 }
 
 /* -- the register's search box --------------------------------------------- *
@@ -4081,33 +4082,595 @@ p.factsection__none {
  * smallest definition that makes the existing markup mean what it says.
  * ==================================================================== */
 
-/* -- Uus teema ------------------------------------------------------------- */
+/* ======================================================================
+ * Uus teema
+ *
+ * One reading column, sections separated by a rule rather than boxed into
+ * cards, and one control — the chip — carrying every choice on the page.
+ *
+ * The chip is what removes most of the height. It is not a new control: the
+ * same radio and the same checkbox the page always posted, with the native box
+ * moved out of the way and the label carrying the state. Which one it is stays
+ * legible, because the group still behaves the way its input type behaves — a
+ * second radio clears the first and a second checkbox does not.
+ * ====================================================================== */
 
-/* The create form is a single reading column even inside the narrow page, and
-   its groups are further apart than the fields inside a group. */
+/* Wider than `page--narrow`'s reading column, because this page is paired rows
+   rather than prose. 1060px is where the three-column file/date row stops
+   stretching the dropzone past what it is worth. */
+.page--create {
+  max-width: 1060px;
+}
+
 .createform {
-  gap: var(--spacing-5);
+  gap: 0;
+  max-width: 1060px;
 }
 
-/* The label text inside a choice card. The selected and focused states of the
-   card itself are defined once, with the card. */
-.choicecard__name,
-.checkitem__name {
-  color: var(--text-body);
+/* Sections are separated by a rule, not by a card. A boxed section on this
+   page reads as nine competing objects; a hairline reads as one form with
+   parts (Uus teema redesign §3). */
+.createform__row {
+  padding: 11px 0;
+  border-top: 1px solid var(--border-subtle);
+  min-width: 0;
 }
 
-.choicecard:has(input:checked) .choicecard__name,
-.checkitem:has(input:checked) .checkitem__name {
-  color: var(--text-primary);
-  font-weight: var(--typography-weight-medium);
+.createform__row--first {
+  padding-top: 0;
+  border-top: 0;
 }
 
-/* The file control fills its dropzone; the zone is the affordance, not the
-   button inside it. */
-.dropzone__input {
-  width: 100%;
-  font-size: var(--typography-size-meta);
+/* The paired rows. Each is `minmax(0, …)` on its flexible track so a long
+   organisation name wraps instead of widening the grid and taking the page
+   sideways with it. */
+.createform__pair,
+.createform__trio {
+  display: grid;
+  gap: 18px;
+  align-items: start;
+}
+
+.createform__pair--summary {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+.createform__pair--people {
+  grid-template-columns: 246px minmax(0, 1fr);
+}
+
+.createform__pair--class {
+  grid-template-columns: minmax(0, 1fr) 130px;
+}
+
+.createform__trio {
+  grid-template-columns: minmax(0, 1fr) 146px 146px;
+}
+
+/* Under ~1024px the paired rows stop being pairs. A breakpoint rather than
+   `auto-fit`, because these tracks are deliberately unequal — a 320px note
+   beside a summary is a decision, and `auto-fit` would negotiate it away. */
+@media (max-width: 1080px) {
+  .createform__pair,
+  .createform__trio {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-3);
+  }
+
+  /* A date box has one shape whatever the column is doing. Stretched to the
+     full width of a stacked row it reads as the most important field on the
+     screen, which on this page it is not. */
+  .createform__trio .field:has(.dateinput),
+  .createform__pair--class .field {
+    max-width: 18rem;
+  }
+}
+
+/* This page's labels are the design's: 11px, .08em, secondary rather than
+   muted, because on a form a label is read and not merely noticed. */
+.createform .field__label {
+  font-size: var(--typography-size-label);
+  letter-spacing: var(--typography-tracking-label);
   color: var(--text-secondary);
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+}
+
+/* No boxes. `fieldset.field` is bordered everywhere else because it groups
+   fields inside a form that has cards; here the section rule already groups.
+   The dropzone below draws its own dashed border, which is an affordance and
+   not a grouping. */
+.createform fieldset.field {
+  border: 0;
+  padding: 0;
+}
+
+.createform fieldset.field > legend {
+  padding: 0;
+}
+
+/* How many are chosen, beside the label. Filled by app.js; absent without
+   scripting, which costs nothing — the chips themselves say which are on. */
+.field__count:empty {
+  display: none;
+}
+
+.field__count {
+  font-size: var(--typography-size-meta-sm);
+  font-weight: var(--typography-weight-regular);
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text-muted);
+}
+
+/* The title is the one field that reads as a capture surface: warmer ground,
+   brand border, a soft halo. It is where the cursor already is. */
+.createform .field__input--prominent {
+  background: var(--surface-capture);
+  border-color: var(--accent-border);
+}
+
+.createform .field__input--prominent:focus {
+  box-shadow: 0 0 0 3px var(--accent-halo);
+}
+
+/* Millest teema räägib: prose, so it reads as prose. */
+.field__input--prose {
+  min-height: 52px;
+  font-size: var(--typography-size-row);
+  line-height: var(--typography-line-body);
+  resize: vertical;
+}
+
+/* Märkmed on the create form is the rail note at create-form height. Dashed
+   whether or not it holds text, because "this one is private" is a property of
+   the box and not of whether somebody has used it yet.
+   `.createform` in the selector for the height, because `.railnote__area`'s own
+   118px rule is declared further down the file and would otherwise win — the
+   private note came out half again as tall as the summary beside it. */
+.createform .railnote__area--create {
+  min-height: 52px;
+  border-style: dashed;
+}
+
+/* -- the file area --------------------------------------------------------- */
+
+.createform .dropzone {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-15);
+  padding: var(--spacing-2) var(--spacing-25);
+  min-height: 38px;
+  /* Solid, unlike every dashed affordance on this page. Dashed here would say
+     "this opens something optional", and the file is frequently the reason the
+     matter exists at all (mockup 8a). */
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+}
+
+.createform .dropzone.is-over {
+  border-color: var(--accent-primary);
+  background: var(--accent-soft);
+}
+
+.dropzone__choose {
+  padding: 3px 11px;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  color: var(--text-body);
+  font-size: var(--typography-size-meta);
+  cursor: pointer;
+}
+
+.dropzone__choose:hover {
+  border-color: var(--accent-border);
+  color: var(--text-primary);
+}
+
+/* The input is visually hidden but focusable, so the ring has to land on the
+   label that stands in for it. */
+.dropzone input:focus-visible + .dropzone__choose {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+.dropzone__hint {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+.createform .dropzone__list {
+  flex: 1 0 100%;
+  margin: var(--spacing-1) 0 0;
+}
+
+/* One chosen file: what it is, how big, and the way to take it off again. */
+.dropzone__file {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-1) var(--spacing-2);
+  border-left: 2px solid var(--status-success-border);
+  background: var(--surface-panel);
+  font-size: var(--typography-size-meta);
+}
+
+.dropzone__kind {
+  flex: none;
+  font-size: var(--typography-size-chip-sm);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-chip);
+  color: var(--status-success);
+}
+
+.dropzone__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.dropzone__size {
+  flex: none;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.dropzone__drop {
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--accent-link);
+  font-size: var(--typography-size-base);
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.dropzone__drop:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* -- the chip -------------------------------------------------------------- */
+
+.chiprow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: var(--spacing-15);
+  min-width: 0;
+}
+
+.chip {
+  position: relative;
+  display: inline-flex;
+  max-width: 100%;
+}
+
+/* Focusable, not visible. Absolutely positioned inside the chip rather than
+   `display: none`, because a hidden input is not focusable and the keyboard
+   ring has to land somewhere — it lands on `.chip__name` below. */
+.chip__input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+}
+
+.chip__name {
+  display: inline-block;
+  padding: 3px 11px;
+  border-radius: 13px;
+  font-size: var(--typography-size-meta);
+  line-height: 1.5;
+  color: var(--text-body);
+  border: 1px solid var(--border-control);
+  cursor: pointer;
+  /* Long labels wrap inside the chip rather than pushing the row wider.
+     "Töösuhted, töökeskkond" and "Ootan ELi õiguse ülevõtmist" are what this
+     is for at 1024px. */
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.chip:hover .chip__name {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.chip__input:checked + .chip__name {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+}
+
+.chip__input:focus-visible + .chip__name {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+/* The way back out of a chosen chip, shown only once there is something to
+   undo. Inside the label, so clicking it unticks the box it belongs to. */
+.chip__clear {
+  display: none;
+  margin-left: 6px;
+  color: var(--accent-link);
+  font-weight: var(--typography-weight-bold);
+}
+
+.chip__input:checked + .chip__name .chip__clear {
+  display: inline;
+}
+
+/* Dashed always means "opens something optional". */
+.chip--other .chip__name {
+  border-style: dashed;
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.chip--other .chip__input:checked + .chip__name {
+  border-style: solid;
+  color: var(--text-primary);
+}
+
+.createform__other {
+  margin-top: var(--spacing-3);
+  max-width: 30rem;
+}
+
+/* -- the long tail, shaped like a chip ------------------------------------- */
+
+.chipdetails {
+  display: inline-block;
+  max-width: 100%;
+}
+
+.chipdetails__summary {
+  display: inline-block;
+  padding: 3px 11px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 13px;
+  font-size: var(--typography-size-meta);
+  line-height: 1.5;
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.chipdetails__summary::-webkit-details-marker {
+  display: none;
+}
+
+.chipdetails__summary::after {
+  content: " ▾";
+  color: var(--text-muted);
+}
+
+.chipdetails[open] > .chipdetails__summary::after {
+  content: " ▴";
+}
+
+.chipdetails__summary:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-border);
+}
+
+.chipdetails__summary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+.chipdetails__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+  padding: var(--spacing-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
+.chipdetails__search {
+  max-width: 20rem;
+}
+
+.chipdetails__body .chiprow {
+  margin-top: 0;
+  /* A catalogue of ministries is long. It scrolls inside its own box rather
+     than lengthening the page under everything below it. */
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* -- Hetkeseis: the chip that explains itself ------------------------------ */
+
+/* The affordance: a small circled "i" saying this chip explains itself.
+ *
+ * Drawn with a border rather than set as a character. `ⓘ` is not in Barlow, so
+ * it would fall back to whatever the machine happens to have — a different
+ * glyph on the CI container than on a laptop, which is a visual baseline that
+ * fails for a reason nobody can act on. And drawn in CSS rather than in the
+ * markup, so it is in no accessible name and in no test's idea of what the
+ * chip is called: the chip is "Valitsuses", not "Valitsuses i". */
+.chip--explained .chip__name::after {
+  content: "i";
+  display: inline-block;
+  margin-left: 6px;
+  width: 11px;
+  height: 11px;
+  line-height: 10px;
+  text-align: center;
+  vertical-align: 1px;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-circle);
+  font-size: 8px;
+  font-weight: var(--typography-weight-bold);
+  font-style: normal;
+  color: var(--text-muted);
+}
+
+.chip--explained:hover .chip__name::after,
+.chip--explained .chip__input:focus-visible + .chip__name::after {
+  color: var(--accent-link);
+}
+
+.chip--explained .chip__input:checked + .chip__name::after {
+  color: var(--text-secondary);
+}
+
+/* And it says so to the pointer as well: this chip has something to read. */
+.chip--explained .chip__name {
+  cursor: help;
+}
+
+/* The tooltip. Shown on hover and on keyboard focus, hidden again when either
+   leaves — no click, no navigation, and no `title=` attribute, which a screen
+   reader may or may not announce and a keyboard user never sees at all.
+   `.is-suppressed` is what Escape sets (static/js/app.js). */
+.stagehelp {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: min(22rem, calc(100vw - 24px));
+  padding: var(--spacing-2) var(--spacing-25);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-body);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-regular);
+  line-height: var(--typography-line-body);
+  white-space: normal;
+  /* `display: none`, not `visibility: hidden`.
+   *
+   * An absolutely positioned box that is merely invisible still contributes to
+   * the document's scrollable overflow, so ten hidden bubbles hanging off the
+   * right-hand Hetkeseis chips put a horizontal scrollbar on the whole page at
+   * 1024px — measured, not guessed. Taken out of layout entirely there is
+   * nothing to overflow until one is actually opened, and an opened one is
+   * flipped by then.
+   *
+   * A description referenced by `aria-describedby` is read even when its
+   * element is `display: none`; that is the whole reason the attribute exists
+   * (WAI accname §4.3.2). */
+  display: none;
+  pointer-events: none;
+}
+
+.chip--explained:hover .stagehelp,
+.chip--explained:focus-within .stagehelp {
+  display: block;
+}
+
+.chip--explained.is-suppressed .stagehelp {
+  display: none;
+}
+
+/* A chip near the right edge opens leftwards instead of off the screen. Set by
+   the script once the bubble has a box to measure; the `max-width` below is the
+   floor under it, so even an unflipped bubble on a narrow window stays inside
+   the viewport. */
+.stagehelp--flip {
+  left: auto;
+  right: 0;
+}
+
+/* -- Järgmine tegevus: the one panel ---------------------------------------- */
+
+.createform__row--panel {
+  border-top: 0;
+  padding-top: var(--spacing-4);
+}
+
+.nextpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3) var(--spacing-4);
+  background: var(--surface-capture);
+  border: 1px solid var(--accent-border);
+  border-left: 2px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+}
+
+.nextpanel__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-3);
+}
+
+.nextpanel__text {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+
+.nextpanel__date {
+  flex: 0 0 auto;
+  width: 9.5rem;
+}
+
+.nextpanel .chiprow {
+  margin-top: 0;
+}
+
+/* The meaning chips are quieter than the mode chips beside them: they answer a
+   question about the date, not about the work. */
+.chip--meaning .chip__name {
+  font-size: var(--typography-size-meta-sm);
+}
+
+/* -- the actions ------------------------------------------------------------ */
+
+.createform__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-4);
+}
+
+/* At the far end of the actions row, not tucked behind "Loobu": it is a
+   reassurance about the whole form, not a note on the button beside it. */
+.createform__note {
+  margin-left: auto;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+/* "Loo teema" reads inactive until there is a title to save. `aria-disabled`
+   and a flat fill rather than `disabled`: the button still submits, so
+   somebody who presses it anyway gets the server's refusal beside the field
+   instead of a control that does nothing and says nothing (Uus teema
+   redesign §7, §15). */
+.button--primary[aria-disabled="true"] {
+  background: var(--surface-elevated);
+  border-color: var(--border-control);
+  color: var(--text-muted);
+}
+
+/* -- a refused save --------------------------------------------------------- */
+
+/* The field that was refused, marked on the box as well as under it. Colour is
+   never the only signal: the message below the field says what is wrong in
+   words (Uus teema redesign §7). */
+.createform .field:has(.field__error) .field__input,
+.createform .field:has(.field__error) .dropzone__input {
+  border-color: var(--status-danger-border);
+  box-shadow: 0 0 0 3px var(--status-danger-halo);
 }
 
 /* -- structured facts ------------------------------------------------------ */
@@ -5782,9 +6345,17 @@ p.factsection__none {
   flex: 1;
 }
 
-/* -- restricted chip beside the title --------------------------------- */
+/* -- restricted chip beside the title --------------------------------- *
+ *
+ * Named `lockchip`, not `chip`. It was `.chip` — a bare, generic name for one
+ * badge on one heading — until `Uus teema` needed the same word for the form
+ * control its design calls a chip, and the two rules collided: every option on
+ * the create form came out uppercase and heavy, because this one was declared
+ * later in the file and won. The values below are exactly the ones this badge
+ * has always computed to; only the name moved (Uus teema redesign §4).
+ */
 
-.chip {
+.lockchip {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-1);
@@ -5797,7 +6368,7 @@ p.factsection__none {
   white-space: nowrap;
 }
 
-.chip--restricted {
+.lockchip--restricted {
   background: var(--status-warning-soft);
   border: 1px solid var(--status-warning-border);
   color: var(--status-warning);

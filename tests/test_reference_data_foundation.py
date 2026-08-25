@@ -50,10 +50,14 @@ from app.taxonomy.reference_data import (
     POLICY_AREA_SOURCE_V1_TITLE,
     POLICY_AREA_SOURCE_V1_URL,
     POLICY_AREA_SOURCE_VERIFIED_ON,
+    POLICY_AREA_WITHDRAWAL_SOURCE_TITLE,
+    POLICY_AREA_WITHDRAWAL_VERIFIED_ON,
     REFERENCE_POLICY_AREA_KEYS,
     REFERENCE_POLICY_AREA_VERSION,
     REFERENCE_POLICY_AREAS_V1,
+    REFERENCE_POLICY_AREAS_V2,
     RETIRED_POLICY_AREA_KEYS_V1,
+    RETIRED_POLICY_AREA_KEYS_V2,
 )
 
 pytestmark = pytest.mark.django_db
@@ -62,11 +66,16 @@ pytestmark = pytest.mark.django_db
 #: also prove the *earlier* baseline was not edited after the fact.
 MIGRATION_V1 = importlib.import_module("app.taxonomy.migrations.0002_reference_policy_areas")
 MIGRATION = importlib.import_module("app.taxonomy.migrations.0003_working_policy_area_vocabulary")
+#: The withdrawal, kept addressable for the same drift guard.
+MIGRATION_V3 = importlib.import_module(
+    "app.taxonomy.migrations.0004_retire_catchall_and_deadline_areas"
+)
 
-#: The twenty-three the department works to, in the order it gave them. Written
-#: out rather than derived from the manifest: a test that reads the same tuple
-#: it is checking would agree with any edit, including a wrong one.
-EXPECTED = [
+#: Everything ``taxonomy/0003`` seeded — the twenty-three the department named
+#: in the Teema redesign review, in the order it gave them. Written out rather
+#: than derived from the manifest: a test that reads the same tuple it is
+#: checking would agree with any edit, including a wrong one.
+SEEDED_V2 = [
     ("maksejouetus", "Maksejõuetus", 10),
     ("raamatupidamine", "Raamatupidamine", 20),
     ("intellektuaalomand", "Intellektuaalomand", 30),
@@ -92,9 +101,20 @@ EXPECTED = [
     ("arengukavad-strateegiad", "Arengukavad, strateegiad", 230),
 ]
 
-#: The four names that appear in both the retired nine and the working
-#: twenty-three. Their rows carry over untouched — same key, same primary key,
-#: same relations — which is the whole reason those four are not in
+#: The two the product owner withdrew on 2026-08-25, written out here for the
+#: same reason as the list above. `Olulised tähtajad` is a watch list and not a
+#: subject area; `Muud teemad` is the free-text `Muu` affordance a second time.
+WITHDRAWN_V2 = ["muud-teemad", "olulised-tahtajad"]
+
+#: What may be chosen today: the seeded twenty-three less the withdrawn two,
+#: still in the department's order and still carrying its gaps at 200 and 220.
+#: Those gaps are the point — the sequence is the one the department reviewed,
+#: not a ranking to be closed up.
+EXPECTED = [row for row in SEEDED_V2 if row[0] not in WITHDRAWN_V2]
+
+#: The four names that appear in both the retired nine and the working list.
+#: Their rows carry over untouched — same key, same primary key, same relations
+#: — which is the whole reason those four are not in
 #: `RETIRED_POLICY_AREA_KEYS_V1`.
 CARRIED_OVER = ["energeetika", "riigihanked", "arioigus", "keskkond"]
 
@@ -111,24 +131,66 @@ PROVISIONAL_KEYS = {key for key, _ in PROVISIONAL_POLICY_AREAS} - set(REFERENCE_
 # ---------------------------------------------------------------------------
 
 
-def test_the_twenty_three_working_areas_are_in_a_migrated_database():
-    rows = list(PolicyArea.objects.filter(key__in=[key for key, *_ in EXPECTED]))
-    assert {row.key for row in rows} == {key for key, *_ in EXPECTED}
+def test_every_seeded_working_area_is_still_a_row():
+    """All twenty-three, including the two no longer offered.
+
+    Withdrawal is `is_active`, never a delete: the Matters filed under
+    `Muud teemad` still show it, and the statistics still count them
+    (`taxonomy/0004`, Uus teema redesign §7.2).
+    """
+    rows = list(PolicyArea.objects.filter(key__in=[key for key, *_ in SEEDED_V2]))
+    assert {row.key for row in rows} == {key for key, *_ in SEEDED_V2}
     assert len(rows) == 23
 
 
-def test_the_offered_vocabulary_is_exactly_the_twenty_three_in_order():
+def test_the_offered_vocabulary_is_exactly_the_twenty_one_in_order():
     """One governed list, and it is what every surface offers.
 
     The set *and* the order: the department sequenced these, and a control that
-    rearranged them would be answering a question nobody asked
-    (app/taxonomy/vocabulary.py, Teema redesign §7, §7.1).
+    rearranged them would be answering a question nobody asked. Twenty-one plus
+    the free-text `Muu` affordance is the twenty-two the approved design names
+    — and `Muu` is not in this list because it is not a `PolicyArea` at all
+    (app/taxonomy/vocabulary.py, Uus teema redesign §7).
     """
     from app.taxonomy.vocabulary import selectable_policy_areas
 
+    assert len(EXPECTED) == 21
     assert [area.name_et for area in selectable_policy_areas()] == [
         name for _key, name, _order in EXPECTED
     ]
+
+
+def test_the_two_withdrawn_areas_are_no_longer_offered_anywhere():
+    """`Olulised tähtajad` was a watch list; `Muud teemad` was `Muu` twice.
+
+    Neither is a subject area, and both stop being offered together — but only
+    stop being *offered*. The row, the relations and the description are all
+    still there (`taxonomy/0004`).
+    """
+    from app.taxonomy.vocabulary import policy_area_choices, selectable_policy_areas
+
+    withdrawn = PolicyArea.objects.filter(key__in=WITHDRAWN_V2)
+    assert withdrawn.count() == len(WITHDRAWN_V2)
+    assert not withdrawn.filter(is_active=True).exists()
+
+    offered = {area.key for area in selectable_policy_areas()}
+    assert offered.isdisjoint(set(WITHDRAWN_V2))
+    assert {key for key, _label in policy_area_choices()}.isdisjoint(set(WITHDRAWN_V2))
+
+
+def test_nothing_remapped_muud_teemad_onto_muu():
+    """The fuzzy migration this arrangement exists to refuse.
+
+    `Muud teemad` and `Muu` mean the same thing to a reader, which is exactly
+    why the temptation is there — and exactly why acting on it would rewrite
+    somebody else's filing on a coincidence of wording. There is no `Muu`
+    PolicyArea to remap onto, and the free-text column the affordance writes is
+    not something a migration can fill truthfully (Uus teema redesign §7.2).
+    """
+    assert not PolicyArea.objects.filter(name_et__iexact="Muu").exists()
+    catchall = PolicyArea.objects.get(key="muud-teemad")
+    assert catchall.name_et == "Muud teemad"
+    assert catchall.description
 
 
 def test_the_retired_areas_keep_their_rows_and_stop_being_offered():
@@ -185,7 +247,7 @@ def test_names_and_order_are_exactly_the_reviewed_ones():
 
 def test_every_reviewed_area_is_active():
     keys = [key for key, *_ in EXPECTED]
-    assert PolicyArea.objects.filter(key__in=keys, is_active=True).count() == 23
+    assert PolicyArea.objects.filter(key__in=keys, is_active=True).count() == len(EXPECTED)
 
 
 def test_every_reviewed_area_carries_a_definition():
@@ -203,15 +265,45 @@ def test_the_manifest_and_the_frozen_migration_baseline_agree():
     next vocabulary change is a new manifest entry *and* a new migration.
     """
     frozen = [tuple(row) for row in MIGRATION.BASELINE]
-    live = [
+    seeded = [
         (area.key, area.name_et, area.description, area.sort_order)
-        for area in REFERENCE_POLICY_AREAS_V1
+        for area in REFERENCE_POLICY_AREAS_V2
     ]
-    assert frozen == live
+    assert frozen == seeded
 
     # And the retired list the migration acts on is the manifest's, not a
     # second opinion about which of the nine carried over.
     assert list(MIGRATION.RETIRED) == list(RETIRED_POLICY_AREA_KEYS_V1)
+
+
+def test_the_withdrawal_migration_and_the_manifest_agree():
+    """The same drift guard, one migration later.
+
+    `taxonomy/0004` carries its own frozen copy of the two withdrawn keys, and
+    the manifest that stops offering them is a separate edit. If the two ever
+    disagreed, a fresh database would offer a label a migrated one does not —
+    which is the drift the whole arrangement exists to make impossible.
+    """
+    assert list(MIGRATION_V3.WITHDRAWN) == list(RETIRED_POLICY_AREA_KEYS_V2)
+
+    # The offered manifest is exactly the seeded one minus those two, in the
+    # order it already had. Derived rather than retyped, and checked rather
+    # than assumed.
+    offered = [area.key for area in REFERENCE_POLICY_AREAS_V1]
+    assert offered == [
+        area.key
+        for area in REFERENCE_POLICY_AREAS_V2
+        if area.key not in RETIRED_POLICY_AREA_KEYS_V2
+    ]
+    assert set(offered).isdisjoint(set(RETIRED_POLICY_AREA_KEYS_V2))
+
+
+def test_the_withdrawal_refuses_a_row_somebody_has_renamed():
+    """Deactivating on a key alone would overrule an edit without saying so."""
+    PolicyArea.objects.filter(key="muud-teemad").update(name_et="Muud küsimused")
+
+    with pytest.raises(RuntimeError, match="Muud küsimused"):
+        MIGRATION_V3.retire(global_apps, None)
 
 
 def test_version_ones_frozen_baseline_is_still_its_own():
@@ -246,7 +338,14 @@ def test_the_business_source_is_recorded():
     assert POLICY_AREA_SOURCE_PUBLISHER.startswith("Eesti Kaubandus-Tööstuskoda")
     assert "Teema redesign" in POLICY_AREA_SOURCE_TITLE
     assert POLICY_AREA_SOURCE_VERIFIED_ON == "2026-08-24"
-    assert REFERENCE_POLICY_AREA_VERSION == "2.0"
+    assert REFERENCE_POLICY_AREA_VERSION == "3.0"
+
+    # The withdrawal keeps its own trail. The list still came from the Teema
+    # redesign review on the 24th; stopping two of its labels being offered was
+    # a separate decision on the 25th, and conflating the two dates would make
+    # the earlier one unanswerable.
+    assert "Uus teema" in POLICY_AREA_WITHDRAWAL_SOURCE_TITLE
+    assert POLICY_AREA_WITHDRAWAL_VERIFIED_ON == "2026-08-25"
 
 
 def test_the_earlier_vocabularys_provenance_is_kept():
@@ -314,8 +413,10 @@ def test_reverse_removes_only_pristine_unused_rows():
     try:
         assert not PolicyArea.objects.filter(key__in=REFERENCE_POLICY_AREA_KEYS).exists()
     finally:
-        _migrate_taxonomy_to(("taxonomy", "0003_working_policy_area_vocabulary"))
-    assert PolicyArea.objects.filter(key__in=REFERENCE_POLICY_AREA_KEYS).count() == 23
+        _migrate_taxonomy_to(("taxonomy", "0004_retire_catchall_and_deadline_areas"))
+    assert PolicyArea.objects.filter(key__in=REFERENCE_POLICY_AREA_KEYS).count() == len(
+        REFERENCE_POLICY_AREA_KEYS
+    )
 
 
 def test_reverse_puts_the_retired_areas_back_on_the_offered_list():

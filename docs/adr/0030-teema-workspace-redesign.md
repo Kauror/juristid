@@ -149,6 +149,14 @@ stable order is learnable and a self-rearranging one is not.
 `Olulised tähtajad` appears in the vocabulary as a subject label. It is not
 `MatterImportantDate`. They share four words and nothing else.
 
+> **Amended by ADR 0032 (2026-08-25).** Hands-on use decided that sharing four
+> words was itself the problem: `Olulised tähtajad` names a cross-cutting watch
+> list, which is a workflow property and not an answer to *which area of law is
+> this*. It and `Muud teemad` — which duplicated the free-text `Muu`
+> affordance — are withdrawn from the offered vocabulary by `taxonomy/0004`.
+> Twenty-one remain, and everything above about *how* a label is withdrawn is
+> unchanged: `is_active` moves, nothing is deleted, nothing is remapped.
+
 ### 8. `Matter.superseded_by` — `Järglane` as a relationship
 
 `Disposition.SUPERSEDED` could always say *that* a file continued elsewhere;

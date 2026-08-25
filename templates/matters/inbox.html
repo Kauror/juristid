@@ -24,7 +24,9 @@ intake and an IntakeItem model arrive only when there is a real feed to consume
       <a class="button button--primary" href="{% url 'matters:intake' %}">
         + Lisa saabunud materjal
       </a>
-      <a class="button button--quiet" href="{% url 'matters:matter_create' %}">+ Uus teema</a>
+      {% if can_write_business_content %}
+        <a class="button button--quiet" href="{% url 'matters:matter_create' %}">+ Uus teema</a>
+      {% endif %}
     </span>
   </div>
 
@@ -52,7 +54,7 @@ intake and an IntakeItem model arrive only when there is a real feed to consume
     {% else %}
       <p class="empty">
         Teemasid ei ole veel loodud.
-        <a href="{% url 'matters:matter_create' %}">Loo esimene teema</a>.
+        {% if can_write_business_content %}<a href="{% url 'matters:matter_create' %}">Loo esimene teema</a>.{% endif %}
       </p>
     {% endif %}
   </section>

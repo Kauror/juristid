@@ -82,7 +82,7 @@ def test_several_policy_areas_can_be_chosen(signed_in, specialist):
 
 
 def test_policy_areas_are_offered_in_the_reviewed_order(signed_in, specialist):
-    """The department sequenced these twenty-three; the form shows that order.
+    """The department sequenced these; the form shows that order.
 
     It replaces an ordering by usage frequency, which existed because nine
     broad headings sorted by an admin field made people hunt. With a working

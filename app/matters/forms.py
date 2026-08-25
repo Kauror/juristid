@@ -20,7 +20,7 @@ from app.core.authorization import scoped_count
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.core.richtext import plain_text
-from app.core.widgets import EstonianDateField, EstonianDateInput
+from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
 from app.matters.entry_enums import EntryKind
@@ -41,6 +41,7 @@ from app.workflow.enums import (
     default_date_semantics,
 )
 from app.workflow.models import StageVocabulary
+from app.workflow.selectors import selectable_stages, stage_help_texts
 
 
 def _entry_moment(value: date | None) -> datetime | None:
@@ -117,7 +118,14 @@ def active_users() -> Any:
 
 
 def active_stages() -> Any:
-    return StageVocabulary.objects.filter(is_active=True).order_by("sort_order", "label_et")
+    """The offered Hetkeseis vocabulary, from the module that governs it.
+
+    One line, for the reason `offered_policy_areas` below is one line: the list
+    and its order are `app.workflow.selectors.selectable_stages`, and a form
+    that assembled its own would drift from the tooltip that explains it
+    (Uus teema redesign §8).
+    """
+    return selectable_stages()
 
 
 def offered_policy_areas() -> list[PolicyArea]:
@@ -170,6 +178,35 @@ def organisations_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation
     return sorted(found, key=lambda organisation: ranking[organisation.pk])
 
 
+def addressees_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
+    """The bodies this department actually answers to, most frequent first.
+
+    The addressee counterpart of `organisations_by_usage`, and separate from it
+    on purpose: who *sends* Koda a file and who Koda *answers* are two different
+    facts, and one list standing for both would put the Riigikogu committee that
+    never sends anything behind ten ministries that never receive anything.
+
+    `scoped_count` for the same reason the sender list uses it: the visibility
+    join fans out over collaborators, and `Count("id")` inside a `GROUP BY`
+    would count join rows (app/core/authorization.py).
+    """
+    from app.matters.models import Matter
+
+    usage = (
+        Matter.objects.visible_to(viewer)
+        .filter(addressee_organisation__isnull=False)
+        .order_by()
+        .values("addressee_organisation")
+        .annotate(total=scoped_count())
+        .order_by("-total")[:limit]
+    )
+    ranking = {row["addressee_organisation"]: index for index, row in enumerate(usage)}
+    if not ranking:
+        return list(Organisation.objects.order_by("name")[:limit])
+    found = Organisation.objects.filter(pk__in=ranking)
+    return sorted(found, key=lambda organisation: ranking[organisation.pk])
+
+
 class MatterCreateForm(forms.Form):
     """Creating a Teema requires a title and nothing else.
 
@@ -180,9 +217,15 @@ class MatterCreateForm(forms.Form):
     What changed in Stage 2E.1 is *which* optional fields are in front of you.
     A new matter arrives as a title, a file, a person, a sender and a date, and
     those now use visible controls rather than five dropdowns — for a department
-    of four, a select is a click to find out what the options even are. The
-    procedural metadata that used to sit beside them is still here, one
-    disclosure down (brief 14, 15).
+    of four, a select is a click to find out what the options even are.
+
+    What changed with the approved Uus teema design is that nothing is behind a
+    disclosure any more, and that the form finally carries the two texts a
+    lawyer writes while the file is still in front of them: `Lühikokkuvõte` and
+    the private `Märkmed`. The height that bought it came from pairing rows and
+    from the chip control, not from hiding fields — every field on the page
+    before this round is still on it, still posting the same name and the same
+    value (Uus teema redesign §2, §3).
     """
 
     title = forms.CharField(
@@ -194,6 +237,39 @@ class MatterCreateForm(forms.Form):
                 "autofocus": "autofocus",
                 "placeholder": "Näiteks: Pakendiseaduse muutmise eelnõu",
             }
+        ),
+    )
+    #: The plain-language answer to *what is this*, written where it is first
+    #: known. `Matter.brief_summary` and nothing else: `position_summary` says
+    #: what Koda thinks, `rationale_summary` says why, and the first `Entry`
+    #: says what happened on a day. None of the three can be made to mean this
+    #: without corrupting it (app/matters/models.py, Teema redesign §6).
+    #:
+    #: Optional, like everything but the title. A summary written before the
+    #: file has been read is worse than none.
+    brief_summary = forms.CharField(
+        label="Millest teema räägib",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input field__input--prose",
+                "rows": "3",
+                "placeholder": "Mida see eelnõu muudab ja keda puudutab?",
+            }
+        ),
+    )
+    #: The private scratch pad, on the capture screen because that is where the
+    #: half-formed thought occurs. Written to `MatterPersonalNote`, which is
+    #: scoped by author and read by nobody else — not a second Matter column
+    #: (app/matters/models.py, Teema redesign §22.4).
+    #:
+    #: No placeholder, deliberately: a prompt in a box nobody else will ever
+    #: read is the page telling somebody what to think about privately.
+    notes = forms.CharField(
+        label="Märkmed",
+        required=False,
+        widget=forms.Textarea(
+            attrs={"class": "railnote__area railnote__area--create", "rows": "3"}
         ),
     )
     owner = UserChoiceField(
@@ -210,7 +286,7 @@ class MatterCreateForm(forms.Form):
         # Stage 2E.1 and is left alone here rather than redesigned in a round
         # about other things — but it is the same gap `stage` had, so if anybody
         # is asked to fix it, this is the line (Agent-UI brief 5.1).
-        widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
     #: Radios, rendered as chips. Both fields hold exactly one value, and a
     #: control that let you tick two would promise something the model cannot
@@ -235,13 +311,19 @@ class MatterCreateForm(forms.Form):
         # without it the row had no Määramata chip at all, and a stage picked by
         # mistake could not be unpicked. Caught by CI, not by reading.
         blank=True,
-        widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
+        # The one control on the page whose options need explaining. Which of
+        # `Kooskõlastusringil` and `Valitsuses` a file is in depends on an event
+        # that has or has not happened, and the department wrote a sentence per
+        # stage saying which. The sentence is on the row; this is what points a
+        # screen reader at the one belonging to *this* chip
+        # (app/workflow/selectors.py, Uus teema redesign §8).
+        widget=DescribedRadioSelect(attrs={"class": "chip__input"}),
     )
     track = forms.ChoiceField(
         label="Menetlusliik",
         choices=[("", "Määramata"), *Track.choices],
         required=False,
-        widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
     source_organisations = forms.ModelMultipleChoiceField(
         label="Saatja",
@@ -250,7 +332,7 @@ class MatterCreateForm(forms.Form):
         # Checkboxes, because a Matter really can arrive from several bodies at
         # once. This was radios while the model held one sender, and the control
         # was right for the model it had; both moved together (Agent-E brief 28).
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
         help_text="Kellelt teema tuli. Saatjaid võib olla mitu.",
     )
     #: The long tail. Shown only when the reader asks for it, and validated
@@ -271,14 +353,27 @@ class MatterCreateForm(forms.Form):
         label="Muu saatja",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
     )
+    #: Still one organisation, and still a radio, because `Matter` holds one
+    #: addressee. The approved design draws it as a multi-select mirroring what
+    #: ADR 0025 did for senders — a file can be answered to a ministry and a
+    #: committee at once — and offers the single-value chip group as the version
+    #: to ship if the migration is not wanted yet. That is what this is: the
+    #: layout is the design's, the cardinality is the model's, and the schema
+    #: change is left as a decision rather than made as a side effect of a form
+    #: redesign (Uus teema redesign §5, ADR 0032).
     addressee_organisation = forms.ModelChoiceField(
         label="Adressaat",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=SELECT_WIDGET,
-        help_text="Kellele Koda vastab. Eraldi fakt saatjast.",
+        empty_label="Määramata",
+        # `blank=True` is what keeps that label. Django drops the empty choice
+        # for a `ModelChoiceField` rendered as radios unless it is set, and
+        # without it an addressee picked by mistake could not be unpicked — the
+        # defect CI caught on `stage` a round ago.
+        blank=True,
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
     received_date = EstonianDateField(
         label="Saabus",
@@ -301,12 +396,12 @@ class MatterCreateForm(forms.Form):
         required=False,
         # Checkboxes because a Matter really can belong to several areas, and a
         # multi-select hides that behind a modifier key nobody uses (brief 19).
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
     )
     policy_area_other_selected = forms.BooleanField(
         label="Muu",
         required=False,
-        widget=forms.CheckboxInput(attrs={"class": "checkitem__input"}),
+        widget=forms.CheckboxInput(attrs={"class": "chip__input"}),
     )
     policy_area_other = forms.CharField(
         label="Muu valdkond",
@@ -327,6 +422,9 @@ class MatterCreateForm(forms.Form):
     is_test_data = forms.BooleanField(
         label="Testandmed",
         required=False,
+        # The one control on this page that is not a chip. Every chip answers
+        # "which of these is it"; this answers "is this even real work", and a
+        # pill in the row beside Valdkonnad would read as one more of them.
         widget=forms.CheckboxInput(attrs={"class": "checkitem__input"}),
         help_text="Arenduseks loodud teema; ei kuulu päris aruandlusse.",
     )
@@ -383,6 +481,14 @@ class MatterCreateForm(forms.Form):
         set_choices(self, "stage", active_stages())
         set_choices(self, "addressee_organisation", Organisation.objects.order_by("name"))
 
+        # The explanations the Hetkeseis chips carry, read once. Handed to the
+        # widget so each radio can point at its own, and exposed on the form so
+        # the template can render the bubble the radio points at — one mapping,
+        # two consumers, no sentence written twice
+        # (app/workflow/selectors.py, Uus teema redesign §8).
+        self.stage_help = stage_help_texts()
+        cast(Any, self.fields["stage"].widget).descriptions = self.stage_help
+
         # Every organisation is a *valid* sender; only the frequent ones are
         # offered as chips. Validation therefore runs against the full set —
         # narrowing it to the visible ten would reject a correct answer given
@@ -414,8 +520,49 @@ class MatterCreateForm(forms.Form):
                 for organisation in Organisation.objects.order_by("name")
                 if organisation.pk not in frequent
             ]
+            # What the disclosure's own label says it holds. Counted here
+            # because a template cannot take the length of a choice iterator,
+            # and "Vali nimekirjast" with no number is a door with nothing
+            # written on it.
+            self.sender_tail_count = len(rest.choices)
+
+            # Adressaat is one radio group rendered in two places: the bodies
+            # this department answers most often as chips, the rest inside the
+            # "Vali nimekirjast" disclosure. One group and one name, because it
+            # holds one value — the senders need two *fields* only because a
+            # checkbox group cannot be split without splitting the field.
+            #
+            # `addressee_offered` is the whole ordered list; `addressee_split`
+            # is where the long tail starts, counting the named blank option
+            # that Django puts first. The template slices on it rather than
+            # comparing primary keys, which a template cannot do without a
+            # filter written to help it.
+            self.frequent_addressees = addressees_by_usage(viewer)
+            shortlist = {organisation.pk for organisation in self.frequent_addressees}
+            tail = [
+                organisation
+                for organisation in Organisation.objects.order_by("name")
+                if organisation.pk not in shortlist
+            ]
+            self.addressee_offered = [*self.frequent_addressees, *tail]
+            self.addressee_split = 1 + len(self.frequent_addressees)
+            addressees = cast(Any, self.fields["addressee_organisation"])
+            # The named blank option, restated. Assigning `choices` replaces
+            # Django's iterator, and the iterator is what would otherwise have
+            # put `empty_label` in front — so "Määramata" has to be written
+            # here or an addressee chosen by mistake could not be unchosen.
+            addressees.choices = [
+                ("", addressees.empty_label),
+                *((organisation.pk, organisation.name) for organisation in self.addressee_offered),
+            ]
+            self.addressee_tail_count = len(tail)
         else:
             self.frequent_senders = []
+            self.sender_tail_count = 0
+            self.frequent_addressees = []
+            self.addressee_offered = []
+            self.addressee_split = 1
+            self.addressee_tail_count = 0
 
 
 class MatterEditForm(forms.Form):
@@ -598,17 +745,32 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
     }
 
 
+#: What the date on a next step means, in the words the form shows.
+#:
+#: The stored values are `DateSemantics` and are not touched. What differs is
+#: the wording and the order: Tähtaeg · Oodatav aeg · Vaatan üle reads as the
+#: three answers to "what is this date", in the order the three kinds produce
+#: them, where the enum's own labels are ordered by nothing and call
+#: EXPECTED_AROUND "Oodatav umbes" — right in a register cell, wrong as the
+#: label of a box somebody is about to type a date into.
+DATE_MEANING_CHOICES: tuple[tuple[str, str], ...] = (
+    (DateSemantics.DEADLINE.value, "Tähtaeg"),
+    (DateSemantics.EXPECTED_AROUND.value, "Oodatav aeg"),
+    (DateSemantics.REVIEW_ON.value, "Vaatan üle"),
+)
+
+
 class NextActionForm(forms.Form):
     """`Järgmiseks`, including what its date actually means.
 
-    `use_required_attribute` is off, and that is not cosmetic. On Uus teema this
-    form is rendered inside a *closed* `<details>`, and setting a next action is
-    optional — the view only validates it when somebody typed something. With
-    the HTML `required` attribute present, the browser refuses to submit a form
-    containing an invalid control it cannot scroll to, reports nothing, and the
-    "Loo teema" button silently does nothing. Creating a Matter without a next
-    action was impossible in a browser and fine in every test that posted
-    directly (Stage-2E.1 brief 26).
+    `use_required_attribute` is off, and that is not cosmetic. Setting a next
+    action is optional — the view only validates it when somebody typed
+    something — and with the HTML `required` attribute present a browser refuses
+    to submit a form containing an invalid control, reports nothing, and the
+    "Loo teema" button silently does nothing. That is how it failed while this
+    block sat inside a closed `<details>`; the block is on the page now, but an
+    empty optional field would refuse the submit just the same
+    (Stage-2E.1 brief 26).
 
     The server-side requirement is unchanged: `text` is still required, and a
     partially filled next action is still refused.
@@ -628,17 +790,25 @@ class NextActionForm(forms.Form):
             }
         ),
     )
-    #: Radios rather than a select, and the enum's own labels: Teen, Ootan,
-    #: Jälgin already read as Estonian a lawyer uses. What the template adds is
-    #: a line under each saying what it means, which is where the distinction
-    #: between "I have to do something" and "I am waiting on someone" actually
-    #: gets made. The stored values are unchanged — DO, WAIT, MONITOR
+    #: The same three mode chips as Minu töö, the register and the Teema
+    #: composer, and the same shape rule: TEEN filled, OOTAN solid-outlined,
+    #: JÄLGIN dashed. Shape carries the distinction, never colour alone, and a
+    #: reader who has met the vocabulary on the other four surfaces should not
+    #: have to relearn it here as a stack of described cards.
+    #:
+    #: The described cards are what this replaces. Their glosses — "Mul endal
+    #: tuleb midagi teha" and the other two — made the distinction on a page
+    #: where the vocabulary was new. Beside a date whose meaning is stated on
+    #: the same row, they were three lines explaining what the row already says
+    #: (Uus teema redesign §6).
+    #:
+    #: The stored values are unchanged: DO, WAIT, MONITOR
     #: (master specification 11.2).
     kind = forms.ChoiceField(
         label="Mis laadi samm see on?",
         choices=ActionKind.choices,
         initial=ActionKind.DO,
-        widget=forms.RadioSelect(attrs={"class": "choicecard__input"}),
+        widget=forms.RadioSelect(attrs={"class": "modechip__input"}),
     )
     #: Optional, and normally derived. "Kuupäeva tähendus" is a question about
     #: the data model, and a required dropdown asking it was in front of every
@@ -646,14 +816,23 @@ class NextActionForm(forms.Form):
     #:
     #: It is *not* deleted, because the model genuinely permits more than one
     #: meaning per kind and the register's parser uses that — a DO whose source
-    #: names a vague month is DO + EXPECTED_AROUND, not a deadline. Left alone
-    #: it derives from the kind; the explicit choice is one disclosure away
-    #: (app/workflow/enums.py, Agent-UI brief 9.4).
+    #: names a vague month is DO + EXPECTED_AROUND, not a deadline.
+    #:
+    #: No longer a nested disclosure, and no longer phrased as a question about
+    #: the data model. The three meanings are chips on the row with the date, so
+    #: the box states what it means instead of a swapped label stating it on the
+    #: box's behalf. Left blank it still derives from the kind, which is what
+    #: keeps a POST from anywhere — a script, a test, a browser with the chips
+    #: untouched — storing the same canonical value
+    #: (app/workflow/enums.py, Uus teema redesign §6).
     date_semantics = forms.ChoiceField(
-        label="Mida kuupäev täpselt tähendab",
-        choices=DateSemantics.choices,
+        label="Mida kuupäev tähendab",
+        # The design's wording for the same three stored values, in the order
+        # the three kinds produce them. The enum is untouched: the register,
+        # Minu töö and the Teema page keep the words they have.
+        choices=DATE_MEANING_CHOICES,
         required=False,
-        widget=SELECT_WIDGET,
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
     #: Today, because that is the answer nearly every time and nobody should have
     #: to type it. `initial` only ever fills an *unbound* form, so a POSTed value
@@ -662,14 +841,23 @@ class NextActionForm(forms.Form):
     target_date = EstonianDateField(
         label="Kuupäev", required=False, widget=DATE_WIDGET, initial=timezone.localdate
     )
+    #: Kept, and no longer rendered on Uus teema.
+    #:
+    #: The step inherits the Vastutaja chosen a few rows up, which the view
+    #: hands to the service as a default; naming the same colleague twice on one
+    #: form is a question whose answer is already on the screen. Re-assigning a
+    #: step to somebody else is a real thing that happens — on the Teema page,
+    #: where the step and the person are both in front of you
+    #: (app/workflow/services.py `set_next_action`, Uus teema redesign §6).
+    #:
+    #: The field stays, because a POST that names somebody explicitly must
+    #: still win over the default, and because deleting it would move that rule
+    #: out of the form and into the view.
     responsible = UserChoiceField(
         label="Kes selle eest vastutab?",
         queryset=User.objects.none(),
         required=False,
         widget=SELECT_WIDGET,
-        # The service already falls back to the Matter's owner. Saying so turns
-        # a blank select from "I must choose again" into "this is already
-        # right" (app/workflow/services.py, `set_next_action`).
         help_text="Tühjaks jättes vastutab teema vastutaja.",
     )
 

@@ -24,6 +24,7 @@ from app.reporting import context as ctx
 from app.reporting.context import ReportingContext
 from app.reporting.selectors.historical import visible_pages
 from app.taxonomy.models import PolicyArea, Tag
+from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow.enums import Track
 from app.workflow.models import StageVocabulary
 
@@ -197,7 +198,13 @@ def options(context: ReportingContext, tab: str) -> dict[str, object]:
         "record_modes": RecordMode.choices,
         "origins": MatterOrigin.choices,
         "owners": User.objects.filter(is_active=True).order_by("display_name"),
-        "policy_areas": PolicyArea.objects.filter(is_active=True).order_by("name_et"),
+        # The governed vocabulary, read from the one function that answers
+        # "which Valdkonnad may somebody choose today" — including its reviewed
+        # order. Assembled here independently, this filter drifted from Uus
+        # teema by an ordering and would have drifted from it by a *label* the
+        # first time one was withdrawn (app/taxonomy/vocabulary.py,
+        # Uus teema redesign §7.1).
+        "policy_areas": selectable_policy_areas(),
         "show_stage": ctx.PARAM_STAGE in contextual,
         "show_track": ctx.PARAM_TRACK in contextual,
         "show_tag": ctx.PARAM_TAG in contextual,

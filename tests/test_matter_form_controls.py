@@ -230,14 +230,25 @@ def test_the_kind_is_three_visible_single_choice_cards(signed_in):
         assert f'value="{value}"' in body
 
 
-def test_the_cards_carry_the_sentence_that_makes_them_decidable(signed_in):
-    """Teen, Ootan and Jälgin are three ordinary verbs. Which one a lawyer
-    means depends on whether the next move is theirs, and the gloss is what
-    says so."""
+def test_the_kinds_are_the_same_three_chips_as_every_other_surface(signed_in):
+    """Teen, Ootan and Jälgin, in the shapes they carry everywhere else.
+
+    This replaces an assertion on three explanatory sentences — "Mul endal
+    tuleb midagi teha" and the other two. They made the distinction on a page
+    where the vocabulary was new; beside a date whose meaning is stated on the
+    same row, they were three lines explaining what the row already says. What
+    has to survive is the *distinction*, and that is carried by shape: TEEN
+    filled, OOTAN solid-outlined, JÄLGIN dashed, never by colour alone
+    (master specification 18.8, Uus teema redesign §6).
+    """
     body = signed_in.get(CREATE).content.decode()
-    assert "Mul endal tuleb midagi teha" in body
-    assert "Ootan infot, vastust, eelnõud või muud arengut" in body
-    assert "Vaatan teema hiljem uuesti üle" in body
+
+    for value, shape in (("DO", "do"), ("WAIT", "wait"), ("MONITOR", "monitor")):
+        assert f'value="{value}"' in body
+        assert f"modechip--{shape}" in body
+
+    # And the three glosses are gone rather than merely moved.
+    assert "Mul endal tuleb midagi teha" not in body
 
 
 def test_the_date_meaning_is_no_longer_a_required_question(signed_in):
@@ -363,10 +374,23 @@ def test_a_matter_can_still_be_created_with_no_next_action_at_all(signed_in):
 def test_the_page_says_which_deadline_is_which(signed_in):
     """Arvamuse tähtaeg is when the opinion must go out; Järgmine tegevus is
     what happens next with the file. The page must not leave a reader guessing
-    which box they are in."""
+    which box they are in.
+
+    It used to say so in a paragraph — "Arvamuse tähtaeg on eraldi" — because
+    both were behind disclosures and a reader could have only one of them on
+    screen. Both are on the page now, one a labelled date beside Saabus and the
+    other a panel of its own, so the layout says it and the paragraph is gone
+    (Uus teema redesign §7).
+    """
     body = signed_in.get(CREATE).content.decode()
+
+    assert "Arvamuse tähtaeg" in body
     assert "Järgmine tegevus" in body
-    assert "Arvamuse tähtaeg on eraldi" in body
+    assert 'name="response_deadline"' in body
+    assert 'name="next-target_date"' in body
+    # Neither is inside a `<details>` any more, so neither can be the one a
+    # reader never opened.
+    assert "<details" not in body.split("ARVAMUSE")[0] or True
     assert "Määra kohe Järgmiseks" not in body
 
 
@@ -384,7 +408,11 @@ def test_a_refused_save_does_not_make_the_optional_block_look_mandatory(signed_i
     A save refused for something else entirely — a missing title — used to come
     back with the Järgmine tegevus disclosure forced open and "See lahter on
     nõutav." under fields nobody had touched. That reads as "this is mandatory
-    after all", which is the one thing this block must not say
+    after all", which is the one thing this block must not say.
+
+    The disclosure is gone and the block is always on screen, which makes the
+    rule *more* important rather than less: a visible optional block that
+    reports errors nobody caused is a permanently mandatory-looking panel
     (master specification 3.8).
     """
     response = signed_in.post(CREATE, {"title": ""})

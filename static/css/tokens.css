@@ -169,6 +169,9 @@
      design's sense — no elevation is implied — which is why it is named for
      the accent rather than for a shadow role. */
   --accent-halo: rgba(0, 159, 218, 0.12);
+  /* The same halo in the danger role: what a refused field wears, so that the
+     box says something is wrong as well as the message under it. */
+  --status-danger-halo: rgba(239, 125, 110, 0.08);
   --focus-ring-width: 2px;
   --focus-ring-offset-width: 2px;
 
@@ -235,6 +238,7 @@
 
   --focus-ring: #0079a6;
   --accent-halo: rgba(0, 121, 166, 0.14);
+  --status-danger-halo: rgba(178, 60, 44, 0.1);
 
   --status-danger: #b23c2c;
   --status-danger-soft: #fbecea;

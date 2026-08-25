@@ -113,7 +113,7 @@
             <button class="visually-hidden" type="submit">Otsi</button>
           </form>
 
-          {% if user.is_authenticated %}
+          {% if user.is_authenticated and can_write_business_content %}
             <a class="button button--primary topbar__cta" href="{% url 'matters:matter_create' %}">
               <span aria-hidden="true">+</span>
               <span class="topbar__ctatext">Uus teema</span>

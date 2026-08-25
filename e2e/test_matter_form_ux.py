@@ -2,10 +2,16 @@
 
 The database-level guarantees — cardinality, derived date meanings, the
 canonical record a POST produces — are asserted in
-`tests/test_matter_form_controls.py`. What only a browser shows is whether the
-page *reads* as those guarantees: whether ticking a second Hetkeseis clears the
-first, whether the date label follows the chosen kind, and whether the two
-deadlines look like the two different things they are.
+`tests/test_matter_form_controls.py` and `tests/test_uus_teema_redesign.py`.
+What only a browser shows is whether the page *reads* as those guarantees:
+whether ticking a second Hetkeseis clears the first, whether a stage explains
+itself on hover and on focus, and whether three rows of chips wrap instead of
+taking the page sideways.
+
+Both disclosures are gone with the redesign, so most of what used to be
+"open the panel, then assert" is now "assert". What replaced them is a page
+that shows everything at once, which is a stronger claim and a narrower one:
+nothing here may need a click to become true.
 """
 
 from __future__ import annotations
@@ -34,16 +40,44 @@ def open_details(page, summary: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("field", ["stage", "track"])
+@pytest.mark.parametrize("field", ["stage", "track", "addressee_organisation"])
 def test_the_procedural_fields_are_visible_choices_not_dropdowns(page, base_url, field):
     """For a department of four, a select is a click spent finding out what the
-    options even are."""
+    options even are.
+
+    And no longer behind "+ Täpsusta teema andmeid": the procedural half of the
+    page is on the page. `attached` rather than `visible` for the radio, because
+    the chip control hides the input and shows the label — which is the next
+    test's subject.
+    """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
-    open_details(page, "Täpsusta teema andmeid")
 
     expect(page.locator(f'select[name="{field}"]')).to_have_count(0)
-    expect(page.locator(f'input[type="radio"][name="{field}"]').first).to_be_visible()
+    expect(page.locator(f'input[type="radio"][name="{field}"]').first).to_be_attached()
+    expect(page.locator("summary", has_text="Täpsusta teema andmeid")).to_have_count(0)
+
+
+def test_the_chip_hides_the_box_and_keeps_the_control(page, base_url):
+    """The chip is a skin, not a replacement.
+
+    The native input is still there and still focusable — it is what makes the
+    keyboard ring land somewhere and what tells a screen reader whether one or
+    several may be chosen. What moved is that the label carries the state
+    instead of a 13px checkbox beside it (Uus teema redesign §4).
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    chip = page.locator(".chip").first
+    box = chip.locator("input")
+    expect(box).to_be_attached()
+    assert box.evaluate("node => node.getBoundingClientRect().width") < 2
+    expect(chip.locator(".chip__name")).to_be_visible()
+
+    # Clicking the visible part is clicking the control.
+    chip.locator(".chip__name").click()
+    expect(box).to_be_checked()
 
 
 @pytest.mark.parametrize("field", ["stage", "track"])
@@ -56,7 +90,6 @@ def test_choosing_a_second_value_replaces_the_first(page, base_url, screenshots,
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
-    open_details(page, "Täpsusta teema andmeid")
 
     options = page.locator(f'input[type="radio"][name="{field}"]')
     if options.count() < 3:
@@ -127,23 +160,34 @@ def test_the_form_says_where_a_missing_institution_comes_from(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_the_three_kinds_are_cards_a_lawyer_can_tell_apart(page, base_url, screenshots):
+def test_the_three_kinds_are_the_shapes_they_are_everywhere_else(page, base_url, screenshots):
+    """TEEN filled, OOTAN solid-outlined, JÄLGIN dashed.
+
+    The same three chips as Minu töö, the register and the Teema composer, and
+    the same rule: shape carries the distinction, colour never alone. It
+    replaces three described cards whose glosses explained a vocabulary the
+    reader has now met on four other surfaces (Uus teema redesign §6).
+    """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
-    open_details(page, "Järgmine tegevus")
 
     block = page.locator("#jargmine-liik")
     expect(block).to_be_visible()
-    expect(block).to_contain_text("Mul endal tuleb midagi teha")
-    expect(block).to_contain_text("Ootan infot, vastust, eelnõud või muud arengut")
-    expect(block).to_contain_text("Vaatan teema hiljem uuesti üle")
+    for value in ("do", "wait", "monitor"):
+        expect(block.locator(f".modechip--{value}")).to_have_count(1)
+
+    borders = block.evaluate(
+        """node => ['do', 'wait', 'monitor'].map(kind =>
+              getComputedStyle(node.querySelector('.modechip--' + kind)).borderStyle)"""
+    )
+    assert borders[2] == "dashed", borders
+    assert borders[0] == "solid" and borders[1] == "solid", borders
     screenshots(page, "jargmine-tegevus")
 
 
 def test_only_one_kind_can_be_active(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
-    open_details(page, "Järgmine tegevus")
 
     wait = page.locator('input[name="next-kind"][value="WAIT"]')
     monitor = page.locator('input[name="next-kind"][value="MONITOR"]')
@@ -155,49 +199,165 @@ def test_only_one_kind_can_be_active(page, base_url):
 
 
 @pytest.mark.parametrize(
-    ("value", "wording"),
+    ("value", "meaning"),
     [
-        ("DO", "Tähtaeg"),
-        ("WAIT", "Millal võiks arengut oodata?"),
-        ("MONITOR", "Millal vaatan uuesti üle?"),
+        ("DO", "DEADLINE"),
+        ("WAIT", "EXPECTED_AROUND"),
+        ("MONITOR", "REVIEW_ON"),
     ],
 )
-def test_the_date_label_says_what_the_date_means_for_the_chosen_kind(
-    page, base_url, value, wording
-):
-    """The question the technical "Kuupäeva tähendus" dropdown was asking, in
-    the vocabulary of the work rather than of the database."""
+def test_the_date_meaning_follows_the_chosen_kind(page, base_url, value, meaning):
+    """The stored meaning, stated on the row rather than asked about.
+
+    It was a nested disclosure headed "Täpsusta, mida kuupäev tähendab" over a
+    select called "Kuupäeva tähendus" — a question in the vocabulary of the
+    database. Three chips beside the date say the same thing in the vocabulary
+    of the work, and the chosen one still derives from the kind.
+    """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
-    open_details(page, "Järgmine tegevus")
 
     page.locator(f'input[name="next-kind"][value="{value}"]').check()
-    expect(page.locator("[data-datelabel-for]").first).to_have_text(wording)
+    expect(page.locator(f'input[name="next-date_semantics"][value="{meaning}"]')).to_be_checked()
 
 
-def test_the_technical_date_meaning_is_available_but_not_in_the_way(page, base_url):
-    """Not deleted: the model genuinely permits pairs the derivation does not
-    produce, and the register's own parser records some of them."""
+def test_a_chosen_meaning_survives_a_change_of_kind(page, base_url):
+    """Once somebody has said what the date means, it is theirs.
+
+    The model permits pairs the derivation does not produce — a DO whose source
+    names a vague month is an expectation, not a deadline — and the register's
+    own parser records them. A derivation that overwrote an explicit choice
+    would make those unreachable from the page.
+    """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
-    open_details(page, "Järgmine tegevus")
 
-    field = page.locator('select[name="next-date_semantics"]')
-    expect(field).to_have_count(1)
-    expect(field).to_be_hidden()
+    around = page.locator('input[name="next-date_semantics"][value="EXPECTED_AROUND"]')
+    around.check()
+    page.locator('input[name="next-kind"][value="MONITOR"]').check()
 
-    open_details(page, "Täpsusta, mida kuupäev tähendab")
-    expect(field).to_be_visible()
+    expect(around).to_be_checked()
 
 
-def test_the_two_deadlines_are_told_apart_in_words(page, base_url):
+def test_the_two_deadlines_are_two_places_on_the_page(page, base_url):
     """Arvamuse tähtaeg is when this opinion must go out; Järgmine tegevus is
-    what happens next with the file. They are not two versions of one date."""
+    what happens next with the file.
+
+    A paragraph used to say so, because both were behind disclosures and a
+    reader could have only one of them on screen. Both are visible now — one a
+    labelled date beside Saabus, the other a panel of its own — so the layout
+    says it (Uus teema redesign §7).
+    """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
-    open_details(page, "Järgmine tegevus")
 
-    expect(page.locator(".disclosure", has_text="Arvamuse tähtaeg on eraldi").first).to_be_visible()
+    expect(page.locator('input[name="response_deadline"]')).to_be_visible()
+    expect(page.locator("#jargmine-tegevus")).to_be_visible()
+    expect(page.get_by_text("Arvamuse tähtaeg on eraldi")).to_have_count(0)
+
+
+# ---------------------------------------------------------------------------
+# Hetkeseis explains itself
+# ---------------------------------------------------------------------------
+
+
+def _open_bubbles(page):
+    return page.evaluate(
+        """() => [...document.querySelectorAll('.stagehelp')]
+              .filter(node => getComputedStyle(node).display !== 'none')
+              .map(node => ({
+                id: node.id,
+                text: node.textContent.trim(),
+                clipped: node.getBoundingClientRect().right
+                           > document.documentElement.clientWidth + 1
+                         || node.getBoundingClientRect().left < -1,
+              }))"""
+    )
+
+
+def test_a_stage_explains_itself_on_hover(page, base_url, screenshots):
+    """Which of `Kooskõlastusringil` and `Valitsuses` a file is in depends on an
+    event that has or has not happened, and the department wrote a sentence per
+    stage saying which (Uus teema redesign §8)."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    assert _open_bubbles(page) == []
+
+    chip = page.locator(".chip--explained", has_text="Kooskõlastusringil").first
+    chip.hover()
+    page.wait_for_timeout(120)
+
+    shown = _open_bubbles(page)
+    assert len(shown) == 1, shown
+    assert shown[0]["text"].startswith("Seaduse või määruse eelnõu kooskõlastusringile")
+    assert not shown[0]["clipped"]
+    screenshots(page, "hetkeseisu-selgitus")
+
+    page.mouse.move(0, 0)
+    page.wait_for_timeout(150)
+    assert _open_bubbles(page) == []
+
+
+def test_each_stage_shows_its_own_text_and_only_its_own(page, base_url):
+    """One chip, one bubble. A row that opened two would be a row explaining
+    something other than what the pointer is on."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    chips = page.locator(".chip--explained")
+    assert chips.count() >= 5
+
+    for index in range(chips.count()):
+        chips.nth(index).hover()
+        page.wait_for_timeout(60)
+        shown = _open_bubbles(page)
+        assert len(shown) == 1, (index, shown)
+        assert not shown[0]["clipped"], shown[0]["id"]
+
+
+def test_the_explanation_reaches_a_keyboard_and_a_screen_reader(page, base_url):
+    """Hover is not the only way in.
+
+    Focus opens the same bubble, Escape closes it, and the radio points at it
+    with `aria-describedby` — which is what makes the text part of the option's
+    accessible description rather than a hint only a mouse can find.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    radio = page.locator('input[name="stage"][aria-describedby]').first
+    described = radio.get_attribute("aria-describedby")
+    assert described
+
+    radio.focus()
+    page.wait_for_timeout(120)
+    shown = _open_bubbles(page)
+    assert [node["id"] for node in shown] == [described], shown
+
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(120)
+    assert _open_bubbles(page) == []
+
+
+@pytest.mark.parametrize("width", [1440, 1280, 1024])
+def test_a_stage_tooltip_never_opens_off_the_screen(page, base_url, width):
+    """The chips wrap, so the last one on a row sits against the right edge.
+
+    Its bubble flips to open leftwards rather than widening the document, which
+    is the difference between a tooltip and a horizontal scrollbar.
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    create_form(page, base_url)
+
+    chips = page.locator(".chip--explained")
+    for index in range(chips.count()):
+        chips.nth(index).hover()
+        page.wait_for_timeout(60)
+        shown = _open_bubbles(page)
+        assert shown and not shown[0]["clipped"], (width, index, shown)
+        assert not _document_overflows(page), f"a tooltip widened the page at {width}px"
 
 
 def test_the_next_action_block_is_still_optional(page, base_url):
@@ -224,7 +384,6 @@ def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
 
     page.fill("#id_title", "Vastutaja pärandub järgmisele sammule")
     page.locator('input[name="owner"]').first.check()
-    open_details(page, "Järgmine tegevus")
     page.fill("#id_next-text", "Jälgi menetluse käiku")
     page.locator('input[name="next-kind"][value="MONITOR"]').check()
     page.fill("#id_next-target_date", "1.9.2026")
@@ -258,22 +417,71 @@ def _document_overflows(page) -> bool:
     )
 
 
-@pytest.mark.parametrize("width", [1440, 1024, 420])
+@pytest.mark.parametrize("width", [1440, 1280, 1024, 420])
 def test_the_form_survives_a_narrow_window(page, base_url, width):
-    """Every row of chips this round added has to wrap rather than push.
+    """Six rows of chips now, and nothing hidden behind a disclosure.
 
-    Three rows of them now — Vastutaja, Valdkonnad, Hetkeseis, Menetlusliik and
-    the three Järgmine tegevus cards — and a card that refused to wrap would
-    take the whole page sideways with it.
+    Vastutaja, Saatja, twenty-two Valdkonnad, eleven Hetkeseis, eight
+    Menetlusliik and Adressaat — plus the three mode chips and the three date
+    meanings. A chip that refused to wrap would take the whole page sideways
+    with it, and at 1024 the paired rows have to stop being pairs.
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
     create_form(page, base_url)
-    open_details(page, "Täpsusta teema andmeid")
-    open_details(page, "Järgmine tegevus")
     page.wait_for_load_state("networkidle")
 
     assert not _document_overflows(page), f"the create form scrolls sideways at {width}px"
+
+
+@pytest.mark.parametrize("width", [1440, 1280, 1024])
+def test_the_whole_form_is_reachable_without_opening_anything(page, base_url, width):
+    """The claim the redesign is built on: everything is on screen at load.
+
+    Not "everything fits on one screen" — it does not, and the design says so.
+    What must hold is that no field needs a click to *exist*, so a reader who
+    scrolls has seen the whole form.
+    """
+    sign_in(page, base_url, MARTIN)
+    page.set_viewport_size({"width": width, "height": 900})
+    create_form(page, base_url)
+
+    for name in (
+        "title",
+        "brief_summary",
+        "notes",
+        "files",
+        "received_date",
+        "response_deadline",
+        "policy_area_other_selected",
+        "is_test_data",
+        "next-text",
+        "next-target_date",
+    ):
+        expect(page.locator(f'[name="{name}"]')).to_have_count(1)
+    for group in ("owner", "source_organisations", "policy_areas", "stage", "track"):
+        expect(page.locator(f'[name="{group}"]').first).to_be_attached()
+
+    expect(page.get_by_role("button", name="Loo teema")).to_be_visible()
+
+
+def test_a_refused_save_hides_nothing_it_was_given(page, base_url):
+    """A refusal must not cost somebody the fields they filled in — and must
+    not need a click to show them what went wrong."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    page.fill("#id_brief_summary", "Mida see teema ettevõtjatele tähendab.")
+    page.locator('input[name="policy_areas"]').first.check()
+    page.locator("form.createform").evaluate("form => form.noValidate = true")
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_load_state("networkidle")
+
+    expect(page.locator("#id_brief_summary")).to_have_value(
+        "Mida see teema ettevõtjatele tähendab."
+    )
+    expect(page.locator('input[name="policy_areas"]').first).to_be_checked()
+    expect(page.locator(".field__error").first).to_be_visible()
 
 
 @pytest.mark.parametrize("width", [1024, 420])
@@ -295,9 +503,8 @@ def test_the_choice_cards_are_real_controls_with_real_labels(page, base_url):
     what makes the row keyboard-reachable and readable to a screen reader."""
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
-    open_details(page, "Täpsusta teema andmeid")
 
-    for name in ("stage", "track", "owner"):
+    for name in ("stage", "track", "owner", "policy_areas", "addressee_organisation"):
         inputs = page.locator(f'input[name="{name}"]')
         expect(inputs.first).to_be_attached()
         # Wrapped in their own <label>, so the whole chip is the hit area and
