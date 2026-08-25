@@ -10,6 +10,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from app.accounts import shared_gate
+from app.accounts.selectors import persona_candidates
 from app.core.authorization import is_department_head, may_write_business_content
 from app.legacy_import.opinion_access import may_read_archive
 
@@ -57,6 +58,20 @@ def application(request: HttpRequest) -> dict[str, Any]:
         "auth_mode": shared_gate.current_mode(),
         "shared_gate_mode": shared_gate.is_shared_gate(),
         "gate_passed": shared_gate.has_passed(request),
+        # The people the top-bar switcher may offer, and the one currently
+        # selected. Both only ever reach a template in shared-gate mode, and the
+        # queryset is lazy — the query runs when the popover is rendered and not
+        # otherwise, so the other two modes pay nothing for it.
+        #
+        # The same central population the switch endpoint accepts a POST
+        # against. Two lists that agree today are two lists that can stop
+        # agreeing, and the one that matters is the endpoint's
+        # (app/accounts/selectors.py, docs/adr/0034).
+        "persona_candidates": persona_candidates() if shared_gate.is_shared_gate() else (),
+        # The identifier rather than the object, because the popover compares it
+        # against every row and `request.user` is already in the context under
+        # its own name.
+        "current_persona_id": _current_persona_id(request),
         # Whether to offer the department-head surface in the navigation.
         # Computed here rather than compared in the template: a template that
         # asks `user.role == "DEPARTMENT_HEAD"` puts a copy of an authorization
@@ -78,3 +93,16 @@ def application(request: HttpRequest) -> dict[str, Any]:
         # try something it knows will fail (app/matters/views.py).
         "can_write_business_content": may_write_business_content(getattr(request, "user", None)),
     }
+
+
+def _current_persona_id(request: HttpRequest) -> Any:
+    """The selected persona's primary key, or nothing.
+
+    `None` rather than the empty string: the template compares it with a row's
+    `pk`, and a comparison against "" would be false for every row — which is
+    correct today and silently correct for the wrong reason.
+    """
+    user = getattr(request, "user", None)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return None
+    return getattr(user, "pk", None)

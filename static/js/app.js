@@ -984,6 +984,164 @@
     });
   }
 
+  /* ---- The persona popover -----------------------------------------------
+   * The pill on the bar opens the same list the full page shows, so somebody
+   * comparing two colleagues' queues stays on the queue instead of making a
+   * round trip through /konto/kasutaja/ (Vali kasutaja brief 19).
+   *
+   * Progressive enhancement, as everything in this file is. With scripting off
+   * the pill is a `<button type="button">` that does nothing and the popover is
+   * `hidden` — so the full page stays the way to switch, which is why it stays
+   * on the bar as a real route rather than being replaced by this.
+   *
+   * The options are real submit buttons in real forms, and they keep those
+   * semantics: no `role="menuitem"`, which would replace what the element is
+   * with a claim about a widget this is not. What is added here is the part
+   * native buttons in a popup do not get for free — arrow keys between them,
+   * Escape to close, a click outside to close, and focus put back on the pill
+   * when it does (Vali kasutaja brief 26).
+   */
+  function bindPersonaMenu(scope) {
+    (scope || document).querySelectorAll("[data-persona-trigger]").forEach(function (pill) {
+      if (!once(pill, "PersonaMenu")) {
+        return;
+      }
+      var menu = document.getElementById(pill.getAttribute("aria-controls"));
+      if (!menu) {
+        return;
+      }
+
+      var options = function () {
+        return Array.prototype.slice.call(menu.querySelectorAll("[data-persona-option]"));
+      };
+
+      var isOpen = function () {
+        return pill.getAttribute("aria-expanded") === "true";
+      };
+
+      /* `hidden` as well as the attribute, because the popover has to be out of
+         the accessibility tree when it is shut — a `display: none` alone would
+         do it, but then the state lives in a stylesheet and the attribute is a
+         second copy of it that can drift. */
+      var open = function (focusFirst) {
+        pill.setAttribute("aria-expanded", "true");
+        menu.hidden = false;
+        if (focusFirst) {
+          var first = options()[0];
+          if (first) {
+            first.focus();
+          }
+        }
+      };
+
+      var close = function (restoreFocus) {
+        if (!isOpen()) {
+          return;
+        }
+        pill.setAttribute("aria-expanded", "false");
+        menu.hidden = true;
+        if (restoreFocus) {
+          pill.focus();
+        }
+      };
+
+      var step = function (from, delta) {
+        var all = options();
+        if (!all.length) {
+          return;
+        }
+        var index = all.indexOf(from);
+        /* Wraps. A list of four names is short enough that running off the end
+           and stopping feels like the key did not work. */
+        var next = index < 0 ? (delta > 0 ? 0 : all.length - 1) : (index + delta + all.length) % all.length;
+        all[next].focus();
+      };
+
+      pill.addEventListener("click", function () {
+        if (isOpen()) {
+          close(false);
+        } else {
+          open(false);
+        }
+      });
+
+      /* Enter and Space already activate a button and reach the click handler
+         above. The arrows are the addition: they open the popover *and* land on
+         the first choice, which is what makes it operable without a pointer. */
+      pill.addEventListener("keydown", function (event) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          event.preventDefault();
+          if (!isOpen()) {
+            open(false);
+          }
+          var all = options();
+          if (all.length) {
+            all[event.key === "ArrowDown" ? 0 : all.length - 1].focus();
+          }
+        } else if (event.key === "Escape") {
+          close(false);
+        }
+      });
+
+      menu.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          close(true);
+          return;
+        }
+        var option = event.target.closest ? event.target.closest("[data-persona-option]") : null;
+        if (!option) {
+          return;
+        }
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          step(option, 1);
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          step(option, -1);
+        } else if (event.key === "Home") {
+          event.preventDefault();
+          step(null, 1);
+        } else if (event.key === "End") {
+          event.preventDefault();
+          step(null, -1);
+        }
+      });
+
+      /* Tabbing out of the popover closes it, without stealing the focus the
+         person was moving towards. `focusout` fires before the new element is
+         focused, so the check is deferred by a frame — `relatedTarget` is
+         `null` in a few browsers here and asking the document afterwards is the
+         answer that is always right. */
+      menu.addEventListener("focusout", function () {
+        window.setTimeout(function () {
+          var active = document.activeElement;
+          if (!menu.contains(active) && active !== pill) {
+            close(false);
+          }
+        }, 0);
+      });
+    });
+  }
+
+  /* One listener for every popover on the page rather than one per pill, so a
+     surface that arrives through HTMX cannot leave a second copy behind. */
+  document.addEventListener("click", function (event) {
+    document.querySelectorAll("[data-persona-trigger]").forEach(function (pill) {
+      if (pill.getAttribute("aria-expanded") !== "true") {
+        return;
+      }
+      var menu = document.getElementById(pill.getAttribute("aria-controls"));
+      var inside = pill.contains(event.target) || (menu && menu.contains(event.target));
+      if (!inside) {
+        pill.setAttribute("aria-expanded", "false");
+        if (menu) {
+          menu.hidden = true;
+        }
+      }
+    });
+  });
+
   document.addEventListener("DOMContentLoaded", function () {
     bind(document);
     bindPeriodFields(document);
@@ -993,6 +1151,7 @@
     bindChipCounts(document);
     bindStageHelp(document);
     bindRequiredAction(document);
+    bindPersonaMenu(document);
     focusFragmentTarget();
   });
 
@@ -1018,5 +1177,6 @@
     bindChipCounts(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);
     bindRequiredAction(event.target.querySelector ? event.target : document);
+    bindPersonaMenu(event.target.querySelector ? event.target : document);
   });
 })();

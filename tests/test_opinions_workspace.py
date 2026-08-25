@@ -444,11 +444,38 @@ def test_the_archive_tab_creates_no_submission(client, shared, specialist):
     assert Submission.objects.count() == before == 0
 
 
-def test_a_reader_role_gets_neither_the_archive_nor_somebody_elses_submissions(client, shared):
+def test_a_reader_role_gets_neither_the_archive_nor_somebody_elses_submissions(client, settings):
+    """Signed in directly, because a READER is not a persona any more.
+
+    The shared gate offers only the department's work roles, so this account
+    cannot be selected behind it at all (docs/adr/0034) — which is a *stronger*
+    guarantee than the one below, and asserted where that rule lives. What is
+    still worth proving here is the archive's own rule about the role, and that
+    is a property of `request.user` however it got there. So this signs in the
+    way a deployment that authenticates individuals does.
+    """
+    settings.AUTH_MODE = AuthMode.NONE
+    settings.LOGIN_URL = "accounts:dev_login"
     reader = factories.UserFactory(role=UserRole.READER)
     hold()
     rebuild_archive_index()
-    act_as(client, reader)
+    client.force_login(reader)
 
     assert client.get(ARCHIVE_URL).status_code == 403
     assert client.get(SENT_URL).status_code == 200
+
+
+def test_a_reader_cannot_be_selected_as_a_persona_at_all(client, shared):
+    """And so the case above cannot arise behind the shared gate.
+
+    Arvamused itself stays reachable — it is `gate_required`, and the department
+    scope is what somebody past the password is entitled to before they name
+    anybody. What the refusal changes is *whose* view it is: nobody's.
+    """
+    reader = factories.UserFactory(role=UserRole.READER)
+    act_as(client, reader)
+
+    assert not client.session.get("_auth_user_id")
+    response = client.get(SENT_URL)
+    assert response.status_code == 200
+    assert not response.wsgi_request.user.is_authenticated

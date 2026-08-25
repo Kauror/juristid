@@ -41,6 +41,7 @@ from django.urls import reverse
 from app.accounts import cloudflare_access, shared_gate
 from app.accounts.enums import AuthMode
 from app.accounts.models import User
+from app.accounts.selectors import is_persona_candidate
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 
@@ -74,6 +75,7 @@ class AuthenticationModeMiddleware:
         gate_url = reverse("accounts:shared_gate")
 
         if shared_gate.has_passed(request):
+            self._drop_an_ineligible_persona(request)
             return self.get_response(request)
 
         # A session that carries a persona but not a valid gate is a session
@@ -86,6 +88,44 @@ class AuthenticationModeMiddleware:
         if request.path == gate_url:
             return self.get_response(request)
         return redirect(gate_url)
+
+    def _drop_an_ineligible_persona(self, request: HttpRequest) -> None:
+        """Stop acting as somebody who may no longer be acted as.
+
+        Narrowing the candidate rule closes the *endpoint* immediately, and does
+        nothing about a session that already selected an account the new rule
+        excludes — an administrator persona chosen this morning would go on
+        being an administrator persona until the gate aged out twelve hours
+        later. The fix is only complete if it also applies to sessions that are
+        already open (docs/adr/0034).
+
+        The same treatment an expired gate gets a few lines below: the persona
+        goes, the door stays open, and the reader lands on the department view
+        with nobody selected. Recorded through the existing persona-change
+        event, with the reason, rather than disappearing silently — somebody
+        whose selection vanished mid-task should be able to find out why.
+        """
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated or is_persona_candidate(user):
+            return
+
+        record_security_event(
+            event_type=SecurityEventType.PERSONA_SELECTED,
+            actor=None,
+            ip_address=request.META.get("REMOTE_ADDR"),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            detail=shared_gate.audit_detail(
+                request,
+                previous_persona=str(user.pk),
+                chosen_persona=None,
+                reason="persona_no_longer_eligible",
+            ),
+        )
+        logout(request)
+        # `logout` flushes the session, which would take the gate with it and
+        # send somebody back to the password form for a change they did not
+        # make. Re-opening it is what `act_as` does for the same reason.
+        shared_gate.open_gate(request)
 
     # -- cloudflare access -------------------------------------------------
 

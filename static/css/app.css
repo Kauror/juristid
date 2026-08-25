@@ -2533,12 +2533,6 @@ fieldset.field > legend {
     flex-basis: 240px;
   }
 
-  /* The word "Kasutaja" is the first thing to go: the name beside it already
-     says what the control is about. */
-  .actingas__label {
-    display: none;
-  }
-
   .topbar__envlong {
     display: none;
   }
@@ -3110,84 +3104,547 @@ fieldset.field > legend {
   border-color: var(--status-warning-border);
 }
 
-/* -- who the application is showing work for ------------------------------ *
+/* ====================================================================
+ * Vali kasutaja — the persona pill, its popover, and the full page
  *
  * Named, not reduced to an avatar. In shared-gate mode this is a *selected
  * view*, not "you", and somebody reading a dashboard needs to know whose it is
- * before they read it (docs/adr/0016).
- */
+ * before they read it (docs/adr/0016, docs/adr/0034).
+ *
+ * Every class here is scoped to this component. The pill sits on the bar
+ * between the environment badge and Välju, and nothing below is allowed to
+ * reach a table, a form or the navigation: this is one control and one page,
+ * and a broad selector added here is a regression somewhere nobody was looking
+ * (Vali kasutaja brief 28).
+ * ==================================================================== */
 
-.actingas {
-  display: inline-flex;
-  align-items: baseline;
-  gap: var(--spacing-15);
-  padding-left: var(--spacing-3);
-  border-left: 1px solid var(--border-subtle);
-  flex: 0 1 auto;
-  min-width: 0;
-}
+/* ---- the pill ------------------------------------------------------ */
 
-.actingas__label {
-  color: var(--text-muted);
-  font-size: var(--typography-size-label);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+.personaswitch {
+  position: relative;
   flex: none;
 }
 
-/* The selected persona is the one thing on this control that must stay
-   readable, so it truncates rather than wrapping the bar onto a second line. */
-.actingas__name {
-  font-size: var(--typography-size-row);
+.personapill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  /* Asymmetric: the avatar is a circle and needs almost nothing on its side,
+     the caret needs room to sit away from the edge. */
+  padding: 2px var(--spacing-25) 2px 3px;
+  background: var(--surface-raised);
+  border: 1px solid var(--accent-border);
+  /* The one pill in this design, and it is a pill because it holds a circle:
+     a 6px radius around a 24px avatar reads as a mistake. */
+  border-radius: 16px;
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+  max-width: 200px;
+  min-width: 0;
+}
+
+.personapill:hover {
+  background: var(--surface-elevated);
+}
+
+.personapill[aria-expanded="true"] {
+  background: var(--surface-elevated);
+  border-color: var(--accent-link);
+}
+
+/* Nobody selected. The brand-tinted border is what says "there is a person
+   here"; with no persona there is not one, so the pill drops to the ordinary
+   control border and the dashed avatar beside it carries the rest. An
+   untinted pill is also what stops the empty state reading as "you". */
+.personapill--none {
+  border-color: var(--border-control);
+}
+
+.personapill__avatar {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: var(--radius-circle);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--typography-size-chip-sm);
+  font-weight: var(--typography-weight-bold);
+  color: var(--text-body);
+  text-transform: uppercase;
+}
+
+/* No persona chosen. Dashed rather than empty: a plain grey circle beside a
+   name-shaped gap reads as "you", which is the one thing this mode must not
+   say (Vali kasutaja brief 14). */
+.personapill__avatar--none {
+  background: none;
+  border-style: dashed;
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+.personapill__name {
+  font-size: var(--typography-size-meta);
   font-weight: var(--typography-weight-semibold);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 15ch;
   min-width: 0;
 }
 
-/* Past the shared door, nobody chosen. Said in words: an empty control here
-   would read as "you", which is exactly the confusion this mode has to avoid. */
-.actingas__name--none {
-  color: var(--status-warning);
+.personapill__name--none {
   font-weight: var(--typography-weight-regular);
-  font-style: italic;
+  color: var(--text-body);
 }
 
-/* -- picking one --------------------------------------------------------- */
+/* The caret glyph is CSS, so the open and closed states cannot disagree with
+   `aria-expanded`: both are driven by the same attribute. */
+.personapill__caret {
+  flex: none;
+  font-size: var(--typography-size-chip);
+  line-height: 1;
+  color: var(--text-muted);
+}
 
-.personalist {
+.personapill__caret::before {
+  content: "\25be";
+}
+
+.personapill[aria-expanded="true"] .personapill__caret {
+  color: var(--accent-link);
+}
+
+.personapill[aria-expanded="true"] .personapill__caret::before {
+  content: "\25b4";
+}
+
+/* ---- the popover --------------------------------------------------- */
+
+.personamenu {
+  position: absolute;
+  /* Measured from the pill box rather than from the viewport, so the popover
+     stays put when the bar contents reflow. */
+  top: calc(100% + var(--spacing-2));
+  right: 0;
+  width: 308px;
+  max-width: calc(100vw - var(--spacing-8));
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-popover);
+  padding: var(--spacing-15);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  z-index: 40;
+}
+
+.personamenu[hidden] {
+  display: none;
+}
+
+.personamenu__label {
+  margin: 0;
+  padding: 5px var(--spacing-25) 7px;
+  font-size: 10.5px;
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* The form is only there to make the row a POST. It must not become a box in
+   the layout, or every option would sit in its own flex item and the 1px
+   rhythm between rows would come from the wrong element. */
+.personamenu__form {
+  display: contents;
+}
+
+.personaoption {
   display: grid;
-  gap: var(--spacing-2);
-  margin: var(--spacing-4) 0;
-  padding: 0;
-  list-style: none;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  gap: var(--spacing-25);
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: 7px var(--spacing-25);
+  border: 0;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-body);
+  font-family: inherit;
+  font-size: var(--typography-size-base);
+  text-align: left;
 }
 
-.personalist__item form {
+/* Only the ones that are buttons. A cursor that says "press me" over a row
+   nothing happens on is a small lie told several times a day. */
+button.personaoption {
+  cursor: pointer;
+}
+
+button.personaoption:hover,
+button.personaoption:focus-visible {
+  background: var(--surface-overlay-hover);
+  color: var(--text-primary);
+}
+
+.personaoption--current {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+/* The rule above the no-persona choice. On the option rather than on the form
+   around it, because the form is `display: contents` and has no box to carry
+   one.
+
+   After `.personaoption`, not before it. Both are single-class selectors, so
+   the later one wins every property they share — and `.personaoption` sets
+   `border: 0` and `margin: 0`, which silently cancelled the divider when this
+   sat above it. */
+.personaoption--nobody {
+  border-top: 1px solid var(--border-control);
+  margin-top: 3px;
+  padding-top: var(--spacing-2);
+  border-radius: 0;
+}
+
+/* Unless it is also the selected one, in which case the soft accent fill needs
+   its corners back or the last row of the list reads as a cut-off band. */
+.personaoption--nobody.personaoption--current {
+  border-radius: var(--radius-control);
+}
+
+.personaoption__avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-circle);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-control);
   display: flex;
   align-items: center;
-  gap: var(--spacing-3);
-  padding: var(--spacing-2) var(--spacing-3);
+  justify-content: center;
+  font-size: var(--typography-size-chip-sm);
+  font-weight: var(--typography-weight-bold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.personaoption__avatar--current {
+  background: var(--surface-elevated);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.personaoption__avatar--none {
+  background: none;
+  border-style: dashed;
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta-sm);
+}
+
+.personaoption__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personaoption--current .personaoption__name {
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* The tick is the second signal, beside the background one. Colour alone would
+   leave the active row indistinguishable to a reader who cannot separate
+   `--surface-selected` from the popover behind it (Vali kasutaja brief 26). */
+.personaoption__mark {
+  font-size: var(--typography-size-meta);
+  color: var(--accent-link);
+}
+
+.personamenu__note {
+  margin: 3px 0 0;
+  padding: 7px var(--spacing-25) var(--spacing-1);
+  border-top: 1px solid var(--border-control);
+  font-size: var(--typography-size-label);
+  line-height: var(--typography-line-normal);
+  color: var(--text-muted);
+}
+
+/* ---- the full page ------------------------------------------------- */
+
+/* Bleeds to the edges of `.app__main`, which carries 24px/32px of padding —
+   the same idiom `.page--work` and `.matterhead` use, so the header band rule
+   reaches the edge of the shell instead of stopping in mid-air. */
+.page--persona {
+  max-width: none;
+  gap: 0;
+  margin: calc(var(--spacing-6) * -1) calc(var(--spacing-8) * -1)
+    calc(var(--spacing-10) * -1);
+}
+
+.personahead {
   background: var(--surface-panel);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--border-default);
+  padding: var(--spacing-4) var(--spacing-8) var(--spacing-35);
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-35);
+  flex-wrap: wrap;
 }
 
-.personalist__item.is-current form {
-  border-color: var(--accent-border);
+.personahead__title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-title);
 }
 
-.personalist__name {
-  flex: 1 1 auto;
+.personahead__spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+.personahead__now {
+  margin: 0;
+  font-size: var(--typography-size-sm);
+  color: var(--text-secondary);
+}
+
+.personahead__nowname {
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.personabody {
+  padding: var(--spacing-45) var(--spacing-8) 34px;
+  display: flex;
+  flex-direction: column;
+  /* 4px between the named people and the no-persona row: enough that the
+     dashed row reads as a different kind of choice, not so much that it reads
+     as a different section (Vali kasutaja brief 9). */
+  gap: var(--spacing-1);
+  max-width: calc(760px + var(--spacing-8) * 2);
+}
+
+.personalist {
+  display: flex;
+  flex-direction: column;
+}
+
+.personalist__label {
+  margin: 0;
+  padding: 0 2px var(--spacing-15);
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.personalist__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.personalist__empty {
+  margin: 0;
+  padding: var(--spacing-25) var(--spacing-3);
+  font-size: var(--typography-size-base);
+  color: var(--text-muted);
+}
+
+.personarow {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: var(--spacing-3);
+  align-items: center;
+  width: 100%;
+  margin: 0;
+  padding: var(--spacing-25) var(--spacing-3);
+  min-height: 52px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+}
+
+/* The whole row is the target, not the six letters on its right. */
+button.personarow {
+  cursor: pointer;
+}
+
+button.personarow:hover,
+button.personarow:focus-visible {
+  background: var(--surface-hover);
+}
+
+/* `Vali` is quiet until the row is under the pointer or the focus ring, at
+   which point it becomes the button it has been all along. */
+.personarow__action {
+  font-size: var(--typography-size-sm);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  padding: var(--spacing-1) var(--spacing-35);
+}
+
+button.personarow:hover .personarow__action,
+button.personarow:focus-visible .personarow__action {
+  background: var(--surface-elevated);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.personarow--current {
+  background: var(--surface-selected);
+  border-left: 2px solid var(--accent-primary);
+  /* Square where the accent rule is, rounded everywhere else: the rule is part
+     of the row, not a decoration beside it. */
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  padding-left: var(--spacing-25);
+}
+
+.personarow__avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-circle);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-control);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  color: var(--text-secondary);
+  text-transform: uppercase;
+}
+
+.personarow__avatar--current {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.personarow__avatar--none {
+  background: none;
+  border-style: dashed;
+  border-color: var(--border-strong);
+  color: var(--text-muted);
   font-size: var(--typography-size-row);
 }
 
-.personalist__role {
-  display: block;
-  color: var(--text-muted);
-  font-size: var(--typography-size-meta);
+.personarow__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: var(--typography-weight-medium);
+}
+
+.personarow--current .personarow__name {
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* Not a disabled "Vali". A greyed-out button invites the press it then
+   refuses; this says what is true instead (Vali kasutaja brief 11). */
+.personarow__state {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--accent-link);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-sm);
+  padding: 3px var(--spacing-25);
+  white-space: nowrap;
+}
+
+.personarow--nobody {
+  background: none;
+  border: 1px dashed var(--border-strong);
+}
+
+.personarow--nobody .personarow__name {
+  font-size: var(--typography-size-row);
+  color: var(--text-body);
+}
+
+.personarow--nobody.personarow--current {
+  background: var(--surface-selected);
+  border-style: solid;
+  border-color: transparent;
+  border-left: 2px solid var(--accent-primary);
+}
+
+/* ---- narrow shells ------------------------------------------------- *
+ *
+ * The ability to switch persona never hides — it is how somebody gets out of
+ * the wrong view. The name goes before the control does, and the popover stays
+ * anchored to a pill that is still an avatar and a caret.
+ */
+@media (max-width: 1240px) {
+  .personapill__name {
+    max-width: 8ch;
+  }
+}
+
+@media (max-width: 1040px) {
+  .personapill__name {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .personapill {
+    padding-right: var(--spacing-15);
+  }
+}
+
+/* `.app__main` drops to `--spacing-3` below 860px, so a full-bleed page pulling
+   itself out by `--spacing-8` hangs past the viewport on both sides — which is
+   a horizontal scrollbar on every width below this, and invisible in a
+   screenshot. */
+@media (max-width: 860px) {
+  .page--persona {
+    margin-left: calc(var(--spacing-3) * -1);
+    margin-right: calc(var(--spacing-3) * -1);
+    margin-top: calc(var(--spacing-4) * -1);
+    margin-bottom: calc(var(--spacing-8) * -1);
+  }
+
+  .personahead,
+  .personabody {
+    padding-left: var(--spacing-3);
+    padding-right: var(--spacing-3);
+  }
+
+  .personamenu {
+    /* Anchored to the bar rather than to the pill, so a pill that has drifted
+       towards the middle of a narrow bar cannot push its popover off-screen. */
+    position: fixed;
+    top: 52px;
+    right: var(--spacing-3);
+    left: auto;
+    width: auto;
+    min-width: 268px;
+    max-width: calc(100vw - var(--spacing-6));
+  }
 }
 
 /* ====================================================================

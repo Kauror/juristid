@@ -24,6 +24,7 @@ from django.views.decorators.http import require_http_methods
 
 from app.accounts import shared_gate
 from app.accounts.models import User
+from app.accounts.selectors import persona_candidates, persona_from_id
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 
@@ -266,9 +267,14 @@ def _gate_refused(
 def choose_persona(request: HttpRequest) -> HttpResponse:
     """Whose work am I looking at?
 
-    Not a sign-in page, and worded so nobody mistakes it for one. The list is
-    every active account; picking one changes which work the application shows
-    and proves nothing about who is reading it.
+    Not a sign-in page, and worded so nobody mistakes it for one. Picking a name
+    changes which work the application shows and proves nothing about who is
+    reading it.
+
+    The list is the department's policy and legal people, from
+    `app.accounts.selectors.persona_candidates` — the same population `act_as`
+    accepts a POST against, so the page and the endpoint cannot disagree about
+    who is selectable (docs/adr/0034).
     """
     if not shared_gate.is_shared_gate():
         raise Http404("This deployment does not use a persona selector.")
@@ -279,7 +285,7 @@ def choose_persona(request: HttpRequest) -> HttpResponse:
         request,
         "accounts/choose_persona.html",
         {
-            "people": User.objects.filter(is_active=True).order_by("display_name"),
+            "people": persona_candidates(),
             "current": request.user if request.user.is_authenticated else None,
             "next_url": _safe_next(request),
         },
@@ -303,9 +309,21 @@ def act_as(request: HttpRequest) -> HttpResponse:
         logout(request)
         shared_gate.open_gate(request)
         _record_persona_change(request, previous=previous, chosen=None)
-        return redirect("matters:overview")
+        # The same safe target a named choice gets. Switching from the top bar
+        # has to leave somebody where they were reading, and "somewhere else
+        # entirely" is as disorienting when the choice is *nobody* as when it is
+        # a colleague. A target that needs a persona — Minu töö — then answers
+        # with the application's usual redirect to this page, which is the
+        # honest outcome rather than a page invented for a reader who has not
+        # said who they are (Vali kasutaja brief 19, 23).
+        return redirect(_safe_next(request) or "matters:overview")
 
-    person = _selected_user(User.objects.filter(is_active=True), raw)
+    # The central candidate population, not "every active account". A crafted
+    # POST carrying an administrator's, a superuser's or a reader's identifier
+    # has to be refused by the *endpoint*: everybody behind the shared door can
+    # reach this view, so a list narrowed only in the template narrows nothing
+    # (app/accounts/selectors.py, docs/adr/0034).
+    person = persona_from_id(raw)
     if person is None:
         messages.error(request, "Vali kehtiv kasutaja.")
         return redirect("accounts:choose_persona")
