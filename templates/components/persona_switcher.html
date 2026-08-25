@@ -54,8 +54,10 @@
 
     {% for person in persona_candidates %}
       {% if current_persona_id == person.pk %}
-        {# The active row is not an action. A button that re-selects who is
-           already selected is a control whose only outcome is an audit row. #}
+        {% comment %}
+          The active row is not an action. A button that re-selects who is
+          already selected is a control whose only outcome is an audit row.
+        {% endcomment %}
         <p class="personaoption personaoption--current">
           <span class="personaoption__avatar personaoption__avatar--current"
                 aria-hidden="true">{{ person.initials }}</span>

@@ -149,17 +149,30 @@ def test_the_selected_persona_survives_moving_between_pages(past_the_door, gate_
 
 
 def test_switching_from_the_register_returns_to_the_register(past_the_door, gate_base_url):
-    """The acceptance criterion the popover exists for (brief 19)."""
-    page = past_the_door
-    page.goto(f"{gate_base_url}/teemad/?olek=koik")
-    page.wait_for_load_state("networkidle")
+    """The acceptance criterion the popover exists for (brief 19).
 
+    Starts by choosing somebody, because the register is `login_required` and a
+    session with no persona never gets to be on it — it is bounced to the
+    persona page, which is the behaviour Minu töö has too. The question this
+    asks is the one that actually arises: switching *between* colleagues from a
+    filtered register, and keeping both the page and its query string.
+    """
+    page = past_the_door
     menu = _open_menu(page)
     menu.get_by_role("button", name=SPECIALIST, exact=False).click()
     page.wait_for_load_state("networkidle")
 
+    page.goto(f"{gate_base_url}/teemad/?olek=koik")
+    page.wait_for_load_state("networkidle")
+    assert "/teemad/" in page.url, "a chosen persona should reach the register"
+
+    menu = _open_menu(page)
+    menu.get_by_role("button", name=HEAD, exact=False).click()
+    page.wait_for_load_state("networkidle")
+
     assert "/teemad/" in page.url
     assert "olek=koik" in page.url
+    expect(_pill(page)).to_contain_text(HEAD)
 
 
 # -- the popover is a keyboard control -------------------------------------

@@ -3153,6 +3153,14 @@ fieldset.field > legend {
   border-color: var(--accent-link);
 }
 
+/* Nobody selected. The brand-tinted border is what says "there is a person
+   here"; with no persona there is not one, so the pill drops to the ordinary
+   control border and the dashed avatar beside it carries the rest. An
+   untinted pill is also what stops the empty state reading as "you". */
+.personapill--none {
+  border-color: var(--border-control);
+}
+
 .personapill__avatar {
   width: 24px;
   height: 24px;

@@ -44,8 +44,11 @@
       <div class="personalist__rows">
         {% for person in people %}
           {% if current and current.pk == person.pk %}
-            {# Not an action. A "Vali" that re-selects the selected person is a
-               control whose only outcome is an audit row (brief 11). #}
+            {% comment %}
+              Not an action. A "Vali" that re-selects the person who is already
+              selected is a control whose only outcome is an audit row
+              (brief 11).
+            {% endcomment %}
             <p class="personarow personarow--current">
               <span class="personarow__avatar personarow__avatar--current"
                     aria-hidden="true">{{ person.initials }}</span>

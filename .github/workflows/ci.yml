@@ -265,9 +265,11 @@ jobs:
       # is cheaper and leaves the rest of the suite exactly as it was
       # (docs/adr/0034).
       E2E_GATE_BASE_URL: http://127.0.0.1:8001
-      # CI-only, and long enough to satisfy `juristid.E011`. The real one is a
-      # host-side secret and is not in this repository, this image, or any
-      # Compose default.
+      # A rehearsal password for a throwaway server on localhost, under a
+      # test-only name. The deployment variable it stands in for is deliberately
+      # absent from every tracked YAML file in this repository — a committed
+      # shared password does not look wrong in a diff, it looks like a default
+      # (tests/test_repository_data_safety.py, config/e2e_gate_settings.py).
       E2E_GATE_PASSWORD: ci-jagatud-parool-mitte-kusagil-mujal
       # Set to "1" on a manual run to (re)generate the visual baselines. The
       # renderings land in the browser-artifacts upload; commit what you agree
@@ -324,9 +326,9 @@ jobs:
       # slower and harder to read than a second port.
       - name: Start the shared-gate application
         env:
-          AUTH_MODE: shared_gate
-          JURISTID_SHARED_GATE_PASSWORD: ci-jagatud-parool-mitte-kusagil-mujal
-          DEV_LOGIN_ENABLED: "0"
+          # The mode, the password and the refusal to combine a gate with the
+          # synthetic sign-in all live in the settings module, not here.
+          DJANGO_SETTINGS_MODULE: config.e2e_gate_settings
         run: |
           nohup uv run python manage.py runserver 127.0.0.1:8001 --noreload             > artifacts/server-gate.log 2>&1 &
           for attempt in $(seq 1 40); do
