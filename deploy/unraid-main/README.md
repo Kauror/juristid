@@ -411,6 +411,45 @@ recovery.
 - **No real data leaving this host.** Not into Git, not into CI, not into a PR
   comment, not into a screenshot, not into a log uploaded anywhere. The
   repository is public.
+- **No test suite through this Compose project.** See below — this one has
+  already happened.
+
+### Never run the application test suite through this stack
+
+Not `docker compose -p juristid-main run … pytest`, not `docker exec
+juristid-main-web pytest`, not a one-off container attached to
+`juristid-main-internal`. Tests belong in CI, in a development checkout, or in a
+Compose project created for testing.
+
+**This is not advice; it happened.** On 2026-08-24 a pytest run in a container
+derived from this stack's image wrote 63 synthetic test files into
+`/mnt/user/appdata/juristid-main/evidence`. Three things combined:
+
+1. the image sets `DJANGO_SETTINGS_MODULE=config.settings`, and pytest-django
+   reads the environment *before* `pyproject.toml` — so production settings won;
+2. `docker compose run` inherits the service's environment and volumes, so
+   `EVIDENCE_ROOT=/app/evidence` still pointed at the real evidence bind mount;
+3. Django's test runner created and dropped its own `test_juristid` database, so
+   the rows vanished and the bytes did not.
+
+The consequence was 1,473 bytes of harmless fixtures and an integrity report
+that has exited non-zero ever since. The same path was open to a larger file,
+and the same misconfiguration decides which *database* a plain `manage.py`
+command talks to — there the test runner would not have saved anything.
+
+Three controls now make the mistake fail closed rather than write:
+
+- `pyproject.toml` passes `--ds=config.test_settings`, the one form that beats
+  an inherited `DJANGO_SETTINGS_MODULE`;
+- `config/test_settings.py` refuses to finish importing when the environment has
+  `REAL_DATA_ALLOWED` on, carries `JURISTID_RUNTIME`, or names a deployment's
+  storage root — and both application services here set `JURISTID_RUNTIME`
+  precisely so a test process started through them stops;
+- `tests/conftest.py` gives every test its own temporary evidence, derivative
+  and legacy-source directories, whether or not the test asks.
+
+Any of the three alone would have prevented it. If a refusal ever gets in the
+way, the environment is wrong, not the refusal.
 
 
 ## Cutover

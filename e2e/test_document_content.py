@@ -49,6 +49,13 @@ def run_worker() -> str:
     # directory per process* — so the worker looked in an empty folder and
     # reported every file missing. The browser suite runs against the real
     # server's settings, and so must anything it shells out to.
+    #
+    # This is the one deliberate exception to "a test process uses the test
+    # settings", and it is safe for a reason worth stating: the parent pytest
+    # process refuses to start at all in an environment belonging to a
+    # deployment (config/test_safety.py), so this child can only ever inherit
+    # the storage roots of a development or CI environment. It is not a hole in
+    # the isolation — it is downstream of the check that closed it.
     environment = {**os.environ, "DJANGO_SETTINGS_MODULE": "config.settings"}
     result = subprocess.run(
         [sys.executable, "manage.py", "extract_pending_documents", "--limit", "20"],
