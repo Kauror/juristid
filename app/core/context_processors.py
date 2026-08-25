@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from app.accounts import shared_gate
-from app.core.authorization import is_department_head
+from app.core.authorization import is_department_head, may_write_business_content
 from app.legacy_import.opinion_access import may_read_archive
 
 
@@ -71,4 +71,10 @@ def application(request: HttpRequest) -> dict[str, Any]:
         # only — every archive view asks again and refuses a crafted URL with a
         # 403 (app/legacy_import/opinion_access.py, docs/adr/0028).
         "can_read_opinion_archive": may_read_archive(getattr(request, "user", None)),
+        # Whether to offer "+ Uus teema" on the bar and in the empty states.
+        # Same reasoning again, and the same predicate `matter_create` now
+        # calls: a READER may read the register and change nothing in it, and
+        # offering them a button that answers 404 is a page telling somebody to
+        # try something it knows will fail (app/matters/views.py).
+        "can_write_business_content": may_write_business_content(getattr(request, "user", None)),
     }

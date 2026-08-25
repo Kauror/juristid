@@ -35,18 +35,15 @@ ESTONIAN_DATE = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{4}$")
 
 
 def create_form(page, base_url) -> None:
+    """Open Uus teema.
+
+    Nothing to reveal afterwards. `Arvamuse tähtaeg` used to live inside a
+    closed `<details>`, so every test below opened it before it could type into
+    it; the redesign put the whole form on screen and the helper that opened
+    the panel went with it (Uus teema redesign §3).
+    """
     page.goto(f"{base_url}/teemad/uus/")
     page.wait_for_load_state("networkidle")
-
-
-def open_details(page, summary: str) -> None:
-    """Open a `<details>` by its summary text.
-
-    Necessary rather than cosmetic: `Arvamuse tähtaeg` lives inside a closed
-    disclosure, and Playwright refuses to fill a control it cannot see — which
-    is the same refusal a person would make.
-    """
-    page.locator("summary", has_text=summary).first.click()
 
 
 def picker_for(page, field_id: str):
@@ -135,7 +132,6 @@ def test_picking_a_day_writes_an_estonian_date_into_the_box(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    open_details(page, "Täpsusta teema andmeid")
     picker = picker_for(page, "#id_response_deadline")
     picker.locator(".datepicker__trigger").click()
     panel = picker.locator(".datepicker__panel")
@@ -213,7 +209,6 @@ def test_the_calendar_closes_on_escape(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    open_details(page, "Täpsusta teema andmeid")
     picker = picker_for(page, "#id_response_deadline")
     picker.locator(".datepicker__trigger").click()
     panel = picker.locator(".datepicker__panel")
@@ -234,7 +229,6 @@ def test_a_typed_estonian_date_is_saved(page, base_url):
 
     page.fill("#id_title", "Eestikeelse kuupäevaga teema")
     page.fill("#id_received_date", "7.9.2026")
-    open_details(page, "Täpsusta teema andmeid")
     page.fill("#id_response_deadline", "23.8.2026")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
@@ -253,7 +247,6 @@ def test_a_padded_estonian_date_is_accepted_too(page, base_url):
     create_form(page, base_url)
 
     page.fill("#id_title", "Nullidega kuupäevaga teema")
-    open_details(page, "Täpsusta teema andmeid")
     page.fill("#id_response_deadline", "07.09.2026")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
@@ -269,7 +262,6 @@ def test_an_impossible_date_is_refused_in_estonian(page, base_url):
     create_form(page, base_url)
 
     page.fill("#id_title", "Võimatu kuupäevaga teema")
-    open_details(page, "Täpsusta teema andmeid")
     page.fill("#id_response_deadline", "31.02.2026")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")

@@ -825,6 +825,15 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     other three, which is the failure mode the intake surface already avoids
     (Stage-2E.1 brief 23).
     """
+    # The same check `matter_edit`, the composer and the intake surface make,
+    # and it was missing here: `Uus teema` was reachable — and worked — for a
+    # READER, who may read the register and change nothing in it. 404 rather
+    # than 403, matching every other refusal in this module: a reader who may
+    # not write is not told which surfaces exist for those who may
+    # (app/core/authorization.py, master specification 5.1).
+    if not may_write_business_content(request.user):
+        raise Http404("Uut teemat saab luua ainult sisu muutmise õigusega.")
+
     form = MatterCreateForm(request.POST or None, viewer=request.user)
     # Bound only when somebody actually wrote a next action. Bound
     # unconditionally, a refused save — a missing title, a rejected file —
@@ -863,6 +872,11 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 title=data["title"],
                 actor=request.user,
                 owner=data.get("owner"),
+                # Written on the record, not into an Entry. `brief_summary`
+                # answers *what is this*, which no Entry, no position and no
+                # rationale can be made to mean without corrupting it
+                # (app/matters/models.py, Teema redesign §6).
+                brief_summary=data.get("brief_summary") or "",
                 stage=data.get("stage"),
                 track=data.get("track") or "",
                 source_organisations=list(data.get("source_organisations") or []),
@@ -883,6 +897,15 @@ def matter_create(request: HttpRequest) -> HttpResponse:
             )
             for upload in uploads:
                 _attach_incoming_file(matter, upload, actor=request.user)
+
+            # The private scratch pad, through its own service, and only when
+            # something was typed. An empty note would create a row recording
+            # that somebody wrote nothing — the same reason an untouched
+            # Järgmine tegevus creates no NextAction below
+            # (app/matters/services.py, `save_personal_note`).
+            note = (data.get("notes") or "").strip()
+            if note:
+                save_personal_note(matter=matter, author=request.user, body=note)
 
             if wants_action:
                 # The owner is chosen on this same form, so the Matter does not
@@ -924,16 +947,13 @@ def _create_context(request: HttpRequest, form: Any, action_form: Any) -> dict[s
         "form": form,
         "action_form": action_form,
         "frequent_senders": getattr(form, "frequent_senders", []),
-        # Named here rather than excluded in the template by listing the primary
-        # ones: a field added to the form later should appear *somewhere* by
-        # default, and the safe default is the disclosure.
-        # `stage` and `track` are named in the template now, because each is a
-        # row of radio chips rather than one more box in the grid. They stay out
-        # of this tuple so the generic loop does not render them a second time.
-        "secondary_fields": (
-            "addressee_organisation",
-            "response_deadline",
-        ),
+        # `secondary_fields` is gone with the disclosure it fed. The template
+        # named the primary fields and looped this tuple for the rest, which was
+        # the right shape while the rest were hidden behind "+ Täpsusta teema
+        # andmeid". Nothing on the page is hidden now, so every field is placed
+        # by name — and a field added to the form later has to be placed
+        # deliberately rather than appearing in a panel nobody opened
+        # (Uus teema redesign §3).
         "today": timezone.localdate(),
         "nav_active": "teemad",
     }

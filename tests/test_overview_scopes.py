@@ -299,12 +299,23 @@ def test_minu_tiim_shows_the_whole_week_not_only_the_problems(department_head, s
 
 
 def test_the_area_table_uses_the_governed_vocabulary(department_head, today):
-    """Twenty-three active areas, read from the taxonomy rather than restated."""
-    assert PolicyArea.objects.filter(is_active=True).count() == 23
+    """As many rows as there are offered areas, read rather than restated.
+
+    Counted from `selectable_policy_areas` rather than written out, because the
+    number is not the point: the point is that this table and Uus teema offer
+    the same vocabulary. A literal here would have to be edited every time the
+    department adds or withdraws a label, and the edit that forgot would look
+    like a broken table rather than a stale test (Uus teema redesign §7.1).
+    """
+    from app.taxonomy.vocabulary import selectable_policy_areas
+
+    offered = selectable_policy_areas().count()
+    assert offered
+    assert PolicyArea.objects.filter(is_active=True).count() == offered
 
     rows, empty = ov.area_rows(department_head, today, [])
 
-    assert len(rows) + empty == 23
+    assert len(rows) + empty == offered
 
 
 def test_a_retired_area_with_open_work_is_kept_and_marked(department_head, specialist, today):

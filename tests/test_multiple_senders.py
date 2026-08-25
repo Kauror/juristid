@@ -703,7 +703,7 @@ def test_the_department_overview_prefetches_its_senders(
     *Arvamusi koostamisel*, and the honest Matter total behind *Vajab
     sekkumist*, which is a union of four populations and cannot be read off the
     capped row list. Every population the page had already resolved is reused
-    rather than re-scoped (ADR 0032, `overview.Populations`).
+    rather than re-scoped (ADR 0033, `overview.Populations`).
     """
     for index in range(15):
         factories.MatterFactory(

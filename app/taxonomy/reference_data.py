@@ -9,8 +9,8 @@ nobody mistakes a rehearsal for the real register. What is below is the
 opposite — the classification the department actually files under, which
 belongs in a real deployment and would be useless as an invention.
 
-**Where these twenty-three come from.** The department's own reviewed working
-list of Valdkonnad, supplied with the approved Teema redesign on 2026-08-24 and
+**Where these come from.** The department's own reviewed working list of
+Valdkonnad, supplied with the approved Teema redesign on 2026-08-24 and
 transcribed here label for label, in the order it was given. It is not derived
 from anything: no page was scraped, no old list was mapped forward, and no
 label was reworded to look tidier beside its neighbours. "Alkohol, tubakas" and
@@ -38,7 +38,7 @@ when asked which area a file belongs to. "Maksejõuetus", "Riigihanked",
 actually uses, and with only nine broad headings on offer, most files were
 either filed under nothing or filed under "Muu".
 
-Version 2.0 is therefore the reviewed *working* vocabulary — the twenty-three
+Version 2.0 was therefore the reviewed *working* vocabulary — the twenty-three
 labels the department named, in the order it named them. ``Tag`` is unaffected
 and stays what it was: free subject vocabulary with aliases and merging.
 Valdkond answers *which area of law or policy*, Silt answers *what specifically
@@ -54,10 +54,38 @@ them, and no code guesses which of the new labels somebody meant. "Maksud" is
 not "Maksud ja toll", and inventing that equivalence would rewrite a decade of
 somebody else's filing on a coincidence of spelling (`taxonomy/0003`).
 
-**``Olulised tähtajad`` here is a label, not a deadline.** It is the subject
-area a file belongs to. ``MatterImportantDate`` is an operational date on one
-Matter. They share four words and nothing else, and no code may treat one as
-the other.
+Version 3.0, and the two labels it withdrew
+------------------------------------------
+
+Hands-on use of version 2.0 found two of its twenty-three doing damage rather
+than work, and the product owner withdrew both with the approved Uus teema
+design (2026-08-25).
+
+**``Olulised tähtajad`` was never a subject area.** It named a cross-cutting
+watch list — files whose timing matters — which is a workflow property of a
+Matter and not an answer to *which area of law is this*. The product already
+has that concept, and it is a different one: ``MatterImportantDate`` is an
+operational date on one Matter and the *Olulised tähtajad* calendar is built
+from those rows. Two things sharing four words, one of them a taxonomy label,
+is how a lawyer ends up filing a tax deadline under a heading the tax report
+does not count.
+
+**``Muud teemad`` and ``Muu`` were the same catch-all twice.** Uus teema has
+always carried a ``Muu`` affordance that reveals a free-text box, because a
+file that fits no label needs somewhere to say what it is instead. A taxonomy
+row spelling the same idea gave two ways to answer *none of these*, one of
+which recorded nothing about the file at all. Only the free-text ``Muu``
+remains, and it is not a ``PolicyArea``: it writes ``Matter.policy_area_other``
+and creates no taxonomy row (``app/matters/forms.py``).
+
+**Both are deactivated, not deleted, and nothing was remapped.** No Matter
+filed under either changes: the rows stay, the relations stay, statistics still
+count them, and the Teema header still shows them under the "varasem valdkond"
+note that lets somebody correct another field without dropping the filing. In
+particular nothing guesses that a Matter filed under ``Muud teemad`` meant
+``Muu`` — that would be a fuzzy migration over somebody else's judgement, and
+the free-text box it would have to fill has nothing truthful to put in it
+(`taxonomy/0004`, Uus teema redesign §7).
 """
 
 from __future__ import annotations
@@ -67,7 +95,7 @@ from dataclasses import dataclass
 #: Bumped when the *set* of reviewed areas changes, not when wording is fixed.
 #: Recorded in the reference-data plan digest so a plan built under one
 #: vocabulary can never be applied under another.
-REFERENCE_POLICY_AREA_VERSION = "2.0"
+REFERENCE_POLICY_AREA_VERSION = "3.0"
 
 #: Where the business list came from, and when. Quoted in the ADR and asserted
 #: by the source-contract test, so that changing the vocabulary without changing
@@ -76,6 +104,12 @@ POLICY_AREA_SOURCE_TITLE = "Koda Õigusloome — Teema redesign, Valdkonnad"
 POLICY_AREA_SOURCE_PUBLISHER = "Eesti Kaubandus-Tööstuskoda, õigusosakond"
 POLICY_AREA_SOURCE_URL = ""
 POLICY_AREA_SOURCE_VERIFIED_ON = "2026-08-24"
+
+#: Version 3.0 withdrew two of the labels above. Its own provenance, because
+#: the reviewer's question is not "where did this list come from" but "who
+#: decided to stop offering those two, and when".
+POLICY_AREA_WITHDRAWAL_SOURCE_TITLE = "Koda Õigusloome — Uus teema, kinnitatud disain"
+POLICY_AREA_WITHDRAWAL_VERIFIED_ON = "2026-08-25"
 
 #: Version 1.0's provenance, kept rather than overwritten. The nine areas it
 #: describes are still in the database — four of them active — and a reader
@@ -299,12 +333,38 @@ REFERENCE_POLICY_AREAS_V2: tuple[ReferencePolicyArea, ...] = (
     ),
 )
 
-#: The name the rest of the codebase imports. Version 1.0's nine reviewed areas
-#: are not deleted from the database by the change of manifest — four of them
-#: are in the list above under the same key, and the other five are deactivated
-#: by `taxonomy/0003` and keep every relation they had. What the manifest
-#: governs is which areas are *offered*, and that is now these twenty-three.
-REFERENCE_POLICY_AREAS_V1: tuple[ReferencePolicyArea, ...] = REFERENCE_POLICY_AREAS_V2
+#: The two version-2.0 keys the product owner withdrew on 2026-08-25. Kept here
+#: as data for the same reason `RETIRED_POLICY_AREA_KEYS_V1` is: the migration
+#: that deactivates them and the test that proves nothing remapped a Matter
+#: filed under one of them have to agree, and neither may consult a mapping
+#: table — there is no reviewed equivalence between `Muud teemad` and `Muu`,
+#: and writing one down is how a guess becomes a fact (Uus teema redesign §7).
+RETIRED_POLICY_AREA_KEYS_V2: tuple[str, ...] = (
+    "muud-teemad",
+    "olulised-tahtajad",
+)
+
+#: Version 3.0: the twenty-one areas that remain offered.
+#:
+#: Derived by exclusion rather than retyped, deliberately. The twenty-three
+#: above are the transcription of what the department wrote down, and a second
+#: hand-copied list of twenty-one beside it would be a second place for a comma
+#: in "Alkohol, tubakas" to go missing. What version 3.0 *is* — the earlier list
+#: minus two named keys — is the whole of the change, and that is what this
+#: says. The remaining `sort_order` values keep their gaps at 200 and 220: they
+#: are the department's sequence, not a ranking, and renumbering them would move
+#: every label for no reason a reader could see.
+REFERENCE_POLICY_AREAS_V3: tuple[ReferencePolicyArea, ...] = tuple(
+    area for area in REFERENCE_POLICY_AREAS_V2 if area.key not in RETIRED_POLICY_AREA_KEYS_V2
+)
+
+#: The name the rest of the codebase imports. Neither retirement deletes
+#: anything: version 1.0's nine are still rows (four of them active, five
+#: deactivated by `taxonomy/0003`), and version 2.0's two withdrawn labels are
+#: still rows deactivated by `taxonomy/0004`, each keeping every relation it
+#: had. What the manifest governs is which areas are *offered*, and that is now
+#: these twenty-one.
+REFERENCE_POLICY_AREAS_V1: tuple[ReferencePolicyArea, ...] = REFERENCE_POLICY_AREAS_V3
 
 #: The five version-1.0 keys whose names the working vocabulary does not
 #: contain. Kept here as data because two places need to agree about them: the

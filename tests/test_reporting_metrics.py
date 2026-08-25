@@ -503,7 +503,7 @@ def test_searchability_says_what_is_holding_it_back(world, reporting_context, se
     """And says it without implying the corpus might be infected.
 
     The files are known to be malware-free; what has not happened is text
-    extraction. Naming the scanner told a reader the opposite (ADR 0032).
+    extraction. Naming the scanner told a reader the opposite (ADR 0033).
     """
     settings.REAL_DATA_ALLOWED = True
     result = compute(keys.SEARCHABLE_DOCUMENT_COVERAGE, reporting_context(world.martin))

@@ -54,6 +54,7 @@ from app.matters.selectors import MISSING
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
+from app.taxonomy.vocabulary import selectable_policy_areas
 
 # ---------------------------------------------------------------------------
 # Scopes
@@ -907,7 +908,11 @@ def area_rows(
             }
         )
 
-    active = {area.key: area for area in PolicyArea.objects.filter(is_active=True)}
+    # The governed vocabulary, from the one function that defines it. The rows
+    # are re-sorted below by whichever column the reader chose, so what is taken
+    # from here is the *set*: which areas are current, and therefore which of
+    # the rows below carry the "varasem" flag (app/taxonomy/vocabulary.py).
+    active = {area.key: area for area in selectable_policy_areas()}
     legacy_keys = {key for key in open_counts if key not in active}
     legacy = {area.key: area for area in PolicyArea.objects.filter(key__in=legacy_keys)}
 
@@ -927,7 +932,7 @@ def area_rows(
 
     empty = sum(1 for row in rows if row.open_count == 0)
     # An area with nothing open is normally counted in the footer rather than
-    # rendered as a blank line — twenty-three empty rows is a page that looks
+    # rendered as a blank line — a screenful of empty rows is a page that looks
     # like a data problem. `?tuhjad=1` is that footer's destination: it promised
     # "all N areas" and opened the register, which lists Matters and not areas
     # at all (Ülevaade QA §3).

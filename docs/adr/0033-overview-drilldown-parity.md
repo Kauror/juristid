@@ -1,4 +1,4 @@
-# 0032 — Ülevaade drill-down parity, and what a number is allowed to open
+# 0033 — Ülevaade drill-down parity, and what a number is allowed to open
 
 - **Status:** Accepted
 - **Date:** 2026-08-25
