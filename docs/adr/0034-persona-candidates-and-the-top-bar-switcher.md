@@ -90,6 +90,27 @@ them off the persona list. That failure is visible the same day and fixed by
 moving the technical access to a technical account. The opposite failure — a
 privileged account quietly becoming selectable — is noticed by nobody.
 
+### A session that already holds an ineligible persona loses it
+
+Narrowing the endpoint closes the door for new selections and does nothing about
+the sessions that came through before it. The shared-gate session lasts twelve
+hours, so an administrator persona chosen in the morning would go on being one
+for most of a working day after the fix shipped.
+
+`AuthenticationModeMiddleware._shared_gate` therefore checks the persona it
+restored against the same `is_persona_candidate` predicate on every request, and
+drops it if the rule no longer admits it: the persona goes, the gate stays open,
+and the reader lands on the department view with nobody selected.
+
+This is the treatment the middleware already gives a session whose gate expired,
+for the same reason — a session must not go on acting as somebody it may no
+longer act as. It is recorded through the existing `PERSONA_SELECTED` event with
+`reason: "persona_no_longer_eligible"`, rather than vanishing silently: somebody
+whose selection disappears mid-task should be able to find out why.
+
+Cheap: the predicate reads the user object the auth middleware already loaded,
+and adds no query.
+
 ### The audit mechanism is unchanged
 
 `_record_persona_change` and `SecurityEventType.PERSONA_SELECTED` already

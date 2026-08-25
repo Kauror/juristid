@@ -155,6 +155,30 @@ def act_as(gate_client, person):
     return gate_client
 
 
+@pytest.fixture
+def individually(client, settings):
+    """Sign in as one person, with no shared door in front.
+
+    ADMINISTRATOR and READER are no longer persona candidates: behind the shared
+    gate only the department's own work roles may be selected, and the endpoint
+    refuses a crafted POST for anybody else (docs/adr/0034).
+
+    The archive's rules *about* those roles have not changed and still have to
+    be proven. They are properties of `request.user`, not of how the request
+    established one — so the cases below sign in the way a deployment that
+    authenticates individuals would, and the persona rule is asserted
+    separately, where it belongs.
+    """
+    settings.AUTH_MODE = AuthMode.NONE
+    settings.LOGIN_URL = "accounts:dev_login"
+
+    def sign_in(person):
+        client.force_login(person)
+        return client
+
+    return sign_in
+
+
 def item_of(binary) -> OpinionArchiveItem:
     return OpinionArchiveItem.objects.get(binary=binary)
 
@@ -291,32 +315,46 @@ def test_a_department_head_persona_reaches_every_archive_surface(behind_the_gate
     assert behind_the_gate.get(file_url(stored)).status_code == 200
 
 
-def test_an_administrator_persona_reads_but_is_offered_no_link_form(
-    behind_the_gate, administrator, binary
-):
-    act_as(behind_the_gate, administrator)
-    body = behind_the_gate.get(detail_url(binary)).content.decode()
+def test_an_administrator_reads_but_is_offered_no_link_form(individually, administrator, binary):
+    client = individually(administrator)
+    body = client.get(detail_url(binary)).content.decode()
     assert "Seo teemaga" not in body
     assert "seoseid mitte muuta" in body
 
 
-def test_an_administrator_persona_may_not_post_a_link(
-    behind_the_gate, administrator, binary, normal_matter
-):
+def test_an_administrator_may_not_post_a_link(individually, administrator, binary, normal_matter):
     """Not offered in the interface is not a guard."""
-    act_as(behind_the_gate, administrator)
-    response = behind_the_gate.post(
+    client = individually(administrator)
+    response = client.post(
         link_url(binary), {"action": "link", "viide": normal_matter.display_reference}
     )
     assert response.status_code == 403
     assert OpinionArchiveMatterLink.objects.count() == 0
 
 
-@pytest.mark.parametrize("role", [UserRole.SPECIALIST, UserRole.READER])
-def test_an_ordinary_persona_is_refused_every_archive_surface(
-    behind_the_gate, stored, normal_matter, role
+@pytest.mark.parametrize("role", [UserRole.ADMINISTRATOR, UserRole.READER])
+def test_a_non_department_account_cannot_become_a_persona_and_reach_the_letters(
+    behind_the_gate, stored, role
 ):
-    person = factories.UserFactory(role=role)
+    """The stronger guarantee, behind the door where it matters.
+
+    An administrator may read the archive when a deployment can say who they
+    are. Behind one shared password it cannot, so the account is not selectable
+    and the session stays the department viewer — which reaches no letters at
+    all (docs/adr/0034, docs/adr/0028).
+    """
+    person = factories.UserFactory(role=role, is_staff=role == UserRole.ADMINISTRATOR)
+    act_as(behind_the_gate, person)
+
+    assert not behind_the_gate.session.get("_auth_user_id")
+    assert behind_the_gate.get(browse_url()).status_code in (302, 403)
+    assert behind_the_gate.get(detail_url(stored)).status_code in (302, 403)
+
+
+def test_an_ordinary_persona_is_refused_every_archive_surface(
+    behind_the_gate, stored, normal_matter
+):
+    person = factories.UserFactory(role=UserRole.SPECIALIST)
     act_as(behind_the_gate, person)
 
     assert behind_the_gate.get(browse_url()).status_code == 403
@@ -403,10 +441,10 @@ def test_the_candidate_queue_is_not_offered_to_a_reader_who_cannot_use_it(
 
 
 def test_the_candidate_queue_is_still_offered_to_the_administrator(
-    behind_the_gate, administrator, binary
+    individually, administrator, binary
 ):
-    act_as(behind_the_gate, administrator)
-    body = behind_the_gate.get(browse_url()).content.decode()
+    client = individually(administrator)
+    body = client.get(browse_url()).content.decode()
     assert reverse("legacy_import:opinion_queue") in body
 
 
@@ -447,7 +485,7 @@ def filed(binary, two_matters):
 
 
 def test_an_archive_reader_is_told_a_hidden_relationship_exists_and_nothing_else(
-    behind_the_gate, administrator, filed, two_matters
+    individually, administrator, filed, two_matters
 ):
     """The load-bearing one. Archive access is not a route into the register.
 
@@ -458,8 +496,8 @@ def test_an_archive_reader_is_told_a_hidden_relationship_exists_and_nothing_else
     here survives.
     """
     normal, restricted = two_matters
-    act_as(behind_the_gate, administrator)
-    body = behind_the_gate.get(detail_url(filed)).content.decode()
+    client = individually(administrator)
+    body = client.get(detail_url(filed)).content.decode()
 
     assert normal.title in body
     assert reverse("matters:matter_detail", kwargs={"pk": normal.pk}) in body
@@ -515,13 +553,13 @@ def test_an_administrator_cannot_link_a_matter_they_may_not_read(
 
 
 def test_a_hidden_candidate_shows_its_class_and_not_its_matter(
-    behind_the_gate, administrator, binary, two_matters
+    individually, administrator, binary, two_matters
 ):
     """Archive-side evidence is the archive's to show; the Matter is not."""
     _, restricted = two_matters
     propose(binary, restricted, explanation="Sünteetiline selgitus.")
-    act_as(behind_the_gate, administrator)
-    body = behind_the_gate.get(detail_url(binary)).content.decode()
+    client = individually(administrator)
+    body = client.get(detail_url(binary)).content.decode()
 
     assert "Sünteetiline selgitus." in body
     assert restricted.title not in body

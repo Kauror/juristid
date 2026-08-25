@@ -3256,16 +3256,6 @@ fieldset.field > legend {
   display: contents;
 }
 
-/* The rule above the no-persona choice. On the option rather than on the form
-   around it, because the form is `display: contents` and has no box to carry
-   one. */
-.personaoption--nobody {
-  border-top: 1px solid var(--border-control);
-  margin-top: 3px;
-  padding-top: var(--spacing-2);
-  border-radius: 0;
-}
-
 .personaoption {
   display: grid;
   grid-template-columns: 26px minmax(0, 1fr) auto;
@@ -3298,6 +3288,27 @@ button.personaoption:focus-visible {
 .personaoption--current {
   background: var(--surface-selected);
   color: var(--text-primary);
+}
+
+/* The rule above the no-persona choice. On the option rather than on the form
+   around it, because the form is `display: contents` and has no box to carry
+   one.
+
+   After `.personaoption`, not before it. Both are single-class selectors, so
+   the later one wins every property they share — and `.personaoption` sets
+   `border: 0` and `margin: 0`, which silently cancelled the divider when this
+   sat above it. */
+.personaoption--nobody {
+  border-top: 1px solid var(--border-control);
+  margin-top: 3px;
+  padding-top: var(--spacing-2);
+  border-radius: 0;
+}
+
+/* Unless it is also the selected one, in which case the soft accent fill needs
+   its corners back or the last row of the list reads as a cut-off band. */
+.personaoption--nobody.personaoption--current {
+  border-radius: var(--radius-control);
 }
 
 .personaoption__avatar {

@@ -297,6 +297,78 @@ def test_the_switch_endpoint_only_answers_a_post(behind_the_gate, department):
     assert response.status_code == 405
 
 
+# -- a persona that was selected before the rule narrowed ------------------
+
+
+def test_a_session_already_acting_as_an_excluded_account_is_dropped(behind_the_gate, department):
+    """Closing the endpoint does not close the sessions that beat it there.
+
+    A persona chosen this morning under the old rule would otherwise go on
+    being an administrator persona until the gate aged out twelve hours later,
+    which is most of a working day (docs/adr/0034).
+
+    `force_login` here stands in for exactly that: a session carrying an
+    account the current rule refuses. It cannot be produced through `act_as`
+    any more, which is the point.
+    """
+    behind_the_gate.force_login(department["admin"])
+
+    response = behind_the_gate.get("/ulevaade/")
+
+    assert response.status_code == 200
+    assert not response.wsgi_request.user.is_authenticated
+    # And the door stays open: nobody is asked for the password again because
+    # of a change they did not make.
+    assert shared_gate.has_passed(response.wsgi_request)
+
+
+def test_dropping_an_ineligible_persona_is_recorded_with_its_reason(behind_the_gate, department):
+    behind_the_gate.force_login(department["admin"])
+    behind_the_gate.get("/ulevaade/")
+
+    event = SecurityAuditEvent.objects.filter(event_type=SecurityEventType.PERSONA_SELECTED).latest(
+        "occurred_at"
+    )
+    assert event.detail["previous_persona"] == str(department["admin"].pk)
+    assert event.detail["chosen_persona"] is None
+    assert event.detail["reason"] == "persona_no_longer_eligible"
+
+
+def test_a_session_acting_as_a_candidate_is_left_alone(behind_the_gate, department):
+    """The guard above must not log everybody out on every request."""
+    _act_as(behind_the_gate, str(department["specialist"].pk))
+
+    first = behind_the_gate.get("/ulevaade/")
+    second = behind_the_gate.get("/teemad/")
+
+    assert first.wsgi_request.user == department["specialist"]
+    assert second.wsgi_request.user == department["specialist"]
+    assert (
+        SecurityAuditEvent.objects.filter(event_type=SecurityEventType.PERSONA_SELECTED).count()
+        == 1
+    )
+
+
+def test_a_stale_technical_persona_cannot_reach_the_department_surface(behind_the_gate, department):
+    """The reason the drop matters, rather than the fact that it happens.
+
+    A technical account that also carries the department-head role is the one
+    combination where the old rule and the new one disagree about something
+    with consequences: under the old rule it was selectable, and it opens
+    Osakonna töö. The session is refused the surface because the persona is
+    gone, not because the route happened to check something else.
+    """
+    privileged = factories.UserFactory(
+        role=UserRole.DEPARTMENT_HEAD, is_staff=True, display_name="Tehniline Juhtkonto"
+    )
+    behind_the_gate.force_login(privileged)
+
+    response = behind_the_gate.get(reverse("matters:department_work"))
+
+    assert response.status_code in (302, 404)
+    assert not response.wsgi_request.user.is_authenticated
+
+
 # -- audit ------------------------------------------------------------------
 
 
@@ -334,7 +406,15 @@ def test_choosing_nobody_is_also_a_recorded_persona_change(behind_the_gate, depa
 
 @pytest.fixture
 def restricted_world(department):
-    """One ordinary Matter and one restricted one, with a title worth hiding."""
+    """One ordinary Matter and one restricted one, with a title worth hiding.
+
+    The restricted Matter is owned by `colleague` — not by the head — on
+    purpose. Owned by the head it would be visible to them twice over, by role
+    *and* by participation, and a test that cannot tell those apart proves
+    neither. As it stands the four cases the brief names are each distinct:
+    `colleague` is entitled by participation, `head` by role, `specialist` by
+    neither, and a session with no persona by nothing at all.
+    """
     factories.MatterFactory(
         owner=department["specialist"],
         title="Avalik eelnõu kõigile",
@@ -342,12 +422,28 @@ def restricted_world(department):
         is_open=True,
     )
     factories.MatterFactory(
-        owner=department["head"],
+        owner=department["colleague"],
         title="Konfidentsiaalne liikmete tagasiside",
         visibility=Visibility.RESTRICTED,
         is_open=True,
     )
     return department
+
+
+def test_the_owning_specialist_persona_does_see_their_restricted_matter(
+    behind_the_gate, restricted_world
+):
+    """Participation entitles, and switching to it is how you get there.
+
+    Without this the negative cases below would pass just as well if the
+    restricted Matter were invisible to everybody, which would prove that
+    nothing works rather than that authorization does.
+    """
+    _act_as(behind_the_gate, str(restricted_world["colleague"].pk))
+
+    page = behind_the_gate.get("/teemad/?olek=koik").content.decode()
+
+    assert "Konfidentsiaalne liikmete tagasiside" in page
 
 
 @pytest.mark.parametrize("path", ["/ulevaade/", "/teemad/?olek=koik"])
@@ -365,8 +461,7 @@ def test_a_specialist_persona_never_receives_a_restricted_title(
 def test_the_department_head_persona_sees_what_that_role_entitles(
     behind_the_gate, restricted_world
 ):
-    """The role decides, not the switch. Asserted so the case above is a
-    property of authorization rather than of nothing being visible at all."""
+    """By role alone: the head owns none of this and sees it anyway."""
     _act_as(behind_the_gate, str(restricted_world["head"].pk))
 
     page = behind_the_gate.get("/teemad/?olek=koik").content.decode()
