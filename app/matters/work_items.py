@@ -595,6 +595,8 @@ def work_population_ids(
     today: date | None = None,
     items: list[WorkItem] | None = None,
     responsible: Any = ANY_PERSON,
+    quiet: QuerySet[Matter] | None = None,
+    ownerless: QuerySet[Matter] | None = None,
 ) -> set[Any]:
     """The Matter primary keys one named population holds, for this reader.
 
@@ -618,8 +620,13 @@ def work_population_ids(
         items = work_items(user, today=today)
     ids = {item.matter_id for item in work_population_items(items, key, today)}
     if key == WORK_NEEDS_ATTENTION:
-        quiet = matters_without_action(user)
-        ownerless = ownerless_matters(user)
+        # Reused when the caller has them, because `visible_to` resolves the
+        # reader's scope on every call and resolving it asks the database
+        # whether this person holds a break-glass grant. Ülevaade has already
+        # paid for both of these (`overview.Populations`), and a page that
+        # re-resolves them here pays twice for one answer.
+        quiet = matters_without_action(user) if quiet is None else quiet
+        ownerless = ownerless_matters(user) if ownerless is None else ownerless
         if responsible is not ANY_PERSON:
             quiet = quiet.filter(owner=responsible)
             if responsible is not None:

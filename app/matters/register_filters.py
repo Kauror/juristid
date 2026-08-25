@@ -368,6 +368,22 @@ def apply_register_filters(
     return apply_date_filters(queryset, params)
 
 
+def as_text(params: Any) -> dict[str, str]:
+    """A parameter mapping as the register reads one: every value a string.
+
+    The view is handed a ``QueryDict``, where every value already is one. A KPI
+    counting *through* this pipeline is handed a plain dict it built itself, and
+    a UUID or an integer in there reaches code that reasonably calls ``.strip()``
+    or ``.split(",")`` on it and raises. Normalising once here means a caller can
+    write ``{"suletud": year}`` and get the same answer as the URL it links to
+    — which is the whole point of counting through the same call.
+    """
+    return {
+        key: "" if value is None else str(value)
+        for key, value in (params.items() if hasattr(params, "items") else ())
+    }
+
+
 def register_population(user: Any, params: Any, *, today: date | None = None) -> QuerySet[Matter]:
     """The exact rows ``matters:matter_list?<params>`` would page through.
 
@@ -380,5 +396,7 @@ def register_population(user: Any, params: Any, *, today: date | None = None) ->
     subqueries so a row can render *viimane tegevus*, and a KPI renders no rows
     at all. The visibility scope is identical, which is the part that has to be.
     """
-    queryset, _ = apply_register_filters(Matter.objects.visible_to(user), user, params, today=today)
+    queryset, _ = apply_register_filters(
+        Matter.objects.visible_to(user), user, as_text(params), today=today
+    )
     return queryset.distinct()

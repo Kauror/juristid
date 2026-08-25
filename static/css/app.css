@@ -2947,6 +2947,15 @@ fieldset.field > legend {
  * `#sissekanne-<id>`, and without this the entry it lands on is behind the
  * header. Playwright found the same thing trying to click a link in a table's
  * first row. */
+/* The Arvamused workspace's count, answering the same question
+ * `.registercount` answers on the register: how many rows is this, before the
+ * reader starts reading them. Quieter, because this page is reached
+ * deliberately rather than typed into. */
+.resultcount {
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+}
+
 .table tbody tr,
 .entrycard,
 .submission,
@@ -2960,14 +2969,6 @@ fieldset.field > legend {
   scroll-margin-top: 96px;
 }
 
-/* A focus ring on a region a fragment moved focus to would be a box drawn round
- * half the page. The scroll and the focus are the behaviour; the outline is
- * not, and the rows inside keep their own. */
-#tulemused:focus,
-#inimesed:focus,
-#vastutajata-valdkonnad:focus {
-  outline: none;
-}
 
 /* -- Stage 2D: the historical case file ---------------------------------- *
  *

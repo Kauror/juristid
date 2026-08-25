@@ -1005,14 +1005,7 @@ def organisation_ranking(
     ]
 
 
-def reporting_counts(
-    user: Any,
-    today: date,
-    #: Unused since both linked rows resolve through their destination's own
-    #: selector. Kept so every rail block has the same signature and a caller
-    #: cannot pass the resolved populations to one and forget the next.
-    pop: Populations | None = None,
-) -> list[CountRow]:
+def reporting_counts(user: Any, today: date, pop: Populations | None = None) -> list[CountRow]:
     """Current-year canonical counts, each from the selector its own list uses.
 
     *Esitatud arvamusi* is SENT ``Submission`` rows. The 767 historical archive
@@ -1020,24 +1013,24 @@ def reporting_counts(
     counting them here would inflate the department's year by an order of
     magnitude (ADR 0021).
 
-    Both linked rows are counted *through* the destination's own selector rather
-    than beside it — the workspace's ``sent_queryset`` and the register's filter
-    pipeline. Each row carries the year into its link, which is the half that
-    was missing: the label said 2026 and the link opened every year there was.
+    Each row now carries its year into its link, which is the half that was
+    missing: the label said 2026 and the link opened every year there was. The
+    closed row is counted *through* the register's own filter pipeline, the way
+    the deadline figure is; the sent row narrows the submission population this
+    page already resolved, and ``tests/test_overview_drilldowns.py`` asserts it
+    against what the destination actually shows.
     """
-    from app.submissions import workspace
-
+    people = _populations(user, pop)
     year = today.year
     closed_params = {"olek": "suletud", "suletud": str(year)}
     return [
         CountRow(
-            # Counted through the workspace's own selector and linked with the
-            # parameters that reproduce it. The year was in the label alone, so
-            # "Esitatud arvamusi 2026" opened every opinion the department had
-            # ever sent (Ülevaade QA §3).
+            # The year is in the link as well as in the label. It was in the
+            # label alone, so "Esitatud arvamusi 2026" opened every opinion the
+            # department had ever sent (Ülevaade QA §3).
             label=f"Esitatud arvamusi {year}",
-            count=workspace.sent_queryset(
-                user, workspace.SentFilters(year=str(year), status=SubmissionStatus.SENT)
+            count=people.submissions.filter(
+                status=SubmissionStatus.SENT, sent_at__year=year
             ).count(),
             url=f"{reverse('submissions:sent')}?aasta={year}",
         ),
@@ -1147,11 +1140,12 @@ class Overview:
         return max(0, self.intervention_total - INTERVENTION_PREVIEW)
 
 
-def drafting_count(user: Any) -> int:
+def drafting_count(user: Any, pop: Populations | None = None) -> int:
     """Canonical opinions being written now, counted by the list's own selector."""
     from app.submissions import workspace
 
-    return workspace.drafting(user).count()
+    people = _populations(user, pop)
+    return workspace.drafting(user, people.submissions).count()
 
 
 def drafting_url() -> str:
@@ -1225,7 +1219,7 @@ def _department_figures(
             #
             # Counted by the same selector the destination lists with, so the
             # figure and the Arvamused workspace cannot disagree.
-            drafting_count(user),
+            drafting_count(user, people),
             "arvamust koostamisel",
             drafting_url(),
             tone="warning",
@@ -1280,7 +1274,14 @@ def build_overview(
         page.interventions = rows
         page.intervention_total = len(rows)
         page.intervention_matters = len(
-            wi.work_population_ids(user, wi.WORK_NEEDS_ATTENTION, today=today, items=items)
+            wi.work_population_ids(
+                user,
+                wi.WORK_NEEDS_ATTENTION,
+                today=today,
+                items=items,
+                quiet=people.quiet,
+                ownerless=people.ownerless,
+            )
         )
         page.intervention_url = _teemad(**_OPEN_FULL, too=wi.WORK_NEEDS_ATTENTION)
         page.deadlines = deadline_groups(items, today)

@@ -136,13 +136,17 @@ def test_saabunud_is_off_the_bar_and_still_a_working_page(page, base_url):
     product, which nobody asked for (Ülevaade QA §2).
     """
     sign_in(page, base_url, SANDRA)
-    page.set_viewport_size({"width": 1600, "height": 900})
-    open_register(page, base_url)
-
     navigation = page.get_by_role("navigation", name="Peamine")
-    page.locator(".topnav__trigger").click()
-    for destination in NOT_ON_THE_BAR:
-        expect(navigation.get_by_role("link", name=destination, exact=True)).to_have_count(0)
+
+    # Both layouts, because the bar has two branches and only one is rendered
+    # at a time: inline above 1560, behind "Veel" below it. Neither is opened —
+    # at 1600 the disclosure is `display: none` and clicking its trigger waits
+    # thirty seconds for an element that is never coming.
+    for width in (1600, 1280):
+        page.set_viewport_size({"width": width, "height": 900})
+        open_register(page, base_url)
+        for destination in NOT_ON_THE_BAR:
+            expect(navigation.get_by_role("link", name=destination, exact=True)).to_have_count(0)
 
     page.goto(f"{base_url}/saabunud/")
     page.wait_for_load_state("networkidle")

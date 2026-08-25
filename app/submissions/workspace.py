@@ -175,7 +175,7 @@ DRAFTING_STATUS = SubmissionStatus.DRAFT
 DRAFTING_QUERY = f"olek={SubmissionStatus.DRAFT}"
 
 
-def drafting(user: Any) -> QuerySet[Submission]:
+def drafting(user: Any, visible: QuerySet[Submission] | None = None) -> QuerySet[Submission]:
     """Canonical opinions this reader may see that are still being written.
 
     The *canonical* domain and only that. The 767 historical letters are held
@@ -185,10 +185,17 @@ def drafting(user: Any) -> QuerySet[Submission]:
     an archive-heavy production database contributes exactly zero here, which is
     the honest answer to "how many opinions are we writing" (docs/adr/0028).
 
-    Through ``sent_queryset`` rather than beside it, so the count on Ülevaade
-    and the list at ``/arvamused/?olek=DRAFT`` are one query asked twice.
+    ``visible`` is the already-scoped population, for a caller that has one:
+    ``visible_to`` resolves the reader's scope on every call, and a page holding
+    the answer already should not buy it twice. Omitted, it is resolved here.
+
+    The condition is the one ``sent_queryset`` applies for ``?olek=DRAFT``, so
+    the figure on Ülevaade and the list at ``/arvamused/?olek=DRAFT`` hold the
+    same rows — and ``tests/test_overview_drilldowns.py`` asserts that against
+    the view rather than trusting this comment.
     """
-    return sent_queryset(user, SentFilters(status=DRAFTING_STATUS))
+    rows = Submission.objects.visible_to(user) if visible is None else visible
+    return rows.filter(status=DRAFTING_STATUS)
 
 
 def sent_counts(user: Any) -> dict[str, int]:
