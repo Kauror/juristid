@@ -87,6 +87,9 @@ CANDIDATE_PAGE_TITLE = "Alkoholiaktsiisi töörühma märkmed"
 #: (Stage-2E brief 69).
 OVERDUE_TITLE = "Tähtaja ületanud sünteetiline teema"
 SUBMISSION_TITLE = "Sünteetiline arvamus ministeeriumile"
+#: The one canonical opinion in preparation, so the *Arvamusi koostamisel*
+#: figure and the list it opens both have something in them.
+DRAFT_SUBMISSION_TITLE = "Koostamisel sünteetiline arvamus"
 #: A signed container, not a PDF, and for two reasons. It is what a Chamber
 #: opinion actually goes out as; and a synthetic stub with a `.pdf` extension is
 #: a *broken* PDF, which the extraction worker correctly reports as a failure —
@@ -218,12 +221,28 @@ class Command(BaseCommand):
             author=sandra,
             kind=EntryKind.NOTE,
         )
+        # Today, not today + 4, and the reason is the visual baselines.
+        #
+        # A work item four days out lands in *Sel nädalal* on a Monday and in
+        # *Hiljem* on a Thursday, because the ISO week ends on Sunday. Minu töö
+        # omits an empty band, so the page was one section shorter on some
+        # weekdays than on others and `minu-too.png` went red for a reason that
+        # was the calendar rather than the CSS. Ülevaade's *Tähtajad* groups
+        # moved the same row between *Sel nädalal* and *Järgmisel* for the same
+        # reason.
+        #
+        # `today` is the one anchor whose band is the same on all seven days:
+        # it is always *Täna* on Minu töö and always inside *Sel nädalal* on
+        # Ülevaade. A deterministic *Sel nädalal*-band row is not constructible
+        # at all — on a Sunday that band is structurally empty — so the world
+        # locks the four bands it can and `test_ui_shell` asserts the banding
+        # rules in Python, where a weekday can be chosen (Ülevaade QA §5).
         set_next_action(
             matter=restricted,
             text="Konfidentsiaalne järgmine samm",
             kind=ActionKind.DO,
             date_semantics=DateSemantics.DEADLINE,
-            target_date=date.today() + timedelta(days=4),
+            target_date=date.today(),
             actor=sandra,
         )
 
@@ -546,6 +565,25 @@ class Command(BaseCommand):
             actor=martin,
         )
         mark_submission_sent(submission=submission, actor=martin, channel="EIS")
+
+        # One opinion still being written, left in DRAFT on purpose. Ülevaade's
+        # *N arvamust koostamisel* counts exactly these, and a figure the seeded
+        # world can only ever render as nought proves nothing about the link
+        # under it (Ülevaade QA §1).
+        #
+        # On `overdue` rather than on `visible`, which is the Matter every visual
+        # scenario opens. A draft there is not wrong — the Matter is exactly
+        # where an unfinished opinion belongs — but its section is headed
+        # *Väljasaadetud arvamused* and counts every submission on the Matter,
+        # so the baseline would have recorded a draft under a heading that says
+        # it was sent. That wording is worth correcting on its own merits and in
+        # its own round; this fixture does not need to force the question.
+        create_submission(
+            matter=overdue,
+            title=DRAFT_SUBMISSION_TITLE,
+            actor=martin,
+            recipients=[ministry],
+        )
 
     def _department_world(self, sandra: Any, martin: Any, ministry: Any, stage: Any) -> None:
         """The states Osakonna töö exists to surface.

@@ -88,8 +88,17 @@
 
   {% if refusal %}
     <p class="notice notice--warning">{{ refusal }}</p>
-  {% elif page.object_list %}
-    <p class="cardnote">{{ total }} vastet.</p>
+  {% else %}
+    {% comment %}
+      Printed whether or not anything came back, and outside the branch that
+      renders the rows. Ülevaade's *N arvamust koostamisel* leads here, and a
+      figure whose destination shows no count at all is a figure a reader has
+      to take on trust — including when the honest answer is nought.
+    {% endcomment %}
+    <p class="cardnote resultcount">{{ total }} vastet.</p>
+  {% endif %}
+
+  {% if page.object_list and not refusal %}
     <div class="tablewrap tablewrap--evidence">
       <table class="table">
         <caption class="visually-hidden">Selles süsteemis saadetud arvamused</caption>
@@ -166,6 +175,7 @@
     </div>
 
     {% include "components/pagination.html" with page=page query_string=query_string %}
+  {% elif refusal %}
   {% elif filters.any_applied %}
     <p class="empty">Nende filtritega arvamusi ei leitud. Muuda otsingut või lähtesta filtrid.</p>
   {% else %}

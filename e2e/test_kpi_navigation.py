@@ -1,18 +1,31 @@
-"""Ülevaade's Seis strip: every figure is a promise that a list exists.
+"""Ülevaade's drill-downs, in a browser: every number opens exactly its own list.
 
-The complaint this suite exists for has not changed with the rebuild — a number
+The complaint has not changed since the KPI cards became a Seis strip — a number
 somebody cannot follow is a number they stop trusting, and a number whose list
-holds a different count is worse than no number at all. What changed is where
-the numbers live: the KPI card row became a one-line strip, and its figures lead
-to the register, to the canonical opinion list, and to this page's own
-intervention list.
+holds a different count is worse than no number at all. What changed in this
+round is how much of the page is held to it.
 
-That last destination is deliberate and is the one thing worth explaining.
-*Üle tähtaja* counts late **work** — a DO deadline and an Oluline tähtaeg
-alike — and the register can only filter Matters by their open action, so a
-link there would open a list shorter than the number above it. `?sekkumine=`
-narrows the list this page already renders, which is the only destination that
-can hold exactly what the figure counted.
+Before, one figure was asserted at a time and *üle tähtaja* was exempted: it
+counts late **work**, an ``Oluline tähtaeg`` past its day carries no open
+action, and the register's ``?tegevus=`` could not express that — so the figure
+narrowed this page's own intervention list instead of opening the register like
+every figure beside it. ``?too=`` expresses the read model's populations
+directly (``app/matters/work_items.py``), so the exemption is gone and the
+figure leads where a reader expects.
+
+What this file asserts, in a real browser, for **every** clickable number on
+all three scopes:
+
+* the number is read off the page as rendered;
+* the link is clicked, not synthesised;
+* the destination's own count element equals it;
+* the destination shows *which* filter produced the list;
+* and the results section is in the viewport and holds focus, so somebody who
+  clicked a number is looking at the rows rather than at a filter panel.
+
+The Python suite beside it (``tests/test_overview_drilldowns.py``) proves the
+same equality against the querysets. This proves it against the pixels, which is
+the only place the fragment, the focus and the chips exist at all.
 """
 
 from __future__ import annotations
@@ -26,69 +39,310 @@ from e2e.conftest import HEAD, sign_in
 
 pytestmark = pytest.mark.e2e
 
-#: The figures that open the register, by the caption printed beside them.
-#: Matched loosely so rewording the copy does not break a navigation test —
-#: what is asserted is the behaviour, not the sentence.
-REGISTER_FIGURES = {
-    "open": "avatud teemat",
-    "no_action": "järgmise tegevuseta",
-    "deadlines": "tähtaega",
-}
+SCOPES = ("osakond", "tiim", "valdkonniti")
+
+#: Everything on the page that prints a number and links somewhere. The value
+#: selector is relative to the link, or the link itself when it *is* the number.
+#:
+#: Kept as data so a drill-down added later is either listed here or visibly
+#: absent from a suite that names its coverage.
+NUMBERED_LINKS: tuple[tuple[str, str], ...] = (
+    (".seis__figure", ".seis__number"),
+    (".ovsection__head .ovsection__link", ""),
+    (".deadlinegroup__more a", ""),
+    ("a.loadrow__open", ""),
+    ("a.loadrow__overdue", ""),
+    (".loadrow--unassigned", ".loadrow__open"),
+    ("a.arearail", ".arearail__count"),
+    ("a.railrow", ".railrow__value"),
+    (".areatable__num a", ""),
+    (".arearow__more", ""),
+    (".personblock__counts a", ""),
+    (".personblock__footer a", ""),
+)
 
 
-def figure(page, caption: str):
-    return page.locator(".seis__figure").filter(has_text=caption).first
+def first_number(text: str) -> int | None:
+    """The first integer in a label, which is the number the reader sees.
+
+    ``Ava kõik 12 teemat registris →`` and a bare ``12`` are both links whose
+    promise is twelve. A label with no number at all — *Näita kõiki põhjuseid* —
+    promises nothing countable and is skipped rather than guessed at.
+    """
+    match = re.search(r"\d+", text or "")
+    return int(match.group(0)) if match else None
 
 
-def figure_count(page, caption: str) -> int:
-    return int(figure(page, caption).locator(".seis__number").inner_text().strip())
+def drilldowns(page) -> list[dict]:
+    """Every (number, destination) pair on screen, read as rendered."""
+    found: list[dict] = []
+    for link_selector, value_selector in NUMBERED_LINKS:
+        links = page.locator(link_selector)
+        for index in range(links.count()):
+            link = links.nth(index)
+            href = link.get_attribute("href")
+            # Rows inside a collapsed <details> — the area table's per-row
+            # "Näita kõiki N teemat" — are not on screen and cannot be clicked.
+            # They are the same link the row's own summary already carries, so
+            # skipping them loses no coverage; reading them would silently
+            # produce an empty label and a claim of nothing.
+            if not href or not link.is_visible():
+                continue
+            source = link.locator(value_selector) if value_selector else link
+            if value_selector and not source.count():
+                continue
+            claimed = first_number(source.inner_text())
+            if claimed is None:
+                continue
+            found.append(
+                {
+                    "selector": link_selector,
+                    "index": index,
+                    "href": href,
+                    "count": claimed,
+                    "label": link.inner_text().strip().replace("\n", " ")[:60],
+                }
+            )
+    return found
 
 
 def shown_total(page) -> int:
-    """What the register says it is showing, from its own live count element."""
-    text = page.locator(".registercount").inner_text()
+    """What the destination says it is showing, from its own count element.
+
+    Both list surfaces print one: the register's live ``.registercount`` and the
+    Arvamused workspace's ``.resultcount``. A destination with no count element
+    is a destination whose promise cannot be checked, and there are none.
+    """
+    element = page.locator(".registercount, .resultcount").first
+    expect(element).to_be_visible()
+    text = element.inner_text()
     match = re.search(r"\d+", text)
-    assert match, f"the register printed no count: {text!r}"
+    assert match, f"the destination printed no count: {text!r}"
     return int(match.group(0))
 
 
-def open_figure(page, base_url, caption: str) -> int:
-    """Read a figure, click it, and return the number it claimed."""
-    page.goto(f"{base_url}/ulevaade/")
+def in_viewport(page, selector: str) -> bool:
+    return page.evaluate(
+        """(selector) => {
+            const node = document.querySelector(selector);
+            if (!node) return false;
+            const box = node.getBoundingClientRect();
+            return box.top < window.innerHeight && box.bottom > 0;
+        }""",
+        selector,
+    )
+
+
+def open_overview(page, base_url: str, scope: str = "osakond"):
+    page.goto(f"{base_url}/ulevaade/?vaade={scope}")
     page.wait_for_load_state("networkidle")
-    expect(figure(page, caption)).to_be_visible()
-    claimed = figure_count(page, caption)
-    figure(page, caption).click()
-    page.wait_for_load_state("networkidle")
-    return claimed
+    return page
 
 
-@pytest.mark.parametrize("key", sorted(REGISTER_FIGURES))
-def test_a_figure_opens_the_register_already_filtered(page, base_url, key):
-    """The whole complaint, in one assertion per figure.
+# ---------------------------------------------------------------------------
+# The sweep: every number, every scope
+# ---------------------------------------------------------------------------
 
-    The register must arrive holding the figure's own number *and* say which
-    filter produced it. A count that happens to match with no chip on screen is
-    the failure this replaced — an unfiltered register that coincidentally has
-    the same number of rows.
+
+@pytest.mark.parametrize("scope", SCOPES)
+def test_every_number_opens_a_list_holding_exactly_that_many(page, base_url, scope):
+    """The whole complaint, asserted once per clickable number on the page.
+
+    Each one is read, clicked and checked against the destination's own count.
+    Compared as the two numbers a reader compares — the one they clicked and the
+    one they land on — because that is the disagreement they would notice.
     """
     sign_in(page, base_url, HEAD)
-    claimed = open_figure(page, base_url, REGISTER_FIGURES[key])
+    open_overview(page, base_url, scope)
+    targets = drilldowns(page)
+    assert targets, f"{scope} rendered no numbered links at all"
 
-    assert "/teemad/?" in page.url, f"{key} did not open the register"
-    assert shown_total(page) == claimed, f"{key}: the figure and the list disagree"
-    expect(page.locator(".filterchip")).not_to_have_count(0)
+    checked = 0
+    for target in targets:
+        if "/teemad/" not in target["href"] and "/arvamused/" not in target["href"]:
+            continue
+        open_overview(page, base_url, scope)
+        link = page.locator(target["selector"]).nth(target["index"])
+        expect(link).to_be_visible()
+        link.click()
+        page.wait_for_load_state("networkidle")
+        assert shown_total(page) == target["count"], (
+            f"{scope}: {target['label']!r} claims {target['count']}, {page.url} disagrees"
+        )
+        checked += 1
+
+    assert checked, f"{scope} has no list destinations to check"
 
 
-@pytest.mark.parametrize("key", sorted(REGISTER_FIGURES))
-def test_the_filter_a_figure_applied_can_be_cleared(page, base_url, key):
-    """Arriving from a number must not be a dead end.
+@pytest.mark.parametrize("scope", SCOPES)
+def test_arriving_from_a_number_shows_which_filter_produced_the_list(page, base_url, scope):
+    """A filtered list with no visible filter is indistinguishable from a broken one.
 
-    "Tühjenda kõik" returns to the ordinary register, which is how somebody who
-    clicked the wrong figure gets back to their work.
+    A count that happens to match with no chip on screen is the failure this
+    replaced: an unfiltered register that coincidentally had the same number of
+    rows in it.
     """
     sign_in(page, base_url, HEAD)
-    open_figure(page, base_url, REGISTER_FIGURES[key])
+    open_overview(page, base_url, scope)
+
+    for target in drilldowns(page):
+        if "/teemad/" not in target["href"]:
+            continue
+        page.goto(f"{base_url}{target['href']}")
+        page.wait_for_load_state("networkidle")
+        expect(page.locator(".filterchip")).not_to_have_count(0)
+
+
+@pytest.mark.parametrize("scope", SCOPES)
+def test_arriving_from_a_number_lands_on_the_rows(page, base_url, scope):
+    """The reader clicked a count; they get the list, not the filter panel.
+
+    A filtered register opens with a search box, a status strip and a narrowing
+    panel that expands itself whenever a filter is active. Without the fragment
+    the rows are below all of it.
+    """
+    sign_in(page, base_url, HEAD)
+    open_overview(page, base_url, scope)
+
+    for target in drilldowns(page):
+        if "/teemad/" not in target["href"]:
+            continue
+        assert target["href"].endswith("#tulemused"), target["label"]
+        page.goto(f"{base_url}{target['href']}")
+        page.wait_for_load_state("networkidle")
+        assert in_viewport(page, "#tulemused"), target["label"]
+        assert page.evaluate("() => document.activeElement.id") == "tulemused", target["label"]
+
+
+@pytest.mark.parametrize("scope", SCOPES)
+def test_no_number_leads_nowhere(page, base_url, scope):
+    sign_in(page, base_url, HEAD)
+    open_overview(page, base_url, scope)
+
+    for target in drilldowns(page):
+        assert target["href"] != "#", target["label"]
+
+
+# ---------------------------------------------------------------------------
+# The destinations that are not the register
+# ---------------------------------------------------------------------------
+
+
+def test_the_people_figure_opens_the_list_of_people(page, base_url):
+    """It counts colleagues, not Matters, so it opens the list of colleagues.
+
+    It used to open the whole register — a figure reading "4 inimest" landing on
+    ninety Matters.
+    """
+    sign_in(page, base_url, HEAD)
+    open_overview(page, base_url, "tiim")
+    figure = page.locator(".seis__figure").filter(has_text="inimest").first
+    claimed = int(figure.locator(".seis__number").inner_text().strip())
+
+    figure.click()
+    page.wait_for_load_state("networkidle")
+    assert page.locator(".personblock").count() == claimed
+    assert in_viewport(page, "#inimesed")
+
+
+def test_the_unowned_areas_figure_opens_the_list_of_areas(page, base_url):
+    """It counts policy areas, so it opens the areas — never the ownerless files."""
+    sign_in(page, base_url, HEAD)
+    open_overview(page, base_url, "valdkonniti")
+    figure = page.locator(".seis__figure").filter(has_text="valdkonda vastutajata").first
+    claimed = int(figure.locator(".seis__number").inner_text().strip())
+
+    figure.click()
+    page.wait_for_load_state("networkidle")
+    assert "/teemad/" not in page.url
+    rows = page.locator("#vastutajata-valdkonnad .railrow")
+    if claimed:
+        assert rows.count() == claimed
+        assert in_viewport(page, "#vastutajata-valdkonnad")
+
+
+def test_the_drafting_figure_opens_the_canonical_opinions_being_written(page, base_url):
+    """Canonical Submissions in DRAFT — never the historical archive."""
+    sign_in(page, base_url, HEAD)
+    open_overview(page, base_url, "osakond")
+    figure = page.locator(".seis__figure").filter(has_text="arvamust koostamisel").first
+    expect(figure).to_be_visible()
+    claimed = int(figure.locator(".seis__number").inner_text().strip())
+    assert claimed >= 1, "the seeded world holds no opinion in preparation"
+
+    figure.click()
+    page.wait_for_load_state("networkidle")
+    assert "/arvamused/" in page.url and "olek=DRAFT" in page.url
+    assert shown_total(page) == claimed
+    expect(page.locator(".table tbody tr")).to_have_count(claimed)
+
+
+def test_the_sent_figure_still_opens_the_canonical_sent_list(page, base_url):
+    sign_in(page, base_url, HEAD)
+    open_overview(page, base_url, "osakond")
+    page.locator(".seis__figure").filter(has_text="esitatud arvamust").first.click()
+    page.wait_for_load_state("networkidle")
+
+    assert "/arvamused/" in page.url
+    assert "kuu=" in page.url
+
+
+# ---------------------------------------------------------------------------
+# The two lists this page shows in place rather than in the register
+# ---------------------------------------------------------------------------
+
+
+def test_show_all_under_the_intervention_list_shows_all_of_it(page, base_url):
+    """The footer promised the whole list and carried `sekkumine=hilinenud`."""
+    sign_in(page, base_url, HEAD)
+    open_overview(page, base_url, "osakond")
+    more = page.locator(".ovsection__more a").first
+    if not more.count():
+        pytest.skip("the seeded world does not fill the intervention list past its preview")
+
+    claimed = first_number(more.inner_text())
+    more.click()
+    page.wait_for_load_state("networkidle")
+    assert page.locator(".interrow").count() == claimed
+
+
+def test_the_intervention_heading_opens_every_reason_at_once(page, base_url):
+    """Four kinds of trouble in one list, and its link holds all four."""
+    sign_in(page, base_url, HEAD)
+    open_overview(page, base_url, "osakond")
+    link = page.locator(".ovsection__head .ovsection__link").first
+    claimed = first_number(link.inner_text())
+
+    link.click()
+    page.wait_for_load_state("networkidle")
+    assert "too=sekkumist" in page.url
+    assert shown_total(page) == claimed
+
+
+def test_the_area_footer_opens_every_area_including_the_empty_ones(page, base_url):
+    """A number of areas opens a list of areas — it opened the register."""
+    sign_in(page, base_url, HEAD)
+    open_overview(page, base_url, "valdkonniti")
+    footer = page.locator(".ovsection__more a").first
+    claimed = first_number(footer.inner_text())
+
+    footer.click()
+    page.wait_for_load_state("networkidle")
+    assert "/teemad/" not in page.url
+    assert page.locator(".arearow").count() == claimed
+
+
+# ---------------------------------------------------------------------------
+# Getting back out
+# ---------------------------------------------------------------------------
+
+
+def test_the_filter_a_figure_applied_can_be_cleared(page, base_url):
+    """Arriving from a number must not be a dead end."""
+    sign_in(page, base_url, HEAD)
+    open_overview(page, base_url, "osakond")
+    page.locator(".seis__figure").filter(has_text="järgmise tegevuseta").first.click()
+    page.wait_for_load_state("networkidle")
     filtered = shown_total(page)
 
     page.locator(".filterchip--clear").click()
@@ -105,28 +359,35 @@ def test_the_back_button_returns_to_the_overview(page, base_url):
     a page that cannot be shared and cannot be reproduced from a bug report.
     """
     sign_in(page, base_url, HEAD)
-    open_figure(page, base_url, REGISTER_FIGURES["no_action"])
+    open_overview(page, base_url, "osakond")
+    page.locator(".seis__figure").filter(has_text="järgmise tegevuseta").first.click()
+    page.wait_for_load_state("networkidle")
     page.go_back()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator(".seis__figure").first).to_be_visible()
 
 
-def test_the_overdue_figure_opens_a_list_that_holds_exactly_what_it_counted(page, base_url):
-    """The figure counts late work; the list it opens holds late work.
+def test_the_overdue_figure_opens_late_work_and_not_a_passed_review(page, base_url):
+    """The figure counts late work; the register list it opens holds late work.
 
     Both a genuinely late DO and a WAIT past its review date exist in the seeded
-    world, so a filter that collected reviews as well as deadlines would fail
-    here rather than merely be too generous (master specification 18.8).
+    world, so a population that collected reviews as well as deadlines would
+    fail here rather than merely be too generous (master specification 18.8).
     """
     from app.core.management.commands.seed_e2e_data import OVERDUE_TITLE, REVIEW_DUE_TITLE
 
     sign_in(page, base_url, HEAD)
-    claimed = open_figure(page, base_url, "üle tähtaja")
+    open_overview(page, base_url, "osakond")
+    figure = page.locator(".seis__figure").filter(has_text="üle tähtaja").first
+    claimed = int(figure.locator(".seis__number").inner_text().strip())
 
-    assert "sekkumine=hilinenud" in page.url
-    rows = page.locator(".interrow")
-    assert rows.count() == claimed, "the figure and its list disagree"
+    figure.click()
+    page.wait_for_load_state("networkidle")
+
+    assert "too=hilinenud" in page.url
+    assert shown_total(page) == claimed
+    rows = page.locator(".table--register tbody tr")
     expect(rows.filter(has_text=OVERDUE_TITLE)).to_have_count(1)
     expect(rows.filter(has_text=REVIEW_DUE_TITLE)).to_have_count(0)
 
@@ -135,30 +396,11 @@ def test_the_stalled_figure_opens_the_matters_with_no_next_action(page, base_url
     from app.core.management.commands.seed_e2e_data import UNASSIGNED_TITLE
 
     sign_in(page, base_url, HEAD)
-    open_figure(page, base_url, REGISTER_FIGURES["no_action"])
+    open_overview(page, base_url, "osakond")
+    page.locator(".seis__figure").filter(has_text="järgmise tegevuseta").first.click()
+    page.wait_for_load_state("networkidle")
 
     rows = page.locator(".table--register tbody tr")
     # The unassigned Matter has no next action either, so it is in this list —
     # what matters is that the list is filtered at all, which the chip proves.
     expect(rows.filter(has_text=UNASSIGNED_TITLE)).to_have_count(1)
-
-
-def test_the_opinion_figure_opens_the_canonical_sent_list(page, base_url):
-    """Sent Submissions, narrowed to this month — never the historical archive."""
-    sign_in(page, base_url, HEAD)
-    open_figure(page, base_url, "esitatud arvamust")
-
-    assert "/arvamused/" in page.url
-    assert "kuu=" in page.url
-
-
-def test_no_figure_leads_nowhere(page, base_url):
-    sign_in(page, base_url, HEAD)
-    page.goto(f"{base_url}/ulevaade/")
-    page.wait_for_load_state("networkidle")
-
-    figures = page.locator(".seis__figure")
-    assert figures.count() >= 4
-    for index in range(figures.count()):
-        href = figures.nth(index).get_attribute("href")
-        assert href and href != "#", "a Seis figure leads nowhere"

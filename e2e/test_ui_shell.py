@@ -32,7 +32,13 @@ VIEWPORTS = [(1440, 900), (1366, 768), (1280, 800), (1024, 768)]
 
 #: The four destinations a lawyer moves between all day. They are on the bar at
 #: every width.
-PRIMARY = ["Ülevaade", "Minu töö", "Saabunud", "Teemad"]
+PRIMARY = ["Ülevaade", "Minu töö", "Teemad"]
+
+#: Off the bar entirely, and its route deliberately untouched. Saabunud is a
+#: triage surface somebody opens when they are triaging, not a destination in
+#: the daily rotation — the QA round took it off the bar and left the page,
+#: its models and its data exactly where they were (Ülevaade QA §2).
+NOT_ON_THE_BAR = ["Saabunud"]
 
 #: The reading surfaces. Inline above 1560, behind "Veel" below it. Osakonna töö
 #: is deliberately absent from both lists: it is offered by role, and the route
@@ -119,6 +125,47 @@ def test_every_destination_stays_reachable_at_every_width(page, base_url, width,
 
     for destination in SECONDARY:
         expect(navigation.get_by_role("link", name=destination, exact=True)).to_have_count(1)
+
+
+def test_saabunud_is_off_the_bar_and_still_a_working_page(page, base_url):
+    """Removed from navigation, not from the product.
+
+    Both halves matter. A link left on the bar is the thing the QA round asked
+    to remove; a route quietly deleted with it would take the intake surface,
+    its unassigned list and the *Lisa saabunud materjal* action out of the
+    product, which nobody asked for (Ülevaade QA §2).
+    """
+    sign_in(page, base_url, SANDRA)
+    navigation = page.get_by_role("navigation", name="Peamine")
+
+    # Both layouts, because the bar has two branches and only one is rendered
+    # at a time: inline above 1560, behind "Veel" below it. Neither is opened —
+    # at 1600 the disclosure is `display: none` and clicking its trigger waits
+    # thirty seconds for an element that is never coming.
+    for width in (1600, 1280):
+        page.set_viewport_size({"width": width, "height": 900})
+        open_register(page, base_url)
+        for destination in NOT_ON_THE_BAR:
+            expect(navigation.get_by_role("link", name=destination, exact=True)).to_have_count(0)
+
+    page.goto(f"{base_url}/saabunud/")
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_role("heading", name="Saabunud")).to_be_visible()
+
+
+def test_ulevaade_still_leads_to_saabunud(page, base_url):
+    """The path that replaces the bar item, asserted rather than assumed.
+
+    "Uued teemad" on the facts rail is where the question "what has arrived"
+    actually occurs to somebody, and it is now the way in.
+    """
+    sign_in(page, base_url, SANDRA)
+    page.goto(f"{base_url}/ulevaade/")
+    page.wait_for_load_state("networkidle")
+
+    page.get_by_role("link", name="Ava Saabunud →").click()
+    page.wait_for_load_state("networkidle")
+    assert "/saabunud/" in page.url
 
 
 @pytest.mark.parametrize("width,height", VIEWPORTS, ids=lambda v: str(v))

@@ -166,6 +166,38 @@ def sent_queryset(user: Any, filters: SentFilters) -> QuerySet[Submission]:
     )
 
 
+#: The one `?olek=` value that means "being written now".
+#:
+#: Named here so the Ülevaade figure and the tab it opens cannot drift apart:
+#: the figure counts :func:`drafting`, the destination is
+#: :data:`DRAFTING_QUERY`, and the view builds the same ``SentFilters`` from it.
+DRAFTING_STATUS = SubmissionStatus.DRAFT
+DRAFTING_QUERY = f"olek={SubmissionStatus.DRAFT}"
+
+
+def drafting(user: Any, visible: QuerySet[Submission] | None = None) -> QuerySet[Submission]:
+    """Canonical opinions this reader may see that are still being written.
+
+    The *canonical* domain and only that. The 767 historical letters are held
+    bytes catalogued as evidence of past correspondence — they are not
+    Submission rows, they are finished rather than in preparation, and the
+    conversion that would make some of them canonical is P4's and is gated. So
+    an archive-heavy production database contributes exactly zero here, which is
+    the honest answer to "how many opinions are we writing" (docs/adr/0028).
+
+    ``visible`` is the already-scoped population, for a caller that has one:
+    ``visible_to`` resolves the reader's scope on every call, and a page holding
+    the answer already should not buy it twice. Omitted, it is resolved here.
+
+    The condition is the one ``sent_queryset`` applies for ``?olek=DRAFT``, so
+    the figure on Ülevaade and the list at ``/arvamused/?olek=DRAFT`` hold the
+    same rows — and ``tests/test_overview_drilldowns.py`` asserts that against
+    the view rather than trusting this comment.
+    """
+    rows = Submission.objects.visible_to(user) if visible is None else visible
+    return rows.filter(status=DRAFTING_STATUS)
+
+
 def sent_counts(user: Any) -> dict[str, int]:
     """Headline figures for the workspace, before any filter is applied.
 

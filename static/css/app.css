@@ -2947,12 +2947,28 @@ fieldset.field > legend {
  * `#sissekanne-<id>`, and without this the entry it lands on is behind the
  * header. Playwright found the same thing trying to click a link in a table's
  * first row. */
+/* The Arvamused workspace's count, answering the same question
+ * `.registercount` answers on the register: how many rows is this, before the
+ * reader starts reading them. Quieter, because this page is reached
+ * deliberately rather than typed into. */
+.resultcount {
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+}
+
 .table tbody tr,
 .entrycard,
 .submission,
-.fragment {
+.fragment,
+/* The register's results region, and the two Ulevaade lists a figure that
+ * counts people or areas opens instead of the register. All three are landing
+ * points for a link somebody clicked a number to follow. */
+#tulemused,
+#inimesed,
+#vastutajata-valdkonnad {
   scroll-margin-top: 96px;
 }
+
 
 /* -- Stage 2D: the historical case file ---------------------------------- *
  *
@@ -6936,6 +6952,36 @@ p.factsection__none {
 }
 
 .loadrow__overdue--bad {
+  color: var(--status-danger);
+}
+
+/* Koormus rows carry two destinations — the person's open Matters and the late
+ * work they are responsible for — so the row is a container of links rather
+ * than one link. `__who` takes the flex space the name used to, which keeps the
+ * two numbers on the right where they were. */
+.loadrow__who {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.loadrow__open,
+.loadrow__overdue {
+  text-decoration: none;
+  color: inherit;
+}
+
+a.loadrow__who:hover,
+a.loadrow__open:hover,
+a.loadrow__overdue:hover {
+  text-decoration: underline;
+}
+
+a.loadrow__overdue--bad {
   color: var(--status-danger);
 }
 
