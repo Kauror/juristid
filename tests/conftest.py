@@ -114,6 +114,19 @@ def evidence_root(settings, tmp_path):
     # under the test settings, and `/app/legacy-source` under the production
     # ones. Same mount, same failure, one class of evidence further along.
     settings.LEGACY_SOURCE_ROOT = tmp_path / "legacy-source"
+    # Created, not merely named. A deployment's storage roots exist before the
+    # process starts — they are bind mounts — and `deployment_readiness` calls a
+    # root that is absent a problem, correctly: a container handed an empty
+    # directory where a mount should be works perfectly until it is replaced.
+    # While this fixture was opt-in, most tests saw the directories
+    # `config/test_settings.py` had already made with `mkdtemp`, so nothing
+    # noticed. Storage that exists is part of what "isolated" has to mean here.
+    for root in (
+        settings.EVIDENCE_ROOT,
+        settings.DERIVATIVE_ROOT,
+        settings.LEGACY_SOURCE_ROOT,
+    ):
+        root.mkdir(parents=True, exist_ok=True)
     settings.STORAGES = {
         **settings.STORAGES,
         settings.EVIDENCE_STORAGE_ALIAS: {
