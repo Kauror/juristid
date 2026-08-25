@@ -92,8 +92,10 @@ def test_the_chip_hides_the_box_and_keeps_the_control(page, base_url):
 
     expect(chip.locator(".chip__name")).to_be_visible()
 
-    # And clicking the part a person can see is clicking the control.
-    chip.locator(".chip__name").click()
+    # And clicking the chip is clicking the control. The click lands on the
+    # input, which is what covering it is for — a driver asked to click the
+    # *name* is correctly told that something else is in front of it.
+    chip.click()
     expect(box).to_be_checked()
 
 
@@ -301,8 +303,13 @@ def test_a_stage_explains_itself_on_hover(page, base_url, screenshots):
 
     assert _open_bubbles(page) == []
 
-    chip = page.locator(".chip--explained", has_text="Kooskõlastusringil").first
-    chip.hover()
+    # By the radio's accessible name, not by a substring of the chip's text.
+    # `has_text` is a case-insensitive substring, and the Idee explanation
+    # contains "kooskõlastusringile" — so the first chip *containing* the word
+    # is the wrong one. The name is the three words on the chip, which is what
+    # moving the bubble out of the label restored.
+    radio = page.get_by_role("radio", name="Kooskõlastusringil", exact=True)
+    radio.hover()
     page.wait_for_timeout(120)
 
     shown = _open_bubbles(page)
@@ -326,7 +333,10 @@ def test_each_stage_shows_its_own_text_and_only_its_own(page, base_url):
     assert chips.count() >= 5
 
     for index in range(chips.count()):
-        chips.nth(index).hover()
+        # Hovering the input rather than the wrapper: the input covers its chip
+        # and is what the pointer meets, and the wrapper also contains the
+        # bubble, whose own box a hover would otherwise land in.
+        chips.nth(index).locator("input").hover()
         page.wait_for_timeout(60)
         shown = _open_bubbles(page)
         assert len(shown) == 1, (index, shown)
@@ -370,7 +380,7 @@ def test_a_stage_tooltip_never_opens_off_the_screen(page, base_url, width):
 
     chips = page.locator(".chip--explained")
     for index in range(chips.count()):
-        chips.nth(index).hover()
+        chips.nth(index).locator("input").hover()
         page.wait_for_timeout(60)
         shown = _open_bubbles(page)
         assert shown and not shown[0]["clipped"], (width, index, shown)
@@ -480,6 +490,26 @@ def test_the_whole_form_is_reachable_without_opening_anything(page, base_url, wi
         expect(page.locator(f'[name="{group}"]').first).to_be_attached()
 
     expect(page.get_by_role("button", name="Loo teema")).to_be_visible()
+
+
+def test_the_submit_reads_inactive_without_becoming_unusable(page, base_url):
+    """The flat fill is a hint, not a claim.
+
+    `disabled` would strand a browser with scripting off, and `aria-disabled`
+    would tell a screen reader the button is unavailable while the server is
+    perfectly willing to answer it. Pressing it with no title has to produce the
+    refusal beside the field (Uus teema redesign §7, §15).
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    button = page.get_by_role("button", name="Loo teema")
+    expect(button).to_have_attribute("data-inactive", "true")
+    expect(button).to_be_enabled()
+    assert button.get_attribute("aria-disabled") is None
+
+    page.fill("#id_title", "Nüüd on pealkiri")
+    expect(button).to_have_attribute("data-inactive", "false")
 
 
 def test_a_refused_save_hides_nothing_it_was_given(page, base_url):

@@ -4353,6 +4353,14 @@ p.factsection__none {
   max-width: 100%;
 }
 
+/* An explained chip is a wrapper, not a label: its tooltip has to live beside
+   the label rather than inside it, or the description becomes part of the
+   option's accessible name. The label is the part that binds to the input. */
+.chip__hit {
+  display: inline-flex;
+  max-width: 100%;
+}
+
 /* The real control, invisible and covering its chip.
  *
  * Not a zero-sized box, which is what the design's CSS specifies and what this
@@ -4510,33 +4518,41 @@ p.factsection__none {
  * Drawn with a border rather than set as a character. `ⓘ` is not in Barlow, so
  * it would fall back to whatever the machine happens to have — a different
  * glyph on the CI container than on a laptop, which is a visual baseline that
- * fails for a reason nobody can act on. And drawn in CSS rather than in the
- * markup, so it is in no accessible name and in no test's idea of what the
- * chip is called: the chip is "Valitsuses", not "Valitsuses i". */
-.chip--explained .chip__name::after {
+ * fails for a reason nobody can act on.
+ *
+ * On the wrapper rather than on the label inside it, and for exactly the reason
+ * the bubble is: **CSS generated content counts towards an accessible name.**
+ * Set on `.chip__name`, this marker made every Hetkeseis radio announce itself
+ * as "Kooskõlastusringil i" and every by-name lookup for the chip miss. The
+ * label holds the three words and nothing else; the marker is painted beside
+ * them, inside the space the padding below reserves. */
+.chip--explained .chip__name {
+  padding-right: 26px;
+}
+
+.chip--explained::after {
   content: "i";
-  display: inline-block;
-  margin-left: 6px;
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 11px;
   height: 11px;
   line-height: 10px;
   text-align: center;
-  vertical-align: 1px;
   border: 1px solid currentColor;
   border-radius: var(--radius-circle);
   font-size: 8px;
   font-weight: var(--typography-weight-bold);
   font-style: normal;
   color: var(--text-muted);
+  /* Painted, never in the way: the input underneath is the click target. */
+  pointer-events: none;
 }
 
-.chip--explained:hover .chip__name::after,
-.chip--explained .chip__input:focus-visible + .chip__name::after {
+.chip--explained:hover::after,
+.chip--explained:focus-within::after {
   color: var(--accent-link);
-}
-
-.chip--explained .chip__input:checked + .chip__name::after {
-  color: var(--text-secondary);
 }
 
 /* And it says so to the pointer as well: this chip has something to read. On
@@ -4663,12 +4679,14 @@ p.factsection__none {
   color: var(--text-muted);
 }
 
-/* "Loo teema" reads inactive until there is a title to save. `aria-disabled`
-   and a flat fill rather than `disabled`: the button still submits, so
-   somebody who presses it anyway gets the server's refusal beside the field
-   instead of a control that does nothing and says nothing (Uus teema
-   redesign §7, §15). */
-.button--primary[aria-disabled="true"] {
+/* "Loo teema" reads inactive until there is a title to save.
+ *
+ * A flat fill and nothing else: no `disabled`, and no `aria-disabled` either.
+ * The button still submits, so somebody who presses it anyway gets the server's
+ * refusal beside the field instead of a control that does nothing and says
+ * nothing — and `aria-disabled` would tell every screen reader and every
+ * browser driver the opposite of that (Uus teema redesign §7, §15). */
+.button--primary[data-inactive="true"] {
   background: var(--surface-elevated);
   border-color: var(--border-control);
   color: var(--text-muted);

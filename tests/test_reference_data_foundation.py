@@ -594,8 +594,10 @@ def test_a_plan_on_an_empty_database_proposes_every_institution():
     assert len(plan.organisations) == len(PUBLIC_REFERENCE_ORGANISATIONS)
     assert len(plan.organisations_to_create) == len(PUBLIC_REFERENCE_ORGANISATIONS)
     assert not plan.organisations_present
-    # Policy areas are already there: they came with the schema.
-    assert len(plan.areas_present) == 23
+    # Policy areas are already there: they came with the schema. Counted from
+    # the manifest rather than written out, so withdrawing a label is one edit
+    # in one place (Uus teema redesign §7).
+    assert len(plan.areas_present) == len(EXPECTED)
     assert not plan.areas_missing
 
 
@@ -638,7 +640,7 @@ def test_the_plan_command_json_names_tags_as_unmanaged(capsys):
     out = capsys.readouterr().out
     payload = json.loads(out[: out.rindex("}") + 1])
     assert payload["tags"] == "not managed by this baseline"
-    assert payload["policy_areas"]["present"] == 23
+    assert payload["policy_areas"]["present"] == len(EXPECTED)
     assert payload["plan_sha256"] == build_reference_plan().digest()
 
 
@@ -786,7 +788,7 @@ def test_verify_passes_on_a_complete_baseline():
     apply_reference_plan(expected_sha256=build_reference_plan().digest())
     report = verify_reference_data()
     assert report.ok, report.problems
-    assert report.policy_areas_present == 23
+    assert report.policy_areas_present == len(EXPECTED)
     assert report.organisations_present == len(PUBLIC_REFERENCE_ORGANISATIONS)
 
 

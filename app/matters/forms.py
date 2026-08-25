@@ -545,7 +545,7 @@ class MatterCreateForm(forms.Form):
                 if organisation.pk not in shortlist
             ]
             self.addressee_offered = [*self.frequent_addressees, *tail]
-            self.addressee_split = 1 + len(self.frequent_addressees)
+            self.addressee_split: int | None = 1 + len(self.frequent_addressees)
             addressees = cast(Any, self.fields["addressee_organisation"])
             # The named blank option, restated. Assigning `choices` replaces
             # Django's iterator, and the iterator is what would otherwise have

@@ -934,10 +934,14 @@
   }
 
   /* ---- A primary action that says whether it can do anything --------------
-   * "Loo teema" reads inactive until there is a title. `aria-disabled` rather
-   * than `disabled`, deliberately: the button still submits, so pressing it
-   * anyway produces the server's refusal beside the field rather than a
-   * control that does nothing and explains nothing.
+   * "Loo teema" reads inactive until there is a title, and it stays a working
+   * button: pressing it anyway produces the server's refusal beside the field
+   * rather than a control that does nothing and explains nothing.
+   *
+   * A data attribute, not `aria-disabled`. That attribute makes the claim this
+   * one deliberately does not — a screen reader announces the button as
+   * unavailable and a browser driver refuses to click it, which is exactly the
+   * behaviour the flat fill is *not* meant to have.
    */
   function bindRequiredAction(scope) {
     (scope || document).querySelectorAll("button[data-needs]").forEach(function (button) {
@@ -950,7 +954,7 @@
       }
       var sync = function () {
         var ready = field.value.trim() !== "";
-        button.setAttribute("aria-disabled", ready ? "false" : "true");
+        button.setAttribute("data-inactive", ready ? "false" : "true");
       };
       field.addEventListener("input", sync);
       sync();

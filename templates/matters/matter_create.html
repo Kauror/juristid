@@ -291,14 +291,32 @@
         <div class="chiprow">
           {% for choice in form.stage %}
             {% with help=form.stage_help|stage_help:choice.data.value %}
-              <label class="chip {% if help %}chip--explained{% endif %}">
-                {{ choice.tag }}
-                <span class="chip__name">{{ choice.choice_label }}</span>
-                {% if help %}
+              {% if help %}
+                {% comment %}
+                  The bubble is a sibling of the label, not a child of it.
+
+                  Inside, it became part of the option's accessible name: a
+                  screen reader announced "Kooskõlastusringil, Seaduse või
+                  määruse eelnõu kooskõlastusringile saatmisest kuni…" as the
+                  name of a radio button, and every by-name lookup for the chip
+                  matched a paragraph. The description reaches the reader
+                  through `aria-describedby`, which is what that attribute is
+                  for; the name is the three words on the chip.
+                {% endcomment %}
+                <span class="chip chip--explained">
+                  <label class="chip__hit">
+                    {{ choice.tag }}
+                    <span class="chip__name">{{ choice.choice_label }}</span>
+                  </label>
                   <span class="stagehelp" role="tooltip"
                         id="{{ choice.id_for_label }}-selgitus">{{ help }}</span>
-                {% endif %}
-              </label>
+                </span>
+              {% else %}
+                <label class="chip">
+                  {{ choice.tag }}
+                  <span class="chip__name">{{ choice.choice_label }}</span>
+                </label>
+              {% endif %}
             {% endwith %}
           {% endfor %}
         </div>
@@ -361,7 +379,9 @@
                 </label>
                 <div class="chiprow" id="adressaat-nimekiri">
                   {% for choice in form.addressee_organisation %}
-                    {% if forloop.counter0 >= form.addressee_split %}{# never reached when the split is None: the tail count is 0 and this block is not rendered #}
+                    {# `addressee_split` is never None here: a tail count of
+                       zero is what makes this whole block unrendered. #}
+                    {% if forloop.counter0 >= form.addressee_split %}
                       <label class="chip">
                         {{ choice.tag }}
                         <span class="chip__name">{{ choice.choice_label }}</span>
@@ -481,6 +501,15 @@
 
     {# 8 — One primary action, and the promise that makes it safe to press. #}
     <div class="createform__actions">
+      {% comment %}
+        `data-needs`, not `aria-disabled`. The button reads inactive until there
+        is a title, and it still submits — somebody who presses it anyway gets
+        the server's refusal beside the field rather than a control that does
+        nothing and explains nothing. `aria-disabled` would say the opposite to
+        anything that reads it: a screen reader announces the button as
+        unavailable, and a browser driver refuses to click it at all, which is
+        how the browser suite found this (Uus teema redesign §7, §15).
+      {% endcomment %}
       <button type="submit" class="button button--primary" data-needs="id_title">Loo teema</button>
       <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Loobu</a>
       <span class="createform__note">Ülejäänud andmeid saab lisada ka hiljem teema lehel.</span>
