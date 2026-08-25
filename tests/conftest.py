@@ -85,7 +85,7 @@ def pdf_bytes():
 
 
 @pytest.fixture(autouse=True)
-def evidence_root(settings, tmp_path):
+def evidence_root(settings, tmp_path_factory):
     """Evidence, derivatives and OneNote source in this test's own directory.
 
     Three directories rather than one, because keeping them apart is a property
@@ -99,21 +99,32 @@ def evidence_root(settings, tmp_path):
     real evidence store, through tests that simply did not request it. Storage
     isolation is not a thing to remember; it is the floor.
 
-    Tests that name ``evidence_root`` still get exactly this object, and still
-    get it before they run, so nothing about them changes.
+    Tests that name ``evidence_root`` get the same three subdirectories under it
+    they always did, so nothing about them changes.
+
+    A directory of its own rather than the test's ``tmp_path``, which is the one
+    thing autouse changed the meaning of: while this was opt-in, only a test
+    that asked for storage got these three directories planted in its
+    ``tmp_path``. Autouse plants them in *every* test's, including tests that
+    use ``tmp_path`` as a scratch tree and mean something by what is in it —
+    ``test_the_backup_refuses_a_data_root_with_no_evidence_tree`` passes its
+    ``tmp_path`` to the backup script precisely because it holds no ``evidence``
+    directory. Somewhere else entirely, per test, is the only version of this
+    that is invisible.
 
     Per test rather than per process, so two tests can never see each other's
-    files and a parallel run cannot share a writable tree: ``tmp_path`` is
-    unique to the test *and* to the worker, and pytest cleans it up.
+    files and a parallel run cannot share a writable tree: ``mktemp`` numbers
+    each call, and each xdist worker has its own base directory.
     """
-    settings.EVIDENCE_ROOT = tmp_path / "evidence"
-    settings.DERIVATIVE_ROOT = tmp_path / "derivatives"
+    root = tmp_path_factory.mktemp("juristid-storage")
+    settings.EVIDENCE_ROOT = root / "evidence"
+    settings.DERIVATIVE_ROOT = root / "derivatives"
     # The third canonical storage class. Left out while this fixture was opt-in,
     # which meant the OneNote page XML a historical-import test writes went to
     # whatever LEGACY_SOURCE_ROOT the settings named — a temporary directory
     # under the test settings, and `/app/legacy-source` under the production
     # ones. Same mount, same failure, one class of evidence further along.
-    settings.LEGACY_SOURCE_ROOT = tmp_path / "legacy-source"
+    settings.LEGACY_SOURCE_ROOT = root / "legacy-source"
     # Created, not merely named. A deployment's storage roots exist before the
     # process starts — they are bind mounts — and `deployment_readiness` calls a
     # root that is absent a problem, correctly: a container handed an empty
@@ -121,12 +132,12 @@ def evidence_root(settings, tmp_path):
     # While this fixture was opt-in, most tests saw the directories
     # `config/test_settings.py` had already made with `mkdtemp`, so nothing
     # noticed. Storage that exists is part of what "isolated" has to mean here.
-    for root in (
+    for storage_root in (
         settings.EVIDENCE_ROOT,
         settings.DERIVATIVE_ROOT,
         settings.LEGACY_SOURCE_ROOT,
     ):
-        root.mkdir(parents=True, exist_ok=True)
+        storage_root.mkdir(parents=True, exist_ok=True)
     settings.STORAGES = {
         **settings.STORAGES,
         settings.EVIDENCE_STORAGE_ALIAS: {
@@ -142,7 +153,7 @@ def evidence_root(settings, tmp_path):
             "OPTIONS": {"location": str(settings.LEGACY_SOURCE_ROOT)},
         },
     }
-    return tmp_path
+    return root
 
 
 @pytest.fixture

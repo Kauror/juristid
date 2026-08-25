@@ -54,7 +54,7 @@ PDF = b"%PDF-1.4 test"
 
 
 def test_evidence_written_without_asking_for_the_fixture_stays_in_this_test(
-    normal_matter, tmp_path
+    normal_matter, tmp_path_factory
 ) -> None:
     """The incident itself, in one test.
 
@@ -79,16 +79,20 @@ def test_evidence_written_without_asking_for_the_fixture_stays_in_this_test(
         mime_type="application/pdf",
     )
 
+    basetemp = tmp_path_factory.getbasetemp()
     stored = Path(django_settings.EVIDENCE_ROOT) / version.storage_key
     assert stored.exists(), "the capture service wrote nothing at all"
-    assert stored.is_relative_to(tmp_path), (
-        f"{stored} is outside this test's temporary directory {tmp_path}"
+    assert stored.is_relative_to(basetemp), (
+        f"{stored} is outside this run's temporary directory {basetemp}"
     )
+    # Not the root the *settings module* minted, which is the one a test writes
+    # to when no fixture has redirected it — so this is the assertion that
+    # `autouse=True` is doing the work rather than the test settings.
     assert not stored.is_relative_to(PROCESS_EVIDENCE_ROOT)
     assert test_safety.forbidden_root(stored) is None
 
 
-def test_the_derivative_and_source_classes_are_isolated_too(tmp_path) -> None:
+def test_the_derivative_and_source_classes_are_isolated_too(evidence_root) -> None:
     """All three writable classes, not just the one that was noticed.
 
     ``/app/derivatives`` and ``/app/legacy-source`` are bind-mounted by the same
@@ -97,14 +101,32 @@ def test_the_derivative_and_source_classes_are_isolated_too(tmp_path) -> None:
     """
     for name in test_safety.WRITABLE_ROOT_VARIABLES:
         root = Path(getattr(django_settings, name))
-        assert root.is_relative_to(tmp_path), f"{name} is not this test's own directory"
+        assert root.is_relative_to(evidence_root), f"{name} is not this test's own directory"
+        assert root.is_dir(), f"{name} was named but never created"
 
 
-def test_asking_for_the_fixture_by_name_still_works(evidence_root, tmp_path) -> None:
-    """Every test that already named it keeps the object it always got."""
-    assert evidence_root == tmp_path
-    assert Path(django_settings.EVIDENCE_ROOT) == tmp_path / "evidence"
-    assert Path(django_settings.DERIVATIVE_ROOT) == tmp_path / "derivatives"
+def test_asking_for_the_fixture_by_name_still_works(evidence_root) -> None:
+    """Every test that already named it keeps the layout it always got."""
+    assert Path(django_settings.EVIDENCE_ROOT) == evidence_root / "evidence"
+    assert Path(django_settings.DERIVATIVE_ROOT) == evidence_root / "derivatives"
+    assert Path(django_settings.LEGACY_SOURCE_ROOT) == evidence_root / "legacy-source"
+
+
+def test_the_storage_roots_are_not_planted_in_the_tests_own_tmp_path(tmp_path) -> None:
+    """The thing making a fixture autouse changes that nothing warns about.
+
+    While it was opt-in, only a test that asked for storage got three
+    directories appearing in its ``tmp_path``. Autouse would have put them in
+    every test's — including
+    ``test_deployment_scripts.py::test_the_backup_refuses_a_data_root_with_no_evidence_tree``,
+    which hands its ``tmp_path`` to the backup script *because* it holds no
+    ``evidence`` directory, and which consequently stopped testing what it says
+    it tests. CI caught it; this keeps it caught.
+    """
+    assert list(tmp_path.iterdir()) == [], "the storage fixture wrote into tmp_path"
+    for name in test_safety.WRITABLE_ROOT_VARIABLES:
+        root = Path(getattr(django_settings, name))
+        assert not root.is_relative_to(tmp_path), f"{name} is inside the test's tmp_path"
 
 
 # ---------------------------------------------------------------------------
