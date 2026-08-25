@@ -142,6 +142,40 @@ jobs:
       - name: The OCR runtime CI claims to have is actually present
         run: uv run python manage.py check_ocr_runtime --required
 
+      # The property being proved is that this job's result does not depend on
+      # which DJANGO_SETTINGS_MODULE the surrounding environment happened to
+      # export. `pyproject.toml` passes `--ds=config.test_settings`, which is
+      # the one form pytest-django resolves *ahead* of the environment variable
+      # — and the production image bakes that variable in as `config.settings`,
+      # which is how a pytest run on the server wrote 63 test files into the
+      # real evidence store on 2026-08-24.
+      #
+      # Two node ids rather than the module, so this step stays free of both the
+      # database and the subprocess tests; the module itself runs in full below.
+      - name: An inherited production settings module does not decide the suite
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings
+        run: >-
+          uv run pytest -q
+          "tests/test_test_isolation.py::test_the_settings_in_force_are_the_test_settings"
+          "tests/test_test_isolation.py::test_the_writable_roots_are_not_a_deployments"
+
+      # And the other accepted outcome: an environment that says it may hold the
+      # Chamber's real material stops the suite before collection rather than
+      # relying on a fixture to redirect storage later. Asserted as a *failure*,
+      # because a guard that silently stopped refusing would otherwise look
+      # exactly like a passing job.
+      - name: A real-data environment stops the suite instead of running it
+        env:
+          DJANGO_SETTINGS_MODULE: config.settings
+          REAL_DATA_ALLOWED: "1"
+        run: |
+          if uv run pytest -q "tests/test_test_isolation.py::test_the_settings_in_force_are_the_test_settings" > isolation.log 2>&1; then
+            echo "the suite ran in an environment marked as holding real data"; cat isolation.log; exit 1
+          fi
+          grep -q "JURISTID TEST SAFETY" isolation.log || { echo "it failed, but not for the safety reason"; cat isolation.log; exit 1; }
+          rm -f isolation.log
+
       - name: Test suite
         run: uv run pytest --cov --cov-report=term-missing
 

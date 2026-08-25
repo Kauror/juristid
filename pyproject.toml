@@ -87,7 +87,10 @@ ignore = [
 "e2e/*" = ["S101"]
 "config/settings.py" = ["S105"]
 "config/typecheck_settings.py" = ["F403"]
-"config/test_settings.py" = ["F403", "F405"]
+# E402: the safety guard has to run before `from config.settings import *`,
+# which is the whole point of it — a refusal that fires after the settings it is
+# refusing have loaded is not a refusal.
+"config/test_settings.py" = ["F403", "F405", "E402"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["app", "config"]
@@ -106,10 +109,26 @@ check_untyped_defs = true
 django_settings_module = "config.typecheck_settings"
 
 [tool.pytest.ini_options]
+# The settings module, chosen the only way that actually decides it.
+#
+# pytest-django resolves this in the order: --ds option, then
+# DJANGO_SETTINGS_MODULE from the *environment*, then this ini key. So the ini
+# key alone is not a control: the production image bakes in
+# DJANGO_SETTINGS_MODULE=config.settings, and on 2026-08-24 a pytest run in a
+# container derived from it therefore loaded production settings, kept
+# EVIDENCE_ROOT pointing at the real evidence mount, and wrote 63 test fixtures
+# into the Chamber's evidence store.
+#
+# `--ds` in addopts is the one place this is decided, for every invocation of
+# `pytest` in this repository, whatever the surrounding environment exports. The
+# ini key below is kept because it is what a reader looks for, and because it is
+# what applies if pytest is ever run with addopts suppressed — but it is the
+# fallback, not the control. A deliberate override is still possible: an
+# explicit `--ds=...` on the command line comes after these and wins.
 DJANGO_SETTINGS_MODULE = "config.test_settings"
 python_files = ["test_*.py"]
 testpaths = ["tests"]
-addopts = "--strict-markers -ra"
+addopts = "--ds=config.test_settings --strict-markers -ra"
 markers = [
     "e2e: browser test; requires a running server and E2E_BASE_URL",
 ]

@@ -84,16 +84,60 @@ def pdf_bytes():
     return b"%PDF-1.4 synthetic evidence"
 
 
-@pytest.fixture
-def evidence_root(settings, tmp_path):
-    """Evidence and derivatives in a temporary directory, kept apart.
+@pytest.fixture(autouse=True)
+def evidence_root(settings, tmp_path_factory):
+    """Evidence, derivatives and OneNote source in this test's own directory.
 
-    Two directories rather than one, because keeping them apart is a property
+    Three directories rather than one, because keeping them apart is a property
     under test: a backup that omits derivatives must still be a complete backup,
     and that is only checkable if they were never mixed (Stage-2B brief 9, 81).
+
+    ``autouse``, and that keyword is the whole point of this fixture now. It
+    used to be opt-in, which meant a test was isolated only if its author
+    remembered to ask — and on 2026-08-24 a suite run inside a container built
+    from the production image wrote 63 synthetic fixtures into the Chamber's
+    real evidence store, through tests that simply did not request it. Storage
+    isolation is not a thing to remember; it is the floor.
+
+    Tests that name ``evidence_root`` get the same three subdirectories under it
+    they always did, so nothing about them changes.
+
+    A directory of its own rather than the test's ``tmp_path``, which is the one
+    thing autouse changed the meaning of: while this was opt-in, only a test
+    that asked for storage got these three directories planted in its
+    ``tmp_path``. Autouse plants them in *every* test's, including tests that
+    use ``tmp_path`` as a scratch tree and mean something by what is in it —
+    ``test_the_backup_refuses_a_data_root_with_no_evidence_tree`` passes its
+    ``tmp_path`` to the backup script precisely because it holds no ``evidence``
+    directory. Somewhere else entirely, per test, is the only version of this
+    that is invisible.
+
+    Per test rather than per process, so two tests can never see each other's
+    files and a parallel run cannot share a writable tree: ``mktemp`` numbers
+    each call, and each xdist worker has its own base directory.
     """
-    settings.EVIDENCE_ROOT = tmp_path / "evidence"
-    settings.DERIVATIVE_ROOT = tmp_path / "derivatives"
+    root = tmp_path_factory.mktemp("juristid-storage")
+    settings.EVIDENCE_ROOT = root / "evidence"
+    settings.DERIVATIVE_ROOT = root / "derivatives"
+    # The third canonical storage class. Left out while this fixture was opt-in,
+    # which meant the OneNote page XML a historical-import test writes went to
+    # whatever LEGACY_SOURCE_ROOT the settings named — a temporary directory
+    # under the test settings, and `/app/legacy-source` under the production
+    # ones. Same mount, same failure, one class of evidence further along.
+    settings.LEGACY_SOURCE_ROOT = root / "legacy-source"
+    # Created, not merely named. A deployment's storage roots exist before the
+    # process starts — they are bind mounts — and `deployment_readiness` calls a
+    # root that is absent a problem, correctly: a container handed an empty
+    # directory where a mount should be works perfectly until it is replaced.
+    # While this fixture was opt-in, most tests saw the directories
+    # `config/test_settings.py` had already made with `mkdtemp`, so nothing
+    # noticed. Storage that exists is part of what "isolated" has to mean here.
+    for storage_root in (
+        settings.EVIDENCE_ROOT,
+        settings.DERIVATIVE_ROOT,
+        settings.LEGACY_SOURCE_ROOT,
+    ):
+        storage_root.mkdir(parents=True, exist_ok=True)
     settings.STORAGES = {
         **settings.STORAGES,
         settings.EVIDENCE_STORAGE_ALIAS: {
@@ -104,8 +148,12 @@ def evidence_root(settings, tmp_path):
             "BACKEND": "django.core.files.storage.FileSystemStorage",
             "OPTIONS": {"location": str(settings.DERIVATIVE_ROOT)},
         },
+        settings.LEGACY_SOURCE_STORAGE_ALIAS: {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+            "OPTIONS": {"location": str(settings.LEGACY_SOURCE_ROOT)},
+        },
     }
-    return tmp_path
+    return root
 
 
 @pytest.fixture

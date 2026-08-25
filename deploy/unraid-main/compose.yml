@@ -113,6 +113,13 @@ services:
       # Migrations and seeding are controlled one-off steps, never container
       # start-up work (master specification 24.2).
       SEED_DEV_DATA: "0"
+      # This is a deployed stack, and it says so. `config/test_safety.py`
+      # refuses to start the test suite in any environment carrying this
+      # marker, which is the control that makes "do not run pytest through this
+      # Compose project" more than a sentence in a runbook: `docker compose run`
+      # inherits a service's environment, so a test process started here sees it
+      # and stops. The application itself never reads it.
+      JURISTID_RUNTIME: deployed
     depends_on:
       db:
         condition: service_healthy
@@ -182,6 +189,13 @@ services:
       LEGACY_SOURCE_ROOT: /app/legacy-source
       HISTORICAL_SOURCE_ROOT: /srv/historical-source
       SEED_DEV_DATA: "0"
+      # This is a deployed stack, and it says so. `config/test_safety.py`
+      # refuses to start the test suite in any environment carrying this
+      # marker, which is the control that makes "do not run pytest through this
+      # Compose project" more than a sentence in a runbook: `docker compose run`
+      # inherits a service's environment, so a test process started here sees it
+      # and stops. The application itself never reads it.
+      JURISTID_RUNTIME: deployed
     depends_on:
       db:
         condition: service_healthy

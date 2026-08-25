@@ -422,6 +422,29 @@ POSTGRES_HOST=127.0.0.1 POSTGRES_SSLMODE=disable uv run pytest --cov
 The application image is built without development dependencies, so the test
 runner lives on the host rather than inside the web container.
 
+### Where the suite may run
+
+`uv run pytest` from the repository root is the canonical command, and it is
+canonical in a load-bearing sense rather than a stylistic one. `pyproject.toml`
+passes `--ds=config.test_settings`, which is the only form pytest-django
+resolves ahead of a `DJANGO_SETTINGS_MODULE` inherited from the environment —
+and the production image bakes that variable in as `config.settings`.
+
+The suite refuses to start in an environment that belongs to a deployment. It
+stops, with an explanation, if `REAL_DATA_ALLOWED` is on, if `JURISTID_RUNTIME`
+is set, or if any writable storage root points at a deployment's data. So:
+
+- run it in CI, in a local development checkout, or in a Compose project made
+  for testing;
+- never through a deployed stack. `docker compose -p juristid-main run … pytest`
+  hands the process that stack's environment *and* its evidence bind mount. On
+  2026-08-24 a run like that wrote 63 synthetic test files into the Chamber's
+  real evidence store — the database was isolated and dropped afterwards, the
+  filesystem was not.
+
+`config/test_safety.py` holds the refusals and explains each one;
+`tests/test_test_isolation.py` is the regression suite for them.
+
 ## Migrations
 
 ```bash
