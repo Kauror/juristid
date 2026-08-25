@@ -71,19 +71,74 @@
 
   /* ---- Uus teema: say which files are about to be uploaded --------------
    * A file input shows "3 files" and nothing about which three. This lists
-   * them before saving, so a wrong pick is visible while it is still cheap.
+   * them before saving, with the size and a way to take one back off, so a
+   * wrong pick is visible and reversible while it is still free — after the
+   * save each of these is an immutable version and removing it is a different
+   * kind of act (app/documents, Uus teema redesign §9).
    */
+  function humanSize(bytes) {
+    if (bytes < 1024) {
+      return bytes + " B";
+    }
+    if (bytes < 1024 * 1024) {
+      return Math.round(bytes / 1024) + " KB";
+    }
+    return (bytes / (1024 * 1024)).toFixed(1).replace(".", ",") + " MB";
+  }
+
   var fileInput = document.getElementById("id_files");
   var fileList = document.getElementById("valitud-failid");
   if (fileInput && fileList) {
+    var withoutIndex = function (skip) {
+      /* A FileList is read-only, so the way to drop one file is to build a new
+         transfer holding the others. Supported everywhere this application
+         runs; where it is not, the button simply does not appear. */
+      var transfer = new DataTransfer();
+      Array.prototype.slice.call(fileInput.files || []).forEach(function (file, index) {
+        if (index !== skip) {
+          transfer.items.add(file);
+        }
+      });
+      fileInput.files = transfer.files;
+      fileInput.dispatchEvent(new Event("change"));
+    };
+    var canDrop = typeof DataTransfer === "function";
+
     fileInput.addEventListener("change", function () {
       fileList.textContent = "";
       var chosen = Array.prototype.slice.call(fileInput.files || []);
       fileList.hidden = chosen.length === 0;
-      chosen.forEach(function (file) {
+      chosen.forEach(function (file, index) {
         var item = document.createElement("li");
         item.className = "dropzone__file";
-        item.textContent = file.name;
+
+        var kind = document.createElement("span");
+        kind.className = "dropzone__kind";
+        kind.textContent = "TÕEND";
+        item.appendChild(kind);
+
+        var name = document.createElement("span");
+        name.className = "dropzone__name";
+        name.textContent = file.name;
+        item.appendChild(name);
+
+        var size = document.createElement("span");
+        size.className = "dropzone__size";
+        size.textContent = humanSize(file.size);
+        item.appendChild(size);
+
+        if (canDrop) {
+          var drop = document.createElement("button");
+          drop.type = "button";
+          drop.className = "dropzone__drop";
+          drop.textContent = "×";
+          drop.setAttribute("aria-label", "Eemalda fail " + file.name);
+          drop.addEventListener("click", function () {
+            withoutIndex(index);
+          });
+          item.appendChild(drop);
+        }
+
         fileList.appendChild(item);
       });
     });
@@ -724,7 +779,11 @@
       }
       box.addEventListener("input", function () {
         var needle = box.value.trim().toLowerCase();
-        list.querySelectorAll(".checkitem").forEach(function (item) {
+        /* `.chip` is Uus teema's control, `.checkitem` the one every other
+           surface still uses. One selector rather than two bindings, because
+           the rule — hide what does not match, never hide what is ticked — is
+           the same on both. */
+        list.querySelectorAll(".chip, .checkitem").forEach(function (item) {
           var name = (item.textContent || "").trim().toLowerCase();
           var checked = item.querySelector("input:checked");
           /* A ticked choice never hides. Somebody who types after choosing
@@ -736,39 +795,191 @@
   }
 
   /* ---- What the Järgmine tegevus date means ------------------------------
-   * The stored field is `date_semantics`, and asking a lawyer to pick one from
-   * a dropdown called "Kuupäeva tähendus" was asking a question in the
-   * vocabulary of the database. The value is derived from the chosen kind on
-   * the server; this makes the *label* say the same thing, so the box reads
-   * "Tähtaeg" for TEEN and "Millal vaatan uuesti üle?" for JÄLGIN.
+   * The date meaning is a real stored field, and it is now three chips on the
+   * row with the date rather than a label swapped to describe it. What is left
+   * for a script is the derivation: TEEN means Tähtaeg, OOTAN means Oodatav
+   * aeg, JÄLGIN means Vaatan üle, and choosing a kind should move the meaning
+   * with it — until somebody chooses a meaning themselves, after which it is
+   * theirs and no kind change may overwrite it.
    *
-   * Presentation only. The server derives and validates regardless, and with
-   * scripting off the label reads the neutral "Kuupäev", which is true for all
-   * three (app/workflow/enums.py, `default_date_semantics`).
+   * Presentation only, twice over. The server derives the same values from the
+   * same kind when the field arrives blank, so a browser with scripting off
+   * stores exactly what a browser with scripting on stores
+   * (app/workflow/enums.py, `default_date_semantics`).
    */
-  function bindDateLabels(scope) {
-    (scope || document).querySelectorAll("[data-datelabel-for]").forEach(function (label) {
-      if (!once(label, "DateLabel")) {
+  var MEANING_FOR_KIND = {
+    DO: "DEADLINE",
+    WAIT: "EXPECTED_AROUND",
+    MONITOR: "REVIEW_ON",
+  };
+
+  function bindDerivedMeaning(scope) {
+    (scope || document).querySelectorAll("[data-derives-from]").forEach(function (row) {
+      if (!once(row, "DerivedMeaning")) {
         return;
       }
-      var group = document.getElementById(label.getAttribute("data-datelabel-for"));
-      if (!group) {
+      var kinds = document.getElementById(row.getAttribute("data-derives-from"));
+      if (!kinds) {
         return;
       }
-      var byKind = {
-        DO: label.getAttribute("data-label-do"),
-        WAIT: label.getAttribute("data-label-wait"),
-        MONITOR: label.getAttribute("data-label-monitor"),
-      };
-      var neutral = label.textContent;
+      var touched = false;
+      row.querySelectorAll("input[type=radio]").forEach(function (radio) {
+        radio.addEventListener("change", function () {
+          touched = true;
+        });
+      });
       var sync = function () {
-        var chosen = group.querySelector("input[type=radio]:checked");
-        var wording = chosen ? byKind[chosen.value] : null;
-        label.textContent = wording || neutral;
+        if (touched) {
+          return;
+        }
+        var chosen = kinds.querySelector("input[type=radio]:checked");
+        var wanted = chosen ? MEANING_FOR_KIND[chosen.value] : null;
+        if (!wanted) {
+          return;
+        }
+        var target = row.querySelector('input[value="' + wanted + '"]');
+        if (target) {
+          target.checked = true;
+        }
       };
-      group.querySelectorAll("input[type=radio]").forEach(function (radio) {
+      kinds.querySelectorAll("input[type=radio]").forEach(function (radio) {
         radio.addEventListener("change", sync);
       });
+      sync();
+    });
+  }
+
+  /* Arriving from a number: put the reader on the rows.
+   *
+   * Every figure on Ulevaade links to `...#tulemused`, and a filtered register
+   * opens with a search box, a status strip and a narrowing panel that expands
+   * itself whenever a filter is active. The browser scrolls to the fragment on
+   * its own; what it does not reliably do is *focus* it, so a keyboard or
+   * screen-reader user landed at the top of the document and had to tab past
+   * every control to reach the list they clicked a number to see.
+   *
+   * `preventScroll` because the browser has already scrolled, and focusing
+   * again would fight it. Progressive: with JavaScript off the fragment still
+   * scrolls, which is the part that matters most. */
+  function focusFragmentTarget() {
+    if (window.location.hash !== "#tulemused") return;
+    var results = document.getElementById("tulemused");
+    if (!results) return;
+    try {
+      results.focus({ preventScroll: true });
+    } catch (error) {
+      results.focus();
+    }
+  }
+
+  /* ---- How many are chosen ------------------------------------------------
+   * A count beside the label, for the rows where the chips wrap onto three
+   * lines and "did I tick Ehitus?" costs a scan. Reads the controls the page
+   * already has; adds nothing to what is posted.
+   */
+  function bindChipCounts(scope) {
+    (scope || document).querySelectorAll("[data-chipcount-for]").forEach(function (badge) {
+      if (!once(badge, "ChipCount")) {
+        return;
+      }
+      var key = badge.getAttribute("data-chipcount-for");
+      var form = badge.closest("form");
+      if (!form) {
+        return;
+      }
+      /* Either a field name — every chip in the group, wherever it is rendered
+         — or one element's id, which is how the file input is counted. */
+      var byName = form.querySelectorAll('input[name="' + key + '"]');
+      var single = document.getElementById(key);
+      var sources = byName.length ? Array.prototype.slice.call(byName) : single ? [single] : [];
+      if (!sources.length) {
+        return;
+      }
+      var sync = function () {
+        var count = single && sources[0] === single
+          ? (single.files || []).length
+          : sources.filter(function (input) {
+              return input.checked && input.value !== "";
+            }).length;
+        badge.textContent = count ? count + " valitud" : "";
+      };
+      sources.forEach(function (input) {
+        input.addEventListener("change", sync);
+      });
+      sync();
+    });
+  }
+
+  /* ---- The Hetkeseis tooltip ----------------------------------------------
+   * Hover and focus are CSS. Two things are not, and both are corrections
+   * rather than behaviour:
+   *
+   *  - a chip near the right edge would open its bubble off the screen, so the
+   *    bubble is measured once it is visible and flipped to open leftwards;
+   *  - Escape closes it, which a CSS `:hover` cannot hear. Suppression lasts
+   *    until the pointer or the focus leaves the chip, so the next hover shows
+   *    it again rather than the chip staying mute.
+   *
+   * With scripting off the tooltip still opens on hover and on focus and still
+   * closes when either leaves; only the flip and Escape are missing
+   * (Uus teema redesign §8).
+   */
+  function bindStageHelp(scope) {
+    (scope || document).querySelectorAll(".chip--explained").forEach(function (chip) {
+      if (!once(chip, "StageHelp")) {
+        return;
+      }
+      var bubble = chip.querySelector(".stagehelp");
+      if (!bubble) {
+        return;
+      }
+      var place = function () {
+        chip.classList.remove("is-suppressed");
+        bubble.classList.remove("stagehelp--flip");
+        var box = bubble.getBoundingClientRect();
+        if (box.right > document.documentElement.clientWidth - 8) {
+          bubble.classList.add("stagehelp--flip");
+        }
+      };
+      var clear = function () {
+        chip.classList.remove("is-suppressed");
+      };
+      chip.addEventListener("mouseenter", place);
+      chip.addEventListener("mouseleave", clear);
+      chip.addEventListener("focusin", place);
+      chip.addEventListener("focusout", clear);
+      chip.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          chip.classList.add("is-suppressed");
+        }
+      });
+    });
+  }
+
+  /* ---- A primary action that says whether it can do anything --------------
+   * "Loo teema" reads inactive until there is a title, and it stays a working
+   * button: pressing it anyway produces the server's refusal beside the field
+   * rather than a control that does nothing and explains nothing.
+   *
+   * A data attribute, not `aria-disabled`. That attribute makes the claim this
+   * one deliberately does not — a screen reader announces the button as
+   * unavailable and a browser driver refuses to click it, which is exactly the
+   * behaviour the flat fill is *not* meant to have.
+   */
+  function bindRequiredAction(scope) {
+    (scope || document).querySelectorAll("button[data-needs]").forEach(function (button) {
+      if (!once(button, "RequiredAction")) {
+        return;
+      }
+      var field = document.getElementById(button.getAttribute("data-needs"));
+      if (!field) {
+        return;
+      }
+      var sync = function () {
+        var ready = field.value.trim() !== "";
+        button.setAttribute("data-inactive", ready ? "false" : "true");
+      };
+      field.addEventListener("input", sync);
       sync();
     });
   }
@@ -778,7 +989,11 @@
     bindPeriodFields(document);
     bindDatePickers(document);
     bindChoiceFilters(document);
-    bindDateLabels(document);
+    bindDerivedMeaning(document);
+    bindChipCounts(document);
+    bindStageHelp(document);
+    bindRequiredAction(document);
+    focusFragmentTarget();
   });
 
   /* A rejected save returns 400 with the surface re-rendered and the errors in
@@ -799,6 +1014,9 @@
     bindPeriodFields(event.target.querySelector ? event.target : document);
     bindDatePickers(event.target.querySelector ? event.target : document);
     bindChoiceFilters(event.target.querySelector ? event.target : document);
-    bindDateLabels(event.target.querySelector ? event.target : document);
+    bindDerivedMeaning(event.target.querySelector ? event.target : document);
+    bindChipCounts(event.target.querySelector ? event.target : document);
+    bindStageHelp(event.target.querySelector ? event.target : document);
+    bindRequiredAction(event.target.querySelector ? event.target : document);
   });
 })();

@@ -6,10 +6,16 @@ Andmekvaliteet — what somebody can actually fix, kept apart from what they
 cannot.
 
 The distinction is the page. A queue that mixes "three conflicting matches
-nobody has decided" with "sixteen thousand files waiting on a malware scanner
-that does not exist yet" is a queue people stop opening. So the actionable rows
-carry a warning border, the coverage limitations carry a plain one, and only the
-first group counts towards the attention total.
+nobody has decided" with "sixteen thousand files whose text has not been
+extracted yet" is a queue people stop opening. So the actionable rows carry a
+warning border, the coverage limitations carry a plain one, and only the first
+group counts towards the attention total.
+
+Extraction readiness is not in that list at all. It is a property of this
+system's own pipeline rather than of the record, and while it sat among the
+queues readers took it for an unresolved safety question about the corpus. It is
+reported in `Teksti eraldamine` below, in full, with what it means said out
+loud.
 
 Legitimate archive sparsity is not listed at all. An ARCHIVE Matter with no next
 action, an old Matter with no modern stage, a OneNote-only Matter with no
@@ -72,9 +78,24 @@ bytes in OneNote itself are all correct states of the record
   <section aria-labelledby="kvaliteet-eraldamine-heading">
     <h2 class="sectionlabel" id="kvaliteet-eraldamine-heading">Teksti eraldamine</h2>
     <p class="chart__summary">
-      Viis eri seisundit, mida ei liideta. Pahavarakontrolli ootav fail ei ole
+      Viis eri seisundit, mida ei liideta. Tekstitöötlust ootav fail ei ole
       ebaõnnestumine ega järjekord, ja allkirjaümbrik ei ole kunagi kumbki:
       seda ei avata teadlikult.
+    </p>
+    {% comment %}
+      Said in words on the page, not only in a metric definition somebody would
+      have to open. The corpus is known to be malware-free; what is outstanding
+      is a step in this system's text-extraction pipeline. A reader who takes
+      "Ootab tekstitöötlust" for a security warning has been told the wrong
+      thing by the page rather than by the data (Statistika QA §4).
+    {% endcomment %}
+    <p class="chart__summary">
+      <strong>Juristide failid on teadaolevalt pahavaravabad.</strong>
+      „Ootab tekstitöötlust“ tähendab, et faili teksti ei ole veel eraldatud,
+      sest eraldamise tehniline eeltingimus ei ole täidetud. See ei viita
+      pahavarakahtlusele ega lahendamata turvaküsimusele, ja ükski fail ei ole
+      seetõttu ohtlik ega kättesaamatu — avada saab neid teema juurest nagu
+      kõiki teisi.
     </p>
 
     <section class="chart" aria-labelledby="eraldamine-jaotus-heading">

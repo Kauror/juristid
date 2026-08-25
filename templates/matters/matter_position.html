@@ -86,8 +86,17 @@ opinion is usually the same person about to write down what Koda argued.
       </section>
 
       <section aria-labelledby="arvamused-heading">
+        {% comment %}
+          `Koja arvamused`, not `Väljasaadetud arvamused`.
+
+          The list below is every Submission on this Matter the reader may see —
+          a Koostamisel draft as much as a sent one — so a heading naming the
+          sent ones described the count beneath it wrongly, and described a
+          colleague's unfinished draft as something that had already left the
+          building. The population is untouched; only the name of it changed.
+        {% endcomment %}
         <h2 class="sectionlabel" id="arvamused-heading">
-          Väljasaadetud arvamused
+          Koja arvamused
           <span class="sectionlabel__count">{{ submissions|length }}</span>
         </h2>
         <p class="cardnote">

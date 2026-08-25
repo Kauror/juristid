@@ -13,14 +13,21 @@ definition, which is exactly why it has to be on this one.
 <section class="ovsection" aria-label="Vajab sekkumist">
   <div class="ovsection__head">
     <h2 class="ovsection__title">Vajab sekkumist</h2>
+    {% comment %}
+      Two numbers, because they are two facts. The rows are attention items —
+      one Matter that is both late and unowned is two of them — and the link
+      opens Matters. Printing one number and linking the other is how "Ava
+      registris" started opening a list that did not match the heading above it
+      (Ülevaade QA §3).
+    {% endcomment %}
     {% if page.intervention_filter %}
-      <span class="ovsection__meta">{{ page.intervention_total }} · {{ page.intervention_label }}</span>
+      <span class="ovsection__meta">{{ page.intervention_total }} rida · {{ page.intervention_label }}</span>
       <span class="ovsection__spacer"></span>
       <a class="ovsection__link" href="?vaade=osakond">Näita kõiki põhjuseid →</a>
     {% else %}
-      <span class="ovsection__meta">{{ page.intervention_total }} teemat · järjestatud kiireloomulisuse järgi</span>
+      <span class="ovsection__meta">{{ page.intervention_total }} rida · järjestatud kiireloomulisuse järgi</span>
       <span class="ovsection__spacer"></span>
-      <a class="ovsection__link" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL">Ava registris →</a>
+      <a class="ovsection__link" href="{{ page.intervention_url }}">Ava kõik {{ page.intervention_matters }} teemat registris →</a>
     {% endif %}
   </div>
 
@@ -66,7 +73,12 @@ definition, which is exactly why it has to be on this one.
 
   {% if page.intervention_remaining %}
     <p class="ovsection__more">
-      <a href="?vaade=osakond&amp;sekkumine=hilinenud">Näita kõiki {{ page.intervention_total }}</a>
+      {% comment %}
+        `sekkumine=koik`, not `sekkumine=hilinenud`. The footer promises the
+        whole list and used to open the late rows only, so a link reading
+        "Näita kõiki 41" produced nine.
+      {% endcomment %}
+      <a href="?vaade=osakond&amp;sekkumine=koik">Näita kõiki {{ page.intervention_total }} rida</a>
     </p>
   {% endif %}
 </section>
@@ -97,9 +109,15 @@ belongs in the intervention list above, where it reads as "look at this again"
           <p class="railblock__empty">Tähtaegu ei ole.</p>
         {% endfor %}
       </div>
-      {% if group.remaining %}
+      {% if group.count %}
         <p class="deadlinegroup__more">
-          <a href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;jarjestus=deadline">Näita ülejäänud {{ group.remaining }}</a>
+          {% comment %}
+            The group's own population, not the whole register sorted by date.
+            "Näita ülejäänud 3" opened two thousand rows and left the reader to
+            find the three; the link now holds exactly this window's Matters
+            (`?too=`, app/matters/work_items.py).
+          {% endcomment %}
+          <a href="{{ group.url }}">Ava kõik {{ group.matter_count }} teemat →</a>
         </p>
       {% endif %}
     </div>

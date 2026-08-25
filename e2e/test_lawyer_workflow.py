@@ -67,22 +67,21 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     page.locator("#id_title").fill(MATTER_TITLE)
 
-    # Owner, sender and the arrival date are visible choices now, not selects
-    # inside the disclosure — that is the Stage-2E.1 redesign, and driving them
-    # the old way is what this test is for (docs/adr, brief 15–17).
+    # Owner and sender are visible choices, not selects — and nothing on this
+    # page is behind a disclosure any more, which is the Uus teema redesign:
+    # the whole form is on screen at load and this walk never clicks to reveal
+    # a field (Uus teema redesign §3).
     page.get_by_role("radio", name=SANDRA.short_name, exact=True).check()
     # A checkbox, not a radio: a matter may have arrived from several bodies
     # (Wave-2 multiple senders, ADR 0025).
     page.get_by_role("checkbox", name="Näidisministeerium").check()
 
-    page.locator("summary", has_text="Täpsusta teema andmeid").click()
-    # Hetkeseis and Menetlusliik are visible radio chips now, not dropdowns:
-    # each holds one value, and the control says so (Agent-UI brief 5.1).
+    # Hetkeseis and Menetlusliik are visible radio chips, not dropdowns: each
+    # holds one value, and the control says so (Agent-UI brief 5.1).
     page.get_by_role("radio", name="Kooskõlastusringil", exact=True).check()
     page.get_by_role("radio", name="Riigisisene", exact=True).check()
     page.locator("#id_response_deadline").fill(_future(21))
 
-    page.locator("summary", has_text="Järgmine tegevus").first.click()
     page.locator("#id_next-text").fill("Koosta ja saada koja arvamus")
     # The kind is a card, and the date meaning is derived from it rather than
     # asked as a second question. DEADLINE is what DO derives to

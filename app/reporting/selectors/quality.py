@@ -341,6 +341,12 @@ def queues(context: ReportingContext) -> list[QualityQueue]:
             url=_materials_state_url(context, "unavailable"),
             explanation="Fail on allikas olemas, aga selle ülekandmine ei õnnestunud.",
         ),
+        # Extraction readiness is deliberately absent from this list. "Ootab
+        # tekstitöötlust" is not a queue anybody works through, and the corpus's
+        # technical readiness sitting in a business queue is what made readers
+        # treat it as an outstanding safety question. It is reported in full in
+        # the *Teksti eraldamine* section below, where it belongs and where the
+        # copy can say what it actually means (Statistika QA §4).
         QualityQueue(
             key="extraction_failed",
             label="Teksti eraldamine ebaõnnestus",
@@ -356,17 +362,6 @@ def queues(context: ReportingContext) -> list[QualityQueue]:
             explanation=(
                 "Sisu on olemas, kuid narratiivi järjekord võib olla ebatäpne. "
                 "Piirang, mitte parandatav viga."
-            ),
-            is_coverage_note=True,
-        ),
-        QualityQueue(
-            key="awaiting_scanner",
-            label="Ootab pahavarakontrolli",
-            count=documents.extraction_awaiting_scanner(context).value,
-            url="",
-            explanation=(
-                "Neid ei töödelda enne, kui skanner on olemas. Ootuspärane "
-                "seisund, mitte tegevusnimekiri."
             ),
             is_coverage_note=True,
         ),

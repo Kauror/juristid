@@ -421,3 +421,46 @@ draft vocabulary anyone has produced.
 Nothing was seeded, and the UI exposes no tag control, because a checkbox row
 over an empty vocabulary teaches people the feature is broken. The follow-up is
 a reviewed seed migration plus a control on the Matter form, in that order.
+
+## Surfaced by the Uus teema redesign (2026-08-25)
+
+Three product questions the redesign found and refused to answer for the
+department. Each is recorded here rather than decided in code, and each is
+named in ADR 0032.
+
+| Decision | Owner | Needed by |
+| --- | --- | --- |
+| Whether a Matter may be answered to more than one body — `Matter.addressee_organisation` FK → M2M, mirroring what ADR 0025 did for senders | Department head | Before the first real matter that is answered to a ministry and a Riigikogu committee at once |
+| Which of `ELi menetluses` and `muu` the duplicated Hetkeseis description belongs to | Whoever owns the Hetkeseis vocabulary | Before the explanations are shown to somebody learning the vocabulary from them |
+| Where the supplied `rohkem pole tegevusi plaanis` description belongs, given that it is a closure reason and not a stage | Department head | Whenever the closure control is given an explanation of its own |
+
+### Adressaat as a multi-select
+
+The approved design draws Adressaat as a chip multi-select, on the argument
+that a matter can be answered to a ministry and a committee at once, and offers
+the single-value chip group as the version to ship if the migration is not
+wanted yet. The single-value version shipped.
+
+The layout is unaffected either way — the chips look identical and the long-tail
+picker is the same — so this is a schema question and not a design one. ADR 0025
+recorded the singular addressee as a *deliberate* decision, and reversing it
+touches the edit form, the Teema header, the register, search and the
+statistics. It is not something a form redesign may decide as a side effect.
+
+### The two Hetkeseis texts that are not decidable in code
+
+The business descriptions supplied for the ten stages were transcribed sentence
+for sentence into `workflow/0006`. Two of them a migration cannot resolve:
+
+- the text supplied for `muu` is word for word the text supplied for `ELi
+  menetluses`. Both ship as given. Two stages explaining themselves identically
+  is very likely a slip in the source document, but which of the two is wrong is
+  a product decision;
+- `rohkem pole tegevusi plaanis` came with a description alongside the ten stage
+  texts, and it is not a stage: `workflow/0004` reads it as the
+  `MONITORING_STOPPED` disposition, because it describes Koda stopping work
+  rather than where the external process stands. Its text is recorded verbatim
+  in ADR 0032 and is not shown anywhere yet.
+
+The `idee` text as supplied carries an unbalanced parenthesis and is transcribed
+as given. Closing it would be a guess about where the sentence was meant to end.

@@ -102,8 +102,11 @@ def test_the_form_is_fillable_without_opening_a_dropdown(page, base_url, screens
 
     expect(page.locator("#id_title")).to_be_visible()
     expect(page.locator(".dropzone")).to_be_visible()
-    expect(page.locator(".choicecards").first).to_be_visible()
-    expect(page.locator(".checkitems").first).to_be_visible()
+    # `.chiprow` since the Uus teema redesign: the same radios and checkboxes,
+    # with the label carrying the state instead of a box beside it. What this
+    # asserts is unchanged — a visible row of choices, not a select.
+    expect(page.locator(".chiprow").first).to_be_visible()
+    expect(page.locator('input[name="policy_areas"]').first).to_be_attached()
     expect(page.locator("#id_received_date")).to_be_visible()
     screenshots(page, "uus-teema")
 
@@ -211,10 +214,10 @@ def test_two_ticked_areas_both_survive_the_save(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_create(page, base_url)
 
-    # Scoped to the policy-area boxes by their input name. The sender control
-    # is a `.checkitems` group too now, and it sits above this one — an
-    # unscoped nth(0) reads a ministry and then looks for it among the tags.
-    area_labels = page.locator("label.checkitem:has(input[name='policy_areas'])")
+    # Scoped to the policy-area boxes by their input name. Every control on the
+    # page is a chip now and four rows of them sit above this one — an unscoped
+    # nth(0) reads a ministry and then looks for it among the tags.
+    area_labels = page.locator("label.chip:has(input[name='policy_areas'])")
     chosen = [area_labels.nth(index).inner_text().strip() for index in (0, 1)]
     page.locator("#id_title").fill("Kahe valdkonnaga teema")
     page.locator("input[name='policy_areas']").nth(0).check()
@@ -263,7 +266,12 @@ def test_a_matter_can_be_created_with_a_file_attached(page, base_url, tmp_path):
 
     page.locator("#id_title").fill("Browseri testist loodud teema")
     page.locator("#id_files").set_input_files(str(attachment))
-    expect(page.locator(".dropzone__file")).to_have_text("kaaskiri.txt")
+    # The row now carries what the file will become as well as its name: TÕEND,
+    # the filename and the size, with the way to take it off again while that
+    # is still free (Uus teema redesign §9).
+    row = page.locator(".dropzone__file")
+    expect(row).to_contain_text("kaaskiri.txt")
+    expect(row).to_contain_text("TÕEND")
 
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("domcontentloaded")

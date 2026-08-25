@@ -33,6 +33,22 @@ pytestmark = pytest.mark.django_db
 OVERVIEW = "matters:overview"
 
 
+def register_rows(user, url: str, *, today=None):
+    """Exactly the Matters ``matters:matter_list`` would page for this link.
+
+    The figure's own URL, parsed and run back through the register's filter
+    pipeline — never a re-derived condition. A test that rebuilt the query would
+    prove the two similar conditions agree with each other rather than that the
+    figure and the list are one query.
+    """
+    from urllib.parse import parse_qsl, urlparse
+
+    from app.matters.register_filters import register_population
+
+    parsed = urlparse(url)
+    return list(register_population(user, dict(parse_qsl(parsed.query)), today=today))
+
+
 def _sent(matter, *, title: str, sent):
     """A canonical sent Submission, with the evidence its state requires.
 
@@ -283,12 +299,23 @@ def test_minu_tiim_shows_the_whole_week_not_only_the_problems(department_head, s
 
 
 def test_the_area_table_uses_the_governed_vocabulary(department_head, today):
-    """Twenty-three active areas, read from the taxonomy rather than restated."""
-    assert PolicyArea.objects.filter(is_active=True).count() == 23
+    """As many rows as there are offered areas, read rather than restated.
+
+    Counted from `selectable_policy_areas` rather than written out, because the
+    number is not the point: the point is that this table and Uus teema offer
+    the same vocabulary. A literal here would have to be edited every time the
+    department adds or withdraws a label, and the edit that forgot would look
+    like a broken table rather than a stale test (Uus teema redesign §7.1).
+    """
+    from app.taxonomy.vocabulary import selectable_policy_areas
+
+    offered = selectable_policy_areas().count()
+    assert offered
+    assert PolicyArea.objects.filter(is_active=True).count() == offered
 
     rows, empty = ov.area_rows(department_head, today, [])
 
-    assert len(rows) + empty == 23
+    assert len(rows) + empty == offered
 
 
 def test_a_retired_area_with_open_work_is_kept_and_marked(department_head, specialist, today):
@@ -384,19 +411,61 @@ def test_every_seis_figure_resolves_to_a_real_list(client, department_head, scop
     assert page.figures
     for figure in page.figures:
         assert figure.url, f"{figure.key} has no destination"
-        # A relative destination is this page narrowing itself — the only
-        # honest home for a figure the register cannot express.
+        # A relative destination is this page narrowing itself — the honest home
+        # for the two figures that count something the register does not list,
+        # namely people and policy areas.
         url = figure.url if figure.url.startswith("/") else reverse(OVERVIEW) + figure.url
         response = client.get(url)
         assert response.status_code == 200, f"{figure.key} -> {url}"
 
 
-def test_the_overdue_figure_and_its_list_hold_the_same_rows(department_head, specialist, today):
-    """The figure counts late work; the list it opens holds exactly that.
+@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_TEAM, ov.SCOPE_AREAS])
+def test_a_figure_that_opens_the_register_carries_a_filter(department_head, scope, today):
+    """A figure linking to the bare register is the defect this page keeps finding.
 
-    An Oluline tähtaeg that has passed is genuinely late and has no open action,
-    so the register cannot express it. Narrowing this page's own intervention
-    list is what keeps the number and the rows equal (§21).
+    Not every figure opens the register — *N inimest* opens the list of people
+    on this page — but every one that does must arrive somewhere narrowed, or
+    the reader is looking at the whole corpus and a number that no longer means
+    anything.
+    """
+    from urllib.parse import parse_qsl, urlparse
+
+    page = ov.build_overview(department_head, scope=scope, today=today)
+    register = reverse("matters:matter_list")
+
+    for figure in page.figures:
+        if not figure.url.startswith(register):
+            continue
+        assert dict(parse_qsl(urlparse(figure.url).query)), (
+            f"{figure.key} opens an unfiltered register"
+        )
+
+
+@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_TEAM, ov.SCOPE_AREAS])
+def test_a_register_figure_lands_on_the_results(department_head, scope, today):
+    """The fragment is part of the promise, not decoration.
+
+    A filtered register opens on a search box, a status strip and a narrowing
+    panel that expands itself whenever a filter is applied. Somebody who clicked
+    a number wants the rows.
+    """
+    page = ov.build_overview(department_head, scope=scope, today=today)
+    register = reverse("matters:matter_list")
+
+    for figure in page.figures:
+        if figure.url.startswith(register):
+            assert figure.url.endswith(ov.RESULTS_ANCHOR), f"{figure.key} lands above the rows"
+
+
+def test_the_overdue_figure_and_its_list_hold_the_same_rows(department_head, specialist, today):
+    """The figure counts late work; the register list it opens holds exactly that.
+
+    An `Oluline tähtaeg` that has passed is genuinely late and carries no open
+    action, so `?tegevus=` could never express it — which is why the figure used
+    to narrow this page's own intervention list instead of opening the register
+    like every figure beside it. `?too=` expresses the read model's own
+    population, so the figure now leads where a reader expects and the two
+    halves are still one query (Ülevaade QA §3).
     """
     late_action = create_matter(
         title="Hilinenud tegevusega", owner=specialist, reference_year=2026, actor=specialist
@@ -431,18 +500,11 @@ def test_the_overdue_figure_and_its_list_hold_the_same_rows(department_head, spe
 
     page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
     figure = next(f for f in page.figures if f.key == "overdue")
-    filtered = ov.build_overview(
-        department_head,
-        scope=ov.SCOPE_DEPARTMENT,
-        today=today,
-        intervention_filter="hilinenud",
-    )
+    rows = register_rows(department_head, figure.url, today=today)
 
     assert figure.count == 2
-    assert len(filtered.interventions) == figure.count
-    titles = {row.matter.title for row in filtered.interventions}
-    assert titles == {"Hilinenud tegevusega", "Hilinenud tähtajaga"}
-    assert "Ootav" not in titles
+    assert {matter.title for matter in rows} == {"Hilinenud tegevusega", "Hilinenud tähtajaga"}
+    assert figure.count == len(rows)
 
 
 def test_the_month_filter_narrows_the_sent_list(client, department_head, specialist):

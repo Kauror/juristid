@@ -112,7 +112,11 @@ def test_a_restricted_matter_is_chipped_and_says_nothing_more(signed_in, special
     assert "Piiratud" in body
     # The chip says *that* it is restricted. Why is not on the page: a reason
     # beside the chip would leak the thing the restriction protects.
-    assert "chip--restricted" in body
+    #
+    # `lockchip` since the Uus teema round: the badge used to claim the bare
+    # `.chip` class, which the create form's own chip control then collided
+    # with. Same badge, same pixels, its own name (static/css/app.css).
+    assert "lockchip--restricted" in body
 
 
 def test_a_restricted_matter_is_unreachable_for_an_outsider(client, other_specialist, specialist):

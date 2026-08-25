@@ -499,10 +499,19 @@ def test_searchability_excludes_what_no_parser_opens(world, reporting_context):
     assert result.value == 57
 
 
-def test_searchability_says_when_a_scanner_is_holding_it_back(world, reporting_context, settings):
+def test_searchability_says_what_is_holding_it_back(world, reporting_context, settings):
+    """And says it without implying the corpus might be infected.
+
+    The files are known to be malware-free; what has not happened is text
+    extraction. Naming the scanner told a reader the opposite (ADR 0033).
+    """
     settings.REAL_DATA_ALLOWED = True
     result = compute(keys.SEARCHABLE_DOCUMENT_COVERAGE, reporting_context(world.martin))
-    assert any("pahavarakontrolli" in note for note in result.notes)
+    notes = " ".join(result.notes)
+
+    assert "tekstitöötlust" in notes
+    assert "pahavaravabad" in notes
+    assert "pahavarakontrolli" not in notes
 
 
 # ---------------------------------------------------------------------------

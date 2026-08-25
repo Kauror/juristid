@@ -65,3 +65,5 @@ Naming: `NNNN-short-decision-title.md`.
 - 0029 — the reviewed reference-data baseline: nine policy areas, the core public institutions, and why no backfill yet
 - 0030 — the approved Teema workspace redesign: two tabs, one composer save, grouped-not-merged history, and the twenty-three working Valdkonnad
 - 0031 — what a working session on real data changed: the position back in the rail, one dated work list, a full edit page beside the inline controls
+- 0032 — the approved Uus teema redesign: one screen, one chip control, two Valdkonnad withdrawn, and Hetkeseis explaining itself on the row
+- 0033 — Ülevaade drill-down parity: a number opens a list of its own kind, `?too=` makes the dated-work populations addressable, and "Ootab pahavarakontrolli" stops telling readers their archive might be infected

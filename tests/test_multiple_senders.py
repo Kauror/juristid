@@ -693,6 +693,18 @@ def test_rendering_many_senders_costs_no_query_per_row(
 def test_the_department_overview_prefetches_its_senders(
     signed_in, specialist, django_assert_max_num_queries
 ):
+    """A ceiling, and what it is a ceiling on.
+
+    The property is that the cost does not scale with rows: fifteen Matters with
+    two senders each would add at least fifteen queries the moment the prefetch
+    is lost, which is an order of magnitude past any headroom here.
+
+    The number moved from 40 when the QA round gave the page two more figures —
+    *Arvamusi koostamisel*, and the honest Matter total behind *Vajab
+    sekkumist*, which is a union of four populations and cannot be read off the
+    capped row list. Every population the page had already resolved is reused
+    rather than re-scoped (ADR 0033, `overview.Populations`).
+    """
     for index in range(15):
         factories.MatterFactory(
             title=f"Ulevaate teema {index}",
@@ -703,7 +715,7 @@ def test_the_department_overview_prefetches_its_senders(
             ],
         )
 
-    with django_assert_max_num_queries(40):
+    with django_assert_max_num_queries(44):
         response = signed_in.get(reverse("matters:overview"))
         response.content.decode()
 

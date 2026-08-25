@@ -12,7 +12,8 @@ Zero is rendered as an em dash, never as a red 0. A red zero says "nothing is
 wrong here" in the colour used for "something is wrong here".
 
 Areas with no open work are counted in the footer rather than rendered as
-empty rows: the information survives without twenty-three blank lines.
+empty rows: the information survives without a blank line for every area the
+department governs.
 {% endcomment %}
 
 <section class="ovsection" aria-label="Valdkonnad">
@@ -33,7 +34,9 @@ empty rows: the information survives without twenty-three blank lines.
             {{ row.name }}
             {% if row.is_legacy %}<span class="badge badge--quiet">varasem</span>{% endif %}
           </span>
-          <span class="areatable__num"><a href="{{ row.url }}">{{ row.open_count }}</a></span>
+          <span class="areatable__num">
+            {% if row.open_count %}<a href="{{ row.url }}">{{ row.open_count }}</a>{% else %}<span class="areatable__zero">—</span>{% endif %}
+          </span>
           <span class="areatable__num">
             {% if row.overdue %}<a class="areatable__danger" href="{{ row.overdue_url }}">{{ row.overdue }}</a>{% else %}<span class="areatable__zero">—</span>{% endif %}
           </span>
@@ -43,12 +46,13 @@ empty rows: the information survives without twenty-three blank lines.
           <span class="arearow__owners">
             {% if row.owners %}
               {% for owner in row.owners %}<span class="avatar avatar--sm" title="{{ owner.name }}">{{ owner.initials }}</span>{% endfor %}
-            {% else %}
+            {% elif row.is_unowned %}
               {% comment %}
                 Only when the area has open work and *nobody at all* owns any of
                 it. An area with five owned Matters and one unassigned one is
                 being watched, and calling it "vastutajata" would be false
-                (§19.3).
+                (§19.3) — and an area with no open work at all is not unowned,
+                it is quiet, which is why the empty rows say nothing here.
               {% endcomment %}
               <a class="arearow__unowned" href="{{ row.unassigned_url }}">vastutajata</a>
             {% endif %}
@@ -69,7 +73,9 @@ empty rows: the information survives without twenty-three blank lines.
           {% empty %}
             <p class="railblock__empty">Selle valdkonna teemad avanevad registris.</p>
           {% endfor %}
-          <a class="arearow__more" href="{{ row.url }}">Näita kõiki {{ row.open_count }} teemat →</a>
+          {% if row.open_count %}
+            <a class="arearow__more" href="{{ row.url }}">Näita kõiki {{ row.open_count }} teemat →</a>
+          {% endif %}
         </div>
       </details>
     {% empty %}
@@ -78,7 +84,19 @@ empty rows: the information survives without twenty-three blank lines.
   </div>
 
   <p class="ovsection__more">
-    <a href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL">Näita kõiki {{ page.area_total }} valdkonda</a>
-    <span class="ovnote">{{ page.empty_areas }} valdkonnas ei ole ühtegi avatud teemat</span>
+    {% comment %}
+      A number of *areas* opens a list of areas. It opened the register — which
+      lists Matters — so "Näita kõiki 23 valdkonda" produced ninety-one teemat
+      and no valdkond at all (Ülevaade QA §3). `?tuhjad=1` renders the areas
+      carrying no open work as rows rather than as a footnote, which is exactly
+      the twenty-three this link promises.
+    {% endcomment %}
+    {% if page.show_empty_areas %}
+      <a href="?vaade=valdkonniti&amp;jarjesta={{ page.sort }}">Peida tühjad valdkonnad</a>
+      <span class="ovnote">{{ page.empty_areas }} valdkonnas ei ole ühtegi avatud teemat</span>
+    {% else %}
+      <a href="?vaade=valdkonniti&amp;jarjesta={{ page.sort }}&amp;tuhjad=1">Näita kõiki {{ page.area_total }} valdkonda</a>
+      <span class="ovnote">{{ page.empty_areas }} valdkonnas ei ole ühtegi avatud teemat</span>
+    {% endif %}
   </p>
 </section>
