@@ -54,7 +54,6 @@ from app.matters.selectors import MISSING
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
-from app.workflow.enums import ActionKind
 
 # ---------------------------------------------------------------------------
 # Scopes
@@ -80,6 +79,10 @@ def scope_from(value: str | None) -> str:
 
 #: The area table's sort keys. In the URL for the same reason the scope is.
 SORT_PARAM = "jarjesta"
+
+#: Render the areas that carry no open work as rows too. The area table's own
+#: footer link, and the only honest destination for a number that counts areas.
+SHOW_EMPTY_AREAS_PARAM = "tuhjad"
 SORT_OPEN = "avatud"
 SORT_OVERDUE = "hilinenud"
 SORT_NO_ACTION = "tegevuseta"
@@ -134,16 +137,33 @@ ESTONIAN_MONTHS_IN: tuple[str, ...] = (
 )
 
 
+#: The register's results region. Every link from this page carries it, so
+#: arriving from a number lands on the rows rather than on the filter panel the
+#: reader then has to scroll past to find out whether anything came back.
+RESULTS_ANCHOR = "#tulemused"
+
+#: The two figures on this page that count something the register does not list
+#: — people, and policy areas. Each one opens the list of exactly those, which
+#: is on this page.
+PEOPLE_ANCHOR = "#inimesed"
+UNOWNED_ANCHOR = "#vastutajata-valdkonnad"
+
+
 def _teemad(**params: Any) -> str:
     """A link into the register with filters already applied.
 
     Every figure on this page is a promise that a list exists behind it, and the
     promise is kept by reusing the register's own query parameters rather than
     inventing a parallel query language beside them.
+
+    The fragment is part of the promise. A filtered register still opens on its
+    search box and its narrowing panel, and a reader who arrived from "12 üle
+    tähtaja" wants the twelve rows — so the link names the results region and
+    the register focuses it (templates/matters/matter_list.html).
     """
     query = "&".join(f"{key}={value}" for key, value in params.items() if value not in (None, ""))
     base = reverse("matters:matter_list")
-    return f"{base}?{query}" if query else base
+    return f"{base}?{query}{RESULTS_ANCHOR}" if query else f"{base}{RESULTS_ANCHOR}"
 
 
 _OPEN_FULL = {"olek": "avatud", "liik": "FULL"}
@@ -178,7 +198,11 @@ class Populations:
         return cls(
             user=user,
             open_matters=open_matters,
-            quiet=open_matters.filter(wi.no_next_action_q()),
+            # Through the read model rather than a condition written here, so
+            # this and the register's `?tegevus=puudub` are one definition. They
+            # were two, and they disagreed about a Matter whose only open action
+            # is restricted below it: reader-blind here, reader-scoped there.
+            quiet=wi.matters_without_action(user),
             ownerless=open_matters.filter(owner__isnull=True),
             submissions=Submission.objects.visible_to(user),
         )
@@ -243,11 +267,24 @@ _REASON_RANK = {
 INTERVENTION_PARAM = "sekkumine"
 
 #: What each value of that parameter selects, as the reasons it holds.
+INTERVENTION_ALL = "koik"
+
 INTERVENTION_FILTERS: dict[str, tuple[str, ...]] = {
     "hilinenud": (REASON_OVERDUE, REASON_IMPORTANT),
     "sammuta": (REASON_NO_ACTION,),
     "vastutajata": (REASON_OWNERLESS,),
     "ulevaatamiseks": (REASON_RIPE,),
+    # Every reason, uncapped. It exists because the list's own "Näita kõiki N"
+    # link had nowhere honest to go: it carried `sekkumine=hilinenud`, so a
+    # footer promising all forty rows opened the nine that were late
+    # (Ülevaade QA §3).
+    INTERVENTION_ALL: (
+        REASON_OVERDUE,
+        REASON_IMPORTANT,
+        REASON_NO_ACTION,
+        REASON_OWNERLESS,
+        REASON_RIPE,
+    ),
 }
 
 #: How each filtered list describes itself above the rows.
@@ -256,6 +293,7 @@ INTERVENTION_LABELS: dict[str, str] = {
     "sammuta": "järgmise tegevuseta",
     "vastutajata": "vastutajata",
     "ulevaatamiseks": "ülevaatamiseks küpsed",
+    INTERVENTION_ALL: "kõik põhjused",
 }
 
 _REASON_TONE = {
@@ -410,10 +448,21 @@ def intervention_rows(
 
 @dataclass(frozen=True)
 class DeadlineGroup:
+    """One deadline window, and the register list that holds exactly it.
+
+    ``count`` is work items — two deadlines on one Matter are two lines in the
+    table — and ``matter_count`` is what the register would list. They are
+    printed as the different numbers they are, because the group's link opens a
+    list of *Matters* and a "Näita ülejäänud 3" above a list of two is the
+    failure this page exists to avoid.
+    """
+
     key: str
     label: str
     items: list[wi.WorkItem]
     shown: int
+    #: The `?too=` value that reproduces this window on the register.
+    population: str
 
     @property
     def count(self) -> int:
@@ -427,32 +476,39 @@ class DeadlineGroup:
     def remaining(self) -> int:
         return max(0, self.count - self.shown)
 
+    @property
+    def matter_count(self) -> int:
+        return len({item.matter_id for item in self.items})
 
-def real_deadlines(items: list[wi.WorkItem]) -> list[wi.WorkItem]:
-    """Only what a department may honestly call a deadline.
+    @property
+    def url(self) -> str:
+        return _teemad(**_OPEN_FULL, too=self.population)
 
-    DO deadlines and ``Oluline tähtaeg``. A WAIT's expected date and a MONITOR's
-    review date are commitments nobody made — they belong in the intervention
-    list, where they read as "look at this again", not in a table headed
-    *Tähtajad* (master specification 18.8).
-    """
-    return [
-        item
-        for item in items
-        if not item.is_action or item.action_kind == ActionKind.DO.value
-        if item.meaning in (wi.MEANING_DEADLINE, wi.MEANING_IMPORTANT)
-    ]
+
+#: Kept as a name here because three test modules and two callers read it from
+#: this module; the definition itself lives with the read model, so the register
+#: filters on the same predicate the table renders.
+real_deadlines = wi.real_deadlines
 
 
 def deadline_groups(items: list[wi.WorkItem], today: date) -> list[DeadlineGroup]:
-    week_end = wi.end_of_iso_week(today)
-    next_end = week_end + timedelta(days=7)
-    dated = [(item.when, item) for item in real_deadlines(items) if item.when is not None]
-    this_week = [item for when, item in dated if today <= when <= week_end]
-    next_week = [item for when, item in dated if week_end < when <= next_end]
+    this_week = wi.work_population_items(items, wi.WORK_DEADLINE_THIS_WEEK, today)
+    next_week = wi.work_population_items(items, wi.WORK_DEADLINE_NEXT_WEEK, today)
     return [
-        DeadlineGroup("sel_nadalal", "Sel nädalal", this_week, len(this_week)),
-        DeadlineGroup("jargmisel", "Järgmisel", next_week, DEADLINE_PREVIEW),
+        DeadlineGroup(
+            "sel_nadalal",
+            "Sel nädalal",
+            this_week,
+            len(this_week),
+            wi.WORK_DEADLINE_THIS_WEEK,
+        ),
+        DeadlineGroup(
+            "jargmisel",
+            "Järgmisel",
+            next_week,
+            DEADLINE_PREVIEW,
+            wi.WORK_DEADLINE_NEXT_WEEK,
+        ),
     ]
 
 
@@ -548,7 +604,17 @@ def activity_feed(user: Any, today: date, kind: str = FEED_ALL) -> list[FeedItem
     if kind in (FEED_ALL, FEED_SUBMISSIONS):
         sent = (
             Submission.objects.visible_to(user)
-            .filter(status=SubmissionStatus.SENT, sent_at__isnull=False, sent_at__gte=since)
+            # `sent_at__date__gte`, not `sent_at__gte`. `since` is a date, and
+            # Django compares a date against a DateTimeField by widening it to
+            # midnight *naive* — which raises a RuntimeWarning under
+            # USE_TZ and quietly means "midnight UTC" rather than midnight here.
+            # The two Entry/ChangeEvent branches beside this one already use the
+            # `__date` lookup; this one did not (Ülevaade QA §5).
+            .filter(
+                status=SubmissionStatus.SENT,
+                sent_at__isnull=False,
+                sent_at__date__gte=since,
+            )
             .select_related("matter", "sent_by")
             .order_by("-sent_at")[:FEED_LIMIT]
         )
@@ -592,7 +658,13 @@ def activity_feed(user: Any, today: date, kind: str = FEED_ALL) -> list[FeedItem
 
 @dataclass(frozen=True)
 class PersonLoad:
-    """One colleague's inventory and attention counts. Never a ranking."""
+    """One colleague's inventory and attention counts. Never a ranking.
+
+    ``overdue`` counts **Matters**, not late rows. Two missed deadlines on one
+    file are one file to open, and the register — which is where the number
+    leads — lists Matters. Counting rows here and listing Matters there is how a
+    "3 üle tähtaja" link opens two rows (Ülevaade QA §3).
+    """
 
     user: Any
     open_count: int
@@ -620,7 +692,11 @@ class PersonLoad:
 
     @property
     def overdue_url(self) -> str:
-        return _teemad(**_OPEN_FULL, vastutaja=self.user.pk, tegevus="hilinenud")
+        # `too_vastutaja`, not `vastutaja`: this counts the late work this
+        # person is *responsible* for, which is a different question from which
+        # files they own — and the row prints the two side by side precisely
+        # because they are different (master specification 18.1).
+        return _teemad(**_OPEN_FULL, too=wi.WORK_OVERDUE, too_vastutaja=self.user.pk)
 
     @property
     def no_action_url(self) -> str:
@@ -693,7 +769,7 @@ def person_loads(
             PersonLoad(
                 user=person,
                 open_count=open_by_owner.get(person.pk, 0),
-                overdue=len(overdue),
+                overdue=len({item.matter_id for item in overdue}),
                 week=len(week),
                 no_action=quiet_by_owner.get(person.pk, 0),
                 items=shown,
@@ -751,7 +827,10 @@ class AreaRow:
 
     @property
     def overdue_url(self) -> str:
-        return _teemad(**_OPEN_FULL, valdkond=self.key, tegevus="hilinenud")
+        # The read model's own population, not `?tegevus=hilinenud`: the column
+        # counts a passed `Oluline tähtaeg` too, and that carries no open action
+        # for the register to filter on.
+        return _teemad(**_OPEN_FULL, valdkond=self.key, too=wi.WORK_OVERDUE)
 
     @property
     def no_action_url(self) -> str:
@@ -788,6 +867,7 @@ def area_rows(
     items: list[wi.WorkItem],
     *,
     sort: str = SORT_OPEN,
+    include_empty: bool = False,
     pop: Populations | None = None,
 ) -> tuple[list[AreaRow], int]:
     """One row per area that carries work, plus how many carry none.
@@ -846,7 +926,12 @@ def area_rows(
         )
 
     empty = sum(1 for row in rows if row.open_count == 0)
-    active_rows = [row for row in rows if row.open_count > 0]
+    # An area with nothing open is normally counted in the footer rather than
+    # rendered as a blank line — twenty-three empty rows is a page that looks
+    # like a data problem. `?tuhjad=1` is that footer's destination: it promised
+    # "all N areas" and opened the register, which lists Matters and not areas
+    # at all (Ülevaade QA §3).
+    active_rows = rows if include_empty else [row for row in rows if row.open_count > 0]
 
     keys = {
         SORT_OPEN: lambda row: (-row.open_count, row.name),
@@ -920,34 +1005,58 @@ def organisation_ranking(
     ]
 
 
-def reporting_counts(user: Any, today: date, pop: Populations | None = None) -> list[CountRow]:
-    """Current-year canonical counts, from the canonical tables only.
+def reporting_counts(
+    user: Any,
+    today: date,
+    #: Unused since both linked rows resolve through their destination's own
+    #: selector. Kept so every rail block has the same signature and a caller
+    #: cannot pass the resolved populations to one and forget the next.
+    pop: Populations | None = None,
+) -> list[CountRow]:
+    """Current-year canonical counts, each from the selector its own list uses.
 
     *Esitatud arvamusi* is SENT ``Submission`` rows. The 767 historical archive
     files are evidence of past correspondence, not canonical sent opinions, and
     counting them here would inflate the department's year by an order of
     magnitude (ADR 0021).
+
+    Both linked rows are counted *through* the destination's own selector rather
+    than beside it — the workspace's ``sent_queryset`` and the register's filter
+    pipeline. Each row carries the year into its link, which is the half that
+    was missing: the label said 2026 and the link opened every year there was.
     """
-    people = _populations(user, pop)
+    from app.submissions import workspace
+
     year = today.year
+    closed_params = {"olek": "suletud", "suletud": str(year)}
     return [
         CountRow(
+            # Counted through the workspace's own selector and linked with the
+            # parameters that reproduce it. The year was in the label alone, so
+            # "Esitatud arvamusi 2026" opened every opinion the department had
+            # ever sent (Ülevaade QA §3).
             label=f"Esitatud arvamusi {year}",
-            count=people.submissions.filter(
-                status=SubmissionStatus.SENT, sent_at__year=year
+            count=workspace.sent_queryset(
+                user, workspace.SentFilters(year=str(year), status=SubmissionStatus.SENT)
             ).count(),
-            url=reverse("submissions:sent"),
+            url=f"{reverse('submissions:sent')}?aasta={year}",
         ),
         CountRow(
+            # No destination: this product has no list of Kaasamine records
+            # outside the Matter that carries them, and a link to something
+            # adjacent is worse than no link at all.
             label=f"Kaasamisi {year}",
             count=MatterEngagement.objects.visible_to(user).filter(occurred_on__year=year).count(),
         ),
         CountRow(
             label=f"Suletud teemasid {year}",
-            count=Matter.objects.visible_to(user)
-            .filter(is_open=False, closed_at__year=year)
-            .count(),
-            url=_teemad(olek="suletud", liik="FULL"),
+            # Counted *through* the register's own filter pipeline, the way the
+            # deadline figure is, so the count and the list are one query rather
+            # than two that resemble each other. `?liik=` is deliberately absent
+            # from both halves: an archive row closed this year is still one of
+            # this year's completions.
+            count=register_population(user, closed_params, today=today).count(),
+            url=_teemad(**closed_params),
         ),
     ]
 
@@ -982,6 +1091,11 @@ class Overview:
     figures: list[Figure] = field(default_factory=list)
     interventions: list[InterventionRow] = field(default_factory=list)
     intervention_total: int = 0
+    #: Distinct Matters behind the whole list, uncapped. A different number from
+    #: `intervention_total`, and deliberately: one Matter can be late *and*
+    #: unowned, which is two rows and one file to open.
+    intervention_matters: int = 0
+    intervention_url: str = ""
     intervention_filter: str = ""
     deadlines: list[DeadlineGroup] = field(default_factory=list)
     feed: list[FeedItem] = field(default_factory=list)
@@ -989,6 +1103,7 @@ class Overview:
     people: list[PersonLoad] = field(default_factory=list)
     areas: list[AreaRow] = field(default_factory=list)
     empty_areas: int = 0
+    show_empty_areas: bool = False
     area_total: int = 0
     sort: str = SORT_OPEN
     loads: list[PersonLoad] = field(default_factory=list)
@@ -1032,6 +1147,20 @@ class Overview:
         return max(0, self.intervention_total - INTERVENTION_PREVIEW)
 
 
+def drafting_count(user: Any) -> int:
+    """Canonical opinions being written now, counted by the list's own selector."""
+    from app.submissions import workspace
+
+    return workspace.drafting(user).count()
+
+
+def drafting_url() -> str:
+    """The Arvamused workspace, showing exactly what :func:`drafting_count` counted."""
+    from app.submissions import workspace
+
+    return f"{reverse('submissions:sent')}?{workspace.DRAFTING_QUERY}"
+
+
 def _department_figures(
     user: Any, today: date, items: list[wi.WorkItem], pop: Populations | None = None
 ) -> list[Figure]:
@@ -1046,6 +1175,7 @@ def _department_figures(
     sent = people.submissions.filter(
         status=SubmissionStatus.SENT, sent_at__year=today.year, sent_at__month=today.month
     ).count()
+    overdue_ids = wi.work_population_ids(user, wi.WORK_OVERDUE, today=today, items=items)
     return [
         Figure(
             "open",
@@ -1055,11 +1185,17 @@ def _department_figures(
         ),
         Figure(
             "overdue",
-            len(wi.overdue_items(items)),
-            "üle tähtaja",
-            # Not the register: this counts late *work*, and an Oluline tähtaeg
-            # that has passed has no open action for the register to filter on.
-            f"?{SCOPE_PARAM}={SCOPE_DEPARTMENT}&{INTERVENTION_PARAM}=hilinenud",
+            # Matters, because Matters is what the list holds. Two missed
+            # deadlines on one file are one file to open, and the register
+            # cannot list a row twice to make a work-item count come out.
+            len(overdue_ids),
+            "teemat üle tähtaja",
+            # The register, through `?too=` — the read model's own population,
+            # resolved by the read model's own function. It used to narrow this
+            # page's intervention list instead, because `?tegevus=` cannot
+            # express a passed `Oluline tähtaeg`; `?too=` can, so the figure now
+            # opens the register like every figure beside it (Ülevaade QA §3).
+            _teemad(**_OPEN_FULL, too=wi.WORK_OVERDUE),
             tone="danger",
         ),
         Figure(
@@ -1080,6 +1216,21 @@ def _department_figures(
             _teemad(**deadline_params),
         ),
         Figure(
+            "drafting",
+            # Canonical Submissions in DRAFT — opinions somebody is writing now.
+            # Not the register's VÄLJA column, which records what the *Excel*
+            # era knew about a sent date, and not the historical archive, whose
+            # 767 letters are evidence of past correspondence rather than work
+            # in progress (ADR 0021, ADR 0028).
+            #
+            # Counted by the same selector the destination lists with, so the
+            # figure and the Arvamused workspace cannot disagree.
+            drafting_count(user),
+            "arvamust koostamisel",
+            drafting_url(),
+            tone="warning",
+        ),
+        Figure(
             "submissions",
             sent,
             f"esitatud arvamust {month}",
@@ -1096,6 +1247,7 @@ def build_overview(
     sort: str = SORT_OPEN,
     feed_filter: str = FEED_ALL,
     intervention_filter: str = "",
+    show_empty_areas: bool = False,
 ) -> Overview:
     """Assemble one scope. The shell is the same for all three."""
     today = today or timezone.localdate()
@@ -1127,6 +1279,10 @@ def build_overview(
             rows = [row for row in rows if row.reason in wanted]
         page.interventions = rows
         page.intervention_total = len(rows)
+        page.intervention_matters = len(
+            wi.work_population_ids(user, wi.WORK_NEEDS_ATTENTION, today=today, items=items)
+        )
+        page.intervention_url = _teemad(**_OPEN_FULL, too=wi.WORK_NEEDS_ATTENTION)
         page.deadlines = deadline_groups(items, today)
         page.feed = activity_feed(user, today, feed_filter)
         page.loads = person_loads(user, today, items, pop=people)
@@ -1146,23 +1302,36 @@ def build_overview(
         week_end = wi.end_of_iso_week(today)
         deadlines = real_deadlines(items)
         page.figures = [
-            Figure("people", len(page.people), "inimest", _teemad(**_OPEN_FULL)),
+            # The one figure on this page that does not count Matters, so its
+            # destination is the list of people below rather than the register:
+            # following it must land on exactly the N this number claims, and
+            # this page *is* that list (Ülevaade QA §3).
+            Figure(
+                "people",
+                len(page.people),
+                "inimest",
+                f"?{SCOPE_PARAM}={SCOPE_TEAM}{PEOPLE_ANCHOR}",
+            ),
+            # The department's open Matters, not the sum of the rows below.
+            # Summing per-person counts silently drops every unowned file — the
+            # ones the rail lists as *Vastutajata* — so the strip disagreed with
+            # the register link beside it by exactly that many.
             Figure(
                 "open",
-                sum(person.open_count for person in page.people),
+                people.open_matters.count(),
                 "avatud teemat",
                 _teemad(**_OPEN_FULL),
             ),
             Figure(
                 "overdue",
-                sum(person.overdue for person in page.people),
-                "üle tähtaja",
-                _teemad(olek="avatud", tegevus="hilinenud"),
+                len(wi.work_population_ids(user, wi.WORK_OVERDUE, today=today, items=items)),
+                "teemat üle tähtaja",
+                _teemad(**_OPEN_FULL, too=wi.WORK_OVERDUE),
                 tone="danger",
             ),
             Figure(
                 "no_action",
-                sum(person.no_action for person in page.people),
+                people.quiet.count(),
                 "järgmise tegevuseta",
                 _teemad(**_OPEN_FULL, tegevus=MISSING),
                 tone="warning",
@@ -1189,11 +1358,14 @@ def build_overview(
         ]
         return page
 
-    areas, empty = area_rows(user, today, items, sort=sort, pop=people)
+    areas, empty = area_rows(
+        user, today, items, sort=sort, include_empty=show_empty_areas, pop=people
+    )
     attach_area_matters(user, areas, pop=people)
     page.areas = areas
     page.empty_areas = empty
-    page.area_total = len(areas) + empty
+    page.show_empty_areas = show_empty_areas
+    page.area_total = len(areas) if show_empty_areas else len(areas) + empty
     unowned = [row for row in areas if row.is_unowned]
     page.unowned_areas = unowned
     page.figures = [
@@ -1202,7 +1374,11 @@ def build_overview(
             "unowned",
             len(unowned),
             "valdkonda vastutajata",
-            _teemad(**_OPEN_FULL, vastutaja=MISSING),
+            # This counts *areas*, so it opens the list of those areas — the
+            # rail block beside the table — and not the register. It linked to
+            # every ownerless Matter, which is a different population with a
+            # different number: three areas, eleven files (Ülevaade QA §3).
+            f"?{SCOPE_PARAM}={SCOPE_AREAS}{UNOWNED_ANCHOR}",
             tone="warning",
         ),
     ]

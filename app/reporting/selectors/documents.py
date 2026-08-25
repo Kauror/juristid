@@ -12,11 +12,26 @@ does not exist yet. Stage 2D imports historical evidence with
 right. Together they mean a large part of the corpus is *waiting on a control*,
 which is neither a failure, nor a queue, nor a defect (main, commit 34d91b1).
 
+What the reader is told about that state
+----------------------------------------
+The gate stays exactly where it is. What changed is the sentence beside the
+number. *Ootab pahavarakontrolli* named the mechanism, and every reader who saw
+it understood the same wrong thing: that these files might be infected and that
+somebody has an unresolved safety question to answer. Neither is true — the
+Juristid corpus is known to be free of malware — and a statistic that leaves a
+department believing its own archive is suspect is worse than no statistic.
+
+So the business-facing wording describes the real situation: the text of these
+files has not been extracted yet, because a technical precondition of this
+system's extraction pipeline is not satisfied. The stored
+``malware_scan_state`` is untouched, ``eligibility_q`` is untouched, and no file
+becomes extractable because a label was rewritten (Statistika QA §4).
+
 So five states are reported separately, and the eligibility rule is imported
 from the orchestrator rather than restated:
 
 * **eligible** — a worker may open it;
-* **awaiting a scanner** — it may not be opened yet, and that is expected here;
+* **awaiting extraction** — it may not be opened yet, and that is expected here;
 * **done**, **failed**, **not applicable** — the terminal outcomes.
 
 ``NOT_APPLICABLE`` is a success. A signed container has no extracted text
@@ -54,7 +69,12 @@ def visible_versions(context: ReportingContext) -> QuerySet[DocumentVersion]:
 
 
 def awaiting_scanner(context: ReportingContext) -> QuerySet[DocumentVersion]:
-    """Exactly ``orchestrator.awaiting_scanner``, scoped to this viewer."""
+    """Exactly ``orchestrator.awaiting_scanner``, scoped to this viewer.
+
+    The function keeps the orchestrator's name because it is the orchestrator's
+    population — renaming the code would hide which gate this is. Only what the
+    reader is shown changed.
+    """
     return (
         visible_versions(context)
         .filter(extraction_state=ExtractionState.PENDING)
@@ -112,8 +132,9 @@ def extraction_pending(context: ReportingContext) -> MetricResult:
 def extraction_awaiting_scanner(context: ReportingContext) -> MetricResult:
     result = _state_result(context, keys.EXTRACTION_AWAITING_SCANNER, awaiting_scanner(context))
     return result.with_note(
-        "Need failid muutuvad eraldatavaks päeval, mil pahavarakontroll märgib "
-        "need puhtaks. See ei ole viga ega järjekord."
+        "Failid on teadaolevalt pahavaravabad. Ootel on tekstitöötlus, mitte "
+        "turvakontrolli tulemus: eraldamise tehniline eeltingimus ei ole veel "
+        "täidetud. See ei ole viga ega järjekord."
     )
 
 
@@ -123,7 +144,7 @@ def extraction_failed(context: ReportingContext) -> MetricResult:
         keys.EXTRACTION_FAILED,
         visible_versions(context).filter(extraction_state=ExtractionState.FAILED),
     )
-    return result.with_note("Allkirjaümbrikud ja pahavarakontrolli ootavad failid ei kuulu siia.")
+    return result.with_note("Allkirjaümbrikud ja tekstitöötlust ootavad failid ei kuulu siia.")
 
 
 def extraction_not_applicable(context: ReportingContext) -> MetricResult:
@@ -150,9 +171,9 @@ def extraction_states(context: ReportingContext) -> tuple[Segment, ...]:
         ),
         Segment(label="Järjekorras", value=pending),
         Segment(
-            label="Ootab pahavarakontrolli",
+            label="Ootab tekstitöötlust",
             value=waiting,
-            note="Ei ole viga",
+            note="Ei ole viga ega pahavarakahtlus",
         ),
         Segment(
             label="Ei kohaldu",
@@ -185,8 +206,9 @@ def searchable_document_coverage(context: ReportingContext) -> MetricResult:
     ]
     if waiting:
         notes.append(
-            f"{waiting} faili ootab pahavarakontrolli. Kuni see pole tehtud, ei "
-            f"saa see näitaja väita otsitavuse täielikkust."
+            f"{waiting} faili ootab tekstitöötlust — need on teadaolevalt "
+            f"pahavaravabad, kuid nende teksti ei ole veel eraldatud. Kuni see "
+            f"pole tehtud, ei saa see näitaja väita otsitavuse täielikkust."
         )
 
     percentage = round(100.0 * extracted / openable) if openable else 0

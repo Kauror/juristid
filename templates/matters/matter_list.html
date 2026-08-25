@@ -204,6 +204,22 @@ localStorage (Stage-2E.1 brief 12).
             </select>
           </label>
 
+          {% comment %}
+            The dated-work populations Ülevaade counts, as a control. Beside
+            "Järgmine tegevus" rather than inside it: this asks about *work*,
+            including an `Oluline tähtaeg` that has passed on a Matter carrying
+            no open action at all (app/matters/work_items.py).
+          {% endcomment %}
+          <label class="field">
+            <span class="field__label">Töö seis</span>
+            <select class="field__input" name="too">
+              <option value="">Kõik</option>
+              {% for value, label in work_state_options %}
+                <option value="{{ value }}" {% if filters.too == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+
           <label class="field">
             <span class="field__label">Materjalid</span>
             <select class="field__input" name="materjalid">
@@ -319,6 +335,25 @@ localStorage (Stage-2E.1 brief 12).
     </div>
   </div>
 
-  {% include "matters/partials/register_results.html" %}
+  {% comment %}
+    The results region, named so a link can land on it.
+
+    Every figure on Ülevaade carries `#tulemused`. Without it a reader who
+    clicked "12 üle tähtaja" arrived at the top of a filtered register — the
+    search box, the status segments and a narrowing panel that opens itself
+    whenever a filter is active — and had to scroll past all of it to find out
+    whether twelve rows had come back.
+
+    The anchor is on this wrapper rather than on `#teemad-tulemused`, which the
+    live search replaces with `outerHTML`: an id on the swapped element survives
+    the first keystroke and nothing after it, and a fragment that stops
+    resolving fails silently.
+
+    `tabindex="-1"` so the fragment moves focus as well as the viewport;
+    `scroll-margin-top` keeps the sticky bar off the first row (static/css).
+  {% endcomment %}
+  <section id="tulemused" tabindex="-1" aria-label="Tulemused">
+    {% include "matters/partials/register_results.html" %}
+  </section>
 </div>
 {% endblock %}

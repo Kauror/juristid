@@ -773,12 +773,36 @@
     });
   }
 
+  /* Arriving from a number: put the reader on the rows.
+   *
+   * Every figure on Ulevaade links to `...#tulemused`, and a filtered register
+   * opens with a search box, a status strip and a narrowing panel that expands
+   * itself whenever a filter is active. The browser scrolls to the fragment on
+   * its own; what it does not reliably do is *focus* it, so a keyboard or
+   * screen-reader user landed at the top of the document and had to tab past
+   * every control to reach the list they clicked a number to see.
+   *
+   * `preventScroll` because the browser has already scrolled, and focusing
+   * again would fight it. Progressive: with JavaScript off the fragment still
+   * scrolls, which is the part that matters most. */
+  function focusFragmentTarget() {
+    if (window.location.hash !== "#tulemused") return;
+    var results = document.getElementById("tulemused");
+    if (!results) return;
+    try {
+      results.focus({ preventScroll: true });
+    } catch (error) {
+      results.focus();
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     bind(document);
     bindPeriodFields(document);
     bindDatePickers(document);
     bindChoiceFilters(document);
     bindDateLabels(document);
+    focusFragmentTarget();
   });
 
   /* A rejected save returns 400 with the surface re-rendered and the errors in

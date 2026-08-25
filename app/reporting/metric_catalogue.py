@@ -914,8 +914,8 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         version=1,
         label_et="Eraldamiseks kõlblikke",
         description_et=(
-            "Tõendiversioonid, mida töötaja tohib avada. Pahavarakontrolli "
-            "ootavat faili ei pakuta järjekorda ega loeta ebaõnnestunuks."
+            "Tõendiversioonid, mida töötaja tohib avada. Tekstitöötlust ootavat "
+            "faili ei pakuta järjekorda ega loeta ebaõnnestunuks."
         ),
         source_population_et="Nähtavate teemade tõendiversioonid",
         drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
@@ -944,24 +944,37 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     ),
     MetricDefinition(
         key=EXTRACTION_AWAITING_SCANNER,
-        version=1,
-        label_et="Ootab pahavarakontrolli",
+        # Version 2: the wording, not the measurement. The population is
+        # unchanged — the same versions the extraction queue will not yet offer
+        # a worker — but "Ootab pahavarakontrolli" described the *mechanism* and
+        # readers understood it as "these files may be infected". They are not:
+        # the Juristid corpus is known to be malware-free. What is missing is a
+        # step in this system's own text-extraction pipeline (Statistika QA §4).
+        version=2,
+        label_et="Ootab tekstitöötlust",
         description_et=(
-            "Versioonid, mida ei töödelda enne, kui skanner ütleb „puhas“. "
-            "See ei ole ebaõnnestumine ega järjekord."
+            "Versioonid, mille tekst on veel eraldamata, sest eraldamise "
+            "tehniline eeltingimus ei ole täidetud. Failid ise on teadaolevalt "
+            "pahavaravabad — see seisund ei tähenda pahavarakahtlust ega "
+            "lahendamata turvaküsimust."
         ),
         source_population_et="Nähtavate teemade tõendiversioonid",
         drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
         time_basis=TimeBasis.POINT_IN_TIME,
         respects_period=False,
-        notes_et="Selles keskkonnas võib see olla nullist erinev ja see on korras.",
+        notes_et=(
+            "Ei ole viga, järjekord ega turvaintsident. Tehniline eeltingimus "
+            "on tekstituvastuse konveieri väravakontroll, mis Turvalise piloodi "
+            "väravani veel ei tööta; selles keskkonnas on nullist erinev arv "
+            "ootuspärane."
+        ),
     ),
     MetricDefinition(
         key=EXTRACTION_FAILED,
         version=1,
         label_et="Eraldamine ebaõnnestus",
         description_et=(
-            "Tõeline parseri viga. Allkirjaümbrikud ja skannerit ootavad failid ei kuulu siia."
+            "Tõeline parseri viga. Allkirjaümbrikud ja tekstitöötlust ootavad failid ei kuulu siia."
         ),
         source_population_et="Nähtavate teemade tõendiversioonid",
         drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",

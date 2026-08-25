@@ -13,20 +13,34 @@ by side, not summed, because summing them would produce a score
 {% if page.is_department or page.is_team %}
   <section class="railblock" aria-label="Koormus">
     <h2 class="railblock__label">Koormus <span class="railblock__hint">avatud · üle</span></h2>
+    {% comment %}
+      Two numbers, two destinations. The row opens this person's open Matters;
+      the overdue figure opens the Matters they are *responsible* for late work
+      on, which is a different population — a NextAction belongs to whoever must
+      do it, not to whoever owns the file. One link for both would have sent a
+      reader clicking "3" to a list of eleven (Ülevaade QA §3).
+
+      Not nested: an <a> inside an <a> is invalid and the browser silently
+      unnests it, which is how the number would stop being clickable at all.
+    {% endcomment %}
     {% for person in page.loads %}
-      <a class="loadrow" href="{{ person.url }}">
-        <span class="avatar avatar--sm">{{ person.initials }}</span>
-        <span class="loadrow__name">{{ person.name }}</span>
-        <span class="loadrow__open">{{ person.open_count }}</span>
-        <span class="loadrow__overdue{% if person.overdue %} loadrow__overdue--bad{% endif %}">
-          {% if person.overdue %}{{ person.overdue }}{% else %}—{% endif %}
-        </span>
-      </a>
+      <span class="loadrow">
+        <a class="loadrow__who" href="{{ person.url }}">
+          <span class="avatar avatar--sm">{{ person.initials }}</span>
+          <span class="loadrow__name">{{ person.name }}</span>
+        </a>
+        <a class="loadrow__open" href="{{ person.url }}">{{ person.open_count }}</a>
+        {% if person.overdue %}
+          <a class="loadrow__overdue loadrow__overdue--bad" href="{{ person.overdue_url }}">{{ person.overdue }}</a>
+        {% else %}
+          <span class="loadrow__overdue">—</span>
+        {% endif %}
+      </span>
     {% empty %}
       <p class="railblock__empty">Kedagi ei ole kirjas.</p>
     {% endfor %}
     {% if page.unassigned %}
-      <a class="loadrow loadrow--unassigned" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;vastutaja=puudub">
+      <a class="loadrow loadrow--unassigned" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;vastutaja=puudub#tulemused">
         <span class="loadrow__name">Vastutajata</span>
         <span class="loadrow__open">{{ page.unassigned }}</span>
         <span class="loadrow__overdue"></span>
@@ -68,11 +82,24 @@ by side, not summed, because summing them would produce a score
 {% if page.is_team %}
   <section class="railblock" aria-label="Tiimi tähtajad">
     <h2 class="railblock__label">Tiimi tähtajad</h2>
+    {% comment %}
+      The Matter count rather than the work-item count, because the destination
+      is a list of Matters. The department's own Tähtajad table beside it counts
+      rows, and says so — the two numbers answer two questions and are never
+      the same number by accident.
+    {% endcomment %}
     {% for group in page.deadlines %}
-      <span class="railrow">
-        <span class="railrow__key">{{ group.label }}</span>
-        <span class="railrow__value">{{ group.count }}</span>
-      </span>
+      {% if group.matter_count %}
+        <a class="railrow" href="{{ group.url }}">
+          <span class="railrow__key">{{ group.label }}</span>
+          <span class="railrow__value">{{ group.matter_count }}</span>
+        </a>
+      {% else %}
+        <span class="railrow">
+          <span class="railrow__key">{{ group.label }}</span>
+          <span class="railrow__value">0</span>
+        </span>
+      {% endif %}
     {% endfor %}
   </section>
 
@@ -88,7 +115,7 @@ by side, not summed, because summing them would produce a score
 {% endif %}
 
 {% if page.is_areas %}
-  <section class="railblock" aria-label="Vastutajata valdkonnad">
+  <section class="railblock" id="vastutajata-valdkonnad" tabindex="-1" aria-label="Vastutajata valdkonnad">
     <h2 class="railblock__label railblock__label--warning">Vastutajata valdkonnad</h2>
     {% for row in page.unowned_areas %}
       <a class="railrow" href="{{ row.unassigned_url }}">
@@ -104,7 +131,7 @@ by side, not summed, because summing them would produce a score
         "assign an owner to the area". It means what it can honestly mean: open
         the Matters in these areas that have nobody's name on them (§20).
       {% endcomment %}
-      <a class="railblock__more" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;vastutaja=puudub">Määra vastutajad →</a>
+      <a class="railblock__more" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;vastutaja=puudub#tulemused">Määra vastutajad →</a>
     {% endif %}
   </section>
 

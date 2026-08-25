@@ -166,6 +166,31 @@ def sent_queryset(user: Any, filters: SentFilters) -> QuerySet[Submission]:
     )
 
 
+#: The one `?olek=` value that means "being written now".
+#:
+#: Named here so the Ülevaade figure and the tab it opens cannot drift apart:
+#: the figure counts :func:`drafting`, the destination is
+#: :data:`DRAFTING_QUERY`, and the view builds the same ``SentFilters`` from it.
+DRAFTING_STATUS = SubmissionStatus.DRAFT
+DRAFTING_QUERY = f"olek={SubmissionStatus.DRAFT}"
+
+
+def drafting(user: Any) -> QuerySet[Submission]:
+    """Canonical opinions this reader may see that are still being written.
+
+    The *canonical* domain and only that. The 767 historical letters are held
+    bytes catalogued as evidence of past correspondence — they are not
+    Submission rows, they are finished rather than in preparation, and the
+    conversion that would make some of them canonical is P4's and is gated. So
+    an archive-heavy production database contributes exactly zero here, which is
+    the honest answer to "how many opinions are we writing" (docs/adr/0028).
+
+    Through ``sent_queryset`` rather than beside it, so the count on Ülevaade
+    and the list at ``/arvamused/?olek=DRAFT`` are one query asked twice.
+    """
+    return sent_queryset(user, SentFilters(status=DRAFTING_STATUS))
+
+
 def sent_counts(user: Any) -> dict[str, int]:
     """Headline figures for the workspace, before any filter is applied.
 

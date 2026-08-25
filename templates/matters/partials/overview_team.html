@@ -17,6 +17,13 @@ Nothing here ranks anybody. There is no reassignment banner and no nudge: the
 counts say what is true, and the manager decides.
 {% endcomment %}
 
+{% comment %}
+  A stable anchor, because the Seis strip's *N inimest* counts people rather
+  than Matters and therefore opens the list of those people — which is this.
+  Every other figure on the page opens the register; this one cannot, and a
+  figure with nowhere to go is the dead end the strip exists to avoid.
+{% endcomment %}
+<div id="inimesed" tabindex="-1">
 {% for person in page.people %}
   <section class="personblock" aria-label="{{ person.name }}">
     <div class="personblock__head">
@@ -78,17 +85,25 @@ counts say what is true, and the manager decides.
       what keeps a capped list from reading as the whole truth.
     {% endcomment %}
     {% if person.no_action or person.later %}
+      {% comment %}
+        Each number links to its own list. They were one link to this person's
+        whole portfolio, so "Veel 4 teemat järgmise tegevuseta" opened
+        seventeen. `later` counts dated work beyond this week and the register
+        has no filter for "this person's later rows", so it stays a plain
+        number rather than a link to something adjacent.
+      {% endcomment %}
       <p class="personblock__footer">
-        {% if person.no_action %}Veel {{ person.no_action }} teemat järgmise tegevuseta{% endif %}
+        {% if person.no_action %}Veel <a href="{{ person.no_action_url }}">{{ person.no_action }} teemat järgmise tegevuseta</a>{% endif %}
         {% if person.no_action and person.later %} ja {% endif %}
         {% if person.later %}{{ person.later }} hilisema tähtajaga{% endif %}
-        — <a href="{{ person.url }}">vaata kõiki</a>
+        — <a href="{{ person.url }}">vaata kõiki {{ person.open_count }} teemat</a>
       </p>
     {% endif %}
   </section>
 {% empty %}
   <p class="workempty">Ühtegi teemasid kandvat kolleegi ei ole kirjas.</p>
 {% endfor %}
+</div>
 
 {% comment %}
   The limitation, stated on the page rather than only in a report. There is no

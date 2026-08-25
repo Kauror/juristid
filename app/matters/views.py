@@ -46,7 +46,7 @@ from app.legacy_import.register_display import (
     source_instructions_for,
 )
 from app.matters import overview as overview_module
-from app.matters import register_filters, selectors
+from app.matters import register_filters, selectors, work_items
 from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.forms import (
     BriefSummaryForm,
@@ -170,6 +170,7 @@ def overview(request: HttpRequest) -> HttpResponse:
     sort = request.GET.get(overview_module.SORT_PARAM, overview_module.SORT_OPEN)
     feed = request.GET.get(overview_module.FEED_PARAM, overview_module.FEED_ALL)
     intervention = request.GET.get(overview_module.INTERVENTION_PARAM, "")
+    show_empty_areas = request.GET.get(overview_module.SHOW_EMPTY_AREAS_PARAM) == "1"
     today = timezone.localdate()
     return render(
         request,
@@ -182,6 +183,7 @@ def overview(request: HttpRequest) -> HttpResponse:
                 sort=sort,
                 feed_filter=feed,
                 intervention_filter=intervention,
+                show_empty_areas=show_empty_areas,
             ),
             "scopes": overview_module.SCOPES,
             "scope": scope,
@@ -333,6 +335,12 @@ FILTER_LABELS = {
     "paritolu": "Päritolu",
     "allikas": "Ajalooline allikas",
     "tegevus": "Järgmine tegevus",
+    # The dated-work populations Ülevaade counts. A dimension of its own rather
+    # than more values on `tegevus`, because it is not about the open action at
+    # all: a passed `Oluline tähtaeg` is late work on a Matter that may carry no
+    # action whatsoever (app/matters/work_items.py).
+    "too": "Töö seis",
+    "too_vastutaja": "Töö vastutaja",
     # What the register recorded about the drafting step. A dimension of its own
     # rather than a synonym for `tegevus`: a Matter can carry a next action and
     # an unfinished opinion at the same time, and they are different questions
@@ -359,6 +367,10 @@ FILTER_LABELS = {
     # like any filter and belongs in the same chip row and the same shared URL
     # (Agent-C brief 24, 26).
     "andmed": "Andmed",
+    # The closing year, which is not the reporting year. Ülevaade's Aruandlus
+    # rail counts what the department finished this year and used to link to
+    # every closed Matter there has ever been.
+    "suletud": "Suletud aastal",
 }
 
 #: What `?materjalid=` reads as in a chip.
@@ -514,6 +526,11 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         return "Olemas" if value == register_filters.SOURCE_PRESENT else "Puudub"
     if name == "tegevus":
         return NEXT_ACTION_LABELS.get(value, value)
+    if name == "too":
+        return work_items.WORK_POPULATION_LABELS.get(value, value)
+    if name == "too_vastutaja":
+        person = _named_by_pk(User, value)
+        return person.get_short_name() if person else value
     if name == "arvamus":
         return OPINION_LABELS.get(value, value)
     if name in {"saatja", "adressaat", "asutus"}:
@@ -540,6 +557,13 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
         if not value or (name == "ulatus" and value == "koik"):
             continue
         if name == "andmed" and value == selectors.DATA_CLASS_ALL:
+            continue
+        # `?too_vastutaja=` narrows `?too=` and does nothing on its own. A chip
+        # for a parameter that changed no rows is a chip that says the list is
+        # narrower than it is.
+        if name == register_filters.WORK_RESPONSIBLE_PARAM and not params.get(
+            register_filters.WORK_PARAM
+        ):
             continue
         without = params.copy()
         without.pop(name, None)
@@ -650,6 +674,10 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         ],
         "status_options": _status_options(request, params),
         "active_filters": chips,
+        # Offered in the narrowing panel as well as reachable from a link: a
+        # dimension a figure can set and the panel cannot is one somebody can
+        # arrive at and never reproduce (Stage-2E brief 38).
+        "work_state_options": list(work_items.WORK_POPULATION_LABELS.items()),
         "filters": {
             "olek": status,
             "ulatus": scope,
@@ -669,6 +697,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             "allikas": params.get("allikas", ""),
             "tegevus": params.get("tegevus", ""),
             "arvamus": params.get("arvamus", ""),
+            "too": params.get("too", ""),
             "saatja": params.get("saatja", ""),
             "adressaat": params.get("adressaat", ""),
             "jarjestus": sort,

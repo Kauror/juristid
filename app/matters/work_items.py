@@ -503,8 +503,142 @@ def week_items(items: list[WorkItem], today: date, week_end: date | None = None)
     return [item for item in items if item.when is not None and today <= item.when <= week_end]
 
 
+def real_deadlines(items: list[WorkItem]) -> list[WorkItem]:
+    """Only what a department may honestly call a deadline.
+
+    DO deadlines and ``Oluline tähtaeg``. A WAIT's expected date and a MONITOR's
+    review date are commitments nobody made — they belong in the intervention
+    list, where they read as "look at this again", not in a table headed
+    *Tähtajad* (master specification 18.8).
+
+    Here rather than in :mod:`app.matters.overview` because the register now
+    filters on it too: a *Tähtajad* group that opens a list assembled by a
+    second, similar predicate is a group whose count and list drift apart.
+    """
+    return [
+        item
+        for item in items
+        if not item.is_action or item.action_kind == ActionKind.DO.value
+        if item.meaning in (MEANING_DEADLINE, MEANING_IMPORTANT)
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Named work populations, addressable from a URL
+# ---------------------------------------------------------------------------
+#
+# Why these exist
+# ---------------
+# Every figure on Ülevaade is a promise that a list exists behind it, and four
+# of those figures count *work* rather than Matters: a passed ``Oluline
+# tähtaeg`` carries no open NextAction, so the register's ``?tegevus=`` cannot
+# express it and a link there opened a list shorter than the number above it.
+#
+# The fix is not a second query language. It is this: one function turns the
+# shared read model into a set of Matter primary keys, Ülevaade counts that set,
+# and the register's ``?too=`` filter narrows to the *same* set. The count and
+# the list cannot disagree, because there is one selector and both call it
+# (master specification 18.9).
+
+WORK_OVERDUE = "hilinenud"
+WORK_RIPE = "ulevaatamiseks"
+WORK_DEADLINE_THIS_WEEK = "tahtaeg-nadalal"
+WORK_DEADLINE_NEXT_WEEK = "tahtaeg-jargmisel"
+WORK_NEEDS_ATTENTION = "sekkumist"
+
+#: What each value selects, and how it reads in a filter chip.
+WORK_POPULATION_LABELS: dict[str, str] = {
+    WORK_OVERDUE: "Üle tähtaja",
+    WORK_RIPE: "Ülevaatamiseks küps",
+    WORK_DEADLINE_THIS_WEEK: "Tähtaeg sel nädalal",
+    WORK_DEADLINE_NEXT_WEEK: "Tähtaeg järgmisel nädalal",
+    WORK_NEEDS_ATTENTION: "Vajab sekkumist",
+}
+
+WORK_POPULATIONS: tuple[str, ...] = tuple(WORK_POPULATION_LABELS)
+
+
+def work_population_items(items: list[WorkItem], key: str, today: date) -> list[WorkItem]:
+    """The rows of one named population, out of an already-read work model.
+
+    Ülevaade passes the list it already holds; the register filter reads its
+    own. Same function either way, which is the whole point.
+    """
+    if key == WORK_OVERDUE:
+        return overdue_items(items)
+    if key == WORK_RIPE:
+        return review_ripe_items(items)
+    if key in (WORK_DEADLINE_THIS_WEEK, WORK_DEADLINE_NEXT_WEEK):
+        week_end = end_of_iso_week(today)
+        next_end = week_end + timedelta(days=7)
+        dated = [(item.when, item) for item in real_deadlines(items) if item.when is not None]
+        if key == WORK_DEADLINE_THIS_WEEK:
+            return [item for when, item in dated if when is not None and today <= when <= week_end]
+        return [item for when, item in dated if when is not None and week_end < when <= next_end]
+    if key == WORK_NEEDS_ATTENTION:
+        # The dated half. The two undated halves — no next action, no owner —
+        # are querysets rather than work items and are added by the caller that
+        # has the reader (`work_population_ids`).
+        return overdue_items(items) + review_ripe_items(items)
+    return []
+
+
+#: "no person was named", as distinct from "the person named is nobody" — which
+#: is a real filter value (`?too_vastutaja=puudub`, the work nobody carries).
+ANY_PERSON = object()
+
+
+def work_population_ids(
+    user: Any,
+    key: str,
+    *,
+    today: date | None = None,
+    items: list[WorkItem] | None = None,
+    responsible: Any = ANY_PERSON,
+) -> set[Any]:
+    """The Matter primary keys one named population holds, for this reader.
+
+    ``items`` lets a page that has already read the work model avoid reading it
+    again; omitting it reads the same model with the same authorization. Either
+    way the answer is a set of Matters, because that is what the register lists
+    and what a figure beside it must therefore count.
+
+    ``responsible`` narrows to one person's work. The caller filters ``items``
+    for the dated half — a NextAction names who must do it — and this handles
+    the two undated halves of *Vajab sekkumist*, which have no responsible
+    column at all: an uninstructed Matter belongs to its owner, and an unowned
+    one belongs to nobody, which is precisely why it is on the list. Getting
+    that second one wrong would put every unassigned file into every
+    colleague's count.
+    """
+    if key not in WORK_POPULATION_LABELS:
+        return set()
+    today = today or timezone.localdate()
+    if items is None:
+        items = work_items(user, today=today)
+    ids = {item.matter_id for item in work_population_items(items, key, today)}
+    if key == WORK_NEEDS_ATTENTION:
+        quiet = matters_without_action(user)
+        ownerless = ownerless_matters(user)
+        if responsible is not ANY_PERSON:
+            quiet = quiet.filter(owner=responsible)
+            if responsible is not None:
+                ownerless = ownerless.none()
+        ids |= set(quiet.values_list("pk", flat=True))
+        ids |= set(ownerless.values_list("pk", flat=True))
+    return ids
+
+
 def no_next_action_q() -> Q:
-    """Matters carrying no open instruction, as a condition rather than a list."""
+    """Matters carrying no open instruction, as a condition rather than a list.
+
+    Reader-blind, and therefore **not** what a page counts with: an action
+    restricted below its Matter is invisible to most readers, so this condition
+    would call the Matter instructed while the register — which asks the same
+    question through ``NextAction.objects.visible_to`` — lists it as having
+    none. Kept for the one caller that genuinely wants the reader-blind fact,
+    and every count goes through :func:`matters_without_action` instead.
+    """
     return ~Q(
         pk__in=NextAction.objects.filter(status=ActionStatus.OPEN).values("matter_id"),
     )
@@ -516,8 +650,16 @@ def matters_without_action(user: Any, *, owner: Any = None) -> QuerySet[Matter]:
     Without it a Matter simply stops appearing anywhere and goes quiet, which is
     the failure the whole right rail exists to prevent (design handoff,
     recommendation 1).
+
+    The condition is the register's own ``?tegevus=puudub``, imported rather
+    than restated. It was restated once, reader-blind, and the two answers
+    differed on exactly the Matters that matter most: one carrying an action
+    only its participants may read counted as instructed here and as
+    uninstructed in the list the figure linked to.
     """
-    queryset = open_matters(user).filter(no_next_action_q())
+    from app.matters.selectors import MISSING, filter_by_next_action
+
+    queryset = filter_by_next_action(open_matters(user), user, MISSING)
     if owner is not None:
         queryset = queryset.filter(owner=owner)
     return queryset
@@ -541,6 +683,13 @@ __all__ = [
     "MEANING_REVIEW",
     "SOURCE_IMPORTANT_DEADLINE",
     "SOURCE_NEXT_ACTION",
+    "WORK_DEADLINE_NEXT_WEEK",
+    "WORK_DEADLINE_THIS_WEEK",
+    "WORK_NEEDS_ATTENTION",
+    "WORK_OVERDUE",
+    "WORK_POPULATIONS",
+    "WORK_POPULATION_LABELS",
+    "WORK_RIPE",
     "ActionKind",
     "WorkBand",
     "WorkItem",
@@ -554,9 +703,12 @@ __all__ = [
     "open_matters",
     "overdue_items",
     "ownerless_matters",
+    "real_deadlines",
     "review_ripe_items",
     "sort_items",
     "undated_actions",
     "week_items",
     "work_items",
+    "work_population_ids",
+    "work_population_items",
 ]

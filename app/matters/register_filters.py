@@ -60,6 +60,33 @@ SOURCE_SEVERAL = "mitu"
 OPINION_DRAFTING = "koostamisel"
 OPINION_SENT = "saadetud"
 
+#: What `?too=` selects: a named population of the shared dated-work read model
+#: (:mod:`app.matters.work_items`), as Matters.
+#:
+#: It exists because four Ülevaade figures count *work* rather than open
+#: actions. "12 üle tähtaja" includes an ``Oluline tähtaeg`` whose day has
+#: passed, and an important deadline is not a NextAction — so `?tegevus=` could
+#: never express it, and the link opened a list shorter than the number above
+#: it. A list shorter than its own count reads as a bug in the count.
+#:
+#: Nothing new is measured here. The values are the read model's own
+#: populations, resolved by the read model's own function, so the figure and the
+#: list are one selector called twice (master specification 18.9).
+WORK_PARAM = "too"
+
+#: Narrows `?too=` to the work one person is responsible for, which is a
+#: different question from who owns the Matter — and deliberately so: a
+#: NextAction belongs to whoever must do it, an ``Oluline tähtaeg`` to the
+#: Matter's owner, and Ülevaade prints the two side by side rather than summing
+#: them (master specification 18.1). `?vastutaja=` answers the ownership half;
+#: this answers the responsibility half.
+WORK_RESPONSIBLE_PARAM = "too_vastutaja"
+
+#: The year a Matter was closed in. Its own parameter rather than `?aasta=`,
+#: which is the *reporting* year — the year the file belongs to, not the year
+#: the department finished it (Ülevaade's Aruandlus rail asks the second).
+CLOSED_YEAR_PARAM = "suletud"
+
 #: The two organisation directions, as URL parameters. Never merged: the same
 #: register column meant the sender until 2019 and the addressee from 2020.
 #: URL parameter -> the lookup path that answers it, and whether the path
@@ -171,6 +198,46 @@ def filter_by_opinion_state(queryset: QuerySet[Matter], value: str) -> QuerySet[
     )
 
 
+def filter_by_work_state(
+    queryset: QuerySet[Matter],
+    user: Any,
+    value: str,
+    responsible_raw: str = "",
+    today: date | None = None,
+) -> QuerySet[Matter]:
+    """Apply `?too=`, through the read model Ülevaade counted with.
+
+    The population is resolved by :func:`app.matters.work_items.work_population_ids`
+    and nothing is re-derived here — which is what makes "Ülevaade says 12" and
+    "the register lists 12" the same statement rather than two similar ones.
+
+    An unrecognised value empties the list rather than being ignored, for the
+    reason every other filter in this module does: a chip above the whole
+    register is a lie the reader has no way to catch.
+    """
+    from app.matters import work_items as wi
+
+    if value not in wi.WORK_POPULATION_LABELS:
+        return queryset.none()
+
+    items: list[Any] | None = None
+    responsible: Any = wi.ANY_PERSON
+    if responsible_raw:
+        responsible = None
+        if responsible_raw != selectors.MISSING:
+            try:
+                responsible = uuid.UUID(responsible_raw)
+            except ValueError:
+                return queryset.none()
+        items = [
+            item
+            for item in wi.work_items(user, today=today)
+            if (item.responsible.pk if item.responsible is not None else None) == responsible
+        ]
+    ids = wi.work_population_ids(user, value, today=today, items=items, responsible=responsible)
+    return queryset.filter(pk__in=ids)
+
+
 def apply_register_filters(
     queryset: QuerySet[Matter],
     user: Any,
@@ -231,6 +298,15 @@ def apply_register_filters(
         queryset = queryset.filter(origin__in=origin.split(","))
     if year := params.get("aasta"):
         queryset = filter_by_reporting_year(queryset, year)
+    if closed_year := params.get(CLOSED_YEAR_PARAM):
+        # `closed_at`, not the reporting year. "Suletud teemasid 2026" on the
+        # Aruandlus rail counts the files the department *finished* this year,
+        # which is a different question from which year a file belongs to — a
+        # 2024 consultation closed in 2026 is one of 2026's completions.
+        if not closed_year.isdigit():
+            queryset = queryset.none()
+        else:
+            queryset = queryset.filter(closed_at__year=int(closed_year))
     if source := params.get("allikas"):
         if source == SOURCE_SEVERAL:
             queryset = queryset.annotate(
@@ -245,6 +321,14 @@ def apply_register_filters(
         queryset = selectors.filter_by_next_action(queryset, user, action_filter, today)
     if opinion := params.get("arvamus"):
         queryset = filter_by_opinion_state(queryset, opinion)
+    if work_state := params.get(WORK_PARAM):
+        queryset = filter_by_work_state(
+            queryset,
+            user,
+            work_state,
+            (params.get(WORK_RESPONSIBLE_PARAM) or "").strip(),
+            today,
+        )
     for parameter, (field, many) in ORGANISATION_FILTERS.items():
         raw = params.get(parameter)
         if not raw:

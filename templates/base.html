@@ -28,14 +28,22 @@
 
         {% if user.is_authenticated or gate_passed %}
           {% comment %}
-            Priority navigation. The four destinations a lawyer moves between
-            all day stay on the bar; everything else — Arvamused first — sits in
-            the group that lays out inline when there is room and folds into
-            "Veel" when there is not. A fifth fixed item puts a horizontal
-            scrollbar on the shell at 1024px, which is measured rather than
-            guessed: e2e/test_ui_shell.py fails on exactly that. This is a presentation decision only — every route below is
-            still enforced server-side, and "Veel" contains links, not
-            permission logic.
+            Priority navigation. The destinations a lawyer moves between all day
+            stay on the bar; everything else — Arvamused first — sits in the
+            group that lays out inline when there is room and folds into "Veel"
+            when there is not. A fifth fixed item puts a horizontal scrollbar on
+            the shell at 1024px, which is measured rather than guessed:
+            e2e/test_ui_shell.py fails on exactly that. This is a presentation
+            decision only — every route below is still enforced server-side, and
+            "Veel" contains links, not permission logic.
+
+            Saabunud is not on the bar. It is a triage surface somebody opens
+            when they are triaging, not a destination in the daily rotation, and
+            three of the four fixed items were being pushed together to keep it
+            there. The route, its models and its data are untouched: Ülevaade's
+            *Uued teemad* rail links straight to it, which is where a person is
+            when the question "what has arrived" actually occurs to them
+            (Ülevaade QA §2).
 
             The disclosure is real markup rather than a width-conditional
             render, so at wide viewports CSS lays the same links out inline and
@@ -49,9 +57,6 @@
             <a class="topnav__link {% if nav_active == 'minu_too' %}is-active{% endif %}"
                {% if nav_active == 'minu_too' %}aria-current="page"{% endif %}
                href="{% url 'matters:my_work' %}">Minu töö</a>
-            <a class="topnav__link {% if nav_active == 'saabunud' %}is-active{% endif %}"
-               {% if nav_active == 'saabunud' %}aria-current="page"{% endif %}
-               href="{% url 'matters:inbox' %}">Saabunud</a>
             <a class="topnav__link {% if nav_active == 'teemad' %}is-active{% endif %}"
                {% if nav_active == 'teemad' %}aria-current="page"{% endif %}
                href="{% url 'matters:matter_list' %}">Teemad</a>
