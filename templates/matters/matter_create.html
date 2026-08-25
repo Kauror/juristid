@@ -379,8 +379,10 @@
                 </label>
                 <div class="chiprow" id="adressaat-nimekiri">
                   {% for choice in form.addressee_organisation %}
-                    {# `addressee_split` is never None here: a tail count of
-                       zero is what makes this whole block unrendered. #}
+                    {% comment %}
+                      `addressee_split` is never None here: a tail count of
+                      zero is what makes this whole block unrendered.
+                    {% endcomment %}
                     {% if forloop.counter0 >= form.addressee_split %}
                       <label class="chip">
                         {{ choice.tag }}
