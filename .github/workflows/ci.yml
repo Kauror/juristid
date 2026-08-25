@@ -132,6 +132,25 @@ jobs:
       - name: A fresh database migrates from zero
         run: uv run python manage.py migrate --noinput
 
+      # From zero is the easy direction. A deployment migrates from wherever it
+      # already is, and the migrations that carry a release are the ones nobody
+      # has run against a populated database yet — so the state a deployment
+      # actually starts from is named here and stepped forward.
+      #
+      # `migrate <app> <number>` backwards, then forwards, which exercises the
+      # reverse each data migration claims to have as well as the forward path.
+      # A data migration whose reverse was never run is a rollback plan nobody
+      # has tested.
+      #
+      # The two targets are the last migration in each app on `main`. When a
+      # release adds another, move them: leaving them behind quietly narrows
+      # this to a range that is no longer the one being deployed.
+      - name: And forwards again from the state a deployment is in
+        run: |
+          uv run python manage.py migrate taxonomy 0003 --noinput
+          uv run python manage.py migrate workflow 0005 --noinput
+          uv run python manage.py migrate --noinput
+
       - name: Estonian search capabilities are available
         run: uv run python manage.py check_search_capabilities
 
