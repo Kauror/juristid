@@ -178,12 +178,15 @@ def test_the_private_note_stays_out_of_the_shared_record(
 
 
 def test_a_reader_still_cannot_create_a_matter(client):
+    """404 rather than 403, which is this module's convention and not an
+    accident: a reader who may not write is not told which surfaces exist for
+    those who may (tests/test_uus_teema_redesign.py)."""
     reader = factories.UserFactory(role=UserRole.READER)
     client.force_login(reader)
 
     before = Matter.objects.count()
     response = client.post(CREATE, {"title": "Lugeja integratsiooniteema"})
 
-    assert response.status_code in (403, 302)
+    assert response.status_code == 404
     assert Matter.objects.count() == before
     assert not Matter.objects.filter(title="Lugeja integratsiooniteema").exists()
