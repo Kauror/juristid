@@ -1,0 +1,135 @@
+name: Release image
+
+# Build a production image for a reviewed commit, off the deployment host.
+#
+# KOCORP must not build this image. Its Docker writable storage is parity-backed
+# through a USB rotational disk, which makes an on-host build slow enough that
+# BuildKit has died in the middle of one — and a build that dies halfway on the
+# machine serving real data is a bad place to discover that. So the image is
+# built here, saved, carried over, and loaded. The host's only image operations
+# are `docker load` and `docker compose up`.
+#
+# Run it from the Actions tab, or:
+#
+#   gh workflow run release-image.yml -f sha=<full-40-char-sha>
+#
+# The artifact holds the gzipped image and a manifest naming the revision, the
+# image id, the archive size and the archive's SHA-256. Check that digest again
+# after the transfer: it is the only thing that proves the bytes the host loads
+# are the bytes this job built.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: The full 40-character commit to build. Not a branch, not a tag.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and save the image
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      # The workflow file comes from the default branch; the *source* comes from
+      # whatever commit was asked for. Those are deliberately allowed to differ,
+      # so a release can be built without its own reviewed tree having to carry
+      # the build tooling.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+
+      - name: The checkout is the commit that was asked for, and is clean
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          echo "requested: ${{ inputs.sha }}"
+          echo "checked out: $head"
+          test "$head" = "${{ inputs.sha }}" || { echo "checkout is not the requested commit"; exit 1; }
+          test -z "$(git status --porcelain)" || { echo "the tree is dirty"; git status --porcelain; exit 1; }
+          echo "SHORT=${head:0:12}" >> "$GITHUB_ENV"
+          echo "FULL=$head" >> "$GITHUB_ENV"
+
+      # linux/amd64 explicitly, because the runner's default architecture is a
+      # property of the runner and the host's is a property of the host, and a
+      # release should not depend on those happening to agree.
+      - name: Build
+        run: |
+          docker build \
+            --platform linux/amd64 \
+            --build-arg GIT_SHA="$FULL" \
+            -t "juristid-main-web:$SHORT" \
+            .
+
+      # Asked of the image rather than assumed from the build argument. A
+      # container that cannot say which commit it is fails `deployment_readiness`
+      # on the host, and finding that out here costs a minute instead of a
+      # deployment.
+      - name: The image says which commit it is
+        run: |
+          set -euo pipefail
+          baked="$(docker run --rm --entrypoint cat "juristid-main-web:$SHORT" /app/GIT_SHA)"
+          stamp="$(docker run --rm --entrypoint cat "juristid-main-web:$SHORT" /app/BUILD_STAMP)"
+          arch="$(docker image inspect "juristid-main-web:$SHORT" --format '{{.Os}}/{{.Architecture}}')"
+          echo "baked revision: $baked"
+          echo "build stamp:    $stamp"
+          echo "platform:       $arch"
+          test "$baked" = "$FULL" || { echo "the image reports $baked, not $FULL"; exit 1; }
+          test "$arch" = "linux/amd64" || { echo "wrong platform: $arch"; exit 1; }
+          echo "BUILD_STAMP=$stamp" >> "$GITHUB_ENV"
+
+      # Enough to prove the interpreter, the installed application and the
+      # settings module all survived the build. Disposable configuration and no
+      # database: this is an image check, not a deployment check.
+      - name: The application imports inside the image
+        env:
+          DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+          DJANGO_ALLOWED_HOSTS: localhost
+        run: |
+          docker run --rm \
+            -e DJANGO_SECRET_KEY -e DJANGO_ALLOWED_HOSTS -e DJANGO_DEBUG=0 \
+            --entrypoint python "juristid-main-web:$SHORT" \
+            -c "import django; django.setup(); from django.conf import settings; print('django', django.get_version()); print('settings', settings.SETTINGS_MODULE); print('revision', open('/app/GIT_SHA').read())"
+
+      - name: Save and digest
+        run: |
+          set -euo pipefail
+          archive="juristid-main-web-$SHORT.tar.gz"
+          docker save "juristid-main-web:$SHORT" | gzip -1 > "$archive"
+          image_id="$(docker image inspect "juristid-main-web:$SHORT" --format '{{.Id}}')"
+          size="$(stat -c %s "$archive")"
+          digest="$(sha256sum "$archive" | cut -d' ' -f1)"
+          {
+            echo "revision:      $FULL"
+            echo "image_tag:     juristid-main-web:$SHORT"
+            echo "image_id:      $image_id"
+            echo "platform:      linux/amd64"
+            echo "build_stamp:   $BUILD_STAMP"
+            echo "archive:       $archive"
+            echo "archive_bytes: $size"
+            echo "archive_sha256: $digest"
+            echo "builder:       github-actions ${{ runner.os }} ${{ runner.arch }}"
+          } > "release-manifest-$SHORT.txt"
+          cat "release-manifest-$SHORT.txt"
+          echo "$digest  $archive" > "$archive.sha256"
+          echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-image-${{ env.SHORT }}
+          path: |
+            ${{ env.ARCHIVE }}
+            ${{ env.ARCHIVE }}.sha256
+            release-manifest-${{ env.SHORT }}.txt
+          # The image is already gzipped; asking the upload to compress it again
+          # costs minutes and saves nothing.
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
