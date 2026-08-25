@@ -156,3 +156,92 @@ def test_ulevaade_still_offers_the_way_in(client, specialist):
     body = client.get(reverse("matters:overview")).content.decode()
 
     assert reverse("matters:inbox") in body
+
+
+# ---------------------------------------------------------------------------
+# Koja arvamused
+# ---------------------------------------------------------------------------
+#
+# The third wording correction of the same shape, found while integrating this
+# round with the Uus teema redesign. The opinions section on a Matter lists
+# every Submission the reader may see and counts all of them, but it was headed
+# *Väljasaadetud arvamused* — so a colleague's Koostamisel draft appeared under
+# a heading saying it had been sent, and the count above it described a
+# population the heading did not name.
+#
+# A label change only. The query is untouched, and the tests below assert that
+# in both directions: the draft is still listed and still counted, and the
+# heading no longer claims it left the building.
+
+
+@pytest.fixture
+def drafted_opinion(normal_matter, specialist):
+    from app.submissions.services import create_submission
+
+    return create_submission(
+        matter=normal_matter,
+        title="Koostamisel arvamus",
+        actor=specialist,
+    )
+
+
+def test_a_draft_appears_under_a_heading_that_does_not_say_it_was_sent(
+    client, specialist, normal_matter, drafted_opinion
+):
+    from app.submissions.enums import SubmissionStatus
+
+    assert drafted_opinion.status == SubmissionStatus.DRAFT
+
+    client.force_login(specialist)
+    page = client.get(reverse("matters:matter_position", kwargs={"pk": normal_matter.pk}))
+    body = page.content.decode()
+
+    assert page.status_code == 200
+    assert "Koja arvamused" in body
+    assert "Väljasaadetud arvamused" not in body
+    # The draft is there, which is what makes the old heading a false statement
+    # rather than a merely clumsy one.
+    assert "Koostamisel arvamus" in body
+
+
+def test_the_heading_still_counts_exactly_what_it_renders(
+    client, specialist, normal_matter, drafted_opinion
+):
+    """The population did not move, so the number must not have either."""
+    from app.submissions.models import Submission
+
+    client.force_login(specialist)
+    page = client.get(reverse("matters:matter_position", kwargs={"pk": normal_matter.pk}))
+
+    rendered = page.context["submissions"]
+    assert list(rendered) == [drafted_opinion]
+    assert len(rendered) == Submission.objects.filter(matter=normal_matter).count()
+
+
+def test_a_sent_opinion_is_listed_in_the_same_place(
+    client, specialist, normal_matter, drafted_opinion
+):
+    """Both statuses under one heading is the reason the heading had to change."""
+    from app.submissions.services import (
+        attach_final_evidence,
+        create_submission,
+        mark_submission_sent,
+    )
+
+    sent = create_submission(matter=normal_matter, title="Saadetud arvamus", actor=specialist)
+    attach_final_evidence(
+        submission=sent,
+        content=b"%PDF-1.4 arvamus",
+        original_filename="arvamus.pdf",
+        mime_type="application/pdf",
+        actor=specialist,
+    )
+    mark_submission_sent(submission=sent, actor=specialist)
+
+    client.force_login(specialist)
+    page = client.get(reverse("matters:matter_position", kwargs={"pk": normal_matter.pk}))
+    body = page.content.decode()
+
+    assert "Koostamisel arvamus" in body
+    assert "Saadetud arvamus" in body
+    assert len(page.context["submissions"]) == 2

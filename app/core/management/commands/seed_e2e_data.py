@@ -572,12 +572,11 @@ class Command(BaseCommand):
         # under it (Ülevaade QA §1).
         #
         # On `overdue` rather than on `visible`, which is the Matter every visual
-        # scenario opens. A draft there is not wrong — the Matter is exactly
-        # where an unfinished opinion belongs — but its section is headed
-        # *Väljasaadetud arvamused* and counts every submission on the Matter,
-        # so the baseline would have recorded a draft under a heading that says
-        # it was sent. That wording is worth correcting on its own merits and in
-        # its own round; this fixture does not need to force the question.
+        # scenario opens. The heading that made this matter has since been
+        # corrected — the section is *Koja arvamused* now, and a draft under it
+        # is described accurately — but the placement stays where it is, because
+        # the figure above counts exactly these and a fixture moved for a reason
+        # that has gone away is a baseline churned for nothing.
         create_submission(
             matter=overdue,
             title=DRAFT_SUBMISSION_TITLE,
