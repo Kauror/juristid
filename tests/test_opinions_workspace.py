@@ -466,10 +466,16 @@ def test_a_reader_role_gets_neither_the_archive_nor_somebody_elses_submissions(c
 
 
 def test_a_reader_cannot_be_selected_as_a_persona_at_all(client, shared):
-    """And so the case above cannot arise behind the shared gate."""
+    """And so the case above cannot arise behind the shared gate.
+
+    Arvamused itself stays reachable — it is `gate_required`, and the department
+    scope is what somebody past the password is entitled to before they name
+    anybody. What the refusal changes is *whose* view it is: nobody's.
+    """
     reader = factories.UserFactory(role=UserRole.READER)
     act_as(client, reader)
 
+    assert not client.session.get("_auth_user_id")
     response = client.get(SENT_URL)
-    assert response.status_code == 302
-    assert reverse("accounts:choose_persona") in response["Location"]
+    assert response.status_code == 200
+    assert not response.wsgi_request.user.is_authenticated

@@ -315,21 +315,45 @@ def test_a_department_head_persona_reaches_every_archive_surface(behind_the_gate
     assert behind_the_gate.get(file_url(stored)).status_code == 200
 
 
-def test_an_administrator_reads_but_is_offered_no_link_form(individually, administrator, binary):
-    client = individually(administrator)
-    body = client.get(detail_url(binary)).content.decode()
-    assert "Seo teemaga" not in body
-    assert "seoseid mitte muuta" in body
+def test_the_shared_gate_lets_an_administrator_read_the_corpus_but_not_file_it(
+    shared, administrator
+):
+    """The rule, at the predicate, because no screen can reach it any more.
+
+    Under the shared gate the archive widens to two roles and filing narrows to
+    one: an administrator may open every letter Koda holds and may not say what
+    the Chamber's correspondence concerns (docs/adr/0028). That asymmetry used
+    to be asserted through the workspace, by selecting an administrator persona
+    and reading the page — and an administrator is not a persona candidate any
+    anymore, so that route is gone (docs/adr/0034).
+
+    Asserting it here rather than deleting it. The rule has not changed, the
+    module still implements it, and the day this deployment moves to Cloudflare
+    Access — where an administrator *is* an identity the system can name — it
+    starts mattering again. A rule with no test is a rule that drifts while
+    nobody is looking.
+    """
+    assert may_read_archive(administrator)
+    assert not may_manage_archive_links(administrator)
 
 
-def test_an_administrator_may_not_post_a_link(individually, administrator, binary, normal_matter):
-    """Not offered in the interface is not a guard."""
+def test_an_administrator_who_is_named_individually_may_file_a_letter(
+    individually, administrator, binary, normal_matter
+):
+    """And outside the shared gate the widening does not apply.
+
+    The mode is the whole difference: `may_manage_archive_links` narrows to the
+    department head only while the department is behind one password, because
+    that is the mode in which the system cannot say who acted. This is the other
+    branch, and it is the one the deployment is heading for.
+    """
     client = individually(administrator)
     response = client.post(
         link_url(binary), {"action": "link", "viide": normal_matter.display_reference}
     )
-    assert response.status_code == 403
-    assert OpinionArchiveMatterLink.objects.count() == 0
+
+    assert response.status_code in (200, 302)
+    assert OpinionArchiveMatterLink.objects.count() == 1
 
 
 @pytest.mark.parametrize("role", [UserRole.ADMINISTRATOR, UserRole.READER])

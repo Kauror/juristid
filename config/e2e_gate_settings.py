@@ -46,6 +46,14 @@ SHARED_GATE_PASSWORD = os.environ.get("E2E_GATE_PASSWORD", "")
 # job's environment so the refusal cannot be switched off by editing YAML.
 DEV_LOGIN_ENABLED = False
 
+# Derived from `AUTH_MODE` in `config/settings.py` — and derived *at import*,
+# which is before the line above it. Overriding the mode afterwards therefore
+# leaves the wrong redirect behind: a reader with no persona was sent to the
+# synthetic sign-in, which this mode disables, so Minu töö answered 404 instead
+# of offering the persona page. Restated here for the same reason every
+# shared-gate test fixture restates it.
+LOGIN_URL = "accounts:choose_persona"
+
 if os.environ.get("REAL_DATA_ALLOWED", "0") not in {"0", "", "false", "False"}:
     # A rehearsal password, in a file, in a public repository's CI. It may sit
     # in front of a seeded world and nothing else. This is a `raise` rather than
