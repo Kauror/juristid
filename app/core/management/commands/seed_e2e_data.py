@@ -570,8 +570,16 @@ class Command(BaseCommand):
         # *N arvamust koostamisel* counts exactly these, and a figure the seeded
         # world can only ever render as nought proves nothing about the link
         # under it (Ülevaade QA §1).
+        #
+        # On `overdue` rather than on `visible`, which is the Matter every visual
+        # scenario opens. A draft there is not wrong — the Matter is exactly
+        # where an unfinished opinion belongs — but its section is headed
+        # *Väljasaadetud arvamused* and counts every submission on the Matter,
+        # so the baseline would have recorded a draft under a heading that says
+        # it was sent. That wording is worth correcting on its own merits and in
+        # its own round; this fixture does not need to force the question.
         create_submission(
-            matter=visible,
+            matter=overdue,
             title=DRAFT_SUBMISSION_TITLE,
             actor=martin,
             recipients=[ministry],
