@@ -340,7 +340,7 @@
         {% endcomment %}
         <div class="chiprow">
           {% for choice in form.addressee_organisation %}
-            {% if forloop.counter0 < form.addressee_split %}
+            {% if form.addressee_split is None or forloop.counter0 < form.addressee_split %}
               <label class="chip">
                 {{ choice.tag }}
                 <span class="chip__name">{{ choice.choice_label }}</span>
@@ -361,7 +361,7 @@
                 </label>
                 <div class="chiprow" id="adressaat-nimekiri">
                   {% for choice in form.addressee_organisation %}
-                    {% if forloop.counter0 >= form.addressee_split %}
+                    {% if forloop.counter0 >= form.addressee_split %}{# never reached when the split is None: the tail count is 0 and this block is not rendered #}
                       <label class="chip">
                         {{ choice.tag }}
                         <span class="chip__name">{{ choice.choice_label }}</span>

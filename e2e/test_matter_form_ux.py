@@ -61,10 +61,12 @@ def test_the_procedural_fields_are_visible_choices_not_dropdowns(page, base_url,
 def test_the_chip_hides_the_box_and_keeps_the_control(page, base_url):
     """The chip is a skin, not a replacement.
 
-    The native input is still there and still focusable — it is what makes the
-    keyboard ring land somewhere and what tells a screen reader whether one or
-    several may be chosen. What moved is that the label carries the state
-    instead of a 13px checkbox beside it (Uus teema redesign §4).
+    The native input is still there, still focusable and still the thing a
+    click lands on — it covers its chip at zero opacity rather than being
+    shrunk to nothing, because a control with no box is a control a browser
+    reports as invisible and a driver refuses to touch. What moved is that the
+    label carries the state instead of a 13px box beside it
+    (Uus teema redesign §4, static/css/app.css `.chip__input`).
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
@@ -72,10 +74,25 @@ def test_the_chip_hides_the_box_and_keeps_the_control(page, base_url):
     chip = page.locator(".chip").first
     box = chip.locator("input")
     expect(box).to_be_attached()
-    assert box.evaluate("node => node.getBoundingClientRect().width") < 2
+
+    painted = box.evaluate(
+        """node => {
+             const style = getComputedStyle(node);
+             const own = node.getBoundingClientRect();
+             const chip = node.closest('.chip').getBoundingClientRect();
+             return {
+               opacity: style.opacity,
+               covers: Math.abs(own.width - chip.width) < 2
+                       && Math.abs(own.height - chip.height) < 2,
+             };
+           }"""
+    )
+    assert painted["opacity"] == "0", painted
+    assert painted["covers"], painted
+
     expect(chip.locator(".chip__name")).to_be_visible()
 
-    # Clicking the visible part is clicking the control.
+    # And clicking the part a person can see is clicking the control.
     chip.locator(".chip__name").click()
     expect(box).to_be_checked()
 

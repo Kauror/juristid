@@ -4353,15 +4353,26 @@ p.factsection__none {
   max-width: 100%;
 }
 
-/* Focusable, not visible. Absolutely positioned inside the chip rather than
-   `display: none`, because a hidden input is not focusable and the keyboard
-   ring has to land somewhere — it lands on `.chip__name` below. */
+/* The real control, invisible and covering its chip.
+ *
+ * Not a zero-sized box, which is what the design's CSS specifies and what this
+ * was built as first. An input with no dimensions is a control nothing can
+ * point at: a browser reports it as not visible, so a click lands on whatever
+ * is underneath and a driver refuses to touch it at all — every chip on the
+ * page became undrivable, which is how the browser suite found it. Covering the
+ * chip means clicking the chip *is* clicking the input, which is what both a
+ * person and a test are trying to do.
+ *
+ * The same fix, for the same reason, as `.modechip__input` further down. */
 .chip__input {
   position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   margin: 0;
+  opacity: 0;
+  cursor: pointer;
+  z-index: 1;
 }
 
 .chip__name {
@@ -4528,8 +4539,9 @@ p.factsection__none {
   color: var(--text-secondary);
 }
 
-/* And it says so to the pointer as well: this chip has something to read. */
-.chip--explained .chip__name {
+/* And it says so to the pointer as well: this chip has something to read. On
+   the input, because the input is the layer the pointer actually meets. */
+.chip--explained .chip__input {
   cursor: help;
 }
 

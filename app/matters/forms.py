@@ -561,7 +561,12 @@ class MatterCreateForm(forms.Form):
             self.sender_tail_count = 0
             self.frequent_addressees = []
             self.addressee_offered = []
-            self.addressee_split = 1
+            # No viewer means no usage to rank by, so there is no shortlist and
+            # no long tail — and the template must render *everything* inline
+            # rather than the one blank option. A split of zero would hide the
+            # whole catalogue behind a disclosure that is not rendered either,
+            # which is a form quietly offering one choice.
+            self.addressee_split = None
             self.addressee_tail_count = 0
 
 
