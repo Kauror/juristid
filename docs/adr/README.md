@@ -43,6 +43,8 @@ consequences and reversibility.
 | [0032](0032-uus-teema-redesign.md) | The approved Uus teema redesign: one screen, one chip control | Accepted |
 | [0033](0033-overview-drilldown-parity.md) | Ülevaade drill-down parity: every number opens a list of its own kind | Accepted |
 | [0034](0034-persona-candidates-and-the-top-bar-switcher.md) | Persona candidates are a role-based population, and switching happens from the bar | Accepted |
+| [0035](0035-the-bounded-workspace.md) | The shell keeps the viewport; the workspace stops at 1600px and centres | Accepted |
+| [0036](0036-assignable-department-workers.md) | Who current business work may be assigned to, and who a filter may name | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
