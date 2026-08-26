@@ -281,6 +281,23 @@ def named_owner_in(population: QuerySet[Any], raw_id: str) -> User | None:
     return _one_of(owner_filter_choices(population), raw_id)
 
 
+def is_person_identifier(raw_id: str) -> bool:
+    """Whether this filter value could name a person at all.
+
+    The distinction matters for what a chip prints. ``mitte-uuid`` is not an
+    identifier — it cannot denote anybody, so echoing it back reveals nothing
+    and tells the reader what they actually filtered by. A *well-formed* UUID
+    that resolves to nobody this reader may know is the opposite case: it very
+    possibly does denote somebody, and the honest answer is to say nothing
+    about them.
+    """
+    try:
+        uuid.UUID(str(raw_id))
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
+
+
 def _one_of(population: QuerySet[User], raw_id: str) -> User | None:
     """One row of a narrowed population, by identifier, or nothing at all.
 

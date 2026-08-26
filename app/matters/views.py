@@ -32,10 +32,17 @@ from django.views.decorators.http import require_http_methods
 from app.accounts.models import User
 from app.accounts.selectors import (
     assignable_including,
+    is_person_identifier,
     named_owner_in,
     owner_filter_choices,
 )
-from app.core.authorization import may_review_work_victory, may_write_business_content
+from app.core.authorization import apply as apply_scope
+from app.core.authorization import (
+    child_visibility_q,
+    may_review_work_victory,
+    may_write_business_content,
+    scope_for_user,
+)
 from app.core.dates import format_estonian_date, parse_flexible_date
 from app.core.decorators import business_write_required, gate_required, viewer_for
 from app.core.enums import Visibility
@@ -508,6 +515,10 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         # name of somebody who owns only work this reader may not see — the
         # option list is already bounded that way and the chip has to agree
         # (app/accounts/selectors.py `named_owner_in`, AUTH-003).
+        if not is_person_identifier(value):
+            # Not an identifier at all, so it names nobody and hiding it would
+            # only leave the reader guessing what they had filtered by.
+            return value
         person = named_owner_in(Matter.objects.visible_to(request.user), value)
         # The short name, matching the control the filter was chosen from: a
         # chip that reads "Vastutaja: Sandra Näidis" beside a select offering
@@ -1050,14 +1061,27 @@ def _position_opinion(request: HttpRequest, matter: Matter) -> Submission | None
     visibilities, both of which have to hold, because the filename is the
     disclosure whether or not the bytes are refused (AUTH-003 §21).
     """
+    # One scope resolution for both predicates. `visible_to` asks the database
+    # about break-glass every time it is called, and the obvious spelling —
+    # `Submission.objects.visible_to(...)` filtered by
+    # `Document.objects.visible_to(...)` — pays for that lookup twice on a page
+    # that already renders a timeline (ADR 0033, ADR 0038).
+    scope = scope_for_user(request.user)
     return (
-        Submission.objects.filter(
-            matter=matter,
-            status=SubmissionStatus.SENT,
-            final_version__isnull=False,
-            final_version__document__in=Document.objects.visible_to(request.user).values("pk"),
+        apply_scope(
+            Submission.objects.filter(
+                matter=matter,
+                status=SubmissionStatus.SENT,
+                final_version__isnull=False,
+            ).filter(
+                child_visibility_q(
+                    scope,
+                    parent_prefix="final_version__document__matter__",
+                    override_field="final_version__document__visibility_override",
+                )
+            ),
+            child_visibility_q(scope),
         )
-        .visible_to(request.user)
         .select_related("final_version")
         .order_by("-sent_at")
         .first()
