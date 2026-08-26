@@ -16,6 +16,7 @@ from django.db.models import QuerySet
 from django.utils import timezone
 
 from app.accounts.models import User
+from app.accounts.selectors import assignable_business_users, assignable_including
 from app.core.authorization import scoped_count
 from app.core.enums import Visibility
 from app.core.errors import DomainError
@@ -113,8 +114,23 @@ TEXT_WIDGET = forms.TextInput(attrs={"class": "field__input"})
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input"})
 
 
-def active_users() -> Any:
-    return User.objects.filter(is_active=True).order_by("display_name")
+def assignable_users() -> Any:
+    """Who a person may be handed work on this form.
+
+    One line, for the reason `active_stages` and `offered_policy_areas` below
+    are one line: the population is `app.accounts.selectors`, and a form that
+    assembled its own would drift from the rule the persona list already obeys.
+
+    It replaces an `is_active=True` filter over the whole user table. Being able
+    to sign in is not the same thing as doing the department's work — the
+    administrator account could not be *become*, but could still be handed a
+    file — and the two answers are now the one answer (docs/adr/0035).
+
+    For a form editing a record that already names somebody, use
+    `assignable_including(...)` instead: this list is about new work, and an
+    edit page must not refuse the owner already on the Matter.
+    """
+    return assignable_business_users()
 
 
 def active_stages() -> Any:
@@ -477,7 +493,10 @@ class MatterCreateForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.viewer = viewer
 
-        set_choices(self, "owner", active_users())
+        # New work, and only new work: this form has no existing owner to
+        # preserve, so the population is the current department workers with no
+        # union (app/accounts/selectors.py).
+        set_choices(self, "owner", assignable_users())
         set_choices(self, "stage", active_stages())
         set_choices(self, "addressee_organisation", Organisation.objects.order_by("name"))
 
@@ -689,7 +708,15 @@ class MatterEditForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.matter = matter
 
-        set_choices(self, "owner", active_users())
+        # The current workers *plus* whoever this Matter already names.
+        #
+        # Exactly the shape `policy_areas` uses a few lines down, and for the
+        # same reason: a Matter owned by a departed colleague must survive
+        # having its title corrected. Narrowing this to the current workers
+        # alone would make the unchanged owner an invalid choice, and the field
+        # being optional that would not even fail loudly — it would clear an
+        # owner nobody asked to remove (app/accounts/selectors.py).
+        set_choices(self, "owner", assignable_including(matter.owner if matter else None))
         set_choices(self, "stage", active_stages())
         organisations = Organisation.objects.order_by("name")
         set_choices(self, "source_organisations", organisations)
@@ -868,7 +895,18 @@ class NextActionForm(forms.Form):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        set_choices(self, "responsible", active_users())
+        # No template renders this select — it is a field the POST may carry,
+        # which is exactly why the population matters. A control hidden from the
+        # page is not a control an endpoint refuses, and until this line the
+        # endpoint accepted any signed-in account's identifier. New work only,
+        # so no union: an existing step is superseded and replaced rather than
+        # edited, and the person named on the replacement is a new assignment
+        # (app/workflow/services.py `set_next_action`, docs/adr/0035).
+        #
+        # Leaving it blank still means *the Matter owner*, unchanged — including
+        # when that owner is a departed colleague. That is the record saying who
+        # has the file, not somebody choosing them today.
+        set_choices(self, "responsible", assignable_users())
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
@@ -1475,9 +1513,14 @@ class MatterFieldForm(forms.Form):
     # business data.
     data_class = forms.ChoiceField(choices=MatterDataClass.choices, required=False)
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, matter: Matter | None = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        set_choices(self, "owner", active_users())
+        # `matter` is what makes the inline owner control survive a Matter whose
+        # owner is no longer a department worker: the current workers plus that
+        # one person, so re-submitting the value already on the record is a
+        # save and naming any *other* non-assignable account is a refusal
+        # (app/accounts/selectors.py, docs/adr/0035).
+        set_choices(self, "owner", assignable_including(matter.owner if matter else None))
         set_choices(self, "stage", active_stages())
         set_choices(self, "source_organisations", Organisation.objects.order_by("name"))
         set_choices(self, "addressee_organisation", Organisation.objects.order_by("name"))
@@ -1729,7 +1772,11 @@ class IncomingIntakeForm(forms.Form):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        set_choices(self, "owner", User.objects.filter(is_active=True).order_by("display_name"))
+        # A Matter that does not exist yet, so there is nothing to preserve:
+        # the current department workers and nobody else. Intake is the second
+        # way into a Matter and must not be the way around `Uus teema`'s rule
+        # (app/accounts/selectors.py).
+        set_choices(self, "owner", assignable_users())
         set_choices(self, "source_organisations", Organisation.objects.order_by("name"))
         set_choices(
             self,

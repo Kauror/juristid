@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from urllib.parse import urlencode
 
 from app.accounts.models import User
+from app.accounts.selectors import assignable_including
 from app.matters.enums import MatterOrigin, RecordMode
 from app.reporting import context as ctx
 from app.reporting.context import ReportingContext
@@ -197,7 +198,16 @@ def options(context: ReportingContext, tab: str) -> dict[str, object]:
     payload: dict[str, object] = {
         "record_modes": RecordMode.choices,
         "origins": MatterOrigin.choices,
-        "owners": User.objects.filter(is_active=True).order_by("display_name"),
+        # The `Vastutaja` select means *current department worker*, so it
+        # offers exactly those — plus whoever this report is already filtered
+        # by, which may well be a departed colleague whose year this is. The
+        # rows themselves are untouched: a historical owner still counts, still
+        # aggregates and still resolves to a name in `_display_value` above.
+        # Narrowing the chooser is not permission to make the report lie
+        # (app/accounts/selectors.py, docs/adr/0035).
+        "owners": assignable_including(
+            User.objects.filter(pk=context.owner_id).first() if context.owner_id else None
+        ),
         # The governed vocabulary, read from the one function that answers
         # "which Valdkonnad may somebody choose today" — including its reviewed
         # order. Assembled here independently, this filter drifted from Uus

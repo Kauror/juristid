@@ -30,6 +30,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
+from app.accounts.selectors import assignable_including
 from app.core.authorization import may_review_work_victory, may_write_business_content
 from app.core.dates import format_estonian_date, parse_flexible_date
 from app.core.decorators import gate_required, viewer_for
@@ -716,7 +717,14 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         return render(request, "matters/partials/register_results.html", context)
 
     context |= {
-        "owners": User.objects.filter(is_active=True).order_by("display_name"),
+        # The current department workers, plus whoever this URL is already
+        # filtered by. The narrowing is what the control means — `Vastutaja`
+        # offers the people work can be given to, not every account that can
+        # sign in — and the union is what keeps an existing link honest: a
+        # filter on a departed colleague must go on naming them in the select
+        # it is selected in, or the page shows `Kõik` while filtering by
+        # somebody (app/accounts/selectors.py, docs/adr/0035).
+        "owners": assignable_including(_named_by_pk(User, params.get("vastutaja", ""))),
         "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "tracks": Track.choices,
         # The governed vocabulary, so the register's filter offers exactly what
@@ -1119,7 +1127,13 @@ def _header_context(
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
         "dispositions": Disposition.choices,
-        "owners": User.objects.filter(is_active=True).order_by("display_name"),
+        # The inline owner control. Current department workers plus this
+        # Matter's own owner, so a file held by a departed colleague still says
+        # who holds it and can still be handed to somebody who is here — the
+        # same population `MatterFieldForm` validates against, because a select
+        # offering more than the form accepts is a save that fails on submit
+        # (app/accounts/selectors.py).
+        "owners": assignable_including(matter.owner),
         "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "organisations": Organisation.objects.order_by("name"),
         # Resolved once here rather than read off the Matter inside the loop
@@ -1674,7 +1688,12 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
 
     matter = get_visible_matter(request, pk)
     surface = _FIELD_SURFACES.get(field, "matters/partials/header.html")
-    form = MatterFieldForm(request.POST)
+    # The Matter is handed to the form so the owner field accepts the owner
+    # already on it. The header renders that owner as the selected option, and
+    # without this the control would refuse the value it is displaying: pressing
+    # Salvesta on a Matter held by a departed colleague, having changed nothing,
+    # would answer "Vigane väärtus." (app/matters/forms.py).
+    form = MatterFieldForm(request.POST, matter=matter)
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
@@ -1754,7 +1773,7 @@ def set_data_class(request: HttpRequest, pk: Any) -> HttpResponse:
     (Agent-C brief 18, 22).
     """
     matter = get_visible_matter(request, pk)
-    form = MatterFieldForm(request.POST)
+    form = MatterFieldForm(request.POST, matter=matter)
     # `data_class` is `required=False` on that form, because one POST carries
     # one field. An absent value is refused here rather than defaulted: a
     # malformed request must not quietly make a development record real.

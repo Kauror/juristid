@@ -159,7 +159,11 @@ def test_no_name_or_address_is_written_into_the_rule():
 
     tree = ast.parse(inspect.getsource(selectors))
     functions = {node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)}
-    for name in ("persona_candidates", "is_persona_candidate", "persona_from_id"):
+    # Every function in the module, not the three the persona flow calls. The
+    # rule now lives one level down in `department_workers` and the persona
+    # entry points delegate to it, so a tuple naming only the delegates would
+    # have stopped reading the code that decides anything (docs/adr/0035).
+    for name in functions:
         node = functions[name]
         # Prose is allowed to name a colleague; a filter is not. The docstring
         # is dropped before the code is read, so the rule is about what runs.
@@ -185,6 +189,18 @@ def _is_docstring(statement: object) -> bool:
 
 def test_the_included_roles_are_the_two_that_do_department_work():
     assert PERSONA_ROLES == frozenset({UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value})
+
+
+def test_the_persona_roles_are_the_department_work_roles_themselves():
+    """One object, not two frozensets that happen to be equal today.
+
+    The persona list and the assignment controls read the same rule, and this
+    is the assertion that they cannot be given different role sets by an edit
+    that only looks like a rename (docs/adr/0035).
+    """
+    from app.accounts.selectors import DEPARTMENT_WORK_ROLES
+
+    assert PERSONA_ROLES is DEPARTMENT_WORK_ROLES
 
 
 # -- ordering and lookup ---------------------------------------------------

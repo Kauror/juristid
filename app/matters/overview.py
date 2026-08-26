@@ -112,6 +112,12 @@ DEADLINE_HORIZON_DAYS = 14
 
 #: Roles whose holders carry files and therefore belong in a people list even
 #: with nothing open. A READER reads and an ADMINISTRATOR administers.
+#:
+#: Deliberately *not* `app.accounts.selectors.DEPARTMENT_WORK_ROLES`, for the
+#: reason `app/matters/department_dashboard.py` gives at its own copy: this is a
+#: report population unioned with everybody who currently owns something, and
+#: the assignment rule is stricter than it. Narrowing a chooser must not delete
+#: a row from a page about who holds what (docs/adr/0035).
 CASEWORK_ROLES: tuple[str, ...] = (UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value)
 
 #: "in August" — the inessive, written out rather than derived.
