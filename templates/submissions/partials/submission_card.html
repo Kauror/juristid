@@ -79,7 +79,14 @@ that goes through the authorization-checked download route.
     </p>
   {% endif %}
 
-  {% if submission.final_version %}
+  {% comment %}
+    `final_version_readable`, not `final_version`. The download route refuses
+    the bytes of a restricted document already; this stops the card naming the
+    file, its size and its checksum to a reader who may not open it. A filename
+    is often the most telling thing about a document (AUTH-003 §21,
+    app/matters/views.py `matter_position`).
+  {% endcomment %}
+  {% if submission.final_version and submission.final_version_readable %}
     <div class="evidenceblock">
       <span>
         <span class="badge badge--evidence">Tõend</span>

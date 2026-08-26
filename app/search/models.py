@@ -25,7 +25,19 @@ from app.core.models import BaseModel
 
 #: Bumped when the indexed text or the vector configuration changes, so a
 #: partially rebuilt index is visible rather than merely stale.
-INDEX_VERSION = "2D.1"
+#: The contract a projection row was built under.
+#:
+#: Bumped by AUTH-003, and the bump is load-bearing rather than bookkeeping.
+#: Rows written before it can contain a RESTRICTED `Kaasamine`'s title and note
+#: inside a MATTER row's tsvector, and there is no way to neutralise part of a
+#: stored vector at query time — the tokens are simply in it. So the query
+#: chokepoint refuses to read any row that does not carry the current version
+#: (`app.search.services._scoped_documents`), which makes every pre-fix row
+#: ineligible the moment the new code is deployed, before any rebuild.
+#:
+#: That is deliberately fail-closed. Until the one-time rebuild runs, search
+#: returns too little; it never returns something confidential.
+INDEX_VERSION = "AUTH003.1"
 
 
 class SearchSourceKind(models.TextChoices):
@@ -47,6 +59,19 @@ class SearchSourceKind(models.TextChoices):
     # answer for three would mean choosing which of them decides who may see it
     # (Stage-2D brief 37).
     LEGACY_SOURCE_PAGE = "LEGACY_SOURCE_PAGE", "Ajalooline OneNote'i leht"
+    # `Kaasamine`, as its own row rather than text folded into the Matter's.
+    #
+    # It was folded in until AUTH-003, and that was a confidentiality defect
+    # rather than an untidiness: a MatterEngagement carries its own
+    # `visibility_override`, so it can be stricter than the Matter it hangs off
+    # — and a MATTER row is authorized by the Matter alone. A RESTRICTED
+    # consultation's title and note were therefore searchable by anybody who
+    # could open a NORMAL parent.
+    #
+    # The rule this restores is the one every other child kind here already
+    # follows: text whose visibility may be narrower than its Matter's gets a
+    # row whose visibility can express that.
+    ENGAGEMENT = "ENGAGEMENT", "Kaasamine"
 
 
 #: Which live column carries each kind's own restriction, for the authorization
@@ -62,6 +87,7 @@ SOURCE_OVERRIDE_FIELDS: dict[str, str | None] = {
     SearchSourceKind.ENTRY.value: "entry__visibility_override",
     SearchSourceKind.SUBMISSION.value: "submission__visibility_override",
     SearchSourceKind.DOCUMENT_FRAGMENT.value: "document__visibility_override",
+    SearchSourceKind.ENGAGEMENT.value: "engagement__visibility_override",
     # A source page has no restriction of its own. It is historical material
     # attached to a Matter, and the Matter's visibility is the whole answer —
     # so this maps to None, exactly like MATTER above.
@@ -140,6 +166,14 @@ class SearchDocument(BaseModel):
         blank=True,
         related_name="search_documents",
         verbose_name="tekstiosa",
+    )
+    engagement = models.ForeignKey(
+        "matters.MatterEngagement",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="search_documents",
+        verbose_name="kaasamine",
     )
     matter_source_page = models.ForeignKey(
         "legacy_import.MatterSourcePage",

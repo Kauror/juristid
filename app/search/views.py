@@ -58,12 +58,12 @@ def search_view(request: HttpRequest) -> HttpResponse:
     # attribute and falls back to a query per Matter without it.
     matters = [result.matter for result in results if result.is_matter]
     if matters:
-        prefetch_related_objects(matters, open_action_prefetch())
+        prefetch_related_objects(matters, open_action_prefetch(request.user))
 
     rows = [
         {
             "result": result,
-            "action": current_action_of(result.matter) if result.is_matter else None,
+            "action": current_action_of(result.matter, request.user) if result.is_matter else None,
             "target": _target_url(result),
         }
         for result in results

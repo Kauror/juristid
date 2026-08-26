@@ -30,7 +30,7 @@ from django.utils import timezone
 from app.core.richtext import plain_text
 from app.documents.enums import DerivativeStatus
 from app.documents.models import DocumentTextFragment, DocumentVersion
-from app.matters.models import Entry
+from app.matters.models import Entry, MatterEngagement
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.submissions.models import Submission
 
@@ -49,6 +49,62 @@ def indexable_submissions() -> QuerySet[Submission]:
     return Submission.objects.select_related("matter").prefetch_related(
         "recipient_rows__organisation__aliases"
     )
+
+
+def indexable_engagements() -> QuerySet:
+    """Every `Kaasamine`, with the Matter its row will hang off.
+
+    Unfiltered by visibility on purpose. This builds the projection; *reading*
+    it is authorized at query time against the engagement's own current
+    override, which is what lets somebody restrict a consultation and have it
+    disappear from search on the next query with no reindex
+    (`app.search.services._scoped_documents`).
+    """
+    return MatterEngagement.objects.select_related("matter")
+
+
+def _engagement_values(engagement, now: object) -> dict[str, object]:
+    """One `Kaasamine` as a search row.
+
+    The same three things the Matter row used to swallow: the title, the note,
+    and the link's *host* rather than the link. A campaign URL is mostly
+    tracking parameters, and indexing those adds thousands of meaningless
+    tokens without making anything findable; the host's own labels go in beside
+    it because PostgreSQL reads `survey.alchemer.example` as one token and
+    somebody typing the vendor's name would otherwise get nothing.
+
+    The link terms are `alias_text` rather than `body_text` because that is what
+    they are — alternate names for the same thing — and the title tier should
+    not rank a Matter highly because a hostname happened to match.
+    """
+    return {
+        "matter": engagement.matter,
+        "source_kind": SearchSourceKind.ENGAGEMENT,
+        "source_object_id": engagement.pk,
+        "engagement": engagement,
+        "title": engagement.title,
+        "identifiers": "",
+        "alias_text": " ".join(dict.fromkeys(engagement.link_search_terms)),
+        "body_text": engagement.note or "",
+        "source_locator": f"kaasamine-{engagement.pk}",
+        "index_version": INDEX_VERSION,
+        "indexed_at": now,
+    }
+
+
+def refresh_engagements(engagements: QuerySet) -> int:
+    rows = list(engagements)
+    if not rows:
+        return 0
+    now = timezone.now()
+    identifiers = [engagement.pk for engagement in rows]
+    SearchDocument.objects.filter(
+        source_kind=SearchSourceKind.ENGAGEMENT, source_object_id__in=identifiers
+    ).delete()
+    SearchDocument.objects.bulk_create(
+        [SearchDocument(**_engagement_values(engagement, now)) for engagement in rows]
+    )
+    return len(rows)
 
 
 def indexable_fragments() -> QuerySet[DocumentTextFragment]:

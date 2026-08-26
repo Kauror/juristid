@@ -257,6 +257,30 @@ def owner_filter_choices(population: QuerySet[Any]) -> QuerySet[User]:
     ).order_by("display_name")
 
 
+def named_owner_in(population: QuerySet[Any], raw_id: str) -> User | None:
+    """The person a `Vastutaja` filter value names — if this reader's own data
+    names them.
+
+    A filter *chip* is a rendered name, and it was being rendered by looking the
+    query string's UUID up in `User.objects`. That turns the address bar into a
+    directory: anybody who knows or guesses an identifier gets a colleague's
+    name back, and gets it precisely when that person appears nowhere the reader
+    is allowed to look — which is when the answer is most revealing, because it
+    says a person, a file and a working relationship exist (AUTH-003).
+
+    So the label resolves against the same bounded population that made the
+    *option* legitimate in the first place: today's department workers, union
+    the owners genuinely represented in ``population``. A caller passes the
+    queryset its own surface may show, exactly as it already does for the
+    dropdown — and a name that is not in it is not a name this reader learns.
+
+    Returning ``None`` rather than raising: an unrecognised value is a filter
+    that matches nothing, which is a legitimate if unhelpful thing to ask for,
+    and the caller decides what to print instead.
+    """
+    return _one_of(owner_filter_choices(population), raw_id)
+
+
 def _one_of(population: QuerySet[User], raw_id: str) -> User | None:
     """One row of a narrowed population, by identifier, or nothing at all.
 

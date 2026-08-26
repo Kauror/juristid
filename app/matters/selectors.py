@@ -230,11 +230,23 @@ def filter_by_next_action(
     return annotated.filter(matches_action=value != MISSING)
 
 
-def open_action_prefetch() -> Prefetch:
-    """Attach the one open action without a query per row."""
+def open_action_prefetch(user: Any) -> Prefetch:
+    """Attach the one open action this reader may see, without a query per row.
+
+    Scoped, and the scoping is the point rather than a precaution. A
+    `NextAction` is a `VisibilityInheritingModel`: it can be restricted below
+    the Matter it belongs to, and this prefetch decorates rows of a register
+    whose Matters are visible by definition. Unscoped, it printed a restricted
+    step's text and the colleague responsible for it onto a row anybody could
+    read — the exact condition `work_items.no_next_action_q` already warns about
+    two files away, where it says such an action "is invisible to most readers"
+    (AUTH-003).
+    """
     return Prefetch(
         "next_actions",
-        queryset=NextAction.objects.filter(status=ActionStatus.OPEN).select_related("responsible"),
+        queryset=NextAction.objects.visible_to(user)
+        .filter(status=ActionStatus.OPEN)
+        .select_related("responsible"),
         to_attr="open_actions",
     )
 
@@ -254,7 +266,7 @@ def matter_list_queryset(user: Any) -> QuerySet[Matter]:
     return annotate_last_activity(
         Matter.objects.visible_to(user)
         .select_related("owner", "stage", "addressee_organisation")
-        .prefetch_related(open_action_prefetch(), "source_organisations", "policy_areas"),
+        .prefetch_related(open_action_prefetch(user), "source_organisations", "policy_areas"),
         user,
     )
 
@@ -379,12 +391,24 @@ def active_deadline(
     )
 
 
-def current_action_of(matter: Matter) -> NextAction | None:
-    """Read the prefetched open action, falling back to a query if absent."""
+def current_action_of(matter: Matter, user: Any = None) -> NextAction | None:
+    """Read the prefetched open action, falling back to a query if absent.
+
+    The fallback needs the reader for the same reason the prefetch does: it
+    answers the same question by a different route, and a route that skipped
+    the check would be the leak the prefetch just closed, reachable whenever a
+    caller forgot to prefetch. Without a reader it returns nothing rather than
+    guessing — a missing action reads as "none set", which is safe, while a
+    wrong one is not.
+    """
     prefetched = getattr(matter, "open_actions", None)
     if prefetched is not None:
         return prefetched[0] if prefetched else None
-    return matter.next_actions.filter(status=ActionStatus.OPEN).first()
+    if user is None:
+        return None
+    return (
+        NextAction.objects.visible_to(user).filter(matter=matter, status=ActionStatus.OPEN).first()
+    )
 
 
 def visible_actions(user: Any) -> QuerySet[NextAction]:
