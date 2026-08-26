@@ -344,6 +344,19 @@ def _kaasamine(page):
     return page.locator("#kaasamine")
 
 
+def _at_rest(page):
+    """Take the pointer off whatever was just clicked, and settle.
+
+    A click leaves the mouse where it landed, and the accordion head paints its
+    `+ Lisa` in the link colour on hover — so the first rendering of these came
+    back with the header hovered in one capture and at rest in another, for no
+    reason a reader of the baseline could see. A baseline should show the state
+    the test is named for and not where the mouse happened to stop.
+    """
+    page.mouse.move(0, 0)
+    page.wait_for_timeout(120)
+
+
 def test_kaasamine_collapsed_with_nothing_recorded(page, base_url):
     """The state a reader arrives at, on a Matter nobody has consulted about.
 
@@ -364,7 +377,7 @@ def test_kaasamine_open_with_nothing_recorded(page, base_url):
     """One click, and what it opens onto is the form itself."""
     open_matter(page, base_url, ARCHIVE_TITLE)
     _kaasamine(page).locator(".accordion__head").click()
-    page.wait_for_timeout(120)
+    _at_rest(page)
     compare("kaasamine-tyhi", capture(page, "kaasamine-tyhi", clip_to="#kaasamine"))
 
 
@@ -372,7 +385,7 @@ def test_kaasamine_open_with_a_record(page, base_url):
     """The records, and the composer waiting behind its own control."""
     open_matter(page, base_url, OPEN_TITLE)
     _kaasamine(page).locator(".accordion__head").click()
-    page.wait_for_timeout(120)
+    _at_rest(page)
     compare("kaasamine-kirjed", capture(page, "kaasamine-kirjed", clip_to="#kaasamine"))
 
 
@@ -380,7 +393,7 @@ def test_kaasamine_composer_open_over_a_record(page, base_url):
     """`+ Lisa` from collapsed: the section and the form in one action."""
     open_matter(page, base_url, OPEN_TITLE)
     _kaasamine(page).locator("[data-engagement-add-trigger]").click()
-    page.wait_for_timeout(120)
+    _at_rest(page)
     compare("kaasamine-lisa", capture(page, "kaasamine-lisa", clip_to="#kaasamine"))
 
 
