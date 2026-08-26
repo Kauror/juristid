@@ -312,7 +312,17 @@ localStorage (Stage-2E.1 brief 12).
           <label class="field">
             <span class="field__label">Järjestus</span>
             <select class="field__input" name="jarjestus">
-              <option value="reference" {% if filters.jarjestus == "reference" %}selected{% endif %}>Viide</option>
+              {% comment %}
+                `Vaikimisi`, not `Viide`. The value is unchanged and so is the
+                ordering: newest reference first, which is the register's own
+                filing order and the list a lawyer expects to open on. What
+                changed is that the reference is no longer anywhere on this page,
+                so an option naming it asked somebody to sort by a value they
+                cannot see. `?jarjestus=reference` still works and is still what
+                the form posts — the label is the only thing that moved
+                (review of PR #72, §18).
+              {% endcomment %}
+              <option value="reference" {% if filters.jarjestus == "reference" %}selected{% endif %}>Vaikimisi</option>
               {% comment %}
                 Named for what it sorts by. `?jarjestus=updated` orders on
                 `Matter.updated_at` — when the row was last written — and the

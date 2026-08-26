@@ -18,6 +18,8 @@ world computes its dates from today and those pixels change daily.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import expect
 
@@ -312,7 +314,7 @@ def test_the_overview_leads_with_intervention_then_deadlines_then_activity(page,
         "  document.querySelectorAll('.ovbody__main section[aria-label]')"
         ").map(node => node.getAttribute('aria-label'))"
     )
-    assert order == ["Vajab sekkumist", "Tähtajad", "Viimane tegevus"], order
+    assert order == ["Vajab sekkumist", "Tähtajad", "Viimased muudatused"], order
 
 
 def test_the_intervention_queue_says_what_it_wants(page, base_url):
@@ -381,6 +383,119 @@ def test_no_work_surface_still_spends_a_column_on_the_reference(page, base_url):
         page.goto(f"{base_url}{path}")
         page.wait_for_load_state("networkidle")
         expect(page.get_by_role("columnheader", name="Viide")).to_have_count(0)
+
+
+def test_no_ordinary_reading_surface_prints_a_matter_reference(page, base_url):
+    """The whole document, in a real browser, on every surface QA read.
+
+    A rendered-HTML assertion cannot see a value that arrives through CSS or a
+    template the server-side test did not exercise, and `2026_10` is short
+    enough to hide anywhere. So this looks at the text the browser actually
+    exposes — which includes the accessibility tree and every title attribute —
+    rather than at markup (human QA §4, §23).
+    """
+    sign_in(page, base_url, SANDRA)
+    pattern = re.compile(r"(19|20)\d{2}_\d+")
+
+    for path in ("/ulevaade/", "/minu-too/", "/teemad/", "/saabunud/", "/olulised-tahtajad/"):
+        page.goto(f"{base_url}{path}")
+        page.wait_for_load_state("networkidle")
+        text = page.locator("#sisu").inner_text()
+        assert not pattern.search(text), f"{path}: {pattern.search(text).group()}"
+
+    open_first_matter(page, base_url)
+    text = page.locator("#sisu").inner_text()
+    assert not pattern.search(text), text[:400]
+
+
+def test_the_teema_crumb_is_one_level(page, base_url):
+    """*Teemad / 2026_10* became *Teemad*, and the title is the heading."""
+    sign_in(page, base_url, SANDRA)
+    open_first_matter(page, base_url)
+
+    crumbs = page.locator(".matterhead__crumbs")
+    expect(crumbs.get_by_role("link", name="Teemad")).to_be_visible()
+    assert "/" not in crumbs.inner_text(), crumbs.inner_text()
+    expect(page.locator(".matterhead__title")).to_contain_text(OPEN_TITLE[:40])
+
+
+def test_the_intervention_row_states_the_missing_deadline_and_nothing_else(page, base_url):
+    """*sammuta · 202 P VAIKUST* became *tähtaeg puudub* (human QA §10, §11)."""
+    sign_in(page, base_url, SANDRA)
+    open_overview(page, base_url, "?vaade=osakond&sekkumine=sammuta")
+
+    rows = page.locator(".interrow")
+    assert rows.count(), "the seeded world has no next-step-less Matter"
+    text = page.locator(".ovsection__rows").inner_text()
+    assert "tähtaeg puudub" in text.lower(), text
+    assert "sammuta" not in text.lower(), text
+    assert "vaikust" not in text.lower(), text
+
+
+def test_recent_changes_says_who_did_what_in_which_topic(page, base_url):
+    """One line, three parts, and the third is a topic a person can name.
+
+    The row used to end in `2026_303`. It now ends in the topic's title — which
+    on this seeded world is a deliberately long one, so this is also the
+    long-title case: the row must stay a row (human QA §16, §20, §37).
+    """
+    sign_in(page, base_url, SANDRA)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    open_overview(page, base_url)
+
+    section = page.locator("section[aria-label='Viimased muudatused']")
+    expect(section.get_by_text("Viimased muudatused", exact=True)).to_be_visible()
+
+    row = section.locator(".feedrow").first
+    expect(row).to_be_visible()
+    link = row.get_by_role("link").first
+    expect(link).to_be_visible()
+    # The topic link goes to a Matter, and the row's text names a person before
+    # it: "<Actor> <did something> · <topic>".
+    assert re.match(r"^/teemad/[0-9a-f-]{36}/$", link.get_attribute("href") or ""), link
+    assert "·" in row.inner_text(), row.inner_text()
+
+    # A long title truncates inside its own row rather than widening the page.
+    assert not document_overflows(page)
+    box = row.bounding_box()
+    assert box["width"] <= 1441, box
+    # And the full title is still reachable, on the link itself.
+    assert len(link.get_attribute("title") or "") > 0
+
+
+def test_the_change_filter_is_named_for_what_it_holds(page, base_url):
+    """`Staatuse muutused` stopped being true when the bucket widened.
+
+    It now carries Järgmiseks, olulised tähtajad, jõustumised, kaasamised,
+    töövõidud and a rename as well as the stage and owner changes it was named
+    for. The query value behind it is unchanged (review §12).
+    """
+    sign_in(page, base_url, SANDRA)
+    open_overview(page, base_url)
+
+    strip = page.locator(".feedfilter")
+    expect(strip.get_by_role("link", name="Teema muudatused")).to_be_visible()
+    expect(strip.get_by_role("link", name="Staatuse muutused")).to_have_count(0)
+
+    strip.get_by_role("link", name="Teema muudatused").click()
+    page.wait_for_load_state("networkidle")
+    assert "voog=staatus" in page.url, page.url
+
+
+def test_the_default_ordering_is_offered_by_what_it_does(page, base_url):
+    """`Viide` named a column this page no longer has (review §18)."""
+    sign_in(page, base_url, SANDRA)
+    open_register(page, base_url)
+    page.locator(".filterpanel__trigger").click()
+
+    options = page.locator('select[name="jarjestus"] option')
+    labels = [options.nth(i).inner_text().strip() for i in range(options.count())]
+    values = [options.nth(i).get_attribute("value") for i in range(options.count())]
+
+    assert "Vaikimisi" in labels, labels
+    assert "Viide" not in labels, labels
+    # The value behind it is untouched, so a bookmarked URL still works.
+    assert "reference" in values, values
 
 
 def test_a_colleague_is_named_by_their_short_name_in_the_register(page, base_url):

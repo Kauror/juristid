@@ -63,7 +63,7 @@ counts say what is true, and the manager decides.
                 {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter.title }}
               </span>
               <span class="teamrow__detail">
-                {% if item.reference %}<span class="reference">{{ item.reference }}</span> · {% endif %}{{ item.text }}
+                {{ item.text }}
               </span>
             </span>
             <span class="teamrow__stage">{{ item.stage_label }}</span>

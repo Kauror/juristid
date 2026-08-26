@@ -45,7 +45,14 @@ from app.accounts.enums import UserRole
 from app.accounts.models import User
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
+from app.core.authorization import apply as apply_scope
+from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
 from app.core.dates import format_estonian_date
+from app.intelligence.models import (
+    MatterEffectiveDate,
+    MatterImportantDate,
+    MatterWorkVictory,
+)
 from app.matters import work_items as wi
 from app.matters.activity import activity_of, annotate_last_activity
 from app.matters.models import Entry, Matter, MatterEngagement
@@ -55,6 +62,7 @@ from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
+from app.workflow.models import NextAction
 
 # ---------------------------------------------------------------------------
 # Scopes
@@ -412,10 +420,21 @@ def intervention_rows(
         rows.append(
             InterventionRow(
                 reason=REASON_NO_ACTION,
-                value="sammuta",
-                meaning=f"{(today - since).days} P VAIKUST"
-                if since
-                else "VIIMANE TEGEVUS TEADMATA",
+                # What is wrong with the file, in the words somebody would use
+                # about it. "sammuta" is this module's vocabulary, not the
+                # department's, and it read as an abbreviation of something
+                # (human QA §10).
+                value="tähtaeg puudub",
+                # Deliberately blank. The row used to print "202 P VAIKUST"
+                # beside the reason, and a number nobody can act on is noise on
+                # the one list that exists to be acted on: the file has no next
+                # step whether the silence is two months old or seven, and the
+                # thing to do about it is the same (human QA §11).
+                #
+                # `since` is still computed and still decides `sort_on`, so the
+                # quietest file is still the one at the top. What changed is
+                # what the row says, not which rows there are or in what order.
+                meaning="",
                 matter=matter,
                 detail="järgmine samm määramata",
                 owner=matter.owner,
@@ -520,7 +539,7 @@ def deadline_groups(items: list[wi.WorkItem], today: date) -> list[DeadlineGroup
 
 
 # ---------------------------------------------------------------------------
-# Viimane tegevus
+# Viimased muudatused
 # ---------------------------------------------------------------------------
 
 FEED_ALL = "koik"
@@ -528,37 +547,182 @@ FEED_ENTRIES = "sissekanded"
 FEED_SUBMISSIONS = "arvamused"
 FEED_STATUS = "staatus"
 
+#: The visible tabs. `FEED_STATUS` still resolves from `?voog=staatus`, and
+#: deliberately: the value is in people's bookmarks and in links pasted into
+#: chats, and renaming it would break them to fix a word. What that bucket
+#: *holds* has widened well past "staatus" — Järgmiseks, olulised tähtajad,
+#: jõustumised, kaasamised, töövõidud, a rename, an owner change — so the label
+#: says what the reader will find (review of PR #72, §12).
 FEED_FILTERS: tuple[tuple[str, str], ...] = (
     (FEED_ALL, "Kõik"),
     (FEED_ENTRIES, "Sissekanded"),
     (FEED_SUBMISSIONS, "Arvamused"),
-    (FEED_STATUS, "Staatuse muutused"),
+    (FEED_STATUS, "Teema muudatused"),
 )
 
 FEED_PARAM = "voog"
 
-#: The events a person would recognise as something a colleague did. Field-level
-#: corrections are deliberately absent: a feed that reports a deadline moved by
-#: a day is an audit log, and an audit log is not read.
-_STATUS_EVENTS: tuple[str, ...] = (
+# ---------------------------------------------------------------------------
+# What counts as a change to the department's work
+#
+# `ChangeEvent` is the audit history and holds far more than this. The feed is a
+# *curated projection* of it, and the curation is the point: a section that
+# reported every stored row would report source-field refreshes and cutover
+# normalisations beside a colleague closing a file, and a reader who has to skip
+# rows stops reading them all (§10, §18).
+#
+# Two rules decide membership. **Would a colleague recognise this as something a
+# person did to the work?** — which excludes import, cutover and infrastructure
+# rows whatever their event type. And **can it be scoped safely?** — which is
+# what the split below is really about.
+# ---------------------------------------------------------------------------
+
+#: Events about the Matter itself. `ChangeEvent.matter` is the whole subject, so
+#: Matter-level visibility is the whole answer.
+_MATTER_EVENTS: tuple[str, ...] = (
+    ChangeEventType.MATTER_CREATED,
+    ChangeEventType.MATTER_TITLE_CHANGED,
     ChangeEventType.MATTER_STAGE_CHANGED,
     ChangeEventType.MATTER_ASSIGNED,
     ChangeEventType.MATTER_CLOSED,
     ChangeEventType.MATTER_REOPENED,
-    ChangeEventType.MATTER_CREATED,
 )
 
+#: Events about a *child* record — a Järgmiseks, an Oluline tähtaeg, a
+#: Jõustumine, a Kaasamine, a Töövõit.
+#:
+#: These may not be filtered by their Matter alone. Every one of these models is
+#: a ``VisibilityInheritingModel``: it carries a ``visibility_override`` that can
+#: restrict the record *beyond* its Matter, so a colleague may hold an ordinary
+#: Matter and still not be allowed to know that a particular deadline on it
+#: exists. A row selected on ``matter__in=visible`` would announce exactly that.
+#:
+#: Each family is therefore selected through its own ``visible_to`` queryset,
+#: matched on ``ChangeEvent.object_id`` — every service in this list records the
+#: child as ``obj=``, so the id is there to match on. The Matter filter still
+#: applies on top; this narrows, it never widens.
+#:
+#: This is not the AUTH-003 hardening and does not touch it. It is the ordinary
+#: obligation on a *new* query: build the population inside the boundary rather
+#: than resolve names outside it (§13, §14).
+_CHILD_EVENT_FAMILIES: tuple[tuple[tuple[str, ...], Any], ...] = (
+    (
+        (
+            ChangeEventType.NEXT_ACTION_SET,
+            ChangeEventType.NEXT_ACTION_COMPLETED,
+            ChangeEventType.NEXT_ACTION_REVIEWED,
+            ChangeEventType.NEXT_ACTION_CANCELLED,
+        ),
+        NextAction,
+    ),
+    (
+        (
+            ChangeEventType.IMPORTANT_DATE_ADDED,
+            ChangeEventType.IMPORTANT_DATE_CHANGED,
+            ChangeEventType.IMPORTANT_DATE_CANCELLED,
+        ),
+        MatterImportantDate,
+    ),
+    (
+        (
+            ChangeEventType.EFFECTIVE_DATE_ADDED,
+            ChangeEventType.EFFECTIVE_DATE_CHANGED,
+            ChangeEventType.EFFECTIVE_DATE_CANCELLED,
+        ),
+        MatterEffectiveDate,
+    ),
+    (
+        (
+            ChangeEventType.ENGAGEMENT_ADDED,
+            ChangeEventType.ENGAGEMENT_CHANGED,
+        ),
+        MatterEngagement,
+    ),
+    (
+        (
+            ChangeEventType.WORK_VICTORY_PROPOSED,
+            ChangeEventType.WORK_VICTORY_CONFIRMED,
+            ChangeEventType.WORK_VICTORY_REJECTED,
+        ),
+        MatterWorkVictory,
+    ),
+)
+
+#: The whole user-facing vocabulary of *Viimased muudatused*, in one place.
+#:
+#: Every row reads "<inimene> <tegu> · <teema>", and the middle word is chosen
+#: here rather than in a template. A template that branched on
+#: ``ChangeEventType`` would have to know the enum, and the second template that
+#: rendered the feed would word the same event differently (§27).
+#:
+#: Estonian past tense, third person, with the actor as the subject: these are
+#: sentences about colleagues, not event names. Nothing raw — no
+#: ``MATTER_STAGE_CHANGED``, no model or field names — ever reaches the page.
 _EVENT_VERBS: dict[str, str] = {
+    # The Matter itself
+    ChangeEventType.MATTER_CREATED: "avas teema",
+    # A rename earns a line where the other field edits do not. The enum says
+    # why: the title is what everybody navigates and cites by, so a rename is
+    # the one change most likely to make a colleague think they are looking at a
+    # different file.
+    ChangeEventType.MATTER_TITLE_CHANGED: "muutis teema pealkirja",
     ChangeEventType.MATTER_STAGE_CHANGED: "muutis hetkeseisu",
     ChangeEventType.MATTER_ASSIGNED: "määras vastutaja",
     ChangeEventType.MATTER_CLOSED: "sulges teema",
     ChangeEventType.MATTER_REOPENED: "avas teema uuesti",
-    ChangeEventType.MATTER_CREATED: "avas teema",
+    # Järgmiseks
+    ChangeEventType.NEXT_ACTION_SET: "määras järgmise tegevuse",
+    ChangeEventType.NEXT_ACTION_COMPLETED: "lõpetas järgmise tegevuse",
+    ChangeEventType.NEXT_ACTION_REVIEWED: "vaatas järgmise tegevuse üle",
+    ChangeEventType.NEXT_ACTION_CANCELLED: "tühistas järgmise tegevuse",
+    # Olulised tähtajad
+    ChangeEventType.IMPORTANT_DATE_ADDED: "lisas olulise tähtaja",
+    ChangeEventType.IMPORTANT_DATE_CHANGED: "muutis olulist tähtaega",
+    ChangeEventType.IMPORTANT_DATE_CANCELLED: "tühistas olulise tähtaja",
+    # Jõustumised
+    ChangeEventType.EFFECTIVE_DATE_ADDED: "lisas jõustumise",
+    ChangeEventType.EFFECTIVE_DATE_CHANGED: "muutis jõustumist",
+    ChangeEventType.EFFECTIVE_DATE_CANCELLED: "tühistas jõustumise",
+    # Kaasamine
+    ChangeEventType.ENGAGEMENT_ADDED: "lisas kaasamise",
+    ChangeEventType.ENGAGEMENT_CHANGED: "muutis kaasamist",
+    # Töövõidud
+    ChangeEventType.WORK_VICTORY_PROPOSED: "esitas töövõidu kandidaadi",
+    ChangeEventType.WORK_VICTORY_CONFIRMED: "kinnitas töövõidu",
+    ChangeEventType.WORK_VICTORY_REJECTED: "märkis, et töövõit ei realiseerunud",
 }
+
+#: The last resort, and unreachable while the tuples above are whitelists. It
+#: exists so that a future event type added to one of them without a word here
+#: reads as a vague sentence rather than as ``MATTER_SOMETHING_CHANGED``. A test
+#: asserts no rendered row ever reaches it.
+_EVENT_VERB_FALLBACK = "muutis teemat"
+
+#: The two sources that are not ChangeEvents. Here rather than inline in
+#: `activity_feed` so the vocabulary can be read — and reviewed — as one list.
+_ENTRY_VERB = "lisas sissekande"
+_SUBMISSION_VERB = "esitas arvamuse"
 
 
 @dataclass(frozen=True)
 class FeedItem:
+    """One line of *Viimased muudatused*: who did what, in which topic.
+
+    Everything a row renders is a property here rather than a lookup the
+    template performs on ``matter``. That is not tidiness. The section answers
+    "kes muutis mida ja millise teema juures", and the topic is named by its
+    **title** — the row used to print ``2026_303``, which is how this system
+    files the record and not how anybody refers to it (human QA §16).
+
+    A title says more than a reference does, so where the title comes from
+    matters. It comes from a Matter that is already inside the reader's
+    authorized population: every source in :func:`activity_feed` is filtered
+    through ``visible_to`` or through ``Matter.objects.visible_to`` before a
+    ``FeedItem`` is built, and nothing here resolves a title by primary key
+    afterwards. A Matter the reader may not open produces no row at all, so
+    there is no row whose title could leak (§21).
+    """
+
     when: Any
     actor: Any | None
     verb: str
@@ -573,12 +737,75 @@ class FeedItem:
         return self.actor.initials if self.actor is not None else "—"
 
     @property
+    def matter_title(self) -> str:
+        """The topic as a person names it. Never the technical reference."""
+        return self.matter.title if self.matter is not None else ""
+
+    @property
+    def is_restricted(self) -> bool:
+        return self.matter is not None and self.matter.is_restricted
+
+    @property
     def url(self) -> str:
         return (
             reverse("matters:matter_detail", kwargs={"pk": self.matter.pk})
             if self.matter is not None
             else ""
         )
+
+
+def _authorized_change_events(user: Any, since: date) -> QuerySet[ChangeEvent]:
+    """The curated change rows this reader may see, as one query.
+
+    Two conditions, and a row needs both.
+
+    The **Matter** filter is the outer one and applies to everything: no row is
+    offered about a file the reader cannot open. On its own it would be enough
+    for `_MATTER_EVENTS`, whose whole subject is the Matter.
+
+    The **child** filter narrows the rest. A Järgmiseks, an Oluline tähtaeg, a
+    Jõustumine, a Kaasamine and a Töövõit each carry their own
+    ``visibility_override``, so "the reader may open this Matter" does not
+    answer "the reader may know this record exists". Each family is matched
+    against its own ``visible_to`` queryset on ``object_id`` — the population is
+    built inside the authorization boundary rather than filtered after the fact,
+    which is the difference between a scoped feed and a leak with a title on it.
+
+    An event type in neither group is not selected at all. Authorization
+    whitelists, and so does curation: a future ``ChangeEventType`` appears here
+    only when somebody adds it deliberately, rather than the day it is defined.
+    """
+    # Resolved **once**, then reused for all six populations.
+    #
+    # `visible_to` calls `scope_for_user`, and `scope_for_user` asks the database
+    # whether this person holds a break-glass grant. Six calls to it here is six
+    # identical lookups on one page render — the same avoidable cost
+    # `annotate_last_activity` documents, arriving through a different door, and
+    # it is what pushed this page past its query ceiling
+    # (`tests/test_multiple_senders.py`, ADR 0033).
+    scope = scope_for_user(user)
+
+    def scoped(model: Any) -> Any:
+        return apply_scope(model._default_manager.all(), child_visibility_q(scope))
+
+    visible_matters = apply_scope(Matter.objects.all(), matter_visibility_q(scope)).values("pk")
+
+    eligible = Q(event_type__in=_MATTER_EVENTS)
+    for event_types, model in _CHILD_EVENT_FAMILIES:
+        eligible |= Q(
+            event_type__in=event_types,
+            object_id__in=scoped(model).values("pk"),
+        )
+
+    return (
+        ChangeEvent.objects.filter(
+            eligible,
+            occurred_at__date__gte=since,
+            matter__in=visible_matters,
+        )
+        .select_related("matter", "actor")
+        .order_by("-occurred_at")[:FEED_LIMIT]
+    )
 
 
 def activity_feed(user: Any, today: date, kind: str = FEED_ALL) -> list[FeedItem]:
@@ -602,7 +829,7 @@ def activity_feed(user: Any, today: date, kind: str = FEED_ALL) -> list[FeedItem
             FeedItem(
                 when=entry.occurred_at,
                 actor=entry.author,
-                verb="lisas sissekande",
+                verb=_ENTRY_VERB,
                 matter=entry.matter,
             )
             for entry in entries
@@ -629,30 +856,21 @@ def activity_feed(user: Any, today: date, kind: str = FEED_ALL) -> list[FeedItem
             FeedItem(
                 when=submission.sent_at,
                 actor=getattr(submission, "sent_by", None),
-                verb="esitas arvamuse",
+                verb=_SUBMISSION_VERB,
                 matter=submission.matter,
             )
             for submission in sent
         ]
 
     if kind in (FEED_ALL, FEED_STATUS):
-        events = (
-            ChangeEvent.objects.filter(
-                event_type__in=_STATUS_EVENTS,
-                occurred_at__date__gte=since,
-                matter__in=Matter.objects.visible_to(user).values("pk"),
-            )
-            .select_related("matter", "actor")
-            .order_by("-occurred_at")[:FEED_LIMIT]
-        )
         items += [
             FeedItem(
                 when=event.occurred_at,
                 actor=event.actor,
-                verb=_EVENT_VERBS.get(event.event_type, "muutis teemat"),
+                verb=_EVENT_VERBS.get(event.event_type, _EVENT_VERB_FALLBACK),
                 matter=event.matter,
             )
-            for event in events
+            for event in _authorized_change_events(user, since)
         ]
 
     return sorted(items, key=lambda item: item.when, reverse=True)[:FEED_LIMIT]

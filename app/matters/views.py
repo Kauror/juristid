@@ -297,8 +297,7 @@ def intake(request: HttpRequest) -> HttpResponse:
             else:
                 messages.success(
                     request,
-                    f"Teema {result.matter.display_reference} loodud · "
-                    f"{result.documents} faili lisatud.",
+                    f"Teema „{result.matter.title}” loodud · {result.documents} faili lisatud.",
                 )
                 return redirect("matters:matter_detail", pk=result.matter.pk)
 
@@ -935,10 +934,10 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         if uploads:
             messages.success(
                 request,
-                f"Teema {matter.display_reference} on loodud koos {len(uploads)} failiga.",
+                f"Teema „{matter.title}” on loodud koos {len(uploads)} failiga.",
             )
         else:
-            messages.success(request, f"Teema {matter.display_reference} on loodud.")
+            messages.success(request, f"Teema „{matter.title}” on loodud.")
         # Straight into the file: creation is the start of work, not the end.
         return redirect("matters:matter_detail", pk=matter.pk)
 
@@ -1691,12 +1690,21 @@ def _immutable_facts(matter: Matter) -> list[tuple[str, str]]:
     """What the edit page shows and refuses to edit.
 
     Provenance, not fields. Where a record came from is not somebody's to
-    decide, and the reference is what every other system cites this Matter by.
+    decide, and a page that simply omitted that would read as an oversight.
+
+    **No ``display_reference``.** This panel was the last ordinary surface
+    printing it, kept on the argument that here it was a labelled fact rather
+    than an identity. Review rejected that: `Muuda teemat` is the ordinary
+    application, not admin, import tooling or a diagnostic view, and the rule is
+    about who is looking rather than about how the value is framed. The
+    reference is unchanged system data — ``Matter.display_reference``,
+    ``__str__``, exact search, the CSV export and the import tooling all still
+    carry it — and no ordinary user is shown it (review of PR #72, §2).
+
+    What stays is provenance a colleague can act on: which kind of record this
+    is, and which source row it came from.
     """
-    facts: list[tuple[str, str]] = []
-    if matter.display_reference:
-        facts.append(("Viide", matter.display_reference))
-    facts.append(("Päritolu", matter.get_origin_display()))
+    facts: list[tuple[str, str]] = [("Päritolu", matter.get_origin_display())]
     reference = matter.source_references.order_by("created_at").first()
     if reference is not None:
         where = reference.source_file_name or reference.source_system

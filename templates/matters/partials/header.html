@@ -2,7 +2,7 @@
 The Matter header band: identity, state, the four facts that matter at a
 glance, the plain-language summary, and the two tabs.
 
-Reading order is the redesign's: what is this (reference and title), who owns
+Reading order is the redesign's: what is this (the title), who owns
 it and where it stands (the meta line), what it means for the companies
 affected (the summary). The formal title is frequently a bad description of the
 business issue, which is why the summary sits directly under it in the largest
@@ -22,15 +22,15 @@ rather than read.
     tag inside an open <p> makes the parser close the paragraph — so the menu
     landed on a line of its own under the breadcrumb and pushed the title down
     with it. Exactly the trap `matter_banner.html` documents for <form>.
+
+    One crumb, not two. The trail used to end in `2026_10`, and the level below
+    "Teemad" is this page — whose name is the <h1> a few lines down. Repeating
+    the title in the crumb would say it twice within twenty pixels of itself,
+    and naming it by its reference said it in a language nobody speaks
+    (human QA §8).
   {% endcomment %}
   <div class="matterhead__crumbs">
     <a href="{% url 'matters:matter_list' %}">Teemad</a>
-    <span aria-hidden="true">/</span>
-    {% if matter.display_reference %}
-      <span class="reference">{{ matter.display_reference }}</span>
-    {% else %}
-      <span class="muted">viiteta</span>
-    {% endif %}
 
     <span class="matterhead__state">
       {% comment %}

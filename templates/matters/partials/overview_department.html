@@ -37,14 +37,25 @@ definition, which is exactly why it has to be on this one.
         <a class="interrow__link" href="{{ row.url }}">
           <span class="interrow__reason">
             <span class="interrow__value interrow__value--{{ row.tone }}">{{ row.value }}</span>
-            <span class="interrow__meaning">{{ row.meaning }}</span>
+            {% comment %}
+              Conditional, because one reason has nothing to add. A row saying
+              only "tähtaeg puudub" is the whole fact; an empty element under it
+              would still take the gap above it and pull the reason off the
+              row's optical centre (human QA §11).
+            {% endcomment %}
+            {% if row.meaning %}<span class="interrow__meaning">{{ row.meaning }}</span>{% endif %}
           </span>
           <span class="interrow__body">
             <span class="interrow__title">
               {% if row.matter.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ row.matter.title }}
             </span>
             <span class="interrow__detail">
-              {% if row.matter.display_reference %}<span class="reference">{{ row.matter.display_reference }}</span> · {% endif %}{{ row.detail }}
+              {% comment %}
+                The topic is named by the title on the line above. `2026_10` was
+                the second half of this line and named nothing a reader was
+                looking for (human QA §13).
+              {% endcomment %}
+              {{ row.detail }}
             </span>
           </span>
           <span class="interrow__stage">{{ row.stage_label }}</span>
@@ -129,10 +140,10 @@ The department's last month as one-liners. Professional chronology, not audit
 traffic: a feed that reports a deadline corrected by a day is an audit log, and
 an audit log is not read.
 {% endcomment %}
-<section class="ovsection" aria-label="Viimane tegevus">
+<section class="ovsection" aria-label="Viimased muudatused">
   <details class="foldout" open>
     <summary class="foldout__trigger">
-      <span class="foldout__label">Viimane tegevus</span>
+      <span class="foldout__label">Viimased muudatused</span>
       <span class="foldout__meta">kogu osakond · viimane kuu</span>
     </summary>
     <div class="foldout__body">
@@ -148,9 +159,30 @@ an audit log is not read.
           <span class="avatar avatar--sm">{{ item.initials }}</span>
           <span class="feedrow__text">
             <strong>{{ item.actor_name }}</strong> {{ item.verb }}
+            {% comment %}
+              The topic, by its title. The row used to print `2026_303` here,
+              which tells a reader which record was touched and nothing about
+              which subject — and the whole point of the line is the subject
+              (human QA §16).
+
+              The lock is a marker beside the title, not a replacement for it,
+              which is how every other list on this page renders a restricted
+              topic. A restricted Matter reaches this loop only when the reader
+              may already open it: all three sources in `activity_feed` are
+              scoped before an item is built, so the alternative to a title here
+              is not a safer row, it is a row about a file the reader could have
+              read the title of one click away.
+            {% endcomment %}
             {% if item.matter %}
-              · <a href="{{ item.url }}">
-                {% if item.matter.is_restricted %}<span aria-label="Piiratud teema">🔒</span>{% else %}{{ item.matter.display_reference|default:item.matter.title }}{% endif %}
+              {% comment %}
+                `title`, because the row ellipsises. `.feedrow__text` is a
+                nowrap grid cell, so a long topic truncates at the row's right
+                edge and can never widen the page — and the full title is one
+                hover away rather than lost (§20). It carries the title, never
+                the reference: a tooltip is user-facing text like any other.
+              {% endcomment %}
+              · <a href="{{ item.url }}" title="{{ item.matter_title }}">
+                {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter_title }}
               </a>
             {% endif %}
           </span>

@@ -144,7 +144,6 @@
                 {% endif %}
               </td>
               <td>
-                <span class="reference">{{ submission.matter.display_reference|default:"—" }}</span>
                 <a href="{% url 'matters:matter_detail' pk=submission.matter_id %}">{{ submission.matter.title }}</a>
               </td>
               <td>

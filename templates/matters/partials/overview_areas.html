@@ -61,7 +61,6 @@ department governs.
         <div class="arearow__body">
           {% for matter in row.matters %}
             <a class="arealine" href="{% url 'matters:matter_detail' pk=matter.pk %}">
-              <span class="reference">{{ matter.display_reference }}</span>
               <span class="arealine__title">
                 {% if matter.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ matter.title }}
               </span>

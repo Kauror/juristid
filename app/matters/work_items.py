@@ -166,6 +166,14 @@ class WorkItem:
 
     @property
     def reference(self) -> str:
+        """The technical reference. A **sort key**, not something a row prints.
+
+        Its one caller is the tie-break in `sort_items` below, where it
+        makes two items sharing a date order stably. No template reads it: the
+        work rows name their topic by title, because `2026_10` told a reader
+        which record was written and nothing about which subject
+        (human QA §4, §23).
+        """
         return self.matter.display_reference
 
     @property
