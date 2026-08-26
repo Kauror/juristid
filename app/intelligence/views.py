@@ -27,14 +27,14 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from app.core.authorization import may_review_work_victory, may_write_business_content
-from app.core.decorators import gate_required, viewer_for
+from app.core.decorators import WRITE_REFUSED, gate_required, viewer_for
 from app.core.errors import DomainError
 from app.intelligence import filters, selectors, services
 from app.intelligence.enums import WorkVictoryStatus
@@ -90,8 +90,21 @@ def _matter_for(request: HttpRequest, matter_id: Any) -> Matter:
 
 
 def _require_business_write(request: HttpRequest) -> None:
+    """The same refusal as every other business write, in the same words.
+
+    This module answered 403 while `app.matters.views` answered 404 for the
+    identical question. Both were secure; the pair was not. A 403 says "you
+    could do this with another role", which hands a description of the
+    application to the one caller who should learn nothing from it — and a
+    reader who met 403 here and 404 there could map the difference.
+
+    404 is the settled convention (`app.core.decorators.business_write_required`).
+    The *stricter* work-victory review below keeps its 403 on purpose: that
+    asks a different question of somebody who may already write and may already
+    see the record.
+    """
     if not may_write_business_content(request.user):
-        raise PermissionDenied("Sellel kasutajal ei ole õigust teema sisu muuta.")
+        raise Http404(WRITE_REFUSED)
 
 
 def _matter_anchor(matter: Matter, anchor: str) -> str:

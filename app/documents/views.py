@@ -35,7 +35,7 @@ from django.views.decorators.http import require_http_methods
 from app.accounts import shared_gate
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
-from app.core.decorators import gate_required, viewer_for
+from app.core.decorators import business_write_required, gate_required, viewer_for
 from app.core.errors import DomainError
 from app.core.http import content_disposition
 from app.documents import inline
@@ -101,6 +101,7 @@ class DocumentUploadForm(forms.Form):
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def upload_evidence(request: HttpRequest, matter_id: Any) -> HttpResponse:
     """Create a logical document and capture its first immutable version."""
@@ -134,6 +135,7 @@ def upload_evidence(request: HttpRequest, matter_id: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
     """Add a further version to an existing document. Bytes never change."""

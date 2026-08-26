@@ -15,6 +15,7 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
 from django.views.decorators.http import require_http_methods
 
+from app.core.decorators import business_write_required
 from app.core.errors import DomainError
 from app.documents.models import Document, DocumentVersion
 from app.documents.uploads import UploadRejected, read_upload
@@ -37,6 +38,7 @@ def _visible_submission(request: HttpRequest, pk: Any) -> Submission:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def create(request: HttpRequest, matter_id: Any) -> HttpResponse:
     matter = get_visible_matter(request, matter_id)
@@ -61,6 +63,7 @@ def create(request: HttpRequest, matter_id: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def attach_evidence(request: HttpRequest, pk: Any) -> HttpResponse:
     """Capture the exact final text, by upload or by selecting existing evidence."""
@@ -109,6 +112,7 @@ def attach_evidence(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def mark_sent(request: HttpRequest, pk: Any) -> HttpResponse:
     submission = _visible_submission(request, pk)
@@ -130,6 +134,7 @@ def mark_sent(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def withdraw(request: HttpRequest, pk: Any) -> HttpResponse:
     submission = _visible_submission(request, pk)

@@ -33,7 +33,7 @@ from app.accounts.models import User
 from app.accounts.selectors import assignable_including, owner_filter_choices
 from app.core.authorization import may_review_work_victory, may_write_business_content
 from app.core.dates import format_estonian_date, parse_flexible_date
-from app.core.decorators import gate_required, viewer_for
+from app.core.decorators import business_write_required, gate_required, viewer_for
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
@@ -261,6 +261,7 @@ def inbox(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def intake(request: HttpRequest) -> HttpResponse:
     """File material that has just arrived, files first.
@@ -1499,6 +1500,7 @@ def _overview_with_engagement_error(
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
@@ -1522,6 +1524,7 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def complete_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
@@ -1539,6 +1542,7 @@ def complete_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpRespon
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
     """Record that a WAIT or MONITOR was checked, and when to check again.
@@ -1715,6 +1719,7 @@ def _immutable_facts(matter: Matter) -> list[tuple[str, str]]:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     """Inline header edits. One field, one service call, one re-render."""
@@ -1795,6 +1800,7 @@ _FIELD_SURFACES = {
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def set_data_class(request: HttpRequest, pk: Any) -> HttpResponse:
     """Reclassify a Matter as real business data or as development data.
@@ -1884,6 +1890,7 @@ def update_summary(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def save_note(request: HttpRequest, pk: Any) -> HttpResponse:
     """Autosave the private `Märkmed` draft.
@@ -1955,6 +1962,7 @@ def close(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def reopen(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)

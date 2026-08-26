@@ -438,7 +438,11 @@ def test_a_reader_still_cannot_add_a_victory(client, specialist):
         reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk}),
         {"title": "Ei tohiks salvestuda", "precision": "YEAR", "year": "2026"},
     )
-    assert response.status_code == 403
+    # 404, not the 403 this module used to answer. Business-write refusals
+    # are one answer across the application now, and it is the one that
+    # tells a reader nothing about what exists for somebody else
+    # (app/core/decorators.py, AUTH-002).
+    assert response.status_code == 404
     assert matter.work_victories.count() == 0
 
 

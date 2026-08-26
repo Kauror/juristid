@@ -45,6 +45,7 @@ consequences and reversibility.
 | [0034](0034-persona-candidates-and-the-top-bar-switcher.md) | Persona candidates are a role-based population, and switching happens from the bar | Accepted |
 | [0035](0035-the-bounded-workspace.md) | The shell keeps the viewport; the workspace stops at 1600px and centres | Accepted |
 | [0036](0036-assignable-department-workers.md) | Who current business work may be assigned to, and who a filter may name | Accepted |
+| [0037](0037-the-business-write-http-boundary.md) | Where business-write authorization is enforced, and why the refusal is 404 | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -75,3 +76,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0034 — who may be offered as a persona: one role-based population read by both the page and the endpoint, technical accounts excluded, and a top-bar switcher that keeps the page somebody was reading
 - 0035 — the bounded workspace: the shell keeps the viewport, the working surface stops at 1600px and centres, and one token says so for every page
 - 0036 — who current business work may be assigned to: one role-based rule behind persona and assignment, a separate native entry point so a new step never lands in a departed colleague's queue, and filters that describe stored work instead of narrowing to who may be given it
+- 0037 — where business-write authorization is enforced: one HTTP decorator over the existing `may_write_business_content` rule, applied before the view body, answering 404 so a reader learns nothing about what exists for somebody else — and a completeness test that fails if a future mutating route arrives unclassified

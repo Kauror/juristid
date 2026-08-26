@@ -211,7 +211,11 @@ def test_a_reader_gets_no_write_route(client, world):
         _add_url(world["normal"]),
         {"title": "Ei tohiks", "precision": "YEAR", "year": "2030"},
     )
-    assert response.status_code == 403
+    # 404, not the 403 this module used to answer. Business-write refusals
+    # are one answer across the application now, and it is the one that
+    # tells a reader nothing about what exists for somebody else
+    # (app/core/decorators.py, AUTH-002).
+    assert response.status_code == 404
     assert world["normal"].important_dates.count() == 1
 
 
@@ -221,7 +225,11 @@ def test_an_administrator_gets_no_write_route(client, world, administrator):
         _add_url(world["normal"]),
         {"title": "Ei tohiks", "precision": "YEAR", "year": "2030"},
     )
-    assert response.status_code == 403
+    # 404, not the 403 this module used to answer. Business-write refusals
+    # are one answer across the application now, and it is the one that
+    # tells a reader nothing about what exists for somebody else
+    # (app/core/decorators.py, AUTH-002).
+    assert response.status_code == 404
 
 
 def test_a_specialist_may_write_on_a_matter_they_do_not_own(client, world, other_specialist):

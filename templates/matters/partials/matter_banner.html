@@ -23,10 +23,17 @@ paragraph. The banner's own action slot keeps it inside and at the right.
       {{ matter.get_disposition_display }}{% if matter.disposition_reason %} — {{ matter.disposition_reason }}{% endif %}
       {% if matter.closed_at %}<span class="muted">({{ matter.closed_at|date:"j.n.Y" }})</span>{% endif %}
     </p>
-    <form class="banner__actions" method="post" action="{% url 'matters:reopen' pk=matter.pk %}">
-      {% csrf_token %}
-      <button class="button button--quiet" type="submit">Ava uuesti…</button>
-    </form>
+    {% comment %}
+      Offered to somebody who can act on it. The route refuses everybody else
+      regardless — that is the boundary, and it is in `app/core/decorators.py` —
+      but a reader should not be shown a button whose only answer is 404.
+    {% endcomment %}
+    {% if can_write %}
+      <form class="banner__actions" method="post" action="{% url 'matters:reopen' pk=matter.pk %}">
+        {% csrf_token %}
+        <button class="button button--quiet" type="submit">Ava uuesti…</button>
+      </form>
+    {% endif %}
   </div>
 {% endif %}
 {% if matter.record_mode == "ARCHIVE" %}
