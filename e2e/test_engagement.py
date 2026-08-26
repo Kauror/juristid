@@ -18,7 +18,7 @@ import re
 
 from playwright.sync_api import expect
 
-from app.core.management.commands.seed_e2e_data import RESTRICTED_TITLE
+from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, RESTRICTED_TITLE
 from e2e.conftest import SANDRA, sign_in
 
 
@@ -57,21 +57,32 @@ def open_scratch_matter(page, base_url: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
+def open_empty_matter(page, base_url: str) -> None:
+    """The archive record, which holds no `Kaasamine` and never will.
+
+    The zero state cannot be read off the scratch Matter: the tests below write
+    to it, so it is empty exactly once per seeded world and only until the first
+    of them runs. That made the primary regression test pass in a full run and
+    fail on its own — the shape of test nobody can reproduce while fixing it.
+
+    Nothing in the browser suite writes an engagement here, and nothing needs
+    to: these two tests only open a section and look (Kaasamine one-click §18).
+    """
+    page.goto(f"{base_url}/teemad/?olek=koik&q=Arhiiviteema")
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("link", name=ARCHIVE_TITLE, exact=False).first.click()
+    page.wait_for_load_state("networkidle")
+
+
 def add_form(page):
     """The add form, not a row's edit form; both carry the same field names."""
     return page.locator("#kaasamine form[data-engagement-add]")
 
 
 def test_one_click_opens_the_section_and_its_form_when_nothing_is_recorded(page, base_url):
-    """The primary regression. Two clicks used to be needed for the first record.
-
-    Sandra's scratch Matter is written to by the tests below, so this one runs
-    first by file order and is the only place the zero state is reachable —
-    which is exactly why it asserts the click count rather than the end state
-    alone (Kaasamine one-click §18).
-    """
+    """The primary regression. Two clicks used to be needed for the first record."""
     sign_in(page, base_url, SANDRA)
-    open_scratch_matter(page, base_url)
+    open_empty_matter(page, base_url)
 
     section = page.locator("#kaasamine")
     expect(section).to_be_visible()
@@ -95,7 +106,7 @@ def test_one_click_opens_the_section_and_its_form_when_nothing_is_recorded(page,
 def test_the_keyboard_opens_the_empty_section_and_its_form(page, base_url):
     """Tab to the summary, press Enter, and the form is there (§15)."""
     sign_in(page, base_url, SANDRA)
-    open_scratch_matter(page, base_url)
+    open_empty_matter(page, base_url)
 
     section = page.locator("#kaasamine")
     section.locator(".accordion__head").focus()
@@ -109,7 +120,11 @@ def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    open_kaasamine(page)
+    # The header action rather than the section, because this test is about the
+    # save and not about the empty state: `+ Lisa` opens the composer whether
+    # the scratch Matter still holds nothing or already holds what an earlier
+    # run put there.
+    add_trigger(page).click()
     expect(title_box(page)).to_be_visible()
 
     # The three approved options. `WEB_CALL` is still a valid stored value and
@@ -260,7 +275,7 @@ def test_a_saved_record_stays_visible_and_the_composer_closes(page, base_url):
     # rather than the save — and reported a save that had in fact happened as a
     # record that never arrived.
     expect(
-        page.locator("#kaasamine .factrow").get_by_text("Teine kaasamiskutse", exact=True)
+        page.locator("#kaasamine .factrow").get_by_text("Teine kaasamiskutse", exact=True).first
     ).to_be_visible()
     assert section.get_attribute("open") is not None
     expect(composer(page)).to_have_count(1)
