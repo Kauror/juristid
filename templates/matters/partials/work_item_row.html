@@ -29,7 +29,6 @@ The whole row is a link to the Matter, so Enter opens it from the keyboard.
         {{ item.text }}
       </span>
       <span class="workrow2__matter">
-        {% if item.reference %}<span class="reference">{{ item.reference }}</span> · {% endif %}
         {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter.title }}
       </span>
     </span>

@@ -92,10 +92,15 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     page.get_by_role("button", name="Loo teema").click()
 
-    # The Matter opens immediately and carries a human reference.
+    # The Matter opens immediately, named by its title.
+    #
+    # The crumb is one level and stops at "Teemad". It used to end in the
+    # technical reference — `2026_10` — which named the record and not the
+    # subject, and the subject is the <h1> directly beneath it (human QA §8).
     expect(page.get_by_role("heading", name=MATTER_TITLE)).to_be_visible()
-    reference = page.locator(".matterhead__crumbs .reference").inner_text().strip()
-    assert re.fullmatch(r"\d{4}_\d+", reference), reference
+    crumbs = page.locator(".matterhead__crumbs")
+    expect(crumbs.get_by_role("link", name="Teemad")).to_be_visible()
+    assert not re.search(r"\d{4}_\d+", crumbs.inner_text()), crumbs.inner_text()
 
     expect(page.locator(".nextrow__text")).to_have_text("Koosta ja saada koja arvamus")
     expect(page.locator(".nextrow .modechip--do")).to_be_visible()
@@ -106,6 +111,22 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     screenshots(page, "03-teema-ulevaade")
 
     matter_url = page.url
+
+    # The reference is still there, still allocated, and still the thing every
+    # other system cites this file by — it has simply stopped standing in for
+    # the topic's name in the ordinary reading surfaces. `Muuda teemat` states
+    # it under `Muutumatu`, beside the record's origin, where it is a labelled
+    # provenance fact rather than an identity (human QA §5, §31).
+    page.goto(f"{matter_url}muuda/")
+    reference = (
+        page.locator("section[aria-label='Muutumatud andmed'] .railcard__row")
+        .filter(has_text="Viide")
+        .locator(".railcard__value")
+        .inner_text()
+        .strip()
+    )
+    assert re.fullmatch(r"\d{4}_\d+", reference), reference
+    page.goto(matter_url)
 
     # It reaches Minu töö straight away.
     #

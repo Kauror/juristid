@@ -317,7 +317,7 @@ whose addressee nobody recorded should look short, not incomplete.
         <p class="railcard__row">
           <span class="railcard__key">Eelnev teema</span>
           <a href="{% url 'matters:matter_detail' pk=earlier.pk %}">
-            {{ earlier.display_reference|default:earlier.title|truncatechars:40 }} →
+            {{ earlier.title|truncatechars:40 }} →
           </a>
         </p>
       {% endfor %}
@@ -325,7 +325,7 @@ whose addressee nobody recorded should look short, not incomplete.
         <p class="railcard__row">
           <span class="railcard__key">Jätkub teemana</span>
           <a href="{% url 'matters:matter_detail' pk=matter.superseded_by.pk %}">
-            {{ matter.superseded_by.display_reference|default:matter.superseded_by.title|truncatechars:40 }} →
+            {{ matter.superseded_by.title|truncatechars:40 }} →
           </a>
         </p>
       {% endif %}

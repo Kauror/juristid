@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load document_state %}
-{% block title %}{{ document.title }} · {{ matter.display_reference }} · {{ application_name }}{% endblock %}
+{% block title %}{{ document.title }} · {{ matter.title }} · {{ application_name }}{% endblock %}
 
 {% comment %}
   Original and derivative are the load-bearing distinction on this page, and the
@@ -16,7 +16,7 @@
 {% block content %}
 <div class="page">
   <nav class="crumbs" aria-label="Asukoht">
-    <a href="{% url 'matters:matter_documents' pk=matter.pk %}">{{ matter.display_reference }} · Dokumendid</a>
+    <a href="{% url 'matters:matter_documents' pk=matter.pk %}">{{ matter.title|truncatechars:60 }} · Dokumendid</a>
   </nav>
 
   <header class="pagehead">

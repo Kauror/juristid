@@ -412,10 +412,21 @@ def intervention_rows(
         rows.append(
             InterventionRow(
                 reason=REASON_NO_ACTION,
-                value="sammuta",
-                meaning=f"{(today - since).days} P VAIKUST"
-                if since
-                else "VIIMANE TEGEVUS TEADMATA",
+                # What is wrong with the file, in the words somebody would use
+                # about it. "sammuta" is this module's vocabulary, not the
+                # department's, and it read as an abbreviation of something
+                # (human QA §10).
+                value="tähtaeg puudub",
+                # Deliberately blank. The row used to print "202 P VAIKUST"
+                # beside the reason, and a number nobody can act on is noise on
+                # the one list that exists to be acted on: the file has no next
+                # step whether the silence is two months old or seven, and the
+                # thing to do about it is the same (human QA §11).
+                #
+                # `since` is still computed and still decides `sort_on`, so the
+                # quietest file is still the one at the top. What changed is
+                # what the row says, not which rows there are or in what order.
+                meaning="",
                 matter=matter,
                 detail="järgmine samm määramata",
                 owner=matter.owner,
@@ -520,7 +531,7 @@ def deadline_groups(items: list[wi.WorkItem], today: date) -> list[DeadlineGroup
 
 
 # ---------------------------------------------------------------------------
-# Viimane tegevus
+# Viimased muudatused
 # ---------------------------------------------------------------------------
 
 FEED_ALL = "koik"
@@ -548,6 +559,16 @@ _STATUS_EVENTS: tuple[str, ...] = (
     ChangeEventType.MATTER_CREATED,
 )
 
+#: The whole user-facing vocabulary of *Viimased muudatused*, in one place.
+#:
+#: Every row reads "<inimene> <tegu> · <teema>", and the middle word is chosen
+#: here rather than in a template. A template that branched on
+#: ``ChangeEventType`` would have to know the enum, and the second template that
+#: rendered the feed would word the same event differently (§27).
+#:
+#: Estonian past tense, third person, with the actor as the subject: these are
+#: sentences about colleagues, not event names. Nothing raw — no
+#: ``MATTER_STAGE_CHANGED``, no model or field names — ever reaches the page.
 _EVENT_VERBS: dict[str, str] = {
     ChangeEventType.MATTER_STAGE_CHANGED: "muutis hetkeseisu",
     ChangeEventType.MATTER_ASSIGNED: "määras vastutaja",
@@ -556,9 +577,36 @@ _EVENT_VERBS: dict[str, str] = {
     ChangeEventType.MATTER_CREATED: "avas teema",
 }
 
+#: The last resort, and unreachable while `_STATUS_EVENTS` is a whitelist. It
+#: exists so that a future event type added to that tuple without a word here
+#: reads as a vague sentence rather than as ``MATTER_SOMETHING_CHANGED``.
+_EVENT_VERB_FALLBACK = "muutis teemat"
+
+#: The two sources that are not ChangeEvents. Here rather than inline in
+#: `activity_feed` so the vocabulary can be read — and reviewed — as one list.
+_ENTRY_VERB = "lisas sissekande"
+_SUBMISSION_VERB = "esitas arvamuse"
+
 
 @dataclass(frozen=True)
 class FeedItem:
+    """One line of *Viimased muudatused*: who did what, in which topic.
+
+    Everything a row renders is a property here rather than a lookup the
+    template performs on ``matter``. That is not tidiness. The section answers
+    "kes muutis mida ja millise teema juures", and the topic is named by its
+    **title** — the row used to print ``2026_303``, which is how this system
+    files the record and not how anybody refers to it (human QA §16).
+
+    A title says more than a reference does, so where the title comes from
+    matters. It comes from a Matter that is already inside the reader's
+    authorized population: every source in :func:`activity_feed` is filtered
+    through ``visible_to`` or through ``Matter.objects.visible_to`` before a
+    ``FeedItem`` is built, and nothing here resolves a title by primary key
+    afterwards. A Matter the reader may not open produces no row at all, so
+    there is no row whose title could leak (§21).
+    """
+
     when: Any
     actor: Any | None
     verb: str
@@ -571,6 +619,15 @@ class FeedItem:
     @property
     def initials(self) -> str:
         return self.actor.initials if self.actor is not None else "—"
+
+    @property
+    def matter_title(self) -> str:
+        """The topic as a person names it. Never the technical reference."""
+        return self.matter.title if self.matter is not None else ""
+
+    @property
+    def is_restricted(self) -> bool:
+        return self.matter is not None and self.matter.is_restricted
 
     @property
     def url(self) -> str:
@@ -602,7 +659,7 @@ def activity_feed(user: Any, today: date, kind: str = FEED_ALL) -> list[FeedItem
             FeedItem(
                 when=entry.occurred_at,
                 actor=entry.author,
-                verb="lisas sissekande",
+                verb=_ENTRY_VERB,
                 matter=entry.matter,
             )
             for entry in entries
@@ -629,7 +686,7 @@ def activity_feed(user: Any, today: date, kind: str = FEED_ALL) -> list[FeedItem
             FeedItem(
                 when=submission.sent_at,
                 actor=getattr(submission, "sent_by", None),
-                verb="esitas arvamuse",
+                verb=_SUBMISSION_VERB,
                 matter=submission.matter,
             )
             for submission in sent
@@ -649,7 +706,7 @@ def activity_feed(user: Any, today: date, kind: str = FEED_ALL) -> list[FeedItem
             FeedItem(
                 when=event.occurred_at,
                 actor=event.actor,
-                verb=_EVENT_VERBS.get(event.event_type, "muutis teemat"),
+                verb=_EVENT_VERBS.get(event.event_type, _EVENT_VERB_FALLBACK),
                 matter=event.matter,
             )
             for event in events

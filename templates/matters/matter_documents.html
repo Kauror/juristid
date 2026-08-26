@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load document_state %}
-{% block title %}Dokumendid · {{ matter.display_reference }} · {{ application_name }}{% endblock %}
+{% block title %}Dokumendid · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
 {% comment %}
 The file workspace — the only second tab a Matter has.

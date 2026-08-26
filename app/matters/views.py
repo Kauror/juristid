@@ -297,8 +297,7 @@ def intake(request: HttpRequest) -> HttpResponse:
             else:
                 messages.success(
                     request,
-                    f"Teema {result.matter.display_reference} loodud · "
-                    f"{result.documents} faili lisatud.",
+                    f"Teema „{result.matter.title}” loodud · {result.documents} faili lisatud.",
                 )
                 return redirect("matters:matter_detail", pk=result.matter.pk)
 
@@ -935,10 +934,10 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         if uploads:
             messages.success(
                 request,
-                f"Teema {matter.display_reference} on loodud koos {len(uploads)} failiga.",
+                f"Teema „{matter.title}” on loodud koos {len(uploads)} failiga.",
             )
         else:
-            messages.success(request, f"Teema {matter.display_reference} on loodud.")
+            messages.success(request, f"Teema „{matter.title}” on loodud.")
         # Straight into the file: creation is the start of work, not the end.
         return redirect("matters:matter_detail", pk=matter.pk)
 
@@ -1692,6 +1691,16 @@ def _immutable_facts(matter: Matter) -> list[tuple[str, str]]:
 
     Provenance, not fields. Where a record came from is not somebody's to
     decide, and the reference is what every other system cites this Matter by.
+
+    This is the one ordinary surface that still prints ``display_reference``,
+    and deliberately. Everywhere else the reference was standing in for the
+    topic's *name* — in a crumb, a row, a feed line — and a reader who wanted to
+    know which file they were looking at got `2026_10` instead of the subject.
+    Here it is not an identity: it is a labelled fact under `Muutumatu`, beside
+    the record's origin and its source row, answering "what does the rest of the
+    world call this record". Removing it would take the answer away from the
+    only page that asks the question, while leaving the more technical
+    `Algallikas` beside it (human QA §3, §5, §31).
     """
     facts: list[tuple[str, str]] = []
     if matter.display_reference:

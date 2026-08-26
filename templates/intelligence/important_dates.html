@@ -41,9 +41,6 @@ never prints as a day, and a heading never invents a month for one.
                 </span>
                 {% if entry.title %}<span class="factrow__title">{{ entry.title }}</span>{% endif %}
                 <a class="factrow__matter" href="{% url 'matters:matter_detail' pk=entry.matter.pk %}">
-                  {% if entry.matter.display_reference %}
-                    <span class="reference">{{ entry.matter.display_reference }}</span>
-                  {% endif %}
                   {{ entry.matter.title }}
                 </a>
               </span>

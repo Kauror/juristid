@@ -111,7 +111,7 @@ Nothing on this page is anybody else's work.
               <a class="entryline" href="{% url 'matters:matter_detail' pk=entry.matter.pk %}">
                 <span class="entryline__when">{{ entry.occurred_at|date:"j.n" }}</span>
                 <span class="entryline__matter">
-                  {% if entry.matter.display_reference %}<span class="reference">{{ entry.matter.display_reference }}</span> · {% endif %}{{ entry.matter.title }}
+                  {{ entry.matter.title }}
                 </span>
               </a>
             {% empty %}
@@ -144,7 +144,6 @@ Nothing on this page is anybody else's work.
               {% endif %}
             {% endwith %}
             <span class="quietrow__meta">
-              {% if row.matter.display_reference %}<span class="reference">{{ row.matter.display_reference }}</span> · {% endif %}
               {{ row.silence }}
               <a class="quietrow__cta" href="{% url 'matters:matter_detail' pk=row.matter.pk %}#jargmiseks">Määra</a>
             </span>
@@ -174,7 +173,7 @@ Nothing on this page is anybody else's work.
               {{ item.text }}
             </span>
             <span class="undatedrow__matter">
-              {% if item.reference %}<span class="reference">{{ item.reference }}</span> · {% endif %}{{ item.matter.title }}
+              {{ item.matter.title }}
             </span>
           </a>
         {% empty %}

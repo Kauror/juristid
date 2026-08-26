@@ -94,7 +94,7 @@
           <li class="linklist__item">
             {% if link_row.view.visible %}
               <a href="{% url 'matters:matter_detail' pk=link_row.link.matter_id %}">
-                {{ link_row.view.matter.display_reference|default:"—" }} {{ link_row.view.matter.title|truncatechars:90 }}
+                {{ link_row.view.matter.title|truncatechars:90 }}
               </a>
             {% else %}
               {% comment %}
@@ -190,7 +190,7 @@
             <span class="badge">{{ candidate_row.candidate.get_match_class_display }}</span>
             {% if candidate_row.view.visible %}
               <a href="{% url 'matters:matter_detail' pk=candidate_row.candidate.matter_id %}">
-                {{ candidate_row.view.matter.display_reference|default:"—" }} {{ candidate_row.view.matter.title|truncatechars:80 }}
+                {{ candidate_row.view.matter.title|truncatechars:80 }}
               </a>
             {% elif candidate_row.candidate.matter_id %}
               <span class="linklist__meta">

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Arvamused · {{ matter.display_reference }} · {{ application_name }}{% endblock %}
+{% block title %}Arvamused · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
 {% comment %}
 `Arvamused` on one Matter — no longer a tab.

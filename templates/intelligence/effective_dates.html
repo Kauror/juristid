@@ -50,9 +50,6 @@ not belong under a month heading (Stage-2G brief 17).
                 {% endif %}
                 <a class="factrow__matter"
                    href="{% url 'matters:matter_detail' pk=entry.effective_date.matter.pk %}">
-                  {% if entry.effective_date.matter.display_reference %}
-                    <span class="reference">{{ entry.effective_date.matter.display_reference }}</span>
-                  {% endif %}
                   {{ entry.effective_date.matter.title }}
                 </a>
                 {% if entry.effective_date.source_url %}
@@ -84,9 +81,6 @@ not belong under a month heading (Stage-2G brief 17).
                 <span class="factrow__title">{{ record.description }}</span>
               {% endif %}
               <a class="factrow__matter" href="{% url 'matters:matter_detail' pk=record.matter.pk %}">
-                {% if record.matter.display_reference %}
-                  <span class="reference">{{ record.matter.display_reference }}</span>
-                {% endif %}
                 {{ record.matter.title }}
               </a>
             </span>

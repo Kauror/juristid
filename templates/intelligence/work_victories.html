@@ -45,9 +45,6 @@ the selected year (Stage-2G brief 27).
               </span>
               <span class="factrow__title">{{ record.title }}</span>
               <a class="factrow__matter" href="{% url 'matters:matter_detail' pk=record.matter.pk %}">
-                {% if record.matter.display_reference %}
-                  <span class="reference">{{ record.matter.display_reference }}</span>
-                {% endif %}
                 {{ record.matter.title }}
               </a>
               {% if record.confirmed_by %}

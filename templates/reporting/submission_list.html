@@ -31,7 +31,6 @@ is the number the chart showed.
             <tr>
               <th scope="col">Saadetud</th>
               <th scope="col">Liik</th>
-              <th scope="col">Viide</th>
               <th scope="col">Teema</th>
               <th scope="col">Adressaadid</th>
             </tr>
@@ -41,11 +40,6 @@ is the number the chart showed.
               <tr>
                 <td class="table__date">{{ submission.sent_at|date:"j.n.Y" }}</td>
                 <td><span class="muted">{{ submission.get_kind_display }}</span></td>
-                <td>
-                  <span class="reference">
-                    {{ submission.matter.display_reference|default:"—" }}
-                  </span>
-                </td>
                 <td class="table__title">
                   <a href="{% url 'matters:matter_detail' pk=submission.matter_id %}">
                     {{ submission.title }}

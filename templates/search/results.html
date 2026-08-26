@@ -60,9 +60,6 @@ reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
           <a class="result" href="{{ row.target }}">
             <span class="result__head">
               <span class="badge badge--source">{{ row.result.source_label }}</span>
-              {% if row.result.matter.display_reference %}
-                <span class="reference">{{ row.result.matter.display_reference }}</span>
-              {% endif %}
               <span class="result__title">{{ row.result.matter.title }}</span>
               {% if row.result.is_matter %}
                 {% if row.result.matter.stage %}

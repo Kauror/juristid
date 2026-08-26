@@ -19,7 +19,7 @@
 <div class="page">
   <nav class="crumbs" aria-label="Asukoht">
     <a href="{% url 'matters:matter_detail' pk=matter.pk %}">
-      {{ matter.display_reference|default:"Ajalooline teema" }} · {{ matter.title|truncatechars:50 }}
+      {{ matter.title|truncatechars:60 }}
     </a>
   </nav>
 
@@ -67,7 +67,7 @@
       <p class="cardnote">
         Sama leht on seotud ka:
         {% for other in other_matters %}
-          <a href="{% url 'legacy_import:source_page' pk=other.pk %}">{{ other.matter.display_reference|default:other.matter.title|truncatechars:40 }}</a>{% if not forloop.last %},{% endif %}
+          <a href="{% url 'legacy_import:source_page' pk=other.pk %}">{{ other.matter.title|truncatechars:40 }}</a>{% if not forloop.last %},{% endif %}
         {% endfor %}
       </p>
     {% endif %}
