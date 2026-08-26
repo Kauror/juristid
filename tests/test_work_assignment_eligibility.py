@@ -116,7 +116,9 @@ def test_the_create_form_offers_the_department_and_nobody_else(
 
 
 @pytest.mark.parametrize("kind", INELIGIBLE_KINDS)
-def test_a_crafted_create_post_cannot_name_an_ineligible_owner(client, specialist, ineligible, kind):
+def test_a_crafted_create_post_cannot_name_an_ineligible_owner(
+    client, specialist, ineligible, kind
+):
     """The form refuses, and no Matter is written with that owner.
 
     Both halves matter. A form that merely dropped the value would create the
@@ -160,7 +162,9 @@ def test_the_intake_form_offers_the_department_and_nobody_else(
 
 
 @pytest.mark.parametrize("kind", INELIGIBLE_KINDS)
-def test_a_crafted_intake_post_cannot_name_an_ineligible_owner(client, specialist, ineligible, kind):
+def test_a_crafted_intake_post_cannot_name_an_ineligible_owner(
+    client, specialist, ineligible, kind
+):
     """And leaves nothing behind — no Matter, and no document either.
 
     Intake writes a Matter and its evidence in one transaction. A refusal that
@@ -450,9 +454,7 @@ def test_an_inline_handover_to_a_colleague_succeeds(client, specialist, normal_m
     assert normal_matter.owner == head
 
 
-def test_the_inline_control_accepts_the_departed_owner_it_is_displaying(
-    client, specialist, former
-):
+def test_the_inline_control_accepts_the_departed_owner_it_is_displaying(client, specialist, former):
     """Pressing Salvesta having changed nothing must be a save, not a refusal.
 
     The header renders this Matter's owner as the selected option. A queryset

@@ -100,9 +100,7 @@ def test_there_is_no_fourth_chip_at_all(page, base_url):
     group = page.locator("fieldset").filter(has_text="Vastutaja").first
     names = [text.strip() for text in group.locator(".chip__name").all_inner_texts()]
 
-    assert sorted(names) == sorted(
-        {SANDRA.short_name, MARTIN.short_name, HEAD.short_name}
-    )
+    assert sorted(names) == sorted({SANDRA.short_name, MARTIN.short_name, HEAD.short_name})
     assert group.locator("input[name='owner']").count() == len(names)
 
 
