@@ -1690,22 +1690,21 @@ def _immutable_facts(matter: Matter) -> list[tuple[str, str]]:
     """What the edit page shows and refuses to edit.
 
     Provenance, not fields. Where a record came from is not somebody's to
-    decide, and the reference is what every other system cites this Matter by.
+    decide, and a page that simply omitted that would read as an oversight.
 
-    This is the one ordinary surface that still prints ``display_reference``,
-    and deliberately. Everywhere else the reference was standing in for the
-    topic's *name* — in a crumb, a row, a feed line — and a reader who wanted to
-    know which file they were looking at got `2026_10` instead of the subject.
-    Here it is not an identity: it is a labelled fact under `Muutumatu`, beside
-    the record's origin and its source row, answering "what does the rest of the
-    world call this record". Removing it would take the answer away from the
-    only page that asks the question, while leaving the more technical
-    `Algallikas` beside it (human QA §3, §5, §31).
+    **No ``display_reference``.** This panel was the last ordinary surface
+    printing it, kept on the argument that here it was a labelled fact rather
+    than an identity. Review rejected that: `Muuda teemat` is the ordinary
+    application, not admin, import tooling or a diagnostic view, and the rule is
+    about who is looking rather than about how the value is framed. The
+    reference is unchanged system data — ``Matter.display_reference``,
+    ``__str__``, exact search, the CSV export and the import tooling all still
+    carry it — and no ordinary user is shown it (review of PR #72, §2).
+
+    What stays is provenance a colleague can act on: which kind of record this
+    is, and which source row it came from.
     """
-    facts: list[tuple[str, str]] = []
-    if matter.display_reference:
-        facts.append(("Viide", matter.display_reference))
-    facts.append(("Päritolu", matter.get_origin_display()))
+    facts: list[tuple[str, str]] = [("Päritolu", matter.get_origin_display())]
     reference = matter.source_references.order_by("created_at").first()
     if reference is not None:
         where = reference.source_file_name or reference.source_system

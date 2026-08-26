@@ -463,6 +463,41 @@ def test_recent_changes_says_who_did_what_in_which_topic(page, base_url):
     assert len(link.get_attribute("title") or "") > 0
 
 
+def test_the_change_filter_is_named_for_what_it_holds(page, base_url):
+    """`Staatuse muutused` stopped being true when the bucket widened.
+
+    It now carries Järgmiseks, olulised tähtajad, jõustumised, kaasamised,
+    töövõidud and a rename as well as the stage and owner changes it was named
+    for. The query value behind it is unchanged (review §12).
+    """
+    sign_in(page, base_url, SANDRA)
+    open_overview(page, base_url)
+
+    strip = page.locator(".feedfilter")
+    expect(strip.get_by_role("link", name="Teema muudatused")).to_be_visible()
+    expect(strip.get_by_role("link", name="Staatuse muutused")).to_have_count(0)
+
+    strip.get_by_role("link", name="Teema muudatused").click()
+    page.wait_for_load_state("networkidle")
+    assert "voog=staatus" in page.url, page.url
+
+
+def test_the_default_ordering_is_offered_by_what_it_does(page, base_url):
+    """`Viide` named a column this page no longer has (review §18)."""
+    sign_in(page, base_url, SANDRA)
+    open_register(page, base_url)
+    page.locator(".filterpanel__trigger").click()
+
+    options = page.locator('select[name="jarjestus"] option')
+    labels = [options.nth(i).inner_text().strip() for i in range(options.count())]
+    values = [options.nth(i).get_attribute("value") for i in range(options.count())]
+
+    assert "Vaikimisi" in labels, labels
+    assert "Viide" not in labels, labels
+    # The value behind it is untouched, so a bookmarked URL still works.
+    assert "reference" in values, values
+
+
 def test_a_colleague_is_named_by_their_short_name_in_the_register(page, base_url):
     """Every resolved owner cell, not whichever row happens to sort first."""
     sign_in(page, base_url, SANDRA)

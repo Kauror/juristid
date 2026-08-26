@@ -112,22 +112,6 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     matter_url = page.url
 
-    # The reference is still there, still allocated, and still the thing every
-    # other system cites this file by — it has simply stopped standing in for
-    # the topic's name in the ordinary reading surfaces. `Muuda teemat` states
-    # it under `Muutumatu`, beside the record's origin, where it is a labelled
-    # provenance fact rather than an identity (human QA §5, §31).
-    page.goto(f"{matter_url}muuda/")
-    reference = (
-        page.locator("section[aria-label='Muutumatud andmed'] .railcard__row")
-        .filter(has_text="Viide")
-        .locator(".railcard__value")
-        .inner_text()
-        .strip()
-    )
-    assert re.fullmatch(r"\d{4}_\d+", reference), reference
-    page.goto(matter_url)
-
     # It reaches Minu töö straight away.
     #
     # Somewhere in the one list, not in a nominated band: the list is banded by
@@ -345,23 +329,23 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.get_by_role("link", name=re.compile("Pakendiseaduse")).first.click()
     expect(page.get_by_role("heading", name=MATTER_TITLE)).to_be_visible()
 
-    # The exact reference navigates straight to the file — from anywhere, which
-    # is the whole point of typing a reference.
+    # There used to be a second search here, typing this Matter's technical
+    # reference and expecting the redirect straight to the file. The reference
+    # was read a moment earlier out of `Muuda teemat` — and that panel no longer
+    # shows it, because `Muuda teemat` is the ordinary application. Keeping the
+    # value on a page so that a browser test could scrape it would have been the
+    # same leak wearing a different hat.
     #
-    # Started from Ülevaade on purpose. Run from the file's own page, the
-    # assertion below matched the heading that was *already on screen* and
-    # passed before the navigation had begun: a step that looked like a wait and
-    # was not. That is what made the next one flake.
+    # Nothing about exact-reference search changed, and none of its coverage
+    # went with the step. It is a property of the search layer and is proved
+    # against the database, where the reference legitimately lives:
+    # `tests/test_search_authorization.py` asserts the 302 and its target, and
+    # `tests/test_work_surface_cleanup.py` asserts the register answers a
+    # reference typed into this same box. What this file is for — that the box
+    # in the bar takes a lawyer from a query to a file — is the scenario
+    # directly above (review of PR #72, §4).
     page.goto(f"{base_url}/ulevaade/")
     page.wait_for_url(f"{base_url}/ulevaade/")
-
-    page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill(reference)
-    page.keyboard.press("Enter")
-    # The URL, because it is the one thing that cannot match the page we came
-    # from. Every element assertion here can be satisfied by the previous
-    # document, which is exactly how this went wrong.
-    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
-    expect(page.get_by_role("heading", name=MATTER_TITLE)).to_be_visible()
 
     # Ctrl+K focuses search rather than opening a command palette.
     #

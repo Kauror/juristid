@@ -7,12 +7,13 @@ screenshot would catch:
 shifts every cell in the row one column left, and the page still looks like a
 table. So the check is structural — every row has exactly as many cells as the
 header has columns — not a search for a missing word. What the reference is
-actually for (identity, exact search, `Muuda teemat`'s provenance panel) is
-asserted to still work, because a cleanup that quietly removed a capability
-would be a much worse trade than the column was.
+actually for (identity and exact search) is asserted to still work, because a
+cleanup that quietly removed a capability would be a much worse trade than the
+column was.
 
-The Matter's own page used to be on that list. A later round of hands-on QA took
-it off — see the test at the bottom of this file, which says why.
+The Matter's own page used to be on that list, and so, briefly, did `Muuda
+teemat`. Hands-on QA and then review took both off — see the test at the bottom
+of this file, which says why.
 
 *Colleagues appear by short name.* Only where a real account is resolved. The
 matching rule for a name the register recorded — never shortened, because the
@@ -192,11 +193,16 @@ def test_the_matter_page_names_the_topic_rather_than_the_record(populated, clien
     the reference was not identifying anything they were unsure of, it was
     sitting in the one line of the page that could have oriented them.
 
-    So the reference left the reading surfaces and stayed everywhere it answers
-    a question somebody is asking — exact search, `__str__`, the export, and
-    `Muuda teemat`, where it is a labelled provenance fact rather than a name.
-    The three tests above this one are the capabilities that had to survive, and
-    they still do (human QA §1, §8; tests/test_identifier_free_ui.py).
+    So the reference left every ordinary reading surface and stayed everywhere it
+    answers a question somebody is asking: exact search, `__str__`, the CSV
+    export, the work-sort tie-break and the import tooling. The three tests above
+    this one are the capabilities that had to survive, and they still do
+    (human QA §1, §8; tests/test_identifier_free_ui.py).
+
+    `Muuda teemat` was briefly the exception, on the argument that a labelled
+    provenance fact is not an identity. Review rejected that too — the rule is
+    about who is looking, and that page is the ordinary application — so both
+    pages are asserted here (review of PR #72, §2).
     """
     client.force_login(specialist)
     matter = populated["owned"]
@@ -206,7 +212,9 @@ def test_the_matter_page_names_the_topic_rather_than_the_record(populated, clien
 
     assert matter.title in detail
     assert matter.display_reference not in detail
-    assert matter.display_reference in edit
+    assert matter.display_reference not in edit
+    # Gone from the page, not gone from the record.
+    assert matter.display_reference
 
 
 # -- short names ------------------------------------------------------------
