@@ -71,3 +71,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0032 — the approved Uus teema redesign: one screen, one chip control, two Valdkonnad withdrawn, and Hetkeseis explaining itself on the row
 - 0033 — Ülevaade drill-down parity: a number opens a list of its own kind, `?too=` makes the dated-work populations addressable, and "Ootab pahavarakontrolli" stops telling readers their archive might be infected
 - 0034 — who may be offered as a persona: one role-based population read by both the page and the endpoint, technical accounts excluded, and a top-bar switcher that keeps the page somebody was reading
+- 0035 — the bounded workspace: the shell keeps the viewport, the working surface stops at 1600px and centres, and one token says so for every page
