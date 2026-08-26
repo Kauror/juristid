@@ -268,25 +268,50 @@
   font-size: var(--typography-size-chip-sm);
 }
 
+/* ---- the bounded workspace ------------------------------------------
+ *
+ * The one place the application decides how wide work may get. Every page
+ * inherits it, because every page is inside it: the centred `.page` container
+ * and the full-bleed work surfaces alike measure themselves against this box
+ * rather than against the monitor.
+ *
+ * `width: 100%` is stated rather than left to `align-items: stretch`, because
+ * an auto cross-axis margin on a flex item turns stretching off — without an
+ * explicit width the box would shrink-to-fit its content and every page would
+ * be a different width. With it, the used width is min(100%, the maximum) and
+ * the auto margins centre what is left over (docs/adr/0035).
+ */
 .app__main {
   flex: 1;
-  padding: var(--spacing-6) var(--spacing-8) var(--spacing-10);
+  width: 100%;
+  max-width: var(--layout-workspace-max);
+  margin-inline: auto;
+  padding: var(--spacing-6) var(--layout-gutter) var(--spacing-10);
 }
 
+/* The band spans the viewport — it is a shell rule, and a hairline that stops
+   in mid-air on a 3440px monitor reads as a rendering fault. What it says is
+   aligned with the workspace, so the build stamp starts where the page does. */
 .app__footer {
-  padding: var(--spacing-4) var(--spacing-8);
+  padding: var(--spacing-4) var(--layout-gutter);
   border-top: 1px solid var(--border-subtle);
   color: var(--text-muted);
   font-size: var(--typography-size-label);
 }
 
 .app__footer p {
-  margin: 0;
-  max-width: none;
+  margin: 0 auto;
+  max-width: var(--layout-workspace-content);
 }
 
+/* A centred page inside the workspace. It used to carry 1376px of its own —
+   the content width of the design's 1440px primary viewport — which bounded
+   the register and the forms but said nothing about the full-bleed work
+   surfaces, and left the two families with different edges once the viewport
+   grew past 1600. One number now, derived from the workspace, so Teemad and
+   Ülevaade start and end in the same place on any monitor. */
 .page {
-  max-width: 1376px;
+  max-width: var(--layout-workspace-content);
   margin: 0 auto;
   display: flex;
   flex-direction: column;
@@ -332,8 +357,14 @@
   color: var(--text-secondary);
 }
 
+/* Outside `.app__main` — it is a band, not page content — so it repeats the
+   workspace bound and the gutter rather than inheriting them. Without the
+   gutter it was flush against the viewport edge below 1440 while the page
+   under it was inset by 32px. */
 .messages {
-  max-width: 1376px;
+  width: 100%;
+  max-width: var(--layout-workspace-max);
+  padding-inline: var(--layout-gutter);
   margin: 0 auto var(--spacing-4);
   display: flex;
   flex-direction: column;
@@ -1320,7 +1351,7 @@ p.formnote {
 .matterhead {
   background: var(--surface-panel);
   border-bottom: 1px solid var(--border-default);
-  margin: calc(var(--spacing-6) * -1) calc(var(--spacing-8) * -1) 0;
+  margin: calc(var(--spacing-6) * -1) calc(var(--layout-gutter) * -1) 0;
   padding: var(--spacing-4) var(--spacing-8) 0;
   display: flex;
   flex-direction: column;
@@ -2596,8 +2627,17 @@ fieldset.field > legend {
     width: 100%;
   }
 
+  /* The gutter is redefined rather than each padding overridden, so the
+     message band, the footer and every full-bleed page's negative margin move
+     with it. A bleed pulling itself out by 32px against 12px of shell padding
+     is 20px of horizontal scrollbar on every page, and it is invisible in a
+     screenshot — which is why e2e measures scrollWidth instead. */
+  .app {
+    --layout-gutter: var(--spacing-3);
+  }
+
   .app__main {
-    padding: var(--spacing-4) var(--spacing-3) var(--spacing-8);
+    padding: var(--spacing-4) var(--layout-gutter) var(--spacing-8);
   }
 
   .matterhead {
@@ -3384,7 +3424,7 @@ button.personaoption:focus-visible {
 .page--persona {
   max-width: none;
   gap: 0;
-  margin: calc(var(--spacing-6) * -1) calc(var(--spacing-8) * -1)
+  margin: calc(var(--spacing-6) * -1) calc(var(--layout-gutter) * -1)
     calc(var(--spacing-10) * -1);
 }
 
@@ -5887,7 +5927,7 @@ p.factsection__none {
    padding. Negative margins rather than changing the shell, because the
    register and the dashboards still want that gutter. */
 .teema {
-  margin: calc(var(--spacing-6) * -1) calc(var(--spacing-8) * -1)
+  margin: calc(var(--spacing-6) * -1) calc(var(--layout-gutter) * -1)
     calc(var(--spacing-10) * -1);
   display: flex;
   flex-direction: column;
@@ -7275,7 +7315,7 @@ button.accordion__action:focus-visible {
 .page--overview {
   max-width: none;
   gap: 0;
-  margin: calc(var(--spacing-6) * -1) calc(var(--spacing-8) * -1)
+  margin: calc(var(--spacing-6) * -1) calc(var(--layout-gutter) * -1)
     calc(var(--spacing-10) * -1);
 }
 
