@@ -1,0 +1,21 @@
+{% comment %}
+The add-`Kaasamine` form, rendered in two places by one file.
+
+With records on the section it sits inside a `+ Lisa kaasamine` disclosure,
+because the records are what the reader opened the section for. With none it is
+rendered bare, directly in the section body: opening `KAASAMINE` on a Matter
+nobody has consulted anybody about *is* the intent to add one, and a disclosure
+whose only job is to be clicked once more is a state that carries no
+information (Kaasamine one-click §5).
+
+`data-engagement-add` distinguishes this from a row's edit form: both carry the
+same five field names, and a browser test that located `input[name="title"]`
+without it would match every row on the page.
+{% endcomment %}
+<form class="stackform" data-engagement-add
+      hx-post="{% url 'matters:add_engagement' pk=matter.pk %}"
+      hx-target="#teema-vaade" hx-swap="outerHTML">
+  {% csrf_token %}
+  {% include "matters/partials/engagement_fields.html" with form=engagement_form record=None bound_values=engagement_add_open %}
+  <button class="button button--quiet button--tiny" type="submit">Lisa kaasamine</button>
+</form>

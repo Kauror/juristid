@@ -765,3 +765,191 @@ def test_a_real_matters_engagement_is_not_in_a_test_purge_plan(specialist):
 
     plan = build_purge_plan([])
     assert plan.count_of(MatterEngagement._meta.label) == 0
+
+
+# -- the section's interaction state -----------------------------------------
+#
+# Two clicks to add the first `Kaasamine`: one to open the section, one to open
+# a `+ Lisa kaasamine` disclosure standing alone in an otherwise empty body. The
+# middle state showed nothing the header had not already said, and the click
+# that reached it was already an expression of the intent to add something.
+#
+# What the server owes the page is a shape, not a script: with no records the
+# add form is rendered in the section body directly, so opening the section
+# *is* opening the form, with JavaScript on or off (Kaasamine one-click §3–§5).
+
+
+def _rendered(client, matter) -> str:
+    return client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+
+
+def _opening_tag(body: str, marker: str) -> str:
+    """The one opening tag carrying `marker`, from its `<` to its own `>`."""
+    at = body.index(marker)
+    return body[body.rindex("<", 0, at) : body.index(">", at) + 1]
+
+
+def _is_open(body: str, marker: str) -> bool:
+    """Whether the `<details>` carrying `marker` renders with `open`."""
+    import re as _re
+
+    return _re.search(r"\bopen\b", _opening_tag(body, marker)) is not None
+
+
+SECTION = 'id="kaasamine"'
+COMPOSER = "data-engagement-composer"
+ADD_FORM = "data-engagement-add\n"
+
+
+def test_with_nothing_recorded_the_section_is_closed_and_the_form_is_its_body(
+    signed_in, specialist
+):
+    """One click, and the thing that opens is the form (§28.1, §28.2, §28.3)."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    body = _rendered(signed_in, matter)
+
+    # Closed on arrival: the empty state is not a section that opens itself.
+    assert not _is_open(body, SECTION)
+    assert 'data-engagement-count="0"' in body
+    # And nothing between the section and the form. The disclosure is absent
+    # from the DOM rather than present-and-open, because a control whose only
+    # state is "open" is a control that is only ever clicked to no effect.
+    assert COMPOSER not in body
+    assert "+ Lisa kaasamine" not in body
+    assert ADD_FORM in body
+
+
+def test_with_a_record_the_section_is_closed_and_so_is_the_composer(signed_in, specialist):
+    """Opening it shows the records; the form waits to be asked for (§28.4, §28.5)."""
+    matter = factories.MatterFactory(owner=specialist)
+    add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="Liikmete küsitlus",
+        occurred_on=dt.date(2026, 7, 1),
+        actor=specialist,
+    )
+
+    body = _rendered(signed_in, matter)
+
+    assert not _is_open(body, SECTION)
+    assert 'data-engagement-count="1"' in body
+    assert "Liikmete küsitlus" in body
+    # The composer is here and shut, and it is what the explicit add action
+    # opens — the records are what the reader opened the section for.
+    assert COMPOSER in body
+    assert not _is_open(body, COMPOSER)
+    assert "+ Lisa kaasamine" in body
+
+
+def test_the_add_action_is_a_button_the_keyboard_reaches(signed_in, specialist):
+    """A span inside the summary is only the disclosure's toggle (§13, §15)."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    body = _rendered(signed_in, matter)
+
+    tag = _opening_tag(body, "data-engagement-add-trigger")
+    assert tag.startswith("<button")
+    assert 'type="button"' in tag
+
+
+def test_a_refused_add_leaves_the_section_and_the_form_open(signed_in, specialist):
+    """The reason for a refusal must not be behind a disclosure (§28.9)."""
+    matter = factories.MatterFactory(owner=specialist)
+    add_engagement(matter=matter, kind=EngagementKind.SURVEY, title="Olemasolev", actor=specialist)
+
+    response = _post_add(signed_in, matter, title="")
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert _is_open(body, SECTION)
+    assert _is_open(body, COMPOSER)
+
+
+def test_a_refused_add_keeps_what_was_typed(signed_in, specialist):
+    """`_overview_with_engagement_error` re-renders "so nothing typed is lost".
+
+    The hand-rendered add form read its values from `record`, which is `None`
+    when adding, so a refused save came back with the title box empty and the
+    date box empty — every field the person had filled in wiped by the
+    explanation of why it was refused (Kaasamine one-click §7).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _post_add(
+        signed_in,
+        matter,
+        title="Liikmete kaasamiskutse",
+        url="javascript:alert(1)",
+        note="Vastuseid ootame septembrini.",
+        occurred_on="15.9.2026",
+    )
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert 'value="Liikmete kaasamiskutse"' in body
+    assert "Vastuseid ootame septembrini." in body
+    assert 'value="15.9.2026"' in body
+
+
+def test_an_unreadable_date_says_so_where_it_was_typed(signed_in, specialist):
+    """The one field the browser will not police on its way out (§7)."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _post_add(signed_in, matter, occurred_on="32.13.2026")
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert not MatterEngagement.objects.filter(matter=matter).exists()
+    assert 'class="field__error"' in body
+    assert 'value="32.13.2026"' in body
+
+
+def test_a_refused_edit_opens_its_own_row_and_not_the_composer(signed_in, specialist):
+    """A refusal belongs where it came from, not beside a second empty answer."""
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = add_engagement(
+        matter=matter, kind=EngagementKind.SURVEY, title="Enne", actor=specialist
+    )
+
+    response = signed_in.post(
+        reverse(
+            "matters:update_engagement", kwargs={"pk": matter.pk, "engagement_id": engagement.pk}
+        ),
+        {"kind": EngagementKind.SURVEY, "title": ""},
+    )
+    body = response.content.decode()
+
+    assert response.status_code == 400
+    assert _is_open(body, SECTION)
+    assert not _is_open(body, COMPOSER)
+
+
+def test_a_saved_engagement_leaves_the_section_open_and_the_composer_shut(signed_in, specialist):
+    """The reader must see the record they just made (§28.8)."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    response = _post_add(signed_in, matter, title="Uus kaasamiskutse")
+    body = response.content.decode()
+
+    assert response.status_code == 200
+    assert _is_open(body, SECTION)
+    assert "Uus kaasamiskutse" in body
+    # One record now, so the composer exists again — and it is shut, because the
+    # emptied form is not what the save was for.
+    assert COMPOSER in body
+    assert not _is_open(body, COMPOSER)
+
+
+def test_a_reader_who_cannot_write_gets_no_form_in_either_state(client, specialist):
+    """The empty state renders a form, not a form for everybody."""
+    reader = factories.ReaderFactory()
+    matter = factories.MatterFactory(owner=specialist)
+    client.force_login(reader)
+
+    body = _rendered(client, matter)
+
+    assert "Kaasamist ei ole kirja pandud" in body
+    assert ADD_FORM not in body
+    assert "data-engagement-add-trigger" not in body
