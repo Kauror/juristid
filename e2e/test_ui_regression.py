@@ -340,6 +340,63 @@ def test_matter_at_1024(page, base_url):
     compare("teema-1024", capture(page, "teema-1024"))
 
 
+def _kaasamine(page):
+    return page.locator("#kaasamine")
+
+
+def _at_rest(page):
+    """Take the pointer off whatever was just clicked, and settle.
+
+    A click leaves the mouse where it landed, and the accordion head paints its
+    `+ Lisa` in the link colour on hover — so the first rendering of these came
+    back with the header hovered in one capture and at rest in another, for no
+    reason a reader of the baseline could see. A baseline should show the state
+    the test is named for and not where the mouse happened to stop.
+    """
+    page.mouse.move(0, 0)
+    page.wait_for_timeout(120)
+
+
+def test_kaasamine_collapsed_with_nothing_recorded(page, base_url):
+    """The state a reader arrives at, on a Matter nobody has consulted about.
+
+    Four clipped captures rather than four new full-page ones: the change these
+    lock is one section's interaction, and a whole-page baseline per state would
+    put four more pages' worth of unrelated layout under review every time
+    anything else on Teema moved (Kaasamine one-click §23).
+
+    The archive Matter, because it is the one the browser suite never writes to
+    that also holds no engagement — the scratch Matter the interactive tests use
+    is empty only until they run.
+    """
+    open_matter(page, base_url, ARCHIVE_TITLE)
+    compare("kaasamine-suletud", capture(page, "kaasamine-suletud", clip_to="#kaasamine"))
+
+
+def test_kaasamine_open_with_nothing_recorded(page, base_url):
+    """One click, and what it opens onto is the form itself."""
+    open_matter(page, base_url, ARCHIVE_TITLE)
+    _kaasamine(page).locator(".accordion__head").click()
+    _at_rest(page)
+    compare("kaasamine-tyhi", capture(page, "kaasamine-tyhi", clip_to="#kaasamine"))
+
+
+def test_kaasamine_open_with_a_record(page, base_url):
+    """The records, and the composer waiting behind its own control."""
+    open_matter(page, base_url, OPEN_TITLE)
+    _kaasamine(page).locator(".accordion__head").click()
+    _at_rest(page)
+    compare("kaasamine-kirjed", capture(page, "kaasamine-kirjed", clip_to="#kaasamine"))
+
+
+def test_kaasamine_composer_open_over_a_record(page, base_url):
+    """`+ Lisa` from collapsed: the section and the form in one action."""
+    open_matter(page, base_url, OPEN_TITLE)
+    _kaasamine(page).locator("[data-engagement-add-trigger]").click()
+    _at_rest(page)
+    compare("kaasamine-lisa", capture(page, "kaasamine-lisa", clip_to="#kaasamine"))
+
+
 def test_matter_documents(page, base_url):
     open_matter(page, base_url, OPEN_TITLE, tab="Dokumendid")
     compare("teema-dokumendid", capture(page, "teema-dokumendid"))
@@ -398,6 +455,47 @@ def test_my_work(page, base_url):
     """
     signed_in(page, base_url, "/minu-too/")
     compare("minu-too", capture(page, "minu-too"))
+
+
+# ---- Ultrawide -----------------------------------------------------------
+#
+# The four above are taken at 1440, the design's primary viewport, and 1440 is
+# exactly where the workspace bound does nothing: below 1600 every one of them
+# renders as it always did. So none of them can say whether the bound works,
+# and the failure it fixes was only ever visible on a monitor none of them
+# describe — a QA screenshot at 3440 where an Ülevaade row put its title at one
+# bezel and its owner near the other.
+#
+# What these lock is the composition at 3440: a bounded workspace in the middle
+# of the monitor, outer margin either side, the facts rail flush against the
+# content rather than the screen edge. The *relationships* — narrower than the
+# viewport, centred, rail inside the workspace — are assertions and live in
+# `test_ultrawide_workspace.py`, because a baseline approves a broken layout as
+# readily as a correct one. These say the result also looks right.
+#
+# Statistika is here and is not at 1440, which is deliberate: it is the one
+# surface using the centred `.page` container whose content is charts and wide
+# tables rather than rows, so it is the one most likely to reveal a bound that
+# is right for lists and wrong for everything else.
+
+#: The ultrawide the QA round photographed. Height is the ordinary 900: these
+#: are full-page captures, so it sets how much is above the fold and nothing
+#: else.
+ULTRAWIDE = {"width": 3440, "height": 900}
+
+
+@pytest.mark.parametrize(
+    "name,path",
+    [
+        ("ulevaade-3440", "/ulevaade/"),
+        ("minu-too-3440", "/minu-too/"),
+        ("teemad-3440", "/teemad/"),
+        ("statistika-3440", "/statistika/"),
+    ],
+)
+def test_the_bounded_workspace_at_3440(page, base_url, name, path):
+    signed_in(page, base_url, path, width=ULTRAWIDE["width"], height=ULTRAWIDE["height"])
+    compare(name, capture(page, name))
 
 
 # ---- Vali kasutaja -------------------------------------------------------

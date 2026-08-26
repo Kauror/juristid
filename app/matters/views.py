@@ -1087,6 +1087,12 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `Kaasamine`. Read here for the same reason as everything else on this
         # dict: the template must not be able to start querying.
         "engagements": engagements,
+        # `(record, is_editing)`. One bound form is shared by the add form and
+        # every row's edit form, so exactly one of them may render the rejected
+        # values — and the row's disclosure and the fields inside it have to
+        # agree about which. Decided here rather than compared twice in the
+        # template (Kaasamine one-click §7).
+        "engagement_rows": [(record, False) for record in engagements],
         "engagement_count": len(engagements),
         "engagement_form": EngagementForm(),
         "engagement_error": "",
@@ -1095,6 +1101,15 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # Adding a consultation and watching the section it went into fold shut
         # is the one moment a reader needs to see the list (Teema redesign §14).
         "engagement_open": False,
+        # The add form's own state, separate from the section's. On a Matter
+        # with records it is a disclosure that stays shut until asked for; on
+        # one with none there is no disclosure at all and opening the section
+        # is the whole gesture. Either way a *refused* add reopens it, and it
+        # cannot key on `engagement_error`: a field error — an empty title, an
+        # unreadable date — leaves that string empty, which folded the
+        # explanation shut on exactly the saves that needed explaining
+        # (Kaasamine one-click §3, §7).
+        "engagement_add_open": False,
         "can_write": may_write_business_content(request.user),
         "can_review_victory": may_review_work_victory(request.user),
         "today": timezone.localdate(),
@@ -1468,7 +1483,14 @@ def _overview_with_engagement_error(
     context["engagement_form"] = form
     context["engagement_error"] = error
     context["engagement_editing"] = editing
+    context["engagement_rows"] = [
+        (record, editing is not None and record.pk == editing) for record in context["engagements"]
+    ]
+    # The section always, and the add form only when the add is what failed:
+    # a refused *edit* belongs in the row it came from, and opening the composer
+    # beside it would offer a second, empty answer to the same refusal.
     context["engagement_open"] = True
+    context["engagement_add_open"] = editing is None
     return render(request, "matters/partials/overview.html", context, status=400)
 
 
