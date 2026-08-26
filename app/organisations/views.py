@@ -17,6 +17,7 @@ from django.http import HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.views.decorators.http import require_http_methods
 
+from app.core.decorators import business_write_required
 from app.core.errors import DomainError
 from app.organisations.forms import OrganisationQuickCreateForm
 from app.organisations.models import Organisation
@@ -34,6 +35,7 @@ def _options_context(target: str, selected: Organisation | None, **extra: Any) -
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def quick_create(request: HttpRequest) -> HttpResponse:
     """Create an institution without leaving the form that needed it.

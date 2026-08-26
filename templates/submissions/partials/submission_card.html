@@ -114,7 +114,12 @@ that goes through the authorization-checked download route.
     </p>
   {% endfor %}
 
-  {% if submission.status == "DRAFT" %}
+  {% comment %}
+    Every control below writes. The routes refuse a reader on their own
+    (app/core/decorators.py); this keeps the card from offering three buttons
+    whose only answer would be 404.
+  {% endcomment %}
+  {% if can_write and submission.status == "DRAFT" %}
     {% if not submission.final_version %}
       <form class="inlineform" method="post" enctype="multipart/form-data"
             action="{% url 'submissions:attach_evidence' pk=submission.pk %}">
@@ -138,7 +143,7 @@ that goes through the authorization-checked download route.
         <button class="button button--primary" type="submit">Märgi saadetuks</button>
       </form>
     {% endif %}
-  {% elif submission.status == "SENT" %}
+  {% elif can_write and submission.status == "SENT" %}
     <form method="post" action="{% url 'submissions:withdraw' pk=submission.pk %}">
       {% csrf_token %}
       <button class="button button--quiet" type="submit">Võta tagasi</button>
