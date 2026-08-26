@@ -129,6 +129,83 @@ def test_every_destination_stays_reachable_at_every_width(page, base_url, width,
         expect(navigation.get_by_role("link", name=destination, exact=True)).to_have_count(1)
 
 
+@pytest.mark.parametrize("width,height", VIEWPORTS, ids=lambda v: str(v))
+def test_the_emblem_is_the_only_branding_and_it_actually_renders(page, base_url, width, height):
+    """The mark alone, drawn, on the bar — not a broken image and not a wordmark.
+
+    Three separate ways this change could look right and be wrong, so all three
+    are asserted rather than looked at:
+
+    * a `{% static %}` path that resolves to no file still lays out — the <img>
+      keeps its CSS box and the alt text is invisible against the bar, so the
+      only proof the artwork arrived is `naturalWidth`;
+    * the emblem is a single dark ink over an alpha mask, drawn for paper, and
+      the stylesheet inverts it for --surface-nav. Without that filter it is
+      still *there*, still the right size, and effectively invisible;
+    * the wordmark it replaces could come back anywhere in the shell without
+      the header itself looking any different.
+
+    Aspect ratio is checked against the file's own 598x586 rather than assumed
+    square: a `width` and `height` pair that disagreed with the artwork would
+    stretch it, and at this size that reads as a slightly oval seal nobody can
+    name the fault in.
+    """
+    sign_in(page, base_url, SANDRA)
+    page.set_viewport_size({"width": width, "height": height})
+    open_register(page, base_url)
+
+    logo = page.locator(".topbar__logo")
+    expect(logo).to_be_visible()
+    assert page.evaluate(
+        "() => { const i = document.querySelector('.topbar__logo');"
+        " return i.complete && i.naturalWidth > 0; }"
+    ), "the emblem did not load"
+
+    box = logo.bounding_box()
+    assert abs(box["width"] / box["height"] - 598 / 586) < 0.01, (
+        f"the emblem is drawn {box['width']:.1f}x{box['height']:.1f}, which is not its aspect ratio"
+    )
+
+    assert (
+        page.evaluate("() => getComputedStyle(document.querySelector('.topbar__logo')).filter")
+        != "none"
+    ), "the emblem is dark ink on a dark bar with no correction"
+
+    # The mark carries the brand alone now, so its accessible name is the only
+    # thing a screen reader has to go on for the link home.
+    expect(page.get_by_role("link", name="Eesti Kaubandus-Tööstuskoda")).to_have_count(1)
+    assert "ÕIGUSLOOME" not in page.locator(".topbar").inner_text()
+
+
+@pytest.mark.parametrize("width,height", VIEWPORTS, ids=lambda v: str(v))
+def test_the_emblem_sits_on_the_bar_without_growing_it(page, base_url, width, height):
+    """Centred, compact, and never the reason the shell got taller.
+
+    The bar is one 48px row (asserted above), so an emblem that overflowed it
+    would be clipped rather than noticed, and one that pushed the navigation
+    right would spend width the 1024px column has none of.
+    """
+    sign_in(page, base_url, SANDRA)
+    page.set_viewport_size({"width": width, "height": height})
+    open_register(page, base_url)
+
+    bar = page.locator(".topbar").bounding_box()
+    logo = page.locator(".topbar__logo").bounding_box()
+
+    assert logo["height"] <= bar["height"] - 8, "the emblem fills the bar edge to edge"
+    assert abs((logo["y"] + logo["height"] / 2) - (bar["y"] + bar["height"] / 2)) <= 1, (
+        "the emblem is not centred on the bar"
+    )
+
+    # Clear space before the first destination: enough to read as a brand
+    # lockup, not so much that it looks like a missing element. The artwork's
+    # own transparent margin is inside the box, so the measured gap understates
+    # what the eye sees by ~3px.
+    first = page.get_by_role("link", name="Ülevaade", exact=True).first.bounding_box()
+    gap = first["x"] - (logo["x"] + logo["width"])
+    assert 8 <= gap <= 40, f"clear space before Ülevaade is {gap:.1f}px"
+
+
 def test_saabunud_is_off_the_bar_and_still_a_working_page(page, base_url):
     """Removed from navigation, not from the product.
 

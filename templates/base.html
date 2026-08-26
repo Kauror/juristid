@@ -19,11 +19,25 @@
 
     <div class="app">
       <header class="topbar">
+        {% comment %}
+          The round emblem is the only branding on the bar. The wordmark beside
+          it said ÕIGUSLOOME — a label for the one product a reader is already
+          inside, spending ~90px of a bar that has no spare width at 1024px
+          (e2e/test_ui_shell.py measures exactly that). The link still carries
+          the organisation's name for anybody who cannot see the mark.
+
+          The file is the supplied artwork unmodified: one ink colour over an
+          alpha mask, drawn for paper. Its ink is inverted for the dark shell in
+          the stylesheet rather than by shipping a second, re-coloured copy, so
+          there is one emblem in the repository and the light theme
+          (tokens.css) gets the artwork as drawn.
+        {% endcomment %}
         <a class="topbar__brand" href="{% url 'core:home' %}">
           <img class="topbar__logo"
-               src="{% static 'brand/koda-logo-negative.png' %}"
+               src="{% static 'brand/koda-logo-round.png' %}"
+               width="598"
+               height="586"
                alt="Eesti Kaubandus-Tööstuskoda">
-          <span class="topbar__product">ÕIGUSLOOME</span>
         </a>
 
         {% if user.is_authenticated or gate_passed %}

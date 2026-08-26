@@ -44,24 +44,46 @@
 .topbar__brand {
   display: flex;
   align-items: center;
-  gap: var(--spacing-3);
   text-decoration: none;
   flex: none;
 }
 
+/* The supplied emblem carries its own transparent margin — the drawn circle is
+   78% of the file's width and 79% of its height — so the box is sized to what
+   should be *seen*, not to the file. 34px of box draws a ~27px mark, optically
+   centred on the 48px bar to within half a pixel and leaving 7px of air above
+   and below. The bar's `height: 48px` is fixed rather than a minimum, so no
+   value here can make it taller.
+
+   34 rather than the 20 the wordmark's lockup used, because this is a seal at
+   hairline weight and it is now the only branding on the bar: at 26px the
+   interior collapses into a smudge, and at 20px there is nothing left but a
+   ring. 38px and up crowds the row for no further legibility.
+
+   That baked margin is ~3.5px of clear space at this size, so the brand no
+   longer sets `gap` — a token on top of it would double the space the artwork
+   already provides before "Ülevaade". The whole block is ~35px wide against
+   ~162px for the mark-plus-wordmark it replaces, which is width handed back to
+   the navigation at the 1024px end of the ladder. */
 .topbar__logo {
-  height: 20px;
+  height: 34px;
   width: auto;
   display: block;
 }
 
-.topbar__product {
-  border-left: 1px solid var(--border-control);
-  padding-left: var(--spacing-3);
-  font-size: var(--typography-size-meta);
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
+/* The artwork is a single dark ink (#373736) over an alpha mask, drawn for
+   paper, and it is invisible on --surface-nav. Inverting turns that ink white
+   while leaving the mask alone, so the anti-aliased edges stay soft and the
+   result matches the negative wordmark the bar carried before. `brightness`
+   takes the inverted #c8c8c9 the rest of the way rather than leaving the mark
+   a muted grey beside white navigation text.
+
+   Scoped to the dark theme, not applied flat: tokens.css keeps a light theme
+   (docs/adr/0009) whose --surface-nav is white, and there the artwork as drawn
+   is already correct. An unscoped filter would hand that theme a white emblem
+   on white the day it is switched on. */
+:root[data-theme="dark"] .topbar__logo {
+  filter: invert(1) brightness(1.4);
 }
 
 .topnav {
