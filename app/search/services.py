@@ -44,7 +44,12 @@ from app.core.authorization import apply as apply_scope
 from app.core.authorization import projected_visibility_q, scope_for_user
 from app.core.text import normalize_for_matching
 from app.matters.models import Matter
-from app.search.models import SOURCE_OVERRIDE_FIELDS, SearchDocument, SearchSourceKind
+from app.search.models import (
+    INDEX_VERSION,
+    SOURCE_OVERRIDE_FIELDS,
+    SearchDocument,
+    SearchSourceKind,
+)
 
 
 class WordSimilarity(Func):
@@ -264,7 +269,18 @@ def visible_documents(user: Any) -> QuerySet[SearchDocument]:
     queryset this returns, so there is no path to a result that skipped it.
     """
     scope = scope_for_user(user)
-    documents = SearchDocument.objects.select_related(
+    # Rows built under an older projection contract are not read at all.
+    #
+    # Visibility filtering is row-granular: it decides whether a row is returned,
+    # never what is inside one. A MATTER row indexed before AUTH-003 can hold a
+    # RESTRICTED Kaasamine's words in its tsvector, and no predicate can take
+    # them back out — so the only safe answer is to stop trusting the row.
+    #
+    # The cost is that search is empty between deploying this and running
+    # `rebuild_search_index`. That is the correct direction to fail: a reader
+    # sees too little and can tell, rather than reading something they should
+    # not and cannot (docs/adr/0038).
+    documents = SearchDocument.objects.filter(index_version=INDEX_VERSION).select_related(
         "matter",
         "matter__owner",
         "matter__stage",
@@ -272,6 +288,7 @@ def visible_documents(user: Any) -> QuerySet[SearchDocument]:
         "document",
         "document_version",
         "entry",
+        "engagement",
         "submission",
         "matter_source_page",
         "matter_source_page__source_page",

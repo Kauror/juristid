@@ -690,8 +690,17 @@ def test_an_engagement_on_a_restricted_matter_does_not_leak(client, specialist, 
 
 
 def test_a_matter_is_found_through_its_engagement_text(specialist):
-    from app.search.indexing import indexable_matters, refresh_matters
-    from app.search.services import search_matters
+    """Still findable — through the engagement's own search row.
+
+    The text used to be concatenated into the Matter's row. That made a
+    RESTRICTED `Kaasamine` searchable by anybody who could open a NORMAL parent,
+    because a MATTER row is authorized by the Matter alone, so AUTH-003 moved it
+    to a row whose visibility can express the child's own. What a reader can
+    *find* is unchanged; which reader can find it is now correct.
+    """
+    from app.search.indexing import rebuild_all
+    from app.search.models import SearchSourceKind
+    from app.search.services import search_documents
 
     matter = factories.MatterFactory(title="Pakendiseaduse teema", owner=specialist)
     add_engagement(
@@ -705,17 +714,28 @@ def test_a_matter_is_found_through_its_engagement_text(specialist):
     add_engagement(
         matter=matter, kind=EngagementKind.WEB_CALL, title="Teine kaasamiskutse", actor=specialist
     )
-    refresh_matters(indexable_matters().filter(pk=matter.pk))
+    rebuild_all()
 
     # Including the vendor's name, which lives only in the link's host — and
-    # which a single `host` token would have made unfindable.
-    for term in ("Ainulaadne", "pakendiküsitlus", "alchemer"):
-        hits = [hit.matter.pk for hit in search_matters(query=term, user=specialist)]
-        assert hits.count(matter.pk) == 1, term
+    # which PostgreSQL would otherwise read as one unsearchable token.
+    for term in ("pakendiküsitlus", "septembrini", "alchemer"):
+        rows = list(search_documents(query=term, user=specialist))
+        assert rows, f"nothing found for {term!r}"
+        assert {row.matter_id for row in rows} == {matter.pk}
+        assert SearchSourceKind.ENGAGEMENT in {row.source_kind for row in rows}
 
 
-def test_the_projection_does_not_depend_on_relation_order(specialist):
-    from app.search.indexing import indexable_matters, indexed_text_for
+def test_the_matter_row_no_longer_carries_engagement_text(specialist):
+    """The property that replaced the old ordering test.
+
+    That test asserted `_engagement_text_for` sorted its parts so two rebuilds
+    of an unchanged Matter produced identical text. The function is gone: each
+    `Kaasamine` is one row now, so there is no concatenation whose order could
+    vary — and the invariant worth pinning instead is that the Matter row
+    carries none of it (AUTH-003).
+    """
+    from app.search.indexing import indexable_matters, indexed_text_for, rebuild_all
+    from app.search.models import SearchDocument, SearchSourceKind
 
     matter = factories.MatterFactory(owner=specialist)
     add_engagement(matter=matter, kind=EngagementKind.SURVEY, title="Zeta", actor=specialist)
@@ -725,8 +745,13 @@ def test_the_projection_does_not_depend_on_relation_order(specialist):
     second = indexed_text_for(indexable_matters().get(pk=matter.pk))
 
     assert first == second
-    assert "Alfa" in first["body_text"] and "Zeta" in first["body_text"]
-    assert first["body_text"].index("Alfa") < first["body_text"].index("Zeta")
+    assert "Alfa" not in first["body_text"]
+    assert "Zeta" not in first["body_text"]
+
+    rebuild_all()
+    engagement_rows = SearchDocument.objects.filter(source_kind=SearchSourceKind.ENGAGEMENT)
+    assert {row.title for row in engagement_rows} == {"Alfa", "Zeta"}
+    assert all(row.engagement_id is not None for row in engagement_rows)
 
 
 # -- TEST data and the purge planner ----------------------------------------

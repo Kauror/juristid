@@ -1002,12 +1002,20 @@ def test_a_report_chip_names_a_departed_colleague_rather_than_calling_them_unkno
 ):
     """Display of stored history, not a new assignment.
 
-    "tundmatu" is reserved for an identifier that names nobody at all. A
-    colleague who has left is not unknown; the department knows exactly who
-    they are, and the report is about the year they were here.
+    "tundmatu" is reserved for an identifier that names nobody *this reader can
+    see*. A colleague who has left is not unknown; the department knows exactly
+    who they are, and the report is about the year they were here.
+
+    The Matter is what makes that true, and it is now created here. The test
+    used to assert the name from a bare identifier with no work behind it — the
+    case the sibling test above calls out as the one that "must not" name
+    anybody, and the leak case it says is "below". That case exists now
+    (tests/test_child_projection_visibility.py) and this one is its other half:
+    represented work, truthfully named (AUTH-003).
     """
     from app.reporting import context as ctx
 
+    factories.MatterFactory(owner=former)
     client.force_login(specialist)
 
     response = client.get(reverse("reporting:matters"), {ctx.PARAM_OWNER: str(former.pk)})

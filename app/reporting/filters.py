@@ -18,8 +18,7 @@ from collections.abc import Collection
 from dataclasses import dataclass
 from urllib.parse import urlencode
 
-from app.accounts.models import User
-from app.accounts.selectors import owner_filter_choices
+from app.accounts.selectors import named_owner_in, owner_filter_choices
 from app.matters.enums import MatterOrigin, RecordMode
 from app.reporting import context as ctx
 from app.reporting.context import ReportingContext
@@ -156,7 +155,11 @@ def _display_value(context: ReportingContext, param: str, raw: str) -> str:
     if param == ctx.PARAM_TRACK:
         return dict(Track.choices).get(raw, raw)
     if param == ctx.PARAM_OWNER:
-        owner = User.objects.filter(pk=raw).first() if raw else None
+        # The reporting population this context is allowed to report on, which
+        # is the same boundary the owner dropdown is built from a few lines
+        # below. `User.objects.filter(pk=raw)` was a directory lookup wearing a
+        # filter label (AUTH-003).
+        owner = named_owner_in(reporting_population(context), raw) if raw else None
         return owner.display_name if owner else "tundmatu"
     if param == ctx.PARAM_POLICY_AREA:
         area = PolicyArea.objects.filter(key=raw).first()

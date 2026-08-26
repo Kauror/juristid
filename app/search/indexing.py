@@ -133,6 +133,7 @@ class RebuildResult:
     submissions: int = 0
     fragments: int = 0
     source_pages: int = 0
+    engagements: int = 0
 
 
 def indexable_matters() -> QuerySet[Matter]:
@@ -212,32 +213,6 @@ def _alias_text_for(matter: Matter) -> str:
     return " ".join(dict.fromkeys([*parts, *normalized]))
 
 
-def _engagement_text_for(matter: Matter) -> str:
-    """What a `Kaasamine` record makes a Matter findable by.
-
-    The title, the note, and the link's **host** rather than the link. A
-    campaign URL is mostly tracking parameters, and indexing those adds
-    thousands of meaningless tokens per Matter without making anything easier
-    to find. The host's own labels go in beside it, because PostgreSQL treats
-    ``survey.alchemer.example`` as a single token and a reader typing the
-    vendor's name would otherwise get nothing (Agent-F brief 47).
-
-    Sorted before joining, so two rebuilds of an unchanged Matter produce
-    identical text. The projection is compared to decide whether a row changed;
-    text whose word order came from the join would make every rebuild look like
-    an edit (brief 48).
-    """
-    parts: list[str] = []
-    for engagement in sorted(
-        matter.engagements.all(), key=lambda record: (record.title, str(record.pk))
-    ):
-        parts.append(engagement.title)
-        if engagement.note:
-            parts.append(engagement.note)
-        parts.extend(engagement.link_search_terms)
-    return " ".join(parts)
-
-
 def _title_text_for(matter: Matter) -> str:
     titles = [matter.title, *(matter.alternate_titles or [])]
     return " ".join(title for title in titles if title)
@@ -274,7 +249,10 @@ def indexed_text_for(matter: Matter) -> dict[str, str]:
                 matter.brief_summary,
                 matter.position_summary,
                 matter.rationale_summary,
-                _engagement_text_for(matter),
+                # `Kaasamine` is deliberately absent. It has its own row kind
+                # now, because it has its own visibility and this row does not
+                # (app/search/child_indexing.py, AUTH-003). A MATTER row may
+                # only carry content the Matter itself governs.
             )
             if part
         ),
@@ -491,7 +469,9 @@ def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildR
             chunk = identifiers[offset : offset + batch_size]
             total += refresh_matters(indexable_matters().filter(pk__in=chunk))
 
-        entries, submissions, fragments, source_pages = _rebuild_children(batch_size=batch_size)
+        entries, submissions, fragments, source_pages, engagements = _rebuild_children(
+            batch_size=batch_size
+        )
         documents = SearchDocument.objects.count()
 
     return RebuildResult(
@@ -501,12 +481,13 @@ def rebuild_all(*, batch_size: int = BATCH_SIZE, clear: bool = True) -> RebuildR
         submissions=submissions,
         fragments=fragments,
         source_pages=source_pages,
+        engagements=engagements,
         seconds=(timezone.now() - started).total_seconds(),
         index_version=INDEX_VERSION,
     )
 
 
-def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int]:
+def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int, int]:
     """Entries, submissions and document fragments, inside the caller's
     transaction.
 
@@ -517,10 +498,12 @@ def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int]:
     nothing about it looks wrong (docs/adr/0013).
     """
     from app.search.child_indexing import (
+        indexable_engagements,
         indexable_entries,
         indexable_fragments,
         indexable_source_links,
         indexable_submissions,
+        refresh_engagements,
         refresh_entries,
         refresh_fragments,
         refresh_source_links,
@@ -531,12 +514,13 @@ def _rebuild_children(*, batch_size: int) -> tuple[int, int, int, int]:
     submissions = _in_batches(indexable_submissions(), refresh_submissions, batch_size)
     fragments = _in_batches(indexable_fragments(), refresh_fragments, batch_size)
     source_pages = _in_batches(indexable_source_links(), refresh_source_links, batch_size)
+    engagements = _in_batches(indexable_engagements(), refresh_engagements, batch_size)
 
     # One statement for every child row, rather than one per batch. The vectors
     # are computed in the database either way; doing it once means PostgreSQL
     # plans it once.
     _recompute_vectors(SearchDocument.objects.exclude(source_kind=SearchSourceKind.MATTER))
-    return entries, submissions, fragments, source_pages
+    return entries, submissions, fragments, source_pages, engagements
 
 
 def _in_batches(queryset: QuerySet, refresh: object, batch_size: int) -> int:

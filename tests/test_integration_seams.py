@@ -514,4 +514,8 @@ def test_the_current_register_is_not_a_kind_of_search_row() -> None:
         "SUBMISSION",
         "DOCUMENT_FRAGMENT",
         "LEGACY_SOURCE_PAGE",
+        # AUTH-003. A `Kaasamine` is a canonical record with its own
+        # visibility, not a derived table — so this addition is a new *source*
+        # rather than the failure this test guards against.
+        "ENGAGEMENT",
     }

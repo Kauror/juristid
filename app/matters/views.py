@@ -30,14 +30,25 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
-from app.accounts.selectors import assignable_including, owner_filter_choices
-from app.core.authorization import may_review_work_victory, may_write_business_content
+from app.accounts.selectors import (
+    assignable_including,
+    is_person_identifier,
+    named_owner_in,
+    owner_filter_choices,
+)
+from app.core.authorization import apply as apply_scope
+from app.core.authorization import (
+    child_visibility_q,
+    may_review_work_victory,
+    may_write_business_content,
+    scope_for_user,
+)
 from app.core.dates import format_estonian_date, parse_flexible_date
 from app.core.decorators import business_write_required, gate_required, viewer_for
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
-from app.documents.models import Document
+from app.documents.models import Document, DocumentVersion
 from app.documents.services import link_working_document
 from app.documents.uploads import UploadRejected
 from app.intelligence.selectors import matter_intelligence
@@ -499,11 +510,23 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     if value == selectors.MISSING:
         return "Määramata"
     if name == "vastutaja":
-        person = _named_by_pk(User, value)
+        # Resolved inside this reader's own authorized register, not against
+        # `User.objects`. A crafted `?vastutaja=<uuid>` must not answer with the
+        # name of somebody who owns only work this reader may not see — the
+        # option list is already bounded that way and the chip has to agree
+        # (app/accounts/selectors.py `named_owner_in`, AUTH-003).
+        if not is_person_identifier(value):
+            # Not an identifier at all, so it names nobody and hiding it would
+            # only leave the reader guessing what they had filtered by.
+            return value
+        person = named_owner_in(Matter.objects.visible_to(request.user), value)
         # The short name, matching the control the filter was chosen from: a
         # chip that reads "Vastutaja: Sandra Näidis" beside a select offering
         # "Sandra" looks like two different filters.
-        return person.get_short_name() if person else value
+        #
+        # An unresolvable value prints as unknown rather than as the raw UUID:
+        # echoing the identifier back confirms nothing but reads like a fact.
+        return person.get_short_name() if person else "tundmatu"
     if name == "hetkeseis":
         stage = StageVocabulary.objects.filter(key=value).first()
         return stage.label_et if stage else value
@@ -1031,14 +1054,34 @@ def _position_opinion(request: HttpRequest, matter: Matter) -> Submission | None
     historical archive letter is not a canonical submission — the archive keeps
     its own surface precisely so the Matter page cannot claim an opinion went
     out that nobody recorded going out.
+
+    And only where the *evidence* is readable too. The rail prints the file's
+    name beside the position, and a Submission a reader may see can point at a
+    Document restricted below it — a Document carries its own override. Two
+    visibilities, both of which have to hold, because the filename is the
+    disclosure whether or not the bytes are refused (AUTH-003 §21).
     """
+    # One scope resolution for both predicates. `visible_to` asks the database
+    # about break-glass every time it is called, and the obvious spelling —
+    # `Submission.objects.visible_to(...)` filtered by
+    # `Document.objects.visible_to(...)` — pays for that lookup twice on a page
+    # that already renders a timeline (ADR 0033, ADR 0038).
+    scope = scope_for_user(request.user)
     return (
-        Submission.objects.filter(
-            matter=matter,
-            status=SubmissionStatus.SENT,
-            final_version__isnull=False,
+        apply_scope(
+            Submission.objects.filter(
+                matter=matter,
+                status=SubmissionStatus.SENT,
+                final_version__isnull=False,
+            ).filter(
+                child_visibility_q(
+                    scope,
+                    parent_prefix="final_version__document__matter__",
+                    override_field="final_version__document__visibility_override",
+                )
+            ),
+            child_visibility_q(scope),
         )
-        .visible_to(request.user)
         .select_related("final_version")
         .order_by("-sent_at")
         .first()
@@ -1224,7 +1267,23 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
     )
     # Split the recipients by role in Python off the prefetch, rather than
     # issuing two more queries per card.
+    # Which final-evidence versions this reader may actually be told about.
+    #
+    # The download route already refuses the bytes, but the card was printing
+    # the filename, the size and the first half of the SHA-256 beside a link —
+    # and a Submission a reader may see can point at a Document restricted
+    # below it, because a Document carries its own override. Metadata is
+    # disclosure: a filename is frequently the most telling thing about a file
+    # (AUTH-003 §21). One query for the page rather than one per card.
+    readable_versions = set(
+        DocumentVersion.objects.filter(
+            pk__in=[s.final_version_id for s in submissions if s.final_version_id],
+            document__in=Document.objects.visible_to(request.user).values("pk"),
+        ).values_list("pk", flat=True)
+    )
+
     for submission in submissions:
+        submission.final_version_readable = submission.final_version_id in readable_versions
         rows = list(submission.recipient_rows.all())
         submission.addressee_list = [
             row.organisation for row in rows if row.role == RecipientRole.ADDRESSEE

@@ -34,6 +34,7 @@ from django.db import models
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
+from app.audit.visibility import scope_change_events
 from app.matters.models import Entry, Matter
 
 #: Events worth a line in the chronology. Field-level noise is deliberately
@@ -208,8 +209,13 @@ def matter_timeline(
     # which operation an entry belongs to — the Entry table carries no such
     # column, because an entry is business content and an operation is an audit
     # fact about how it was written.
+    # Scoped by the child each row is *about*, not only by the Matter it hangs
+    # off. `EVIDENCE_VERSION_ADDED` carries a filename, `NEXT_ACTION_SET` the
+    # step's text — and a restricted document properly hidden from Dokumendid
+    # was still naming itself here, because the row describing it was selected
+    # by the Matter alone (AUTH-003, app/audit/visibility.py).
     events = list(
-        ChangeEvent.objects.filter(matter=matter)
+        scope_change_events(ChangeEvent.objects.filter(matter=matter), user)
         .filter(
             models.Q(event_type__in=TIMELINE_EVENT_TYPES)
             | models.Q(event_type__in=SUPPRESSED_WHEN_ENTRY_SHOWN)

@@ -520,7 +520,15 @@ def test_a_page_of_results_does_not_cost_a_query_per_row(signed_in, django_asser
         matter.policy_areas.add(factories.PolicyAreaFactory())
         indexed(matter)
 
-    with django_assert_max_num_queries(25):
+    # 26 rather than 25 since AUTH-003. The open-action prefetch is scoped now
+    # — a `Järgmiseks` can be restricted below its Matter, and unscoped it
+    # printed a restricted step onto rows anybody could read — which costs one
+    # break-glass lookup for the page.
+    #
+    # Constant, which is the only thing this test is about. Measured at 10, 25
+    # and 60 rows the page issues 26 queries every time: the property is that a
+    # keystroke does not scale with the register, and it still does not.
+    with django_assert_max_num_queries(26):
         response = signed_in.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik"})
     assert total_of(response) == 25
 
