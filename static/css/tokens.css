@@ -73,6 +73,38 @@
   --spacing-8: 2rem;
   --spacing-10: 2.5rem;
 
+  /* ---- layout: the shell spans the viewport, the workspace does not ---
+   *
+   * There is no width at which more pixels keep making a work surface better.
+   * Past about 1600px a list row stops being a row somebody reads and becomes
+   * a line their eye has to traverse: on a 3440px monitor the Ülevaade
+   * intervention rows put the title at the left edge and the stage and owner
+   * that qualify it 2800px away, with the facts rail off against the bezel.
+   * Nothing was stretching incorrectly — the full-bleed work surfaces were
+   * simply given the whole viewport, and the viewport got bigger than the
+   * design.
+   *
+   * So the shell keeps the viewport and the workspace does not. `--layout-
+   * gutter` is the shell's own horizontal padding, named rather than repeated,
+   * because the full-bleed pages pull themselves back out by exactly that
+   * amount and the two numbers must not drift. `--layout-workspace-content` is
+   * what a centred page gets inside the gutters; it is derived rather than
+   * written down for the same reason.
+   *
+   * 1600px was tuned against the pages, not borrowed. At it, an Ülevaade
+   * intervention row sweeps 1196px from its date to its owner — against
+   * 1036px at the design's 1440px primary viewport, and 3036px unbounded on a
+   * 3440px monitor — and the flexible title cell is 754px rather than 594px,
+   * so an ultrawide screen is still better than 1440 and no longer worse.
+   * 1500 was tried and squeezes the Seis strip back onto one crowded line;
+   * 1650 reopens a visible gap between a row's title and the stage and owner
+   * that qualify it. Below 1600 nothing changes at all: every width in the
+   * supported desktop ladder up to 1440 renders exactly as it did.
+   */
+  --layout-gutter: var(--spacing-8);
+  --layout-workspace-max: 1600px;
+  --layout-workspace-content: calc(var(--layout-workspace-max) - var(--layout-gutter) * 2);
+
   /* ---- radius: never pill except avatars --------------------------- */
   --radius-chip: 3px;
   --radius-sm: 4px;

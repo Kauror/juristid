@@ -400,6 +400,47 @@ def test_my_work(page, base_url):
     compare("minu-too", capture(page, "minu-too"))
 
 
+# ---- Ultrawide -----------------------------------------------------------
+#
+# The four above are taken at 1440, the design's primary viewport, and 1440 is
+# exactly where the workspace bound does nothing: below 1600 every one of them
+# renders as it always did. So none of them can say whether the bound works,
+# and the failure it fixes was only ever visible on a monitor none of them
+# describe — a QA screenshot at 3440 where an Ülevaade row put its title at one
+# bezel and its owner near the other.
+#
+# What these lock is the composition at 3440: a bounded workspace in the middle
+# of the monitor, outer margin either side, the facts rail flush against the
+# content rather than the screen edge. The *relationships* — narrower than the
+# viewport, centred, rail inside the workspace — are assertions and live in
+# `test_ultrawide_workspace.py`, because a baseline approves a broken layout as
+# readily as a correct one. These say the result also looks right.
+#
+# Statistika is here and is not at 1440, which is deliberate: it is the one
+# surface using the centred `.page` container whose content is charts and wide
+# tables rather than rows, so it is the one most likely to reveal a bound that
+# is right for lists and wrong for everything else.
+
+#: The ultrawide the QA round photographed. Height is the ordinary 900: these
+#: are full-page captures, so it sets how much is above the fold and nothing
+#: else.
+ULTRAWIDE = {"width": 3440, "height": 900}
+
+
+@pytest.mark.parametrize(
+    "name,path",
+    [
+        ("ulevaade-3440", "/ulevaade/"),
+        ("minu-too-3440", "/minu-too/"),
+        ("teemad-3440", "/teemad/"),
+        ("statistika-3440", "/statistika/"),
+    ],
+)
+def test_the_bounded_workspace_at_3440(page, base_url, name, path):
+    signed_in(page, base_url, path, width=ULTRAWIDE["width"], height=ULTRAWIDE["height"])
+    compare(name, capture(page, name))
+
+
 # ---- Vali kasutaja -------------------------------------------------------
 #
 # These six run against the *shared-gate* server, because the persona switcher
