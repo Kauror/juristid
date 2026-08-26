@@ -1,7 +1,7 @@
 """One rule for who currently does the department's work.
 
 `app/accounts/selectors.py` answers two questions that were separate rules until
-docs/adr/0035: *whose work is this application showing* (the persona list) and
+docs/adr/0036: *whose work is this application showing* (the persona list) and
 *who may current business work be given to* (every owner and responsible
 control). They are the same question about the same account, and this suite
 asserts the single definition rather than either of its consumers — the persona
@@ -247,7 +247,7 @@ def test_the_assignment_predicate_is_the_base_predicate():
 def test_the_persona_list_is_the_same_population_as_the_assignment_list():
     """The defect this branch exists to close, asserted as one line.
 
-    Before docs/adr/0035 the persona list was narrowed and the ownership
+    Before docs/adr/0036 the persona list was narrowed and the ownership
     controls were not, so an account that had just been refused as a persona
     was still one dropdown away from owning a file.
     """

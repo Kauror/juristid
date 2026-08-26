@@ -14,9 +14,12 @@ rule rather than two that happen to agree today:
 shared door (docs/adr/0034).
 
 **Who may current business work be given to?** — the Vastutaja on a new Teema,
-the Vastutaja on an existing one, the owner on `Saabunud`, the person a
-`Järgmiseks` step is set for, and the filters that offer *current department
-workers* as a choice (docs/adr/0035).
+the Vastutaja on an existing one, the owner on `Saabunud`, and the person a
+`Järgmiseks` step is set for (docs/adr/0036).
+
+A third question that is *not* this one, and is answered a few sections down:
+**whose name does the stored work carry?** The `Vastutaja` filters on Teemad and
+Statistika ask that, not this — see `owner_filter_choices`.
 
 Before those were joined, the persona list was narrowed and the ownership
 controls were not, so an account that had just been refused as a persona was
@@ -56,6 +59,7 @@ about new work only, which is what `assignable_including` exists to keep true.
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from django.db.models import Q, QuerySet
 
@@ -208,6 +212,48 @@ def assignable_including(*bound: object) -> QuerySet[User]:
     # ordered subquery inside `IN (…)` sorts a set nobody reads.
     return User.objects.filter(
         Q(pk__in=department_workers().order_by().values("pk")) | Q(pk__in=kept)
+    ).order_by("display_name")
+
+
+# ---------------------------------------------------------------------------
+# Filtering — who the stored records actually name
+# ---------------------------------------------------------------------------
+
+
+def owner_filter_choices(population: QuerySet[Any]) -> QuerySet[User]:
+    """The people a `Vastutaja` **filter** should offer, for one authorized set.
+
+    A chooser and a filter are not the same control wearing two labels. A
+    chooser hands out work, so it offers the people work may be given to. A
+    filter describes work that already exists, so it has to offer the people the
+    records *name* — and a register whose filter cannot reach a departed
+    colleague's seventeen unhandled files is a register that hides exactly the
+    work somebody is looking for. Narrowing the chooser was the point of
+    `assignable_business_users`; narrowing the filter with it was a mistake that
+    read as tidiness.
+
+    So: today's department workers — who belong on the list whether or not they
+    currently hold anything, because filtering to a colleague and getting an
+    honest empty page is a useful answer — union the people who genuinely own
+    something in ``population``.
+
+    **``population`` is the authorization boundary, and it is the caller's job.**
+    Never `User.objects.all()`, never every owner in the database: an option is
+    a name on a page, and a name that appears only because of records this
+    reader may not see tells them that a colleague, a file and a working
+    relationship exist. The caller passes the queryset its own surface is
+    allowed to show — `Matter.objects.visible_to(viewer)` for the register, the
+    same narrowed by `real_data()` for the reports — and passes it *before* its
+    own owner filter, so choosing a name does not collapse the list to that one
+    name and strand the reader with no way back.
+
+    ``order_by()`` on the subqueries deliberately: both sides are ordered for
+    presentation, and an ORDER BY inside `IN (…)` sorts a set nobody reads while
+    dragging its sort columns into the SELECT.
+    """
+    represented = population.order_by().exclude(owner_id=None).values("owner_id")
+    return User.objects.filter(
+        Q(pk__in=department_workers().order_by().values("pk")) | Q(pk__in=represented)
     ).order_by("display_name")
 
 

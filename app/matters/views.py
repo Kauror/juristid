@@ -30,7 +30,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
-from app.accounts.selectors import assignable_including
+from app.accounts.selectors import assignable_including, owner_filter_choices
 from app.core.authorization import may_review_work_victory, may_write_business_content
 from app.core.dates import format_estonian_date, parse_flexible_date
 from app.core.decorators import gate_required, viewer_for
@@ -104,7 +104,7 @@ from app.workflow.services import (
     acknowledge_review,
     complete_next_action,
     current_next_action,
-    set_next_action,
+    set_next_action_for_new_work,
 )
 
 PAGE_SIZE = 25
@@ -717,14 +717,19 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         return render(request, "matters/partials/register_results.html", context)
 
     context |= {
-        # The current department workers, plus whoever this URL is already
-        # filtered by. The narrowing is what the control means — `Vastutaja`
-        # offers the people work can be given to, not every account that can
-        # sign in — and the union is what keeps an existing link honest: a
-        # filter on a departed colleague must go on naming them in the select
-        # it is selected in, or the page shows `Kõik` while filtering by
-        # somebody (app/accounts/selectors.py, docs/adr/0035).
-        "owners": assignable_including(_named_by_pk(User, params.get("vastutaja", ""))),
+        # A filter, not a chooser. `Vastutaja` here describes stored work, so
+        # it offers the current department workers *and* everybody who actually
+        # owns something in this register — a colleague who left with seventeen
+        # files still open is precisely who somebody comes to this control
+        # looking for, and the earlier narrowing left them reachable only by
+        # typing a UUID into the address bar.
+        #
+        # Bounded by `visible_to`, and by that alone: the option list must not
+        # name somebody who appears only on Matters this reader may not open.
+        # Read before the register's own `vastutaja` filter, so selecting a name
+        # does not reduce the select to that one name
+        # (app/accounts/selectors.py `owner_filter_choices`, docs/adr/0036).
+        "owners": owner_filter_choices(Matter.objects.visible_to(request.user)),
         "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "tracks": Track.choices,
         # The governed vocabulary, so the register's filter offers exactly what
@@ -921,7 +926,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # fallback to `matter.owner` has nothing to fall back to. Handed
                 # in explicitly, and only as a default: an explicit choice in
                 # the action form still wins (app/matters/forms.py).
-                set_next_action(
+                set_next_action_for_new_work(
                     matter=matter,
                     actor=request.user,
                     **action_form.as_service_kwargs(default_responsible=data.get("owner")),
@@ -1507,7 +1512,7 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
         return render(request, "matters/partials/overview.html", context, status=400)
 
     try:
-        set_next_action(matter=matter, actor=request.user, **form.as_service_kwargs())
+        set_next_action_for_new_work(matter=matter, actor=request.user, **form.as_service_kwargs())
     except DomainError as error:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))

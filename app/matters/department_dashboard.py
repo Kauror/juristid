@@ -89,7 +89,7 @@ INCOMING_LIMIT = 15
 #: — keeps their row and their open work stays visible. The assignment rule is
 #: stricter on purpose (it also refuses `is_staff` and `is_superuser`), and
 #: adopting it here would take live work off the page that finds it
-#: (docs/adr/0035 §"What this does not change").
+#: (docs/adr/0036 §"What this does not change").
 CASEWORK_ROLES: tuple[str, ...] = (
     UserRole.SPECIALIST.value,
     UserRole.DEPARTMENT_HEAD.value,

@@ -179,7 +179,7 @@ def test_an_inactive_person_is_not_offered_as_a_current_owner() -> None:
     every active account. It is now the department-worker rule the persona list
     also reads, which is a strictly narrower population: an inactive colleague
     was excluded before and is excluded now, and this case goes on saying so
-    (app/accounts/selectors.py, docs/adr/0035).
+    (app/accounts/selectors.py, docs/adr/0036).
     """
     from app.accounts.selectors import assignable_business_users
 

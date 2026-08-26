@@ -162,7 +162,7 @@ def test_no_name_or_address_is_written_into_the_rule():
     # Every function in the module, not the three the persona flow calls. The
     # rule now lives one level down in `department_workers` and the persona
     # entry points delegate to it, so a tuple naming only the delegates would
-    # have stopped reading the code that decides anything (docs/adr/0035).
+    # have stopped reading the code that decides anything (docs/adr/0036).
     for name in functions:
         node = functions[name]
         # Prose is allowed to name a colleague; a filter is not. The docstring
@@ -196,7 +196,7 @@ def test_the_persona_roles_are_the_department_work_roles_themselves():
 
     The persona list and the assignment controls read the same rule, and this
     is the assertion that they cannot be given different role sets by an edit
-    that only looks like a rename (docs/adr/0035).
+    that only looks like a rename (docs/adr/0036).
     """
     from app.accounts.selectors import DEPARTMENT_WORK_ROLES
 

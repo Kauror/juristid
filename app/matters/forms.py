@@ -124,7 +124,7 @@ def assignable_users() -> Any:
     It replaces an `is_active=True` filter over the whole user table. Being able
     to sign in is not the same thing as doing the department's work — the
     administrator account could not be *become*, but could still be handed a
-    file — and the two answers are now the one answer (docs/adr/0035).
+    file — and the two answers are now the one answer (docs/adr/0036).
 
     For a form editing a record that already names somebody, use
     `assignable_including(...)` instead: this list is about new work, and an
@@ -901,11 +901,15 @@ class NextActionForm(forms.Form):
         # endpoint accepted any signed-in account's identifier. New work only,
         # so no union: an existing step is superseded and replaced rather than
         # edited, and the person named on the replacement is a new assignment
-        # (app/workflow/services.py `set_next_action`, docs/adr/0035).
+        # (app/workflow/services.py `set_next_action_for_new_work`, ADR 0036).
         #
-        # Leaving it blank still means *the Matter owner*, unchanged — including
-        # when that owner is a departed colleague. That is the record saying who
-        # has the file, not somebody choosing them today.
+        # Leaving it blank still means *the Matter owner* — but only while that
+        # owner is somebody the department still gives work to. The native
+        # service refuses the rest rather than filing a new step in a departed
+        # colleague's queue; the wording is in `responsible_for_new_work`, and
+        # the reason it is enforced there rather than here is that the composer
+        # reaches the same fallback without going through this form at all
+        # (ADR 0036 §5).
         set_choices(self, "responsible", assignable_users())
 
     def clean(self) -> dict[str, Any]:
@@ -1519,7 +1523,7 @@ class MatterFieldForm(forms.Form):
         # owner is no longer a department worker: the current workers plus that
         # one person, so re-submitting the value already on the record is a
         # save and naming any *other* non-assignable account is a refusal
-        # (app/accounts/selectors.py, docs/adr/0035).
+        # (app/accounts/selectors.py, docs/adr/0036).
         set_choices(self, "owner", assignable_including(matter.owner if matter else None))
         set_choices(self, "stage", active_stages())
         set_choices(self, "source_organisations", Organisation.objects.order_by("name"))

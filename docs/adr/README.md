@@ -72,3 +72,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0033 — Ülevaade drill-down parity: a number opens a list of its own kind, `?too=` makes the dated-work populations addressable, and "Ootab pahavarakontrolli" stops telling readers their archive might be infected
 - 0034 — who may be offered as a persona: one role-based population read by both the page and the endpoint, technical accounts excluded, and a top-bar switcher that keeps the page somebody was reading
 - 0035 — the bounded workspace: the shell keeps the viewport, the working surface stops at 1600px and centres, and one token says so for every page
+- 0036 — who current business work may be assigned to: one role-based rule behind persona and assignment, a separate native entry point so a new step never lands in a departed colleague's queue, and filters that describe stored work instead of narrowing to who may be given it

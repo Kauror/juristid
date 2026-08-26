@@ -140,7 +140,34 @@ def test_saving_the_header_owner_unchanged_is_a_save_and_not_a_refusal(page, bas
 # ---------------------------------------------------------------------------
 
 
+def test_a_new_step_on_a_departed_colleagues_matter_is_refused_on_the_page(page, base_url):
+    """Correction 1, where a person actually meets it.
+
+    The composer carries no Vastutaja control, so this Matter's next step would
+    have defaulted to the colleague who left — into the one queue nobody opens.
+    The refusal has to be visible and it has to say what can be done about it,
+    which is a sentence about the Teema's owner and not about the step.
+    """
+    sign_in(page, base_url, MARTIN)
+    _open_matter(page, base_url, FORMER_OWNER_TITLE)
+
+    page.locator(".composer__body").fill("Ootan ministeeriumi vastust.")
+    page.locator("#next_kind_WAIT").check(force=True)
+    page.locator("[data-composer-submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    expect(page.get_by_text("ei ole enam aktiivne osakonna töötaja")).to_be_visible()
+
+
 def test_the_register_filter_offers_the_department_and_not_the_administrator(page, base_url):
+    """And the departed colleague, on the bare register, with no filter applied.
+
+    `Vastutaja` here describes stored work rather than handing any out, so the
+    list is the department plus whoever actually owns something in it. The
+    seeded former colleague owns an open Matter, so they belong on it; the
+    administrator owns nothing, so existing as an account does not put them
+    there. That pair is the whole distinction, read off one rendered select.
+    """
     sign_in(page, base_url, MARTIN)
     page.goto(f"{base_url}/teemad/")
     page.wait_for_load_state("networkidle")
@@ -151,6 +178,7 @@ def test_the_register_filter_offers_the_department_and_not_the_administrator(pag
     assert SANDRA.short_name in options
     assert HEAD.short_name in options
     assert ADMIN.short_name not in options
+    assert any(FORMER_NAME.split()[0] in option for option in options), options
 
 
 def test_a_register_filtered_on_a_departed_colleague_still_finds_their_work(page, base_url):
