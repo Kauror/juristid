@@ -45,7 +45,10 @@ from app.matters.models import (
 )
 from app.workflow.enums import ActionStatus, Disposition, Track
 from app.workflow.models import NextAction
-from app.workflow.services import end_open_action_for_closure, set_next_action
+from app.workflow.services import (
+    end_open_action_for_closure,
+    set_next_action_for_new_work,
+)
 
 #: Distinguishes "leave this field alone" from "set this field to None".
 _UNSET: Any = object()
@@ -1730,7 +1733,11 @@ def compose_update(
             result.engagement = add_engagement(matter=matter, actor=author, **engagement)
 
         if next_action:
-            result.action = set_next_action(matter=matter, actor=author, **next_action)
+            # The composer is a person typing, so the *new work* boundary: a
+            # step nobody named a person for goes to the Matter's owner only
+            # while that owner is still somebody the department gives work to
+            # (app/workflow/services.py `responsible_for_new_work`, ADR 0036).
+            result.action = set_next_action_for_new_work(matter=matter, actor=author, **next_action)
 
         if closure:
             _apply_closure(matter=matter, author=author, result=result, closure=closure)

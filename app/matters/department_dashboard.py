@@ -81,6 +81,15 @@ INCOMING_LIMIT = 15
 #: with nothing open. A READER reads and an ADMINISTRATOR administers; neither
 #: carries files, and listing them with a row of zeroes would suggest they
 #: should.
+#:
+#: Deliberately *not* `app.accounts.selectors.DEPARTMENT_WORK_ROLES`, despite
+#: naming the same two roles. This is a report population, not a chooser: the
+#: query below unions it with everybody who currently owns something, so a
+#: departed colleague — or a technical account that was handed a file years ago
+#: — keeps their row and their open work stays visible. The assignment rule is
+#: stricter on purpose (it also refuses `is_staff` and `is_superuser`), and
+#: adopting it here would take live work off the page that finds it
+#: (docs/adr/0036 §"What this does not change").
 CASEWORK_ROLES: tuple[str, ...] = (
     UserRole.SPECIALIST.value,
     UserRole.DEPARTMENT_HEAD.value,

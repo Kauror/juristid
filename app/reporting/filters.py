@@ -19,9 +19,11 @@ from dataclasses import dataclass
 from urllib.parse import urlencode
 
 from app.accounts.models import User
+from app.accounts.selectors import owner_filter_choices
 from app.matters.enums import MatterOrigin, RecordMode
 from app.reporting import context as ctx
 from app.reporting.context import ReportingContext
+from app.reporting.selectors.base import reporting_population
 from app.reporting.selectors.historical import visible_pages
 from app.taxonomy.models import PolicyArea, Tag
 from app.taxonomy.vocabulary import selectable_policy_areas
@@ -197,7 +199,17 @@ def options(context: ReportingContext, tab: str) -> dict[str, object]:
     payload: dict[str, object] = {
         "record_modes": RecordMode.choices,
         "origins": MatterOrigin.choices,
-        "owners": User.objects.filter(is_active=True).order_by("display_name"),
+        # A filter, not a chooser. The current department workers, plus every
+        # owner genuinely represented in the population this report is built
+        # from — which is how a departed colleague whose year this is stays
+        # reachable, and how they stay reachable from the select rather than
+        # only from a URL somebody would have to already know. Derived from
+        # `reporting_population`, so the option list is bounded by what this
+        # viewer may read and by nothing else: an owner who appears only on
+        # restricted or development records is not named here. Read before the
+        # context's own owner filter, or choosing a name would collapse the list
+        # to that name (app/accounts/selectors.py, docs/adr/0036).
+        "owners": owner_filter_choices(reporting_population(context)),
         # The governed vocabulary, read from the one function that answers
         # "which Valdkonnad may somebody choose today" — including its reviewed
         # order. Assembled here independently, this filter drifted from Uus

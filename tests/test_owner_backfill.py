@@ -171,16 +171,22 @@ def test_an_inactive_person_is_not_offered_as_a_current_owner() -> None:
     departed colleague could become an owner at all, so nothing tested that
     they stay out of the controls for handing out *new* work.
 
-    Asserted against ``active_users()`` — the selector every owner control is
-    built from — rather than against one form, because the rule belongs to
-    this stage and which widget renders it belongs to another.
+    Asserted against ``assignable_business_users()`` — the one selector every
+    owner control is built from — rather than against one form, because the
+    rule belongs to this stage and which widget renders it belongs to another.
+
+    That selector used to be ``app.matters.forms.active_users``, which offered
+    every active account. It is now the department-worker rule the persona list
+    also reads, which is a strictly narrower population: an inactive colleague
+    was excluded before and is excluded now, and this case goes on saying so
+    (app/accounts/selectors.py, docs/adr/0036).
     """
-    from app.matters.forms import active_users
+    from app.accounts.selectors import assignable_business_users
 
     former = factories.UserFactory(display_name="Kadri Endine", is_active=False)
     current = factories.UserFactory(display_name="Ireen Näidis")
 
-    offered = set(active_users())
+    offered = set(assignable_business_users())
     assert current in offered
     assert former not in offered
     # And still resolvable as a historical owner, which is the whole point.

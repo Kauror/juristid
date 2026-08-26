@@ -30,6 +30,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
+from app.accounts.selectors import assignable_including, owner_filter_choices
 from app.core.authorization import may_review_work_victory, may_write_business_content
 from app.core.dates import format_estonian_date, parse_flexible_date
 from app.core.decorators import gate_required, viewer_for
@@ -103,7 +104,7 @@ from app.workflow.services import (
     acknowledge_review,
     complete_next_action,
     current_next_action,
-    set_next_action,
+    set_next_action_for_new_work,
 )
 
 PAGE_SIZE = 25
@@ -716,7 +717,19 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         return render(request, "matters/partials/register_results.html", context)
 
     context |= {
-        "owners": User.objects.filter(is_active=True).order_by("display_name"),
+        # A filter, not a chooser. `Vastutaja` here describes stored work, so
+        # it offers the current department workers *and* everybody who actually
+        # owns something in this register — a colleague who left with seventeen
+        # files still open is precisely who somebody comes to this control
+        # looking for, and the earlier narrowing left them reachable only by
+        # typing a UUID into the address bar.
+        #
+        # Bounded by `visible_to`, and by that alone: the option list must not
+        # name somebody who appears only on Matters this reader may not open.
+        # Read before the register's own `vastutaja` filter, so selecting a name
+        # does not reduce the select to that one name
+        # (app/accounts/selectors.py `owner_filter_choices`, docs/adr/0036).
+        "owners": owner_filter_choices(Matter.objects.visible_to(request.user)),
         "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "tracks": Track.choices,
         # The governed vocabulary, so the register's filter offers exactly what
@@ -913,7 +926,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                 # fallback to `matter.owner` has nothing to fall back to. Handed
                 # in explicitly, and only as a default: an explicit choice in
                 # the action form still wins (app/matters/forms.py).
-                set_next_action(
+                set_next_action_for_new_work(
                     matter=matter,
                     actor=request.user,
                     **action_form.as_service_kwargs(default_responsible=data.get("owner")),
@@ -1134,7 +1147,13 @@ def _header_context(
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
         "dispositions": Disposition.choices,
-        "owners": User.objects.filter(is_active=True).order_by("display_name"),
+        # The inline owner control. Current department workers plus this
+        # Matter's own owner, so a file held by a departed colleague still says
+        # who holds it and can still be handed to somebody who is here — the
+        # same population `MatterFieldForm` validates against, because a select
+        # offering more than the form accepts is a save that fails on submit
+        # (app/accounts/selectors.py).
+        "owners": assignable_including(matter.owner),
         "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "organisations": Organisation.objects.order_by("name"),
         # Resolved once here rather than read off the Matter inside the loop
@@ -1493,7 +1512,7 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
         return render(request, "matters/partials/overview.html", context, status=400)
 
     try:
-        set_next_action(matter=matter, actor=request.user, **form.as_service_kwargs())
+        set_next_action_for_new_work(matter=matter, actor=request.user, **form.as_service_kwargs())
     except DomainError as error:
         context = _overview_context(request, matter)
         context.update(_header_context(request, matter))
@@ -1696,7 +1715,12 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
 
     matter = get_visible_matter(request, pk)
     surface = _FIELD_SURFACES.get(field, "matters/partials/header.html")
-    form = MatterFieldForm(request.POST)
+    # The Matter is handed to the form so the owner field accepts the owner
+    # already on it. The header renders that owner as the selected option, and
+    # without this the control would refuse the value it is displaying: pressing
+    # Salvesta on a Matter held by a departed colleague, having changed nothing,
+    # would answer "Vigane väärtus." (app/matters/forms.py).
+    form = MatterFieldForm(request.POST, matter=matter)
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
@@ -1776,7 +1800,7 @@ def set_data_class(request: HttpRequest, pk: Any) -> HttpResponse:
     (Agent-C brief 18, 22).
     """
     matter = get_visible_matter(request, pk)
-    form = MatterFieldForm(request.POST)
+    form = MatterFieldForm(request.POST, matter=matter)
     # `data_class` is `required=False` on that form, because one POST carries
     # one field. An absent value is refused here rather than defaulted: a
     # malformed request must not quietly make a development record real.

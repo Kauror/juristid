@@ -15,6 +15,7 @@ from django.apps import apps
 from django.db import transaction
 from django.utils import timezone
 
+from app.accounts.selectors import is_assignable_business_user
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
 from app.core.errors import DomainError
@@ -34,6 +35,105 @@ def current_next_action(matter: Any) -> NextAction | None:
         NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN)
         .select_related("responsible")
         .first()
+    )
+
+
+#: Refused when a *new* step would be assigned to somebody the department no
+#: longer gives work to. The remedy is on the Teema, not on the step: the step's
+#: own Vastutaja is not rendered on either native surface, so the only thing the
+#: reader can actually change is who holds the file.
+DEPARTED_OWNER_REFUSAL = (
+    "Teema vastutaja ei ole enam aktiivne osakonna töötaja. "
+    "Määra teemale uus vastutaja, enne kui järgmise sammu salvestad."
+)
+
+#: Refused when a POST names a responsible person outside today's department.
+#: The forms already narrow their querysets, so reaching this means the value
+#: did not come off the page.
+INELIGIBLE_RESPONSIBLE_REFUSAL = "Valitud vastutaja ei ole aktiivne osakonna töötaja."
+
+
+def responsible_for_new_work(*, matter: Any, explicit: Any = None) -> Any:
+    """Who a step a person is creating *right now* may be made responsible for.
+
+    `set_next_action` defaults `responsible` to `matter.owner`, and that default
+    is correct for the caller it was written for: an importer reconstructing a
+    2019 instruction is recording who it belonged to, and the answer is whoever
+    owned the file. It is wrong for the native paths, where nobody is recording
+    a fact — somebody is handing out work today. A Matter whose owner has left
+    would quietly put the new step in a departed colleague's queue, which is the
+    one place nobody looks.
+
+    So the rule is not "never a departed person" — the register still says what
+    it says — it is *new assignments go to current department workers*, and this
+    is where those two meanings are separated. Three answers, and no fourth:
+
+    * an explicit person who is assignable — accepted, unchanged;
+    * nobody named, and the owner is assignable — the owner, which is the
+      convenience the composer was built around and is left exactly as it was;
+    * nobody named, and the owner is not somebody work may be given to —
+      refused, in Estonian, naming the thing the reader can fix.
+
+    Refused rather than repaired. Choosing the department head, the first name
+    on the list or the person pressing the button would all be the system
+    inventing an assignment nobody made, and an invented one is indistinguishable
+    from a deliberate one a week later. Clearing it to nobody is the same
+    failure with a blank where the name should be.
+
+    An unowned Matter is not this case. It has nobody to fall back *to*, the
+    step is stored with no responsible person exactly as it is today, and
+    refusing it would retire behaviour this correction was not asked to change.
+    """
+    if explicit is not None:
+        if not is_assignable_business_user(explicit):
+            raise DomainError(INELIGIBLE_RESPONSIBLE_REFUSAL)
+        return explicit
+
+    owner = getattr(matter, "owner", None)
+    if owner is None:
+        return None
+    if not is_assignable_business_user(owner):
+        raise DomainError(DEPARTED_OWNER_REFUSAL)
+    return owner
+
+
+@transaction.atomic
+def set_next_action_for_new_work(
+    *,
+    matter: Any,
+    text: str,
+    kind: str = ActionKind.DO,
+    date_semantics: str = DateSemantics.DEADLINE,
+    target_date: date | None = None,
+    date_precision: str = DatePrecision.EXACT,
+    source_text: str = "",
+    responsible: Any = None,
+    actor: Any = None,
+) -> NextAction:
+    """`set_next_action`, for the surfaces where a person is creating the step.
+
+    The native boundary, and a separate function rather than a flag on the
+    service. A `bypass=` parameter would put the whole distinction in the hands
+    of whoever writes the next call site, and the reading it needs — *is this
+    somebody assigning work, or something recording what was assigned* — is one
+    the caller knows and the service never can.
+
+    Note the signature: no `provenance`. That keyword exists for the callers
+    that are not a person, and they are exactly the callers that must not come
+    through here. Import, enrichment and the seed commands keep calling
+    `set_next_action` and keep preserving whatever the source says, including a
+    responsible colleague who left years ago.
+    """
+    return set_next_action(
+        matter=matter,
+        text=text,
+        kind=kind,
+        date_semantics=date_semantics,
+        target_date=target_date,
+        date_precision=date_precision,
+        source_text=source_text,
+        responsible=responsible_for_new_work(matter=matter, explicit=responsible),
+        actor=actor,
     )
 
 

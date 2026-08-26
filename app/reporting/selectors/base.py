@@ -83,6 +83,20 @@ def grouped_count_over(path: str) -> Count:
 # ---------------------------------------------------------------------------
 
 
+def reporting_population(context: ReportingContext) -> QuerySet[Matter]:
+    """Everything published statistics may be built from, before any filter.
+
+    The authorization boundary and the real-data boundary, and nothing else —
+    `visible_matters` narrows this by whatever the URL asks for. Split out
+    because one caller needs the population *before* its own dimension is
+    applied: the `Vastutaja` picker asks which owners are represented here, and
+    asking the already-owner-filtered queryset would answer "the one you already
+    chose" and leave no way back (app/accounts/selectors.py
+    `owner_filter_choices`).
+    """
+    return Matter.objects.visible_to(context.viewer).real_data()
+
+
 def visible_matters(context: ReportingContext) -> QuerySet[Matter]:
     """Every Matter this viewer may read, narrowed by the active filters.
 
@@ -110,7 +124,7 @@ def visible_matters(context: ReportingContext) -> QuerySet[Matter]:
     *Kõik* with an explicit *Andmed* filter, because a developer has to be able
     to see the record they just made (docs/adr/0024, Agent-C brief 28, 63).
     """
-    queryset = Matter.objects.visible_to(context.viewer).real_data()
+    queryset = reporting_population(context)
 
     if context.owner_unreadable:
         return queryset.none()
