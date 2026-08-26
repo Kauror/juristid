@@ -327,6 +327,52 @@
       });
     });
 
+    /* Kaasamine: the explicit add action opens the form, not just the section.
+
+       `+ Lisa` sits inside the accordion's own <summary>, where a plain span is
+       nothing but the disclosure's toggle: it opened the section and left the
+       composer shut, so the one control that says "add" still needed a second
+       click before anything could be added (Kaasamine one-click §13).
+
+       The empty state needs none of this. With no records the server renders
+       the form directly in the section body, so a single click on the header is
+       already the whole gesture — and it is the whole gesture with JavaScript
+       switched off too, which is why the fix is not a script that opens things
+       on toggle (Kaasamine one-click §5, §11). */
+    scope.querySelectorAll("[data-engagement-add-trigger]").forEach(function (trigger) {
+      if (!once(trigger, "EngagementAdd")) {
+        return;
+      }
+      trigger.addEventListener("click", function (event) {
+        var section = trigger.closest("details.accordion");
+        if (!section) {
+          return;
+        }
+        /* Both, and both are load-bearing. Without `preventDefault` the
+           summary's own activation runs after this listener and shuts the
+           section this just opened; without `stopPropagation` the document-level
+           listeners on the way up see a click that is not theirs. */
+        event.preventDefault();
+        event.stopPropagation();
+        section.open = true;
+        var composer = section.querySelector("[data-engagement-composer]");
+        if (composer) {
+          composer.open = true;
+        }
+        var form = section.querySelector("form[data-engagement-add]");
+        if (!form) {
+          return;
+        }
+        /* An explicit Add may take the focus; opening the section may not
+           (Kaasamine one-click §14). Not `input` in general: every form here
+           opens with a hidden CSRF token, and it is first in document order. */
+        var field = form.querySelector("select, textarea, input:not([type=hidden])");
+        if (field) {
+          field.focus();
+        }
+      });
+    });
+
     /* The composer's primary button says what the save will actually do. A
        button reading "Salvesta" that closes the file is the one thing a
        destructive-ish action must never look like (Teema redesign §15). */

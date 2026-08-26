@@ -35,6 +35,20 @@ def open_kaasamine(page):
     return section
 
 
+def composer(page):
+    """The `+ Lisa kaasamine` disclosure. Only rendered where records exist."""
+    return page.locator("#kaasamine [data-engagement-composer]")
+
+
+def add_trigger(page):
+    """The header's `+ Lisa`, which opens the section and the form together."""
+    return page.locator("#kaasamine [data-engagement-add-trigger]")
+
+
+def title_box(page):
+    return add_form(page).locator('input[name="title"]')
+
+
 def open_scratch_matter(page, base_url: str) -> None:
     """Sandra's restricted Matter — writable by her, and never screenshotted."""
     page.goto(f"{base_url}/teemad/?olek=koik&q=Konfidentsiaalne")
@@ -48,24 +62,55 @@ def add_form(page):
     return page.locator("#kaasamine form[data-engagement-add]")
 
 
-def test_the_kaasamine_section_is_on_the_matter_page(page, base_url):
+def test_one_click_opens_the_section_and_its_form_when_nothing_is_recorded(page, base_url):
+    """The primary regression. Two clicks used to be needed for the first record.
+
+    Sandra's scratch Matter is written to by the tests below, so this one runs
+    first by file order and is the only place the zero state is reachable —
+    which is exactly why it asserts the click count rather than the end state
+    alone (Kaasamine one-click §18).
+    """
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    section = open_kaasamine(page)
+    section = page.locator("#kaasamine")
     expect(section).to_be_visible()
     expect(section.get_by_role("heading", name="Kaasamine")).to_be_visible()
-    # Collapsed until asked for: the section is read far more often than written.
-    expect(section.get_by_text("+ Lisa kaasamine")).to_be_visible()
-    expect(add_form(page).locator('input[name="title"]')).to_be_hidden()
+    # Collapsed on arrival, and the form with it: the section is read far more
+    # often than written, in this state as in any other.
+    assert section.get_attribute("open") is None
+    assert section.get_attribute("data-engagement-count") == "0"
+    expect(title_box(page)).to_be_hidden()
+
+    section.locator(".accordion__head").click()
+
+    # One click. The section is open and so is the form — and there is no
+    # `+ Lisa kaasamine` step between them to click a second time.
+    assert section.get_attribute("open") is not None
+    expect(title_box(page)).to_be_visible()
+    expect(composer(page)).to_have_count(0)
+    expect(section.get_by_text("+ Lisa kaasamine")).to_have_count(0)
+
+
+def test_the_keyboard_opens_the_empty_section_and_its_form(page, base_url):
+    """Tab to the summary, press Enter, and the form is there (§15)."""
+    sign_in(page, base_url, SANDRA)
+    open_scratch_matter(page, base_url)
+
+    section = page.locator("#kaasamine")
+    section.locator(".accordion__head").focus()
+    page.keyboard.press("Enter")
+
+    assert section.get_attribute("open") is not None
+    expect(title_box(page)).to_be_visible()
 
 
 def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    open_kaasamine(page).get_by_text("+ Lisa kaasamine").click()
-    expect(add_form(page).locator('input[name="title"]')).to_be_visible()
+    open_kaasamine(page)
+    expect(title_box(page)).to_be_visible()
 
     # The three approved options. `WEB_CALL` is still a valid stored value and
     # every historical row carrying it still reads; the creation control does
@@ -111,7 +156,8 @@ def test_an_engagement_link_never_opens_without_noopener(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    open_kaasamine(page).get_by_text("+ Lisa kaasamine").click()
+    add_trigger(page).click()
+    expect(title_box(page)).to_be_visible()
     add_form(page).locator('input[name="title"]').fill("Väline küsitlus")
     add_form(page).locator('input[name="url"]').fill("https://survey.example.invalid/s/1")
     add_form(page).get_by_role("button", name="Lisa kaasamine").click()
@@ -121,3 +167,129 @@ def test_an_engagement_link_never_opens_without_noopener(page, base_url):
     expect(link).to_have_attribute("rel", re.compile("noopener"))
     expect(link).to_have_attribute("rel", re.compile("noreferrer"))
     expect(link).to_have_attribute("target", "_blank")
+
+
+# ---------------------------------------------------------------------------
+# With records on the section
+#
+# The scratch Matter starts empty and the tests above fill it, so these make
+# sure of a record themselves rather than depending on the file's order. A
+# browser test that only passes as part of a full run is a browser test nobody
+# can reproduce while fixing it.
+# ---------------------------------------------------------------------------
+
+
+def with_one_record(page, base_url: str):
+    """Open the scratch Matter, having made sure it holds at least one row."""
+    open_scratch_matter(page, base_url)
+    section = page.locator("#kaasamine")
+    if section.get_attribute("data-engagement-count") != "0":
+        return section
+
+    open_kaasamine(page)
+    title_box(page).fill("Olemasolev kaasamiskutse")
+    add_form(page).get_by_role("button", name="Lisa kaasamine").click()
+    expect(page.locator("#kaasamine .factrow").first).to_be_visible()
+    open_scratch_matter(page, base_url)
+    return page.locator("#kaasamine")
+
+
+def test_a_section_with_records_opens_onto_the_records_and_not_the_form(page, base_url):
+    """The records are what the reader opened the section for (§19)."""
+    sign_in(page, base_url, SANDRA)
+    section = with_one_record(page, base_url)
+
+    assert section.get_attribute("open") is None
+    expect(title_box(page)).to_be_hidden()
+
+    section.locator(".accordion__head").click()
+
+    assert section.get_attribute("open") is not None
+    expect(section.locator(".factrow").first).to_be_visible()
+    # Here, and shut. Nothing auto-opens once there is something to read.
+    expect(composer(page)).to_have_count(1)
+    expect(title_box(page)).to_be_hidden()
+
+    section.get_by_text("+ Lisa kaasamine").click()
+    expect(title_box(page)).to_be_visible()
+
+
+def test_the_header_add_action_opens_the_section_and_the_form_together(page, base_url):
+    """One action, from collapsed, with records present (§20).
+
+    A span in the summary was only the disclosure's toggle: it opened the
+    section and left the composer shut, so `+ Lisa` — the one control that says
+    "add" — needed a second click before anything could be added.
+    """
+    sign_in(page, base_url, SANDRA)
+    section = with_one_record(page, base_url)
+    assert section.get_attribute("open") is None
+
+    add_trigger(page).click()
+
+    assert section.get_attribute("open") is not None
+    expect(title_box(page)).to_be_visible()
+    # An explicit Add may take the focus; opening the section may not (§14).
+    expect(add_form(page).locator('select[name="kind"]')).to_be_focused()
+
+
+def test_the_header_add_action_is_operable_from_the_keyboard(page, base_url):
+    """Reachable by Tab, and Enter on it does not toggle the section shut (§15)."""
+    sign_in(page, base_url, SANDRA)
+    section = with_one_record(page, base_url)
+
+    add_trigger(page).focus()
+    expect(add_trigger(page)).to_be_focused()
+    page.keyboard.press("Enter")
+
+    assert section.get_attribute("open") is not None
+    expect(title_box(page)).to_be_visible()
+
+
+def test_a_saved_record_stays_visible_and_the_composer_closes(page, base_url):
+    """The reader must see what they just made, not an emptied form (§21)."""
+    sign_in(page, base_url, SANDRA)
+    section = with_one_record(page, base_url)
+    add_trigger(page).click()
+
+    title_box(page).fill("Teine kaasamiskutse")
+    add_form(page).get_by_role("button", name="Lisa kaasamine").click()
+
+    # Any row, not the first one. The list is newest-dated-first and an undated
+    # record sorts below every dated one, so `.first` asserted the ordering
+    # rather than the save — and reported a save that had in fact happened as a
+    # record that never arrived.
+    expect(
+        page.locator("#kaasamine .factrow").get_by_text("Teine kaasamiskutse", exact=True)
+    ).to_be_visible()
+    assert section.get_attribute("open") is not None
+    expect(composer(page)).to_have_count(1)
+    expect(title_box(page)).to_be_hidden()
+
+    # And another one can be added straight away.
+    add_trigger(page).click()
+    expect(title_box(page)).to_be_visible()
+    expect(title_box(page)).to_have_value("")
+
+
+def test_a_refused_save_keeps_both_open_with_the_reason_and_the_values(page, base_url):
+    """Never make somebody reopen a disclosure to find out why a save failed (§22).
+
+    The date, because it is the one field the browser will not police on its way
+    out: `required` stops an empty title in the browser, so a server refusal a
+    person can actually reach is an unreadable date.
+    """
+    sign_in(page, base_url, SANDRA)
+    section = with_one_record(page, base_url)
+    add_trigger(page).click()
+
+    title_box(page).fill("Vigane kuupäev")
+    add_form(page).locator('input[name="occurred_on"]').fill("32.13.2026")
+    add_form(page).get_by_role("button", name="Lisa kaasamine").click()
+
+    expect(add_form(page).locator(".field__error")).to_be_visible()
+    assert section.get_attribute("open") is not None
+    assert composer(page).get_attribute("open") is not None
+    expect(title_box(page)).to_be_visible()
+    expect(title_box(page)).to_have_value("Vigane kuupäev")
+    expect(add_form(page).locator('input[name="occurred_on"]')).to_have_value("32.13.2026")

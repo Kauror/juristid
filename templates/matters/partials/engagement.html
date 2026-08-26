@@ -10,6 +10,10 @@ engagement was rather than a heading over an empty list. A Matter nobody has
 consulted anybody about costs one quiet line with an add control on it — not a
 labelled section announcing an absence (Teema redesign §6, §24).
 
+The section is collapsed on arrival in both states. What differs is what opening
+it shows: with records, the records; with none, the add form itself. Nothing is
+auto-opened at page load either way (Kaasamine one-click §8).
+
 There is no delete: a wrong row is corrected.
 
 **No response count.** The mockup's collapsed line reads "47 vastajat", and
@@ -19,6 +23,7 @@ sentence, so the line shows the type and the date instead — which the model do
 know (Teema redesign §14.2).
 {% endcomment %}
 <details class="accordion" id="kaasamine"
+         data-engagement-count="{{ engagement_count }}"
          {% if engagement_open %}open{% endif %}>
   <summary class="accordion__head">
     <span class="accordion__caret" aria-hidden="true"></span>
@@ -34,7 +39,17 @@ know (Teema redesign §14.2).
       <span class="accordion__summary accordion__summary--empty">Kaasamist ei ole kirja pandud</span>
     {% endif %}
     <span class="accordion__spacer"></span>
-    {% if can_write %}<span class="accordion__action">+ Lisa</span>{% endif %}
+    {% comment %}
+      A real button, not a span. Inside the summary a span is only the
+      disclosure's own toggle, so `+ Lisa` on a section with records opened the
+      section and left the composer shut — the explicit add action asking for a
+      second click to add anything. The button takes the click, cancels the
+      toggle it would otherwise cause, and opens both (Kaasamine one-click §13).
+    {% endcomment %}
+    {% if can_write %}
+      <button class="accordion__action" type="button"
+              data-engagement-add-trigger>+ Lisa</button>
+    {% endif %}
   </summary>
 
   <div class="accordion__body">
@@ -44,7 +59,15 @@ know (Teema redesign §14.2).
 
     {% if engagements %}
       <ul class="factlist factlist--compact">
-        {% for record in engagements %}
+        {% comment %}
+          Rows, not records: the second half of each pair says whether *this*
+          row is the one a refused save came from. One bound form is shared by
+          the add form and every edit form, so the row's disclosure and the
+          fields inside it have to agree about that — and a comparison written
+          twice in a template is two places for them to stop agreeing. The view
+          decides it once (Kaasamine one-click §7).
+        {% endcomment %}
+        {% for record, is_editing in engagement_rows %}
           <li class="factrow">
             <span class="factrow__body">
               <span class="factrow__kind">{{ record.get_kind_display }}</span>
@@ -77,14 +100,14 @@ know (Teema redesign §14.2).
             {% if can_write %}
               <span class="factrow__actions">
                 <details class="disclosure disclosure--inline"
-                         {% if engagement_editing == record.pk %}open{% endif %}>
+                         {% if is_editing %}open{% endif %}>
                   <summary class="disclosure__summary">Muuda</summary>
                   <div class="disclosure__body">
                     <form class="stackform"
                           hx-post="{% url 'matters:update_engagement' pk=matter.pk engagement_id=record.pk %}"
                           hx-target="#teema-vaade" hx-swap="outerHTML">
                       {% csrf_token %}
-                      {% include "matters/partials/engagement_fields.html" with form=engagement_form record=record %}
+                      {% include "matters/partials/engagement_fields.html" with form=engagement_form record=record bound_values=is_editing %}
                       <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
                     </form>
                   </div>
@@ -96,25 +119,33 @@ know (Teema redesign §14.2).
       </ul>
     {% endif %}
 
+    {% comment %}
+      Two shapes of the same form, and which one renders is decided by whether
+      there is anything to read here.
+
+      With records, the records are what the reader opened the section for and
+      the composer waits behind its own control. With none, the composer *is*
+      the section: the first click on `KAASAMINE` already said what the reader
+      came to do, so there is nothing left for a `+ Lisa kaasamine` row to add
+      (Kaasamine one-click §3A, §5).
+
+      `engagement_add_open` rather than the error text: a field error — an empty
+      title, an unreadable date — leaves `engagement_error` empty, and the
+      disclosure that keyed on it folded the explanation shut on exactly the
+      saves that needed explaining (Kaasamine one-click §7).
+    {% endcomment %}
     {% if can_write %}
-      <details class="disclosure disclosure--inline"
-               {% if engagement_error and not engagement_editing %}open{% endif %}>
-        <summary class="disclosure__summary">+ Lisa kaasamine</summary>
-        <div class="disclosure__body">
-          {% comment %}
-            `data-engagement-add` distinguishes this from a row's edit form: both
-            carry the same five field names, and a browser test that located
-            `input[name="title"]` without it would match every row on the page.
-          {% endcomment %}
-          <form class="stackform" data-engagement-add
-                hx-post="{% url 'matters:add_engagement' pk=matter.pk %}"
-                hx-target="#teema-vaade" hx-swap="outerHTML">
-            {% csrf_token %}
-            {% include "matters/partials/engagement_fields.html" with form=engagement_form record=None %}
-            <button class="button button--quiet button--tiny" type="submit">Lisa kaasamine</button>
-          </form>
-        </div>
-      </details>
+      {% if engagements %}
+        <details class="disclosure disclosure--inline" data-engagement-composer
+                 {% if engagement_add_open %}open{% endif %}>
+          <summary class="disclosure__summary">+ Lisa kaasamine</summary>
+          <div class="disclosure__body">
+            {% include "matters/partials/engagement_add.html" %}
+          </div>
+        </details>
+      {% else %}
+        {% include "matters/partials/engagement_add.html" %}
+      {% endif %}
     {% endif %}
   </div>
 </details>

@@ -6531,6 +6531,35 @@ p.factsection__none {
   flex: none;
 }
 
+/* The Kaasamine header's `+ Lisa` is a real button, because it has to do
+   something the summary's own toggle cannot express: open the section *and* the
+   composer. Reset to the span it replaces, declaration for declaration, so the
+   collapsed row it sits on is unchanged — a control that moves the header by a
+   pixel turns every Teema baseline red for an interaction fix
+   (Kaasamine one-click §13, §16). */
+button.accordion__action {
+  appearance: none;
+  background: none;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: var(--typography-weight-semibold);
+  line-height: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+/* The summary carries its own focus ring and the button sits inside it, so
+   without this a keyboard reader tabbing from the section to its add action
+   sees nothing move. */
+button.accordion__action:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+  border-radius: var(--radius-chip);
+}
+
 .accordion__head:hover .accordion__action {
   color: var(--accent-link);
 }
