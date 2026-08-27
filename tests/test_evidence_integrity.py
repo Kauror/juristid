@@ -507,14 +507,38 @@ def test_the_integrity_checker_names_a_submission_above_its_evidence(
     assert "Tundlik arvamus" not in found[EVIDENCE_LESS_RESTRICTED].detail
 
 
+def _reparent_past_the_backstop(document, matter):
+    """Reach the state the way it could only have been reached before DATA-002.
+
+    A direct write to `documents_document.matter_id` used to be enough; it is
+    refused now (`submissions/migrations/0006`). What the detector is for is the
+    rows written before that trigger existed, so the test has to reach them the
+    same way `_relax_past_the_backstop` does.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        cursor.execute(
+            "ALTER TABLE documents_document DISABLE TRIGGER "
+            "documents_relied_upon_evidence_stays_in_matter"
+        )
+        cursor.execute(
+            "UPDATE documents_document SET matter_id = %s WHERE id = %s",
+            [str(matter.pk), str(document.pk)],
+        )
+        cursor.execute(
+            "ALTER TABLE documents_document ENABLE TRIGGER "
+            "documents_relied_upon_evidence_stays_in_matter"
+        )
+
+
 def test_the_integrity_checker_names_final_evidence_filed_under_another_matter(
     normal_matter, specialist, capture_evidence
 ):
     """The other half of the same rule.
 
-    No service can produce this state and no trigger is reachable from one, but
-    a direct write to `documents_document.matter_id` can, and until now nothing
-    would have said so.
+    No service can produce this state, and since DATA-002 no direct write can
+    either — but rows that reached it before that trigger existed are still out
+    there, and this is what names them.
     """
     from app.documents.integrity import FOREIGN_FINAL_EVIDENCE, check_evidence
 
@@ -523,7 +547,7 @@ def test_the_integrity_checker_names_final_evidence_filed_under_another_matter(
     submission = create_submission(matter=normal_matter, title="Arvamus", actor=specialist)
     select_final_evidence(submission=submission, version=version, actor=specialist)
 
-    Document.objects.filter(pk=document.pk).update(matter=other)
+    _reparent_past_the_backstop(document, other)
 
     report = check_evidence(scan_storage=False)
     assert FOREIGN_FINAL_EVIDENCE in {finding.kind for finding in report.findings}

@@ -20,6 +20,10 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
 from app.documents.services import add_evidence_version, create_document
+from app.matters.locks import (
+    lock_matter_for_evidence_integrity,
+    lock_submission_for_evidence_integrity,
+)
 from app.search.indexing import reindex_submission
 from app.submissions.enums import RecipientRole, SubmissionKind, SubmissionStatus
 from app.submissions.models import (
@@ -89,14 +93,12 @@ def create_submission(
     return submission
 
 
-def _effective(record: Any) -> str:
-    """The visibility that actually applies, derived not stored."""
-    return most_restrictive(
-        record.matter.visibility, record.visibility_override or Visibility.NORMAL
-    )
-
-
-def check_evidence_is_usable(*, submission: Submission, version: DocumentVersion) -> None:
+def check_evidence_is_usable(
+    *,
+    submission: Submission,
+    version: DocumentVersion,
+    matter_visibility: str | None = None,
+) -> None:
     """The two rules that make a piece of evidence usable as a final text.
 
     Both are checked wherever evidence is attached, selected or sent, and both
@@ -108,16 +110,51 @@ def check_evidence_is_usable(*, submission: Submission, version: DocumentVersion
        whose final text sits on a normal document would be readable, and
        downloadable, by people who cannot see the submission itself — the
        restriction would be cosmetic.
+
+    Rule 1 holds first, so by the time rule 2 is compared both records sit in
+    the same Matter and one visibility governs both sides of it. That is the
+    value ``matter_visibility`` names, and callers holding the Matter's row lock
+    pass the locked row's own column rather than letting this reach through a
+    related-object cache that was populated before they waited for that lock
+    (app/matters/locks.py). Omitted, it is read from the submission, which is
+    what the callers with nothing to serialise against still want.
     """
     document = version.document
     if document.matter_id != submission.matter_id:
         raise DomainError("Tõend peab kuuluma sama teema juurde.")
 
-    if most_restrictive(_effective(document), _effective(submission)) != _effective(document):
+    if matter_visibility is None:
+        matter_visibility = submission.matter.visibility
+
+    evidence_effective = most_restrictive(
+        matter_visibility, document.visibility_override or Visibility.NORMAL
+    )
+    submission_effective = most_restrictive(
+        matter_visibility, submission.visibility_override or Visibility.NORMAL
+    )
+    if most_restrictive(evidence_effective, submission_effective) != evidence_effective:
         raise DomainError(
             "Lõplik tõend ei tohi olla vähem piiratud kui arvamus ise. "
             "Piira dokumenti või loo tõend arvamuse piiranguga."
         )
+
+
+def _evidence_under_document_lock(version: DocumentVersion) -> DocumentVersion:
+    """Re-read an evidence version with its Document row locked.
+
+    Third and last step of the lock order (app/matters/locks.py). It is
+    load-bearing rather than defensive: without it a reparent of the Document
+    and a bind of one of its versions are two writers touching two different
+    rows, so both can pass their own check against a snapshot predating the
+    other and both commit — the same write skew one level down from the Matter.
+    Holding this row makes the reparent wait, and PostgreSQL re-fires its
+    `BEFORE UPDATE` trigger once it wakes, against a database that now contains
+    the pointer.
+    """
+    document = Document.objects.select_for_update(no_key=True).get(pk=version.document_id)
+    version = DocumentVersion.objects.get(pk=version.pk)
+    version.document = document
+    return version
 
 
 @transaction.atomic
@@ -135,23 +172,30 @@ def attach_final_evidence(
     A submission that already has final evidence is not re-pointed at a
     different file: the previously captured version is what was relied upon, and
     quietly replacing it would rewrite history. Withdraw and supersede instead.
+
+    Binding evidence is one of the two operations that can falsify the
+    visibility rule, so it serialises on the Matter first and reads every fact
+    the rule depends on from under that lock (app/matters/locks.py).
     """
-    if submission.status != SubmissionStatus.DRAFT:
+    matter = lock_matter_for_evidence_integrity(submission.matter_id)
+    locked = lock_submission_for_evidence_integrity(submission.pk)
+
+    if locked.status != SubmissionStatus.DRAFT:
         raise DomainError("Lõplikku tõendit saab lisada ainult koostatavale arvamusele.")
-    if submission.final_version_id is not None:
+    if locked.final_version_id is not None:
         raise DomainError("Sellel arvamusel on juba lõplik tõend.")
 
     if document is None:
         document = create_document(
-            matter=submission.matter,
-            title=submission.title[:400],
+            matter=matter,
+            title=locked.title[:400],
             role=DocumentRole.KODA_SUBMISSION_FINAL,
             created_by=actor,
             # Evidence created for a restricted submission inherits that
             # restriction rather than relying on the caller to remember.
-            visibility_override=submission.visibility_override,
+            visibility_override=locked.visibility_override,
         )
-    elif document.matter_id != submission.matter_id:
+    elif document.matter_id != locked.matter_id:
         raise DomainError("Tõend peab kuuluma sama teema juurde.")
 
     version = add_evidence_version(
@@ -162,10 +206,15 @@ def attach_final_evidence(
         uploaded_by=actor,
     )
 
-    check_evidence_is_usable(submission=submission, version=version)
+    check_evidence_is_usable(
+        submission=locked,
+        version=_evidence_under_document_lock(version),
+        matter_visibility=matter.visibility,
+    )
 
-    submission.final_version = version
-    submission.save(update_fields=["final_version", "updated_at"])
+    locked.final_version = version
+    locked.save(update_fields=["final_version", "updated_at"])
+    submission.refresh_from_db()
     return version
 
 
@@ -173,13 +222,27 @@ def attach_final_evidence(
 def select_final_evidence(
     *, submission: Submission, version: DocumentVersion, actor: Any = None
 ) -> Submission:
-    """Point a draft at an evidence version that is already in the Matter."""
-    if submission.status != SubmissionStatus.DRAFT:
-        raise DomainError("Lõplikku tõendit saab valida ainult koostatavale arvamusele.")
-    check_evidence_is_usable(submission=submission, version=version)
+    """Point a draft at an evidence version that is already in the Matter.
 
-    submission.final_version = version
-    submission.save(update_fields=["final_version", "updated_at"])
+    Same protocol as `attach_final_evidence`: the Matter's row lock first, then
+    the submission and the evidence document, and the check against what those
+    locks protect rather than against whatever the caller was holding
+    (app/matters/locks.py).
+    """
+    matter = lock_matter_for_evidence_integrity(submission.matter_id)
+    locked = lock_submission_for_evidence_integrity(submission.pk)
+
+    if locked.status != SubmissionStatus.DRAFT:
+        raise DomainError("Lõplikku tõendit saab valida ainult koostatavale arvamusele.")
+    check_evidence_is_usable(
+        submission=locked,
+        version=_evidence_under_document_lock(version),
+        matter_visibility=matter.visibility,
+    )
+
+    locked.final_version = version
+    locked.save(update_fields=["final_version", "updated_at"])
+    submission.refresh_from_db()
     return submission
 
 
@@ -196,7 +259,13 @@ def mark_submission_sent(
 
     The check-and-write happens under a row lock so two people pressing send at
     once cannot produce two different sent timestamps for one submission.
+
+    Sending re-runs the evidence check, so it is a place the visibility rule is
+    established and takes the Matter lock before the submission's — the same
+    order as the two binding services, and the reason none of the three can
+    deadlock against each other (app/matters/locks.py).
     """
+    matter = lock_matter_for_evidence_integrity(submission.matter_id)
     locked = Submission.objects.select_for_update().get(pk=submission.pk)
 
     if locked.status == SubmissionStatus.SENT:
@@ -210,7 +279,11 @@ def mark_submission_sent(
         )
     # Re-checked at the moment of sending: the document could have been
     # re-pointed or relaxed between drafting and this call.
-    check_evidence_is_usable(submission=locked, version=final_version)
+    check_evidence_is_usable(
+        submission=locked,
+        version=_evidence_under_document_lock(final_version),
+        matter_visibility=matter.visibility,
+    )
 
     locked.status = SubmissionStatus.SENT
     locked.sent_at = sent_at or timezone.now()

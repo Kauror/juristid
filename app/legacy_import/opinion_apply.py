@@ -492,7 +492,7 @@ def _write_one_submission(
     reader: ArchiveReader,
     by_key: dict[tuple[str, str, Any], Any],
 ) -> None:
-    from app.matters.models import Matter
+    from app.matters.locks import lock_matter_for_evidence_integrity
     from app.submissions.models import Submission
 
     candidate_id = _candidate_for(submission_plan, by_key)
@@ -519,7 +519,11 @@ def _write_one_submission(
         report.submissions_linked += 1
         version = submission.final_version
     else:
-        matter = Matter.objects.get(pk=submission_plan.matter_id)
+        # This binds final evidence, so it takes the same Matter lock the
+        # interactive services take, in the same order (app/matters/locks.py).
+        # An apply runs against a live database and has no claim to be the only
+        # writer in it.
+        matter = lock_matter_for_evidence_integrity(submission_plan.matter_id)
         version, _reused = _final_version_for(matter, submission_plan, item, actor, reader, report)
         if version is None:
             report.skipped.append(
