@@ -6,9 +6,13 @@
 whoever is covering a holiday, and for the person writing the annual report.
 Minu töö answers what one person does next; the two are deliberately not mixed.
 
-Three scopes share one shell: a header band, a Seis strip and a body with a
+Two scopes share one shell: a header band, a Seis strip and a body with a
 facts rail. Switching scope changes the strip and the body and nothing else, so
 the page does not jump under the reader.
+
+There were three. *Minu tiim* is retired: it grouped the same department by
+person without a team-membership model behind it, and the Koormus rail already
+lists those people (docs/adr/0039).
 
 The scopes are ordinary links carrying ?vaade=, not a client-side tab strip. A
 department view that cannot be pasted into a message is a view somebody has to
@@ -62,8 +66,6 @@ dead end teaches people to distrust the number.
     <div class="ovbody__main">
       {% if page.is_department %}
         {% include "matters/partials/overview_department.html" %}
-      {% elif page.is_team %}
-        {% include "matters/partials/overview_team.html" %}
       {% else %}
         {% include "matters/partials/overview_areas.html" %}
       {% endif %}

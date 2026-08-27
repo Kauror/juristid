@@ -1,4 +1,4 @@
-"""Ülevaade: three scopes, one shell, and the counts that must stay honest.
+"""Ülevaade: two scopes, one shell, and the counts that must stay honest.
 
 Most of the risk on this page is arithmetic that looks fine. A restricted Matter
 counted for somebody who may not read it, an area called *vastutajata* because
@@ -79,15 +79,17 @@ def today():
     return timezone.localdate()
 
 
-# --- A: the three scopes share one shell ---------------------------------
+# --- A: the two scopes share one shell -----------------------------------
 
 
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
         ("osakond", ov.SCOPE_DEPARTMENT),
-        ("tiim", ov.SCOPE_TEAM),
         ("valdkonniti", ov.SCOPE_AREAS),
+        # The retired third scope, which is now an unrecognised value like any
+        # other and therefore an old bookmark that still opens (docs/adr/0039).
+        ("tiim", ov.SCOPE_DEPARTMENT),
         ("midagi-muud", ov.SCOPE_DEPARTMENT),
         (None, ov.SCOPE_DEPARTMENT),
     ],
@@ -100,7 +102,6 @@ def test_the_scope_comes_from_the_url_and_falls_back(value, expected):
     ("query", "marker"),
     [
         ("?vaade=osakond", "Vajab sekkumist"),
-        ("?vaade=tiim", "Koormus"),
         ("?vaade=valdkonniti", "Valdkond"),
     ],
 )
@@ -111,9 +112,9 @@ def test_each_scope_renders_its_own_body_under_the_same_shell(
 
     body = client.get(reverse(OVERVIEW) + query).content.decode()
 
-    # The shell is the same in all three.
+    # The shell is the same in both.
     assert "Ülevaade" in body
-    assert "Kogu osakond" in body and "Minu tiim" in body and "Valdkonniti" in body
+    assert "Kogu osakond" in body and "Valdkonniti" in body
     assert marker in body
 
 
@@ -204,8 +205,8 @@ def test_open_matters_count_ownership_while_overdue_counts_responsibility(
         actor=specialist,
     )
 
-    page = ov.build_overview(department_head, scope=ov.SCOPE_TEAM, today=today)
-    loads = {person.user.pk: person for person in page.people}
+    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
+    loads = {person.user.pk: person for person in page.loads}
 
     # The file sits with its owner; the late instruction sits with whoever must
     # do it. Summing the two into one "workload" would answer neither question.
@@ -263,39 +264,7 @@ def test_the_deadline_list_holds_deadlines_and_not_review_dates(department_head,
     assert "OOTAN vastust" not in deadlines
 
 
-# --- F: a person's whole week, not only their problems -------------------
-
-
-def test_minu_tiim_shows_the_whole_week_not_only_the_problems(department_head, specialist, today):
-    monday = today - timedelta(days=today.weekday())
-    late = create_matter(title="Hilinenud", owner=specialist, reference_year=2026, actor=specialist)
-    set_next_action(
-        matter=late,
-        text="Hilinenud tegevus",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=monday - timedelta(days=3),
-        actor=specialist,
-    )
-    fine = create_matter(title="Ajakavas", owner=specialist, reference_year=2026, actor=specialist)
-    set_next_action(
-        matter=fine,
-        text="Ajakavas olev tegevus",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=monday + timedelta(days=2),
-        actor=specialist,
-    )
-
-    page = ov.build_overview(department_head, scope=ov.SCOPE_TEAM, today=monday)
-    person = next(row for row in page.people if row.user.pk == specialist.pk)
-    shown = {item.text for item in person.items}
-
-    assert "Hilinenud tegevus" in shown
-    assert "Ajakavas olev tegevus" in shown
-
-
-# --- G: the governed vocabulary, and the legacy areas it must not lose ---
+# --- F: the governed vocabulary, and the legacy areas it must not lose ---
 
 
 def test_the_area_table_uses_the_governed_vocabulary(department_head, today):
@@ -345,7 +314,7 @@ def test_a_retired_area_with_open_work_is_kept_and_marked(department_head, speci
     assert row.open_count == 1
 
 
-# --- H: "vastutajata" means nobody at all --------------------------------
+# --- G: "vastutajata" means nobody at all --------------------------------
 
 
 def test_an_area_is_unowned_only_when_nobody_owns_any_of_its_work(
@@ -380,7 +349,7 @@ def test_an_area_is_unowned_only_when_nobody_owns_any_of_its_work(
     assert unowned_figure.count == 1
 
 
-# --- I: an opinion is a canonical Submission, not an archive file --------
+# --- H: an opinion is a canonical Submission, not an archive file --------
 
 
 def test_only_canonical_sent_submissions_count_as_opinions(department_head, specialist, today):
@@ -399,10 +368,10 @@ def test_only_canonical_sent_submissions_count_as_opinions(department_head, spec
     assert submissions.count == 1
 
 
-# --- J: every figure leads somewhere real --------------------------------
+# --- I: every figure leads somewhere real --------------------------------
 
 
-@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_TEAM, ov.SCOPE_AREAS])
+@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_AREAS])
 def test_every_seis_figure_resolves_to_a_real_list(client, department_head, scope, today):
     """No dead numbers. A figure a reader cannot follow is a figure they stop trusting."""
     client.force_login(department_head)
@@ -419,7 +388,7 @@ def test_every_seis_figure_resolves_to_a_real_list(client, department_head, scop
         assert response.status_code == 200, f"{figure.key} -> {url}"
 
 
-@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_TEAM, ov.SCOPE_AREAS])
+@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_AREAS])
 def test_a_figure_that_opens_the_register_carries_a_filter(department_head, scope, today):
     """A figure linking to the bare register is the defect this page keeps finding.
 
@@ -441,7 +410,7 @@ def test_a_figure_that_opens_the_register_carries_a_filter(department_head, scop
         )
 
 
-@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_TEAM, ov.SCOPE_AREAS])
+@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_AREAS])
 def test_a_register_figure_lands_on_the_results(department_head, scope, today):
     """The fragment is part of the promise, not decoration.
 

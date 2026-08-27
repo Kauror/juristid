@@ -122,7 +122,7 @@ def test_the_new_matter_reaches_the_overview_it_was_created_from(created, specia
     assert TITLE in titles
 
 
-@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_TEAM, ov.SCOPE_AREAS])
+@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_AREAS])
 def test_count_and_list_still_agree_once_a_matter_arrives_this_way(
     signed_in, specialist, created, scope
 ):

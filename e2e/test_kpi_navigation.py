@@ -14,7 +14,7 @@ directly (``app/matters/work_items.py``), so the exemption is gone and the
 figure leads where a reader expects.
 
 What this file asserts, in a real browser, for **every** clickable number on
-all three scopes:
+both scopes:
 
 * the number is read off the page as rendered;
 * the link is clicked, not synthesised;
@@ -39,7 +39,7 @@ from e2e.conftest import HEAD, sign_in
 
 pytestmark = pytest.mark.e2e
 
-SCOPES = ("osakond", "tiim", "valdkonniti")
+SCOPES = ("osakond", "valdkonniti")
 
 #: Everything on the page that prints a number and links somewhere. The value
 #: selector is relative to the link, or the link itself when it *is* the number.
@@ -57,8 +57,6 @@ NUMBERED_LINKS: tuple[tuple[str, str], ...] = (
     ("a.railrow", ".railrow__value"),
     (".areatable__num a", ""),
     (".arearow__more", ""),
-    (".personblock__counts a", ""),
-    (".personblock__footer a", ""),
 )
 
 
@@ -226,23 +224,6 @@ def test_no_number_leads_nowhere(page, base_url, scope):
 # ---------------------------------------------------------------------------
 # The destinations that are not the register
 # ---------------------------------------------------------------------------
-
-
-def test_the_people_figure_opens_the_list_of_people(page, base_url):
-    """It counts colleagues, not Matters, so it opens the list of colleagues.
-
-    It used to open the whole register — a figure reading "4 inimest" landing on
-    ninety Matters.
-    """
-    sign_in(page, base_url, HEAD)
-    open_overview(page, base_url, "tiim")
-    figure = page.locator(".seis__figure").filter(has_text="inimest").first
-    claimed = int(figure.locator(".seis__number").inner_text().strip())
-
-    figure.click()
-    page.wait_for_load_state("networkidle")
-    assert page.locator(".personblock").count() == claimed
-    assert in_viewport(page, "#inimesed")
 
 
 def test_the_unowned_areas_figure_opens_the_list_of_areas(page, base_url):

@@ -13,7 +13,7 @@ The failures were not subtle once they were looked for.
   so two missed deadlines on one file promised two rows and produced one.
 * *N valdkonda vastutajata* counted **policy areas** and opened every ownerless
   **Matter** — three areas, eleven files.
-* *N inimest* on Minu tiim opened the whole register.
+* *N inimest* on the since-retired Minu tiim opened the whole register.
 * The team strip summed per-person counts, which silently drops every unowned
   file, and linked to a register list that includes them.
 * *Esitatud arvamusi 2026* and *Suletud teemasid 2026* carried the year in the
@@ -293,7 +293,7 @@ def rows_at(client, url: str) -> set[str]:
     return {matter.title for matter in client.get(url).context["page"].object_list}
 
 
-ALL_SCOPES = [ov.SCOPE_DEPARTMENT, ov.SCOPE_TEAM, ov.SCOPE_AREAS]
+ALL_SCOPES = [ov.SCOPE_DEPARTMENT, ov.SCOPE_AREAS]
 
 
 @pytest.mark.parametrize("scope", ALL_SCOPES)
@@ -303,8 +303,8 @@ def test_every_drilldown_opens_exactly_what_it_counted(
     """The whole complaint, asserted once per destination on the page.
 
     Both list destinations are covered: Teemad and the Arvamused workspace. The
-    two figures that open a list *on this page* — people, unowned areas — are
-    asserted separately, because there is no register total to compare against.
+    one figure that opens a list *on this page* — unowned areas — is asserted
+    separately, because there is no register total to compare against.
     """
     client.force_login(department_head)
     page = ov.build_overview(department_head, scope=scope, today=today)
@@ -397,32 +397,22 @@ def test_the_unowned_areas_figure_opens_the_list_of_areas(client, department_hea
     assert 'id="vastutajata-valdkonnad"' in body
 
 
-def test_the_people_figure_opens_the_list_of_people(client, department_head, world, today):
-    page = ov.build_overview(department_head, scope=ov.SCOPE_TEAM, today=today)
-    figure = next(f for f in page.figures if f.key == "people")
-
-    assert figure.url.endswith(ov.PEOPLE_ANCHOR)
-    assert figure.count == len(page.people)
-
-    client.force_login(department_head)
-    body = client.get(reverse("matters:overview") + figure.url).content.decode()
-    assert 'id="inimesed"' in body
-
-
-def test_the_team_strip_counts_the_department_and_not_the_sum_of_its_rows(
+def test_the_strip_counts_the_department_and_not_the_sum_of_the_rail_rows(
     client, department_head, world, today
 ):
     """Summing per-person counts drops every unowned file.
 
     The rail lists those separately as *Vastutajata*, so the strip was short by
-    exactly that many while the register link beside it was not.
+    exactly that many while the register link beside it was not. Asserted on
+    Kogu osakond's Koormus rail, which is where the per-person rows live now
+    that Minu tiim is retired (docs/adr/0039).
     """
     client.force_login(department_head)
-    page = ov.build_overview(department_head, scope=ov.SCOPE_TEAM, today=today)
+    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
     figure = next(f for f in page.figures if f.key == "open")
 
     assert page.unassigned >= 1
-    assert figure.count == sum(person.open_count for person in page.people) + page.unassigned
+    assert figure.count == sum(person.open_count for person in page.loads) + page.unassigned
     assert shown_total(client, figure.url) == figure.count
 
 
@@ -436,8 +426,8 @@ def test_a_persons_overdue_link_asks_about_responsibility_not_ownership(
     opened the wrong list under a number that read 1.
     """
     client.force_login(department_head)
-    page = ov.build_overview(department_head, scope=ov.SCOPE_TEAM, today=today)
-    person = next(load for load in page.people if load.user.pk == other_specialist.pk)
+    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
+    person = next(load for load in page.loads if load.user.pk == other_specialist.pk)
 
     assert person.overdue == 1
     # The file they own carries no late work at all, which is the whole point.
