@@ -1184,6 +1184,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # would turn a period somebody deliberately left vague into a day they
         # never named (master specification 3.5).
         "defer_choices": defer_choices(timezone.localdate()),
+        "quick_dates": quick_date_choices(timezone.localdate()),
         "can_defer": current_action is not None and not current_action.is_approximate,
         "today": timezone.localdate(),
     }
@@ -1653,6 +1654,38 @@ def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse
         return render(request, "matters/partials/overview.html", context, status=400)
 
     return _render_overview(request, matter)
+
+
+#: What the composer's «Millal?» row offers. Four spans that cover almost every
+#: next step somebody sets from a meeting they have just come back from; the
+#: exact box behind «Kuupäev…» covers the rest, and it is the field that is
+#: actually submitted either way (design handoff 1d).
+QUICK_DATES: tuple[tuple[int, str], ...] = (
+    (0, "Täna"),
+    (1, "Homme"),
+    (7, "+1 nädal"),
+    (14, "+2 nädalat"),
+)
+
+
+def quick_date_choices(today: date) -> list[dict[str, Any]]:
+    """The quick spans, each carrying the day it resolves to.
+
+    Resolved on the server, in Europe/Tallinn, and delivered on the control. The
+    chip shows the actual date once it is chosen — «+1 nädal → N 03.09» — so
+    nobody sets a step for a day they did not read. Working it out in the
+    browser would answer in the reader's own timezone, which is the whole class
+    of defect `app/core/dates.py` exists to prevent.
+    """
+    return [
+        {
+            "value": format_estonian_date(today + timedelta(days=days)),
+            "label": label,
+            "when": f"{weekday_letter(today + timedelta(days=days))} "
+            f"{short_day_month(today + timedelta(days=days))}",
+        }
+        for days, label in QUICK_DATES
+    ]
 
 
 #: What «Lükka edasi» offers, and how far each option moves the date. Counted

@@ -693,6 +693,10 @@
   position: relative;
 }
 
+.uxcomp__more {
+  position: relative;
+}
+
 .uxcomp__datebody {
   margin-top: 8px;
   padding: 10px 12px;

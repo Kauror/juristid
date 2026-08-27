@@ -22,6 +22,7 @@ from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 
+from app.core.dates import format_estonian_date
 from app.matters import overview as ov
 from app.matters import work_items as wi
 from app.matters.services import add_entry, assign_matter, change_stage, create_matter
@@ -427,3 +428,104 @@ def test_an_approximate_step_is_not_offered_a_one_day_deferral(client, specialis
     client.force_login(specialist)
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
     assert "uxnext__defer" not in body
+
+
+# ---------------------------------------------------------------------------
+# 1d — the composer
+# ---------------------------------------------------------------------------
+
+
+def _composer_markup(body: str) -> str:
+    """The composer's own form, cut out of a rendered Matter page."""
+    return body.split('id="teema-koostaja"')[1].split("</form>")[0]
+
+
+def _composer_is_open(body: str) -> bool:
+    """Whether the `<details>` carries `open`, read off its own tag only."""
+    tag = body.split('id="teema-koostaja"')[1].split(">")[0]
+    return "open" in tag
+
+
+@pytest.mark.django_db
+def test_the_composer_is_closed_until_it_is_wanted_and_opens_on_a_refusal(
+    client, specialist
+) -> None:
+    """A Matter is read far more often than it is written to.
+
+    But a save that was refused must never fold the explanation away with the
+    text somebody typed (design handoff 1d).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    client.force_login(specialist)
+    url = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+
+    body = client.get(url).content.decode()
+    assert not _composer_is_open(body), "the composer opens on request, not on arrival"
+    assert "Mis juhtus?" in body, "and it says what it is for while closed"
+
+    refused = client.post(
+        reverse("matters:compose", kwargs={"pk": matter.pk}),
+        {"next_kind": "DO", "body": ""},
+    )
+    assert refused.status_code == 400
+    assert _composer_is_open(refused.content.decode()), (
+        "a refused save must not fold the reason away with what was typed"
+    )
+
+
+@pytest.mark.django_db
+def test_folding_the_composer_dropped_none_of_its_fields(client, specialist) -> None:
+    """The functionality-preservation check for the redesign's largest form.
+
+    Enumerated from the form rather than from a list written beside it, so a
+    field added later is covered without anybody remembering to add it here. A
+    visual pass that quietly loses `Lõpparvamus` or the entry kind is the exact
+    failure this asserts against.
+    """
+    from app.matters.forms import ComposerForm
+
+    matter = factories.MatterFactory(owner=specialist)
+    # `Lõpparvamus` offers recipients as a checkbox list, so an empty catalogue
+    # renders no control at all and would hide a genuinely missing field.
+    factories.OrganisationFactory()
+    client.force_login(specialist)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    composer = _composer_markup(body)
+
+    form = ComposerForm(matter=matter, viewer=specialist)
+    missing = [name for name in form.fields if f'name="{name}"' not in composer]
+    assert not missing, f"the composer no longer offers: {missing}"
+
+
+@pytest.mark.django_db
+def test_the_quick_dates_carry_the_day_the_server_resolved(client, specialist) -> None:
+    """The chip writes into the exact-date field, and the date is Estonian.
+
+    Nothing is stored by the chip itself: the field below it is what is
+    submitted and validated, so the save behaves identically however the date
+    was chosen — and identically with the chips ignored entirely.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    client.force_login(specialist)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+
+    today = timezone.localdate()
+    assert f'data-quickdate="{format_estonian_date(today)}"' in body, "Täna"
+    assert f'data-quickdate="{format_estonian_date(today + timedelta(days=7))}"' in body, "+1 nädal"
+    assert 'data-quickdate-group="id_next_date"' in body, "the chips write into the real field"
+    # The resolved day is on the element, not worked out in the browser.
+    assert "→ " in body
+
+
+def test_the_l_shortcut_is_advertised_where_it_applies() -> None:
+    """Every keyboard shortcut has an obvious click equivalent (AGENTS.md).
+
+    Here the equivalent is the closed row itself, which is the disclosure's own
+    <summary>; the hint says which key does the same thing.
+    """
+    composer = (TEMPLATE_DIR / "matters" / "partials" / "composer.html").read_text(encoding="utf-8")
+    assert '<kbd class="key">L</kbd>' in composer
+    assert "<summary" in composer, "the click equivalent is the summary itself"
+
+    script = (JS_DIR / "ux.js").read_text(encoding="utf-8")
+    assert "isEditing" in script, "no shortcut may fire inside a text control"

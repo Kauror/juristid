@@ -56,6 +56,26 @@
     }
   }
 
+  /* Any control that sends the reader to a collapsed disclosure has to open it
+     first. app.js focuses the first field inside a `[data-focus]` target, and a
+     field inside a closed <details> is not focusable — «Muuda» on the
+     Järgmiseks row would scroll to a shut box and leave the cursor where it
+     was. Capture phase, so this runs before that handler. */
+  document.addEventListener(
+    "click",
+    function (event) {
+      var trigger = event.target.closest ? event.target.closest("[data-focus]") : null;
+      if (!trigger) {
+        return;
+      }
+      var target = document.getElementById(trigger.getAttribute("data-focus"));
+      if (target && target.tagName === "DETAILS") {
+        target.open = true;
+      }
+    },
+    true
+  );
+
   document.addEventListener("keydown", function (event) {
     if (event.ctrlKey || event.metaKey || event.altKey || isEditing(event.target)) {
       return;
