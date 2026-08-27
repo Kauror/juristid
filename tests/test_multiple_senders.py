@@ -704,6 +704,16 @@ def test_the_department_overview_prefetches_its_senders(
     sekkumist*, which is a union of four populations and cannot be read off the
     capped row list. Every population the page had already resolved is reused
     rather than re-scoped (ADR 0033, `overview.Populations`).
+
+    It moved again to 46 when Aruandlus took over Minu tiim's three period
+    counts (docs/adr/0039). Two of the three cost nothing — the month's opinions
+    are the Seis strip's own number, resolved once and handed to both, and the
+    week's deadlines are counted in Python off the work items the page already
+    read. *Sissekandeid sel nädalal* costs two: the aggregate itself, and the
+    break-glass lookup behind the `Entry` population, which nothing else on the
+    page resolves. Measured flat at 5, 15 and 30 Matters before the number was
+    moved, so what this test guards is untouched; the two-query headroom the
+    ceiling carried is preserved.
     """
     for index in range(15):
         factories.MatterFactory(
@@ -715,7 +725,7 @@ def test_the_department_overview_prefetches_its_senders(
             ],
         )
 
-    with django_assert_max_num_queries(44):
+    with django_assert_max_num_queries(46):
         response = signed_in.get(reverse("matters:overview"))
         response.content.decode()
 

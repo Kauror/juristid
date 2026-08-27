@@ -3016,11 +3016,11 @@ fieldset.field > legend {
 .entrycard,
 .submission,
 .fragment,
-/* The register's results region, and the two Ulevaade lists a figure that
- * counts people or areas opens instead of the register. All three are landing
- * points for a link somebody clicked a number to follow. */
+/* The register's results region, and the Ulevaade list a figure that counts
+ * areas opens instead of the register. Both are landing points for a link
+ * somebody clicked a number to follow. (`#inimesed` was a third, for the
+ * retired Minu tiim — docs/adr/0039.) */
 #tulemused,
-#inimesed,
 #vastutajata-valdkonnad {
   scroll-margin-top: 96px;
 }
@@ -7636,14 +7636,12 @@ button.accordion__action:focus-visible {
 }
 
 .workrow2__link:focus-visible,
-.teamrow__link:focus-visible,
 .interrow__link:focus-visible {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: calc(var(--focus-ring-offset-width) * -1);
 }
 
 .workrow2__datecell,
-.teamrow__datecell,
 .interrow__reason {
   min-width: 0;
   display: flex;
@@ -7652,7 +7650,6 @@ button.accordion__action:focus-visible {
 }
 
 .workrow2__date,
-.teamrow__date,
 .interrow__value {
   font-size: var(--typography-size-sm);
   font-weight: var(--typography-weight-semibold);
@@ -7660,21 +7657,18 @@ button.accordion__action:focus-visible {
   color: var(--text-body);
 }
 
-.workrow2__date--today,
-.teamrow__date--today {
+.workrow2__date--today {
   color: var(--status-warning);
   font-weight: var(--typography-weight-bold);
 }
 
 .workrow2__date--overdue,
-.teamrow__date--overdue,
 .interrow__value--danger {
   color: var(--status-danger);
   font-weight: var(--typography-weight-bold);
 }
 
 .workrow2__date--review,
-.teamrow__date--review,
 .interrow__value--warning {
   color: var(--status-warning);
   font-weight: var(--typography-weight-bold);
@@ -7686,7 +7680,6 @@ button.accordion__action:focus-visible {
    the one thing a row on these pages may never be: OLULINE TÄHTAEG and
    TÄHTAEG 14.08 mean different things and «OLULINE TÄHT…» means neither. */
 .workrow2__meaning,
-.teamrow__meaning,
 .interrow__meaning {
   font-size: 10.5px;
   font-weight: var(--typography-weight-semibold);
@@ -7698,13 +7691,11 @@ button.accordion__action:focus-visible {
 }
 
 .workrow2__body,
-.teamrow__body,
 .interrow__body {
   min-width: 0;
 }
 
 .workrow2__action,
-.teamrow__title,
 .interrow__title {
   display: block;
   font-size: var(--typography-size-row);
@@ -7715,7 +7706,6 @@ button.accordion__action:focus-visible {
 }
 
 .workrow2__matter,
-.teamrow__detail,
 .interrow__detail {
   display: block;
   font-size: var(--typography-size-meta);
@@ -7726,7 +7716,6 @@ button.accordion__action:focus-visible {
 }
 
 .workrow2__stage,
-.teamrow__stage,
 .interrow__stage {
   font-size: var(--typography-size-meta-sm);
   color: var(--text-secondary);
@@ -8302,107 +8291,6 @@ a.loadrow__overdue--bad {
   text-overflow: ellipsis;
 }
 
-/* ---- Minu tiim ----------------------------------------------------- */
-
-.personblock {
-  padding: 15px var(--spacing-8) 17px;
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-
-.personblock__head {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-25);
-  flex-wrap: wrap;
-}
-
-.personblock__name {
-  margin: 0;
-  font-size: var(--typography-size-lg);
-  font-weight: var(--typography-weight-semibold);
-}
-
-.personblock__counts {
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-}
-
-.personblock__counts a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.personblock__bad {
-  color: var(--status-danger);
-  font-weight: var(--typography-weight-semibold);
-}
-
-.personblock__warn {
-  color: var(--status-warning);
-}
-
-.personblock__good {
-  color: var(--status-success);
-  font-weight: var(--typography-weight-semibold);
-}
-
-.personblock__spacer {
-  flex: 1;
-}
-
-.personblock__link {
-  font-size: var(--typography-size-meta);
-  color: var(--accent-link);
-  text-decoration: none;
-}
-
-.personblock__rows {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.personblock__footer {
-  margin: 0;
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-}
-
-.teamrow {
-  display: flex;
-  align-items: stretch;
-  background: var(--surface-raised);
-  border-left: 2px solid var(--border-control);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-}
-
-.teamrow:hover {
-  background: var(--surface-hover);
-}
-
-.teamrow--overdue {
-  border-left-color: var(--status-danger);
-}
-
-.teamrow--review {
-  border-left-color: var(--status-warning);
-}
-
-.teamrow__link {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 96px minmax(0, 1fr) 150px;
-  gap: var(--spacing-35);
-  align-items: center;
-  padding: 9px var(--spacing-3);
-  text-decoration: none;
-  color: inherit;
-}
-
 /* ---- Valdkonniti --------------------------------------------------- */
 
 .areatable {
@@ -8575,8 +8463,7 @@ a.loadrow__overdue--bad {
   .ovhead,
   .seis,
   .workband,
-  .ovsection,
-  .personblock {
+  .ovsection {
     padding-left: var(--spacing-6);
     padding-right: var(--spacing-6);
   }
@@ -8635,8 +8522,7 @@ a.loadrow__overdue--bad {
   .ovhead,
   .seis,
   .workband,
-  .ovsection,
-  .personblock {
+  .ovsection {
     padding-left: var(--spacing-3);
     padding-right: var(--spacing-3);
   }
@@ -8661,7 +8547,6 @@ a.loadrow__overdue--bad {
   /* The rows are grids of fixed cells; below this width they become two lines
      rather than a sideways scroll, because a work row is read, not scanned. */
   .workrow2__link,
-  .teamrow__link,
   .interrow__link,
   .deadlinerow,
   .arealine,
@@ -8672,7 +8557,6 @@ a.loadrow__overdue--bad {
   }
 
   .workrow2__stage,
-  .teamrow__stage,
   .interrow__stage,
   .deadlinerow__owner {
     display: none;

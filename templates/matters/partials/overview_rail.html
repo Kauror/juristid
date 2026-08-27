@@ -10,7 +10,7 @@ by side, not summed, because summing them would produce a score
 (master specification 18.8).
 {% endcomment %}
 
-{% if page.is_department or page.is_team %}
+{% if page.is_department %}
   <section class="railblock" aria-label="Koormus">
     <h2 class="railblock__label">Koormus <span class="railblock__hint">avatud · üle</span></h2>
     {% comment %}
@@ -66,7 +66,7 @@ by side, not summed, because summing them would produce a score
   </section>
 {% endif %}
 
-{% if page.is_department or page.is_team %}
+{% if page.is_department %}
   <section class="railblock" aria-label="Uued teemad">
     <h2 class="railblock__label">Uued teemad</h2>
     {% for row in page.incoming %}
@@ -76,41 +76,6 @@ by side, not summed, because summing them would produce a score
       </a>
     {% endfor %}
     <a class="railblock__more" href="{% url 'matters:inbox' %}">Ava Saabunud →</a>
-  </section>
-{% endif %}
-
-{% if page.is_team %}
-  <section class="railblock" aria-label="Tiimi tähtajad">
-    <h2 class="railblock__label">Tiimi tähtajad</h2>
-    {% comment %}
-      The Matter count rather than the work-item count, because the destination
-      is a list of Matters. The department's own Tähtajad table beside it counts
-      rows, and says so — the two numbers answer two questions and are never
-      the same number by accident.
-    {% endcomment %}
-    {% for group in page.deadlines %}
-      {% if group.matter_count %}
-        <a class="railrow" href="{{ group.url }}">
-          <span class="railrow__key">{{ group.label }}</span>
-          <span class="railrow__value">{{ group.matter_count }}</span>
-        </a>
-      {% else %}
-        <span class="railrow">
-          <span class="railrow__key">{{ group.label }}</span>
-          <span class="railrow__value">0</span>
-        </span>
-      {% endif %}
-    {% endfor %}
-  </section>
-
-  <section class="railblock" aria-label="Tiimi tegevus">
-    <h2 class="railblock__label">Tiimi tegevus</h2>
-    {% for row in page.team_activity %}
-      <span class="railrow">
-        <span class="railrow__key">{{ row.label }}</span>
-        <span class="railrow__value">{{ row.count }}</span>
-      </span>
-    {% endfor %}
   </section>
 {% endif %}
 
@@ -149,6 +114,12 @@ by side, not summed, because summing them would produce a score
 {% endif %}
 
 {% if page.is_department or page.is_areas %}
+  {% comment %}
+    One block, one list. The rows narrow from the year to the reader's own week
+    and each says its own period, so a week row and a year row can sit under one
+    heading without a sub-heading between them — which is what a *Tiimi tegevus*
+    fragment transplanted whole would have needed (docs/adr/0039).
+  {% endcomment %}
   <section class="railblock" aria-label="Aruandlus">
     <h2 class="railblock__label">Aruandlus</h2>
     {% for row in page.reporting %}

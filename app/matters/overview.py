@@ -1,15 +1,22 @@
-"""Ülevaade — where the department stands, in three scopes behind one shell.
+"""Ülevaade — where the department stands, in two scopes behind one shell.
 
 Minu töö answers *what do I do*. This answers *where is the department losing
 time* — for the head, for whoever covers a holiday, and for the person who has
-to write the annual report. Three scopes, one page:
+to write the annual report. Two scopes, one page:
 
 ``?vaade=osakond``   where is time being lost right now
-``?vaade=tiim``      how is each person's week going
 ``?vaade=valdkonniti`` where does Koda intervene, and what is nobody watching
 
+There was a third, ``?vaade=tiim`` — *Minu tiim*, the same department grouped by
+person. It is retired (docs/adr/0039). It never had a population of its own:
+this product has no team-membership model, so it showed every colleague the
+reader was entitled to see — the same people the Koormus rail already lists —
+and its three period counts are now rows in Aruandlus, where a number that is
+looked up rather than read belongs. An old ``?vaade=tiim`` link resolves to the
+department the way every unrecognised scope does.
+
 The scope lives in the URL so a view can be linked, bookmarked and quoted in a
-bug report. There is no client-side tab machinery: three links, one view, one
+bug report. There is no client-side tab machinery: two links, one view, one
 template.
 
 Three rules run through the module.
@@ -70,18 +77,22 @@ from app.workflow.models import NextAction
 
 SCOPE_PARAM = "vaade"
 SCOPE_DEPARTMENT = "osakond"
-SCOPE_TEAM = "tiim"
 SCOPE_AREAS = "valdkonniti"
 
 SCOPES: tuple[tuple[str, str], ...] = (
     (SCOPE_DEPARTMENT, "Kogu osakond"),
-    (SCOPE_TEAM, "Minu tiim"),
     (SCOPE_AREAS, "Valdkonniti"),
 )
 
 
 def scope_from(value: str | None) -> str:
-    """The scope a URL asks for, or the department. Unknown falls back."""
+    """The scope a URL asks for, or the department. Unknown falls back.
+
+    ``?vaade=tiim`` is one of the unknown ones now, which is the whole of the
+    compatibility story for a retired scope: an old bookmark opens the surviving
+    overview rather than 404ing, and there is no second implementation behind it
+    to keep alive (docs/adr/0039).
+    """
     keys = {key for key, _ in SCOPES}
     return value if value in keys else SCOPE_DEPARTMENT
 
@@ -157,10 +168,12 @@ ESTONIAN_MONTHS_IN: tuple[str, ...] = (
 #: reader then has to scroll past to find out whether anything came back.
 RESULTS_ANCHOR = "#tulemused"
 
-#: The two figures on this page that count something the register does not list
-#: — people, and policy areas. Each one opens the list of exactly those, which
-#: is on this page.
-PEOPLE_ANCHOR = "#inimesed"
+#: The one figure on this page that counts something the register does not list
+#: — policy areas. It opens the list of exactly those, which is on this page.
+#:
+#: There was a second, ``#inimesed``, for *N inimest* on the retired Minu tiim.
+#: The Koormus rail still lists people; it carries no figure claiming a total,
+#: so it needs no landing point (docs/adr/0033, docs/adr/0039).
 UNOWNED_ANCHOR = "#vastutajata-valdkonnad"
 
 
@@ -221,6 +234,16 @@ class Populations:
             ownerless=open_matters.filter(owner__isnull=True),
             submissions=Submission.objects.visible_to(user),
         )
+
+    def entries(self) -> QuerySet[Entry]:
+        """The reader's `Sissekanded` — a method, where the rest are fields.
+
+        Deliberately not resolved with them. Only Kogu osakond counts entries,
+        and every `visible_to` costs a break-glass lookup, so a field here would
+        charge Valdkonniti for a population it never reads. Called once, by the
+        one row that shows it (docs/adr/0039).
+        """
+        return Entry.objects.visible_to(self.user)
 
 
 def _populations(user: Any, pop: Populations | None) -> Populations:
@@ -894,10 +917,7 @@ class PersonLoad:
     user: Any
     open_count: int
     overdue: int
-    week: int
     no_action: int
-    items: list[wi.WorkItem] = field(default_factory=list)
-    later: int = 0
 
     @property
     def name(self) -> str:
@@ -959,10 +979,8 @@ def _count_by_owner(queryset: QuerySet[Matter]) -> dict[Any, int]:
 
 def person_loads(
     user: Any,
-    today: date,
     items: list[wi.WorkItem],
     *,
-    with_week: bool = False,
     pop: Populations | None = None,
 ) -> list[PersonLoad]:
     """Per-person counts, with the responsibility rules kept apart on purpose.
@@ -972,36 +990,32 @@ def person_loads(
     whoever must do it, and an ``Oluline tähtaeg`` to the Matter's current
     owner. These are genuinely different questions and collapsing them into one
     "workload" figure would answer neither (§18.1).
+
+    It used to also assemble each person's whole week as rows, for the retired
+    Minu tiim. The Koormus rail this now feeds prints two numbers per person, so
+    the rows, the *later* remainder and the per-person week count went with the
+    view that rendered them (docs/adr/0039).
     """
     people = _populations(user, pop)
     open_by_owner = _count_by_owner(people.open_matters)
     quiet_by_owner = _count_by_owner(people.quiet)
-    week_end = wi.end_of_iso_week(today)
 
     per_person: dict[Any, list[wi.WorkItem]] = {}
     for item in items:
         if item.responsible is not None:
             per_person.setdefault(item.responsible.pk, []).append(item)
 
-    loads: list[PersonLoad] = []
-    for person in _people(user, {key for key in open_by_owner if key is not None}):
-        mine = per_person.get(person.pk, [])
-        week = wi.week_items(mine, today, week_end)
-        overdue = wi.overdue_items(mine)
-        ripe = wi.review_ripe_items(mine)
-        shown = wi.sort_items(overdue + ripe + week) if with_week else []
-        loads.append(
-            PersonLoad(
-                user=person,
-                open_count=open_by_owner.get(person.pk, 0),
-                overdue=len({item.matter_id for item in overdue}),
-                week=len(week),
-                no_action=quiet_by_owner.get(person.pk, 0),
-                items=shown,
-                later=max(0, len(mine) - len(shown)),
-            )
+    return [
+        PersonLoad(
+            user=person,
+            open_count=open_by_owner.get(person.pk, 0),
+            overdue=len(
+                {item.matter_id for item in wi.overdue_items(per_person.get(person.pk, []))}
+            ),
+            no_action=quiet_by_owner.get(person.pk, 0),
         )
-    return loads
+        for person in _people(user, {key for key in open_by_owner if key is not None})
+    ]
 
 
 def unassigned_count(user: Any, pop: Populations | None = None) -> int:
@@ -1283,6 +1297,82 @@ def reporting_counts(user: Any, today: date, pop: Populations | None = None) -> 
     ]
 
 
+def sent_this_month(today: date, pop: Populations) -> int:
+    """Canonical opinions this reader may see, sent in ``today``'s month.
+
+    Named because two surfaces print it — the Seis strip's headline and the
+    Aruandlus row beside the year — and a page that counted it twice would pay
+    for the same aggregate twice and could still only ever show one answer.
+    """
+    return pop.submissions.filter(
+        status=SubmissionStatus.SENT, sent_at__year=today.year, sent_at__month=today.month
+    ).count()
+
+
+def period_counts(
+    user: Any,
+    today: date,
+    items: list[wi.WorkItem],
+    pop: Populations | None = None,
+    *,
+    sent: int | None = None,
+) -> list[CountRow]:
+    """The week and the month, for the same block that holds the year.
+
+    Three rows the retired Minu tiim carried in a *Tiimi tegevus* block of its
+    own. They outlived it because they answer the question Aruandlus is for —
+    how much has this department done lately — at a shorter range than the year
+    rows beside them, and each one says its own period in its label rather than
+    inheriting it from a heading (docs/adr/0039).
+
+    None of the three is a team number, and none ever was. This product has no
+    team-membership model, so every one of them counted the whole department at
+    the reader's own authorization: entries through
+    ``Entry.objects.visible_to``, opinions through the ``Submission``
+    population this page already resolved, deadlines through the shared work
+    read model. Moving them to Kogu osakond therefore changes no population —
+    which is the only reason they could move without a second definition of
+    anything (docs/adr/0038).
+
+    Two windows, deliberately different. Entries are work already written up, so
+    the week runs from Monday to Sunday and asks how much of it has been
+    recorded. Deadlines are work still to come, so the week runs from today to
+    Sunday — the same window ``Minu töö`` calls *this week*, resolved by the
+    same helper rather than by a second interpretation written here.
+    """
+    people = _populations(user, pop)
+    week_start = today - timedelta(days=today.weekday())
+    week_end = wi.end_of_iso_week(today)
+    return [
+        CountRow(
+            label="Sissekandeid sel nädalal",
+            # Bounded at both ends. It was open-ended above, so an entry a
+            # colleague dated into next month counted towards *this week* — the
+            # one boundary on the page where the label and the query disagreed.
+            count=people.entries()
+            .filter(occurred_at__date__gte=week_start, occurred_at__date__lte=week_end)
+            .count(),
+        ),
+        CountRow(
+            # Also the Seis strip's *N esitatud arvamust <kuu>*, counted from
+            # the same population and the same two date parts. One number in two
+            # places on one page: the strip is the headline and this is the
+            # reporting row beside the year it belongs to. They cannot drift,
+            # because there is one population and one filter behind both.
+            label=f"Esitatud arvamusi {ESTONIAN_MONTHS_IN[today.month - 1]}",
+            count=sent_this_month(today, people) if sent is None else sent,
+            url=f"{reverse('submissions:sent')}?aasta={today.year}&kuu={today.month}",
+        ),
+        CountRow(
+            # Work items rather than Matters, and no link: two deadlines on one
+            # file are two commitments to meet, and the register lists files.
+            # The Tähtajad table on this page is where the rows are.
+            label="Tähtaegu sel nädalal",
+            count=len(wi.week_items(real_deadlines(items), today, week_end)),
+        ),
+    ]
+
+
 def new_matters(user: Any, today: date, pop: Populations | None = None) -> list[CountRow]:
     people = _populations(user, pop)
     week_start = today - timedelta(days=today.weekday())
@@ -1322,7 +1412,6 @@ class Overview:
     deadlines: list[DeadlineGroup] = field(default_factory=list)
     feed: list[FeedItem] = field(default_factory=list)
     feed_filter: str = FEED_ALL
-    people: list[PersonLoad] = field(default_factory=list)
     areas: list[AreaRow] = field(default_factory=list)
     empty_areas: int = 0
     show_empty_areas: bool = False
@@ -1335,15 +1424,10 @@ class Overview:
     organisations: list[CountRow] = field(default_factory=list)
     reporting: list[CountRow] = field(default_factory=list)
     incoming: list[CountRow] = field(default_factory=list)
-    team_activity: list[CountRow] = field(default_factory=list)
 
     @property
     def is_department(self) -> bool:
         return self.scope == SCOPE_DEPARTMENT
-
-    @property
-    def is_team(self) -> bool:
-        return self.scope == SCOPE_TEAM
 
     @property
     def is_areas(self) -> bool:
@@ -1385,7 +1469,12 @@ def drafting_url() -> str:
 
 
 def _department_figures(
-    user: Any, today: date, items: list[wi.WorkItem], pop: Populations | None = None
+    user: Any,
+    today: date,
+    items: list[wi.WorkItem],
+    pop: Populations | None = None,
+    *,
+    sent: int | None = None,
 ) -> list[Figure]:
     horizon = today + timedelta(days=DEADLINE_HORIZON_DAYS)
     people = _populations(user, pop)
@@ -1395,9 +1484,8 @@ def _department_figures(
         "tahtaeg_alates": format_estonian_date(today),
         "tahtaeg_kuni": format_estonian_date(horizon),
     }
-    sent = people.submissions.filter(
-        status=SubmissionStatus.SENT, sent_at__year=today.year, sent_at__month=today.month
-    ).count()
+    if sent is None:
+        sent = sent_this_month(today, people)
     overdue_ids = wi.work_population_ids(user, wi.WORK_OVERDUE, today=today, items=items)
     return [
         Figure(
@@ -1472,7 +1560,7 @@ def build_overview(
     intervention_filter: str = "",
     show_empty_areas: bool = False,
 ) -> Overview:
-    """Assemble one scope. The shell is the same for all three."""
+    """Assemble one scope. The shell is the same for both."""
     today = today or timezone.localdate()
     scope = scope_from(scope)
     if intervention_filter not in INTERVENTION_FILTERS:
@@ -1495,7 +1583,8 @@ def build_overview(
     items = wi.work_items(user, today=today)
 
     if scope == SCOPE_DEPARTMENT:
-        page.figures = _department_figures(user, today, items, people)
+        sent = sent_this_month(today, people)
+        page.figures = _department_figures(user, today, items, people, sent=sent)
         rows = intervention_rows(user, today, items, pop=people)
         if intervention_filter:
             wanted = INTERVENTION_FILTERS[intervention_filter]
@@ -1515,77 +1604,20 @@ def build_overview(
         page.intervention_url = _teemad(**_OPEN_FULL, too=wi.WORK_NEEDS_ATTENTION)
         page.deadlines = deadline_groups(items, today)
         page.feed = activity_feed(user, today, feed_filter)
-        page.loads = person_loads(user, today, items, pop=people)
+        page.loads = person_loads(user, items, pop=people)
         page.unassigned = unassigned_count(user, people)
         page.area_rail = [
             CountRow(label=row.name, count=row.open_count, url=row.url)
             for row in area_rows(user, today, items, pop=people)[0][:5]
         ]
         page.incoming = new_matters(user, today, people)
-        page.reporting = reporting_counts(user, today, people)
-        return page
-
-    if scope == SCOPE_TEAM:
-        page.people = person_loads(user, today, items, with_week=True, pop=people)
-        page.loads = page.people
-        page.unassigned = unassigned_count(user, people)
-        week_end = wi.end_of_iso_week(today)
-        deadlines = real_deadlines(items)
-        page.figures = [
-            # The one figure on this page that does not count Matters, so its
-            # destination is the list of people below rather than the register:
-            # following it must land on exactly the N this number claims, and
-            # this page *is* that list (Ülevaade QA §3).
-            Figure(
-                "people",
-                len(page.people),
-                "inimest",
-                f"?{SCOPE_PARAM}={SCOPE_TEAM}{PEOPLE_ANCHOR}",
-            ),
-            # The department's open Matters, not the sum of the rows below.
-            # Summing per-person counts silently drops every unowned file — the
-            # ones the rail lists as *Vastutajata* — so the strip disagreed with
-            # the register link beside it by exactly that many.
-            Figure(
-                "open",
-                people.open_matters.count(),
-                "avatud teemat",
-                _teemad(**_OPEN_FULL),
-            ),
-            Figure(
-                "overdue",
-                len(wi.work_population_ids(user, wi.WORK_OVERDUE, today=today, items=items)),
-                "teemat üle tähtaja",
-                _teemad(**_OPEN_FULL, too=wi.WORK_OVERDUE),
-                tone="danger",
-            ),
-            Figure(
-                "no_action",
-                people.quiet.count(),
-                "järgmise tegevuseta",
-                _teemad(**_OPEN_FULL, tegevus=MISSING),
-                tone="warning",
-            ),
-        ]
-        page.deadlines = deadline_groups(items, today)
-        page.incoming = new_matters(user, today, people)
-        page.team_activity = [
-            CountRow(
-                label="Sissekandeid sel nädalal",
-                count=Entry.objects.visible_to(user)
-                .filter(occurred_at__date__gte=week_end - timedelta(days=6))
-                .count(),
-            ),
-            CountRow(
-                label=f"Esitatud arvamusi {ESTONIAN_MONTHS_IN[today.month - 1]}",
-                count=people.submissions.filter(
-                    status=SubmissionStatus.SENT,
-                    sent_at__year=today.year,
-                    sent_at__month=today.month,
-                ).count(),
-            ),
-            CountRow(label="Tähtaegu sel nädalal", count=len(wi.week_items(deadlines, today))),
-        ]
+        # One Aruandlus block, one list. The week and the month rows lead
+        # because they narrow towards the reader's own week; the year rows they
+        # came to sit beside follow. Two lists rendered into one heading would
+        # be the visually preserved fragment this move exists to avoid.
+        page.reporting = period_counts(user, today, items, people, sent=sent) + reporting_counts(
+            user, today, people
+        )
         return page
 
     areas, empty = area_rows(

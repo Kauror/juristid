@@ -413,7 +413,7 @@ def test_the_scope_is_a_keyboard_reachable_set_of_links(page, base_url):
 
     control = page.get_by_role("navigation", name="Ülevaate ulatus")
     expect(control).to_be_visible()
-    expect(control.get_by_role("link")).to_have_count(3)
+    expect(control.get_by_role("link")).to_have_count(2)
     expect(control.locator("[aria-current='page']")).to_have_text("Kogu osakond")
 
     control.get_by_role("link", name="Valdkonniti").click()
@@ -427,7 +427,7 @@ def test_the_scope_is_a_keyboard_reachable_set_of_links(page, base_url):
 
 def test_the_selected_scope_survives_the_back_button(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_overview(page, base_url, "?vaade=tiim")
+    open_overview(page, base_url, "?vaade=osakond")
     open_overview(page, base_url, "?vaade=valdkonniti")
 
     page.go_back()
@@ -435,7 +435,7 @@ def test_the_selected_scope_survives_the_back_button(page, base_url):
 
     expect(
         page.get_by_role("navigation", name="Ülevaate ulatus").locator("[aria-current='page']")
-    ).to_have_text("Minu tiim")
+    ).to_have_text("Kogu osakond")
 
 
 def test_a_nonsense_scope_shows_the_default_rather_than_an_error(page, base_url):

@@ -103,7 +103,6 @@ CLOCK_DEPENDENT = [
     # sized to one line leaves the second peeking out — and a value that changes
     # daily peeking past its mask turns every baseline red the next morning.
     ".workrow2__datecell",
-    ".teamrow__datecell",
     ".interrow__reason",
     ".deadlinerow__when",
     ".feedrow__when",

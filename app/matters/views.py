@@ -156,13 +156,13 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
 
 @gate_required
 def overview(request: HttpRequest) -> HttpResponse:
-    """Ülevaade — where the department stands, in three scopes behind one shell.
+    """Ülevaade — where the department stands, in two scopes behind one shell.
 
     Deliberately not Minu töö. That page answers "what do I have to do today";
     this one answers "where is the department losing time", which is the
     question a morning review starts from.
 
-    The scope is a URL parameter and the three tabs are ordinary links. A
+    The scope is a URL parameter and the two tabs are ordinary links. A
     client-side tab strip would make the department view unlinkable, which is
     the one thing somebody covering a colleague's holiday needs to be able to
     paste into a message.

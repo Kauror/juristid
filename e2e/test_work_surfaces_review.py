@@ -2,7 +2,7 @@
 
 Not a regression suite. These take one screenshot per scenario into the CI
 artifact directory and assert only the handful of things a picture cannot show
-on its own — that a passed review date is amber rather than red, that the three
+on its own — that a passed review date is amber rather than red, that the two
 Ülevaade scopes are ordinary links, that no row overflows at 1280.
 
 It exists because the development machine has no database and cannot open a
@@ -119,7 +119,7 @@ def test_the_range_control_is_in_the_url(page, base_url):
 
 
 @pytest.mark.parametrize("width", WIDTHS)
-@pytest.mark.parametrize("scope", ["osakond", "tiim", "valdkonniti"])
+@pytest.mark.parametrize("scope", ["osakond", "valdkonniti"])
 def test_ulevaade(page, base_url, scope, width):
     _open(page, base_url, HEAD, f"/ulevaade/?vaade={scope}", width)
     _shoot(page, f"ulevaade-{scope}-{width}")
@@ -130,9 +130,9 @@ def test_the_scopes_are_links_not_a_client_side_tab_strip(page, base_url):
     _open(page, base_url, HEAD, "/ulevaade/", 1440)
 
     tabs = page.get_by_role("navigation", name="Ülevaate ulatus").get_by_role("link")
-    assert tabs.count() == 3
+    assert tabs.count() == 2
 
-    tabs.nth(2).click()
+    tabs.nth(1).click()
     page.wait_for_load_state("networkidle")
 
     assert "vaade=valdkonniti" in page.url
