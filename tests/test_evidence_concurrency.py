@@ -407,6 +407,62 @@ def test_the_matter_lock_does_not_block_writers_that_only_reference_the_matter(s
     assert writer.join() is None
 
 
+def test_binding_evidence_does_not_deadlock_against_a_search_rebuild(specialist):
+    """The same strength rule, one level down, where it is a cycle not a wait.
+
+    A targeted search refresh runs from `post_save` inside the binding
+    transaction and asks for the rebuild gate's shared side. A rebuild holds
+    that gate exclusively and inserts `SearchDocument` rows carrying
+    `submission_id`, which takes `FOR KEY SHARE` on the Submission the binder is
+    holding. Under `FOR UPDATE` those conflict and the two deadlock — the
+    rebuild waiting for the row, the binder waiting for the gate.
+
+    Forced from the gate side, because that is the only ordering in which the
+    two requests overlap: the binder's row lock and its gate request are
+    adjacent statements, so the rebuild has to already hold the gate.
+    """
+    from app.search.indexing import _hold_off_refreshes
+
+    matter = factories.MatterFactory(owner=specialist)
+    submission = create_submission(matter=matter, title="Arvamus", actor=specialist)
+    _document, version = _evidence(matter, specialist)
+
+    gate_held = threading.Event()
+    reach_for_the_row = threading.Event()
+
+    def hold_the_rebuild_gate() -> None:
+        with transaction.atomic():
+            _hold_off_refreshes()
+            gate_held.set()
+            assert reach_for_the_row.wait(TIMEOUT)
+            with connection.cursor() as cursor:
+                # Exactly what re-inserting this submission's projection row
+                # takes on it.
+                cursor.execute(
+                    "SELECT id FROM submissions_submission WHERE id = %s FOR KEY SHARE",
+                    [str(submission.pk)],
+                )
+
+    def bind() -> None:
+        assert gate_held.wait(TIMEOUT)
+        select_final_evidence(submission=submission, version=version, actor=specialist)
+
+    rebuilder = Runner(hold_the_rebuild_gate).start()
+    assert gate_held.wait(TIMEOUT)
+    binder = Runner(bind).start()
+
+    # Observed from this thread, not from either transaction: PostgreSQL caches
+    # a statistics snapshot for the length of a transaction, so a holder polling
+    # `pg_stat_activity` about its own waiter would read the same stale rows
+    # until it committed.
+    wait_until_blocked()
+    reach_for_the_row.set()
+
+    assert rebuilder.join() is None, "the rebuild lost a deadlock against the binder"
+    assert binder.join() is None, "the binder lost a deadlock against the rebuild"
+    assert Submission.objects.get(pk=submission.pk).final_version_id == version.pk
+
+
 def _forced_round(specialist, *, bind_first: bool) -> BaseException | None:
     """One fully synchronised collision, and whatever the follower raised.
 

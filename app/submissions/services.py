@@ -20,7 +20,10 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
 from app.documents.services import add_evidence_version, create_document
-from app.matters.locks import lock_matter_for_evidence_integrity
+from app.matters.locks import (
+    lock_matter_for_evidence_integrity,
+    lock_submission_for_evidence_integrity,
+)
 from app.search.indexing import reindex_submission
 from app.submissions.enums import RecipientRole, SubmissionKind, SubmissionStatus
 from app.submissions.models import (
@@ -175,7 +178,7 @@ def attach_final_evidence(
     the rule depends on from under that lock (app/matters/locks.py).
     """
     matter = lock_matter_for_evidence_integrity(submission.matter_id)
-    locked = Submission.objects.select_for_update().get(pk=submission.pk)
+    locked = lock_submission_for_evidence_integrity(submission.pk)
 
     if locked.status != SubmissionStatus.DRAFT:
         raise DomainError("Lõplikku tõendit saab lisada ainult koostatavale arvamusele.")
@@ -227,7 +230,7 @@ def select_final_evidence(
     (app/matters/locks.py).
     """
     matter = lock_matter_for_evidence_integrity(submission.matter_id)
-    locked = Submission.objects.select_for_update().get(pk=submission.pk)
+    locked = lock_submission_for_evidence_integrity(submission.pk)
 
     if locked.status != SubmissionStatus.DRAFT:
         raise DomainError("Lõplikku tõendit saab valida ainult koostatavale arvamusele.")

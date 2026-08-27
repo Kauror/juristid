@@ -93,20 +93,47 @@ Take a prefix of that order or the whole of it, never a suffix before a prefix.
 suffix taken alone and therefore safe. What would not be safe is any path that
 locked a Document and then a Matter.
 
-### 3. Lock strength is part of the order
+### 3. Lock strength is part of the order — at every level of it
 
-The Matter lock is `FOR NO KEY UPDATE`, not `FOR UPDATE` — exactly what the
-plain `UPDATE` in `set_matter_visibility` takes by itself. The two conflict with
+Every row this protocol takes is locked `FOR NO KEY UPDATE`, not `FOR UPDATE` —
+exactly what a plain `UPDATE` of that row takes by itself. The two conflict with
 each other, so the writers this exists to serialise still take turns. Neither
-conflicts with the `FOR KEY SHARE` that every insert of a row *referencing* a
-Matter acquires.
+conflicts with the `FOR KEY SHARE` that every insert of a row *referencing* the
+locked one acquires.
 
-That is not a micro-optimisation. Documents, Submissions and audit events all
-carry a `matter_id`, so `FOR UPDATE` here would put a Matter wait in the path of
-a transaction that already holds a Document lock and is merely inserting a child
+That is not a micro-optimisation, and it is load-bearing twice.
+
+**On the Matter.** Documents, Submissions and audit events all carry a
+`matter_id`, so `FOR UPDATE` here would put a Matter wait in the path of a
+transaction that already holds a Document lock and is merely inserting a child
 row — reintroducing the `Document → Matter` edge the ordering rule exists to
-keep out of the graph. A test asserts the weaker lock behaviourally: holding it
-must not block a `create_document` on the same Matter.
+keep out of the graph. That path is reachable in ordinary use:
+`documents.views.add_version` locks an existing Document and then records a
+`ChangeEvent` against its Matter. A test asserts the weaker lock behaviourally:
+holding it must not block a `create_document` on the same Matter.
+
+**On the Submission.** The same rule applies one level down, and there it is the
+difference between a wait and a cycle. A targeted search refresh runs from
+`post_save` *inside* the binding transaction and takes the rebuild gate's shared
+side (`app.search.indexing`); a rebuild holds that gate exclusively and
+re-inserts `SearchDocument` rows carrying `submission_id`, which takes
+`FOR KEY SHARE` on the row the binder is holding. Under `FOR UPDATE` those two
+deadlock — the rebuild waiting for the row, the binder waiting for the gate —
+and PostgreSQL aborts one of them. `FOR NO KEY UPDATE` still serialises two
+binders against each other and against a send, which is everything the check
+needs, and lets the projection row through.
+
+`lock_submission_for_evidence_integrity` is the second helper for that reason.
+`test_binding_evidence_does_not_deadlock_against_a_search_rebuild` fails if it is
+strengthened to `FOR UPDATE`, and
+`test_the_matter_lock_does_not_block_writers_that_only_reference_the_matter`
+fails if the Matter helper is.
+
+`mark_submission_sent` still takes the older, stronger `FOR UPDATE` on the
+Submission; that predates this work and is left alone here, but it means the
+cycle above is still reachable from *that* service and from
+`documents.services.add_evidence_version`. Both are pre-existing and belong to a
+separate change rather than to DATA-002.
 
 ### 4. A waiter re-reads everything
 
@@ -165,9 +192,13 @@ select different evidence, supersede the opinion), not an automatic repair.
 - **Authorization is untouched.** Read populations, write authorization,
   break-glass, department-head reads, ADMINISTRATOR behaviour, 404/403 semantics
   and child visibility are all as ADR 0037 and 0038 left them.
-- **Search is untouched.** Visibility is joined live (ADR 0013, 0014) and
-  `set_matter_visibility` already participated in existing refresh behaviour.
-  No new searchable mutation path, no new hook, `INDEX_VERSION` unchanged.
+- **Search is untouched, but not unrelated.** No new searchable mutation path,
+  no new hook, no change in `app/search`, `INDEX_VERSION` unchanged: visibility
+  is joined live (ADR 0013, 0014) and `set_matter_visibility` already
+  participated in existing refresh behaviour. What *is* new is that these
+  transactions now hold row locks while the `post_save` refresh asks for the
+  rebuild gate, which is why the lock strength in decision 3 is stated for the
+  Submission as well as the Matter.
 
 ## Alternatives rejected
 
