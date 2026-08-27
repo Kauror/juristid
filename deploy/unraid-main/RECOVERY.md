@@ -400,9 +400,10 @@ untouched. This is the ordinary case and it is cheap — see `README.md`.
 ### The code is wrong; migrations were applied and they were additive
 
 Usually still just a code rollback: the previous release does not know about the
-new columns and does not select them. `manage.py migration_plan` said whether
-the migrations were additive **before** they were applied, which is when that
-question is answerable cheaply.
+new columns and does not select them. `manage.py migration_plan`, run from the
+target image before the migration, said whether they were additive — which is
+when that question is answerable cheaply, and why the deployment sequence asks
+it there rather than here.
 
 ### The migrations were not additive
 
@@ -419,14 +420,53 @@ command.
 ### The migration failed partway
 
 PostgreSQL runs each migration in a transaction where it can, so a failure often
-leaves the schema untouched. Often is not always. Ask before assuming:
+leaves the schema untouched. Often is not always, and "often" is doing more work
+in that sentence than it can carry: a release is usually several migrations, and
+`migrate` applies them one after another. An earlier one can be committed while
+a later one fails. So the question is never "did the migration apply" but "how
+far did the release get".
+
+Ask, before assuming — and ask the **target image**, the one whose migrations
+were being applied:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py migration_plan
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml run --rm web python manage.py migration_plan
 ```
 
-If it lists the migration as still pending, nothing was applied. If it does not,
-it was, and the schema is ahead of where the failure suggested.
+The two variables from the deployment sequence must still be exported in this
+shell, or `run` resolves `juristid-main-web:local` and answers about some other
+build entirely:
+
+```bash
+export JURISTID_GIT_SHA=<the-sha-that-was-being-deployed>
+```
+
+```bash
+export JURISTID_IMAGE_TAG=${JURISTID_GIT_SHA:0:12}
+```
+
+**Not `exec -T web`.** At this point in a failed deployment the running `web`
+container is still the *previous* image — `up -d` had not happened yet — and its
+migration graph does not contain the release's migrations at all. It cannot call
+them pending, because it has never heard of them, so the reassuring reading
+("still pending, so nothing was applied") is one the old image is incapable of
+disproving. Asked from the target image, both halves of the report mean
+something: what is still pending was not applied, and what is neither pending
+nor unknown was.
+
+Read the whole list, not one line of it:
+
+- **Every migration in the release is still pending.** Nothing was applied.
+- **Some are pending and some are not.** The release is partly applied. The
+  schema is somewhere between two releases and neither the old code nor the new
+  code has ever been tested against it.
+- **None are pending.** They all applied; the failure was later than it looked,
+  or it was in something `migrate` did after the schema change.
+
+The middle case is the one to expect and the one that is easy to miss by
+reading only the migration that appeared in the error. It is a restore decision,
+not a "run it again" decision — re-running `migrate` on a partly-applied release
+is how a schema that is merely inconsistent becomes one nobody can describe.
 
 ### A data migration wrote wrong business data
 

@@ -21,7 +21,7 @@ documented where it lives; this sequences them and says what each one proves.
 | --- | --- | --- |
 | 0.1 | The commit is reviewed and green | `gh pr checks` on the merge commit; CI is the only full verifier |
 | 0.2 | The commit id is known and written down | Deploy a commit, never a branch (`scripts/deploy/juristid-deploy-preflight.sh`) |
-| 0.3 | The migration plan has been read | `manage.py migration_plan` — before applying, not after |
+| 0.3 | The migration plan has been read | `manage.py migration_plan`, from the target image, before applying rather than after |
 | 0.4 | The running build is what you think it is | `manage.py deployment_readiness` |
 
 ## 1. Code and schema
@@ -33,22 +33,29 @@ back independently.
 | | Step | Command |
 | --- | --- | --- |
 | 1.1 | Preflight | `scripts/deploy/juristid-deploy-preflight.sh` |
-| 1.2 | Back up first | `scripts/deploy/juristid-backup.sh` |
-| 1.3 | Build, migrate, replace | `deploy/unraid-main/README.md` §"Deploying a new build" |
-| 1.4 | Post-flight | `manage.py deployment_readiness`, then the A–L browser list in the same README |
+| 1.2 | Build the target image, then read its migration plan | `deploy/unraid-main/README.md` §"Deploying a new build" |
+| 1.3 | Back up, immediately before the schema moves | `scripts/deploy/juristid-backup.sh` |
+| 1.4 | Migrate, then replace | the same README section, same exported identity |
+| 1.5 | Post-flight | `manage.py deployment_readiness`, then the A–L browser list in the same README |
+
+The build sits ahead of the backup on purpose: the migration plan is a question
+about the *target* image, so that image has to exist before it can be asked, and
+building one writes no business data and changes no schema. The backup does not
+move with it — its value is being the last thing before the first command that
+changes the database.
 
 **A first deployment of the reference-data baseline sits inside step 1.** The
-nine policy areas arrive with the migration at 1.3; the public institutions do
+nine policy areas arrive with the migration at 1.4; the public institutions do
 not, because they are operator-seeded reference data. Between the two,
-`deployment_readiness` at 1.4 will refuse — correctly, the deployment really is
+`deployment_readiness` at 1.5 will refuse — correctly, the deployment really is
 missing the vocabulary its features run on. Close the gap before calling the
 deployment done:
 
 | | Step | Command |
 | --- | --- | --- |
-| 1.5 | Read the reference-data plan | `manage.py reference_data plan` |
-| 1.6 | Apply it, against the digest you just read | `manage.py reference_data apply --expect-plan-sha256 <digest>` |
-| 1.7 | Confirm the baseline | `manage.py reference_data verify`, then `manage.py deployment_readiness` |
+| 1.6 | Read the reference-data plan | `manage.py reference_data plan` |
+| 1.7 | Apply it, against the digest you just read | `manage.py reference_data apply --expect-plan-sha256 <digest>` |
+| 1.8 | Confirm the baseline | `manage.py reference_data verify`, then `manage.py deployment_readiness` |
 
 `plan` writes nothing. `apply` only ever adds a missing institution or a missing
 reviewed alias — it never renames, retypes, merges or deactivates anything that
