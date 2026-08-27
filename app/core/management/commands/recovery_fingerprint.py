@@ -8,10 +8,14 @@ which a restore can be measured against instead of eyeballed.
 
 Three properties make it useful rather than decorative:
 
-* **Canonical and rebuildable are counted separately.** A restored database is
-  *supposed* to have an empty search projection until `rebuild_search_index`
-  runs, so comparing those would fail every correct restore. Rebuildable counts
-  are reported and never compared (docs/adr/0014).
+* **Canonical, rebuildable and operational are counted separately.** A restored
+  database is *supposed* to have an empty search projection until
+  `rebuild_search_index` runs, so comparing those would fail every correct
+  restore. Rebuildable counts are reported and never compared (docs/adr/0014).
+  Operational rows — the system's record of work it owes itself, which today is
+  `SearchRebuildDebt` alone — are reported and never compared for a different
+  reason: they *are* restored, and their number is a statement about a queue at
+  one instant rather than about the register (docs/adr/0041).
 * **Evidence is verified against its own recorded hash**, not merely counted.
   A row whose bytes did not come back is exactly the failure a count cannot
   see. Every canonical holder of evidence is walked, not only
@@ -103,6 +107,7 @@ class Command(BaseCommand):
 
         canonical = deployment.canonical_model_labels()
         rebuildable = deployment.rebuildable_model_labels()
+        operational = deployment.operational_model_labels()
 
         evidence, mismatches = self._evidence(sample=sample, skip_bytes=skip_bytes)
         for mismatch in mismatches:
@@ -125,6 +130,7 @@ class Command(BaseCommand):
             "migrations_consistent": state.is_consistent,
             "canonical_counts": deployment.model_counts(canonical),
             "rebuildable_counts": deployment.model_counts(rebuildable),
+            "operational_counts": deployment.model_counts(operational),
             "evidence": evidence,
             "legacy_source": self._tree_digest(Path(settings.LEGACY_SOURCE_ROOT)),
         }
@@ -248,6 +254,24 @@ class Command(BaseCommand):
         for field in self.COMPARED:
             before: Any = earlier.get(field)
             after: Any = current[field]
+            if field == "canonical_counts":
+                # A fingerprint written before `OPERATIONAL_MODELS` existed
+                # still carries the debt table under `canonical_counts`, and a
+                # key present on one side only is reported as a difference. Drop
+                # it from both, so an older fingerprint compares correctly
+                # instead of being refused by a version bump it does not
+                # otherwise need — the field counts the same models, minus one
+                # that never belonged in it.
+                before = {
+                    key: value
+                    for key, value in (before or {}).items()
+                    if key not in deployment.OPERATIONAL_MODELS
+                }
+                after = {
+                    key: value
+                    for key, value in after.items()
+                    if key not in deployment.OPERATIONAL_MODELS
+                }
             if field == "evidence":
                 # `objects_verified` and `bytes_verified` describe how hard this
                 # run looked, not what it found.

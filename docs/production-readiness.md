@@ -155,7 +155,7 @@ takes to notice.
 
 `check_search_integrity` reports stale indexed text as well as missing rows.
 Renaming an Organisation or a Tag changes what every record naming them
-projects, and it still deliberately triggers no fan-out — but since ADR 0039 it
+projects, and it still deliberately triggers no fan-out — but since ADR 0041 it
 no longer triggers *nothing*: the rename records a durable obligation in its own
 transaction and the `searchindex` service discharges it with an atomic full
 rebuild. `check_search_freshness` is the one-line question ("is anything owed,
@@ -182,6 +182,13 @@ authoritative list — today `SearchDocument`, `DocumentDerivative`,
 restore comparison is allowed to find empty. Everything else is canonical until
 somebody argues otherwise, which is the safe default rather than an assessment
 of each table.
+
+`OPERATIONAL_MODELS` beside it is a shorter list with a different meaning:
+`SearchRebuildDebt`, and nothing else. Those rows *are* restored — the dump has
+no table list — but their number is never compared, because it says what the
+system owed itself at one instant rather than what the register holds. Without
+that, a restore taken seconds after somebody renamed a Valdkond reported
+canonical divergence for a queue that was about to empty itself (ADR 0041).
 
 ## Where production actually stands
 

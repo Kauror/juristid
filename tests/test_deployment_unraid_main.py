@@ -560,7 +560,7 @@ def test_the_search_worker_is_not_judged_by_a_healthcheck_it_cannot_pass(
 
     It has no HTTP port, so the image's probe could only ever be red. What it
     answers instead is whether anything has been owed to the index too long,
-    which is the failure a reader experiences (docs/adr/0039).
+    which is the failure a reader experiences (docs/adr/0041).
     """
     check = compose["services"]["searchindex"].get("healthcheck")
     assert check is not None, "the search worker inherits the web healthcheck"

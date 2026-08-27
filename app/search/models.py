@@ -277,7 +277,15 @@ class SearchRebuildReason(models.TextChoices):
     operator reading `check_search_freshness` learns what kind of edit made the
     corpus stale without the debt table holding any business content; and a new
     member cannot be added without somebody deciding which projection column it
-    invalidates (docs/adr/0039).
+    invalidates (docs/adr/0041).
+
+    `POLICY_AREA_REMOVED` is the one member that is not an edit. A PolicyArea is
+    the only reference row in this vocabulary that can be *deleted* while its
+    name is in the corpus — every other one is held by a `PROTECT` foreign key
+    the moment anything indexes it — so a disappearance is a distinct way for
+    the same column to go stale, and it says so rather than borrowing
+    `POLICY_AREA_RENAMED`. An operator who reads "renamed" goes looking for a
+    rename.
     """
 
     ORGANISATION_RENAMED = "ORGANISATION_RENAMED", "Asutus nimetati ümber"
@@ -285,6 +293,7 @@ class SearchRebuildReason(models.TextChoices):
     TAG_RENAMED = "TAG_RENAMED", "Silt nimetati ümber"
     TAG_ALIAS_CHANGED = "TAG_ALIAS_CHANGED", "Sildi nimekuju muutus"
     POLICY_AREA_RENAMED = "POLICY_AREA_RENAMED", "Valdkond nimetati ümber"
+    POLICY_AREA_REMOVED = "POLICY_AREA_REMOVED", "Valdkond kustutati"
     PERSON_RENAMED = "PERSON_RENAMED", "Inimese nimi muutus"
 
 
@@ -320,6 +329,15 @@ class SearchRebuildDebt(BaseModel):
     deleted row, so this table is empty in the ordinary case, and anything in it
     is either work not yet done or work that has failed — which is what makes
     `SELECT count(*)` a usable health probe.
+
+    **It is operational state, not canonical state**, and `recovery_fingerprint`
+    knows that (`app.core.deployment.OPERATIONAL_MODELS`). A row here means "a
+    vocabulary edit landed seconds ago and the worker has not caught up", which
+    is a healthy condition and not something a restore has to reproduce
+    row-for-row. It is still dumped and still restored — it is an ordinary table
+    in an ordinary `pg_dump` — it is simply never *compared*, because a probe
+    that reports canonical drift whenever a queue is non-empty is a probe an
+    operator learns to ignore.
     """
 
     reason = models.CharField(
@@ -334,6 +352,13 @@ class SearchRebuildDebt(BaseModel):
         help_text="Mitu korda on täisindeksi ehitamine seda rida katsetades ebaõnnestunud.",
     )
     last_attempt_at = models.DateTimeField(null=True, blank=True, verbose_name="viimane katse")
+    #: Sanitised metadata about the last failure — never the exception's own
+    #: message. `check_search_freshness` prints this column to a terminal and a
+    #: container log, and a PostgreSQL error message is composed out of the row
+    #: that failed: a not-null violation's DETAIL is `Failing row contains (…)`
+    #: with the projected `title` and `body_text` in it. Everything written here
+    #: goes through `app.search.freshness.describe_failure`, which is the only
+    #: writer, and which reads schema identifiers and SQLSTATE and nothing else.
     last_error = models.TextField(blank=True, verbose_name="viimane viga")
 
     class Meta:

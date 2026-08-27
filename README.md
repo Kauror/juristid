@@ -280,7 +280,7 @@ A rename is different. Renaming an organisation, editing its aliases, renaming a
 tag or a policy area changes the indexed text of every record naming them —
 thousands of rows from one small edit — so that is deferred rather than done in
 the request. The mutation records a durable obligation in its own transaction,
-and a worker discharges it with one atomic full rebuild (ADR 0039). On the
+and a worker discharges it with one atomic full rebuild (ADR 0041). On the
 deployment that worker is its own container; locally it is a command:
 
 ```bash

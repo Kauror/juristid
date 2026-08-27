@@ -29,7 +29,7 @@ import threading
 
 import pytest
 from django.core.management import call_command
-from django.db import connections, transaction
+from django.db import IntegrityError, OperationalError, connection, connections, transaction
 from django.utils import timezone
 
 from app.core.enums import Visibility
@@ -516,7 +516,12 @@ def test_a_failed_rebuild_keeps_the_previous_index_and_the_debt(monkeypatch, spe
     state = freshness.status()
     assert state.owed == 1
     assert state.failed_attempts == 1
-    assert "katkes" in state.last_error
+    # The class, not the message. Whoever raised the exception wrote that
+    # sentence and may have quoted the record it was working on into it, and
+    # this column is printed by a health probe — so nothing writes it but
+    # `describe_failure`, which reads no message at all.
+    assert state.last_error == "RuntimeError"
+    assert "katkes" not in state.last_error
 
 
 def test_a_retry_after_a_failed_rebuild_converges(monkeypatch, specialist):
@@ -1088,3 +1093,356 @@ def test_every_source_kind_has_a_badge_label():
 
     missing = [kind.value for kind in SearchSourceKind if not SOURCE_LABELS.get(kind.value)]
     assert missing == []
+
+
+# ---------------------------------------------------------------------------
+# The other half of a PolicyArea's lifecycle
+# ---------------------------------------------------------------------------
+#
+# Renaming a Valdkond owed a rebuild from the first version of this branch.
+# Deleting one owed nothing, so the corpus kept the old name and public search
+# kept returning results for a Valdkond the taxonomy no longer has — the same
+# silent staleness SEARCH-001 exists to remove, one lifecycle event further on.
+
+
+def test_deleting_a_policy_area_owes_a_rebuild(specialist):
+    area = factories.PolicyAreaFactory(name_et="Merendusvaldkond")
+    matter = factories.MatterFactory(owner=specialist, title="Valdkonnaga teema")
+    matter.policy_areas.add(area)
+    rebuild_all()
+    assert found("Merendusvaldkond", specialist) == [
+        (SearchSourceKind.MATTER.value, str(matter.pk))
+    ]
+
+    area.delete()
+
+    assert freshness.status().reasons == {SearchRebuildReason.POLICY_AREA_REMOVED.value: 1}
+
+
+def test_a_deleted_policy_area_stops_being_findable_once_the_debt_is_paid(specialist):
+    """The reader's half of the same fact.
+
+    A Matter whose only Valdkond was deleted must stop matching that name — not
+    because the row is gone, but because the row's `alias_text` no longer says
+    it. The Matter itself is untouched and stays findable by its title.
+    """
+    area = factories.PolicyAreaFactory(name_et="Merendusvaldkond")
+    matter = factories.MatterFactory(owner=specialist, title="Laevanduse teema")
+    matter.policy_areas.add(area)
+    rebuild_all()
+
+    area.delete()
+    consume()
+
+    assert found("Merendusvaldkond", specialist) == []
+    assert found("Laevanduse", specialist) == [(SearchSourceKind.MATTER.value, str(matter.pk))]
+    assert freshness.status().is_clear
+
+
+def test_a_rolled_back_policy_area_deletion_leaves_no_debt(specialist):
+    """The mark belongs to the deleting transaction, not to the process.
+
+    `post_delete` fires inside the collector's own `atomic`, so a deletion that
+    is rolled back — a `PROTECT` further down the cascade, a validation error
+    after it, an operator's interrupt — takes its debt with it. The alternative
+    is a debt table that accumulates obligations for changes that never
+    happened, and a worker rebuilding the corpus to converge on nothing.
+    """
+    area = factories.PolicyAreaFactory(name_et="Põllumajandusvaldkond")
+    matter = factories.MatterFactory(owner=specialist, title="Maaelu teema")
+    matter.policy_areas.add(area)
+    rebuild_all()
+
+    class Rollback(Exception):
+        pass
+
+    with pytest.raises(Rollback):
+        with transaction.atomic():
+            area.delete()
+            assert freshness.outstanding().count() == 1, "not marked inside the transaction"
+            raise Rollback
+
+    assert freshness.status().is_clear
+    assert found("Põllumajandusvaldkond", specialist) == [
+        (SearchSourceKind.MATTER.value, str(matter.pk))
+    ]
+
+
+def test_deleting_a_matter_does_not_owe_a_full_rebuild(specialist):
+    """The delete hook is on the reference row, not on everything deletable.
+
+    A Matter's own deletion is bounded — its rows go with it through the
+    CASCADE — and marking a corpus-wide rebuild for one would turn ordinary
+    business activity into a rebuild every few minutes, which is a worse
+    failure than the one being fixed.
+    """
+    area = factories.PolicyAreaFactory(name_et="Energeetikavaldkond")
+    matter = factories.MatterFactory(owner=specialist, title="Kaduv teema")
+    matter.policy_areas.add(area)
+    rebuild_all()
+
+    matter.delete()
+
+    assert freshness.status().is_clear
+
+
+def test_every_other_reference_name_is_protected_from_deletion(specialist):
+    """Why PolicyArea is the only model in this file with a `post_delete`.
+
+    Not an assertion about signals — an assertion about the schema they would
+    otherwise have to compensate for. Every other name that reaches the
+    projection is held by a `PROTECT` foreign key the moment something indexes
+    it, so the delete raises instead of quietly changing the corpus. If one of
+    these is ever relaxed to `CASCADE` or `SET_NULL`, this fails and whoever
+    relaxed it has to decide what the projection owes.
+    """
+    from django.db.models import ProtectedError
+
+    organisation = factories.OrganisationFactory(name="Siseministeerium")
+    tag = factories.TagFactory(name_et="Piirivalve")
+    matter = factories.MatterFactory(owner=specialist, title="Piiri teema")
+    matter.source_organisations.add(organisation)
+    matter.tags.add(tag)
+    factories.EntryFactory(matter=matter, author=specialist, organisation=organisation)
+    rebuild_all()
+
+    for indexed in (organisation, tag, specialist):
+        with pytest.raises(ProtectedError):
+            indexed.delete()
+
+
+# ---------------------------------------------------------------------------
+# A failed rebuild records why, and never what
+# ---------------------------------------------------------------------------
+#
+# `check_search_freshness` prints `last_error` to a terminal and a container
+# log, and a PostgreSQL error message is composed out of the row that failed. A
+# not-null violation against `SearchDocument` raises with `DETAIL: Failing row
+# contains (…)` — and those brackets hold the projected `title` and `body_text`,
+# which is the most confidential material in the system.
+
+#: Unique enough that finding it anywhere is proof rather than coincidence.
+SENTINEL_TITLE = "SALAJANE-SEARCH-ERROR-987"
+
+
+def _rebuild_that_violates_a_not_null_constraint(monkeypatch) -> None:
+    """Make the next rebuild fail the way PostgreSQL fails, not the way a mock does.
+
+    A raised `Exception("boom")` would pass any sanitiser ever written. The
+    defect is specifically that the *database* composes its message out of the
+    row, so the test has to reach PostgreSQL and let it do that.
+    """
+    from app.search import indexing
+
+    original = indexing._document_values
+
+    def without_indexed_at(matter: object, now: object) -> dict:
+        values = original(matter, now)
+        values["indexed_at"] = None
+        return values
+
+    monkeypatch.setattr(indexing, "_document_values", without_indexed_at)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_database_failure_does_not_persist_the_row_that_failed(monkeypatch, specialist):
+    factories.MatterFactory(owner=specialist, title=SENTINEL_TITLE)
+    freshness.mark_rebuild_owed(SearchRebuildReason.TAG_RENAMED)
+    _rebuild_that_violates_a_not_null_constraint(monkeypatch)
+
+    with pytest.raises(IntegrityError) as caught:
+        consume()
+
+    # The exception itself carries the content — that is PostgreSQL's doing and
+    # is not something this change can or should alter. What matters is what
+    # survives it.
+    assert SENTINEL_TITLE in str(caught.value), "the reproduction stopped reproducing"
+
+    debt = SearchRebuildDebt.objects.get()
+    assert SENTINEL_TITLE not in debt.last_error
+    assert "Failing row contains" not in debt.last_error
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_sanitised_failure_still_says_what_broke(monkeypatch, specialist):
+    """Useful, not merely safe.
+
+    "the rebuild failed" would pass the test above and tell an operator nothing.
+    The SQLSTATE and the schema names PostgreSQL supplies separately are enough
+    to find the change that caused it, and none of them is a value from a row.
+    """
+    factories.MatterFactory(owner=specialist, title=SENTINEL_TITLE)
+    freshness.mark_rebuild_owed(SearchRebuildReason.TAG_RENAMED)
+    _rebuild_that_violates_a_not_null_constraint(monkeypatch)
+
+    with pytest.raises(IntegrityError):
+        consume()
+
+    debt = SearchRebuildDebt.objects.get()
+    assert "IntegrityError" in debt.last_error
+    assert "23502" in debt.last_error
+    assert "search_searchdocument.indexed_at" in debt.last_error
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_freshness_probe_never_prints_the_row_that_failed(monkeypatch, specialist, capsys):
+    """The place the leak would have been read from.
+
+    This command is a container healthcheck, so its output goes to the Docker
+    log by default and to an operator's terminal on demand. It is the reason
+    `last_error` has to be safe rather than merely short.
+    """
+    factories.MatterFactory(owner=specialist, title=SENTINEL_TITLE)
+    freshness.mark_rebuild_owed(SearchRebuildReason.TAG_RENAMED)
+    _rebuild_that_violates_a_not_null_constraint(monkeypatch)
+
+    with pytest.raises(IntegrityError):
+        consume()
+    monkeypatch.undo()
+
+    with pytest.raises(SystemExit):
+        call_command("check_search_freshness")
+
+    printed = capsys.readouterr()
+    assert SENTINEL_TITLE not in printed.out + printed.err
+    # Still a fault, and still says one rebuild has been attempted and failed.
+    assert "ebaõnnestunud 1 korda" in printed.err
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_failed_rebuild_is_still_a_fault_after_sanitisation(monkeypatch, specialist):
+    """Sanitising the message must not soften the state.
+
+    The probe faults on a failed attempt rather than waiting for the staleness
+    threshold, because a rebuild that raised is not going to fix itself by
+    being left alone. That is read off `attempts`, not off the message, and
+    this pins the two apart.
+    """
+    factories.MatterFactory(owner=specialist, title=SENTINEL_TITLE)
+    freshness.mark_rebuild_owed(SearchRebuildReason.TAG_RENAMED)
+    _rebuild_that_violates_a_not_null_constraint(monkeypatch)
+
+    with pytest.raises(IntegrityError):
+        consume()
+
+    state = freshness.status()
+    assert state.failed_attempts == 1
+    assert state.last_error
+    assert not state.is_clear
+
+
+def test_a_failure_with_no_database_underneath_it_still_records_its_class():
+    """Not every failure is PostgreSQL's, and the safe rule is the same.
+
+    A plain Python exception's message is written by whoever raised it and may
+    quote anything it was working on, so it is not read either. The class name
+    is.
+    """
+    described = freshness.describe_failure(ValueError(SENTINEL_TITLE))
+    assert described == "ValueError"
+
+
+# ---------------------------------------------------------------------------
+# The worker survives the database going away
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_worker_pass_reconnects_after_the_connection_is_lost(specialist):
+    """`restart: unless-stopped` cannot see this failure, so the loop has to.
+
+    A PostgreSQL restart leaves the worker holding a dead socket. Every
+    subsequent pass raised `OperationalError` against it, for ever: the process
+    had not exited, so nothing restarted it, the debt kept accumulating, and
+    converging again needed a human to notice and restart the container — the
+    exact failure this branch exists to remove.
+
+    A real invalidation rather than a patched `close_old_connections`: the
+    regression is the state of the connection, and a test that mocks the cure
+    proves only that the cure was called.
+    """
+    organisation = factories.OrganisationFactory(name="Kliimaministeerium")
+    matter = factories.MatterFactory(owner=specialist, title="Kliimateema")
+    matter.source_organisations.add(organisation)
+    rebuild_all()
+    organisation.name = "Keskkonnaamet"
+    organisation.save()
+    assert freshness.outstanding().count() == 1
+
+    # What a database restart leaves behind: Django still holds a connection
+    # object, and the socket under it is gone.
+    connection.connection.close()
+
+    # The pass that meets the dead socket fails, and fails honestly.
+    with pytest.raises(OperationalError):
+        freshness.worker_pass()
+
+    # The next one reconnects and pays the debt off, with no human involved.
+    outcome = freshness.worker_pass()
+    assert outcome.rebuilt
+    assert outcome.cleared == 1
+    assert freshness.status().is_clear
+    assert found("Keskkonnaamet", specialist) == [(SearchSourceKind.MATTER.value, str(matter.pk))]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_loop_without_the_hygiene_would_stay_wedged(specialist):
+    """What makes the test above load-bearing rather than decorative.
+
+    `consume_once` is the loop body without the connection hygiene, and it is
+    what the worker called before this correction. Four passes, four failures,
+    and the debt still outstanding.
+    """
+    freshness.mark_rebuild_owed(SearchRebuildReason.TAG_RENAMED)
+    connection.connection.close()
+
+    for _ in range(4):
+        with pytest.raises(OperationalError):
+            freshness.consume_once()
+
+    connection.close()
+    assert freshness.outstanding().count() == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_healthy_pass_keeps_the_connection_it_had(specialist):
+    """The hygiene must be free in the ordinary case.
+
+    `close_old_connections` drops a connection only when it is unusable or past
+    `CONN_MAX_AGE`, so a worker polling every ten seconds is not opening a new
+    PostgreSQL connection every ten seconds.
+    """
+    freshness.mark_rebuild_owed(SearchRebuildReason.TAG_RENAMED)
+    before = connection.connection
+
+    freshness.worker_pass()
+
+    assert connection.connection is before
+
+
+@pytest.mark.django_db(transaction=True)
+def test_the_integrity_check_does_not_print_the_row_that_failed(monkeypatch, specialist):
+    """The second reader of the same column.
+
+    `check_search_freshness` is the healthcheck and `check_search_integrity` is
+    the fuller diagnostic, and both render `last_error` into their output.
+    Sanitising at the single write site is what covers both — and this pins that
+    a future third reader inherits the same guarantee rather than needing its
+    own filter.
+    """
+    from app.search.management.commands.check_search_integrity import build_report
+
+    factories.MatterFactory(owner=specialist, title=SENTINEL_TITLE)
+    freshness.mark_rebuild_owed(SearchRebuildReason.TAG_RENAMED)
+    _rebuild_that_violates_a_not_null_constraint(monkeypatch)
+
+    with pytest.raises(IntegrityError):
+        consume()
+    monkeypatch.undo()
+
+    report = build_report(sample=0)
+
+    assert not report.ok
+    rendered = " ".join(f"{finding.label} {finding.detail}" for finding in report.findings)
+    assert SENTINEL_TITLE not in rendered
+    assert "Indeksi taastamine" in rendered

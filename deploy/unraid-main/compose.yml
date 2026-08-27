@@ -214,7 +214,7 @@ services:
   # small admin form. That is deliberately not fanned out inside the request;
   # instead the mutation records a durable obligation in its own transaction and
   # this loop discharges it with an atomic full rebuild
-  # (app/search/freshness.py, docs/adr/0039).
+  # (app/search/freshness.py, docs/adr/0041).
   #
   # A container rather than a cron entry, and not for want of trying the simpler
   # thing: this host's cron is generated from the flash drive and editing it can

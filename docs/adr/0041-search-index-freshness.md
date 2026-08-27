@@ -1,4 +1,4 @@
-# ADR 0039 — Search index freshness: durable debt instead of a rebuild somebody remembers
+# ADR 0041 — Search index freshness: durable debt instead of a rebuild somebody remembers
 
 - Status: accepted
 - Date: 2026-08-27
@@ -99,6 +99,7 @@ itself; "high" means one edit can invalidate the corpus.
 | **`Tag.name_et`** | every MATTER row tagged with it | **high** | **new** — durable debt |
 | **`TagAlias` create/edit/delete** | every MATTER row tagged with its tag | **high** | **new** — durable debt |
 | **`PolicyArea.name_et`** | every MATTER row in that area | **high** | **new** — durable debt |
+| **`PolicyArea` delete** | every MATTER row in that area | **high** | **new** — `post_delete` → durable debt. The only reference row here that can be deleted while its name is indexed: every other one is held by a `PROTECT` foreign key the moment anything names it, and `Matter.policy_areas` alone is a plain many-to-many |
 | **`User.display_name`** | every ENTRY row they authored | **high** | **new** — durable debt |
 | Bulk writers (`update()`, `bulk_create`, importers, cutover commands) | whatever they touch | varies | unchanged: the caller owns its refresh, under `suspend_indexing`, and every current one does |
 
@@ -210,6 +211,60 @@ threshold — nothing is converging it — or a rebuild has already failed again
 it. A diagnostic that drained the queue it was asked to describe would be the
 same mistake as one that quietly repaired what it found.
 
+### The debt table holds no indexed content, including in its failure column
+
+`SearchRebuildDebt.last_error` records **sanitised metadata about a failure and
+never the exception's own message**. Everything written to it goes through
+`app.search.freshness.describe_failure`, which is the column's only writer.
+
+The reason is not tidiness. `check_search_freshness` prints that column to an
+operator's terminal and to a container log, and a PostgreSQL error message is
+composed out of the row that failed. A rebuild that hits a not-null violation
+raises with `DETAIL: Failing row contains (…)` — and the row in question is a
+`SearchDocument`, so those brackets contain the projected `title` and
+`body_text`. A unique violation gives `Key (column)=(value) already exists`.
+Storing `str(error)` put the most confidential material this system holds — a
+RESTRICTED `Kaasamine`'s note is in that text — into the one search table that
+was never meant to carry any of it, and then printed it at a health probe's
+verbosity.
+
+The rule is therefore an allow-list rather than a filter: SQLSTATE, exception
+class, and the schema identifiers PostgreSQL supplies separately
+(`table_name`, `column_name`, `constraint_name`). Those are names that appear in
+the DDL, never values that appear in a row. What an operator gets is
+`IntegrityError [23502] search_searchdocument.indexed_at`, which still says
+which constraint broke and therefore what to look at; the full traceback goes to
+the worker's log, whose audience is a developer rather than a probe.
+
+Sanitising does not soften the failure state. `attempts` still increments,
+`check_search_freshness` still faults immediately on a non-zero attempt count,
+and the debt still stands until a rebuild succeeds.
+
+### A database restart must not need a container restart
+
+Every worker iteration begins with `close_old_connections()`
+(`freshness.worker_pass`). A request/response cycle gets this for free — Django
+drops a connection broken by the previous request before the next one needs it —
+and a management command that loops forever gets none of it.
+
+Without it, a PostgreSQL restart wedged the worker permanently: every subsequent
+pass raised `OperationalError` against the same dead socket, the debt kept
+accumulating, and `restart: unless-stopped` never fired, because it watches for a
+process that *exited* and this one was still running and still logging. Recovery
+needed a human to notice and restart the container, which is the failure this
+whole ADR exists to remove, displaced by one layer.
+
+`close_old_connections` rather than an unconditional close: it drops a connection
+only when it is unusable or past `CONN_MAX_AGE`, so an ordinary pass reuses what
+it had. And the healing happens *before* the attempt rather than after the
+failure, so nothing depends on the pass that lost the connection having survived
+long enough to clean up after itself.
+
+This is connection hygiene and not a retry policy. A rebuild that fails for an
+application reason still fails on the next pass, ten seconds later, and stays
+visible in the debt table — the ten-second idle is the whole of the backoff, and
+at six users and a rebuild measured in seconds it is enough.
+
 ### Why the whole corpus rather than a fanout queue
 
 Measured. A full rebuild is 1.7s for 2,946 rows on the deployed host and 4.4s
@@ -226,17 +281,48 @@ authoritative.
 
 ## Consequences
 
-`migrations: search/0007_search_rebuild_debt` — one new table, search-local. **No
-business-data migration**, and nothing that rewrites a Matter, a Submission or a
-Document. Forward deployment is safe against an existing corpus: the table
-starts empty, which reads as "nothing owed", which is true of an index nobody
-has invalidated yet.
+`migrations: search/0007_search_rebuild_debt` — one new table, search-local, and
+still the only one. **No business-data migration**, and nothing that rewrites a
+Matter, a Submission or a Document. Forward deployment is safe against an
+existing corpus: the table starts empty, which reads as "nothing owed", which is
+true of an index nobody has invalidated yet.
 
-`SearchRebuildDebt` is deliberately **not** added to `REBUILDABLE_MODELS`. It is
-not a projection of anything — it is a record that a projection is out of date —
-so the safe default applies and a restore is expected to bring it back. In
-practice the point is moot, because 5.5 already says a restore is followed by a
-rebuild.
+`POLICY_AREA_REMOVED` was folded into 0007 rather than added as a second
+migration, because 0007 has never been applied anywhere: it exists on this
+branch alone, the service it belongs to is not deployed, and CI builds the
+schema from zero on every run. A choices-only `AlterField` emits no DDL, so the
+two forms are identical to PostgreSQL — one file is simply the honest
+description of a table that has only ever been created once.
+
+`SearchRebuildDebt` is **operational** state, and `app/core/deployment.py` grows
+a third category to say so: `OPERATIONAL_MODELS`, alongside canonical and
+rebuildable.
+
+It is not `REBUILDABLE_MODELS` — nothing rebuilds a debt row; rebuilding is what
+*clears* one — and leaving it canonical, which is what this ADR originally
+decided, turned out not to be moot at all. A pending row made
+`recovery_fingerprint --compare` report
+
+    canonical_counts.search.SearchRebuildDebt: 0 -> 1
+
+which is a healthy queue with a few seconds' work in it being reported as
+canonical-state divergence, by the one command whose job is to tell an operator
+whether a restore brought the register back. A probe that cries wolf during a
+correct restore is worse than no probe.
+
+The two halves of the classification are separate decisions and only one of them
+moved. The debt table is still **persisted and restored** exactly as before — the
+backup is a whole-database `pg_dump` and has no table list, and `REBUILDABLE_MODELS`
+never fed it; the classification is read only by `recovery_fingerprint`. What
+changed is that operational counts are **reported and never compared**, for a
+different reason from rebuildable ones: rebuildable rows are legitimately absent
+after a restore, operational rows are legitimately *present*.
+
+`FINGERPRINT_VERSION` is **not** bumped. A fingerprint written before this build
+carries the debt table under `canonical_counts`, so the comparison drops
+operational labels from both sides rather than refusing the older file — which
+keeps a pre-deploy fingerprint comparable across the deploy that introduces this,
+the one moment somebody most wants to compare one.
 
 **A rebuild can now happen at any moment**, where before it happened when an
 operator chose. Ordinary saves are unaffected: the shared/exclusive advisory
@@ -272,3 +358,52 @@ child joins, the AUTH003.1 version gate and the fail-closed behaviour for stale
 rows are all exactly as ADR 0038 left them. Ranking, query semantics and the
 searchable-text composition are unchanged: every new trigger calls the builders
 the rebuild already used, so there is one definition of what a record says.
+
+## Known boundaries, deliberately left alone
+
+Three things this design does not guarantee. Each was examined during the
+correction round, each is reachable only outside the paths the product supports,
+and each would cost more to close than the failure is worth today. They are
+written down so the next person meets them here rather than in production.
+
+**A rename outside a transaction has a window.** `_mark_on_rename` runs on
+`pre_save`, and Django sends `pre_save` *before* the context manager that wraps
+the write — and for a model with no parents that context manager is
+`mark_for_rollback_on_error`, not `atomic`. So a bare `organisation.save()` in
+autocommit commits the debt row in one transaction and the rename in the next.
+A worker polling between the two would rebuild against the old name and clear a
+debt that was owed for a change it did not see, leaving the corpus stale with
+nothing recording it.
+
+It is not reachable from the product. Every supported way to rename an
+`Organisation`, a `Tag`, a `PolicyArea` or a `User` is Django admin, and
+`ModelAdmin.changeform_view` wraps the whole POST in `transaction.atomic` — so
+the mark and the rename commit together, which is the guarantee this design
+claims. What is left is a `manage.py shell` session, where the operator running
+it can also run `rebuild_search_index`. Closing it properly means capturing the
+old value in `pre_save` and marking in `post_save`, which is a second piece of
+per-instance state and a redesign of every handler in the file; it is not worth
+that until something other than admin edits reference data.
+
+**`QuerySet.update()` sends no signals**, so a bulk rename through it owes
+nothing. Re-checked in this round: every `.update()` in the repository that
+touches one of these models sets `is_active`, `sort_order` or `help_text` —
+none of which reaches indexed text — and all of them are migrations or the
+seed command rather than a production write path. The alternative is a database
+trigger, which would put a second definition of "the projection is stale" in a
+place no test in this repository can read. Bulk writers own their refresh here,
+as they already do for `suspend_indexing`.
+
+**The retry cadence is flat.** A rebuild that fails for an application reason is
+retried every `SEARCH_REFRESH_WORKER_IDLE_SECONDS`, for ever, with the failure
+visible in the debt table and in the log each time. That is not a busy loop —
+ten seconds is the floor — and at six users, a rebuild measured in seconds and
+a failure that a human is expected to look at, a backoff curve would add a reset
+rule and its own tests to save a log line every ten seconds. Revisit it if this
+worker ever runs somewhere that pays per query.
+
+The extraction worker (`run_extraction_worker`) has the same connection
+lifecycle as this one had before the correction. It is a separate service with a
+separate queue and it is out of scope here, but whoever touches it next should
+know that `close_if_unusable_or_obsolete` between passes is what keeps a
+long-lived loop alive across a database restart.

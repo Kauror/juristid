@@ -176,7 +176,7 @@ services:
 
   # Search freshness. The rehearsal counterpart of the main stack's service; see
   # deploy/unraid-main/compose.yml for why this is a container and not a cron
-  # entry, and docs/adr/0039 for what it converges.
+  # entry, and docs/adr/0041 for what it converges.
   searchindex:
     image: juristid-test-web:${JURISTID_IMAGE_TAG:-local}
     container_name: juristid-test-searchindex

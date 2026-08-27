@@ -261,7 +261,7 @@ docker compose -p juristid-main -f compose.yml restart web
 `searchindex` is the search freshness worker. It sleeps until a canonical change
 owes the index a rebuild — an Organisation rename, an alias edit, a Tag or
 PolicyArea rename, a person's display name — and then performs one atomic full
-rebuild (ADR 0039). Nothing is owed most of the time, so an empty log is the
+rebuild (ADR 0041). Nothing is owed most of the time, so an empty log is the
 normal state. To ask the question directly:
 
 ```bash

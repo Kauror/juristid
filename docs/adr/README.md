@@ -47,6 +47,7 @@ consequences and reversibility.
 | [0036](0036-assignable-department-workers.md) | Who current business work may be assigned to, and who a filter may name | Accepted |
 | [0037](0037-the-business-write-http-boundary.md) | Where business-write authorization is enforced, and why the refusal is 404 | Accepted |
 | [0038](0038-child-visibility-in-projections.md) | Child visibility in projections, and the index-version gate | Accepted |
+| [0041](0041-search-index-freshness.md) | Search index freshness: durable debt instead of a rebuild somebody remembers | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 

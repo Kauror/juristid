@@ -321,6 +321,122 @@ def test_the_search_projection_is_reported_and_never_compared(tmp_path: Path) ->
     assert "search.SearchDocument" not in fingerprint["canonical_counts"]
 
 
+def test_a_pending_search_rebuild_is_not_canonical_drift(tmp_path: Path) -> None:
+    """The one that made this a correction rather than a design note.
+
+    A `SearchRebuildDebt` row means "somebody renamed a Valdkond a few seconds
+    ago and the worker has not caught up". It is a healthy, self-clearing state
+    that a restore verification should have no opinion about — and until the
+    debt table was classified, taking a fingerprint, marking a rebuild and
+    comparing produced
+
+        canonical_counts.search.SearchRebuildDebt: 0 -> 1
+
+    a non-zero exit and the sentence "The canonical state does not match", from
+    the one command whose job is to tell an operator whether the register came
+    back. A probe that cries wolf during a correct restore is worse than no
+    probe (docs/adr/0041).
+    """
+    from app.search.freshness import mark_rebuild_owed
+    from app.search.models import SearchRebuildReason
+
+    _evidence()
+    out = tmp_path / "before.json"
+    call_command("recovery_fingerprint", "--out", str(out))
+
+    mark_rebuild_owed(SearchRebuildReason.POLICY_AREA_RENAMED)
+
+    # No CommandError: the canonical state is unchanged, because a queue is not
+    # canonical state.
+    call_command("recovery_fingerprint", "--compare", str(out))
+
+
+def test_the_debt_is_reported_even_though_it_is_never_compared(tmp_path: Path) -> None:
+    """Not compared is not the same as not looked at.
+
+    An operator reading a fingerprint beside a backup should be able to see that
+    the index owed a rebuild at the moment it was taken; what they must not get
+    is that fact reported as a difference in the register.
+    """
+    from app.search.freshness import mark_rebuild_owed
+    from app.search.models import SearchRebuildReason
+
+    mark_rebuild_owed(SearchRebuildReason.TAG_RENAMED)
+    out = tmp_path / "fingerprint.json"
+    call_command("recovery_fingerprint", "--out", str(out))
+    fingerprint = json.loads(out.read_text(encoding="utf-8"))
+
+    assert fingerprint["operational_counts"]["search.SearchRebuildDebt"] == 1
+    assert "search.SearchRebuildDebt" not in fingerprint["canonical_counts"]
+    # And it is not a projection either — nothing rebuilds a debt row.
+    assert "search.SearchRebuildDebt" not in fingerprint["rebuildable_counts"]
+
+
+def test_clearing_the_debt_is_not_canonical_drift_either(tmp_path: Path) -> None:
+    """The other direction, which is the one a restore actually takes.
+
+    A dump captured with work outstanding, restored, and then converged by the
+    worker, has fewer debt rows than the fingerprint beside it. That must not
+    read as rows lost in the restore.
+    """
+    from app.search.freshness import consume_once, mark_rebuild_owed
+    from app.search.models import SearchRebuildDebt, SearchRebuildReason
+
+    _evidence()
+    mark_rebuild_owed(SearchRebuildReason.ORGANISATION_RENAMED)
+    out = tmp_path / "before.json"
+    call_command("recovery_fingerprint", "--out", str(out))
+
+    consume_once()
+    assert not SearchRebuildDebt.objects.exists()
+
+    call_command("recovery_fingerprint", "--compare", str(out))
+
+
+def test_excluding_the_debt_did_not_stop_the_check_noticing_real_loss(tmp_path: Path) -> None:
+    """The over-broad-fix guard, and the reason F1 is a classification and not a flag.
+
+    Excluding a model from the comparison is one edit away from excluding the
+    register, and a recovery check that passes over a lost Matter is worse than
+    useless. So the same fixture that proves a pending rebuild is invisible
+    proves an edited Matter is not.
+    """
+    _evidence()
+    matter = factories.MatterFactory(title="Algne pealkiri")
+    out = tmp_path / "before.json"
+    call_command("recovery_fingerprint", "--out", str(out))
+
+    matter.delete()
+
+    with pytest.raises(CommandError) as failure:
+        call_command("recovery_fingerprint", "--compare", str(out))
+    assert "matters.Matter" in str(failure.value)
+
+
+def test_a_fingerprint_taken_before_the_debt_was_classified_still_compares(
+    tmp_path: Path,
+) -> None:
+    """Written for the deploy that introduces this, which is the awkward one.
+
+    An operator fingerprints production, deploys, restores, compares. The file
+    in their hand was written by the previous build, so it carries the debt
+    table under `canonical_counts` and the new one does not — and a key present
+    on one side only is a difference. Dropping operational labels from both
+    sides is what makes that comparison work without a `FINGERPRINT_VERSION`
+    bump that would refuse the file outright.
+    """
+    _evidence()
+    out = tmp_path / "before.json"
+    call_command("recovery_fingerprint", "--out", str(out))
+
+    earlier = json.loads(out.read_text(encoding="utf-8"))
+    earlier["canonical_counts"]["search.SearchRebuildDebt"] = 3
+    earlier.pop("operational_counts", None)
+    out.write_text(json.dumps(earlier), encoding="utf-8")
+
+    call_command("recovery_fingerprint", "--compare", str(out))
+
+
 def test_an_unchanged_system_matches_its_own_fingerprint(tmp_path: Path) -> None:
     _evidence()
     out = tmp_path / "fingerprint.json"

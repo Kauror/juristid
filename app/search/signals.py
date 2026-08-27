@@ -34,7 +34,7 @@ depended on a human noticing and running `rebuild_search_index`. The handlers at
 the bottom of this module now write a durable obligation instead — one row, in
 the same transaction as the rename — and a consumer pays it off with the same
 atomic rebuild an operator would have run (`app/search/freshness.py`,
-docs/adr/0039).
+docs/adr/0041).
 
 So there are two mechanisms and they are not interchangeable:
 
@@ -447,6 +447,48 @@ def _mark_on_rename(fields: tuple[str, ...], reason: str) -> Any:
     return handler
 
 
+def _mark_on_delete(reason: str) -> Any:
+    """Mark a rebuild owed when a reference row disappears.
+
+    The gap this closes is narrow and it was total. Renaming a PolicyArea owed
+    a rebuild; *deleting* one owed nothing, so every Matter that carried its
+    name kept carrying it, `alias_text` went on matching a Valdkond the taxonomy
+    no longer has, and public search kept returning results for it. Nothing
+    anywhere said so — which makes it the same defect SEARCH-001 exists to fix,
+    one lifecycle event further along.
+
+    **PolicyArea is the only reference model that needs this**, and the audit is
+    worth writing down because the asymmetry looks like an oversight. Every
+    other name in `_alias_text_for` reaches the projection through a foreign key
+    that is `PROTECT` the moment anything indexes it: `Organisation` through
+    `MatterSourceOrganisation`, `Matter.addressee_organisation`, `Entry` and
+    `SubmissionRecipient`; `Tag` through `TagAssignment`; a person's
+    `display_name` through `Entry.author`. Deleting any of those raises rather
+    than quietly changing the corpus, and one that *is* deletable is one nothing
+    indexes. `Matter.policy_areas` alone is a plain many-to-many, so its join
+    rows cascade away and the delete succeeds.
+
+    No comparison and no `update_fields`, unlike `_mark_on_rename`: a deletion
+    is unconditionally a change to the vocabulary, and there is no later row to
+    compare against. Deleting an unused Valdkond invalidates nothing in truth
+    and is marked anyway, which costs one coalesced rebuild — the same trade
+    `_mark_alias_change` takes, for the same reason.
+
+    No `_deletion_started_at` guard either, and that is deliberate rather than
+    forgotten. The guard exists for handlers that *re-project* during a cascade
+    and would insert a row the collector has already swept past; this handler
+    inserts a `SearchRebuildDebt`, which no cascade touches. `post_delete` fires
+    inside the collector's own `transaction.atomic`, so the mark commits with
+    the deletion and a rolled-back delete takes its debt with it — the same
+    durability boundary every other mark in this file sits inside.
+    """
+
+    def handler(sender: type[Model], instance: Any, **kwargs: Any) -> None:
+        mark_rebuild_owed(reason)
+
+    return handler
+
+
 def _mark_alias_change(reason: str) -> Any:
     """Aliases are marked unconditionally, and the asymmetry is deliberate.
 
@@ -492,6 +534,14 @@ pre_save.connect(
     _mark_on_rename(("name_et",), SearchRebuildReason.POLICY_AREA_RENAMED),
     sender=PolicyArea,
     dispatch_uid="search_debt_area_rename",
+    weak=False,
+)
+# The other half of a PolicyArea's lifecycle. See `_mark_on_delete` for why
+# this model is the only one here that gets a `post_delete`.
+post_delete.connect(
+    _mark_on_delete(SearchRebuildReason.POLICY_AREA_REMOVED),
+    sender=PolicyArea,
+    dispatch_uid="search_debt_area_deleted",
     weak=False,
 )
 # A person's display name is `alias_text` on every ENTRY row they authored. The

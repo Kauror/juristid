@@ -25,7 +25,7 @@ coarse answer is the correct one here, and it converges automatically on
 searchable text this module has never heard of, which a hand-maintained fanout
 map cannot.
 
-Three properties, matching the extraction worker's:
+Four properties, matching the extraction worker's:
 
 * **A killed worker loses nothing.** The obligation is a committed row, and it
   is deleted only after the rebuild it paid for has committed.
@@ -35,6 +35,11 @@ Three properties, matching the extraction worker's:
 * **It is safe to run twice.** Two workers claiming the same rows perform two
   rebuilds and the second is a no-op against an index that is already current;
   the advisory lock in `app/search/indexing.py` keeps them from overlapping.
+* **A database restart does not need a container restart.** Every pass begins by
+  dropping a connection the previous one broke (`freshness.worker_pass`).
+  Without that the process survives the outage and never works again, which is
+  the one failure mode `restart: unless-stopped` cannot see: it watches for a
+  process that exited, and this one is still running.
 """
 
 from __future__ import annotations
@@ -73,7 +78,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        from app.search.freshness import consume_once
+        from app.search.freshness import worker_pass
 
         idle = options["idle_seconds"]
         if idle is None:
@@ -96,15 +101,26 @@ class Command(BaseCommand):
         rebuilds = 0
         while not stopping["now"]:
             try:
-                outcome = consume_once()
+                outcome = worker_pass()
             except Exception as error:
                 # The attempt is already recorded on the debt rows, which is what
                 # `check_search_freshness` reads; this is the operator's copy
-                # with the traceback attached.
+                # with the traceback attached. The two differ on purpose: the
+                # debt column is sanitised because a probe prints it, and this
+                # log line is for a developer reading the container's own
+                # output (`app/search/freshness.describe_failure`).
                 logger.exception("Otsinguindeksi taastamine ebaõnnestus.")
                 self.stderr.write(self.style.ERROR(f"  taastamine ebaõnnestus: {error}"))
                 if options["once"]:
                     raise SystemExit(1) from error
+                # Idle rather than immediate, and that is the whole of this
+                # worker's retry policy. A rebuild that fails for an application
+                # reason fails again in ten seconds' time; ten seconds is slow
+                # enough that a permanently broken rebuild costs a log line every
+                # ten seconds rather than a busy loop, and quick enough that a
+                # transient outage converges as soon as it ends. Six users and a
+                # rebuild measured in seconds do not need a backoff curve, and a
+                # backoff curve would need its own tests and its own reset rule.
                 time.sleep(idle)
                 continue
 

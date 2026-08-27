@@ -414,7 +414,7 @@ EXTRACTION_WORKER_HEARTBEAT_PATH = env(
 # or PolicyArea rename — records a durable obligation rather than reindexing
 # thousands of rows inside somebody's form submission. These two numbers are the
 # whole runtime configuration of paying that obligation off
-# (app/search/freshness.py, docs/adr/0039).
+# (app/search/freshness.py, docs/adr/0041).
 
 # How long the worker waits when nothing is owed. The same default as the
 # extraction worker, because it is the same question: how long may a user's

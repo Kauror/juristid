@@ -17,7 +17,7 @@ class Migration(migrations.Migration):
                 ('id', models.UUIDField(default=app.core.ids.uuid7, editable=False, primary_key=True, serialize=False)),
                 ('created_at', models.DateTimeField(auto_now_add=True, db_index=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('reason', models.CharField(choices=[('ORGANISATION_RENAMED', 'Asutus nimetati ümber'), ('ORGANISATION_ALIAS_CHANGED', 'Asutuse nimekuju muutus'), ('TAG_RENAMED', 'Silt nimetati ümber'), ('TAG_ALIAS_CHANGED', 'Sildi nimekuju muutus'), ('POLICY_AREA_RENAMED', 'Valdkond nimetati ümber'), ('PERSON_RENAMED', 'Inimese nimi muutus')], db_index=True, max_length=40, verbose_name='põhjus')),
+                ('reason', models.CharField(choices=[('ORGANISATION_RENAMED', 'Asutus nimetati ümber'), ('ORGANISATION_ALIAS_CHANGED', 'Asutuse nimekuju muutus'), ('TAG_RENAMED', 'Silt nimetati ümber'), ('TAG_ALIAS_CHANGED', 'Sildi nimekuju muutus'), ('POLICY_AREA_RENAMED', 'Valdkond nimetati ümber'), ('POLICY_AREA_REMOVED', 'Valdkond kustutati'), ('PERSON_RENAMED', 'Inimese nimi muutus')], db_index=True, max_length=40, verbose_name='põhjus')),
                 ('attempts', models.PositiveIntegerField(default=0, help_text='Mitu korda on täisindeksi ehitamine seda rida katsetades ebaõnnestunud.', verbose_name='katseid')),
                 ('last_attempt_at', models.DateTimeField(blank=True, null=True, verbose_name='viimane katse')),
                 ('last_error', models.TextField(blank=True, verbose_name='viimane viga')),

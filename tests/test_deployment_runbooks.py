@@ -122,6 +122,113 @@ def test_every_compose_command_names_its_project_and_its_file(runbook: Path) -> 
         assert " -f " in line, f"{runbook.name}: no compose file\n  {line}"
 
 
+def _application_stacks() -> list[Path]:
+    """Stack directories that deploy the application, not just a database.
+
+    `deploy/recovery-rehearsal` is a lone `db` service for restoring a dump
+    into, so it has nothing to keep in step and is not a counter-example.
+    """
+    import yaml
+
+    stacks = []
+    for path in sorted(DEPLOY.glob("*/compose.yml")):
+        compose = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if "web" in compose.get("services", {}):
+            stacks.append(path.parent)
+    return stacks
+
+
+def _services_running_the_application_image(compose: dict) -> set[str]:
+    """Every service built from the same image as `web`.
+
+    Read off the file rather than listed here, so a fifth application service
+    is covered on the day it is added rather than on the day somebody remembers
+    this test exists.
+    """
+    services = compose.get("services", {})
+    web = services.get("web", {})
+    reference = web.get("image") or web.get("build")
+    if reference is None:
+        return set()
+    return {
+        name
+        for name, definition in services.items()
+        if (definition.get("image") or definition.get("build")) == reference
+    }
+
+
+def _named_services(line: str) -> list[str]:
+    """The service names a `docker compose … up -d …` line brings up.
+
+    Everything after `up`, minus flags and their arguments. An empty list means
+    the line was unqualified, which is the shape that needs no checking at all:
+    Compose starts whatever the file defines.
+    """
+    tail = line.split(" up ", 1)[1].split()
+    names: list[str] = []
+    skip = False
+    for token in tail:
+        if skip:
+            skip = False
+            continue
+        if token in ("--profile", "--scale", "--timeout", "--wait-timeout"):
+            skip = True
+            continue
+        if token.startswith("-"):
+            continue
+        names.append(token)
+    return names
+
+
+def test_there_are_application_stacks_to_check() -> None:
+    """Guards the guard below: an empty parametrisation would pass in silence."""
+    assert len(_application_stacks()) >= 2
+
+
+@pytest.mark.parametrize("stack", _application_stacks(), ids=lambda path: path.name)
+def test_no_runbook_redeploys_only_some_of_the_application_services(stack: Path) -> None:
+    """`up -d web` leaves every other service on the image it replaced.
+
+    That was survivable while `web` and `extractor` were the only two — a stale
+    extractor still drains its queue. It stopped being survivable when
+    `searchindex` arrived: a stack redeployed with `up -d web` does not start the
+    search refresh worker *at all*, so the durable debt SEARCH-001 introduced
+    accumulates with nothing consuming it, and the projection goes back to
+    converging only when a human runs a rebuild — which is the defect ADR 0041
+    was written to close, reintroduced by the runbook rather than by the code.
+
+    The rule is narrow on purpose. It only fires on a line that names `web`
+    explicitly, so an instruction to restart one worker on its own is still
+    writable, and an unqualified `up -d` — which is what a redeploy should say —
+    passes without the test having an opinion about which services exist.
+    """
+    import yaml
+
+    compose = yaml.safe_load((stack / "compose.yml").read_text(encoding="utf-8"))
+    application = _services_running_the_application_image(compose)
+    # Guards the guard: a stack whose services stopped sharing an image would
+    # make every assertion below vacuous.
+    assert len(application) >= 2, f"{stack.name}: nothing to keep in step"
+
+    examined = 0
+    for runbook in sorted(stack.glob("*.md")):
+        for line in command_lines(runbook.read_text(encoding="utf-8")):
+            if "docker compose" not in line or " up " not in line:
+                continue
+            named = _named_services(line)
+            if "web" not in named:
+                continue
+            examined += 1
+            missing = sorted(application - set(named))
+            assert not missing, (
+                f"{runbook.name}: this deploys `web` and leaves "
+                f"{', '.join(missing)} on the previous build — or, for a service "
+                f"the previous deployment did not have, not running at all. Say "
+                f"`up -d` and let Compose start what the file defines.\n  {line}"
+            )
+    assert examined, f"{stack.name}: no runbook line deploys the application"
+
+
 def test_the_real_data_runbook_does_not_deploy_whatever_main_has_become() -> None:
     """`git pull` deploys the branch, not the commit that was reviewed.
 
