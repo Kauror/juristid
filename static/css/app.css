@@ -6269,14 +6269,6 @@ p.factsection__none {
   gap: var(--spacing-25);
 }
 
-.composer__label {
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  color: var(--accent-link);
-  text-transform: uppercase;
-}
-
 .composer__sublabel {
   font-size: var(--typography-size-label);
   font-weight: var(--typography-weight-bold);
@@ -6296,18 +6288,6 @@ p.factsection__none {
   font-size: var(--typography-size-row);
   color: var(--text-primary);
   resize: vertical;
-}
-
-.composer__next {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-25);
-  flex-wrap: wrap;
-}
-
-.composer__date .dateinput {
-  width: 150px;
-  border-style: dashed;
 }
 
 .composer__actions {

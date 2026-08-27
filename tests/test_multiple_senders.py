@@ -675,19 +675,29 @@ def test_rendering_many_senders_costs_no_query_per_row(
     register with years in it, which is why the assertion is a budget rather
     than a count (Agent-E brief 38, 80).
     """
-    for index in range(20):
-        factories.MatterFactory(
-            title=f"Teema {index}",
-            owner=specialist,
-            source_organisations=[
-                factories.OrganisationFactory(),
-                factories.OrganisationFactory(),
-            ],
-        )
 
-    with django_assert_max_num_queries(25):
-        response = signed_in.get(REGISTER, {"olek": "koik"})
-        response.content.decode()
+    def add(count: int) -> None:
+        for index in range(count):
+            factories.MatterFactory(
+                title=f"Teema {index}",
+                owner=specialist,
+                source_organisations=[
+                    factories.OrganisationFactory(),
+                    factories.OrganisationFactory(),
+                ],
+            )
+
+    # 31 rather than 25 since the saved-view chip strip: four counts sharing one
+    # break-glass lookup, and one read of who a row may be handed to. None of
+    # them scales with rows, which is what this test is about — so it is
+    # measured at two sizes rather than one (docs/adr/0042).
+    add(20)
+    with django_assert_max_num_queries(31):
+        signed_in.get(REGISTER, {"olek": "koik"}).content.decode()
+
+    add(20)
+    with django_assert_max_num_queries(31):
+        signed_in.get(REGISTER, {"olek": "koik"}).content.decode()
 
 
 def test_the_department_overview_prefetches_its_senders(
