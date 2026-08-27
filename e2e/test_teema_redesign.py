@@ -21,7 +21,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import OPEN_TITLE
-from e2e.conftest import MARTIN, SANDRA, sign_in
+from e2e.conftest import MARTIN, SANDRA, open_composer, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -73,11 +73,14 @@ def test_a_normal_matter_answers_everything_above_the_fold(page, base_url):
     open_matter(page, base_url)
 
     fold = page.viewport_size["height"]
+    # The composer is a disclosure, so what has to be above the fold is the row
+    # that opens it. What it opens *into* is measured by the 1024 test below,
+    # where the reading order is what matters (design handoff 1d).
     for selector in (
         ".matterhead__title",
         ".metaline",
-        ".nextrow",
-        ".composer__body",
+        ".uxnext",
+        "summary.uxcomp__collapsed",
     ):
         box = page.locator(selector).first.bounding_box()
         assert box is not None, f"{selector} did not render"
@@ -132,7 +135,7 @@ def test_a_low_data_matter_is_short_and_deliberate(page, base_url):
     ):
         expect(page.get_by_text(absence, exact=False)).to_have_count(0)
 
-    expect(page.locator(".nextrow")).to_contain_text("Järgmine samm on määramata")
+    expect(page.locator(".uxnext")).to_contain_text("Järgmine samm on määramata")
     expect(page.locator(".accordion__summary--empty")).to_be_visible()
 
     # Generous, and still far below what four labelled absences cost: this
@@ -154,6 +157,7 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
 
     for index in range(12):
         page.goto(url)
+        open_composer(page)
         page.locator(".composer__body").fill(f"Sissekanne number {index} sünteetilises maailmas.")
         page.locator("[data-composer-submit]").click()
         page.wait_for_load_state("networkidle")
@@ -162,14 +166,14 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
     timeline = page.locator("#ajajoon")
     expect(timeline).not_to_have_attribute("open", "")
     # Collapsed, it is one line: a count and when it last moved.
-    expect(timeline.locator(".accordion__summary")).to_contain_text("kirjet")
+    expect(timeline.locator(".uxtl__count")).to_contain_text("kirjet")
     # The entries are in the document — a closed <details> still renders its
     # children — and none of them is painted across the top of the page.
-    expect(page.locator(".entrycard").first).to_be_hidden()
+    expect(page.locator(".uxtl__body").first).to_be_hidden()
 
     fold = page.viewport_size["height"]
-    assert page.locator(".nextrow").bounding_box()["y"] < fold
-    assert page.locator(".composer__body").bounding_box()["y"] < fold
+    assert page.locator(".uxnext").bounding_box()["y"] < fold
+    assert page.locator("summary.uxcomp__collapsed").bounding_box()["y"] < fold
 
 
 # ---------------------------------------------------------------------------
@@ -182,12 +186,13 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     url = create_matter(page, base_url, "Lõpetatav teema brauserikatsest")
 
     # A next step first, so the closure has something to end.
+    open_composer(page)
     page.locator(".composer__body").fill("Esitan Koja arvamuse ministeeriumile.")
     page.locator("#next_kind_DO").check(force=True)
     page.locator("#id_next_date").fill(_future(5))
     page.locator("[data-composer-submit]").click()
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".nextrow .modechip--do")).to_be_visible()
+    expect(page.locator(".uxnext .modechip--do")).to_be_visible()
 
     # Closing is a composer action, not a panel in the rail.
     expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)
@@ -218,7 +223,7 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     page.goto(url)
     expect(page.locator(".badge--closed")).to_be_visible()
     expect(page.locator(".banner--closed")).to_contain_text("Seadus jõustus muutmata kujul.")
-    expect(page.locator(".nextrow")).to_contain_text("teema on suletud")
+    expect(page.locator(".uxnext")).to_contain_text("teema on suletud")
     # No writable next step and no composer at all.
     expect(page.locator("#teema-koostaja")).to_have_count(0)
     # The past stays readable.
@@ -310,7 +315,7 @@ def test_at_1024_the_rail_folds_under_and_nothing_scrolls_sideways(page, base_ur
     # the composer, then the chronology.
     order = [
         page.locator(selector).first.bounding_box()["y"]
-        for selector in (".nextrow", ".composer", "#ajajoon")
+        for selector in (".uxnext", ".composer", "#ajajoon")
     ]
     assert order == sorted(order), "the reading order changed at 1024px"
 
@@ -420,12 +425,16 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, "Klaviatuuri brauserikatse")
 
+    open_composer(page)
     page.locator(".composer__body").fill("Salvestatud klaviatuurilt.")
     page.locator(".composer__body").press("ControlOrMeta+Enter")
     page.wait_for_load_state("networkidle")
 
     page.locator("#ajajoon .accordion__head").click()
-    expect(page.get_by_text("Salvestatud klaviatuurilt.")).to_be_visible()
+    # Scoped to the entry body: the closed accordion quotes the newest entry in
+    # its own summary line, so the words appear twice on the page now
+    # (design handoff 1b).
+    expect(page.locator(".richtext").get_by_text("Salvestatud klaviatuurilt.")).to_be_visible()
 
     # The visible equivalent is beside the hint.
     page.goto(url)

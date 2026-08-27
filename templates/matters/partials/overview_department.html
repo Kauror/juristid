@@ -151,7 +151,7 @@ the reader never has to work out what "järgmisel" covers and the list behind
             {% include "matters/partials/deadline_row.html" with item=item %}
           {% endfor %}
           {% if group.remaining %}
-            {% include "matters/partials/deadline_more.html" with rows=group.rest remaining=group.remaining %}
+            {% include "matters/partials/deadline_more.html" with rows=group.rest remaining=group.remaining scope=group.label %}
           {% endif %}
         {% endif %}
       </div>

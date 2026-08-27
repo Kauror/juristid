@@ -17,7 +17,16 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, sign_in, sign_out
+from e2e.conftest import (
+    ADMIN,
+    HEAD,
+    MARTIN,
+    READER,
+    SANDRA,
+    open_composer,
+    sign_in,
+    sign_out,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -102,12 +111,12 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(crumbs.get_by_role("link", name="Teemad")).to_be_visible()
     assert not re.search(r"\d{4}_\d+", crumbs.inner_text()), crumbs.inner_text()
 
-    expect(page.locator(".nextrow__text")).to_have_text("Koosta ja saada koja arvamus")
-    expect(page.locator(".nextrow .modechip--do")).to_be_visible()
+    expect(page.locator(".uxnext__text")).to_have_text("Koosta ja saada koja arvamus")
+    expect(page.locator(".uxnext .modechip--do")).to_be_visible()
     # A TEEN date is a deadline and prints as a bare date — the row says which
     # of the three meanings it carries by the chip beside it, not by a label
     # repeated on every line (Teema redesign §8.2).
-    expect(page.locator(".nextrow__date")).to_be_visible()
+    expect(page.locator(".uxnext__flag")).to_be_visible()
     screenshots(page, "03-teema-ulevaade")
 
     matter_url = page.url
@@ -143,6 +152,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # description *is* the next step, which is the redesign's central claim.
     expect(page.locator("[name='next_text']")).to_have_count(0)
 
+    open_composer(page)
     page.locator(".composer__body").fill("Ootan ministeeriumi uut sõnastust")
     page.locator("#next_kind_WAIT").check(force=True)
     # Revealing one optional block must not reveal the others.
@@ -156,12 +166,12 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.locator("[data-composer-submit]").click()
 
     # Both halves landed, and the surface agrees with itself.
-    expect(page.locator(".nextrow__text")).to_have_text("Ootan ministeeriumi uut sõnastust")
-    expect(page.locator(".nextrow .modechip--wait")).to_be_visible()
+    expect(page.locator(".uxnext__text")).to_have_text("Ootan ministeeriumi uut sõnastust")
+    expect(page.locator(".uxnext .modechip--wait")).to_be_visible()
     # A WAIT date is a review date and is labelled as one, never as a deadline.
-    expect(page.locator(".nextrow__date")).to_contain_text("vaatan üle")
+    expect(page.locator(".uxnext__flag")).to_contain_text("vaatan üle")
     # The superseded DO must no longer be presented as the current action.
-    expect(page.locator(".nextrow").get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
+    expect(page.locator(".uxnext").get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
 
     # The chronology is collapsed by default: a Matter opens on what to do
     # next, not on its history.
@@ -170,7 +180,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     timeline.locator(".accordion__head").click()
     # One professional update, one line — and the sentence says what was done.
     expect(timeline.get_by_text("lisas märkuse ja määras järgmise sammu")).to_be_visible()
-    expect(page.locator(".entrycard").filter(has_text="Ootan ministeeriumi")).to_have_count(1)
+    expect(page.locator(".uxtl__body").filter(has_text="Ootan ministeeriumi")).to_have_count(1)
     screenshots(page, "05-komposer-jarel")
 
     # The Matter is now OOTAN — and it is still in the one list, banded by its
@@ -272,9 +282,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # CSS, so the comparison is case-insensitive.
     kinds = [
         kind.lower()
-        for kind in page.locator(
-            ".entrycard__did, .entrytype, .systemevent__type, .submissionevent__label"
-        ).all_inner_texts()
+        for kind in page.locator(".uxtl__did, .uxtl__kind, .systemevent__type").all_inner_texts()
     ]
     assert any("märkuse" in kind for kind in kinds), kinds
     assert any("saadetud" in kind for kind in kinds), kinds
@@ -364,6 +372,7 @@ def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(pa
     page.locator(".topnav__link", has_text="Teemad").click()
     page.get_by_role("link", name="Tavaline avatud teema kõigile nähtav").click()
 
+    open_composer(page)
     page.locator(".composer__body").fill("See tekst peab alles jääma.")
     # No date meaning chosen: TEEN derives to *Tähtaeg*, and a deadline with no
     # date is still the one combination the server refuses. Left unstated on
@@ -377,10 +386,10 @@ def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(pa
 
     expect(page.get_by_text("Tähtajaline tegevus vajab kuupäeva.")).to_be_visible()
     # Neither half was applied.
-    expect(page.locator(".entrycard").filter(has_text="See tekst peab alles jääma")).to_have_count(
+    expect(page.locator(".uxtl__body").filter(has_text="See tekst peab alles jääma")).to_have_count(
         0
     )
-    expect(page.locator(".nextrow").get_by_text("Jälgi menetluse käiku")).to_be_visible()
+    expect(page.locator(".uxnext").get_by_text("Jälgi menetluse käiku")).to_be_visible()
 
 
 class TestRestrictedMatterIsUnreachable:

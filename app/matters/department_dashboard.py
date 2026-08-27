@@ -315,6 +315,12 @@ class StatCell:
     #: First column of a group, and therefore the one that draws the hairline
     #: separating "right now" from "last week" from "this year".
     sep: bool = False
+    #: What this number is, in words, for a reader who cannot see the column
+    #: heading above it. The grid is a grid rather than a `<table>` — its rows
+    #: are links — so no header is *associated* with any cell, and each one has
+    #: to name itself. It carries the group as well, because two columns are
+    #: both called `ARVAMUSI VÄLJA` and only the group tells them apart.
+    label: str = ""
 
     @property
     def is_zero(self) -> bool:
@@ -471,13 +477,21 @@ def team_rows(user: Any, today: date | None = None) -> list[TeamRow]:
         Q(is_active=True, role__in=CASEWORK_ROLES) | Q(pk__in=owner_ids)
     ).order_by("display_name")
 
-    def cell(column: str, sep: bool, owner_id: Any) -> StatCell:
+    def label_of(column_label: str, group: str) -> str:
+        if group == "week":
+            return f"{column_label.capitalize()} · eelmine nädal"
+        if group == "year":
+            return f"{column_label.capitalize()} · {today.year}"
+        return column_label.capitalize()
+
+    def cell(column: str, sep: bool, label: str, owner_id: Any) -> StatCell:
         value = counts[column].get(owner_id, 0)
         return StatCell(
             value=value,
             url=_column_url(column, owner_id),
             tone=_COLUMN_TONE.get(column, "") if value else "",
             sep=sep,
+            label=label,
         )
 
     rows = [
@@ -486,7 +500,8 @@ def team_rows(user: Any, today: date | None = None) -> list[TeamRow]:
             name=person.display_name,
             initials=person.initials,
             cells=tuple(
-                cell(column, sep, person.pk) for column, _label, _group, sep in TEAM_COLUMNS
+                cell(column, sep, label_of(label, group), person.pk)
+                for column, label, group, sep in TEAM_COLUMNS
             ),
             is_self=person.pk == getattr(user, "pk", None),
             is_former=not person.is_active,
@@ -502,7 +517,10 @@ def team_rows(user: Any, today: date | None = None) -> list[TeamRow]:
             key="vastutajata",
             name="Vastutajata",
             initials="!",
-            cells=tuple(cell(column, sep, None) for column, _label, _group, sep in TEAM_COLUMNS),
+            cells=tuple(
+                cell(column, sep, label_of(label, group), None)
+                for column, label, group, sep in TEAM_COLUMNS
+            ),
             is_unassigned=True,
             url=register_url(**_open_full(), vastutaja=MISSING),
         )
@@ -520,8 +538,9 @@ def team_rows(user: Any, today: date | None = None) -> list[TeamRow]:
                     if sum(row.cells[index].value for row in rows)
                     else "",
                     sep=sep,
+                    label=f"Kokku — {label_of(label, group).lower()}",
                 )
-                for index, (column, _label, _group, sep) in enumerate(TEAM_COLUMNS)
+                for index, (column, label, group, sep) in enumerate(TEAM_COLUMNS)
             ),
             is_total=True,
         )

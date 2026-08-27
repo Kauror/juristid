@@ -9,13 +9,18 @@ A real `<details>`, so it works with scripting switched off, and the trigger
 disappears once what it promised is on screen (`.uxdl__more[open] > summary`).
 {% endcomment %}
 <details class="uxdl__more">
-  <summary>Näita veel {{ remaining }} ▾</summary>
+  {% comment %}
+    Several of these sit on one page, one per window. The group's name goes
+    into the accessible name so they are not four controls called the same
+    thing; the visible text stays the short one.
+  {% endcomment %}
+  <summary>Näita veel {{ remaining }}{% if scope %}<span class="visually-hidden"> — {{ scope }}</span>{% endif %} ▾</summary>
   {% for item in rows|slice:":10" %}
     {% include "matters/partials/deadline_row.html" with item=item %}
   {% endfor %}
   {% with rest=rows|slice:"10:" %}
     {% if rest %}
-      {% include "matters/partials/deadline_more.html" with rows=rest remaining=rest|length %}
+      {% include "matters/partials/deadline_more.html" with rows=rest remaining=rest|length scope=scope %}
     {% endif %}
   {% endwith %}
 </details>

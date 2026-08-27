@@ -401,7 +401,7 @@ def test_the_next_action_block_is_still_optional(page, base_url):
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.locator(".nextrow")).to_contain_text("Järgmine samm on määramata")
+    expect(page.locator(".uxnext")).to_contain_text("Järgmine samm on määramata")
 
 
 def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
@@ -423,7 +423,7 @@ def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
     # sentence (Teema redesign §8). The service still assigns one, which is what
     # this test is actually about, so it is checked where it is visible: the
     # step appears in that person's own Minu töö queue.
-    expect(page.locator(".nextrow__text")).to_have_text("Jälgi menetluse käiku")
+    expect(page.locator(".uxnext__text")).to_have_text("Jälgi menetluse käiku")
     go_to(page, "Minu töö")
     expect(page.get_by_text("Jälgi menetluse käiku").first).to_be_visible()
 

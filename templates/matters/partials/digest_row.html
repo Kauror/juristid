@@ -12,5 +12,8 @@ belongs to, because that is the only place the whole story is
     <span class="uxtl__kind uxtl__kind--{{ row.kind }}">{{ row.kind_label }}</span>
   </span>
   <span class="uxdg__text">{{ row.text }}</span>
-  <span class="uxav" title="{{ row.actor_name|default:'Teadmata' }}">{{ row.initials }}</span>
+  <span class="uxav" title="{{ row.actor_name|default:'Teadmata' }}">
+    <span aria-hidden="true">{{ row.initials }}</span>
+    <span class="visually-hidden">{{ row.actor_name|default:'Teadmata' }}</span>
+  </span>
 </a>

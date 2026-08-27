@@ -663,6 +663,29 @@
   padding: 14px 16px;
 }
 
+/* Two corrections the capture box needs inside the new column layout, both
+   scoped to this form so neither can reach the composer's other surfaces.
+
+   `.composer__body` carries `flex: 1`, which was inert while its parent form
+   was a block; in a column flex container a `flex-basis: 0%` against an
+   auto-height parent resolves as content sizing instead, and the field grew to
+   four lines.
+
+   And its height is the working one for as long as the composer is open.
+   `app.css` grows the field on `:focus-within` and shrinks it again when focus
+   leaves — which was right when the composer stood open on every visit and the
+   page had to stay compact around it. Now the composer *is* the disclosure:
+   somebody has opened it in order to write, and clicking a mode chip or a date
+   box must not reflow four lines of their text under the pointer
+   (static/css/app.css, `.composer:focus-within .composer__body`). */
+.uxcomp__form > .composer__body {
+  flex: none;
+}
+
+.uxcomp[open] .composer__body {
+  height: 108px;
+}
+
 .uxcomp__row {
   display: flex;
   align-items: center;
@@ -980,6 +1003,13 @@
   flex-direction: column;
   gap: 2px;
   overflow-x: auto;
+  /* A containing block for what is inside it. Every number carries a
+     visually-hidden label naming its column, and `.visually-hidden` is
+     absolutely positioned — without a positioned ancestor those boxes resolve
+     against the initial containing block, escape the scroller and put the whole
+     912px grid into the *document's* scrollable width. Measured: the page was
+     914px wide inside a 375px window (design handoff, Osakond §2). */
+  position: relative;
 }
 
 .uxstat > * {
@@ -1153,6 +1183,20 @@ a.uxstat__row:hover {
   color: var(--text-muted);
 }
 
+/* The period control, as one group in the section head. The head itself does
+   not wrap — it is one line of title, spacer and meta on every other section —
+   so the five chips wrap inside their own box instead of pushing the last of
+   them past the right edge of a 375px viewport. Measured: without this the
+   Osakond page was 31px wider than the window on a phone. */
+.uxperiods {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
 /* The free period, beside the fixed ones. */
 .uxdg__period {
   position: relative;
@@ -1208,6 +1252,14 @@ a.uxstat__row:hover {
     right: auto;
     min-width: 0;
     width: min(320px, calc(100vw - var(--spacing-6)));
+  }
+
+  .uxdg__periodbody {
+    /* Stacked rather than side by side: two 118px date boxes and a button do
+       not fit beside each other in a popover bounded by the window. */
+    flex-direction: column;
+    align-items: stretch;
+    max-width: calc(100vw - var(--spacing-6));
   }
 }
 

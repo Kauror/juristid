@@ -28,13 +28,20 @@ is rendered inside the `<details>` and everything older comes from
       {% endcomment %}
       {% if timeline_preview %}
         <span class="uxtl__preview">
-          {{ timeline_preview.occurred_at|date:"j.n" }} ·
+          {% comment %}
+            A `<time>`, so the visual-regression mask that paints over every
+            clock-derived value on the page covers this one too — the quote
+            beside it is content and stays in the baseline
+            (e2e/test_ui_regression.py, `CLOCK_DEPENDENT`).
+          {% endcomment %}
+          <time datetime="{{ timeline_preview.occurred_at|date:'c' }}">{{ timeline_preview.occurred_at|date:"j.n" }}</time> ·
           {{ timeline_preview.actor.get_short_name }}:
           «{{ timeline_preview.excerpt_source|striptags|truncatechars:96 }}»
         </span>
       {% else %}
         <span class="uxtl__preview">
-          Viimane muudatus {{ timeline_items.0.occurred_at|date:"j.n.Y" }}
+          Viimane muudatus
+          <time datetime="{{ timeline_items.0.occurred_at|date:'c' }}">{{ timeline_items.0.occurred_at|date:"j.n.Y" }}</time>
         </span>
       {% endif %}
       {% comment %}

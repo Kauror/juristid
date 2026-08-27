@@ -92,7 +92,11 @@ list by.
                 browser is entitled to prefetch.
               {% endcomment %}
               <details class="uxassign" data-uxpopover>
-                <summary class="uxassign__trigger">Määra ▾</summary>
+                {% comment %}
+                  One of these per unassigned row, so the accessible name says
+                  which file it would assign.
+                {% endcomment %}
+                <summary class="uxassign__trigger">Määra<span class="visually-hidden"> vastutaja: {{ matter.title }}</span> ▾</summary>
                 <div class="uxassign__menu">
                   <form method="post" action="{% url 'matters:assign_owner' pk=matter.pk %}">
                     {% csrf_token %}

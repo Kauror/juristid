@@ -103,11 +103,13 @@ def test_the_pass_ships_as_its_own_stylesheet_and_script() -> None:
 def test_ux_css_touches_exactly_one_existing_class() -> None:
     """Everything the pass draws is `ux`-prefixed, with two declared exceptions.
 
-    `.workrow2 { position: relative }` is the containing block the quick-complete
-    button needs, and `.railrow__value--danger` is a missing modifier of an
-    existing family. Both are additive and both are commented where they sit.
-    Anything else appearing here means the pass has started editing production
-    components, which is the thing the separate file exists to prevent.
+    Three are declared and commented where they sit: `.workrow2` gets the
+    containing block the quick-complete button needs, `.railrow__value--danger`
+    is a modifier the existing family was missing, and `.composer__body` has its
+    resting height restored inside the composer's new column layout. All three
+    are additive. Anything else appearing here means the pass has started
+    editing production components, which is the thing the separate file exists
+    to prevent.
     """
     text = (CSS_DIR / "ux.css").read_text(encoding="utf-8")
     text = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
@@ -116,7 +118,13 @@ def test_ux_css_touches_exactly_one_existing_class() -> None:
         for name in re.findall(r"\.(-?[A-Za-z_][\w-]*)", block.group(1)):
             selectors.add(name)
 
-    allowed_existing = {"workrow2", "railrow__value--danger", "field__input", "is-selected"}
+    allowed_existing = {
+        "workrow2",
+        "railrow__value--danger",
+        "composer__body",
+        "field__input",
+        "is-selected",
+    }
     unexpected = {name for name in selectors if not name.startswith("ux")} - allowed_existing
     assert not unexpected, f"ux.css styles non-ux classes: {sorted(unexpected)}"
 
@@ -228,8 +236,10 @@ def test_today_says_today_and_nobody_says_so_in_more_than_colour(client, departm
     flat = " ".join(panel.split())
 
     assert 'class="uxdl__date uxdl__date--today">täna<' in flat
-    # The word and the dashed mark, not the warning tint on its own.
-    assert 'class="uxav uxav--none" title="Vastutajata">!<' in flat
+    # The word and the dashed mark, not the warning tint on its own — and the
+    # word is in the accessibility tree, not only in a `title`.
+    assert 'class="uxav uxav--none" title="Vastutajata">' in flat
+    assert '<span class="visually-hidden">Vastutajata</span>' in flat
     # The footer the design replaced with a header link.
     assert "Ava kõik" not in flat
     assert "kõik 2 →" in flat
@@ -786,7 +796,7 @@ def test_the_row_offers_the_reader_first_and_only_where_they_may_write(client, s
     client.force_login(specialist)
     body = client.get(reverse("matters:matter_list") + "?olek=koik").content.decode()
 
-    assert "Määra ▾" in body
+    assert "Määra<span" in body and "▾" in body
     menu = body.split('class="uxassign__menu"')[1].split("</form>")[0]
     assert menu.index("(mina)") < len(menu), "the reader is offered"
     assert menu.split("(mina)")[0].count("<button") == 1, "and offered first"

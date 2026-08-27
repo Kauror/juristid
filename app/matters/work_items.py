@@ -747,10 +747,20 @@ def work_population_ids(
         items = work_items(user, today=today)
     ids = {item.matter_id for item in work_population_items(items, key, today, window=window)}
     if key == WORK_QUIET_30:
-        # Nobody's work in particular: silence is a property of the file, and
-        # narrowing it by a responsible person would answer a question the
-        # column cannot be read as asking.
-        return set(quiet_matters(user, today))
+        # A Matter-level state, not a dated obligation, so it has no responsible
+        # person of its own. Narrowed by *owner* when one is named — the same
+        # reading `WORK_NEEDS_ATTENTION` gives its two undated halves below,
+        # because a file nobody has touched belongs to whoever carries it.
+        quiet_ids = quiet_matters(user, today)
+        if responsible is ANY_PERSON:
+            return set(quiet_ids)
+        owned = Matter.objects.filter(pk__in=quiet_ids)
+        owned = (
+            owned.filter(owner__isnull=True)
+            if responsible is None
+            else owned.filter(owner=responsible)
+        )
+        return set(owned.values_list("pk", flat=True))
     if key == WORK_NEEDS_ATTENTION:
         # Reused when the caller has them, because `visible_to` resolves the
         # reader's scope on every call and resolving it asks the database

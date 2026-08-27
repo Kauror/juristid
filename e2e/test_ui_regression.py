@@ -56,7 +56,13 @@ import pathlib
 import pytest
 
 from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, OPEN_TITLE
-from e2e.conftest import DESKTOP_VIEWPORT, SANDRA, pass_the_gate, sign_in
+from e2e.conftest import (
+    DESKTOP_VIEWPORT,
+    SANDRA,
+    open_composer,
+    pass_the_gate,
+    sign_in,
+)
 
 #: The seeded department head, mirroring `seed_e2e_data.PERSONAS`. Named here
 #: rather than looked up, because this suite has no database access.
@@ -125,12 +131,27 @@ CLOCK_DEPENDENT = [
     # matching does not fail — it silently unmasks a value that changes daily,
     # and every baseline goes red the next morning.
     ".metaline__item--deadline .inlineedit__trigger",
-    ".nextrow__date",
+    # The Järgmiseks flag, which is now where the date and its meaning live:
+    # "TÄHTAEG MÖÖDAS · 6 p" counts days from today and changes every morning
+    # (design handoff 1c). The row, the mode chip and the step's own words stay
+    # in the baseline.
+    ".uxnext__flag",
     ".railposition__opinion time",
-    # Only the timeline's summary. It always reads "N kirjet · viimane <date>";
-    # Kaasamine's and Töödokumendid's summaries are content and must stay in
-    # the baseline.
-    ".accordion--timeline .accordion__summary",
+    # The closed timeline's own line. Its quote is content and stays in the
+    # baseline — the date in front of it is a `<time>` and is painted by the
+    # `time` selector below. What is masked here is the two values that move on
+    # their own: the pill carrying the current step's date, and the entry count,
+    # which every functional test that writes a note increments.
+    #
+    # Kaasamine's and Töödokumendid's summaries are content and must stay.
+    ".accordion--timeline > summary .uxtl__previewnext",
+    ".accordion--timeline > summary .uxtl__count",
+    # Ülevaade's rebuilt deadline panel. Every row prints "R 28.08" or "täna",
+    # and every group header prints the window it holds — all of it computed
+    # from today (design handoff 1a). The titles, the owner badges and the
+    # group names stay in the baseline.
+    ".uxdl__date",
+    ".uxdl__range",
     ".railcard__value--date",
     # A date control's value renders in the control, and the create form's
     # Saabus defaults to today. Scoped to that form: unscoped, the selector also
@@ -461,6 +482,9 @@ def test_matter_composer_expanded(page, base_url):
     composer still reads as one surface when a lawyer has opened all of them.
     """
     open_matter(page, base_url, OPEN_TITLE)
+    # The composer is a disclosure now, so the chips inside it are not clickable
+    # until it is open (design handoff 1d).
+    open_composer(page)
     # Three, not four. `+ Kaasamine` is gone: Kaasamine has one path and it is
     # its own section (Teema QA §8).
     for chip in ("+ Manus", "+ Oluline tähtaeg", "+ Lõpeta teema"):

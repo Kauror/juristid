@@ -68,9 +68,15 @@ that look like one product (design handoff, Osakond).
           (static/css/ux.css, `.uxstat`).
 
           Not a <table>. The rows are links, and a row of cells wrapped in an
-          anchor is not valid table markup; the grid carries the same reading
-          order and every number keeps the column heading above it. The group
-          headings and the column headings are two rows of labels rather than
+          anchor is not valid table markup. The grid carries the same reading
+          order, and because no column header can be *associated* with a number
+          in a grid, every number names its own column instead — including which
+          of the three groups that column belongs to, so the two «ARVAMUSI
+          VÄLJA» columns are told apart. The two visible label rows are then
+          hidden from the accessibility tree: read out, they would be a stray
+          row of words with nothing attached to them.
+
+          The group headings and the column headings are two rows rather than
           one, because "last week" beside "right now" is two different questions
           and a reader must be able to tell which is which.
         {% endcomment %}
@@ -81,7 +87,7 @@ that look like one product (design handoff, Osakond).
             <span class="uxstat__grp--week">EELMINE NÄDAL · {{ work.previous_week_label }}</span>
             <span class="uxstat__grp--year">{{ work.today|date:"Y" }}</span>
           </div>
-          <div class="uxstat__cols">
+          <div class="uxstat__cols" aria-hidden="true">
             <span>KES</span>
             {% for key, label, group, sep in team_columns %}
               <span{% if sep %} class="uxstat__sep"{% endif %}>{{ label }}</span>
@@ -93,7 +99,7 @@ that look like one product (design handoff, Osakond).
               <div class="uxstat__row uxstat__row--total">
                 <span class="uxteam__name">{{ row.name }}</span>
                 {% for cell in row.cells %}
-                  <span class="uxstat__num{% if cell.is_zero %} uxstat__num--zero{% elif cell.tone %} uxstat__num--{{ cell.tone }}{% endif %}{% if cell.sep %} uxstat__sep{% endif %}">{% if cell.is_zero %}—{% else %}{{ cell.value }}{% endif %}</span>
+                  <span class="uxstat__num{% if cell.is_zero %} uxstat__num--zero{% elif cell.tone %} uxstat__num--{{ cell.tone }}{% endif %}{% if cell.sep %} uxstat__sep{% endif %}"><span class="visually-hidden">{{ cell.label }}: </span>{% if cell.is_zero %}<span aria-hidden="true">—</span><span class="visually-hidden">0</span>{% else %}{{ cell.value }}{% endif %}</span>
                 {% endfor %}
               </div>
             {% else %}
@@ -119,7 +125,7 @@ that look like one product (design handoff, Osakond).
                   {% endif %}
                 </span>
                 {% for cell in row.cells %}
-                  <span class="uxstat__num{% if cell.is_zero %} uxstat__num--zero{% elif cell.tone %} uxstat__num--{{ cell.tone }}{% endif %}{% if cell.sep %} uxstat__sep{% endif %}">{% if cell.is_zero %}—{% else %}{{ cell.value }}{% endif %}</span>
+                  <span class="uxstat__num{% if cell.is_zero %} uxstat__num--zero{% elif cell.tone %} uxstat__num--{{ cell.tone }}{% endif %}{% if cell.sep %} uxstat__sep{% endif %}"><span class="visually-hidden">{{ cell.label }}: </span>{% if cell.is_zero %}<span aria-hidden="true">—</span><span class="visually-hidden">0</span>{% else %}{{ cell.value }}{% endif %}</span>
                 {% endfor %}
               </a>
             {% endif %}
@@ -163,7 +169,7 @@ that look like one product (design handoff, Osakond).
                   A manager scanning next month should not have to leave the
                   page to see the eleventh date (design handoff, Osakond §3).
                 {% endcomment %}
-                {% include "matters/partials/deadline_more.html" with rows=group.rest remaining=group.remaining batch=10 %}
+                {% include "matters/partials/deadline_more.html" with rows=group.rest remaining=group.remaining scope=group.label %}
               {% endif %}
             </div>
           {% endif %}
@@ -181,6 +187,7 @@ that look like one product (design handoff, Osakond).
             The period is in the URL, so a report somebody is reading can be
             sent to somebody else and open on the same window.
           {% endcomment %}
+          <span class="uxperiods">
           {% for option in work.periods %}
             <a class="uxchip{% if option.active %} is-selected{% endif %}"
                {% if option.active %}aria-current="true"{% endif %}
@@ -210,6 +217,7 @@ that look like one product (design handoff, Osakond).
               </form>
             </div>
           </details>
+          </span>
         </div>
 
         <div class="uxdg">

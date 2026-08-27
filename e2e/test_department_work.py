@@ -239,16 +239,22 @@ def test_nine_columns_scroll_inside_their_block_rather_than_moving_the_page(page
     itself must never move sideways to let them (design handoff, Osakond §2).
     """
     sign_in(page, base_url, HEAD)
-    page.set_viewport_size({"width": 1024, "height": 900})
-    open_work(page, base_url)
 
-    assert not page.evaluate(
-        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
-    ), "the page must not scroll horizontally"
+    # 1024 is where the nine columns still fit: the block is the width of the
+    # main column and the grid's minimum is 220 + 8 x 72 + gaps. What this test
+    # is about is what happens when they do *not* fit, so it is measured at 720
+    # as well — where the block must scroll and the page must not.
+    for width in (1024, 720):
+        page.set_viewport_size({"width": width, "height": 900})
+        open_work(page, base_url)
+        assert not page.evaluate(
+            "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
+        ), f"the page must not scroll horizontally at {width}px"
+
     assert page.evaluate(
         "() => { const t = document.querySelector('.uxstat');"
         " return t.scrollWidth > t.clientWidth; }"
-    ), "the team table must be the thing that scrolls"
+    ), "at 720px the team table must be the thing that scrolls"
 
 
 # =========================================================================
