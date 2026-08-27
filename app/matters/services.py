@@ -34,6 +34,7 @@ from app.matters.enums import (
     RecordMode,
     TagAssignmentSource,
 )
+from app.matters.locks import lock_matter_for_evidence_integrity
 from app.matters.models import (
     Entry,
     EntryRevision,
@@ -336,15 +337,33 @@ def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None)
     The one derived relationship that does not survive the change on its own is
     a Submission's final evidence, which is refused here rather than left to
     become false. See `_submissions_left_above_their_evidence`.
+
+    That refusal is only as good as the moment it is evaluated in. Binding final
+    evidence writes the Submission, not the Matter, so before DATA-002 the two
+    operations touched no row in common: each could read a database in which the
+    other had not committed, each pass, and both commit. The count below is
+    therefore taken under the Matter's own row lock, after which it sees every
+    pointer committed up to that instant — and any binding transaction still in
+    flight is queued behind this one rather than invisible to it
+    (app/matters/locks.py, docs/adr/0040).
     """
     if visibility not in Visibility.values:
         raise DomainError(f"Tundmatu nähtavus {visibility!r}.")
 
-    previous = matter.visibility
+    # A cheap read of the caller's instance, only to skip the lock for the
+    # common no-op. Everything the decision rests on is re-read below.
+    if matter.visibility == visibility:
+        return matter
+
+    locked = lock_matter_for_evidence_integrity(matter.pk)
+
+    # Re-read, not remembered: this transaction may have waited here, and what
+    # it knew before waiting is exactly what the wait invalidates.
+    previous = locked.visibility
     if previous == visibility:
         return matter
 
-    stranded = _submissions_left_above_their_evidence(matter=matter, visibility=visibility)
+    stranded = _submissions_left_above_their_evidence(matter=locked, visibility=visibility)
     if stranded:
         # Counted, never named: the submissions this refers to are the
         # restricted ones, and the person editing the Matter is not necessarily
@@ -355,16 +374,17 @@ def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None)
             "arvamuste enda piirangut."
         )
 
-    matter.visibility = visibility
-    matter.save(update_fields=["visibility", "updated_at"])
+    locked.visibility = visibility
+    locked.save(update_fields=["visibility", "updated_at"])
 
     record_change_event(
         event_type=ChangeEventType.MATTER_VISIBILITY_CHANGED,
-        matter=matter,
+        matter=locked,
         actor=actor,
-        obj=matter,
+        obj=locked,
         payload={"from": previous, "to": visibility},
     )
+    matter.visibility = visibility
     return matter
 
 
