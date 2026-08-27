@@ -265,3 +265,83 @@ class SearchDocument(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.source_kind}:{self.title[:60]}"
+
+
+class SearchRebuildReason(models.TextChoices):
+    """Why a full rebuild is owed.
+
+    Every member is a *vocabulary* change: text that lives on a reference row
+    and is copied into the projection of every record pointing at it. That is
+    the whole population of high-fanout invalidations, and naming them
+    individually rather than storing free text keeps two properties. An
+    operator reading `check_search_freshness` learns what kind of edit made the
+    corpus stale without the debt table holding any business content; and a new
+    member cannot be added without somebody deciding which projection column it
+    invalidates (docs/adr/0039).
+    """
+
+    ORGANISATION_RENAMED = "ORGANISATION_RENAMED", "Asutus nimetati ümber"
+    ORGANISATION_ALIAS_CHANGED = "ORGANISATION_ALIAS_CHANGED", "Asutuse nimekuju muutus"
+    TAG_RENAMED = "TAG_RENAMED", "Silt nimetati ümber"
+    TAG_ALIAS_CHANGED = "TAG_ALIAS_CHANGED", "Sildi nimekuju muutus"
+    POLICY_AREA_RENAMED = "POLICY_AREA_RENAMED", "Valdkond nimetati ümber"
+    PERSON_RENAMED = "PERSON_RENAMED", "Inimese nimi muutus"
+
+
+class SearchRebuildDebt(BaseModel):
+    """One durable record that the projection owes a full rebuild.
+
+    **The point of this table is that it is a row and not a callback.** A
+    high-fanout mutation — renaming an Organisation invalidates the indexed text
+    of every Matter, Submission and Entry that names it — must not fan out
+    inside the request that caused it, and until now it did not fan out at all:
+    the corpus went stale and stayed stale until a human noticed and ran
+    `rebuild_search_index`. Deferring the work is right; deferring it into
+    nothing is what made SEARCH-001 a defect.
+
+    So the mutation writes this row **in its own transaction**. That is the
+    whole guarantee, and it is why `transaction.on_commit` is not what this is:
+    an on-commit callback lives in the process's memory, so a deploy, an OOM
+    kill or a `docker compose down` between the commit and the callback loses
+    the only record that anything was owed — and loses it silently, which is the
+    failure mode this projection cannot afford. A row survives all three, and a
+    business transaction that rolls back takes its debt with it for free.
+
+    **Append-only in use, deliberately without deduplication.** Renaming three
+    organisations writes three rows and they coalesce at the other end: the
+    consumer claims every outstanding row, performs *one* rebuild, and clears
+    exactly the rows it claimed. Collapsing them at write time would need an
+    upsert whose lost-update window is precisely a mark arriving while a rebuild
+    is running — the one moment a mark matters most. Rows are small, they live
+    for one poll interval, and the arithmetic is the same either way
+    (`app/search/freshness.py`).
+
+    The columns record attempts rather than successes. A cleared debt is a
+    deleted row, so this table is empty in the ordinary case, and anything in it
+    is either work not yet done or work that has failed — which is what makes
+    `SELECT count(*)` a usable health probe.
+    """
+
+    reason = models.CharField(
+        max_length=40,
+        choices=SearchRebuildReason.choices,
+        db_index=True,
+        verbose_name="põhjus",
+    )
+    attempts = models.PositiveIntegerField(
+        default=0,
+        verbose_name="katseid",
+        help_text="Mitu korda on täisindeksi ehitamine seda rida katsetades ebaõnnestunud.",
+    )
+    last_attempt_at = models.DateTimeField(null=True, blank=True, verbose_name="viimane katse")
+    last_error = models.TextField(blank=True, verbose_name="viimane viga")
+
+    class Meta:
+        verbose_name = "otsinguindeksi võlg"
+        verbose_name_plural = "otsinguindeksi võlad"
+        # Oldest first: the age of the first row is "how long has search been
+        # stale", which is the number both the probe and the operator want.
+        ordering = ["created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.reason}@{self.created_at:%Y-%m-%d %H:%M:%S}"

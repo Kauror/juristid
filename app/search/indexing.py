@@ -31,7 +31,7 @@ from django.utils import timezone
 from app.core.text import normalize_for_matching
 from app.documents.models import DocumentVersion
 from app.legacy_import.source_pages import MatterSourcePage
-from app.matters.models import Entry, Matter
+from app.matters.models import Entry, Matter, MatterEngagement
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.submissions.models import Submission
 
@@ -369,6 +369,39 @@ def refresh_submission(submission: Submission) -> int:
     _recompute_vectors(
         SearchDocument.objects.filter(
             source_kind=SearchSourceKind.SUBMISSION, source_object_id=submission.pk
+        )
+    )
+    return count
+
+
+@transaction.atomic
+def refresh_engagement(engagement: MatterEngagement) -> int:
+    """Reproject one `Kaasamine`.
+
+    AUTH-003 gave engagements a row of their own, because they carry a
+    `visibility_override` and a MATTER row cannot express one. What it did not
+    give them was a way to *arrive*: nothing but a full rebuild ever wrote an
+    ENGAGEMENT row, so a consultation recorded this morning was not searchable
+    at all — and the integrity check did not count the kind, so nothing said so
+    either. Content that exists and cannot be found, with no detector, is the
+    worst shape a search defect takes.
+
+    Bounded fanout: one engagement is one row, exactly like an Entry. So it is
+    refreshed synchronously, in the caller's transaction, and a recorded
+    engagement is a findable one.
+
+    The vector recomputation is not optional bookkeeping. A row inserted without
+    it exists, counts as indexed and can never match a full-text query — the one
+    defect the projection can hold that looks like success from every angle
+    except a lawyer's.
+    """
+    from app.search.child_indexing import indexable_engagements, refresh_engagements
+
+    _hold_off_a_rebuild()
+    count = refresh_engagements(indexable_engagements().filter(pk=engagement.pk))
+    _recompute_vectors(
+        SearchDocument.objects.filter(
+            source_kind=SearchSourceKind.ENGAGEMENT, source_object_id=engagement.pk
         )
     )
     return count

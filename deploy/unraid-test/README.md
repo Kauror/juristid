@@ -10,7 +10,7 @@ public hostname.
 | LAN URL | <http://192.168.1.133:3020> |
 | Public URL | <https://juristid.orgusaar.ee> — **the PIN is the only gate** |
 | Compose project | `juristid-test` |
-| Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-extractor`, `juristid-test-tunnel` |
+| Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-extractor`, `juristid-test-searchindex`, `juristid-test-tunnel` |
 | Network | `juristid-test-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-test/` |
 | Evidence | `…/evidence` — **back this up** |
@@ -157,7 +157,7 @@ docker compose -p juristid-test -f compose.yml run --rm web python manage.py reb
 Finally:
 
 ```bash
-docker compose -p juristid-test -f compose.yml up -d web extractor
+docker compose -p juristid-test -f compose.yml up -d web extractor searchindex
 ```
 
 ## The extraction worker
@@ -177,6 +177,23 @@ Watch it:
 
 ```bash
 docker compose -p juristid-test -f compose.yml logs -f extractor
+```
+
+## The search freshness worker
+
+`juristid-test-searchindex` runs `manage.py run_search_refresh_worker` from the
+same image. It sleeps until a canonical change owes the search index a rebuild —
+an Organisation rename, an alias edit, a Tag or PolicyArea rename, a person's
+display name — and then performs one atomic full rebuild (ADR 0039). Ordinary
+writes do not go through it: a Matter, an entry, an opinion or a `Kaasamine` is
+refreshed inside its own transaction and is findable immediately.
+
+It mounts nothing. It rebuilds a projection out of PostgreSQL and reads no
+stored file.
+
+```bash
+docker compose -p juristid-test -f compose.yml logs -f searchindex
+docker compose -p juristid-test -f compose.yml exec -T web python manage.py check_search_freshness
 ```
 
 Catch up by hand, bounded, if the worker was down:

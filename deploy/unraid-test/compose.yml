@@ -174,6 +174,39 @@ services:
     networks:
       - internal
 
+  # Search freshness. The rehearsal counterpart of the main stack's service; see
+  # deploy/unraid-main/compose.yml for why this is a container and not a cron
+  # entry, and docs/adr/0039 for what it converges.
+  searchindex:
+    image: juristid-test-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-test-searchindex
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check_search_freshness", "--quiet"]
+      interval: 60s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
+    command:
+      - python
+      - manage.py
+      - run_search_refresh_worker
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-test/config/juristid.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      SEED_DEV_DATA: "0"
+      JURISTID_RUNTIME: deployed
+    depends_on:
+      db:
+        condition: service_healthy
+    # No evidence or derivative mounts: this rebuilds a projection out of
+    # PostgreSQL and reads no stored file.
+    networks:
+      - internal
+
   # Public access for juristid.orgusaar.ee, behind the shared sign-in PIN.
   #
   # Opt-in, because the LAN deployment must work without it:

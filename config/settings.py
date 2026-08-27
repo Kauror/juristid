@@ -407,6 +407,28 @@ EXTRACTION_WORKER_HEARTBEAT_PATH = env(
 )
 
 # --------------------------------------------------------------------------
+# Search freshness
+# --------------------------------------------------------------------------
+#
+# A high-fanout canonical change — an Organisation rename, an alias edit, a Tag
+# or PolicyArea rename — records a durable obligation rather than reindexing
+# thousands of rows inside somebody's form submission. These two numbers are the
+# whole runtime configuration of paying that obligation off
+# (app/search/freshness.py, docs/adr/0039).
+
+# How long the worker waits when nothing is owed. The same default as the
+# extraction worker, because it is the same question: how long may a user's
+# change sit before the loop notices it. A rename is rare and a rebuild is
+# seconds, so there is nothing to gain from polling harder.
+SEARCH_REFRESH_WORKER_IDLE_SECONDS = env_int("SEARCH_REFRESH_WORKER_IDLE_SECONDS", 10)
+
+# How long an obligation may be outstanding before `check_search_freshness`
+# calls it a fault. Comfortably longer than one idle period plus one rebuild, so
+# an ordinary pending rename never trips it, and short enough that a stopped
+# worker is red before anybody has searched for the new name and not found it.
+SEARCH_REBUILD_DEBT_STALE_SECONDS = env_int("SEARCH_REBUILD_DEBT_STALE_SECONDS", 300)
+
+# --------------------------------------------------------------------------
 # Security
 # --------------------------------------------------------------------------
 

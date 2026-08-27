@@ -147,15 +147,23 @@ takes to notice.
 | 4.2 | Evidence is present and is what was hashed | `manage.py check_evidence_integrity --verify-sha` |
 | 4.3 | Nothing is holding bytes nobody references | `manage.py prune_orphaned_evidence` (no `--delete`) |
 | 4.4 | Search is complete, current and not stale | `manage.py check_search_integrity` |
+| 4.4a | Nothing is owed to the search index | `manage.py check_search_freshness` |
 | 4.5 | Archive search matches what is held | `manage.py opinion_archive_search verify` |
 | 4.6 | Era contracts still describe the workbook | `manage.py check_era_contracts` |
 | 4.7 | Canonical state changed the way the plan said | `manage.py recovery_fingerprint --compare before.json` |
 | 4.8 | It is usable | the A–L browser list in `deploy/unraid-main/README.md` |
 
-`check_search_integrity` reports stale indexed text as well as missing rows:
-renaming an Organisation or a Tag changes what every Matter projects and
-deliberately triggers no fan-out, so the rebuild is owed and the check is what
-says so. Answer it with `rebuild_search_index`.
+`check_search_integrity` reports stale indexed text as well as missing rows.
+Renaming an Organisation or a Tag changes what every record naming them
+projects, and it still deliberately triggers no fan-out — but since ADR 0039 it
+no longer triggers *nothing*: the rename records a durable obligation in its own
+transaction and the `searchindex` service discharges it with an atomic full
+rebuild. `check_search_freshness` is the one-line question ("is anything owed,
+and has it been owed too long"), and is the container's healthcheck.
+`check_search_integrity` reports the same debt in context and consumes none of
+it. If the debt is old, the first thing to check is whether
+`run_search_refresh_worker` is running; `rebuild_search_index` remains the
+manual answer and is always safe.
 
 ## 5. Rollback
 

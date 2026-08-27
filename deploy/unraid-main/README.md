@@ -9,7 +9,7 @@ to it, in one system. This is the environment that holds the real thing.
 | Auth mode | `shared_gate` (temporary; see below) |
 | Public URL | `https://juristid.orgusaar.ee` — behind the shared gate |
 | Compose project | `juristid-main` |
-| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-extractor`, `juristid-main-tunnel` |
+| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-extractor`, `juristid-main-searchindex`, `juristid-main-tunnel` |
 | Network | `juristid-main-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-main/` |
 | Evidence | `…/evidence` — **back this up** |
@@ -254,8 +254,23 @@ as not found, which is correct behaviour and a wasted afternoon.
 docker compose -p juristid-main -f compose.yml ps
 docker compose -p juristid-main -f compose.yml logs -f web
 docker compose -p juristid-main -f compose.yml logs -f extractor
+docker compose -p juristid-main -f compose.yml logs -f searchindex
 docker compose -p juristid-main -f compose.yml restart web
 ```
+
+`searchindex` is the search freshness worker. It sleeps until a canonical change
+owes the index a rebuild — an Organisation rename, an alias edit, a Tag or
+PolicyArea rename, a person's display name — and then performs one atomic full
+rebuild (ADR 0039). Nothing is owed most of the time, so an empty log is the
+normal state. To ask the question directly:
+
+```bash
+docker compose -p juristid-main -f compose.yml exec -T web python manage.py check_search_freshness
+```
+
+If it says the index has been owed a rebuild for too long, the worker is what to
+look at first. `rebuild_search_index` remains the manual answer and is always
+safe to run.
 
 ## Deploying a new build
 
