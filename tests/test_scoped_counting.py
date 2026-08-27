@@ -205,7 +205,7 @@ def test_a_restricted_matter_still_contributes_to_nothing(shared_world, other_sp
         visibility=Visibility.RESTRICTED,
         stage=shared_world["stage"],
     )
-    outsider = factories.UserFactory()
+    outsider = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
 
     rows = dashboard.stage_distribution(outsider)
     labels = {row.label: row.count for row in rows}

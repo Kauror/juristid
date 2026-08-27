@@ -34,10 +34,28 @@ def test_normal_matter_is_visible_to_any_active_user(normal_matter, other_specia
     assert normal_matter in Matter.objects.visible_to(other_specialist)
 
 
-def test_restricted_matter_is_hidden_from_an_uninvolved_specialist(
-    restricted_matter, other_specialist
-):
-    assert restricted_matter not in Matter.objects.visible_to(other_specialist)
+def test_restricted_matter_is_visible_to_any_lawyer(restricted_matter, other_specialist):
+    """The decision docs/adr/0042 records, at the level it is enforced.
+
+    This assertion used to read `not in`. Ownership and `collaborators` are
+    workflow metadata — who answers for a file and who is working it — and were
+    never meant to say who may know it exists. Inside the legal department the
+    confidentiality boundary is the application; `RESTRICTED` still separates
+    the team from technical administration, from a shared-gate visitor and from
+    everyone outside, and those are the denials the tests below assert.
+    """
+    assert restricted_matter in Matter.objects.visible_to(other_specialist)
+
+
+def test_restricted_matter_is_hidden_from_a_reader(restricted_matter, reader):
+    """The same row, and somebody the decision deliberately did not widen.
+
+    `READER` is a real, active, authenticated account with a real role. It is
+    outside `ROLES_WITH_RESTRICTED_ACCESS` because docs/adr/0042 is about the
+    legal team, and what a management or communications reader may see is a
+    separate decision nobody has taken.
+    """
+    assert restricted_matter not in Matter.objects.visible_to(reader)
 
 
 def test_restricted_matter_is_visible_to_its_owner(restricted_matter, specialist):
@@ -72,23 +90,23 @@ def test_anonymous_and_inactive_users_see_nothing(normal_matter, specialist):
 
 
 def test_break_glass_opens_restricted_content_only_while_it_is_valid(
-    restricted_matter, other_specialist, department_head
+    restricted_matter, reader, department_head
 ):
-    assert restricted_matter not in Matter.objects.visible_to(other_specialist)
+    assert restricted_matter not in Matter.objects.visible_to(reader)
 
     grant = grant_break_glass(
-        user=other_specialist,
+        user=reader,
         granted_by=department_head,
         reason="Tugijuhtum",
         duration=timedelta(hours=1),
     )
-    assert scope_for_user(other_specialist).break_glass_grant_id == grant.id
-    assert restricted_matter in Matter.objects.visible_to(other_specialist)
+    assert scope_for_user(reader).break_glass_grant_id == grant.id
+    assert restricted_matter in Matter.objects.visible_to(reader)
 
     grant.expires_at = timezone.now() - timedelta(minutes=1)
     grant.starts_at = timezone.now() - timedelta(hours=2)
     grant.save(update_fields=["expires_at", "starts_at", "updated_at"])
-    assert restricted_matter not in Matter.objects.visible_to(other_specialist)
+    assert restricted_matter not in Matter.objects.visible_to(reader)
 
 
 def test_visible_matters_are_not_duplicated_by_the_collaborator_join(
@@ -132,28 +150,26 @@ def test_child_can_never_become_less_restrictive_than_its_matter(restricted_matt
 
 
 def test_document_under_restricted_matter_is_hidden_from_uninvolved_users(
-    restricted_matter, specialist, other_specialist
+    restricted_matter, specialist, reader
 ):
     create_document(matter=restricted_matter, title="Tõend", created_by=specialist)
-    assert Document.objects.visible_to(other_specialist).count() == 0
+    assert Document.objects.visible_to(reader).count() == 0
     assert Document.objects.visible_to(specialist).count() == 1
 
 
-def test_restricting_a_matter_propagates_to_its_children(
-    normal_matter, specialist, other_specialist
-):
+def test_restricting_a_matter_propagates_to_its_children(normal_matter, specialist, reader):
     document = create_document(matter=normal_matter, title="Tõend", created_by=specialist)
-    assert Document.objects.visible_to(other_specialist).count() == 1
+    assert Document.objects.visible_to(reader).count() == 1
 
     set_matter_visibility(matter=normal_matter, visibility=Visibility.RESTRICTED, actor=specialist)
 
     document.refresh_from_db()
     assert document.effective_visibility == Visibility.RESTRICTED
-    assert Document.objects.visible_to(other_specialist).count() == 0
+    assert Document.objects.visible_to(reader).count() == 0
 
 
 def test_relaxing_a_matter_leaves_individually_restricted_children_restricted(
-    restricted_matter, specialist, other_specialist
+    restricted_matter, specialist, reader
 ):
     inherited = create_document(matter=restricted_matter, title="Tavaline", created_by=specialist)
     explicit = create_document(
@@ -170,7 +186,7 @@ def test_relaxing_a_matter_leaves_individually_restricted_children_restricted(
     assert inherited.effective_visibility == Visibility.NORMAL
     assert explicit.effective_visibility == Visibility.RESTRICTED
 
-    visible = set(Document.objects.visible_to(other_specialist))
+    visible = set(Document.objects.visible_to(reader))
     assert inherited in visible
     assert explicit not in visible
 
@@ -179,7 +195,7 @@ def test_relaxing_a_matter_leaves_individually_restricted_children_restricted(
 
 
 def test_a_bulk_update_on_the_matter_hides_its_children_immediately(
-    normal_matter, specialist, other_specialist
+    normal_matter, specialist, reader
 ):
     """The service is not the only safe way to restrict a Matter.
 
@@ -187,46 +203,40 @@ def test_a_bulk_update_on_the_matter_hides_its_children_immediately(
     set_matter_visibility entirely still hides the children at once.
     """
     create_document(matter=normal_matter, title="Tõend", created_by=specialist)
-    assert Document.objects.visible_to(other_specialist).count() == 1
+    assert Document.objects.visible_to(reader).count() == 1
 
     Matter.objects.filter(pk=normal_matter.pk).update(visibility=Visibility.RESTRICTED)
 
-    assert Document.objects.visible_to(other_specialist).count() == 0
+    assert Document.objects.visible_to(reader).count() == 0
     assert Document.objects.visible_to(specialist).count() == 1
 
 
-def test_a_raw_save_on_the_matter_hides_its_children_immediately(
-    normal_matter, specialist, other_specialist
-):
+def test_a_raw_save_on_the_matter_hides_its_children_immediately(normal_matter, specialist, reader):
     create_document(matter=normal_matter, title="Tõend", created_by=specialist)
 
     normal_matter.visibility = Visibility.RESTRICTED
     normal_matter.save(update_fields=["visibility", "updated_at"])
 
-    assert Document.objects.visible_to(other_specialist).count() == 0
+    assert Document.objects.visible_to(reader).count() == 0
 
 
-def test_a_bulk_update_on_the_child_cannot_relax_it(
-    restricted_matter, specialist, other_specialist
-):
+def test_a_bulk_update_on_the_child_cannot_relax_it(restricted_matter, specialist, reader):
     """A child override can only add restriction, never remove the parent's."""
     document = create_document(matter=restricted_matter, title="Tõend", created_by=specialist)
 
     Document.objects.filter(pk=document.pk).update(visibility_override=Visibility.NORMAL)
 
-    assert Document.objects.visible_to(other_specialist).count() == 0
+    assert Document.objects.visible_to(reader).count() == 0
     document.refresh_from_db()
     assert document.effective_visibility == Visibility.RESTRICTED
 
 
-def test_a_child_created_without_the_service_still_inherits(
-    restricted_matter, specialist, other_specialist
-):
+def test_a_child_created_without_the_service_still_inherits(restricted_matter, specialist, reader):
     document = Document.objects.create(
         matter=restricted_matter, title="Otse loodud", created_by=specialist
     )
     assert document.effective_visibility == Visibility.RESTRICTED
-    assert Document.objects.visible_to(other_specialist).count() == 0
+    assert Document.objects.visible_to(reader).count() == 0
 
 
 def test_nothing_stores_a_child_effective_visibility_column():
@@ -264,9 +274,9 @@ def test_unknown_visibility_is_rejected(normal_matter):
         set_matter_visibility(matter=normal_matter, visibility="SECRET")
 
 
-def test_archive_matters_are_scoped_the_same_way_as_full_matters(other_specialist):
+def test_archive_matters_are_scoped_the_same_way_as_full_matters(reader):
     archive = factories.ArchiveMatterFactory(visibility=Visibility.RESTRICTED, owner=None)
-    assert archive not in Matter.objects.visible_to(other_specialist)
+    assert archive not in Matter.objects.visible_to(reader)
 
 
 # -- visibility values fail closed ------------------------------------------
@@ -306,32 +316,28 @@ def _drop_constraint(table: str, name: str) -> None:
         cursor.execute(f"ALTER TABLE {table} DROP CONSTRAINT {name}")
 
 
-def test_an_unknown_matter_visibility_is_never_read_as_normal(
-    normal_matter, specialist, other_specialist
-):
+def test_an_unknown_matter_visibility_is_never_read_as_normal(normal_matter, specialist, reader):
     create_document(matter=normal_matter, title="Tõend", created_by=specialist)
-    assert Matter.objects.visible_to(other_specialist).count() == 1
+    assert Matter.objects.visible_to(reader).count() == 1
 
     _drop_constraint("matters_matter", "matters_visibility_vocabulary")
     Matter.objects.filter(pk=normal_matter.pk).update(visibility="PUBLIC")
 
     # Neither the Matter nor its children may appear for an uninvolved user.
-    assert Matter.objects.visible_to(other_specialist).count() == 0
-    assert Document.objects.visible_to(other_specialist).count() == 0
+    assert Matter.objects.visible_to(reader).count() == 0
+    assert Document.objects.visible_to(reader).count() == 0
     # The owner still reaches it through participation, so nothing is orphaned.
     assert Matter.objects.visible_to(specialist).count() == 1
 
 
-def test_an_unknown_child_override_is_never_read_as_normal(
-    normal_matter, specialist, other_specialist
-):
+def test_an_unknown_child_override_is_never_read_as_normal(normal_matter, specialist, reader):
     document = create_document(matter=normal_matter, title="Tõend", created_by=specialist)
-    assert Document.objects.visible_to(other_specialist).count() == 1
+    assert Document.objects.visible_to(reader).count() == 1
 
     _drop_constraint("documents_document", "documents_visibility_override_vocabulary")
     Document.objects.filter(pk=document.pk).update(visibility_override="PUBLIC")
 
-    assert Document.objects.visible_to(other_specialist).count() == 0
+    assert Document.objects.visible_to(reader).count() == 0
     document.refresh_from_db()
     assert document.effective_visibility == Visibility.RESTRICTED
 

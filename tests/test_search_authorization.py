@@ -61,8 +61,8 @@ def test_a_collaborator_finds_it(world, other_specialist) -> None:
     assert RESTRICTED_TITLE in _titles(search_matters(query="ühinemise", user=other_specialist))
 
 
-def test_an_unrelated_specialist_does_not(world, other_specialist) -> None:
-    results = search_matters(query="ühinemise", user=other_specialist)
+def test_an_unrelated_specialist_does_not(world, reader) -> None:
+    results = search_matters(query="ühinemise", user=reader)
     assert _titles(results) == [OPEN_TITLE]
 
 
@@ -101,53 +101,47 @@ def test_an_anonymous_caller_sees_nothing(world) -> None:
     assert visible_documents(AnonymousUser()).count() == 0
 
 
-def test_a_hidden_matter_does_not_change_the_visible_count(
-    world, specialist, other_specialist
-) -> None:
+def test_a_hidden_matter_does_not_change_the_visible_count(world, specialist, reader) -> None:
     """The disclosure that looks like it is not one."""
     assert result_count(query="ühinemise", user=specialist) == 2
-    assert result_count(query="ühinemise", user=other_specialist) == 1
+    assert result_count(query="ühinemise", user=reader) == 1
 
 
-def test_searching_a_restricted_matters_exact_reference_finds_nothing(
-    world, other_specialist
-) -> None:
+def test_searching_a_restricted_matters_exact_reference_finds_nothing(world, reader) -> None:
     """Even the strongest possible query must not confirm the record exists."""
     reference = world["restricted"].display_reference
-    assert search_matters(query=reference, user=other_specialist) == []
-    assert result_count(query=reference, user=other_specialist) == 0
+    assert search_matters(query=reference, user=reader) == []
+    assert result_count(query=reference, user=reader) == 0
 
 
-def test_searching_a_restricted_matters_organisation_does_not_surface_it(
-    world, other_specialist
-) -> None:
-    assert RESTRICTED_TITLE not in _titles(
-        search_matters(query="Salaministeerium", user=other_specialist)
-    )
+def test_searching_a_restricted_matters_organisation_does_not_surface_it(world, reader) -> None:
+    assert RESTRICTED_TITLE not in _titles(search_matters(query="Salaministeerium", user=reader))
 
 
-def test_searching_a_restricted_matters_tag_does_not_surface_it(world, other_specialist) -> None:
-    assert RESTRICTED_TITLE not in _titles(
-        search_matters(query="Ühinemised", user=other_specialist)
-    )
+def test_searching_a_restricted_matters_tag_does_not_surface_it(world, reader) -> None:
+    assert RESTRICTED_TITLE not in _titles(search_matters(query="Ühinemised", user=reader))
 
 
-def test_restricting_a_matter_takes_effect_without_reindexing(
-    world, specialist, other_specialist
-) -> None:
+def test_restricting_a_matter_takes_effect_without_reindexing(world, reader) -> None:
     """The whole reason the projection stores no visibility.
 
     The search document is untouched here. The next query still gets it right,
-    because authorization is evaluated against the live Matter every time.
+    because authorization is evaluated against the live Matter every time — and
+    that is why docs/adr/0042 needed no `INDEX_VERSION` bump and no rebuild: the
+    indexed text never carried the answer.
+
+    Asked as a reader, because the point is that restricting *changes* what the
+    viewer may see. Since docs/adr/0042 a lawyer reads the department either
+    way, so a lawyer cannot show this property at all.
     """
     open_matter = world["visible"]
-    assert OPEN_TITLE in _titles(search_matters(query="ühinemise", user=specialist))
+    assert OPEN_TITLE in _titles(search_matters(query="ühinemise", user=reader))
 
     set_matter_visibility(matter=open_matter, visibility=Visibility.RESTRICTED)
     # Deliberately no rebuild_all() here.
 
-    assert OPEN_TITLE not in _titles(search_matters(query="ühinemise", user=specialist))
-    assert result_count(query="ühinemise", user=specialist) == 1
+    assert OPEN_TITLE not in _titles(search_matters(query="ühinemise", user=reader))
+    assert result_count(query="ühinemise", user=reader) == 0
 
 
 def test_relaxing_a_matter_takes_effect_without_reindexing(world, other_specialist) -> None:
@@ -172,8 +166,8 @@ def test_a_document_whose_matter_is_gone_cannot_return_a_result(world, specialis
 # -- the view --------------------------------------------------------------
 
 
-def test_the_results_page_shows_only_what_the_reader_may_see(world, client, other_specialist):
-    client.force_login(other_specialist)
+def test_the_results_page_shows_only_what_the_reader_may_see(world, client, reader):
+    client.force_login(reader)
     response = client.get(reverse("search:search"), {"q": "ühinemise"})
     body = response.content.decode()
     assert OPEN_TITLE in body
@@ -181,8 +175,8 @@ def test_the_results_page_shows_only_what_the_reader_may_see(world, client, othe
     assert "Salaministeerium" not in body
 
 
-def test_the_page_count_matches_what_it_shows(world, client, other_specialist):
-    client.force_login(other_specialist)
+def test_the_page_count_matches_what_it_shows(world, client, reader):
+    client.force_login(reader)
     response = client.get(reverse("search:search"), {"q": "ühinemise"})
     assert response.context["result_count"] == 1
     assert len(response.context["rows"]) == 1
@@ -198,11 +192,9 @@ def test_an_exact_reference_still_navigates_straight_to_the_matter(
     assert str(world["restricted"].pk) in response["Location"]
 
 
-def test_a_reference_the_reader_cannot_see_does_not_redirect(
-    world, client, other_specialist
-) -> None:
+def test_a_reference_the_reader_cannot_see_does_not_redirect(world, client, reader) -> None:
     """A redirect would confirm the record exists just as loudly as a title."""
-    client.force_login(other_specialist)
+    client.force_login(reader)
     response = client.get(reverse("search:search"), {"q": world["restricted"].display_reference})
     assert response.status_code == 200
     assert response.context["result_count"] == 0

@@ -75,9 +75,9 @@ def test_the_owner_reaches_everything(client, specialist, restricted_world):
         assert client.get(url).status_code == 200, url
 
 
-def test_an_uninvolved_specialist_reaches_nothing(client, other_specialist, restricted_world):
+def test_an_uninvolved_specialist_reaches_nothing(client, reader, restricted_world):
     """404 rather than 403: a 403 would confirm the record exists."""
-    client.force_login(other_specialist)
+    client.force_login(reader)
     for url in _urls(restricted_world):
         assert client.get(url).status_code == 404, url
 
@@ -101,8 +101,8 @@ def test_a_superuser_alone_does_not_either(client, superuser, restricted_world):
         assert client.get(url).status_code == 404, url
 
 
-def test_it_is_absent_from_the_register_and_its_count(client, other_specialist, restricted_world):
-    client.force_login(other_specialist)
+def test_it_is_absent_from_the_register_and_its_count(client, reader, restricted_world):
+    client.force_login(reader)
     response = client.get(reverse("matters:matter_list"), {"olek": "koik"})
     assert response.context["page"].paginator.count == 0
     assert "Piiratud teema" not in response.content.decode()
@@ -116,8 +116,8 @@ def test_it_is_absent_from_my_work(client, other_specialist, restricted_world):
     assert response.context["work"].open_matters == 0
 
 
-def test_it_is_absent_from_search_results_and_snippets(client, other_specialist, restricted_world):
-    client.force_login(other_specialist)
+def test_it_is_absent_from_search_results_and_snippets(client, reader, restricted_world):
+    client.force_login(reader)
     response = client.get(reverse("search:search"), {"q": "piiratud"})
     assert response.context["result_count"] == 0
     assert "Piiratud teema" not in response.content.decode()
@@ -130,7 +130,7 @@ def test_the_owner_does_find_it(client, specialist, restricted_world):
 
 
 def test_a_restricted_child_inside_a_normal_matter_stays_hidden(
-    client, specialist, other_specialist, normal_matter
+    client, specialist, reader, normal_matter
 ):
     """Visibility is per record, not only per Matter."""
     add_entry(
@@ -141,7 +141,7 @@ def test_a_restricted_child_inside_a_normal_matter_stays_hidden(
     )
     add_entry(matter=normal_matter, body="<p>Kõigile nähtav</p>", author=specialist)
 
-    client.force_login(other_specialist)
+    client.force_login(reader)
     response = client.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
     body = response.content.decode()
     assert response.status_code == 200
@@ -155,9 +155,9 @@ def test_an_anonymous_visitor_is_sent_to_sign_in(client, restricted_world):
         assert response.status_code in (302, 404), url
 
 
-def test_posting_to_a_restricted_matter_is_refused(client, other_specialist, restricted_world):
+def test_posting_to_a_restricted_matter_is_refused(client, reader, restricted_world):
     """Write routes are protected by the same lookup, not only read routes."""
-    client.force_login(other_specialist)
+    client.force_login(reader)
     matter = restricted_world["matter"]
 
     compose = client.post(
@@ -167,6 +167,6 @@ def test_posting_to_a_restricted_matter_is_refused(client, other_specialist, res
 
     field = client.post(
         reverse("matters:update_field", kwargs={"pk": matter.pk, "field": "owner"}),
-        {"owner": str(other_specialist.pk)},
+        {"owner": str(reader.pk)},
     )
     assert field.status_code == 404

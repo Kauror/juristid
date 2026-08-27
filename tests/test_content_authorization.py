@@ -74,11 +74,9 @@ def test_a_collaborator_sees_it(corpus_with_restricted_child, specialist, other_
     assert result_count(query=HIDDEN_WORD, user=other_specialist) == 1
 
 
-def test_an_unrelated_specialist_sees_nothing_of_it(
-    corpus_with_restricted_child, other_specialist
-) -> None:
-    assert result_count(query=HIDDEN_WORD, user=other_specialist) == 0
-    assert search(query=HIDDEN_WORD, user=other_specialist) == []
+def test_an_unrelated_specialist_sees_nothing_of_it(corpus_with_restricted_child, reader) -> None:
+    assert result_count(query=HIDDEN_WORD, user=reader) == 0
+    assert search(query=HIDDEN_WORD, user=reader) == []
 
 
 def test_the_department_head_sees_it(corpus_with_restricted_child, department_head) -> None:
@@ -124,7 +122,7 @@ def test_a_break_glass_grant_opens_it(
 
 
 def test_a_hidden_document_does_not_move_the_count(
-    corpus_with_restricted_child, specialist, other_specialist
+    corpus_with_restricted_child, specialist, reader
 ) -> None:
     """Never "4 results, 1 hidden". The number must simply be 3.
 
@@ -135,10 +133,10 @@ def test_a_hidden_document_does_not_move_the_count(
     query = SHARED_WORD
 
     owner_total = result_count(query=query, user=specialist)
-    outsider_total = result_count(query=query, user=other_specialist)
+    outsider_total = result_count(query=query, user=reader)
 
     assert owner_total > outsider_total > 0
-    assert outsider_total == len(search(query=query, user=other_specialist))
+    assert outsider_total == len(search(query=query, user=reader))
 
 
 def test_the_count_equals_the_rows_for_every_viewpoint(
@@ -150,16 +148,14 @@ def test_the_count_equals_the_rows_for_every_viewpoint(
         assert result_count(query="eelnõu", user=user) == len(rows)
 
 
-def test_a_hidden_document_contributes_no_snippet(
-    corpus_with_restricted_child, other_specialist
-) -> None:
-    for result in search(query="Näidisministeerium", user=other_specialist):
+def test_a_hidden_document_contributes_no_snippet(corpus_with_restricted_child, reader) -> None:
+    for result in search(query="Näidisministeerium", user=reader):
         text = "".join(run.text for run in result.snippet)
         assert HIDDEN_WORD not in text
 
 
 def test_restricting_a_document_takes_effect_without_a_reindex(
-    corpus_with_restricted_child, specialist, other_specialist
+    corpus_with_restricted_child, specialist, reader
 ) -> None:
     """The property ADR 0013 refused to trade away, one level further down.
 
@@ -169,23 +165,23 @@ def test_restricting_a_document_takes_effect_without_a_reindex(
     """
     matter, _ = corpus_with_restricted_child
     visible = matter.documents.get(title="Avalik lisa")
-    assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=other_specialist) == 1
+    assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=reader) == 1
 
     visible.visibility_override = Visibility.RESTRICTED
     visible.save(update_fields=["visibility_override"])
 
-    assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=other_specialist) == 0
+    assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=reader) == 0
     assert result_count(query=corpus.ONLY_ON_PDF_PAGE_4, user=specialist) == 1
 
 
 def test_restricting_the_matter_hides_all_of_its_content(
-    corpus_with_restricted_child, other_specialist
+    corpus_with_restricted_child, reader
 ) -> None:
     matter, _ = corpus_with_restricted_child
     matter.visibility = Visibility.RESTRICTED
     matter.save(update_fields=["visibility"])
 
-    assert result_count(query="Näidisministeerium", user=other_specialist) == 0
+    assert result_count(query="Näidisministeerium", user=reader) == 0
 
 
 # -- entries and submissions -----------------------------------------------
@@ -219,10 +215,10 @@ def test_an_entry_is_searchable_by_its_text(matter_with_children, specialist) ->
 
 
 def test_a_restricted_entry_is_invisible_to_an_outsider(
-    matter_with_children, other_specialist, specialist
+    matter_with_children, reader, specialist
 ) -> None:
     assert result_count(query=HIDDEN_WORD, user=specialist) == 2  # entry and submission
-    assert result_count(query=HIDDEN_WORD, user=other_specialist) == 0
+    assert result_count(query=HIDDEN_WORD, user=reader) == 0
 
 
 def test_a_submission_is_searchable_by_title_and_notes(matter_with_children, specialist) -> None:
@@ -234,25 +230,25 @@ def test_a_submission_is_searchable_by_title_and_notes(matter_with_children, spe
 
 
 def test_a_restricted_submission_contributes_nothing_to_an_outsider(
-    matter_with_children, other_specialist
+    matter_with_children, reader
 ) -> None:
-    for result in search(query="arvamus", user=other_specialist):
+    for result in search(query="arvamus", user=reader):
         assert "Piiratud arvamus" not in result.matter.title
         assert HIDDEN_WORD not in "".join(run.text for run in result.snippet)
 
 
 def test_a_rebuild_does_not_change_who_can_see_what(
-    matter_with_children, specialist, other_specialist
+    matter_with_children, specialist, reader
 ) -> None:
     """Rebuilding writes the index from scratch. It must not write authorization."""
     before = (
         result_count(query=HIDDEN_WORD, user=specialist),
-        result_count(query=HIDDEN_WORD, user=other_specialist),
+        result_count(query=HIDDEN_WORD, user=reader),
     )
     rebuild_all()
     after = (
         result_count(query=HIDDEN_WORD, user=specialist),
-        result_count(query=HIDDEN_WORD, user=other_specialist),
+        result_count(query=HIDDEN_WORD, user=reader),
     )
     assert before == after == (2, 0)
 
