@@ -136,6 +136,13 @@ SOURCE_LABELS: dict[str, str] = {
     SearchSourceKind.SUBMISSION.value: "Arvamus",
     SearchSourceKind.DOCUMENT_FRAGMENT.value: "Dokument",
     SearchSourceKind.LEGACY_SOURCE_PAGE.value: "Ajalooline OneNote",
+    # Added when engagements started actually appearing in results. AUTH-003
+    # created the source kind and only a full rebuild ever wrote one, so no
+    # result carried this kind on any surface anybody looked at — and the
+    # template prints `source_label` into a badge, which rendered empty. Found
+    # by the visual regression the moment SEARCH-001 made a recorded
+    # `Kaasamine` findable.
+    SearchSourceKind.ENGAGEMENT.value: "Kaasamine",
 }
 
 #: Deterministic tiers. Higher wins, and the gaps are wide so that a strong

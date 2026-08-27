@@ -88,6 +88,30 @@ from app.submissions.models import Submission, SubmissionRecipient
 from app.taxonomy.models import PolicyArea, Tag, TagAlias
 
 
+def _deletion_started_at(origin: Any, model: type[Model]) -> bool:
+    """Was `delete()` called on this row, or on something above it?
+
+    Every `post_delete` handler that *re-projects* rather than removing needs
+    this, and getting it wrong does not merely leave a stale row — it makes the
+    delete fail. Django deletes in two phases: rows with no receivers are
+    raw-deleted first, `SearchDocument` among them, and only then does the
+    per-model loop delete the children and fire their handlers. At that moment
+    the parent still exists, because it is deleted later in the same loop. So a
+    handler that re-projects here inserts a search row the cascade has already
+    swept past, nothing collects it afterwards, and the deferred foreign key
+    fails at COMMIT — naming a parent that is no longer there, and taking the
+    operator's delete with it.
+
+    ``origin`` is an instance for ``obj.delete()`` and a queryset for
+    ``qs.delete()``, so the model is read from whichever it is. A missing
+    ``origin`` is treated as "started here": the wrong guess in that direction
+    costs one redundant refresh rather than a row nothing will ever collect.
+    """
+    if origin is None:
+        return True
+    return (getattr(origin, "model", None) or type(origin)) is model
+
+
 def _refresh(matter_id: Any) -> None:
     if indexing_is_suspended() or matter_id is None:
         return
@@ -154,7 +178,17 @@ def refresh_on_source_organisation_row(
     through `bulk_create` and fires no `post_save`, while a row created directly
     by a service fires no `m2m_changed`. Each handler covers what the other
     misses, and refreshing twice costs one delete-and-insert of a single row.
+
+    **Not when the Matter is going too.** `organisation` is PROTECT, so the only
+    thing that can cascade into this table is deleting the Matter — and
+    re-projecting during that cascade re-inserts a row for a Matter the delete is
+    partway through removing, which fails at COMMIT and takes the delete with it.
+    CI caught exactly that (`_deletion_started_at`).
     """
+    if kwargs.get("signal") is post_delete and not _deletion_started_at(
+        kwargs.get("origin"), MatterSourceOrganisation
+    ):
+        return
     _refresh(instance.matter_id)
 
 
@@ -173,7 +207,17 @@ def refresh_on_tag_assignment(
 
     Refreshing twice when both happen is cheap. Missing one makes a tagged
     matter unfindable by its tag, silently.
+
+    The `origin` guard is the same one recipients need and was missing here:
+    deleting a Matter cascades to its `TagAssignment` rows, and re-projecting
+    during that cascade re-inserts a search row for a Matter that is being
+    deleted. It had no test that deleted a tagged Matter, so it had never
+    fired (`_deletion_started_at`).
     """
+    if kwargs.get("signal") is post_delete and not _deletion_started_at(
+        kwargs.get("origin"), TagAssignment
+    ):
+        return
     _refresh(instance.matter_id)
 
 
@@ -272,28 +316,13 @@ def refresh_on_recipient_change(
     """
     if indexing_is_suspended():
         return
-    if kwargs.get("signal") is post_delete and not _deletion_started_at_the_recipients(
-        kwargs.get("origin")
+    if kwargs.get("signal") is post_delete and not _deletion_started_at(
+        kwargs.get("origin"), SubmissionRecipient
     ):
         return
     submission = Submission.objects.filter(pk=instance.submission_id).first()
     if submission is not None:
         refresh_submission(submission)
-
-
-def _deletion_started_at_the_recipients(origin: Any) -> bool:
-    """Was `delete()` called on recipients, or on something above them?
-
-    ``origin`` is an instance for ``obj.delete()`` and a queryset for
-    ``qs.delete()``, so the model is read from whichever it is. A missing
-    ``origin`` is treated as "started here": that is the direction that keeps
-    the index correct, and the wrong guess costs one redundant refresh rather
-    than a row nothing will ever collect.
-    """
-    if origin is None:
-        return True
-    model = getattr(origin, "model", None) or type(origin)
-    return model is SubmissionRecipient
 
 
 @receiver(post_save, sender=MatterSourcePage, dispatch_uid="search_refresh_source_link")

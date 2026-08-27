@@ -980,3 +980,111 @@ def test_reading_the_status_does_not_load_the_debt_table(specialist):
         "LIMIT" in sql or "GROUP BY" in sql or "COUNT" in sql.upper()
         for sql in (query["sql"] for query in queries.captured_queries)
     )
+
+
+def test_a_consumer_killed_before_its_rebuild_leaves_the_debt(specialist):
+    """The claim is a read, so dying after it costs nothing.
+
+    Nothing is marked as "in progress" and nothing is reserved: the obligation
+    is still a plain outstanding row until a rebuild has committed and the
+    delete has run. A worker killed anywhere before that leaves the next one
+    exactly the work it would have had.
+    """
+    organisation = factories.OrganisationFactory(name="Enne")
+    factories.MatterFactory(owner=specialist)
+    organisation.name = "Pärast"
+    organisation.save()
+
+    class Killed(Exception):
+        pass
+
+    def die(*args: object, **kwargs: object) -> None:
+        raise Killed
+
+    real = freshness.rebuild_all
+    freshness.rebuild_all = die  # type: ignore[assignment]
+    try:
+        with pytest.raises(Killed):
+            consume()
+    finally:
+        freshness.rebuild_all = real  # type: ignore[assignment]
+
+    assert freshness.status().owed == 1
+    consume()
+    assert freshness.status().is_clear
+
+
+def test_deleting_a_matter_leaves_no_orphaned_search_result(specialist):
+    """A projection row for a deleted source is not stale data to tidy up later:
+    it is a search result pointing at nothing.
+
+    A Matter with any recorded history cannot be deleted at all — `ChangeEvent`
+    holds it with PROTECT — so the reachable case is a Matter with none, which
+    is what the TEST-data purge is left with once it has removed the audit rows.
+    """
+    matter = factories.MatterFactory(owner=specialist, title="Kustutatav teema")
+    factories.EntryFactory(matter=matter, author=specialist, body="<p>OMEGA sisu</p>")
+    MatterEngagement.objects.create(matter=matter, kind="SURVEY", title="OMEGA küsitlus")
+    survivor = factories.MatterFactory(owner=specialist, title="Alles jääv teema")
+    rebuild_all()
+    assert found("OMEGA", specialist)
+
+    matter.delete()
+
+    assert SearchDocument.objects.filter(matter_id=matter.pk).count() == 0
+    assert found("OMEGA", specialist) == []
+    # And nothing else went with it.
+    assert SearchDocument.objects.filter(matter=survivor).exists()
+
+
+def test_deleting_a_matter_with_senders_and_tags_does_not_fail(specialist):
+    """A `post_delete` that re-projects must not fire during its parent's cascade.
+
+    Django raw-deletes the receiver-less rows first — `SearchDocument` among
+    them — and only then loops over the children. A handler that re-projects at
+    that point inserts a row for a Matter the delete is partway through
+    removing; the deferred foreign key then fails at COMMIT and the delete the
+    operator asked for does not happen at all. CI caught it for senders; the
+    tag handler had the same hole and no test that deleted a tagged Matter.
+    """
+    organisation = factories.OrganisationFactory(name="Saatja")
+    tag = factories.TagFactory(name_et="Silt")
+    matter = factories.MatterFactory(owner=specialist, title="Kustutatav teema")
+    matter.source_organisations.add(organisation)
+    matter.tags.add(tag)
+    rebuild_all()
+
+    matter.delete()
+
+    assert SearchDocument.objects.filter(matter_id=matter.pk).count() == 0
+    assert MatterSourceOrganisation.objects.filter(matter_id=matter.pk).count() == 0
+
+
+def test_removing_one_sender_still_reprojects_the_matter(specialist):
+    """The guard must not turn into "never refresh on delete"."""
+    kept = factories.OrganisationFactory(name="Kultuuriministeerium")
+    dropped = factories.OrganisationFactory(name="Loomeliitude Keskliit")
+    matter = factories.MatterFactory(owner=specialist, title="Autoriõiguse teema")
+    matter.source_organisations.set([kept, dropped])
+
+    MatterSourceOrganisation.objects.filter(matter=matter, organisation=dropped).delete()
+
+    assert found("Loomeliitude", specialist) == []
+    assert found("Kultuuriministeerium", specialist) == [
+        (SearchSourceKind.MATTER.value, str(matter.pk))
+    ]
+
+
+def test_every_source_kind_has_a_badge_label():
+    """A kind with no label prints an empty badge, and only shows up when a row
+    of that kind finally reaches a result page.
+
+    ENGAGEMENT went a whole release without one: AUTH-003 created the kind, only
+    a full rebuild ever wrote a row, and nothing put one in front of a reader
+    until SEARCH-001 did. The next kind added should not need a rendered page to
+    discover the same omission.
+    """
+    from app.search.services import SOURCE_LABELS
+
+    missing = [kind.value for kind in SearchSourceKind if not SOURCE_LABELS.get(kind.value)]
+    assert missing == []
