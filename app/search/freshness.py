@@ -46,7 +46,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from django.db.models import F, QuerySet
+from django.db.models import Count, F, Min, QuerySet, Sum
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from app.search.indexing import RebuildResult, rebuild_all
@@ -99,20 +100,46 @@ class FreshnessStatus:
 
 
 def status() -> FreshnessStatus:
-    """Read-only. Never consumes, never repairs, never rebuilds."""
-    rows = list(outstanding())
-    reasons: dict[str, int] = {}
-    for row in rows:
-        reasons[row.reason] = reasons.get(row.reason, 0) + 1
-    failed = [row for row in rows if row.attempts]
+    """Read-only. Never consumes, never repairs, never rebuilds.
+
+    Aggregated in the database rather than by loading the rows. The debt table
+    is normally empty and never large, but "normally" is doing work there: a
+    bulk writer that touched every alias in the corpus writes a row per alias,
+    and this is the query a container healthcheck runs every sixty seconds. Two
+    small aggregates and one indexed lookup cost the same whether the table
+    holds one row or fifty thousand.
+    """
+    rows = outstanding()
+    totals = rows.aggregate(
+        owed=Count("id"),
+        oldest=Min("created_at"),
+        failed=Coalesce(Sum("attempts"), 0),
+    )
+    if not totals["owed"]:
+        return FreshnessStatus(
+            owed=0, oldest_marked_at=None, reasons={}, failed_attempts=0, last_error=""
+        )
+
+    reasons = dict(
+        rows.values_list("reason").annotate(total=Count("id")).values_list("reason", "total")
+    )
+    last_error = ""
+    if totals["failed"]:
+        latest = (
+            rows.exclude(attempts=0)
+            .exclude(last_error="")
+            .order_by("-last_attempt_at")
+            .values_list("last_error", flat=True)
+            .first()
+        )
+        last_error = latest or ""
+
     return FreshnessStatus(
-        owed=len(rows),
-        oldest_marked_at=rows[0].created_at if rows else None,
+        owed=totals["owed"],
+        oldest_marked_at=totals["oldest"],
         reasons=reasons,
-        failed_attempts=sum(row.attempts for row in failed),
-        last_error=max(failed, key=lambda row: row.last_attempt_at or row.created_at).last_error
-        if failed
-        else "",
+        failed_attempts=totals["failed"],
+        last_error=last_error,
     )
 
 

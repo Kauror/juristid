@@ -950,3 +950,33 @@ def test_every_debt_receiver_survives_garbage_collection(specialist):
     organisation.name = "Pärast"
     organisation.save()
     assert freshness.status().owed == 1
+
+
+def test_reading_the_status_does_not_load_the_debt_table(specialist):
+    """The healthcheck runs every sixty seconds; it may not scale with the debt.
+
+    A bulk writer that touched every alias in the corpus writes a row per alias.
+    Loading them to count them would be fine on the empty table this normally
+    is, and would not be fine on the one day it matters.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    SearchRebuildDebt.objects.bulk_create(
+        [
+            SearchRebuildDebt(reason=SearchRebuildReason.ORGANISATION_ALIAS_CHANGED)
+            for _ in range(200)
+        ]
+    )
+
+    with CaptureQueriesContext(connection) as queries:
+        state = freshness.status()
+
+    assert state.owed == 200
+    assert state.reasons == {SearchRebuildReason.ORGANISATION_ALIAS_CHANGED.value: 200}
+    # Aggregates and a group-by, not two hundred rows.
+    assert len(queries.captured_queries) <= 3
+    assert all(
+        "LIMIT" in sql or "GROUP BY" in sql or "COUNT" in sql.upper()
+        for sql in (query["sql"] for query in queries.captured_queries)
+    )
