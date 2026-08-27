@@ -554,3 +554,51 @@ def test_the_command_exits_non_zero_for_a_submission_above_its_evidence(
     with pytest.raises(SystemExit) as exit_info:
         call_command("check_evidence_integrity", "--skip-storage-scan")
     assert exit_info.value.code == 1
+
+
+def test_the_command_does_not_tell_an_operator_to_restore_a_visibility_fault(
+    restricted_matter, specialist, capture_evidence
+):
+    """The two failure classes have opposite answers, and the summary says which.
+
+    "Restore from backup" is the right sentence for bytes that are gone. It is
+    the wrong one here: the bytes are present and are what was hashed, and the
+    backup holds the same relationship the live database does, so a restore
+    repairs nothing and costs a maintenance window. Which side to change is a
+    decision about the record of what Koda sent.
+    """
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    _stranded_pair(restricted_matter, specialist)
+    _relax_past_the_backstop(restricted_matter)
+
+    output = StringIO()
+    with pytest.raises(SystemExit):
+        call_command("check_evidence_integrity", "--skip-storage-scan", stdout=output)
+
+    text = output.getvalue()
+    assert "Restore from backup" not in text
+    assert "Do not restore" in text
+    assert "record of what Koda sent" in text
+
+
+def test_missing_bytes_still_get_the_restore_sentence(normal_matter, capture_evidence):
+    """The correction above must not have taken the storage advice away."""
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    from app.documents.services import evidence_storage
+
+    version = capture_evidence(normal_matter, PDF, "a.pdf", MIME)
+    evidence_storage().delete(version.storage_key)
+
+    output = StringIO()
+    with pytest.raises(SystemExit):
+        call_command("check_evidence_integrity", "--skip-storage-scan", stdout=output)
+
+    text = output.getvalue()
+    assert "Restore from backup" in text
+    assert "Do not restore" not in text

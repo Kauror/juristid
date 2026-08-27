@@ -93,6 +93,24 @@ INTEGRITY_FAILURES: frozenset[str] = frozenset(
     }
 )
 
+#: Which of those are about *bytes*, and are therefore the ones a restore
+#: answers. Everything else in `INTEGRITY_FAILURES` is about a relationship
+#: between rows: the bytes are present and are what was hashed, so a backup
+#: holds the same relationship the live database does and a restore repairs
+#: nothing. What to change instead — restrict the document, relax the
+#: submission, supersede the evidence, refile it — is a decision about the
+#: record of what Koda sent, and it is a person's to take (docs/adr/0011).
+#:
+#: The listed side is the storage one deliberately, because "restore from
+#: backup" is the sentence that costs something when it is wrong. A finding
+#: class added later and left out of this set is described to an operator as a
+#: question rather than as a restore, which is the harmless direction to be
+#: wrong in — the same reason `restrictiveness` ranks a value it does not
+#: recognise as the most restrictive one.
+STORAGE_FAILURES: frozenset[str] = frozenset(
+    {MISSING_OBJECT, SIZE_MISMATCH, SHA_MISMATCH, UNREADABLE_OBJECT}
+)
+
 
 @dataclass(frozen=True)
 class Finding:

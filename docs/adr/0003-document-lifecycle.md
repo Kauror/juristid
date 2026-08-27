@@ -111,6 +111,15 @@ object is a restore decision and a mismatched checksum is a question about which
 copy is real, and correcting a row to match whatever the store currently holds
 would turn a detected loss into an undetectable one.
 
+The two classes are reported apart, because their answers are opposite. Missing
+or disagreeing bytes are a storage fault, and the answer is to restore. A
+relationship that is wrong — evidence filed under another Matter, evidence less
+restricted than the submission relying on it — is not: the bytes are present and
+are what was hashed, so a backup holds the same relationship and a restore
+repairs nothing. Which side to change is a decision about the record of what
+Koda sent, and the summary says so rather than sending an operator to the
+backups at three in the morning.
+
 **Storage seam**
 
 - Django's `STORAGES` setting with a named `evidence` alias. Development uses

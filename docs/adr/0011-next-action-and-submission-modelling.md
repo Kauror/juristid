@@ -100,8 +100,11 @@ sentence, and a third trigger on `matters_matter` backs it up. Only relaxation
 can break it: tightening raises both sides together, and repairs the state if it
 was already broken.
 
-The rule is now enforced on every input that can change it, so a row that fails
-it can only predate the third trigger. `check_evidence_integrity` reports both
+The rule is now enforced on every ordinary input that can change it, so a row
+that fails it predates the third trigger, was written around it, or reached the
+write-skew window the triggers share (DATA-002: each reads a snapshot, so a
+Matter relaxation committing beside an evidence bind can still produce the
+state). `check_evidence_integrity` reports both
 halves of the rule — `evidence-less-restricted` and `foreign-final-evidence` —
 so that historical corruption is findable rather than silent. Detection is not
 the enforcement, and neither substitutes for the other.

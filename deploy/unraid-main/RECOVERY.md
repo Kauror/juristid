@@ -182,13 +182,21 @@ different question.
 | | Asks | Needs | Finds |
 | --- | --- | --- | --- |
 | `recovery_fingerprint --compare` | is this the same canonical state as before? | an earlier fingerprint | a row, an evidence object or a migration leaf that did not come back |
-| `check_evidence_integrity` | do the store and the database still describe each other? | nothing but the deployment | a row whose object is gone, an object nothing refers to, a size or checksum that disagrees, a document whose current version belongs to another document, an extraction stuck mid-flight |
+| `check_evidence_integrity` | do the store and the database still describe each other? | nothing but the deployment | a row whose object is gone, an object nothing refers to, a size or checksum that disagrees, a document whose current version belongs to another document, a submission whose final evidence is filed under another teema or reads as less restricted than the submission itself, an extraction stuck mid-flight |
 
 So a fingerprint comparison proves a *restore*. It cannot notice an orphaned
 object, because an orphan was never in the fingerprint and never will be. The
 integrity check proves the *live system* at one moment. It cannot notice that
 forty Matters are missing, because it has nothing to compare against. A restore
 wants both, in that order, and the runbook above runs both.
+
+Its findings are not all the same kind of problem, and the summary line says
+which. Missing bytes, a size or a checksum that disagrees: restore. A
+relationship that is wrong — evidence filed under another teema, evidence less
+restricted than the submission that relies on it — is not a storage fault at
+all. The bytes are present and are what was hashed, a backup holds the same
+relationship, and which side to change is a decision about the record of what
+Koda sent. Do not repair those rows to make the check go quiet.
 
 Neither is scheduled. `check_evidence_integrity` is cheap enough to be, and if
 that is ever wanted it is the structural pass — never `--verify-sha`, which

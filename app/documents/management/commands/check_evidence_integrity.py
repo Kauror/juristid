@@ -6,10 +6,13 @@ outside PostgreSQL, so "this row points at an object that is not there" is
 invisible to every check the database performs on itself.
 
 Read-only, always. Nothing here repairs anything, and that is deliberate rather
-than unfinished — a missing evidence object is a restore-from-backup decision,
-and a checksum that disagrees is a question about which of the two copies is
-the real one. Neither is a decision a management command should make at three in
-the morning.
+than unfinished — a missing evidence object is a restore-from-backup decision, a
+checksum that disagrees is a question about which of the two copies is the real
+one, and a submission whose final evidence points somewhere it may not is a
+question about the record of what Koda sent. None of the three is a decision a
+management command should make at three in the morning, and the last one is not
+even the same decision as the other two: it is the only one a restore does not
+answer, so the summary counts it separately.
 
 Two depths::
 
@@ -31,7 +34,11 @@ from typing import Any
 
 from django.core.management.base import BaseCommand
 
-from app.documents.integrity import INTEGRITY_FAILURES, check_evidence
+from app.documents.integrity import (
+    INTEGRITY_FAILURES,
+    STORAGE_FAILURES,
+    check_evidence,
+)
 
 #: How many identifiers are printed per finding class before the rest are
 #: counted instead. A store that has lost a thousand objects has one problem,
@@ -95,14 +102,39 @@ class Command(BaseCommand):
             if len(findings) > len(shown):
                 self.stdout.write(f"  … and {len(findings) - len(shown)} more")
 
-        serious = sum(len(rows) for kind, rows in grouped.items() if kind in INTEGRITY_FAILURES)
-        if serious:
+        # Two kinds of failure, and opposite advice, so they are counted apart.
+        # "Restore from backup" is right for bytes that are gone and wrong for a
+        # relationship that is bad: the backup holds the same relationship, and
+        # following the wrong sentence at three in the morning costs a restore
+        # that repairs nothing.
+        missing_bytes = sum(
+            len(rows)
+            for kind, rows in grouped.items()
+            if kind in INTEGRITY_FAILURES and kind in STORAGE_FAILURES
+        )
+        bad_relationships = sum(
+            len(rows)
+            for kind, rows in grouped.items()
+            if kind in INTEGRITY_FAILURES and kind not in STORAGE_FAILURES
+        )
+
+        if missing_bytes:
             self.stdout.write(
                 self.style.ERROR(
-                    f"\n{serious} finding(s) mean evidence is not intact. Restore from backup "
-                    "rather than editing rows to match what the store currently holds: a row "
-                    "corrected to fit missing bytes turns a detected loss into an undetectable "
-                    "one."
+                    f"\n{missing_bytes} finding(s) mean evidence is not intact. Restore from "
+                    "backup rather than editing rows to match what the store currently holds: a "
+                    "row corrected to fit missing bytes turns a detected loss into an "
+                    "undetectable one."
+                )
+            )
+        if bad_relationships:
+            self.stdout.write(
+                self.style.ERROR(
+                    f"\n{bad_relationships} finding(s) mean the bytes are intact but point "
+                    "somewhere they may not. Do not restore, and do not repair these rows "
+                    "automatically: a backup holds the same relationship, and which side to "
+                    "change — restrict the document, relax the submission, supersede the "
+                    "evidence, refile it — is a decision about the record of what Koda sent."
                 )
             )
         raise SystemExit(1)
