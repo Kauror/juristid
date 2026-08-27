@@ -19,7 +19,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.operations import composer_operation
 from app.audit.services import record_change_event
-from app.core.enums import Visibility, validate_visibility_override
+from app.core.enums import Visibility, most_restrictive, validate_visibility_override
 from app.core.errors import DomainError
 from app.core.richtext import excerpt, is_empty, sanitize_entry_html
 from app.documents.enums import DocumentRole
@@ -43,6 +43,7 @@ from app.matters.models import (
     MatterReferenceSequence,
     TagAssignment,
 )
+from app.submissions.models import Submission
 from app.workflow.enums import ActionStatus, Disposition, Track
 from app.workflow.models import NextAction
 from app.workflow.services import (
@@ -287,6 +288,40 @@ def set_matter_data_class(*, matter: Matter, data_class: str, actor: Any = None)
     return matter
 
 
+def _submissions_left_above_their_evidence(*, matter: Matter, visibility: str) -> int:
+    """How many submissions this Matter visibility would leave above their evidence.
+
+    A Submission's final evidence may never be less restricted than the
+    Submission itself, or the exact text of a restricted opinion is listed and
+    downloadable by people who cannot see the opinion at all (docs/adr/0011).
+    Both sides of that comparison are derived from the Matter's visibility, so
+    the Matter is the third thing that can break the rule — and unlike the other
+    two it does so without either record being written.
+
+    It breaks in one direction only. Tightening the Matter raises both sides
+    together; relaxing it drops the evidence to whatever its own override says
+    while a Submission carrying its own RESTRICTED override stays where it is.
+    The comparison is written out in full rather than reduced to that one case,
+    so it stays correct if the vocabulary ever gains a third value.
+
+    A Matter has a handful of submissions, and this reads two columns of them.
+    """
+    rows = (
+        Submission.objects.filter(matter=matter, final_version__isnull=False)
+        .order_by()
+        .values_list("visibility_override", "final_version__document__visibility_override")
+    )
+    stranded = 0
+    for submission_override, evidence_override in rows:
+        submission_effective = most_restrictive(
+            visibility, submission_override or Visibility.NORMAL
+        )
+        evidence_effective = most_restrictive(visibility, evidence_override or Visibility.NORMAL)
+        if most_restrictive(evidence_effective, submission_effective) != evidence_effective:
+            stranded += 1
+    return stranded
+
+
 @transaction.atomic
 def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None) -> Matter:
     """Change a Matter's visibility, audited.
@@ -297,6 +332,10 @@ def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None)
     restricted. Nothing here can go stale, and a write that bypasses this
     function changes what children are visible just as correctly — it only
     misses the audit record (docs/adr/0005).
+
+    The one derived relationship that does not survive the change on its own is
+    a Submission's final evidence, which is refused here rather than left to
+    become false. See `_submissions_left_above_their_evidence`.
     """
     if visibility not in Visibility.values:
         raise DomainError(f"Tundmatu nähtavus {visibility!r}.")
@@ -304,6 +343,17 @@ def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None)
     previous = matter.visibility
     if previous == visibility:
         return matter
+
+    stranded = _submissions_left_above_their_evidence(matter=matter, visibility=visibility)
+    if stranded:
+        # Counted, never named: the submissions this refers to are the
+        # restricted ones, and the person editing the Matter is not necessarily
+        # someone who may read them.
+        raise DomainError(
+            f"Selle nähtavusega jääks {stranded} arvamuse lõplik tõend arvamusest endast "
+            "vähem piiratuks. Piira enne nende arvamuste tõenddokumente või muuda "
+            "arvamuste enda piirangut."
+        )
 
     matter.visibility = visibility
     matter.save(update_fields=["visibility", "updated_at"])

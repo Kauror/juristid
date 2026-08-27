@@ -2,6 +2,13 @@
 
 Status: Accepted (Stage 1)
 
+- **Amended 2026-08-27 (DATA-001).** A third trigger, on `matters_matter`. The
+  final-evidence rule below named two triggers and two records; both sides of
+  the comparison are *derived* from the Matter's visibility, which was the third
+  input and the one nothing guarded. See *The Matter is the third input* below.
+  It states an input this ADR relied on without recording; it changes no
+  decision here.
+
 ## Context
 
 Two Stage-1 models carry the weight of the product's central claims: that a
@@ -80,6 +87,27 @@ people who cannot see the submission. Two triggers back this up: one on
 `submissions_submission` for the moment evidence is attached or sent, and one on
 `documents_document` for the moment an already-referenced document is relaxed.
 Without the second, one `UPDATE` would undo the rule after the fact.
+
+**The Matter is the third input** (amended 2026-08-27, DATA-001). Effective
+visibility is derived rather than stored (ADR 0005), so both sides of "not less
+restricted than the submission" are computed from the Matter's visibility and
+the record's own override. Relaxing the Matter therefore drops the evidence to
+whatever its own override says, while a submission carrying its own `RESTRICTED`
+override stays where it is — reaching the state the other two triggers refuse to
+create, through an ordinary audited `set_matter_visibility` call, without either
+record being written. `set_matter_visibility` now refuses that change with a
+sentence, and a third trigger on `matters_matter` backs it up. Only relaxation
+can break it: tightening raises both sides together, and repairs the state if it
+was already broken.
+
+The rule is now enforced on every ordinary input that can change it, so a row
+that fails it predates the third trigger, was written around it, or reached the
+write-skew window the triggers share (DATA-002: each reads a snapshot, so a
+Matter relaxation committing beside an evidence bind can still produce the
+state). `check_evidence_integrity` reports both
+halves of the rule — `evidence-less-restricted` and `foreign-final-evidence` —
+so that historical corruption is findable rather than silent. Detection is not
+the enforcement, and neither substitutes for the other.
 
 `EntryRevision` is append-only in the database for the same reason the audit
 tables are: a record of superseded wording that can itself be rewritten proves
