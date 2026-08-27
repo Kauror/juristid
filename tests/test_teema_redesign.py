@@ -364,8 +364,12 @@ def test_teen_with_a_passed_deadline_is_overdue(signed_in, specialist):
 
     body = _detail(signed_in, matter)
 
-    assert "Tähtaeg möödas" in body
-    assert "nextrow__date--overdue" in body
+    # The flag names what the date is and how far past it we are, in one
+    # phrase: «6 p» beside a bare date says nothing about what it counts from
+    # (design handoff 1c).
+    assert "TÄHTAEG MÖÖDAS · 2 p" in " ".join(body.split())
+    # And lateness is the state of the row, not a word beside it.
+    assert "uxnext--overdue" in body
 
 
 @pytest.mark.parametrize("kind", [ActionKind.WAIT, ActionKind.MONITOR])
@@ -384,10 +388,13 @@ def test_a_passed_review_date_is_a_warning_and_never_lateness(signed_in, special
     assert action.is_due_for_review()
 
     body = _detail(signed_in, matter)
-    assert "Ülevaatus möödas" in body
-    assert "Tähtaeg möödas" not in body
-    # And the date is labelled as a review, never as a bare deadline.
-    assert "vaatan üle" in body
+    flat = " ".join(body.split())
+    # A review date that has come round is a reason to look, at warning
+    # strength, and the row itself is never in the overdue state.
+    assert "ÜLEVAATUS MÖÖDAS" in flat
+    assert "uxnext__flag--review" in body
+    assert "TÄHTAEG MÖÖDAS" not in flat
+    assert "uxnext--overdue" not in body
 
 
 def test_an_approximate_review_date_renders_as_its_period(signed_in, specialist):

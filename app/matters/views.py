@@ -16,6 +16,7 @@ Two conventions worth knowing:
 from __future__ import annotations
 
 import uuid
+from datetime import date, timedelta
 from typing import Any
 
 from django.contrib import messages
@@ -43,7 +44,12 @@ from app.core.authorization import (
     may_write_business_content,
     scope_for_user,
 )
-from app.core.dates import format_estonian_date, parse_flexible_date
+from app.core.dates import (
+    format_estonian_date,
+    parse_flexible_date,
+    short_day_month,
+    weekday_letter,
+)
 from app.core.decorators import business_write_required, gate_required, viewer_for
 from app.core.enums import Visibility
 from app.core.errors import DomainError
@@ -101,7 +107,13 @@ from app.matters.services import (
     set_tags,
     update_engagement,
 )
-from app.matters.timeline import TIMELINE_FILTER_ALL, TIMELINE_FILTERS, matter_timeline
+from app.matters.timeline import (
+    TIMELINE_FILTER_ALL,
+    TIMELINE_FILTERS,
+    collapse_system_runs,
+    latest_authored,
+    matter_timeline,
+)
 from app.organisations.models import Organisation
 from app.search import services as search_services
 from app.submissions.enums import RecipientRole, SubmissionStatus
@@ -109,7 +121,7 @@ from app.submissions.forms import SubmissionCreateForm
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
-from app.workflow.enums import ActionKind, Disposition, Track
+from app.workflow.enums import REVIEW_KINDS, ActionKind, Disposition, Track
 from app.workflow.models import NextAction, StageVocabulary
 from app.workflow.services import (
     acknowledge_review,
@@ -1120,6 +1132,13 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
         "timeline_items": items,
+        # What the spine renders: the same items, with adjacent system events
+        # folded into one row each. The flat list stays beside it because the
+        # closed summary counts lines rather than rows (app/matters/timeline.py).
+        "timeline_rows": collapse_system_runs(items),
+        # The last thing a colleague actually wrote, for the closed summary. A
+        # system row would quote the application back at the reader.
+        "timeline_preview": latest_authored(items),
         "timeline_has_more": has_more,
         "timeline_count": len(items) + (1 if has_more else 0),
         "timeline_only": timeline_only,
@@ -1160,6 +1179,12 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "engagement_add_open": False,
         "can_write": may_write_business_content(request.user),
         "can_review_victory": may_review_work_victory(request.user),
+        # «Lükka edasi», with the day each option lands on. Offered only on an
+        # exact date: deferring a step recorded as *september 2026* by a day
+        # would turn a period somebody deliberately left vague into a day they
+        # never named (master specification 3.5).
+        "defer_choices": defer_choices(timezone.localdate()),
+        "can_defer": current_action is not None and not current_action.is_approximate,
         "today": timezone.localdate(),
     }
 
@@ -1630,6 +1655,112 @@ def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse
     return _render_overview(request, matter)
 
 
+#: What «Lükka edasi» offers, and how far each option moves the date. Counted
+#: from today rather than from the date on the step: somebody deferring a
+#: deadline that passed six days ago means "give me another week", not "make it
+#: a day later than the day I already missed" (design handoff 1c).
+DEFER_OPTIONS: tuple[tuple[int, str], ...] = ((1, "+1 päev"), (7, "+1 nädal"))
+
+#: How far the free-date box will accept a deferral. Two years is well past any
+#: planning horizon the department has and short of the typo that would file a
+#: live instruction in 2226.
+DEFER_MAX_DAYS = 730
+
+
+def defer_choices(today: date) -> list[dict[str, Any]]:
+    """The quick options, with the day each one actually lands on.
+
+    Resolved here, in Europe/Tallinn, and rendered on the control. A chip that
+    said only "+1 nädal" would leave the reader to do the arithmetic, and one
+    that worked it out in the browser would answer in the reader's timezone
+    rather than in the department's.
+    """
+    return [
+        {
+            "days": days,
+            "label": label,
+            "when": f"{weekday_letter(today + timedelta(days=days))} "
+            f"{short_day_month(today + timedelta(days=days))}",
+        }
+        for days, label in DEFER_OPTIONS
+    ]
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def defer_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """Move the current step's date, by the service the step's kind requires.
+
+    Two different acts wearing one control. A **DO** carries a commitment Koda
+    made, and moving it is a new instruction that supersedes the old one — which
+    is what `set_next_action_for_new_work` does, chain and audit row included. A
+    **WAIT** or **MONITOR** carries a review date, and moving that is
+    acknowledging the review: the Matter is still waiting on the same thing, so
+    the action keeps its identity and only its date moves.
+
+    Nothing new is decided here. Both services validate, both write their own
+    change event, and both refuse a closed Matter — this view chooses between
+    them and computes no business rule of its own (app/workflow/services.py).
+    """
+    matter = get_visible_matter(request, pk)
+    action = get_object_or_404(
+        NextAction.objects.visible_to(request.user).open(), pk=action_id, matter=matter
+    )
+
+    today = timezone.localdate()
+    raw_days = (request.POST.get("paevad") or "").strip()
+    raw_date = (request.POST.get("kuupaev") or "").strip()
+    target: date | None = None
+    if raw_days:
+        try:
+            days = int(raw_days)
+        except ValueError:
+            days = 0
+        if 0 < days <= DEFER_MAX_DAYS:
+            target = today + timedelta(days=days)
+    elif raw_date:
+        target = parse_flexible_date(raw_date)
+
+    if target is None or target > today + timedelta(days=DEFER_MAX_DAYS):
+        return _overview_error(request, matter, "Kirjuta kuupäev kujul 7.9.2026.")
+
+    try:
+        if action.kind in REVIEW_KINDS:
+            acknowledge_review(action=action, actor=request.user, next_review_date=target)
+        else:
+            # The same person stays responsible. Left to the default it would
+            # fall back to the Matter's owner, quietly moving somebody else's
+            # instruction onto the owner's queue (app/workflow/services.py,
+            # `responsible_for_new_work`).
+            set_next_action_for_new_work(
+                matter=matter,
+                text=action.text,
+                kind=action.kind,
+                date_semantics=action.date_semantics,
+                target_date=target,
+                responsible=action.responsible,
+                actor=request.user,
+            )
+    except DomainError as error:
+        return _overview_error(request, matter, str(error))
+
+    return _render_overview(request, matter)
+
+
+def _overview_error(request: HttpRequest, matter: Matter, message: str) -> HttpResponse:
+    """The Matter surface again, with the refusal on it.
+
+    The shape every write on this page already uses: 400 with the re-rendered
+    view, so somebody pressing a button that could not do what it said reads why
+    (static/js/app.js, `responseHandling`).
+    """
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    context["composer_error"] = message
+    return render(request, "matters/partials/overview.html", context, status=400)
+
+
 FIELD_SERVICES = {
     "owner",
     "stage",
@@ -2051,7 +2182,7 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
         "matters/partials/timeline_items.html",
         {
             "matter": matter,
-            "timeline_items": items,
+            "timeline_rows": collapse_system_runs(items),
             "timeline_has_more": has_more,
             "next_offset": offset + TIMELINE_PAGE_SIZE,
             "timeline_only": only,

@@ -2,123 +2,156 @@
 One timeline projection over authored entries and selected change events.
 
 The redesign's rule is one line per professional action, so an item that came
-out of a composer save renders as a single card carrying its sentence — "Marko
+out of a composer save renders as a single line carrying its sentence — "Marko
 lisas märkuse ja määras järgmise sammu" — and, underneath, the note and the
 next step it produced. Every underlying `ChangeEvent` still exists and still
 says exactly what it said; the grouping is presentation, and no canonical record
 is suppressed or merged (Teema redesign §11.1, app/matters/timeline.py).
 
-Standalone rows keep the three shapes they had:
+The 2026-08 pass gives that projection a spine. A dot per line says what kind of
+thing it is before any word is read — a note, an opinion Koda sent, a meeting, a
+change the application recorded — and the vertical rule between the dots is what
+makes six months read as one chronology rather than as a stack of cards
+(design handoff 1b).
 
-* an authored entry is a card, because a person wrote it;
-* a system event is a one-line muted row, because the system recorded it;
-* a sent submission is a brand-soft card, because it is the outbound act the
-  whole file exists to produce.
+Two things the spine changed, and neither is cosmetic:
+
+* **What one save decided rides with it.** A composer save that set a next step
+  prints it on its own strip under the note — «→ TEEN Saada arvamus EIS-i ·
+  TÄHTAEG 21.08» — instead of as a separate line saying "Järgmiseks määratud".
+  The date is the action's own, at the precision it was recorded to.
+* **Adjacent system events fold.** Three field changes in a row become one line
+  that says how many there are and what kinds, and opens to show all of them.
+  Nothing is hidden: it is a `<details>`, and everything inside renders exactly
+  as it did.
 
 Security audit events never appear here: who downloaded what is a compliance
 record, not professional chronology (master specification 16.5).
 {% endcomment %}
-{% for item in timeline_items %}
-  {% if item.is_entry %}
-    {% comment %}
-      The id is what a search result for an entry scrolls to. Server-rendered
-      anchor, no router: the timeline is already one page (Stage-2B brief 77).
-    {% endcomment %}
-    <article class="entrycard" id="sissekanne-{{ item.entry.pk }}">
-      <span class="avatar avatar--composer" aria-hidden="true">
-        {% if item.entry.author %}{{ item.entry.author.initials }}{% else %}··{% endif %}
-      </span>
-      <div class="entrycard__body">
-        <p class="entrycard__meta">
-          {% if item.entry.author %}
-            <span class="entrycard__author">{{ item.entry.author.display_name }}</span>
-          {% endif %}
-          {% if item.summary_sentence %}
-            <span class="entrycard__did">{{ item.summary_sentence }}</span>
-          {% else %}
-            <span class="entrytype">{{ item.entry.get_kind_display }}</span>
-          {% endif %}
-          <time datetime="{{ item.entry.occurred_at|date:'c' }}">
-            {{ item.entry.occurred_at|date:"j.n.Y H:i" }}
-          </time>
-          {% if item.entry.organisation %}<span>{{ item.entry.organisation.name }}</span>{% endif %}
-          {% if item.entry.was_edited %}
-            <span title="Varasem sõnastus on säilitatud">muudetud</span>
-          {% endif %}
-        </p>
+{% comment %}
+  No grid wrapper here: `#ajalugu-loend` in timeline.html is the grid. This
+  fragment is also what `timeline_page` returns for «Näita varasemaid», which
+  swaps itself in place *inside* that grid — a wrapper of its own would break
+  one spine into two (app/matters/views.py, `timeline_page`).
+{% endcomment %}
+{% for row in timeline_rows %}
+    {% if row.is_run %}
+      {% comment %}
+        A run of adjacent system events. The summary says how many and of what
+        kinds over which days, because a reader deciding whether to open it
+        needs all three — a bare "3 muudatust" is a counter, not information.
+      {% endcomment %}
+      <article class="uxtl__item">
+        <span class="uxtl__rail" aria-hidden="true">
+          <span class="uxtl__dot uxtl__dot--sys"></span>
+          <span class="uxtl__line"></span>
+        </span>
+        <div class="uxtl__body">
+          <details class="uxtl__sys">
+            <summary class="uxtl__sysrow">
+              <span>{{ row.count }} süsteemimuudatust — {{ row.kinds }}</span>
+              <span>{{ row.span }}</span>
+              <span class="uxtl__sysshow">näita ▸</span>
+            </summary>
+            <div class="uxtl__sysbody">
+              {% for item in row.items %}
+                <p class="systemevent">
+                  <span class="systemevent__dot" aria-hidden="true"></span>
+                  <span class="systemevent__type">{{ item.event.get_event_type_display }}</span>
+                  <time datetime="{{ item.event.occurred_at|date:'c' }}">
+                    {{ item.event.occurred_at|date:"j.n.Y H:i" }}
+                  </time>
+                  {% if item.event.actor %}<span>{{ item.event.actor.display_name }}</span>{% endif %}
+                  {% if item.event.summary %}<span>· {{ item.event.summary }}</span>{% endif %}
+                </p>
+              {% endfor %}
+            </div>
+          </details>
+        </div>
+      </article>
+
+    {% else %}
+      {% with item=row.item %}
         {% comment %}
-          Bodies are sanitised on write by app.core.richtext, so the stored
-          fragment is safe to render. Nothing reaches this template that has not
-          been through the allowlist.
+          The id is what a search result for an entry scrolls to. Server-rendered
+          anchor, no router: the timeline is already one page (Stage-2B brief 77).
         {% endcomment %}
-        <div class="richtext">{{ item.entry.body|safe }}</div>
-        {% include "matters/partials/timeline_group_facts.html" with item=item %}
-      </div>
-    </article>
+        <article class="uxtl__item"
+                 {% if item.is_entry %}id="sissekanne-{{ item.entry.pk }}"{% endif %}>
+          <span class="uxtl__rail" aria-hidden="true">
+            <span class="uxtl__dot uxtl__dot--{{ item.marker }}"></span>
+            <span class="uxtl__line"></span>
+          </span>
+          <div class="uxtl__body">
+            <p class="uxtl__meta">
+              {% if item.actor %}
+                <span class="uxtl__author">{{ item.actor.display_name }}</span>
+              {% endif %}
+              {% comment %}
+                The badge names the kind; the sentence names what was done. A
+                line carries whichever it has, never both — "Märkus · lisas
+                märkuse" is the same fact twice.
+              {% endcomment %}
+              {% if item.kind_label %}
+                <span class="uxtl__kind uxtl__kind--{{ item.marker }}">{{ item.kind_label }}</span>
+              {% elif item.summary_sentence %}
+                <span class="uxtl__did">{{ item.summary_sentence }}</span>
+              {% elif item.event %}
+                <span class="uxtl__kind uxtl__kind--closed">{{ item.event.get_event_type_display }}</span>
+              {% endif %}
+              {% if item.entry.organisation %}
+                <span class="uxtl__where">{{ item.entry.organisation.name }}</span>
+              {% endif %}
+              {% if item.entry.was_edited %}
+                <span class="uxtl__where" title="Varasem sõnastus on säilitatud">muudetud</span>
+              {% endif %}
+              <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">
+                {{ item.occurred_at|date:"j.n.Y H:i" }}
+              </time>
+            </p>
 
-  {% elif item.event.event_type == "SUBMISSION_SENT" %}
-    <article class="submissionevent">
-      <p class="entrycard__meta">
-        <span class="submissionevent__label">Väljasaadetud · arvamus</span>
-        <time datetime="{{ item.event.occurred_at|date:'c' }}">
-          {{ item.event.occurred_at|date:"j.n.Y H:i" }}
-        </time>
-        {% if item.event.actor %}
-          <span class="entrycard__author">{{ item.event.actor.display_name }}</span>
-        {% endif %}
-      </p>
-      <p class="submissionevent__summary">{{ item.event.summary }}</p>
-      {% if item.event.payload.addressees %}
-        <p class="entrycard__meta">
-          Saaja: {{ item.event.payload.addressees|join:", " }}
-        </p>
-      {% endif %}
-      {% include "matters/partials/timeline_group_facts.html" with item=item %}
-    </article>
+            {% if item.is_entry %}
+              {% comment %}
+                Bodies are sanitised on write by app.core.richtext, so the stored
+                fragment is safe to render. Nothing reaches this template that has
+                not been through the allowlist.
+              {% endcomment %}
+              <div class="richtext">{{ item.entry.body|safe }}</div>
+            {% elif item.event %}
+              {% if item.event.summary and not item.summary_sentence %}
+                <p class="uxtl__text">{{ item.event.summary }}</p>
+              {% endif %}
+              {% if item.event.payload.addressees %}
+                <p class="uxtl__sub">Saaja: {{ item.event.payload.addressees|join:", " }}</p>
+              {% endif %}
+            {% endif %}
 
-  {% elif item.is_grouped %}
-    {% comment %}
-      A composer save that wrote no note — a closure, or a next step set from
-      the row above. One line saying what the person did, and the facts it
-      produced under it. It is a card rather than a muted system row because a
-      person did it, which is exactly the distinction the muted rows exist to
-      make.
-    {% endcomment %}
-    <article class="entrycard entrycard--facts">
-      <span class="avatar avatar--composer" aria-hidden="true">
-        {% if item.event.actor %}{{ item.event.actor.initials }}{% else %}··{% endif %}
-      </span>
-      <div class="entrycard__body">
-        <p class="entrycard__meta">
-          {% if item.event.actor %}
-            <span class="entrycard__author">{{ item.event.actor.display_name }}</span>
-          {% endif %}
-          <span class="entrycard__did">{{ item.summary_sentence }}</span>
-          <time datetime="{{ item.event.occurred_at|date:'c' }}">
-            {{ item.event.occurred_at|date:"j.n.Y H:i" }}
-          </time>
-        </p>
-        {% include "matters/partials/timeline_group_facts.html" with item=item %}
-      </div>
-    </article>
+            {% include "matters/partials/timeline_group_facts.html" with item=item %}
 
-  {% else %}
-    <p class="systemevent">
-      <span class="systemevent__dot" aria-hidden="true"></span>
-      <span class="systemevent__type">{{ item.event.get_event_type_display }}</span>
-      <time datetime="{{ item.event.occurred_at|date:'c' }}">
-        {{ item.event.occurred_at|date:"j.n.Y H:i" }}
-      </time>
-      {% if item.event.actor %}<span>{{ item.event.actor.display_name }}</span>{% endif %}
-      {% if item.event.summary %}<span>· {{ item.event.summary }}</span>{% endif %}
-    </p>
-  {% endif %}
+            {% comment %}
+              What the save decided. Its own strip rather than its own line: it
+              is the consequence of the thing above it, and a reader scrolling
+              for "what did we agree to do" is looking for exactly this.
+            {% endcomment %}
+            {% if item.next_step %}
+              <p class="uxtl__next">
+                <span class="uxtl__nextmode">→ {{ item.next_step.mode }}</span>
+                <span class="uxtl__nexttext">{{ item.next_step.text }}</span>
+                {% if item.next_step.date_line %}
+                  <span class="uxtl__nextdate">{{ item.next_step.date_line }}</span>
+                {% endif %}
+              </p>
+            {% endif %}
+          </div>
+        </article>
+      {% endwith %}
+    {% endif %}
 {% empty %}
-  <p class="empty">Ajajoon on tühi. Esimene sissekanne ilmub siia.</p>
+  <p class="uxtl__none">Ajajoon on tühi. Esimene sissekanne ilmub siia.</p>
 {% endfor %}
 
 {% if timeline_has_more %}
-  <button type="button" class="button button--quiet"
+  <button type="button" class="button button--quiet uxtl__older"
           hx-get="{% url 'matters:timeline_page' pk=matter.pk %}?nihe={{ next_offset }}&amp;ajajoon={{ timeline_only|default:'koik' }}"
           hx-target="this"
           hx-swap="outerHTML">

@@ -4,8 +4,13 @@
 The chronology is the file's memory and it is the least urgent thing on the
 page: somebody opening a Matter wants to know what it is and what to do next,
 and a Matter with two hundred entries used to answer neither because the history
-started at the fold. Collapsed, it is one line that says how much there is and
-when it last moved.
+started at the fold. Collapsed, it is one line.
+
+What that one line says changed in the 2026-08 pass. A counter — "14 kirjet ·
+viimane 26.8.2026, Ireen" — tells a reader how much there is and nothing about
+whether they need it. It now carries the last thing somebody wrote, the step
+that is currently owed, and the count: three facts, in the order somebody
+decides on (design handoff 1b).
 
 Nothing is fetched eagerly that the collapsed row does not need: the first page
 is rendered inside the `<details>` and everything older comes from
@@ -15,18 +20,37 @@ is rendered inside the `<details>` and everything older comes from
   <summary class="accordion__head">
     <span class="accordion__caret" aria-hidden="true"></span>
     <h2 class="accordion__title">Ajajoon</h2>
-    <span class="accordion__summary">
-      {% if timeline_items %}
-        {% with newest=timeline_items.0 %}
-          {{ timeline_count }} kirjet{% if timeline_has_more %}+{% endif %}
-          · viimane {{ newest.occurred_at|date:"j.n.Y" }}
-          {% if newest.entry.author %}, {{ newest.entry.author.display_name }}
-          {% elif newest.event.actor %}, {{ newest.event.actor.display_name }}{% endif %}
-        {% endwith %}
+    {% if timeline_items %}
+      {% comment %}
+        The excerpt is the entry's own words, stripped of its markup and cut to
+        a line. Never a summary sentence: quoting "lisas märkuse" back at
+        somebody is the application talking about itself.
+      {% endcomment %}
+      {% if timeline_preview %}
+        <span class="uxtl__preview">
+          {{ timeline_preview.occurred_at|date:"j.n" }} ·
+          {{ timeline_preview.actor.get_short_name }}:
+          «{{ timeline_preview.excerpt_source|striptags|truncatechars:96 }}»
+        </span>
       {% else %}
-        Ajajoon on tühi
+        <span class="uxtl__preview">
+          Viimane muudatus {{ timeline_items.0.occurred_at|date:"j.n.Y" }}
+        </span>
       {% endif %}
-    </span>
+      {% comment %}
+        The step that is owed, in the closed row. It is the one thing on this
+        page a reader may be checking the history in order to remember.
+      {% endcomment %}
+      {% if current_action %}
+        <span class="uxtl__previewnext">
+          <b>→ {{ current_action.get_kind_display|upper }}</b>
+          {{ current_action.text|truncatechars:40 }}{% if current_action.target_date %} · {{ current_action.display_date }}{% endif %}
+        </span>
+      {% endif %}
+      <span class="uxtl__count">{{ timeline_count }} kirjet{% if timeline_has_more %}+{% endif %}</span>
+    {% else %}
+      <span class="accordion__summary">Ajajoon on tühi</span>
+    {% endif %}
     <span class="accordion__spacer"></span>
     <span class="accordion__action">Ava ajajoon</span>
   </summary>
@@ -48,8 +72,13 @@ is rendered inside the `<details>` and everything older comes from
       {% endfor %}
     </div>
 
-    <div id="ajalugu-loend">
-      {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter timeline_only=timeline_only %}
+    {% comment %}
+      The spine is this element, not the fragment inside it. «Näita varasemaid»
+      swaps its own button for the next batch *in place*, so the older lines
+      arrive inside the same grid and the vertical rule stays continuous.
+    {% endcomment %}
+    <div id="ajalugu-loend" class="uxtl">
+      {% include "matters/partials/timeline_items.html" with timeline_rows=timeline_rows timeline_has_more=timeline_has_more next_offset=30 matter=matter timeline_only=timeline_only %}
     </div>
   </div>
 </details>

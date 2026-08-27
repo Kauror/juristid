@@ -219,6 +219,16 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
     ),
     WriteRoute(
+        name="matters:defer_action",
+        label="Järgmiseks edasilükkamine",
+        request=lambda w: ({"pk": w["matter"].pk, "action_id": w["action"].pk}, {"paevad": "7"}),
+        probe=lambda w: (
+            w["action"]
+            .__class__.objects.values_list("target_date", flat=True)
+            .get(pk=w["action"].pk)
+        ),
+    ),
+    WriteRoute(
         name="matters:compose",
         label="Sissekande lisamine",
         request=lambda w: ({"pk": w["matter"].pk}, {"body": "<p>Loata sissekanne.</p>"}),

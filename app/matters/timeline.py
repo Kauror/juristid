@@ -26,7 +26,7 @@ which is what they have always been (Teema redesign §11.1).
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any
 
@@ -35,6 +35,7 @@ from django.db import models
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
+from app.matters.entry_enums import EntryKind
 from app.matters.models import Entry, Matter
 
 #: Events worth a line in the chronology. Field-level noise is deliberately
@@ -94,6 +95,51 @@ _CLAUSES: tuple[tuple[str, str], ...] = (
 )
 
 
+#: Which dot the spine draws, and therefore what kind of thing this line is.
+#: Four, because there are four answers a reader wants at a glance: somebody
+#: wrote something, Koda sent something, somebody met somebody, or the
+#: application recorded a change (design handoff 1b).
+MARKER_ENTRY = "entry"
+MARKER_SENT = "sent"
+MARKER_MEETING = "meeting"
+MARKER_SYSTEM = "sys"
+
+#: Entry kinds that are a room with people in it. `Istung` and `Töörühm` are
+#: meetings whatever the vocabulary calls them, and a spine that marked only
+#: `Kohtumine` would draw the same file's three meetings three different ways.
+_MEETING_KINDS: frozenset[str] = frozenset(
+    {
+        EntryKind.MEETING.value,
+        EntryKind.HEARING.value,
+        EntryKind.WORKING_GROUP.value,
+    }
+)
+
+
+@dataclass(frozen=True)
+class TimelineNextStep:
+    """What one save decided, as its own strip under what the save said.
+
+    Read off the `NextAction` the event points at rather than off the event's
+    payload, so the date prints at the precision it was recorded to. The payload
+    carries an anchor date and no precision, and rendering `01.09` for an
+    action somebody recorded as *september 2026* would manufacture a day nobody
+    named (master specification 3.5).
+    """
+
+    mode: str
+    text: str
+    date_label: str
+    date_value: str
+
+    @property
+    def date_line(self) -> str:
+        """``TÄHTAEG 21.08``, or empty when the step carries no date."""
+        if not self.date_value:
+            return ""
+        return f"{self.date_label.upper()} {self.date_value}".strip()
+
+
 @dataclass(frozen=True)
 class TimelineItem:
     """One rendered line. ``occurred_at`` is what the reader sees.
@@ -112,10 +158,57 @@ class TimelineItem:
     event: ChangeEvent | None = None
     events: tuple[ChangeEvent, ...] = ()
     summary_verbs: tuple[str, ...] = ()
+    #: What this save decided, when it decided anything. Attached after the
+    #: page is assembled, in one query for the whole page.
+    next_step: TimelineNextStep | None = None
 
     @property
     def is_entry(self) -> bool:
         return self.entry is not None
+
+    @property
+    def marker(self) -> str:
+        """Which dot the spine draws beside this line.
+
+        Presentation only: nothing downstream decides authorization, membership
+        or ordering from it. A grouped save with no note is still somebody's
+        act and keeps the entry marker, which is the same distinction the muted
+        system row exists to make (design handoff 1b).
+        """
+        if self.entry is not None:
+            return MARKER_MEETING if self.entry.kind in _MEETING_KINDS else MARKER_ENTRY
+        if self.event is not None and self.event.event_type == ChangeEventType.SUBMISSION_SENT:
+            return MARKER_SENT
+        return MARKER_ENTRY if self.is_grouped else MARKER_SYSTEM
+
+    @property
+    def is_system(self) -> bool:
+        """Something the application recorded, rather than something a person
+        wrote. These are what collapse into one row when several sit together."""
+        return self.marker == MARKER_SYSTEM
+
+    @property
+    def kind_label(self) -> str:
+        """The badge beside the author. Empty where the sentence says it."""
+        if self.entry is not None:
+            return str(self.entry.get_kind_display())
+        if self.event is not None and self.event.event_type == ChangeEventType.SUBMISSION_SENT:
+            return "Väljasaadetud · arvamus"
+        return ""
+
+    @property
+    def actor(self) -> Any:
+        """Whoever the line belongs to, from whichever record carries them."""
+        if self.entry is not None and self.entry.author is not None:
+            return self.entry.author
+        return self.event.actor if self.event is not None else None
+
+    @property
+    def excerpt_source(self) -> str:
+        """The text the closed accordion quotes. Sanitised HTML from the entry,
+        which the template strips — never a summary line, which would quote the
+        application back at the reader instead of the colleague."""
+        return self.entry.body if self.entry is not None else ""
 
     @property
     def is_grouped(self) -> bool:
@@ -136,6 +229,101 @@ class TimelineItem:
         if len(verbs) == 1:
             return verbs[0]
         return f"{', '.join(verbs[:-1])} ja {verbs[-1]}"
+
+
+@dataclass(frozen=True)
+class TimelineRow:
+    """One line on screen: either a single item, or a run of system events.
+
+    The chronology is read for what colleagues did. A stage corrected, a date
+    moved and a Matter assigned are all true and none of them is why anybody
+    opened the page, so several of them sitting together fold into one line that
+    says how many there are and offers to show them. Nothing is dropped: the
+    run is a `<details>` and everything inside it renders exactly as it did
+    (design handoff 1b).
+    """
+
+    items: tuple[TimelineItem, ...]
+
+    @property
+    def is_run(self) -> bool:
+        return len(self.items) > 1
+
+    @property
+    def item(self) -> TimelineItem:
+        return self.items[0]
+
+    @property
+    def count(self) -> int:
+        return len(self.items)
+
+    @property
+    def kinds(self) -> str:
+        """The kinds inside the run, once each, in the order they appear.
+
+        "hetkeseis, arvamuse tähtaeg" rather than a bare count: a reader
+        deciding whether to open it needs to know what is in there.
+        """
+        seen: list[str] = []
+        for item in self.items:
+            label = str(item.event.get_event_type_display()) if item.event else ""
+            if label and label not in seen:
+                seen.append(label)
+        return ", ".join(seen)
+
+    @property
+    def span(self) -> str:
+        """``30.07–05.08``. One date when the run covers a single day."""
+        from app.core.dates import short_range
+
+        days = [item.occurred_at.date() for item in self.items]
+        return short_range(min(days), max(days))
+
+
+def latest_authored(items: list[TimelineItem]) -> TimelineItem | None:
+    """The newest line a colleague wrote, for the closed accordion's quote.
+
+    An authored entry, not merely the newest item. Quoting a stage change back
+    at somebody as "the last thing that happened here" is the application
+    talking about itself, and the closed row exists to answer *what did we last
+    say about this file* (design handoff 1b).
+    """
+    return next((item for item in items if item.is_entry), None)
+
+
+#: How many system events have to sit together before folding them is worth it.
+#: One on its own is a line; two are a pair the reader has to scroll past.
+SYSTEM_RUN_MINIMUM = 2
+
+
+def collapse_system_runs(items: list[TimelineItem]) -> list[TimelineRow]:
+    """Group each run of adjacent system events into one row.
+
+    Adjacency in the rendered order, not in the database. Two stage changes with
+    a colleague's note between them are two separate runs, because the note is
+    what the reader came for and folding across it would hide the shape of the
+    file's month.
+    """
+    rows: list[TimelineRow] = []
+    run: list[TimelineItem] = []
+
+    def flush() -> None:
+        if not run:
+            return
+        if len(run) >= SYSTEM_RUN_MINIMUM:
+            rows.append(TimelineRow(tuple(run)))
+        else:
+            rows.extend(TimelineRow((one,)) for one in run)
+        run.clear()
+
+    for item in items:
+        if item.is_system:
+            run.append(item)
+            continue
+        flush()
+        rows.append(TimelineRow((item,)))
+    flush()
+    return rows
 
 
 @dataclass
@@ -303,4 +491,47 @@ def matter_timeline(
 
     page = items[offset : offset + limit]
     has_more = len(items) > offset + limit
-    return page, has_more
+    return _with_next_steps(page, user), has_more
+
+
+def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
+    """Attach «→ TEEN … · TÄHTAEG 21.08» to every save that decided one.
+
+    One query for the whole page, not one per line. The step is read from the
+    `NextAction` rows the events point at rather than from the event payloads,
+    for two reasons: the payload carries an anchor date and no precision, so an
+    action recorded as *september 2026* would print as `01.09`; and the rows go
+    through `visible_to`, so a step restricted below its Matter contributes
+    nothing here either (AUTH-003, master specification 3.5).
+    """
+    from app.workflow.models import NextAction
+
+    def action_of(item: TimelineItem) -> Any:
+        return next(
+            (
+                event.object_id
+                for event in item.events
+                if event.event_type == ChangeEventType.NEXT_ACTION_SET and event.object_id
+            ),
+            None,
+        )
+
+    wanted = {key for key in (action_of(item) for item in page) if key is not None}
+    if not wanted:
+        return page
+
+    steps = {
+        action.pk: TimelineNextStep(
+            mode=str(action.get_kind_display()).upper(),
+            text=action.text,
+            date_label=action.date_label,
+            date_value=action.display_date if action.target_date else "",
+        )
+        for action in NextAction.objects.filter(pk__in=wanted).visible_to(user)
+    }
+
+    resolved = []
+    for item in page:
+        step = steps.get(action_of(item))
+        resolved.append(replace(item, next_step=step) if step is not None else item)
+    return resolved

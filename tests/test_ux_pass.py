@@ -24,9 +24,11 @@ from django.utils import timezone
 
 from app.matters import overview as ov
 from app.matters import work_items as wi
-from app.matters.services import create_matter
-from app.workflow.enums import ActionKind, DateSemantics
+from app.matters.services import add_entry, assign_matter, change_stage, create_matter
+from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
+from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
+from tests import factories
 
 CSS_DIR = Path(settings.BASE_DIR) / "static" / "css"
 JS_DIR = Path(settings.BASE_DIR) / "static" / "js"
@@ -217,3 +219,211 @@ def test_today_says_today_and_nobody_says_so_in_more_than_colour(client, departm
     # The footer the design replaced with a header link.
     assert "Ava kõik" not in flat
     assert "kõik 2 →" in flat
+
+
+# ---------------------------------------------------------------------------
+# 1b — the timeline spine
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_adjacent_system_events_fold_and_a_note_breaks_the_run(
+    specialist, other_specialist
+) -> None:
+    """Folding is by adjacency in the rendered order, not by kind.
+
+    A colleague's note between two field changes is what the reader came for, so
+    the run stops there. Folding across it would hide the shape of the file's
+    month (design handoff 1b).
+    """
+    from app.matters import timeline as tl
+
+    matter = factories.MatterFactory(owner=specialist)
+    change_stage(matter=matter, stage=factories.StageFactory(), actor=specialist)
+    add_entry(matter=matter, author=specialist, body="<p>Kohtusin ministeeriumiga.</p>")
+    change_stage(matter=matter, stage=factories.StageFactory(), actor=specialist)
+    assign_matter(matter=matter, owner=other_specialist, actor=specialist)
+
+    items, _ = tl.matter_timeline(matter=matter, user=specialist)
+    rows = tl.collapse_system_runs(items)
+
+    runs = [row for row in rows if row.is_run]
+    assert runs, "adjacent system events must fold into one row"
+    assert all(item.is_system for row in runs for item in row.items)
+    assert any(not row.is_run and row.item.is_entry for row in rows), (
+        "a note is its own line and is never inside a run"
+    )
+    # Nothing is dropped by folding.
+    assert sum(row.count for row in rows) == len(items)
+
+
+@pytest.mark.django_db
+def test_the_closed_timeline_says_what_was_written_and_what_is_owed(client, specialist) -> None:
+    """A counter tells a reader how much there is and nothing about whether
+    they need it (design handoff 1b)."""
+    matter = factories.MatterFactory(owner=specialist)
+    add_entry(
+        matter=matter,
+        author=specialist,
+        body="<p>Ministeerium kinnitas, et üleminekuaeg on läbiräägitav.</p>",
+    )
+    set_next_action(
+        matter=matter,
+        text="Saada koja arvamus EIS-i",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=timezone.localdate() + timedelta(days=5),
+        actor=specialist,
+    )
+
+    client.force_login(specialist)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    summary = " ".join(body.split("accordion--timeline")[1].split("</summary>")[0].split())
+
+    assert "üleminekuaeg on läbiräägitav" in summary, "the last thing somebody wrote"
+    assert "→ TEEN" in summary and "Saada koja arvamus EIS-i" in summary, "what is owed"
+    assert "kirjet" in summary, "and how much there is"
+
+
+@pytest.mark.django_db
+def test_a_saves_next_step_rides_with_it_at_the_precision_it_was_recorded(specialist) -> None:
+    """The change event's payload carries an anchor and no precision, so a step
+    recorded as *september 2026* would print as `01.09` if the strip were built
+    from the payload (master specification 3.5)."""
+    from app.audit.operations import composer_operation
+    from app.matters import timeline as tl
+
+    matter = factories.MatterFactory(owner=specialist)
+    with composer_operation():
+        add_entry(matter=matter, author=specialist, body="<p>Märkus</p>")
+        set_next_action(
+            matter=matter,
+            text="Jälgin menetlust",
+            kind=ActionKind.MONITOR,
+            date_semantics=DateSemantics.REVIEW_ON,
+            target_date=date(2026, 9, 1),
+            date_precision=DatePrecision.MONTH,
+            actor=specialist,
+        )
+
+    items, _ = tl.matter_timeline(matter=matter, user=specialist)
+    step = next(item.next_step for item in items if item.next_step is not None)
+
+    assert step.mode == "JÄLGIN"
+    assert step.text == "Jälgin menetlust"
+    assert "01.09" not in step.date_value, "a month must not print as a day"
+
+
+# ---------------------------------------------------------------------------
+# 1c — Järgmiseks
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_deferring_a_deadline_supersedes_the_step_and_keeps_its_responsible(
+    client, specialist, other_specialist
+) -> None:
+    """A DO carries a commitment, so moving it is a new instruction.
+
+    Left to the service default the new step would fall to the Matter's owner,
+    quietly moving a colleague's instruction onto somebody else's queue
+    (app/workflow/services.py, `responsible_for_new_work`).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    action = set_next_action(
+        matter=matter,
+        text="Saada koja arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=timezone.localdate() - timedelta(days=6),
+        responsible=other_specialist,
+        actor=specialist,
+    )
+
+    client.force_login(specialist)
+    response = client.post(
+        reverse("matters:defer_action", kwargs={"pk": matter.pk, "action_id": action.pk}),
+        {"paevad": "7"},
+    )
+    assert response.status_code == 200
+
+    action.refresh_from_db()
+    assert action.status == ActionStatus.SUPERSEDED
+    current = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    assert current.target_date == timezone.localdate() + timedelta(days=7)
+    assert current.responsible == other_specialist
+    assert current.text == "Saada koja arvamus"
+
+
+@pytest.mark.django_db
+def test_deferring_a_wait_acknowledges_the_review_and_keeps_the_same_step(
+    client, specialist
+) -> None:
+    """Waiting is not lateness, and moving a review date is not a new promise.
+
+    The action keeps its identity: the Matter is still waiting on the same
+    thing (app/workflow/services.py, `acknowledge_review`).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    action = set_next_action(
+        matter=matter,
+        text="Ootan ministeeriumi vastust",
+        kind=ActionKind.WAIT,
+        date_semantics=DateSemantics.REVIEW_ON,
+        target_date=timezone.localdate() - timedelta(days=3),
+        actor=specialist,
+    )
+
+    client.force_login(specialist)
+    client.post(
+        reverse("matters:defer_action", kwargs={"pk": matter.pk, "action_id": action.pk}),
+        {"kuupaev": "15.9.2026"},
+    )
+
+    action.refresh_from_db()
+    assert action.status == ActionStatus.OPEN, "reviewing is not completing"
+    assert action.target_date == date(2026, 9, 15)
+
+
+@pytest.mark.django_db
+def test_an_unreadable_deferral_is_refused_with_the_page_and_the_reason(client, specialist) -> None:
+    matter = factories.MatterFactory(owner=specialist)
+    action = set_next_action(
+        matter=matter,
+        text="Saada koja arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=timezone.localdate(),
+        actor=specialist,
+    )
+
+    client.force_login(specialist)
+    response = client.post(
+        reverse("matters:defer_action", kwargs={"pk": matter.pk, "action_id": action.pk}),
+        {"kuupaev": "31.02.2026"},
+    )
+
+    assert response.status_code == 400
+    assert "Kirjuta kuupäev kujul" in response.content.decode()
+    action.refresh_from_db()
+    assert action.target_date == timezone.localdate(), "nothing moved"
+
+
+@pytest.mark.django_db
+def test_an_approximate_step_is_not_offered_a_one_day_deferral(client, specialist) -> None:
+    """A step recorded to a month is deliberately vague, and adding a day to it
+    would be a day nobody chose (master specification 3.5)."""
+    matter = factories.MatterFactory(owner=specialist)
+    set_next_action(
+        matter=matter,
+        text="Jälgin menetlust",
+        kind=ActionKind.MONITOR,
+        date_semantics=DateSemantics.REVIEW_ON,
+        target_date=date(2026, 9, 1),
+        date_precision=DatePrecision.MONTH,
+        actor=specialist,
+    )
+
+    client.force_login(specialist)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    assert "uxnext__defer" not in body

@@ -46,6 +46,16 @@ urlpatterns = [
         views.review_action,
         name="review_action",
     ),
+    # `Lükka edasi`. Its own route rather than a flag on the two above it,
+    # because it is one gesture whose meaning depends on the step: a deadline
+    # moves by superseding the instruction, and a review date moves by
+    # acknowledging the review. The view branches; the caller does not have to
+    # know which service it is asking for (design handoff 1c).
+    path(
+        "teemad/<uuid:pk>/jargmiseks/<uuid:action_id>/lukka/",
+        views.defer_action,
+        name="defer_action",
+    ),
     path("teemad/<uuid:pk>/vali/<str:field>/", views.update_field, name="update_field"),
     path("teemad/<uuid:pk>/luhikokkuvote/", views.update_summary, name="update_summary"),
     path("teemad/<uuid:pk>/markmed/", views.save_note, name="save_note"),

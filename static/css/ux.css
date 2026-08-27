@@ -429,6 +429,25 @@
   color: var(--accent-link);
 }
 
+/* Two children of the grid that are not items: the empty state, and the button
+   that fetches older lines in place. Both span the whole width rather than
+   landing in the 20px spine column. */
+.uxtl__none,
+.uxtl__older {
+  grid-column: 1 / -1;
+}
+
+.uxtl__none {
+  margin: 0;
+  font: 400 13px/1.5 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+.uxtl__older {
+  justify-self: start;
+  margin-top: 12px;
+}
+
 .uxtl__count {
   font: 400 12px/1 var(--typography-font-sans);
   color: var(--text-muted);
