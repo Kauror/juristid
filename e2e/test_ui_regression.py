@@ -209,7 +209,42 @@ CLOCK_DEPENDENT = [
     # the block is shut it is `hidden`, so the input has no box and nothing is
     # painted anywhere else.
     "#koostaja-manus .dateinput",
+    # ---- Ülevaade's three week-boundary counts (docs/adr/0039).
+    #
+    # These are dates that never render as a date. Each is a plain integer, and
+    # each is computed against a window anchored on *today*: two from this ISO
+    # week's Monday, one from today itself. The seeded world places its rows a
+    # fixed number of days back, so the counts are stable across a day — and
+    # then the run crosses a Monday and a row that was "last week" is suddenly
+    # "this week", with the same database and a different number on the page.
+    # `Uusi sellel nädalal` did exactly that between two of this branch's own
+    # runs, from 17 to 18.
+    #
+    # `Minu tiim` carried two of them until #79 retired it, and the third was
+    # already here; the move put all three on one captured page, which is what
+    # makes them worth naming together rather than one at a time.
+    #
+    # Scoped to the value, through the label rather than through position: the
+    # rail renders every row as the same `.railrow__key` / `.railrow__value`
+    # pair, so the class alone would take all eight of the page's counts — the
+    # year rows beside them, which are *not* clock-derived and are exactly what
+    # this baseline should still be checking. Matching on the label text also
+    # survives a row being reordered inside its block, which a positional
+    # `:nth-child` would not.
+    #
+    # The label, the row, the block, the borders and the spacing all stay in the
+    # comparison. What is painted is one 26x17 box per row.
+    '.railrow:has(.railrow__key:text-is("Uusi sellel nädalal")) .railrow__value',
+    '.railrow:has(.railrow__key:text-is("Sissekandeid sel nädalal")) .railrow__value',
+    '.railrow:has(.railrow__key:text-is("Tähtaegu sel nädalal")) .railrow__value',
 ]
+
+#: The three above, named once so the scenario entries cannot drift apart.
+ULEVAADE_WEEK_COUNTS = (
+    '.railrow:has(.railrow__key:text-is("Uusi sellel nädalal")) .railrow__value',
+    '.railrow:has(.railrow__key:text-is("Sissekandeid sel nädalal")) .railrow__value',
+    '.railrow:has(.railrow__key:text-is("Tähtaegu sel nädalal")) .railrow__value',
+)
 
 #: What each scenario's capture may not silently stop masking.
 #:
@@ -232,6 +267,15 @@ REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     "teema-suletud": (".banner--closed .banner__text .muted",),
     # This scenario opens `+ Manus` itself, so the control is always there.
     "teema-koostaja": ("#koostaja-manus .dateinput",),
+    # Unlike `.interrow__detail` above, these three are required. They are not
+    # rows of a capped list that a busy world can push off the end: `new_matters`
+    # and `reporting` in `app/matters/overview.py` both return a fixed list of
+    # `CountRow`s, so the row renders whatever the count is — nought included —
+    # for as long as the scope is `Kogu osakond`, which is the scope both these
+    # scenarios capture. If one stops matching, the markup moved and the
+    # selector has to follow it.
+    "ulevaade": ULEVAADE_WEEK_COUNTS,
+    "ulevaade-3440": ULEVAADE_WEEK_COUNTS,
 }
 
 assert not {selector for selectors in REQUIRED_MASKS.values() for selector in selectors} - set(
