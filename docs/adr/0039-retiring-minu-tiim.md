@@ -85,8 +85,22 @@ population before and the population after are the same queryset, resolved by
 the same call, and a restricted child a reader may not see is absent from the
 count on both sides of this change.
 
-The three rows reuse the `Populations` the page already built, so the move adds
-no query and no per-row authorization lookup.
+Two of the three reuse the `Populations` the page already built and cost
+nothing: the month's opinions narrow the `Submission` population the `Seis`
+strip had already resolved, and are handed that strip's own count rather than
+counting it again; the week's deadlines are counted in Python off the work
+items the page had already read. `Sissekandeid sel nädalal` is the exception
+and costs two — the break-glass lookup every `visible_to` performs, because
+nothing else on this page resolves the `Entry` population, and the aggregate
+itself. So the department page went from 42 queries to 44, and `Valdkonniti`
+from 21 to 21: `Populations.entries()` is a method rather than a field
+precisely so a scope that never renders `Aruandlus`'s week row pays for
+neither query.
+
+Nothing here is per-row. The cost is flat in the number of Matters on the
+page — measured at 3, 18 and 30 — which is the property
+`tests/test_overview_simplification.py` guards, rather than the absolute
+ceiling `tests/test_multiple_senders.py` keeps.
 
 ## Consequences
 
