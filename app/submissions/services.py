@@ -264,9 +264,20 @@ def mark_submission_sent(
     established and takes the Matter lock before the submission's — the same
     order as the two binding services, and the reason none of the three can
     deadlock against each other (app/matters/locks.py).
+
+    It takes that submission lock through the same helper the binders use, at
+    the same `FOR NO KEY UPDATE` strength, and the strength is the load-bearing
+    part. Two senders still take turns: both ask for it, and it conflicts with
+    itself and with the plain `UPDATE` a save performs. What it deliberately
+    does not conflict with is the `FOR KEY SHARE` an insert of a row
+    *referencing* this submission acquires — which is what the search
+    projection's own row takes while a rebuild is re-inserting it. Under
+    `FOR UPDATE` this line held a lock that the rebuild needed while this
+    transaction's own `post_save` refresh waited for the rebuild gate, and
+    PostgreSQL resolved the cycle by killing the send (docs/adr/0040).
     """
     matter = lock_matter_for_evidence_integrity(submission.matter_id)
-    locked = Submission.objects.select_for_update().get(pk=submission.pk)
+    locked = lock_submission_for_evidence_integrity(submission.pk)
 
     if locked.status == SubmissionStatus.SENT:
         raise DomainError("Arvamus on juba saadetud.")

@@ -38,6 +38,8 @@ from django.db import DatabaseError, connection, connections, transaction
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
+from app.audit.enums import ChangeEventType
+from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
@@ -49,6 +51,7 @@ from app.matters.locks import (
     lock_matter_for_evidence_integrity,
 )
 from app.matters.services import set_matter_visibility
+from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.submissions.services import (
     create_submission,
@@ -461,6 +464,116 @@ def test_binding_evidence_does_not_deadlock_against_a_search_rebuild(specialist)
     assert rebuilder.join() is None, "the rebuild lost a deadlock against the binder"
     assert binder.join() is None, "the binder lost a deadlock against the rebuild"
     assert Submission.objects.get(pk=submission.pk).final_version_id == version.pk
+
+
+def test_sending_does_not_deadlock_against_a_search_rebuild(specialist, monkeypatch):
+    """The same cycle as above, on the third writer of the rule, forced from the
+    send side rather than the gate side.
+
+    `mark_submission_sent` held the Submission `FOR UPDATE` until 2026-08-27,
+    and that is the one mode of the four that conflicts with the `FOR KEY SHARE`
+    a rebuild takes on the row while re-inserting its projection. The send's own
+    `post_save` refresh then asked for the rebuild gate the rebuild was holding,
+    which closed the cycle — and PostgreSQL resolved it by killing the send.
+    A person pressing *Saada* got a database error because a rebuild happened to
+    be running, which the automatic worker in SEARCH-001 would have made an
+    ordinary occurrence rather than a rare one.
+
+    Forced from the send side here, because that is the ordering the defect
+    needs: the send has to be holding its row lock before the rebuild reaches
+    for it. The pause is inside `check_evidence_is_usable`, which runs after
+    both locks are taken and before the save that triggers the refresh.
+    """
+    from app.search.indexing import rebuild_all
+    from app.submissions import services as submission_services
+
+    matter = factories.MatterFactory(owner=specialist)
+    submission = create_submission(matter=matter, title="Arvamus", actor=specialist)
+    _document, version = _evidence(matter, specialist)
+    select_final_evidence(submission=submission, version=version, actor=specialist)
+    submission.refresh_from_db()
+
+    holding = threading.Event()
+    rebuilt = threading.Event()
+    real_check = submission_services.check_evidence_is_usable
+
+    def hold_the_row_then_check(**kwargs: object) -> None:
+        holding.set()
+        assert rebuilt.wait(TIMEOUT)
+        return real_check(**kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(submission_services, "check_evidence_is_usable", hold_the_row_then_check)
+
+    def send() -> None:
+        mark_submission_sent(submission=submission, actor=specialist)
+
+    def rebuild() -> None:
+        assert holding.wait(TIMEOUT)
+        rebuild_all()
+        rebuilt.set()
+
+    sender = Runner(send).start()
+    rebuilder = Runner(rebuild).start()
+
+    assert rebuilder.join() is None, "the rebuild lost a deadlock against the sender"
+    assert sender.join() is None, "the sender lost a deadlock against the rebuild"
+
+    stored = Submission.objects.get(pk=submission.pk)
+    assert stored.status == SubmissionStatus.SENT
+    assert stored.sent_at is not None
+
+
+def test_two_sends_still_take_turns(specialist):
+    """What the row lock is actually for, at the weaker strength.
+
+    `FOR NO KEY UPDATE` conflicts with itself, so the check-and-write is still
+    serialised: the second sender waits, re-reads the row it waited for, and
+    finds the status its predecessor committed. One send, one timestamp, one
+    audit event — the property the lock exists to hold, kept while the mode it
+    holds it in stopped standing in the projection's way.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    submission = create_submission(matter=matter, title="Arvamus", actor=specialist)
+    _document, version = _evidence(matter, specialist)
+    select_final_evidence(submission=submission, version=version, actor=specialist)
+
+    start = threading.Barrier(2, timeout=TIMEOUT)
+    outcomes: dict[str, BaseException | None] = {}
+
+    def send(tag: str):
+        def run() -> None:
+            start.wait()
+            try:
+                mark_submission_sent(
+                    submission=Submission.objects.get(pk=submission.pk), actor=specialist
+                )
+                outcomes[tag] = None
+            except BaseException as error:  # recorded, not swallowed
+                outcomes[tag] = error
+
+        return run
+
+    first = Runner(send("A")).start()
+    second = Runner(send("B")).start()
+    first.join()
+    second.join()
+
+    succeeded = [tag for tag, error in outcomes.items() if error is None]
+    refused = [error for error in outcomes.values() if error is not None]
+    assert len(succeeded) == 1, f"expected exactly one send to win, got {succeeded}"
+    assert all(isinstance(error, DomainError) for error in refused), (
+        f"the loser must get a refusal in words, not a database error: {refused}"
+    )
+
+    stored = Submission.objects.get(pk=submission.pk)
+    assert stored.status == SubmissionStatus.SENT
+    assert stored.sent_at is not None
+    assert (
+        ChangeEvent.objects.filter(
+            event_type=ChangeEventType.SUBMISSION_SENT, object_id=str(submission.pk)
+        ).count()
+        == 1
+    )
 
 
 def _forced_round(specialist, *, bind_first: bool) -> BaseException | None:
