@@ -231,7 +231,9 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     expect(page.locator("#teema-koostaja")).to_have_count(0)
     # The past stays readable.
     page.locator("#ajajoon .accordion__head").click()
-    expect(page.get_by_text("Menetlus lõppes; töö on tehtud.")).to_be_visible()
+    # Scoped to the entry body: the closed accordion quotes the newest entry in
+    # its own summary line, so the words are on the page twice (design handoff 1b).
+    expect(page.locator(".richtext").get_by_text("Menetlus lõppes; töö on tehtud.")).to_be_visible()
 
 
 # ---------------------------------------------------------------------------

@@ -920,10 +920,16 @@
   display: none;
 }
 
+/* `fixed`, not `absolute`, and this one is not a style choice.
+
+   The register's table sits in `.tablewrap`, which is `overflow-x: auto` so a
+   wide table can scroll on a narrow screen — and a scroll container clips its
+   absolutely positioned descendants in *both* axes. Anchored to the row, the
+   menu was cut off one line below the trigger: the reader could see the first
+   colleague and no other. A fixed box escapes the scroller; `static/js/ux.js`
+   places it under its trigger and keeps it inside the window. */
 .uxassign__menu {
-  position: absolute;
-  left: 0;
-  top: calc(100% + 4px);
+  position: fixed;
   min-width: 170px;
   max-height: 280px;
   overflow-y: auto;

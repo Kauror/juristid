@@ -97,7 +97,7 @@ list by.
                   which file it would assign.
                 {% endcomment %}
                 <summary class="uxassign__trigger">Määra<span class="visually-hidden"> vastutaja: {{ matter.title }}</span> ▾</summary>
-                <div class="uxassign__menu">
+                <div class="uxassign__menu" data-uxfloat>
                   <form method="post" action="{% url 'matters:assign_owner' pk=matter.pk %}">
                     {% csrf_token %}
                     <input type="hidden" name="next" value="{{ request.get_full_path }}">

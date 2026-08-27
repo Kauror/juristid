@@ -231,6 +231,32 @@
    * rows. Escape closes the one you are in and returns focus to its trigger,
    * which is what every other disclosure in the application does (app.js).
    */
+  /* A menu that has to escape a scroll container.
+
+     The register's table lives in `.tablewrap`, which is `overflow-x: auto` so
+     a wide table can scroll — and a scroll container clips its absolutely
+     positioned descendants in both axes, so an owner menu anchored to a row was
+     cut off one line below its trigger. The box is `position: fixed` in the
+     stylesheet; this puts it under its trigger and keeps it inside the window.
+     With no script it still renders at its static position, which is under the
+     trigger — wrong by a few pixels rather than unusable. */
+  function place(holder) {
+    var menu = holder.querySelector("[data-uxfloat]");
+    var trigger = holder.querySelector("summary");
+    if (!menu || !trigger) {
+      return;
+    }
+    var anchor = trigger.getBoundingClientRect();
+    var margin = 8;
+    menu.style.top = anchor.bottom + 4 + "px";
+    var left = Math.min(anchor.left, window.innerWidth - menu.offsetWidth - margin);
+    menu.style.left = Math.max(margin, left) + "px";
+  }
+
+  function placeOpenPopovers() {
+    document.querySelectorAll("details[data-uxpopover][open]").forEach(place);
+  }
+
   function bindExclusivePopovers(scope) {
     scope.querySelectorAll("details[data-uxpopover]").forEach(function (holder) {
       if (!once(holder, "Popover")) {
@@ -245,9 +271,15 @@
             other.open = false;
           }
         });
+        place(holder);
       });
     });
   }
+
+  /* Capture, so a scroll inside the table moves the menu with its row rather
+     than leaving it behind. */
+  window.addEventListener("scroll", placeOpenPopovers, true);
+  window.addEventListener("resize", placeOpenPopovers);
 
   document.addEventListener("keydown", function (event) {
     if (event.key !== "Escape" || !event.target.closest) {

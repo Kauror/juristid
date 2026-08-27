@@ -95,6 +95,16 @@ _CLAUSES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _join(verbs: Any) -> str:
+    """ "lisas märkuse, lisas dokumendi ja määras järgmise sammu"."""
+    parts = list(verbs)
+    if not parts:
+        return ""
+    if len(parts) == 1:
+        return parts[0]
+    return f"{', '.join(parts[:-1])} ja {parts[-1]}"
+
+
 #: Which dot the spine draws, and therefore what kind of thing this line is.
 #: Four, because there are four answers a reader wants at a glance: somebody
 #: wrote something, Koda sent something, somebody met somebody, or the
@@ -216,6 +226,20 @@ class TimelineItem:
         return len(self.events) > 1 or bool(self.entry and self.events)
 
     @property
+    def besides_the_note(self) -> str:
+        """What one save did *apart from* writing the note it is showing.
+
+        The line already carries the entry's kind badge and, underneath, the
+        note itself — so repeating "lisas märkuse" beside them is the same fact
+        three times. Everything else the save did is not visible anywhere else
+        on the line and stays: "lisas dokumendi ja lisas kaasamise".
+
+        Empty for a save that only wrote a note, which is the ordinary case
+        (Teema redesign §11.1, design handoff 1b).
+        """
+        return _join(verb for verb in self.summary_verbs if verb != "lisas märkuse")
+
+    @property
     def summary_sentence(self) -> str:
         """ "lisas märkuse ja määras järgmise sammu", or an empty string.
 
@@ -223,12 +247,7 @@ class TimelineItem:
         records reads as one sentence and a save that wrote one reads as
         nothing at all — the entry card already says what it is.
         """
-        verbs = list(self.summary_verbs)
-        if not verbs:
-            return ""
-        if len(verbs) == 1:
-            return verbs[0]
-        return f"{', '.join(verbs[:-1])} ja {verbs[-1]}"
+        return _join(self.summary_verbs)
 
 
 @dataclass(frozen=True)

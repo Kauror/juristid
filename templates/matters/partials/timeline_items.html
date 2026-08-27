@@ -88,12 +88,18 @@ record, not professional chronology (master specification 16.5).
                 <span class="uxtl__author">{{ item.actor.display_name }}</span>
               {% endif %}
               {% comment %}
-                The badge names the kind; the sentence names what was done. A
-                line carries whichever it has, never both — "Märkus · lisas
-                märkuse" is the same fact twice.
+                The badge names the kind; the sentence names what the save did.
+                An entry gets the badge and, when the same save did more than
+                write the note, the rest of the sentence — «lisas märkuse»
+                beside a `Märkus` badge above the note itself would be the same
+                fact three times, but "lisas dokumendi ja lisas kaasamise" is
+                not said anywhere else on the line (Teema redesign §11.1).
               {% endcomment %}
               {% if item.kind_label %}
                 <span class="uxtl__kind uxtl__kind--{{ item.marker }}">{{ item.kind_label }}</span>
+                {% if item.besides_the_note %}
+                  <span class="uxtl__did">{{ item.besides_the_note }}</span>
+                {% endif %}
               {% elif item.summary_sentence %}
                 <span class="uxtl__did">{{ item.summary_sentence }}</span>
               {% elif item.event %}

@@ -184,9 +184,14 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     timeline = page.locator("#ajajoon")
     expect(timeline).not_to_have_attribute("open", "")
     timeline.locator(".accordion__head").click()
-    # One professional update, one line — and the sentence says what was done.
-    expect(timeline.get_by_text("lisas märkuse ja määras järgmise sammu")).to_be_visible()
-    expect(page.locator(".uxtl__body").filter(has_text="Ootan ministeeriumi")).to_have_count(1)
+    # One professional update, one line. The spine says what kind of line it is,
+    # and what the save *decided* rides with it on its own strip rather than as
+    # a clause — «lisas märkuse ja määras järgmise sammu» said in words what the
+    # strip below now shows in full (design handoff 1b).
+    entry = page.locator(".uxtl__body").filter(has_text="Ootan ministeeriumi")
+    expect(entry).to_have_count(1)
+    expect(entry.locator(".uxtl__kind")).to_be_visible()
+    expect(entry.locator(".uxtl__next")).to_contain_text("Ootan ministeeriumi uut sõnastust")
     screenshots(page, "05-komposer-jarel")
 
     # The Matter is now OOTAN — and it is still in the one list, banded by its
@@ -290,11 +295,14 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
         kind.lower()
         for kind in page.locator(".uxtl__did, .uxtl__kind, .systemevent__type").all_inner_texts()
     ]
-    assert any("märkuse" in kind for kind in kinds), kinds
+    # The entry is named by its own kind now — the spine's badge says
+    # «Kohtumine», where the old card said "lisas märkuse" whatever the kind
+    # actually was (design handoff 1b).
+    assert any("kohtumine" in kind for kind in kinds), kinds
     assert any("saadetud" in kind for kind in kinds), kinds
     # Newest first: the send happened after the meeting was written up.
     assert next(i for i, k in enumerate(kinds) if "saadetud" in k) < next(
-        i for i, k in enumerate(kinds) if "märkuse" in k
+        i for i, k in enumerate(kinds) if "kohtumine" in k
     )
 
     # -- Teemad ----------------------------------------------------------
