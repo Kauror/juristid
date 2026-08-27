@@ -298,9 +298,16 @@ def test_the_pre_migration_audit_does_not_assume_an_unmerged_release(readme: str
     So the step may describe the shape of a release-specific audit, and may show
     the command, but must not name a migration, a service or a flag that only
     exists on a branch.
+
+    The list is what is *not* on main, so it shrinks as things merge. DATA-001
+    and DATA-002 landed (`submissions/0005` and `0006`), and naming them here is
+    now naming main — which is why the step may say that a production instance
+    which has not yet crossed them owes this audit. `searchindex` and
+    `check_search_freshness` are SEARCH-001's, still unmerged, and stay out:
+    that branch reconciles its own deployment wording when it lands.
     """
     text = section(readme, *AUDIT_SECTION)
-    for absent in ("0005", "searchindex", "check_search_freshness"):
+    for absent in ("searchindex", "check_search_freshness"):
         assert absent not in text, (
             f"the runbook names {absent!r}, which is not on main. A runbook that needs an "
             "unmerged branch to be correct is a runbook nobody can follow today."

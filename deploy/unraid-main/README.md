@@ -406,6 +406,14 @@ release note says so. Do not make it unconditional: a check for a constraint the
 target release does not contain is a command that either does not exist in the
 image or answers a question nobody asked.
 
+**Today that release exists.** Main carries `submissions/0005` and `0006`, the
+two migrations that install exactly this kind of guarantee over relationships
+already in the database. A production instance that has not yet crossed them
+owes the audit above before it does — once, on the release that installs them.
+It is named here rather than left to a release note because the condition is a
+fact about the database in front of you: `migration_plan` from step 6 lists
+them as pending, and that listing is what makes this step apply.
+
 ### 8. Back up
 
 Always, and immediately before the migration rather than that morning:
