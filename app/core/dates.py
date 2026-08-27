@@ -109,3 +109,35 @@ def parse_flexible_date(value: str | None) -> date | None:
         return None
     stripped = value.strip()
     return parse_estonian_date(stripped) or parse_date(stripped)
+
+
+#: The one-letter weekday, Monday first. Estonian: esmaspäev, teisipäev,
+#: kolmapäev, neljapäev, reede, laupäev, pühapäev.
+#:
+#: A letter rather than a name because the deadline lists print it in a 60px
+#: cell beside the date, where the question it answers is "is that a working
+#: day" and nothing more (design handoff 1a).
+WEEKDAY_LETTERS: tuple[str, ...] = ("E", "T", "K", "N", "R", "L", "P")
+
+
+def weekday_letter(value: date | None) -> str:
+    return "" if value is None else WEEKDAY_LETTERS[value.weekday()]
+
+
+def short_day_month(value: date | None) -> str:
+    """``28.08``. Zero-padded, because these are read in a column."""
+    return "" if value is None else f"{value.day:02d}.{value.month:02d}"
+
+
+def short_range(start: date | None, end: date | None) -> str:
+    """``27.08–31.08``, the way a group header states the window it holds.
+
+    An en dash, which is what a range takes in Estonian typography, and no
+    spaces around it — the two dates are one token in a header that is already
+    carrying a title and a link.
+    """
+    if start is None or end is None:
+        return ""
+    if start == end:
+        return short_day_month(start)
+    return f"{short_day_month(start)}–{short_day_month(end)}"

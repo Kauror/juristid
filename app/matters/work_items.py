@@ -55,6 +55,7 @@ from django.db.models import Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
+from app.core import dates
 from app.intelligence.enums import FactStatus
 from app.intelligence.models import MatterImportantDate
 from app.matters.enums import RecordMode
@@ -225,6 +226,41 @@ class WorkItem:
     @property
     def _is_approximate(self) -> bool:
         return "." not in self.display_date
+
+    # -- what a deadline row prints -------------------------------------
+    #
+    # Four small properties rather than four `{% if %}` chains, because a
+    # Django template cannot pass an argument to a function and the same row is
+    # rendered by two pages. They are display only: nothing here decides which
+    # window an item is in (design handoff 1a).
+
+    @property
+    def is_today(self) -> bool:
+        return self.when == self.today
+
+    @property
+    def weekday_letter(self) -> str:
+        """``R``. Empty for a date recorded to a month or a quarter, where
+        naming a weekday would name a day nobody chose."""
+        return "" if self._is_approximate else dates.weekday_letter(self.when)
+
+    @property
+    def day_month(self) -> str:
+        """``28.08``, or the stored period verbatim when that is all there is."""
+        if self.when is None:
+            return "—"
+        return self.display_date if self._is_approximate else dates.short_day_month(self.when)
+
+    @property
+    def responsible_initials(self) -> str:
+        """Two letters, or the mark that says nobody carries this."""
+        return self.responsible.initials if self.responsible is not None else "!"
+
+    @property
+    def responsible_title(self) -> str:
+        """The full name, for the badge's `title`. The badge shows initials, so
+        the name has to be reachable some other way or the row names nobody."""
+        return self.responsible.display_name if self.responsible is not None else "Vastutajata"
 
     @property
     def meaning_line(self) -> str:
@@ -552,7 +588,25 @@ WORK_OVERDUE = "hilinenud"
 WORK_RIPE = "ulevaatamiseks"
 WORK_DEADLINE_THIS_WEEK = "tahtaeg-nadalal"
 WORK_DEADLINE_NEXT_WEEK = "tahtaeg-jargmisel"
+#: The rest of the month, past next week. The third group on Ülevaade's
+#: Tähtajad panel; the fourth group below it is what falls past its end.
+WORK_DEADLINE_30_DAYS = "tahtaeg-30"
+#: Everything dated past the thirty-day horizon. It exists because the panel
+#: used to end at next week, so a deadline five weeks out was on no screen at
+#: all until it became next week's problem (design handoff 1a, KAUGEMAL).
+WORK_DEADLINE_BEYOND = "tahtaeg-kaugemal"
 WORK_NEEDS_ATTENTION = "sekkumist"
+#: Open work nothing has happened on for a month. Not a date population: it is
+#: read from the derived last-activity fact, which is why it is resolved as a
+#: queryset in `work_population_ids` rather than out of the item list.
+WORK_QUIET_30 = "muutusteta-30"
+
+#: How long silence has to last before it is worth a line on a manager's page.
+#: A month, which is the review rhythm the department actually keeps.
+QUIET_DAYS = 30
+
+#: The thirty-day horizon the third deadline group ends at, counted from today.
+DEADLINE_MONTH_DAYS = 30
 
 #: What each value selects, and how it reads in a filter chip.
 WORK_POPULATION_LABELS: dict[str, str] = {
@@ -560,10 +614,48 @@ WORK_POPULATION_LABELS: dict[str, str] = {
     WORK_RIPE: "Ülevaatamiseks küps",
     WORK_DEADLINE_THIS_WEEK: "Tähtaeg sel nädalal",
     WORK_DEADLINE_NEXT_WEEK: "Tähtaeg järgmisel nädalal",
+    WORK_DEADLINE_30_DAYS: "Tähtaeg 30 päeva jooksul",
+    WORK_DEADLINE_BEYOND: "Tähtaeg kaugemal",
     WORK_NEEDS_ATTENTION: "Vajab sekkumist",
+    WORK_QUIET_30: f"Muutusteta {QUIET_DAYS} p",
 }
 
 WORK_POPULATIONS: tuple[str, ...] = tuple(WORK_POPULATION_LABELS)
+
+
+#: The four consecutive deadline windows Ülevaade's Tähtajad panel is made of.
+#: Consecutive and exhaustive by construction: each one starts the day after the
+#: previous one ends, and the last has no end. A deadline dated in the future can
+#: therefore land in exactly one of them, which is what stops a date thirty-one
+#: days out from being on no screen at all (design handoff 1a).
+DEADLINE_WINDOW_KEYS: tuple[str, ...] = (
+    WORK_DEADLINE_THIS_WEEK,
+    WORK_DEADLINE_NEXT_WEEK,
+    WORK_DEADLINE_30_DAYS,
+    WORK_DEADLINE_BEYOND,
+)
+
+
+def deadline_window(key: str, today: date) -> tuple[date, date | None]:
+    """The closed interval one deadline group holds, both ends inclusive.
+
+    ``None`` as the end means "and everything after", which only the last group
+    returns. Days rather than weeks past next week: *30 päeva* is the heading
+    the reader sees and the horizon the group is counted to, so it is measured
+    from today and not rounded to a week boundary.
+    """
+    week_end = end_of_iso_week(today)
+    next_end = week_end + timedelta(days=7)
+    month_end = today + timedelta(days=DEADLINE_MONTH_DAYS)
+    if key == WORK_DEADLINE_THIS_WEEK:
+        return today, week_end
+    if key == WORK_DEADLINE_NEXT_WEEK:
+        return week_end + timedelta(days=1), next_end
+    if key == WORK_DEADLINE_30_DAYS:
+        # `next_end` is at most thirteen days out, so this interval is never
+        # inverted and the four windows are always in order.
+        return next_end + timedelta(days=1), month_end
+    return month_end + timedelta(days=1), None
 
 
 def work_population_items(items: list[WorkItem], key: str, today: date) -> list[WorkItem]:
@@ -576,13 +668,13 @@ def work_population_items(items: list[WorkItem], key: str, today: date) -> list[
         return overdue_items(items)
     if key == WORK_RIPE:
         return review_ripe_items(items)
-    if key in (WORK_DEADLINE_THIS_WEEK, WORK_DEADLINE_NEXT_WEEK):
-        week_end = end_of_iso_week(today)
-        next_end = week_end + timedelta(days=7)
-        dated = [(item.when, item) for item in real_deadlines(items) if item.when is not None]
-        if key == WORK_DEADLINE_THIS_WEEK:
-            return [item for when, item in dated if when is not None and today <= when <= week_end]
-        return [item for when, item in dated if when is not None and week_end < when <= next_end]
+    if key in DEADLINE_WINDOW_KEYS:
+        start, end = deadline_window(key, today)
+        return [
+            item
+            for item in real_deadlines(items)
+            if item.when is not None and start <= item.when and (end is None or item.when <= end)
+        ]
     if key == WORK_NEEDS_ATTENTION:
         # The dated half. The two undated halves — no next action, no owner —
         # are querysets rather than work items and are added by the caller that
@@ -627,6 +719,11 @@ def work_population_ids(
     if items is None:
         items = work_items(user, today=today)
     ids = {item.matter_id for item in work_population_items(items, key, today)}
+    if key == WORK_QUIET_30:
+        # Nobody's work in particular: silence is a property of the file, and
+        # narrowing it by a responsible person would answer a question the
+        # column cannot be read as asking.
+        return set(quiet_matters(user, today))
     if key == WORK_NEEDS_ATTENTION:
         # Reused when the caller has them, because `visible_to` resolves the
         # reader's scope on every call and resolving it asks the database
@@ -684,6 +781,37 @@ def ownerless_matters(user: Any) -> QuerySet[Matter]:
     return open_matters(user).filter(owner__isnull=True)
 
 
+def quiet_matters(user: Any, today: date | None = None, *, days: int = QUIET_DAYS) -> list[Any]:
+    """Open work whose last known activity is older than ``days``, as ids.
+
+    *Muutusteta 30 p*, and the reason it is not a queryset. The last-activity
+    fact is a **precedence** over six candidate dates — a closure, a sent
+    opinion, an entry, an action, a consultation, an archived page — resolved in
+    Python by :func:`app.matters.activity.activity_of` so that two facts on the
+    same day pick the more canonical one. Reproducing that ordering as SQL would
+    be a second definition of "last activity" beside the one every register row
+    already prints, and the two would disagree on the day they were most likely
+    to be compared.
+
+    So the annotation is asked for once, in one query, and the comparison is
+    done over the rows it returns. A Matter with no known activity at all is
+    **not** here: nothing is recorded either way, and a page that called that
+    silence would be reporting the absence of a record as the absence of work
+    (app/matters/activity.py, ADR 0026).
+    """
+    from app.matters.activity import activity_of, annotate_last_activity
+
+    today = today or timezone.localdate()
+    cutoff = today - timedelta(days=days)
+    population = annotate_last_activity(open_matters(user), user).only("id", "received_date")
+    quiet = []
+    for matter in population:
+        fact = activity_of(matter)
+        if fact is not None and fact.occurred_on < cutoff:
+            quiet.append(matter.pk)
+    return quiet
+
+
 __all__ = [
     "BAND_LABELS",
     "BAND_LATER",
@@ -698,12 +826,15 @@ __all__ = [
     "MEANING_REVIEW",
     "SOURCE_IMPORTANT_DEADLINE",
     "SOURCE_NEXT_ACTION",
+    "WORK_DEADLINE_30_DAYS",
+    "WORK_DEADLINE_BEYOND",
     "WORK_DEADLINE_NEXT_WEEK",
     "WORK_DEADLINE_THIS_WEEK",
     "WORK_NEEDS_ATTENTION",
     "WORK_OVERDUE",
     "WORK_POPULATIONS",
     "WORK_POPULATION_LABELS",
+    "WORK_QUIET_30",
     "WORK_RIPE",
     "ActionKind",
     "WorkBand",
@@ -712,12 +843,14 @@ __all__ = [
     "band_items",
     "band_of",
     "dated_actions",
+    "deadline_window",
     "end_of_iso_week",
     "important_deadlines",
     "matters_without_action",
     "open_matters",
     "overdue_items",
     "ownerless_matters",
+    "quiet_matters",
     "real_deadlines",
     "review_ripe_items",
     "sort_items",

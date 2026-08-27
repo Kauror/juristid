@@ -55,6 +55,7 @@ from app.audit.models import ChangeEvent
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
 from app.core.dates import format_estonian_date
+from app.core.dates import short_range as format_short_range
 from app.intelligence.models import (
     MatterEffectiveDate,
     MatterImportantDate,
@@ -512,6 +513,12 @@ class DeadlineGroup:
     shown: int
     #: The `?too=` value that reproduces this window on the register.
     population: str
+    #: The interval the header states, both ends inclusive. The far group has no
+    #: end and prints no range: it is everything after the last real window.
+    starts: date | None = None
+    ends: date | None = None
+    #: Rendered as one pointer line instead of a list. Only the far group.
+    is_far: bool = False
 
     @property
     def count(self) -> int:
@@ -526,8 +533,34 @@ class DeadlineGroup:
         return max(0, self.count - self.shown)
 
     @property
+    def rest(self) -> list[wi.WorkItem]:
+        """What the preview did not show, capped.
+
+        Behind a disclosure rather than dropped. A window that quietly ended at
+        four rows is how a deadline stopped being anywhere at all, which is the
+        failure the fourth window exists to fix — and it would be an odd fix
+        that reintroduced it inside the first three (`DEADLINE_LIMIT`).
+        """
+        return self.items[self.shown : DEADLINE_LIMIT]
+
+    @property
     def matter_count(self) -> int:
         return len({item.matter_id for item in self.items})
+
+    @property
+    def range_label(self) -> str:
+        """``27.08–31.08``. Empty where there is no closed interval to state."""
+        return format_short_range(self.starts, self.ends)
+
+    @property
+    def first(self) -> wi.WorkItem | None:
+        """The nearest item. The far group prints this one date and a count."""
+        return self.items[0] if self.items else None
+
+    @property
+    def beyond_first(self) -> int:
+        """How many more there are behind the one date the far group prints."""
+        return max(0, self.matter_count - 1)
 
     @property
     def url(self) -> str:
@@ -540,25 +573,48 @@ class DeadlineGroup:
 real_deadlines = wi.real_deadlines
 
 
+#: The panel's four windows, in reading order: key, heading, and how many rows
+#: the group shows before it stops. The whole of this week, because this week is
+#: what somebody is working in; a preview of the rest, because they are planning
+#: rather than doing. The last window shows one line whatever it holds.
+_DEADLINE_GROUPS: tuple[tuple[str, str, str, int | None], ...] = (
+    ("sel_nadalal", "Sel nädalal", wi.WORK_DEADLINE_THIS_WEEK, None),
+    ("jargmisel", "Järgmisel nädalal", wi.WORK_DEADLINE_NEXT_WEEK, DEADLINE_PREVIEW),
+    ("kolmkymmend", "30 päeva", wi.WORK_DEADLINE_30_DAYS, DEADLINE_PREVIEW),
+    ("kaugemal", "Kaugemal", wi.WORK_DEADLINE_BEYOND, 1),
+)
+
+
 def deadline_groups(items: list[wi.WorkItem], today: date) -> list[DeadlineGroup]:
-    this_week = wi.work_population_items(items, wi.WORK_DEADLINE_THIS_WEEK, today)
-    next_week = wi.work_population_items(items, wi.WORK_DEADLINE_NEXT_WEEK, today)
-    return [
-        DeadlineGroup(
-            "sel_nadalal",
-            "Sel nädalal",
-            this_week,
-            len(this_week),
-            wi.WORK_DEADLINE_THIS_WEEK,
-        ),
-        DeadlineGroup(
-            "jargmisel",
-            "Järgmisel",
-            next_week,
-            DEADLINE_PREVIEW,
-            wi.WORK_DEADLINE_NEXT_WEEK,
-        ),
-    ]
+    """Every dated commitment ahead, in four consecutive windows.
+
+    Four rather than two. The panel used to end at next week, so a deadline five
+    weeks out was on no screen anywhere until it became next week's problem —
+    which is precisely the file somebody wanted a month's warning about. The
+    windows are consecutive and the last is open-ended, so nothing dated can
+    fall between them (design handoff 1a, KAUGEMAL).
+
+    The far group is one line: the next date, and how many more sit behind it in
+    the register. A list would be a plan nobody can act on today; a number with
+    nothing to open would be a figure nobody can check.
+    """
+    groups = []
+    for key, label, population, shown in _DEADLINE_GROUPS:
+        window = wi.work_population_items(items, population, today)
+        starts, ends = wi.deadline_window(population, today)
+        groups.append(
+            DeadlineGroup(
+                key,
+                label,
+                window,
+                len(window) if shown is None else shown,
+                population,
+                starts=starts,
+                ends=ends,
+                is_far=population == wi.WORK_DEADLINE_BEYOND,
+            )
+        )
+    return groups
 
 
 # ---------------------------------------------------------------------------
@@ -1428,6 +1484,16 @@ class Overview:
     @property
     def is_department(self) -> bool:
         return self.scope == SCOPE_DEPARTMENT
+
+    @property
+    def has_deadlines(self) -> bool:
+        """Whether any window holds anything.
+
+        Empty windows are not rendered — four headings above four "ei ole
+        ühtegi" lines is a quiet week looking like a data-quality problem — so
+        the panel needs one place to say that nothing at all is ahead.
+        """
+        return any(group.count for group in self.deadlines)
 
     @property
     def is_areas(self) -> bool:
