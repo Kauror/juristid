@@ -31,7 +31,14 @@ from pathlib import Path
 
 #: Services that run the application image. The tunnel and the database run
 #: pinned upstream images and are deliberately not in this list.
-APPLICATION_SERVICES = ("web", "extractor")
+#:
+#: `searchindex` joined them with SEARCH-001 (docs/adr/0041). It is a management
+#: command from the same image as `web`, so it is one of the services a release
+#: replaces — and a release that resolved a new `web` beside a `:local`
+#: `searchindex` would leave the worker running whatever a hand build last left
+#: behind, rebuilding the corpus with code nobody reviewed. Adding it here is
+#: what makes that a red build rather than something an operator notices later.
+APPLICATION_SERVICES = ("web", "extractor", "searchindex")
 
 IMAGE_PREFIX = "juristid-main-web:"
 FALLBACK_TAG = "local"
