@@ -179,6 +179,17 @@ CLOCK_DEPENDENT = [
     # "Määra →", which is exactly the set of rows whose detail is this string —
     # every other row's detail is its next step, and masking that would take
     # real content out of the baseline.
+    #
+    # Unlike the two above, this one is deliberately *not* in REQUIRED_MASKS,
+    # and the reason is worth keeping: on a freshly seeded world the ownerless
+    # row is in the intervention preview, and on the world this suite actually
+    # runs against — after the functional suite has filed its Matters — it is
+    # pushed off the end of a capped list and never captured at all. Requiring
+    # it made `ulevaade` fail the moment CI ran it, for a reason that is not a
+    # defect. Its presence is a function of how many higher-priority rows the
+    # rest of the browser suite happens to create, so it can be masked but not
+    # depended on: absent it paints nothing, and present it is covered rather
+    # than back in the baseline.
     ".interrow:has(.interrow__assign) .interrow__detail",
 ]
 
@@ -193,12 +204,14 @@ CLOCK_DEPENDENT = [
 #: `capture` refuses to take the screenshot if the element is not there. Only
 #: the values found by rendering these pages are listed: this is a check that
 #: known masks still bite, not a claim that the list is complete.
+#: Only values that are on the page unconditionally belong here. A mask whose
+#: element appears or not depending on how many Matters the functional suite
+#: filed is still worth painting, but requiring it would turn an unrelated
+#: browser test into a visual failure — see the `.interrow__detail` note above.
 REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     "minu-too": (".workband--entries .foldout__meta",),
     "minu-too-3440": (".workband--entries .foldout__meta",),
     "teema-suletud": (".banner--closed .banner__text .muted",),
-    "ulevaade": (".interrow:has(.interrow__assign) .interrow__detail",),
-    "ulevaade-3440": (".interrow:has(.interrow__assign) .interrow__detail",),
 }
 
 assert not {selector for selectors in REQUIRED_MASKS.values() for selector in selectors} - set(
