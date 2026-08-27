@@ -32,8 +32,29 @@ from app.accounts.enums import UserRole
 from app.core.enums import Visibility
 
 # Business roles that may read RESTRICTED content without a break-glass grant.
-# ADMINISTRATOR is deliberately absent (master specification 5.2).
-ROLES_WITH_RESTRICTED_ACCESS: frozenset[str] = frozenset({UserRole.DEPARTMENT_HEAD.value})
+#
+# Both lawyer roles, because inside the legal department the confidentiality
+# boundary is the application, not the Matter. A lawyer who cannot see what a
+# colleague is working on cannot answer for the department's position on it, and
+# the register this replaces was a shared notebook. `RESTRICTED` still divides
+# the department from everyone else — it just stopped dividing one lawyer from
+# another (docs/adr/0042).
+#
+# Ownership and `collaborators` stay exactly where they are, and keep meaning
+# what they always meant: who is answerable for a file and who is working it.
+# That is a question about responsibility, and it was never the same question as
+# who may know the file exists.
+#
+# ADMINISTRATOR is still deliberately absent, and that absence carries more
+# weight now that it is the only business role left outside: technical
+# administration is not legal work, and an administrator who needs to read a
+# restricted file uses break-glass, which is audited (master specification 5.2).
+# READER is absent because this decision is about the legal team; what a
+# management or communications reader may see is a separate decision nobody has
+# taken (specification 5.1).
+ROLES_WITH_RESTRICTED_ACCESS: frozenset[str] = frozenset(
+    {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value}
+)
 
 # Roles that may add or change business content on a Matter they can already
 # see. ADMINISTRATOR is absent for the same reason it is absent above: technical
@@ -78,6 +99,14 @@ def may_write_business_content(user: object | None) -> bool:
     would make the product slower than the OneNote page it replaces
     (Stage-2G brief 29). *Which* Matters they can reach is a separate question,
     answered by `matter_visibility_q` before this is ever asked.
+
+    Since docs/adr/0042 that reach is the whole department for both lawyer
+    roles, so a specialist may now edit a colleague's RESTRICTED Matter exactly
+    as they could already edit a colleague's NORMAL one. That is the same rule
+    it always was, applied to a wider set of Matters — not a new one. What it
+    does not touch is *which operations* a role may perform: a specialist who
+    can now open a restricted file still cannot review a `Töövõit`, because that
+    is decided by `may_review_work_victory` rather than by reach.
     """
     return _business_role(user) in ROLES_WITH_BUSINESS_WRITE
 

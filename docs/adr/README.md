@@ -50,6 +50,7 @@ consequences and reversibility.
 | [0039](0039-retiring-minu-tiim.md) | Retiring `Minu tiim`, and where its three period counts went | Accepted |
 | [0040](0040-concurrent-final-evidence-integrity.md) | Concurrent final-evidence integrity: one lock order, one strength | Accepted |
 | [0041](0041-search-index-freshness.md) | Search index freshness: durable debt instead of a rebuild somebody remembers | Accepted |
+| [0042](0042-department-wide-lawyer-access.md) | Department-wide access for the legal team | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -85,3 +86,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0039 — retiring `Minu tiim`: one operational overview population, its three period counts moved into `Aruandlus` as rows of that block, `?vaade=tiim` normalizing to `Kogu osakond`, and no population widened anywhere in the move
 - 0040 — concurrent final-evidence integrity: both writers serialise on the Matter row under one global `Matter → Submission → Document` order, the waiter re-reads what it decides on, a `matter_id` trigger refuses reparenting relied-upon evidence, and no automatic repair — DATA-001 keeps the detector
 - 0041 — search index freshness: a high-fanout rename records a durable obligation in its own transaction instead of nothing at all, a Compose worker discharges it with the atomic rebuild, `Kaasamine` becomes a bounded synchronous refresh so a recorded consultation is a findable one, and the diagnostic reports the debt without ever draining it
+- 0042 — department-wide access for the legal team: the confidentiality boundary is the application rather than the Matter, both lawyer roles read the whole department, ownership and collaborators go back to meaning responsibility, the collaborative write model is unchanged, and `ADMINISTRATOR`, `DepartmentViewer` and `READER` are all deliberately left where they were
