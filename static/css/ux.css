@@ -1254,6 +1254,16 @@ a.uxstat__row:hover {
     width: min(320px, calc(100vw - var(--spacing-6)));
   }
 
+  /* The closed timeline's three facts do not all fit on a narrow row. The
+     step pill goes first: it is on the Järgmiseks row a few centimetres above,
+     and it is the one of the three that cannot shrink — it and the count are
+     `nowrap`, so keeping it pushed «Ava ajajoon» 108px past the right edge of a
+     480px window. What is left is the quote, which ellipsises, and the count.
+     Both stay in the accessibility tree at every width. */
+  .uxtl__previewnext {
+    display: none;
+  }
+
   .uxdg__periodbody {
     /* Stacked rather than side by side: two 118px date boxes and a button do
        not fit beside each other in a popover bounded by the window. */
@@ -1284,5 +1294,11 @@ a.uxstat__row:hover {
     /* Inside the row rather than hanging off its edge: at this width the row
        has no gutter to hang into. */
     left: 2px;
+  }
+
+  /* And below this the quote goes too. «Ajajoon · 14 kirjet · Ava ajajoon» is
+     what a phone has room for. */
+  .uxtl__preview {
+    display: none;
   }
 }

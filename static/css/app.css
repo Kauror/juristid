@@ -1953,17 +1953,6 @@ p.formnote {
   color: var(--text-secondary);
 }
 
-.entrytype {
-  font-size: var(--typography-size-chip);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-chip);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-chip);
-  padding: 1px 6px;
-  text-transform: uppercase;
-}
-
 .systemevent {
   display: flex;
   align-items: baseline;
@@ -1984,29 +1973,6 @@ p.formnote {
 .systemevent__type {
   font-weight: var(--typography-weight-semibold);
   color: var(--text-secondary);
-}
-
-.submissionevent {
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-card);
-  padding: var(--spacing-3) var(--spacing-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-15);
-  margin: var(--spacing-1) 0;
-}
-
-.submissionevent__label {
-  font-size: var(--typography-size-chip);
-  font-weight: var(--typography-weight-heavy);
-  letter-spacing: 0.07em;
-  color: var(--accent-link);
-  border: 1px solid var(--accent-border);
-  background: var(--surface-base);
-  border-radius: var(--radius-chip);
-  padding: 2px 7px;
-  text-transform: uppercase;
 }
 
 /* Authored bodies. Only the allowlist in app/core/richtext.py can appear. */
@@ -5317,14 +5283,6 @@ p.factsection__none {
   gap: var(--spacing-1);
 }
 
-/* The sent-submission summary is prose inside a card, so it wraps; the work-row
-   class it used to borrow is a single-line ellipsised cell. */
-.submissionevent__summary {
-  font-size: var(--typography-size-row);
-  font-weight: var(--typography-weight-medium);
-  color: var(--text-primary);
-}
-
 .composer__error {
   padding: 0 var(--spacing-4);
 }
@@ -6157,95 +6115,6 @@ p.factsection__none {
   flex: none;
 }
 
-/* -- JÄRGMISEKS ------------------------------------------------------- */
-
-/* One line, always visible, never collapsed. It is the answer to the only
-   question everyone opening a file always has. */
-.nextrow {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-35);
-  flex-wrap: wrap;
-  padding: var(--spacing-35) var(--spacing-8);
-  background: var(--surface-capture);
-  border-top: 1px solid var(--border-control);
-}
-
-.nextrow__label {
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  color: var(--text-muted);
-  text-transform: uppercase;
-  flex: none;
-}
-
-/* The unset state is a warning, not an error. A Matter with no next step is a
-   file drifting, which is worth noticing and is not a failure. */
-.nextrow__label--warning {
-  color: var(--status-warning);
-}
-
-.nextrow__text {
-  font-size: var(--typography-size-lg);
-  font-weight: var(--typography-weight-medium);
-  color: var(--text-primary);
-  min-width: 0;
-}
-
-.nextrow__text--source {
-  font-size: var(--typography-size-base);
-  color: var(--text-body);
-}
-
-.nextrow__source-label,
-.nextrow__snapshot {
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-semibold);
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-  border: 1px solid var(--border-control);
-  border-radius: var(--radius-chip);
-  padding: 1px 6px;
-  flex: none;
-}
-
-.nextrow__date {
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-  flex: none;
-}
-
-/* Only TEEN + deadline can be late. */
-.nextrow__date--overdue {
-  color: var(--status-danger);
-  font-weight: var(--typography-weight-semibold);
-}
-
-/* A passed review date is warning-level and never danger: waiting on a
-   ministry is not a failure (master specification 18.8). */
-.nextrow__date--review {
-  color: var(--status-warning);
-}
-
-.nextrow__empty {
-  font-size: var(--typography-size-row);
-  color: var(--text-secondary);
-}
-
-.nextrow__spacer {
-  flex: 1;
-}
-
-.nextrow--overdue {
-  box-shadow: inset 2px 0 0 0 var(--status-danger);
-}
-
-.nextrow--closed .nextrow__empty {
-  color: var(--text-muted);
-}
-
 /* -- mode chips ------------------------------------------------------- */
 
 /* Shape carries the meaning, colour never alone: filled, solid outline,
@@ -6991,13 +6860,20 @@ button.accordion__action:focus-visible {
 }
 
 @media (max-width: 720px) {
+  /* The gutter, not a spacing step chosen to look like it. Below 860px the
+     shell redefines `--layout-gutter` to 12px, and this bleed was pulling
+     itself out by 16 — 4px past the page on each side, which is 8px of
+     horizontal scrollbar on every Matter at 375, 480 and 720. Exactly the
+     failure the comment above the gutter redefinition describes; nothing
+     measured `scrollWidth` on this page until the 2026-08 pass did
+     (e2e/test_ux_pass.py). */
   .teema {
-    margin-left: calc(var(--spacing-4) * -1);
-    margin-right: calc(var(--spacing-4) * -1);
+    margin-left: calc(var(--layout-gutter) * -1);
+    margin-right: calc(var(--layout-gutter) * -1);
   }
 
   .teema .matterhead,
-  .nextrow,
+  .uxnext,
   .teema .composer,
   .positionblock,
   .sentstrip,
@@ -7006,12 +6882,29 @@ button.accordion__action:focus-visible {
   .accordion__body,
   .teema .rail,
   .teemamain--padded {
-    padding-left: var(--spacing-4);
-    padding-right: var(--spacing-4);
+    padding-left: var(--layout-gutter);
+    padding-right: var(--layout-gutter);
   }
 
   .metaline__value {
     max-width: 24ch;
+  }
+
+  /* A fact row is a date, a title and two controls on one line, and at this
+     width the four of them do not fit: the date's 15ch basis and the controls'
+     `flex: 0 0 auto` are both rigid, so the row pushed «Muuda» and «Tühista»
+     141px past the edge of a 375px window. The row wraps instead, and the
+     controls drop under the title they act on.
+
+     Not a rule the 2026-08 pass needed for anything it drew — but the Matter
+     page is one of the pages it rebuilt, and it may not leave that page with a
+     horizontal scrollbar on a phone (design handoff, responsive targets). */
+  .factrow {
+    flex-wrap: wrap;
+  }
+
+  .factrow__actions {
+    margin-left: auto;
   }
 }
 
@@ -7106,12 +6999,6 @@ button.accordion__action:focus-visible {
    it by name: the digits change daily and the label beside them must not. */
 .metaline__item--deadline {
   font-variant-numeric: tabular-nums;
-}
-
-/* An open Matter with no next step. Warning-toned, never danger: a file
-   drifting is worth noticing and is not a failure. */
-.nextrow--unset {
-  box-shadow: inset 2px 0 0 0 var(--status-warning);
 }
 
 /* The private note sits apart from the facts above it — those are the record,
@@ -7573,8 +7460,7 @@ button.accordion__action:focus-visible {
 
 .workband__more a,
 .ovsection__more a,
-.ovsection__link,
-.deadlinegroup__more a {
+.ovsection__link {
   font-size: var(--typography-size-meta);
   color: var(--accent-link);
   text-decoration: none;
@@ -8183,71 +8069,6 @@ a.loadrow__overdue--bad {
   color: var(--accent-link);
 }
 
-/* ---- Tähtajad ------------------------------------------------------ */
-
-.deadlinegroup {
-  display: grid;
-  grid-template-columns: 132px minmax(0, 1fr);
-  gap: var(--spacing-35);
-  align-items: start;
-  padding: var(--spacing-2) 0;
-}
-
-.deadlinegroup__label {
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  color: var(--text-muted);
-}
-
-.deadlinegroup__rows {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.deadlinegroup__more {
-  grid-column: 2;
-  margin: var(--spacing-1) 0 0;
-}
-
-.deadlinerow {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr) 132px;
-  gap: var(--spacing-25);
-  padding: 4px var(--spacing-2);
-  text-decoration: none;
-  color: inherit;
-  border-radius: var(--radius-sm);
-  font-size: var(--typography-size-meta);
-}
-
-.deadlinerow:hover {
-  background: var(--surface-hover);
-}
-
-.deadlinerow__when {
-  color: var(--text-body);
-  font-variant-numeric: tabular-nums;
-}
-
-.deadlinerow__title,
-.deadlinerow__owner {
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.deadlinerow__owner {
-  color: var(--text-muted);
-}
-
-.deadlinerow__owner--none {
-  color: var(--status-warning);
-}
-
 /* ---- the activity feed --------------------------------------------- */
 
 .feedfilter {
@@ -8548,7 +8369,6 @@ a.loadrow__overdue--bad {
      rather than a sideways scroll, because a work row is read, not scanned. */
   .workrow2__link,
   .interrow__link,
-  .deadlinerow,
   .arealine,
   .feedrow,
   .entryline {
@@ -8557,16 +8377,7 @@ a.loadrow__overdue--bad {
   }
 
   .workrow2__stage,
-  .interrow__stage,
-  .deadlinerow__owner {
+  .interrow__stage {
     display: none;
-  }
-
-  .deadlinegroup {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .deadlinegroup__more {
-    grid-column: 1;
   }
 }

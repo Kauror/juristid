@@ -196,6 +196,9 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
 
     # Closing is a composer action, not a panel in the rail.
     expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)
+    # The save above re-rendered the surface, and a saved composer folds shut —
+    # which is the point of it being a disclosure (design handoff 1d).
+    open_composer(page)
     page.locator(".disclosure-chip", has_text="+ Lõpeta teema").click()
     expect(page.locator("#koostaja-lopetamine")).to_be_visible()
 
@@ -438,6 +441,7 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
 
     # The visible equivalent is beside the hint.
     page.goto(url)
+    open_composer(page)
     expect(page.locator(".composer .composer__hint")).to_be_visible()
     expect(page.locator("[data-composer-submit]")).to_be_visible()
 

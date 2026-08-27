@@ -169,7 +169,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator(".uxnext__text")).to_have_text("Ootan ministeeriumi uut sõnastust")
     expect(page.locator(".uxnext .modechip--wait")).to_be_visible()
     # A WAIT date is a review date and is labelled as one, never as a deadline.
-    expect(page.locator(".uxnext__flag")).to_contain_text("vaatan üle")
+    # The flag names the *stored* meaning. A WAIT recorded without an explicit
+    # one derives `Oodatav`, and the old row printed "vaatan üle" over
+    # every non-deadline regardless — which said the wrong thing about
+    # an expectation somebody never promised to review
+    # (app/workflow/models.py, `date_label`; design handoff 1c).
+    expect(page.locator(".uxnext__flag")).to_contain_text("OODATAV")
+    expect(page.locator(".uxnext")).not_to_have_class("uxnext--overdue")
     # The superseded DO must no longer be presented as the current action.
     expect(page.locator(".uxnext").get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
 

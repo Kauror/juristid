@@ -208,7 +208,10 @@ def test_a_lawyers_open_count_opens_exactly_that_list(page, base_url):
     open_work(page, base_url)
 
     row = team_row(page, MARTIN.display_name)
-    expected = int(row.locator(".uxstat__num").first.inner_text().strip())
+    # Every number carries a visually-hidden label naming its column, because
+    # the grid is a grid rather than a `<table>` and nothing associates a header
+    # with a cell (docs/adr/0042). The digits are what comes after it.
+    expected = int(row.locator(".uxstat__num").first.inner_text().split(":")[-1].strip())
 
     row.click()
     page.wait_for_load_state("networkidle")
