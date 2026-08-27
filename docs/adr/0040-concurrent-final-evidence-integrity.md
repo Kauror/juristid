@@ -129,11 +129,40 @@ strengthened to `FOR UPDATE`, and
 `test_the_matter_lock_does_not_block_writers_that_only_reference_the_matter`
 fails if the Matter helper is.
 
-`mark_submission_sent` still takes the older, stronger `FOR UPDATE` on the
-Submission; that predates this work and is left alone here, but it means the
-cycle above is still reachable from *that* service and from
-`documents.services.add_evidence_version`. Both are pre-existing and belong to a
-separate change rather than to DATA-002.
+`mark_submission_sent` took the older, stronger `FOR UPDATE` on the Submission
+when this decision was first written, and was left alone as pre-existing. That
+turned out to be the wrong place to stop, and it was closed on 2026-08-27: the
+send now takes `lock_submission_for_evidence_integrity` like the two binders, so
+one helper defines the strength for every path that establishes this rule.
+
+What forced it was a measurement rather than a preference. The cycle above was
+reachable from the send, and the send lost it — a person pressing *Saada* while
+a rebuild ran got `DeadlockDetected` rather than an answer.
+`test_sending_does_not_deadlock_against_a_search_rebuild` reproduces it and fails
+if the strength is put back. It had been tolerable only because a rebuild was
+something an operator chose to run; SEARCH-001 makes it automatic, which turns a
+rare collision into an ordinary one.
+
+The weaker mode was audited before it was taken, because `FOR UPDATE` on a parent
+also blocks inserting rows that *reference* it, and dropping to `FOR NO KEY
+UPDATE` stops blocking them. Four models carry a foreign key to `Submission`:
+`SearchDocument` — the projection this exists to let through — plus
+`SubmissionRecipient`, `SubmissionJointSubmitter` and
+`legacy_import.OpinionSubmissionImport`. None of the other three is written
+concurrently with a send by any supported path: `set_recipients` has exactly one
+caller, `create_submission`, which runs it on a submission it created moments
+earlier in the same transaction and which no one else can yet hold;
+`confirm_joint_submitter` locks the join row itself rather than the parent; and
+the importer writes both inside one operator-gated `apply_plan` transaction. So
+the send never depended on blocking those inserts, and two senders still take
+turns — `FOR NO KEY UPDATE` conflicts with itself and with the plain `UPDATE` a
+save performs, which is the whole of what the lock was for
+(`test_two_sends_still_take_turns`).
+
+`documents.services.add_evidence_version` keeps its `FOR UPDATE` on the Document
+and is not part of this change. It was tested against the same rebuild and does
+not deadlock: it locks a Document but never asks for the rebuild gate, so there
+is no cycle to close.
 
 ### 4. A waiter re-reads everything
 
