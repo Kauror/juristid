@@ -613,6 +613,32 @@ jobs:
       - name: Synthetic data was seeded
         run: docker compose exec -T web python manage.py shell -c "from app.matters.models import Matter; assert Matter.objects.exists(), 'seed produced no Matters'"
 
+      # The deployment identity, resolved by Compose itself rather than by a test
+      # that re-implements `${VAR:-default}`. `config` reads the file and
+      # interpolates; it builds nothing, starts nothing and reaches no host.
+      #
+      # The invariant the runbook rests on: one pair of exported variables, and
+      # every application service resolving the same target image from them.
+      # Unset, they fall back to `:local` together — the tag a hand-built image
+      # overwrites, and the one a migration must never resolve.
+      - name: The production stack resolves one target image from one identity
+        run: |
+          set -euo pipefail
+          SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+          JURISTID_ENV_FILE="$(mktemp)"
+          export JURISTID_ENV_FILE
+          echo "POSTGRES_PASSWORD=x" > "$JURISTID_ENV_FILE"
+          resolve() { docker compose -p juristid-main -f deploy/unraid-main/compose.yml config --format json; }
+
+          export JURISTID_GIT_SHA="$SHA"
+          export JURISTID_IMAGE_TAG="${SHA:0:12}"
+          resolve > tagged.json
+          python3 scripts/ci/assert_deployment_identity.py tagged.json "$SHA"
+
+          unset JURISTID_GIT_SHA JURISTID_IMAGE_TAG
+          resolve > untagged.json
+          python3 scripts/ci/assert_deployment_identity.py untagged.json --fallback
+
       - name: Container logs on failure
         if: failure()
         run: docker compose logs

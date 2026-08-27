@@ -267,7 +267,17 @@ difference is invisible until something unreviewed is serving members' material.
 So the target is a full 40-character SHA, and the preflight refuses an
 abbreviation — two commits can share a prefix and the resolution is silent.
 
-### 1. Preflight
+### 1. Write down what is running now
+
+```bash
+curl -s https://juristid.orgusaar.ee/healthz
+```
+
+The `revision` this returns is the rollback target, and it is the one fact that
+becomes unavailable the moment the deployment goes wrong. Read it before, not
+after.
+
+### 2. Preflight
 
 Read-only. It changes nothing, moves nothing, and prints the commands to run.
 
@@ -286,7 +296,7 @@ server, and finding out what matters more than this release. Do not
 changes are, deleting them destroys the only record that they existed. Nothing
 in a deployment is urgent enough to be worth that.
 
-### 2. Move the checkout to the reviewed commit
+### 3. Move the checkout to the reviewed commit
 
 ```bash
 git -C /mnt/user/appdata/juristid-main/repo checkout --detach <full-40-char-sha>
@@ -295,40 +305,12 @@ git -C /mnt/user/appdata/juristid-main/repo checkout --detach <full-40-char-sha>
 Detached on purpose. The deployment is at a commit, not on a branch that can
 move underneath it.
 
-### 3. Read the migration plan before applying it
+### 4. Name the release
 
-```bash
-docker compose -p juristid-main -f compose.yml exec -T web python manage.py migration_plan
-```
-
-Run against the release still serving, so it says what the *new* code would ask
-the database to do — pending migrations, and which of them remove or rewrite
-something rather than only adding.
-
-If everything is additive, the old web process keeps working against the new
-schema while it is replaced, which is what makes the sequence below safe.
-
-If anything is not additive, this is not a rolling deployment. Decide first
-whether the release now serving survives the new schema; if it does not, tell
-the department, take the application down, migrate, and bring it back. Six users
-and an announced ten minutes is better than a silent compatibility gamble.
-
-### 4. Back up
-
-Always, and immediately before the migration rather than that morning:
-
-```bash
-scripts/deploy/juristid-backup.sh --project juristid-main --compose-file deploy/unraid-main/compose.yml --data-root /mnt/user/appdata/juristid-main --backup-root /mnt/user/backups/juristid-main
-```
-
-This is the copy a failed migration is rolled back to. Everything written
-between it and the failure is lost in that rollback, which is why it is taken
-now and not earlier.
-
-### 5. Build, migrate, replace
-
-The SHA is passed into the build so the image can say what code it is, and used
-as the image tag so the previous build stays on the host under its own name.
+Two variables, exported once, before anything is built. Everything after this
+point — the build, the migration plan, the migration, the replacement — reads
+them, and that is the point: one shell, one identity, no step that can quietly
+resolve a different image.
 
 ```bash
 export JURISTID_GIT_SHA=<full-40-char-sha>
@@ -338,9 +320,119 @@ export JURISTID_GIT_SHA=<full-40-char-sha>
 export JURISTID_IMAGE_TAG=${JURISTID_GIT_SHA:0:12}
 ```
 
+The SHA is passed into the build so the image can say what code it is. The tag
+names the image, so the previous build stays on the host under its own name and
+a rollback is a tag rather than a rebuild.
+
+`juristid-main-web:local` is the fallback tag Compose uses when
+`JURISTID_IMAGE_TAG` is unset, and it is deliberately the one tag that gets
+overwritten. A `migrate` that runs against `:local` is a schema change made by
+whatever was last hand-built on this host, which is not the thing that was
+reviewed. Exporting both variables first is what stops that.
+
+### 5. Build the target image
+
 ```bash
 docker compose -p juristid-main -f compose.yml build
 ```
+
+Build before reading the migration plan, deliberately. A build writes no
+business data, mutates no database and does not replace the running
+application — it only produces the candidate image. Everything that changes
+something still happens after the backup in step 8.
+
+### 6. Read the migration plan — from the target image
+
+```bash
+docker compose -p juristid-main -f compose.yml run --rm web python manage.py migration_plan
+```
+
+`run --rm`, not `exec`. The distinction is the whole point of the step.
+
+Application source is `COPY`ed into the image and this stack bind-mounts no
+source into `/app` — only evidence, derivatives, the OneNote source and the
+read-only corpus. So the container that `exec` would enter is still the
+**previously deployed** image, and moving the checkout in step 3 changed nothing
+inside it. Asked there, `migration_plan` reads the old release's migration graph
+and can answer "No pending migrations." for a release that carries several,
+which is the reassuring answer given at exactly the wrong moment.
+
+`run --rm web` starts a one-off container from the image built in step 5 — the
+target code — against the running database. That is the pair the question is
+about: **new code, current schema.** It reports and never migrates.
+
+If everything is additive, the old web process keeps working against the new
+schema while it is replaced, which is what makes the sequence below safe.
+
+If anything is not additive, this is not a rolling deployment. Decide first
+whether the release now serving survives the new schema; if it does not, tell
+the department, take the application down, migrate, and bring it back. Six users
+and an announced ten minutes is better than a silent compatibility gamble.
+
+### 7. Release-specific pre-migration audits
+
+Most releases have none, and this step is then nothing. Some do, and the reason
+they belong *here* rather than after the migration is that a target-image
+one-off container can answer a question about the **current** database before
+the schema moves — which is when a finding is still cheap to act on.
+
+The same `run --rm web` shape as step 6, for the same reason: the audit has to
+be the new release's audit, because an audit the old image does not have cannot
+be run by entering the old image.
+
+**A release that installs a new integrity constraint.** Where the target release
+adds a database-level guarantee over relationships that already exist, run that
+release's read-only integrity check against the still-unmigrated database
+first — for example:
+
+```bash
+docker compose -p juristid-main -f compose.yml run --rm web python manage.py check_evidence_integrity --skip-storage-scan
+```
+
+`--skip-storage-scan` keeps it to the relational question — "does any row point
+at something it should not" — instead of walking the evidence store, which is a
+maintenance window rather than a deployment step. The command reads; it does not
+migrate and it writes nothing.
+
+**If it reports relationship findings, stop.** No migration, no repair, no
+"fix it and carry on". Rows that a new constraint would reject are a question
+about which of the two records is right, and that is a human decision taken with
+the register in front of you — not something a deployment decides at half past
+eight. Nothing here repairs anything automatically, and nothing here should
+grow that ability.
+
+Whether a given release needs this step is a property of that release, and the
+release note says so. Do not make it unconditional: a check for a constraint the
+target release does not contain is a command that either does not exist in the
+image or answers a question nobody asked.
+
+**Today that release exists.** Main carries `submissions/0005` and `0006`, the
+two migrations that install exactly this kind of guarantee over relationships
+already in the database. A production instance that has not yet crossed them
+owes the audit above before it does — once, on the release that installs them.
+It is named here rather than left to a release note because the condition is a
+fact about the database in front of you: `migration_plan` from step 6 lists
+them as pending, and that listing is what makes this step apply.
+
+### 8. Back up
+
+Always, and immediately before the migration rather than that morning:
+
+```bash
+scripts/deploy/juristid-backup.sh --project juristid-main --compose-file deploy/unraid-main/compose.yml --data-root /mnt/user/appdata/juristid-main --backup-root /mnt/user/backups/juristid-main
+```
+
+This is the copy a failed migration is rolled back to. Everything written
+between it and the failure is lost in that rollback, which is why it is taken
+now — after the build and the plan, immediately before the first command that
+changes the database — and not earlier. The build moving ahead of it does not
+move it: a build is not a schema change, and the backup's job is to be the last
+thing before one.
+
+### 9. Migrate, then replace
+
+Still the same shell, so still the same two variables, so still the same image
+that step 6 read the plan from.
 
 ```bash
 docker compose -p juristid-main -f compose.yml run --rm web python manage.py migrate
@@ -354,11 +446,17 @@ Migrations are a deliberate step, never container start-up work: on boot they
 would run on every restart, including the restart that happens at three in the
 morning because the host rebooted.
 
-### 6. Post-flight
+### 10. Post-flight
 
 ```bash
 docker compose -p juristid-main -f compose.yml exec -T web python manage.py deployment_readiness
 ```
+
+`exec`, and here that is the correct word. Steps 6, 7 and 9 asked questions
+about code that was not running yet, so they had to start a container from the
+target image. This one asks about the process that is now serving, so it enters
+it. The rule is not "`run` is safe and `exec` is not" — it is that the command
+must be aimed at whichever image the question is about.
 
 Fails closed on an unapplied migration, a migration the database has that this
 build does not, a missing or wrongly-mounted storage root, a PostgreSQL major
@@ -371,9 +469,16 @@ Then confirm the running revision is the one that was deployed:
 curl -s https://juristid.orgusaar.ee/healthz
 ```
 
-`revision` should be the SHA that was built. The footer's build time moves with
-the image on its own, so a revision that changed beside a build time that did
-not is a build that did not actually replace anything.
+`revision` should be the SHA that was built — the exact one, compared in full,
+not the twelve characters the image tag happens to share with it. The footer's
+build time moves with the image on its own, so a revision that changed beside a
+build time that did not is a build that did not actually replace anything.
+
+Anything beyond this is release-specific and the release note names it. A
+release that changes how something is indexed, projected or derived may need a
+rebuild afterwards; a release that changes none of those needs nothing here.
+Run what that release asks for, against the running new image — so `exec`, like
+the readiness check above.
 
 ### Rolling back
 

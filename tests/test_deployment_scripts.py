@@ -30,6 +30,7 @@ BACKUP = SCRIPTS / "juristid-backup.sh"
 VERIFY = SCRIPTS / "juristid-verify-backup.sh"
 RESTORE = SCRIPTS / "juristid-restore.sh"
 PREFLIGHT = SCRIPTS / "juristid-deploy-preflight.sh"
+LIB = SCRIPTS / "lib.sh"
 
 #: Not skipped when absent. Bash is present on the Linux runner and in the Git
 #: for Windows toolchain the development machine uses, so a missing one is a
@@ -199,6 +200,139 @@ def test_the_preflight_accepts_a_full_commit_id_shaped_target(tmp_path: Path) ->
     assert "full 40-character commit id" not in result.stderr
     assert "the target is a full commit id" in result.stdout
     assert "is not a Git checkout" in result.stderr
+
+
+# -- the sequence the preflight prints -------------------------------------
+#
+# What an operator copies, rendered by the shell that renders it in production
+# rather than approximated in Python. The sequence lives in `deployment_plan` in
+# `lib.sh` precisely so it can be called here: reaching it through the preflight
+# itself would mean getting past a `git fetch`, a Docker daemon and a real host,
+# and a check that cannot run is a check that does not.
+
+
+def render_plan(target: str) -> list[str]:
+    """The printed deployment sequence, one command per line."""
+    script = (
+        f'. "{LIB}"\n'
+        f'deployment_plan juristid-main deploy/unraid-main/compose.yml /srv/repo "{target}"\n'
+    )
+    result = subprocess.run(  # noqa: S603 - a fixed interpreter and a generated literal
+        [BASH, "-c", script], cwd=ROOT, capture_output=True, text=True, timeout=60
+    )
+    assert result.returncode == 0, result.stderr
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+TARGET = "a" * 40
+
+
+def test_the_printed_sequence_establishes_the_identity_before_it_is_needed() -> None:
+    """Exported, in full, before the first command that resolves an image.
+
+    The generated sequence used to prefix `build` and `up -d` with the two
+    variables and leave them off `migrate`. Each line was separately correct;
+    the schema change was the one that could resolve
+    `juristid-main-web:local` — Compose's fallback, and the tag a hand-built
+    image overwrites.
+    """
+    lines = render_plan(TARGET)
+
+    assert f"export JURISTID_GIT_SHA={TARGET}" in lines
+    assert f"export JURISTID_IMAGE_TAG={TARGET[:12]}" in lines
+
+    identity = max(
+        index
+        for index, line in enumerate(lines)
+        if line.startswith(("export JURISTID_GIT_SHA=", "export JURISTID_IMAGE_TAG="))
+    )
+    for needle in ("build", "migration_plan", "manage.py migrate", "up -d"):
+        matching = [index for index, line in enumerate(lines) if line.endswith(needle)]
+        assert matching, f"the printed sequence has no {needle} step"
+        assert min(matching) > identity, (
+            f"{needle} is printed before the identity it needs, so it can resolve a different "
+            "image from the rest of the release"
+        )
+
+
+def test_the_printed_sequence_reads_the_plan_from_the_target_image() -> None:
+    """`run --rm web`, never `exec -T web`.
+
+    `exec` enters the container that is still running the previous release.
+    Application source is baked into the image and nothing bind-mounts the
+    checkout over it, so the new migrations are not in there — and the answer it
+    gives is "No pending migrations.", for a release that carries several.
+    """
+    for line in render_plan(TARGET):
+        if "manage.py migration_plan" not in line:
+            continue
+        assert "run --rm web" in line, line
+        assert "exec" not in line, line
+        break
+    else:  # pragma: no cover - the assertion below reports it
+        pytest.fail("the printed sequence no longer reads a migration plan")
+
+
+def test_the_printed_migrate_and_replacement_share_the_release_identity() -> None:
+    """No line re-establishes the identity for itself.
+
+    An inline `VAR=value command` prefix is separately correct and separately
+    forgettable, which is exactly how `migrate` came to differ from the build
+    around it. One export, one shell, one image.
+    """
+    for line in render_plan(TARGET):
+        if line.startswith("export ") or line.startswith("#"):
+            continue
+        for variable in ("JURISTID_GIT_SHA=", "JURISTID_IMAGE_TAG="):
+            assert variable not in line, f"the identity is set per command again\n  {line}"
+
+
+def test_the_printed_sequence_keeps_the_backup_against_the_migration() -> None:
+    """Build and plan moved ahead of it; the backup did not move with them.
+
+    A build writes nothing and changes no database, so it is safe before the
+    backup. The backup's value is that nothing is written between it and the
+    first command that changes the schema, so nothing may come between them.
+    """
+    lines = [line for line in render_plan(TARGET) if not line.startswith("#")]
+
+    def first(needle: str) -> int:
+        found = [index for index, line in enumerate(lines) if needle in line]
+        assert found, f"the printed sequence no longer has {needle}"
+        return found[0]
+
+    assert first("compose.yml build") < first("migration_plan")
+    assert first("migration_plan") < first("juristid-backup.sh")
+    assert first("juristid-backup.sh") + 1 == first("manage.py migrate"), (
+        "something is printed between the backup and the migration"
+    )
+    assert first("manage.py migrate") < first("up -d")
+
+
+def test_the_printed_post_flight_check_enters_the_running_container() -> None:
+    """Because by then the running container *is* the new image.
+
+    Here so that correcting the plan by replacing every `exec` with `run` fails
+    rather than passes: readiness has to be asked of the process actually
+    serving, not of a one-off container that need not be the same image.
+    """
+    readiness = [line for line in render_plan(TARGET) if "deployment_readiness" in line]
+    assert readiness, "the printed sequence no longer ends with a readiness check"
+    for line in readiness:
+        assert "exec -T web" in line, line
+
+
+def test_the_printed_sequence_reaches_no_other_stack() -> None:
+    """Every Compose line in it still names the project and the file.
+
+    `juristid-test` is on the same host with the usability-test history in it,
+    and implicit discovery finds whichever stack the working directory suggests.
+    """
+    for line in render_plan(TARGET):
+        if not line.startswith("docker compose"):
+            continue
+        assert "-p juristid-main" in line, line
+        assert "-f deploy/unraid-main/compose.yml" in line, line
 
 
 # -- ordinary usability ----------------------------------------------------

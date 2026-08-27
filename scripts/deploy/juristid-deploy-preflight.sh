@@ -234,21 +234,21 @@ if [ "$problems" -gt 0 ]; then
   die "$problems problem(s). Nothing has been changed."
 fi
 
-cat <<NEXT
+cat <<'NEXT'
 Ready. Nothing has been changed yet. The deployment, in order:
 
-  git -C $REPO checkout --detach $TARGET
-  docker compose -p $JURISTID_PROJECT -f $JURISTID_COMPOSE_FILE \\
-    exec -T web python manage.py migration_plan
-  scripts/deploy/juristid-backup.sh --compose-file $JURISTID_COMPOSE_FILE ...
-  JURISTID_GIT_SHA=$TARGET JURISTID_IMAGE_TAG=${TARGET:0:12} \\
-    docker compose -p $JURISTID_PROJECT -f $JURISTID_COMPOSE_FILE build
-  docker compose -p $JURISTID_PROJECT -f $JURISTID_COMPOSE_FILE \\
-    run --rm web python manage.py migrate
-  JURISTID_GIT_SHA=$TARGET JURISTID_IMAGE_TAG=${TARGET:0:12} \\
-    docker compose -p $JURISTID_PROJECT -f $JURISTID_COMPOSE_FILE up -d
-  docker compose -p $JURISTID_PROJECT -f $JURISTID_COMPOSE_FILE \\
-    exec -T web python manage.py deployment_readiness
+NEXT
+
+deployment_plan "$JURISTID_PROJECT" "$JURISTID_COMPOSE_FILE" "$REPO" "$TARGET"
+
+cat <<'NEXT'
+
+The two `export`s come before the build on purpose, and stay set for everything
+after it: the build, the migration plan, the migration and the replacement all
+resolve one image that way. `migration_plan` and `migrate` use `run --rm web` —
+a one-off container from the image just built — because `exec` would enter the
+container still running the *previous* release, whose migration graph does not
+contain this one's migrations at all.
 
 deploy/unraid-main/README.md has the reasoning for each step.
 NEXT
