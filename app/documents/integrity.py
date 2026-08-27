@@ -23,6 +23,8 @@ for them.
 * Is there an object whose bytes disagree with the recorded checksum?
 * Is there a stored object nothing refers to?
 * Does a document's current version belong to a different document?
+* Does a submission's final evidence still satisfy the rule it was accepted
+  under — the right Matter, and no less restricted than the submission?
 * Is a version numbering sequence missing an entry?
 * Is anything stuck mid-extraction?
 
@@ -50,6 +52,7 @@ from django.conf import settings
 from django.db.models import Count, Max
 from django.utils import timezone
 
+from app.core.enums import Visibility, most_restrictive
 from app.documents.enums import ExtractionState
 from app.documents.models import Document, DocumentVersion
 from app.documents.references import referenced_storage_keys
@@ -70,6 +73,8 @@ UNREADABLE_OBJECT = "unreadable-object"
 ORPHAN_OBJECT = "orphan-object"
 UNREADABLE_PREFIX = "unreadable-prefix"
 FOREIGN_CURRENT_VERSION = "foreign-current-version"
+FOREIGN_FINAL_EVIDENCE = "foreign-final-evidence"
+EVIDENCE_LESS_RESTRICTED = "evidence-less-restricted"
 VERSION_NUMBER_GAP = "version-number-gap"
 STUCK_PROCESSING = "stuck-processing"
 
@@ -77,7 +82,15 @@ STUCK_PROCESSING = "stuck-processing"
 #: operator should look at. The distinction drives nothing in this module; it is
 #: here so the command and any future caller agree on it.
 INTEGRITY_FAILURES: frozenset[str] = frozenset(
-    {MISSING_OBJECT, SIZE_MISMATCH, SHA_MISMATCH, UNREADABLE_OBJECT, FOREIGN_CURRENT_VERSION}
+    {
+        MISSING_OBJECT,
+        SIZE_MISMATCH,
+        SHA_MISMATCH,
+        UNREADABLE_OBJECT,
+        FOREIGN_CURRENT_VERSION,
+        FOREIGN_FINAL_EVIDENCE,
+        EVIDENCE_LESS_RESTRICTED,
+    }
 )
 
 
@@ -157,6 +170,7 @@ def check_evidence(*, verify_sha: bool = False, scan_storage: bool = True) -> In
 
     _check_versions(storage, report, verify_sha=verify_sha)
     _check_current_versions(report)
+    _check_final_evidence(report)
     _check_version_numbering(report)
     _check_stuck_extractions(report)
     if scan_storage:
@@ -258,6 +272,81 @@ def _check_current_versions(report: IntegrityReport) -> None:
                     FOREIGN_CURRENT_VERSION,
                     str(document_id),
                     f"current version {version_id} belongs to document {owner_id}",
+                )
+            )
+
+
+def _check_final_evidence(report: IntegrityReport) -> None:
+    """Both halves of the rule a final evidence version was accepted under.
+
+    `check_evidence_is_usable` says a submission's final version must belong to
+    the submission's own Matter, and must not be less restricted than the
+    submission. Both are refused by the service and backed by triggers, so
+    nothing this system does can produce a row that fails them — but the
+    triggers are `BEFORE UPDATE` and cannot reach backwards, and the third of
+    them arrived after the first two. A row written before it, or written with
+    triggers disabled, is exactly the corruption an operator has to be able to
+    find, and it is invisible: the submission still renders, and its evidence
+    still downloads. To the wrong people, which is the point.
+
+    Two columns of a bounded set of rows, in one query. Effective visibility is
+    derived rather than stored (docs/adr/0005), so it is computed here the same
+    way the application computes it.
+    """
+    # Imported here rather than at module scope: `submissions` depends on
+    # `documents`, and the reach back the other way belongs to this one
+    # operator question rather than to the module.
+    from app.submissions.models import Submission
+
+    rows = (
+        Submission.objects.exclude(final_version=None)
+        .order_by("pk")
+        .values_list(
+            "pk",
+            "matter_id",
+            "visibility_override",
+            "matter__visibility",
+            "final_version_id",
+            "final_version__document__matter_id",
+            "final_version__document__visibility_override",
+        )
+    )
+    for (
+        submission_id,
+        matter_id,
+        submission_override,
+        matter_visibility,
+        version_id,
+        evidence_matter_id,
+        evidence_override,
+    ) in rows.iterator(chunk_size=500):
+        if evidence_matter_id != matter_id:
+            report.findings.append(
+                Finding(
+                    FOREIGN_FINAL_EVIDENCE,
+                    str(submission_id),
+                    f"final version {version_id} is filed under teema {evidence_matter_id}",
+                )
+            )
+            # The visibility comparison below reads the evidence's own Matter,
+            # which for a foreign version is not the one being compared against.
+            # Reporting the second finding from that would be noise on top of a
+            # fault that already has to be resolved by hand.
+            continue
+
+        submission_effective = most_restrictive(
+            matter_visibility, submission_override or Visibility.NORMAL
+        )
+        evidence_effective = most_restrictive(
+            matter_visibility, evidence_override or Visibility.NORMAL
+        )
+        if most_restrictive(evidence_effective, submission_effective) != evidence_effective:
+            report.findings.append(
+                Finding(
+                    EVIDENCE_LESS_RESTRICTED,
+                    str(submission_id),
+                    f"final version {version_id} reads as {evidence_effective} "
+                    f"while the submission is {submission_effective}",
                 )
             )
 

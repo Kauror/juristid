@@ -99,7 +99,12 @@ database. `manage.py check_evidence_integrity` is how an operator asks: it
 compares every `DocumentVersion` against the object it claims, reports objects
 nothing references, and checks the invariants the schema does not hold —
 notably that a `Document.current_version` belongs to that same document, which
-only `add_evidence_version` guarantees. `--verify-sha` reads every stored byte
+only `add_evidence_version` guarantees, and that a `Submission.final_version`
+still satisfies the rule it was accepted under (ADR 0011, amended 2026-08-27).
+The second is enforced on every input a running system can change, so a row
+failing it predates the enforcement or was written around it; the check is there
+because such a row is otherwise invisible — the submission renders and its
+evidence downloads, to the wrong people. `--verify-sha` reads every stored byte
 and is never implied, because on a multi-gigabyte store it is a maintenance
 window rather than a health check. It is read-only in every mode: a missing
 object is a restore decision and a mismatched checksum is a question about which

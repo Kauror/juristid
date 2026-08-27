@@ -22,6 +22,8 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.services import add_evidence_version, create_document
+from app.matters.models import Matter
+from app.matters.services import set_matter_visibility
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
 from app.submissions.services import (
@@ -316,3 +318,239 @@ def test_a_restricted_submissions_evidence_does_not_leak(
     # The owner reaches all three.
     client.force_login(specialist)
     assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# The Matter is the third input to the rule (DATA-001)
+# ---------------------------------------------------------------------------
+#
+# Both sides of "final evidence may not be less restricted than its submission"
+# are derived from the Matter's visibility. Relaxing the Matter therefore drops
+# the evidence to whatever its own override says while a submission carrying its
+# own RESTRICTED override stays where it is — reaching the exact state the other
+# two triggers exist to prevent, without either record being written.
+
+
+def _stranded_pair(matter, actor):
+    """A valid restricted submission over evidence that only the Matter protects.
+
+    Built through services only, and accepted by every check on the way: while
+    the Matter is RESTRICTED the document is effectively RESTRICTED too.
+    """
+    _document, version = _evidence(matter, actor, title="Arvamuse tekst")
+    submission = create_submission(
+        matter=matter,
+        title="Tundlik arvamus",
+        actor=actor,
+        visibility_override=Visibility.RESTRICTED,
+    )
+    select_final_evidence(submission=submission, version=version, actor=actor)
+    submission.refresh_from_db()
+    mark_submission_sent(submission=submission, actor=actor)
+    submission.refresh_from_db()
+    return submission, version
+
+
+def test_relaxing_a_matter_over_weaker_final_evidence_is_refused(restricted_matter, specialist):
+    """The regression.
+
+    Before this round the call was accepted, and the submission's exact text
+    became listable and downloadable by anyone who could see the Matter.
+    """
+    _submission, _version = _stranded_pair(restricted_matter, specialist)
+
+    with pytest.raises(DomainError):
+        set_matter_visibility(
+            matter=restricted_matter, visibility=Visibility.NORMAL, actor=specialist
+        )
+
+
+def test_a_refused_relaxation_leaves_the_matter_and_its_evidence_alone(
+    client, restricted_matter, specialist, other_specialist
+):
+    _submission, version = _stranded_pair(restricted_matter, specialist)
+
+    with pytest.raises(DomainError):
+        set_matter_visibility(
+            matter=restricted_matter, visibility=Visibility.NORMAL, actor=specialist
+        )
+
+    restricted_matter.refresh_from_db()
+    assert restricted_matter.visibility == Visibility.RESTRICTED
+
+    client.force_login(other_specialist)
+    assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 404
+
+
+def test_the_database_refuses_relaxing_the_matter_directly(restricted_matter, specialist):
+    """The service is where the sentence comes from; this is the backstop."""
+    _submission, _version = _stranded_pair(restricted_matter, specialist)
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        Matter.objects.filter(pk=restricted_matter.pk).update(visibility=Visibility.NORMAL)
+
+    restricted_matter.refresh_from_db()
+    assert restricted_matter.visibility == Visibility.RESTRICTED
+
+
+def test_relaxing_a_matter_whose_evidence_is_restricted_in_its_own_right_is_fine(
+    restricted_matter, specialist
+):
+    """The ordinary way out: restrict the document, then relax the Matter."""
+    document, version = _evidence(
+        restricted_matter, specialist, override=Visibility.RESTRICTED, title="Arvamuse tekst"
+    )
+    submission = create_submission(
+        matter=restricted_matter,
+        title="Tundlik arvamus",
+        actor=specialist,
+        visibility_override=Visibility.RESTRICTED,
+    )
+    select_final_evidence(submission=submission, version=version, actor=specialist)
+    submission.refresh_from_db()
+    mark_submission_sent(submission=submission, actor=specialist)
+
+    set_matter_visibility(matter=restricted_matter, visibility=Visibility.NORMAL, actor=specialist)
+
+    restricted_matter.refresh_from_db()
+    assert restricted_matter.visibility == Visibility.NORMAL
+    document.refresh_from_db()
+    assert document.visibility_override == Visibility.RESTRICTED
+
+
+def test_an_unrestricted_submission_does_not_block_relaxing_its_matter(
+    restricted_matter, specialist
+):
+    """Nothing is stranded when the submission has no restriction of its own."""
+    _document, version = _evidence(restricted_matter, specialist, title="Arvamuse tekst")
+    submission = create_submission(matter=restricted_matter, title="Arvamus", actor=specialist)
+    select_final_evidence(submission=submission, version=version, actor=specialist)
+    submission.refresh_from_db()
+    mark_submission_sent(submission=submission, actor=specialist)
+
+    set_matter_visibility(matter=restricted_matter, visibility=Visibility.NORMAL, actor=specialist)
+    restricted_matter.refresh_from_db()
+    assert restricted_matter.visibility == Visibility.NORMAL
+
+
+def test_tightening_a_matter_is_never_blocked(normal_matter, specialist):
+    """Tightening raises both sides together, and repairs the state if it was broken."""
+    _document, version = _evidence(normal_matter, specialist, title="Arvamuse tekst")
+    submission = create_submission(matter=normal_matter, title="Arvamus", actor=specialist)
+    select_final_evidence(submission=submission, version=version, actor=specialist)
+    submission.refresh_from_db()
+    mark_submission_sent(submission=submission, actor=specialist)
+
+    set_matter_visibility(matter=normal_matter, visibility=Visibility.RESTRICTED, actor=specialist)
+    normal_matter.refresh_from_db()
+    assert normal_matter.visibility == Visibility.RESTRICTED
+
+
+def test_the_edit_form_refuses_the_change_without_saving_the_rest_of_it(
+    client, restricted_matter, specialist
+):
+    """A refused visibility leaves nothing else from the same edit behind."""
+    _submission, _version = _stranded_pair(restricted_matter, specialist)
+    original_title = restricted_matter.title
+
+    client.force_login(specialist)
+    response = client.post(
+        reverse("matters:matter_edit", kwargs={"pk": restricted_matter.pk}),
+        {
+            "title": "Uus pealkiri",
+            "stage": str(restricted_matter.stage_id or ""),
+            "visibility": Visibility.NORMAL,
+        },
+    )
+
+    # 400 from the refusal itself, not from form validation: the sentence the
+    # service raised is on the page.
+    assert response.status_code == 400
+    assert "vähem piiratuks" in response.content.decode()
+    restricted_matter.refresh_from_db()
+    assert restricted_matter.visibility == Visibility.RESTRICTED
+    assert restricted_matter.title == original_title
+
+
+def _relax_past_the_backstop(matter):
+    """Reach the state the way it could only have been reached before this round."""
+    with connection.cursor() as cursor:
+        # `ALTER TABLE` refuses while this transaction still has deferred
+        # foreign-key events queued from the rows built above.
+        cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
+        cursor.execute(
+            "ALTER TABLE matters_matter DISABLE TRIGGER "
+            "matters_relied_upon_evidence_stays_restricted"
+        )
+        cursor.execute(
+            "UPDATE matters_matter SET visibility = 'NORMAL' WHERE id = %s", [str(matter.pk)]
+        )
+        cursor.execute(
+            "ALTER TABLE matters_matter ENABLE TRIGGER "
+            "matters_relied_upon_evidence_stays_restricted"
+        )
+
+
+def test_the_integrity_checker_names_a_submission_above_its_evidence(
+    restricted_matter, specialist, capture_evidence
+):
+    """Detection for rows written before the trigger existed."""
+    from app.documents.integrity import EVIDENCE_LESS_RESTRICTED, check_evidence
+
+    submission, _version = _stranded_pair(restricted_matter, specialist)
+    _relax_past_the_backstop(restricted_matter)
+
+    report = check_evidence(scan_storage=False)
+    found = {finding.kind: finding for finding in report.findings}
+    assert EVIDENCE_LESS_RESTRICTED in found
+    assert found[EVIDENCE_LESS_RESTRICTED].subject == str(submission.pk)
+    assert "Tundlik arvamus" not in found[EVIDENCE_LESS_RESTRICTED].detail
+
+
+def test_the_integrity_checker_names_final_evidence_filed_under_another_matter(
+    normal_matter, specialist, capture_evidence
+):
+    """The other half of the same rule.
+
+    No service can produce this state and no trigger is reachable from one, but
+    a direct write to `documents_document.matter_id` can, and until now nothing
+    would have said so.
+    """
+    from app.documents.integrity import FOREIGN_FINAL_EVIDENCE, check_evidence
+
+    other = factories.MatterFactory(owner=specialist)
+    document, version = _evidence(normal_matter, specialist)
+    submission = create_submission(matter=normal_matter, title="Arvamus", actor=specialist)
+    select_final_evidence(submission=submission, version=version, actor=specialist)
+
+    Document.objects.filter(pk=document.pk).update(matter=other)
+
+    report = check_evidence(scan_storage=False)
+    assert FOREIGN_FINAL_EVIDENCE in {finding.kind for finding in report.findings}
+
+
+def test_a_healthy_final_evidence_relationship_reports_nothing(
+    normal_matter, specialist, capture_evidence
+):
+    from app.documents.integrity import check_evidence
+
+    _document, version = _evidence(normal_matter, specialist)
+    submission = create_submission(matter=normal_matter, title="Arvamus", actor=specialist)
+    select_final_evidence(submission=submission, version=version, actor=specialist)
+    submission.refresh_from_db()
+    mark_submission_sent(submission=submission, actor=specialist)
+
+    assert check_evidence(scan_storage=False).ok
+
+
+def test_the_command_exits_non_zero_for_a_submission_above_its_evidence(
+    restricted_matter, specialist, capture_evidence
+):
+    from django.core.management import call_command
+
+    _stranded_pair(restricted_matter, specialist)
+    _relax_past_the_backstop(restricted_matter)
+
+    with pytest.raises(SystemExit) as exit_info:
+        call_command("check_evidence_integrity", "--skip-storage-scan")
+    assert exit_info.value.code == 1
