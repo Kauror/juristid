@@ -262,8 +262,14 @@ script again.
 ### Then verify, before anything is published
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d web extractor
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d web extractor searchindex
 ```
+
+Named rather than unqualified, unlike a redeploy: the tunnel is not behind a
+profile on this stack, and nothing is published until the checks below have
+passed. `searchindex` belongs in the list — a restored database keeps whatever
+rebuild obligations it was carrying when the dump was taken, and the worker is
+what discharges them (ADR 0041).
 
 ```bash
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py deployment_readiness

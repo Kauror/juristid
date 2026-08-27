@@ -242,7 +242,7 @@ def storage_roots() -> tuple[StorageRoot, ...]:
 
 
 # --------------------------------------------------------------------------
-# Canonical and rebuildable data
+# Canonical, rebuildable and operational data
 # --------------------------------------------------------------------------
 
 #: Tables a restore does not have to bring back, because they are a projection
@@ -265,20 +265,52 @@ REBUILDABLE_MODELS = frozenset(
 )
 
 
+#: Tables that hold neither business state nor a projection of it, but the
+#: system's own record of work it still owes itself. A restore brings them back
+#: like everything else — they are ordinary rows in the same dump — and their
+#: *contents* are nobody's canonical state, so a fingerprint that compared them
+#: would report drift because a queue happened to be non-empty at one of the two
+#: moments.
+#:
+#: `SearchRebuildDebt` is the whole membership and the reason this category
+#: exists. A pending row there means "a vocabulary edit landed and the rebuild
+#: has not run yet", which is a perfectly healthy state a few seconds long, and
+#: `recovery_fingerprint --compare` reported it as
+#: `canonical_counts.search.SearchRebuildDebt: 0 -> 1` — canonical-state
+#: divergence, in the one command whose whole job is to tell an operator whether
+#: a restore brought the register back. A probe that cries wolf during a normal
+#: restore is worse than no probe (docs/adr/0041).
+#:
+#: It is deliberately not `REBUILDABLE_MODELS`: nothing rebuilds a debt row.
+#: Rebuilding is what *clears* one.
+OPERATIONAL_MODELS = frozenset(
+    {
+        "search.SearchRebuildDebt",
+    }
+)
+
+
 def _local_app_labels() -> set[str]:
     return {config.label for config in apps.get_app_configs() if config.name.startswith("app.")}
 
 
 def canonical_model_labels() -> tuple[str, ...]:
-    """Every model whose rows a restore must bring back, in a stable order."""
+    """Every model whose rows a restore must bring back, in a stable order.
+
+    Everything local that is not a projection and not the system's own work
+    queue. Both exclusions are explicit allow-lists rather than a rule about
+    names, so a new model is canonical until somebody argues otherwise and
+    writes it down.
+    """
     local = _local_app_labels()
+    excluded = REBUILDABLE_MODELS | OPERATIONAL_MODELS
     return tuple(
         sorted(
             label
             for label in (
                 f"{model._meta.app_label}.{model.__name__}" for model in apps.get_models()
             )
-            if label.split(".", 1)[0] in local and label not in REBUILDABLE_MODELS
+            if label.split(".", 1)[0] in local and label not in excluded
         )
     )
 
@@ -287,6 +319,12 @@ def rebuildable_model_labels() -> tuple[str, ...]:
     """Projections a restore may leave empty and rebuild afterwards."""
     known = {f"{model._meta.app_label}.{model.__name__}" for model in apps.get_models()}
     return tuple(sorted(REBUILDABLE_MODELS & known))
+
+
+def operational_model_labels() -> tuple[str, ...]:
+    """Work the system owes itself. Restored, reported, never compared."""
+    known = {f"{model._meta.app_label}.{model.__name__}" for model in apps.get_models()}
+    return tuple(sorted(OPERATIONAL_MODELS & known))
 
 
 def model_counts(labels: tuple[str, ...]) -> dict[str, int]:

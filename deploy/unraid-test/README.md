@@ -10,7 +10,7 @@ public hostname.
 | LAN URL | <http://192.168.1.133:3020> |
 | Public URL | <https://juristid.orgusaar.ee> — **the PIN is the only gate** |
 | Compose project | `juristid-test` |
-| Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-extractor`, `juristid-test-tunnel` |
+| Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-extractor`, `juristid-test-searchindex`, `juristid-test-tunnel` |
 | Network | `juristid-test-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-test/` |
 | Evidence | `…/evidence` — **back this up** |
@@ -157,7 +157,7 @@ docker compose -p juristid-test -f compose.yml run --rm web python manage.py reb
 Finally:
 
 ```bash
-docker compose -p juristid-test -f compose.yml up -d web extractor
+docker compose -p juristid-test -f compose.yml up -d web extractor searchindex
 ```
 
 ## The extraction worker
@@ -177,6 +177,23 @@ Watch it:
 
 ```bash
 docker compose -p juristid-test -f compose.yml logs -f extractor
+```
+
+## The search freshness worker
+
+`juristid-test-searchindex` runs `manage.py run_search_refresh_worker` from the
+same image. It sleeps until a canonical change owes the search index a rebuild —
+an Organisation rename, an alias edit, a Tag or PolicyArea rename, a person's
+display name — and then performs one atomic full rebuild (ADR 0041). Ordinary
+writes do not go through it: a Matter, an entry, an opinion or a `Kaasamine` is
+refreshed inside its own transaction and is findable immediately.
+
+It mounts nothing. It rebuilds a projection out of PostgreSQL and reads no
+stored file.
+
+```bash
+docker compose -p juristid-test -f compose.yml logs -f searchindex
+docker compose -p juristid-test -f compose.yml exec -T web python manage.py check_search_freshness
 ```
 
 Catch up by hand, bounded, if the worker was down:
@@ -245,8 +262,16 @@ docker compose -p juristid-test -f compose.yml run --rm web python manage.py mig
 ```
 
 ```bash
-docker compose -p juristid-test -f compose.yml up -d web
+docker compose -p juristid-test -f compose.yml up -d
 ```
+
+Unqualified, not `up -d web`. Three services run the application image — `web`,
+`extractor` and `searchindex` — and naming one of them leaves the other two
+running the build this deployment replaced. `searchindex` made that visible
+rather than new: before it existed, a redeploy that said `up -d web` left the
+extractor on the old image, and now it also leaves the search worker not running
+at all on a stack deployed after ADR 0041. The tunnel is behind a profile, so
+this starts nothing that is meant to be started deliberately.
 
 Rebuild the search index only when the indexed content or the index version
 changed — the projection maintains itself for ordinary edits. It is atomic, so
@@ -312,8 +337,26 @@ docker compose -p juristid-test -f compose.yml build web
 ```
 
 ```bash
-docker compose -p juristid-test -f compose.yml up -d web
+docker compose -p juristid-test -f compose.yml up -d
 ```
+
+Unqualified for the same reason as a redeploy. The checkout moved `compose.yml`
+too, so what this starts is whatever the code being rolled back to defines —
+which is the correct rule, and it is why the line names no services.
+
+Rolling back is the one direction in which the set of services can *shrink*, and
+that needs one deliberate step rather than a flag. If the target commit predates
+`searchindex` — anything before ADR 0041 — the compose file no longer defines it
+and `up -d` will neither start nor stop it, leaving the old container running
+against code that has gone. Stop it by name:
+
+```bash
+docker compose -p juristid-test -f compose.yml stop searchindex
+```
+
+Not `--remove-orphans`, which would decide for itself what else on this project
+is surplus — and the tunnel, which is profile-gated rather than absent, is
+exactly the kind of thing it might decide about.
 
 Update `APPLICATION_REVISION` to match, or `/healthz` will report the wrong
 commit. The footer's build time follows the image on its own, so a rolled-back

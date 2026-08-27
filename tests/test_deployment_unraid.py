@@ -157,6 +157,7 @@ def test_the_container_names_do_not_collide_with_anything_on_the_host(
         "juristid-test-web",
         "juristid-test-db",
         "juristid-test-extractor",
+        "juristid-test-searchindex",
         "juristid-test-tunnel",
     }
 
@@ -351,3 +352,34 @@ def test_evidence_and_derivatives_are_different_directories(compose: dict[str, A
 def test_the_extractor_restarts_by_itself(compose: dict[str, Any]) -> None:
     """A worker that stays down after a host reboot is a queue nobody drains."""
     assert compose["services"]["extractor"]["restart"] == "unless-stopped"
+
+
+def test_the_search_worker_is_not_judged_by_a_healthcheck_it_cannot_pass(
+    compose: dict[str, Any],
+) -> None:
+    """Same reasoning as the extractor's, different question asked.
+
+    This probe reads the outstanding refresh obligations rather than a
+    heartbeat file, so it measures whether the index is converging rather than
+    whether a process is breathing. A stopped worker with nothing owed is green
+    and correctly so; the moment a rename lands it goes red
+    (app/search/management/commands/check_search_freshness.py).
+    """
+    check = compose["services"]["searchindex"].get("healthcheck")
+    assert check is not None, "the search worker inherits the web healthcheck"
+    assert "check_search_freshness" in " ".join(check["test"])
+
+
+def test_the_search_worker_runs_the_same_image_and_no_evidence_mount(
+    compose: dict[str, Any],
+) -> None:
+    """It rebuilds a projection out of PostgreSQL and reads no stored file.
+
+    Mounting the evidence tree into it would widen what a compromised container
+    can reach in exchange for nothing.
+    """
+    services = compose["services"]
+    assert services["searchindex"]["image"] == services["web"]["image"]
+    assert "volumes" not in services["searchindex"]
+    assert "ports" not in services["searchindex"]
+    assert services["searchindex"]["networks"] == ["internal"]

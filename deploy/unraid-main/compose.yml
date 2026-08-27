@@ -207,6 +207,64 @@ services:
     networks:
       - internal
 
+  # Search freshness: what keeps the index current after a vocabulary change.
+  #
+  # An Organisation rename, an alias edit, a Tag or PolicyArea rename changes
+  # the indexed text of every record naming them — thousands of rows from one
+  # small admin form. That is deliberately not fanned out inside the request;
+  # instead the mutation records a durable obligation in its own transaction and
+  # this loop discharges it with an atomic full rebuild
+  # (app/search/freshness.py, docs/adr/0041).
+  #
+  # A container rather than a cron entry, and not for want of trying the simpler
+  # thing: this host's cron is generated from the flash drive and editing it can
+  # take Unraid's own mover and parity jobs with it, which the test stack's
+  # README says in as many words. The master specification names a management
+  # command from the application image for exactly this job (§24.3).
+  #
+  # Without this service the stack still works and search still converges — an
+  # operator runs `rebuild_search_index` when `check_search_integrity` says a
+  # rebuild is owed, which is what happened before SEARCH-001. What is lost is
+  # that somebody has to notice.
+  searchindex:
+    image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-main-searchindex
+    restart: unless-stopped
+    # Convergence, not liveness: the probe asks whether anything has been owed
+    # too long, which is the failure that reaches a reader. A stopped worker
+    # with nothing owed is green here and correctly so — the index is complete —
+    # and goes red within SEARCH_REBUILD_DEBT_STALE_SECONDS of the first change
+    # it fails to pick up (app/search/management/commands/check_search_freshness.py).
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check_search_freshness", "--quiet"]
+      interval: 60s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
+    command:
+      - python
+      - manage.py
+      - run_search_refresh_worker
+    env_file:
+      - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      SEED_DEV_DATA: "0"
+      # As on every other service in this file: `config/test_safety.py` refuses
+      # to run the test suite in a process that inherits this marker.
+      JURISTID_RUNTIME: deployed
+    depends_on:
+      db:
+        condition: service_healthy
+    # No evidence, derivative or source mounts. This process rebuilds a
+    # projection out of PostgreSQL and reads no file the application stores;
+    # giving it the evidence tree would widen what a compromised container can
+    # reach for no benefit.
+    networks:
+      - internal
+
   # The only route in.
   #
   # Not opt-in, unlike the rehearsal's: there is no host port here, so without

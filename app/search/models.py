@@ -265,3 +265,108 @@ class SearchDocument(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.source_kind}:{self.title[:60]}"
+
+
+class SearchRebuildReason(models.TextChoices):
+    """Why a full rebuild is owed.
+
+    Every member is a *vocabulary* change: text that lives on a reference row
+    and is copied into the projection of every record pointing at it. That is
+    the whole population of high-fanout invalidations, and naming them
+    individually rather than storing free text keeps two properties. An
+    operator reading `check_search_freshness` learns what kind of edit made the
+    corpus stale without the debt table holding any business content; and a new
+    member cannot be added without somebody deciding which projection column it
+    invalidates (docs/adr/0041).
+
+    `POLICY_AREA_REMOVED` is the one member that is not an edit. A PolicyArea is
+    the only reference row in this vocabulary that can be *deleted* while its
+    name is in the corpus — every other one is held by a `PROTECT` foreign key
+    the moment anything indexes it — so a disappearance is a distinct way for
+    the same column to go stale, and it says so rather than borrowing
+    `POLICY_AREA_RENAMED`. An operator who reads "renamed" goes looking for a
+    rename.
+    """
+
+    ORGANISATION_RENAMED = "ORGANISATION_RENAMED", "Asutus nimetati ümber"
+    ORGANISATION_ALIAS_CHANGED = "ORGANISATION_ALIAS_CHANGED", "Asutuse nimekuju muutus"
+    TAG_RENAMED = "TAG_RENAMED", "Silt nimetati ümber"
+    TAG_ALIAS_CHANGED = "TAG_ALIAS_CHANGED", "Sildi nimekuju muutus"
+    POLICY_AREA_RENAMED = "POLICY_AREA_RENAMED", "Valdkond nimetati ümber"
+    POLICY_AREA_REMOVED = "POLICY_AREA_REMOVED", "Valdkond kustutati"
+    PERSON_RENAMED = "PERSON_RENAMED", "Inimese nimi muutus"
+
+
+class SearchRebuildDebt(BaseModel):
+    """One durable record that the projection owes a full rebuild.
+
+    **The point of this table is that it is a row and not a callback.** A
+    high-fanout mutation — renaming an Organisation invalidates the indexed text
+    of every Matter, Submission and Entry that names it — must not fan out
+    inside the request that caused it, and until now it did not fan out at all:
+    the corpus went stale and stayed stale until a human noticed and ran
+    `rebuild_search_index`. Deferring the work is right; deferring it into
+    nothing is what made SEARCH-001 a defect.
+
+    So the mutation writes this row **in its own transaction**. That is the
+    whole guarantee, and it is why `transaction.on_commit` is not what this is:
+    an on-commit callback lives in the process's memory, so a deploy, an OOM
+    kill or a `docker compose down` between the commit and the callback loses
+    the only record that anything was owed — and loses it silently, which is the
+    failure mode this projection cannot afford. A row survives all three, and a
+    business transaction that rolls back takes its debt with it for free.
+
+    **Append-only in use, deliberately without deduplication.** Renaming three
+    organisations writes three rows and they coalesce at the other end: the
+    consumer claims every outstanding row, performs *one* rebuild, and clears
+    exactly the rows it claimed. Collapsing them at write time would need an
+    upsert whose lost-update window is precisely a mark arriving while a rebuild
+    is running — the one moment a mark matters most. Rows are small, they live
+    for one poll interval, and the arithmetic is the same either way
+    (`app/search/freshness.py`).
+
+    The columns record attempts rather than successes. A cleared debt is a
+    deleted row, so this table is empty in the ordinary case, and anything in it
+    is either work not yet done or work that has failed — which is what makes
+    `SELECT count(*)` a usable health probe.
+
+    **It is operational state, not canonical state**, and `recovery_fingerprint`
+    knows that (`app.core.deployment.OPERATIONAL_MODELS`). A row here means "a
+    vocabulary edit landed seconds ago and the worker has not caught up", which
+    is a healthy condition and not something a restore has to reproduce
+    row-for-row. It is still dumped and still restored — it is an ordinary table
+    in an ordinary `pg_dump` — it is simply never *compared*, because a probe
+    that reports canonical drift whenever a queue is non-empty is a probe an
+    operator learns to ignore.
+    """
+
+    reason = models.CharField(
+        max_length=40,
+        choices=SearchRebuildReason.choices,
+        db_index=True,
+        verbose_name="põhjus",
+    )
+    attempts = models.PositiveIntegerField(
+        default=0,
+        verbose_name="katseid",
+        help_text="Mitu korda on täisindeksi ehitamine seda rida katsetades ebaõnnestunud.",
+    )
+    last_attempt_at = models.DateTimeField(null=True, blank=True, verbose_name="viimane katse")
+    #: Sanitised metadata about the last failure — never the exception's own
+    #: message. `check_search_freshness` prints this column to a terminal and a
+    #: container log, and a PostgreSQL error message is composed out of the row
+    #: that failed: a not-null violation's DETAIL is `Failing row contains (…)`
+    #: with the projected `title` and `body_text` in it. Everything written here
+    #: goes through `app.search.freshness.describe_failure`, which is the only
+    #: writer, and which reads schema identifiers and SQLSTATE and nothing else.
+    last_error = models.TextField(blank=True, verbose_name="viimane viga")
+
+    class Meta:
+        verbose_name = "otsinguindeksi võlg"
+        verbose_name_plural = "otsinguindeksi võlad"
+        # Oldest first: the age of the first row is "how long has search been
+        # stale", which is the number both the probe and the operator want.
+        ordering = ["created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.reason}@{self.created_at:%Y-%m-%d %H:%M:%S}"

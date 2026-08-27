@@ -17,43 +17,99 @@ tags. They are deliberately narrow, and two things are **not** covered:
 * renaming an Organisation or editing its aliases, which changes the indexed
   text of every Matter pointing at it. That is a taxonomy-administration event,
   it is rare, and fanning out from it would mean reindexing thousands of rows
-  inside somebody's form submission. ``rebuild_search_index`` is the answer and
-  is documented as such. The same applies to renaming a Tag or a PolicyArea.
+  inside somebody's form submission.
 
-The line between the two lists is fanout, not importance. A handler exists here
-when the number of search rows a write invalidates is bounded by that write —
-one Matter, one entry, one submission, one document's pages, one Matter's claim
-on a OneNote page, the handful of Matters that accepted one such page. It does
-not when a single edit can invalidate the whole corpus, because a synchronous
-reindex of thousands of rows inside a form submission is a worse failure than
-staleness an operator can fix.
+The line between the two lists is fanout, not importance. A handler *refreshes*
+here when the number of search rows a write invalidates is bounded by that write
+— one Matter, one entry, one submission, one `Kaasamine`, one document's pages,
+one Matter's claim on a OneNote page, the handful of Matters that accepted one
+such page. It does not when a single edit can invalidate the whole corpus,
+because a synchronous reindex of thousands of rows inside a form submission is a
+worse failure than staleness.
 
-Both gaps are recoverable by a rebuild, which is the property the projection was
-designed around.
+**SEARCH-001 changes what happens to the second list.** Deferring the work was
+always right; deferring it into *nothing* was the defect. Until now a rename
+left the corpus stale with no record anywhere that it had, and convergence
+depended on a human noticing and running `rebuild_search_index`. The handlers at
+the bottom of this module now write a durable obligation instead — one row, in
+the same transaction as the rename — and a consumer pays it off with the same
+atomic rebuild an operator would have run (`app/search/freshness.py`,
+docs/adr/0041).
+
+So there are two mechanisms and they are not interchangeable:
+
+===============  ==============================  ===========================
+fanout           when the index converges        what guarantees it
+===============  ==============================  ===========================
+bounded          with the business transaction   the refresh is in it
+high             within one consumer pass        the debt row is in it
+===============  ==============================  ===========================
+
+Bulk writes remain the caller's responsibility, and that has not changed:
+`suspend_indexing` still suppresses the *refresh* handlers. It deliberately does
+**not** suppress the debt handlers below, because a debt is not work — it is the
+record that work is owed, and a bulk writer that silently dropped it would
+reintroduce exactly the staleness this closes.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from django.db.models.signals import m2m_changed, post_delete, post_save
+from django.db.models import Model
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
 from django.dispatch import receiver
 
+from app.accounts.models import User
 from app.documents.enums import DerivativeStatus
 from app.documents.models import Document, DocumentVersion
 from app.legacy_import.source_pages import LegacySourcePage, MatterSourcePage
-from app.matters.models import Entry, Matter, TagAssignment
+from app.matters.models import (
+    Entry,
+    Matter,
+    MatterEngagement,
+    MatterSourceOrganisation,
+    TagAssignment,
+)
+from app.organisations.models import Organisation, OrganisationAlias
+from app.search.freshness import mark_rebuild_owed
 from app.search.indexing import (
     indexable_matters,
     indexing_is_suspended,
     refresh_document_version,
+    refresh_engagement,
     refresh_entry,
     refresh_matters,
     refresh_source_link,
     refresh_submission,
 )
-from app.search.models import SearchDocument, SearchSourceKind
+from app.search.models import SearchDocument, SearchRebuildReason, SearchSourceKind
 from app.submissions.models import Submission, SubmissionRecipient
+from app.taxonomy.models import PolicyArea, Tag, TagAlias
+
+
+def _deletion_started_at(origin: Any, model: type[Model]) -> bool:
+    """Was `delete()` called on this row, or on something above it?
+
+    Every `post_delete` handler that *re-projects* rather than removing needs
+    this, and getting it wrong does not merely leave a stale row — it makes the
+    delete fail. Django deletes in two phases: rows with no receivers are
+    raw-deleted first, `SearchDocument` among them, and only then does the
+    per-model loop delete the children and fire their handlers. At that moment
+    the parent still exists, because it is deleted later in the same loop. So a
+    handler that re-projects here inserts a search row the cascade has already
+    swept past, nothing collects it afterwards, and the deferred foreign key
+    fails at COMMIT — naming a parent that is no longer there, and taking the
+    operator's delete with it.
+
+    ``origin`` is an instance for ``obj.delete()`` and a queryset for
+    ``qs.delete()``, so the model is read from whichever it is. A missing
+    ``origin`` is treated as "started here": the wrong guess in that direction
+    costs one redundant refresh rather than a row nothing will ever collect.
+    """
+    if origin is None:
+        return True
+    return (getattr(origin, "model", None) or type(origin)) is model
 
 
 def _refresh(matter_id: Any) -> None:
@@ -83,6 +139,59 @@ def refresh_on_tags_changed(sender: type, instance: Any, action: str, **kwargs: 
         _refresh(getattr(instance, "pk", None))
 
 
+@receiver(
+    m2m_changed, sender=Matter.source_organisations.through, dispatch_uid="search_refresh_senders"
+)
+def refresh_on_source_organisations_changed(
+    sender: type, instance: Any, action: str, **kwargs: Any
+) -> None:
+    """Who sent a Matter is indexed text, and nothing was maintaining it.
+
+    `_alias_text_for` indexes every sender's name and aliases, so that a Matter
+    which arrived from a ministry *and* an association is findable through
+    either (ADR 0025). Nothing refreshed the row when that list changed, and the
+    create path made it worse rather than merely incomplete: `create_matter`
+    calls `Matter.objects.create(...)` — which fires `post_save` and indexes the
+    Matter with **no senders at all** — and only afterwards calls `.set()`. A
+    Matter created through the product with its sender filled in was therefore
+    not findable by that sender, ever, until somebody happened to save it again.
+
+    `update_matter_senders` was the only path that worked, and only because it
+    saves the Matter afterwards for an unrelated reason (`updated_at`). That is
+    the same shape the source-page handler was written to end: correct for
+    exactly as long as the next call site also remembers.
+    """
+    if action in {"post_add", "post_remove", "post_clear"}:
+        _refresh(getattr(instance, "pk", None))
+
+
+@receiver(post_save, sender=MatterSourceOrganisation, dispatch_uid="search_refresh_sender_added")
+@receiver(
+    post_delete, sender=MatterSourceOrganisation, dispatch_uid="search_refresh_sender_removed"
+)
+def refresh_on_source_organisation_row(
+    sender: type[MatterSourceOrganisation], instance: MatterSourceOrganisation, **kwargs: Any
+) -> None:
+    """The other half, for the same reason tags need two handlers.
+
+    `source_organisations` has an explicit through model, so `.set()` reaches it
+    through `bulk_create` and fires no `post_save`, while a row created directly
+    by a service fires no `m2m_changed`. Each handler covers what the other
+    misses, and refreshing twice costs one delete-and-insert of a single row.
+
+    **Not when the Matter is going too.** `organisation` is PROTECT, so the only
+    thing that can cascade into this table is deleting the Matter — and
+    re-projecting during that cascade re-inserts a row for a Matter the delete is
+    partway through removing, which fails at COMMIT and takes the delete with it.
+    CI caught exactly that (`_deletion_started_at`).
+    """
+    if kwargs.get("signal") is post_delete and not _deletion_started_at(
+        kwargs.get("origin"), MatterSourceOrganisation
+    ):
+        return
+    _refresh(instance.matter_id)
+
+
 @receiver(post_save, sender=TagAssignment, dispatch_uid="search_refresh_tag_added")
 @receiver(post_delete, sender=TagAssignment, dispatch_uid="search_refresh_tag_removed")
 def refresh_on_tag_assignment(
@@ -98,7 +207,17 @@ def refresh_on_tag_assignment(
 
     Refreshing twice when both happen is cheap. Missing one makes a tagged
     matter unfindable by its tag, silently.
+
+    The `origin` guard is the same one recipients need and was missing here:
+    deleting a Matter cascades to its `TagAssignment` rows, and re-projecting
+    during that cascade re-inserts a search row for a Matter that is being
+    deleted. It had no test that deleted a tagged Matter, so it had never
+    fired (`_deletion_started_at`).
     """
+    if kwargs.get("signal") is post_delete and not _deletion_started_at(
+        kwargs.get("origin"), TagAssignment
+    ):
+        return
     _refresh(instance.matter_id)
 
 
@@ -123,6 +242,35 @@ def remove_on_entry_delete(sender: type[Entry], instance: Entry, **kwargs: Any) 
     SearchDocument.objects.filter(
         source_kind=SearchSourceKind.ENTRY, source_object_id=instance.pk
     ).delete()
+
+
+@receiver(post_save, sender=MatterEngagement, dispatch_uid="search_refresh_engagement")
+def refresh_on_engagement_save(
+    sender: type[MatterEngagement], instance: MatterEngagement, **kwargs: Any
+) -> None:
+    """A recorded `Kaasamine` has to be a findable one.
+
+    AUTH-003 moved engagement text out of the MATTER row and into a row of its
+    own, so that a consultation restricted below its Matter could be hidden
+    without hiding the Matter. It added no way for that row to appear: only a
+    full rebuild ever wrote one. So between AUTH-003 and here, every engagement
+    recorded through `add_engagement` was invisible to search — and the
+    integrity check did not count the kind, so no report said so.
+
+    That is the shape of defect this module exists to prevent, and it is
+    unbounded in the direction that matters: not "the index is a little behind"
+    but "this content is not in the corpus at all, and nothing will tell you".
+
+    There is deliberately no `post_delete` companion. `SearchDocument.engagement`
+    is a real foreign key with `on_delete=CASCADE`, so removing an engagement
+    removes its projection row in the same statement the database already runs —
+    a handler would be a second mechanism for something the schema guarantees.
+    The regression test asserts the cascade rather than the handler, because the
+    cascade is what is load-bearing.
+    """
+    if indexing_is_suspended():
+        return
+    refresh_engagement(instance)
 
 
 @receiver(post_save, sender=Submission, dispatch_uid="search_refresh_submission")
@@ -168,28 +316,13 @@ def refresh_on_recipient_change(
     """
     if indexing_is_suspended():
         return
-    if kwargs.get("signal") is post_delete and not _deletion_started_at_the_recipients(
-        kwargs.get("origin")
+    if kwargs.get("signal") is post_delete and not _deletion_started_at(
+        kwargs.get("origin"), SubmissionRecipient
     ):
         return
     submission = Submission.objects.filter(pk=instance.submission_id).first()
     if submission is not None:
         refresh_submission(submission)
-
-
-def _deletion_started_at_the_recipients(origin: Any) -> bool:
-    """Was `delete()` called on recipients, or on something above them?
-
-    ``origin`` is an instance for ``obj.delete()`` and a queryset for
-    ``qs.delete()``, so the model is read from whichever it is. A missing
-    ``origin`` is treated as "started here": that is the direction that keeps
-    the index correct, and the wrong guess costs one redundant refresh rather
-    than a row nothing will ever collect.
-    """
-    if origin is None:
-        return True
-    model = getattr(origin, "model", None) or type(origin)
-    return model is SubmissionRecipient
 
 
 @receiver(post_save, sender=MatterSourcePage, dispatch_uid="search_refresh_source_link")
@@ -258,3 +391,191 @@ def refresh_on_document_change(sender: type[Document], instance: Document, **kwa
     ).distinct()
     for version in versions:
         refresh_document_version(version)
+
+
+# -- SEARCH-001: high fanout becomes durable debt ---------------------------
+#
+# Everything above refreshes. Everything below records that a refresh is owed,
+# because the write it follows can invalidate the indexed text of the whole
+# corpus and no request may pay for that.
+#
+# The two halves share nothing except the projection builders, and that is the
+# point: the debt is paid off by `rebuild_all`, which is the same code path an
+# operator's `rebuild_search_index` runs and the same one that composes every
+# searchable column. There is no second, faster way to compose indexed text, so
+# there is nothing that can drift away from what a rebuild would produce.
+
+
+def _mark_on_rename(fields: tuple[str, ...], reason: str) -> Any:
+    """Mark a rebuild owed when a save actually changes reference text.
+
+    Three properties, each of which is why this is not simply "mark on save".
+
+    *It runs on `pre_save`.* The comparison needs the row as it currently
+    stands, and by `post_save` the database already says the new name, so
+    nothing would ever look renamed. The mark it writes lands in the same
+    transaction as the save, so the two commit or roll back together and a save
+    that raises after this point takes its debt with it.
+
+    *It believes `update_fields`.* A save that does not name a watched field
+    cannot have changed one. That is what keeps this subsystem off the sign-in
+    path: `user.save(update_fields=["last_login"])` issues no query here at all.
+
+    *It compares rather than assuming.* `Organisation` and `User` rows are saved
+    for reasons that have nothing to do with their names. Marking on every save
+    would make the debt table a log of ordinary activity and owe a rebuild
+    every few seconds forever, which is a worse failure than the one being
+    fixed. One indexed primary-key lookup on a rarely-saved model is the price
+    of not doing that.
+
+    An instance with no stored row is being created, and nothing can be carrying
+    its old text.
+    """
+
+    def handler(sender: type[Model], instance: Any, **kwargs: Any) -> None:
+        if instance.pk is None:
+            return
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None and not set(update_fields) & set(fields):
+            return
+        stored = sender._default_manager.filter(pk=instance.pk).values(*fields).first()
+        if stored is None:
+            return
+        if any(stored[field] != getattr(instance, field) for field in fields):
+            mark_rebuild_owed(reason)
+
+    return handler
+
+
+def _mark_on_delete(reason: str) -> Any:
+    """Mark a rebuild owed when a reference row disappears.
+
+    The gap this closes is narrow and it was total. Renaming a PolicyArea owed
+    a rebuild; *deleting* one owed nothing, so every Matter that carried its
+    name kept carrying it, `alias_text` went on matching a Valdkond the taxonomy
+    no longer has, and public search kept returning results for it. Nothing
+    anywhere said so — which makes it the same defect SEARCH-001 exists to fix,
+    one lifecycle event further along.
+
+    **PolicyArea is the only reference model that needs this**, and the audit is
+    worth writing down because the asymmetry looks like an oversight. Every
+    other name in `_alias_text_for` reaches the projection through a foreign key
+    that is `PROTECT` the moment anything indexes it: `Organisation` through
+    `MatterSourceOrganisation`, `Matter.addressee_organisation`, `Entry` and
+    `SubmissionRecipient`; `Tag` through `TagAssignment`; a person's
+    `display_name` through `Entry.author`. Deleting any of those raises rather
+    than quietly changing the corpus, and one that *is* deletable is one nothing
+    indexes. `Matter.policy_areas` alone is a plain many-to-many, so its join
+    rows cascade away and the delete succeeds.
+
+    No comparison and no `update_fields`, unlike `_mark_on_rename`: a deletion
+    is unconditionally a change to the vocabulary, and there is no later row to
+    compare against. Deleting an unused Valdkond invalidates nothing in truth
+    and is marked anyway, which costs one coalesced rebuild — the same trade
+    `_mark_alias_change` takes, for the same reason.
+
+    No `_deletion_started_at` guard either, and that is deliberate rather than
+    forgotten. The guard exists for handlers that *re-project* during a cascade
+    and would insert a row the collector has already swept past; this handler
+    inserts a `SearchRebuildDebt`, which no cascade touches. `post_delete` fires
+    inside the collector's own `transaction.atomic`, so the mark commits with
+    the deletion and a rolled-back delete takes its debt with it — the same
+    durability boundary every other mark in this file sits inside.
+    """
+
+    def handler(sender: type[Model], instance: Any, **kwargs: Any) -> None:
+        mark_rebuild_owed(reason)
+
+    return handler
+
+
+def _mark_alias_change(reason: str) -> Any:
+    """Aliases are marked unconditionally, and the asymmetry is deliberate.
+
+    A rename is compared because renames are rare and the models are saved
+    often. An alias row is the opposite: it exists only to be indexed, so every
+    write to one is a write to the corpus's searchable text — creating it,
+    editing it and deleting it alike. There is nothing to compare against and
+    nothing cheaper to test.
+
+    A new alias on a brand-new Organisation owes nothing in truth, and is marked
+    anyway. That costs one coalesced rebuild; guessing the other way costs an
+    abbreviation that silently finds nothing.
+    """
+
+    def handler(sender: type[Model], instance: Any, **kwargs: Any) -> None:
+        mark_rebuild_owed(reason)
+
+    return handler
+
+
+# `weak=False` on every one of these, and it is load-bearing rather than
+# defensive. `Signal.connect` holds its receiver *weakly* by default, so a
+# closure passed in inline — which is what each of these is — has no other
+# reference, is collected at the next garbage collection, and silently stops
+# being a receiver. The handler is still in the file, the `dispatch_uid` is
+# still registered, and nothing anywhere raises; the rename simply stops owing
+# a rebuild. CI caught it here, which is the only place it could have been
+# caught, because the failure is indistinguishable from the defect this module
+# was written to fix.
+pre_save.connect(
+    _mark_on_rename(("name",), SearchRebuildReason.ORGANISATION_RENAMED),
+    sender=Organisation,
+    dispatch_uid="search_debt_org_rename",
+    weak=False,
+)
+pre_save.connect(
+    _mark_on_rename(("name_et",), SearchRebuildReason.TAG_RENAMED),
+    sender=Tag,
+    dispatch_uid="search_debt_tag_rename",
+    weak=False,
+)
+pre_save.connect(
+    _mark_on_rename(("name_et",), SearchRebuildReason.POLICY_AREA_RENAMED),
+    sender=PolicyArea,
+    dispatch_uid="search_debt_area_rename",
+    weak=False,
+)
+# The other half of a PolicyArea's lifecycle. See `_mark_on_delete` for why
+# this model is the only one here that gets a `post_delete`.
+post_delete.connect(
+    _mark_on_delete(SearchRebuildReason.POLICY_AREA_REMOVED),
+    sender=PolicyArea,
+    dispatch_uid="search_debt_area_deleted",
+    weak=False,
+)
+# A person's display name is `alias_text` on every ENTRY row they authored. The
+# fanout is smaller than a ministry's and still unbounded by the write, and one
+# mechanism for "reference text changed" is better than a second one calibrated
+# to a smaller number.
+pre_save.connect(
+    _mark_on_rename(("display_name",), SearchRebuildReason.PERSON_RENAMED),
+    sender=User,
+    dispatch_uid="search_debt_person_rename",
+    weak=False,
+)
+
+post_save.connect(
+    _mark_alias_change(SearchRebuildReason.ORGANISATION_ALIAS_CHANGED),
+    sender=OrganisationAlias,
+    dispatch_uid="search_debt_org_alias_saved",
+    weak=False,
+)
+post_delete.connect(
+    _mark_alias_change(SearchRebuildReason.ORGANISATION_ALIAS_CHANGED),
+    sender=OrganisationAlias,
+    dispatch_uid="search_debt_org_alias_deleted",
+    weak=False,
+)
+post_save.connect(
+    _mark_alias_change(SearchRebuildReason.TAG_ALIAS_CHANGED),
+    sender=TagAlias,
+    dispatch_uid="search_debt_tag_alias_saved",
+    weak=False,
+)
+post_delete.connect(
+    _mark_alias_change(SearchRebuildReason.TAG_ALIAS_CHANGED),
+    sender=TagAlias,
+    dispatch_uid="search_debt_tag_alias_deleted",
+    weak=False,
+)

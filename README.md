@@ -273,8 +273,25 @@ Promotion writes no snapshot and rewrites none. The next
 ## Search
 
 Search reads a rebuildable projection. Ordinary writes keep it current by
-themselves; a rebuild is needed after bulk changes such as renaming an
-organisation or editing its aliases.
+themselves, inside the transaction that made them, so a matter, an entry, an
+opinion or a `Kaasamine` is findable the instant it is saved.
+
+A rename is different. Renaming an organisation, editing its aliases, renaming a
+tag or a policy area changes the indexed text of every record naming them —
+thousands of rows from one small edit — so that is deferred rather than done in
+the request. The mutation records a durable obligation in its own transaction,
+and a worker discharges it with one atomic full rebuild (ADR 0041). On the
+deployment that worker is its own container; locally it is a command:
+
+```bash
+uv run python manage.py run_search_refresh_worker --once
+```
+
+```bash
+uv run python manage.py check_search_freshness
+```
+
+Both of the manual routes still work and are always safe:
 
 ```bash
 uv run python manage.py rebuild_search_index

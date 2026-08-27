@@ -17,7 +17,8 @@ by row:
   versions and the ranking differs by row;
 * does any row have a null vector, which is a row that exists and can never
   match;
-* does any row claim a Matter its own source does not belong to.
+* does any row claim a Matter its own source does not belong to;
+* is a rebuild currently owed, since when, and has paying it off failed.
 
 Every check is a ``COUNT`` or a small ``GROUP BY``. None of them reads document
 text, none walks the corpus row by row, and the whole command is a handful of
@@ -25,6 +26,20 @@ statements — so it is safe to run on a schedule and safe to run while people a
 working. The deep, row-by-row comparison it deliberately is not: reconciling
 every fragment against its source is what a rebuild does, and a rebuild is
 cheaper than a report saying a rebuild is needed.
+
+The last of those is new in SEARCH-001 and is deliberately only a *report*.
+`app/search/freshness.py` records the obligation and
+`run_search_refresh_worker` discharges it; this command reads the same rows and
+consumes nothing. A diagnostic that quietly drained the queue it was asked to
+describe would be the same mistake as one that quietly repaired what it found —
+and worse here, because the repair would then happen wherever somebody happened
+to run a check.
+
+An obligation that is merely *pending* is not a finding. A rename recorded four
+seconds ago is the system working, and reporting it as a fault would train an
+operator to ignore this command. It becomes a finding when it has outlived
+`SEARCH_REBUILD_DEBT_STALE_SECONDS` — nothing is converging it — or when a
+rebuild has already failed against it.
 
 Exit status is 1 when anything is wrong, so it composes with a cron job.
 """
@@ -34,13 +49,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandParser
 from django.db.models import Count, F, Q
 
 from app.documents.enums import DerivativeStatus
 from app.documents.models import DocumentTextFragment
 from app.legacy_import.source_pages import MatterSourcePage
-from app.matters.models import Entry, Matter
+from app.matters.models import Entry, Matter, MatterEngagement
+from app.search.freshness import FreshnessStatus
+from app.search.freshness import status as freshness_status
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.submissions.models import Submission
 
@@ -57,6 +75,7 @@ class IntegrityReport:
     findings: list[Finding] = field(default_factory=list)
     index_versions: dict[str, int] = field(default_factory=dict)
     total_rows: int = 0
+    freshness: FreshnessStatus | None = None
 
     @property
     def ok(self) -> bool:
@@ -84,6 +103,13 @@ def _expected_populations() -> list[tuple[str, str, int]]:
             SearchSourceKind.LEGACY_SOURCE_PAGE.value,
             MatterSourcePage.objects.count(),
         ),
+        # AUTH-003 made `Kaasamine` a source kind and this list was not
+        # extended, so for the whole of that release an engagement could be
+        # recorded, never projected, and never reported missing — the check
+        # said the index was healthy while content sat outside the corpus.
+        # A kind that is projected and not counted here is a kind nothing
+        # watches.
+        ("Kaasamised", SearchSourceKind.ENGAGEMENT.value, MatterEngagement.objects.count()),
     ]
 
 
@@ -180,7 +206,44 @@ def build_report(*, sample: int = DRIFT_SAMPLE) -> IntegrityReport:
 
     report.findings.extend(_crossed_matters())
     report.findings.extend(_stale_matter_text(sample=sample))
+    report.freshness = freshness_status()
+    report.findings.extend(_unpaid_debt(report.freshness))
     return report
+
+
+def _unpaid_debt(state: FreshnessStatus) -> list[Finding]:
+    """Is anything owed that nothing is converging?
+
+    Reads the obligations `app/search/freshness.py` records and never touches
+    them. Pending work is reported in the body of the command as a fact, not
+    here as a fault: this returns a finding only when the obligation has stopped
+    looking like work in progress.
+    """
+    if state.is_clear:
+        return []
+    if state.failed_attempts:
+        return [
+            Finding(
+                label="Indeksi taastamine",
+                detail=(
+                    f"täisindeksi ehitamine on ebaõnnestunud {state.failed_attempts} korda; "
+                    f"viimane viga: {state.last_error or 'teadmata'}"
+                ),
+            )
+        ]
+    age = int(state.seconds_owed())
+    limit = settings.SEARCH_REBUILD_DEBT_STALE_SECONDS
+    if age < limit:
+        return []
+    return [
+        Finding(
+            label="Indeksi võlg",
+            detail=(
+                f"{state.owed} muudatust ootab täisindeksit juba {age}s (lubatud {limit}s). "
+                "Kas `run_search_refresh_worker` töötab?"
+            ),
+        )
+    ]
 
 
 def _stale_matter_text(*, sample: int) -> list[Finding]:
@@ -269,6 +332,7 @@ def _crossed_matters() -> list[Finding]:
             Q(source_kind=SearchSourceKind.LEGACY_SOURCE_PAGE),
             "matter_source_page__matter_id",
         ),
+        ("Kaasamis", Q(source_kind=SearchSourceKind.ENGAGEMENT), "engagement__matter_id"),
     ]
     for label, kind, path in checks:
         crossed = (
@@ -320,6 +384,17 @@ class Command(BaseCommand):
             for version, total in sorted(report.index_versions.items()):
                 marker = "" if version == INDEX_VERSION else "  (vananenud)"
                 self.stdout.write(f"  indeksi versioon {version}: {total}{marker}")
+            state = report.freshness
+            if state is None or state.is_clear:
+                self.stdout.write("  täisindeksi võlg: puudub")
+            else:
+                reasons = ", ".join(
+                    f"{reason} x {count}" for reason, count in sorted(state.reasons.items())
+                )
+                self.stdout.write(
+                    f"  täisindeksi võlg: {state.owed} ({reasons}), "
+                    f"vanim {int(state.seconds_owed())}s"
+                )
 
         for finding in report.findings:
             self.stderr.write(self.style.WARNING(f"{finding.label}: {finding.detail}"))
@@ -328,7 +403,9 @@ class Command(BaseCommand):
             self.stderr.write(
                 self.style.WARNING(
                     "Paranda käsuga `rebuild_search_index` (kogu korpus) või "
-                    "`refresh_matter_search <viide>` (üksik teema)."
+                    "`refresh_matter_search <viide>` (üksik teema). Kui võlg on "
+                    "vana, kontrolli kõigepealt, kas `run_search_refresh_worker` "
+                    "töötab."
                 )
             )
             # A non-zero exit rather than a raised CommandError: this is a
