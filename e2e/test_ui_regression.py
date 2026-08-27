@@ -81,9 +81,16 @@ MAX_DIFFERING_FRACTION = 0.002
 #: register still proves it renders a date meaning beside every date, and the
 #: Matter header still proves its facts strip is one line of values.
 #:
-#: Every one of these renders a fixed-width `dd.mm.yyyy`, so masking the pixels
-#: is enough: the boxes do not change size from one day to the next and the
-#: layout around them does not move.
+#: Masking the pixels is enough for these: the layout around them does not move
+#: from one day to the next. Not every one is fixed-width — `j.n` and `j.n.Y`
+#: drop the leading zero, so the masked *box* is a character or two narrower on
+#: a single-digit day, and the sliver of page behind it is no longer painted.
+#: Measured by rewriting the rendered string to another date and recapturing:
+#: 1px on Minu töö and 6px on the closed banner, against the ~5,800px a
+#: full-page capture may differ by. Unmasked, the same two surfaces moved 341px
+#: and 240px. Closing the last few would mean zero-padding a date the product
+#: deliberately does not zero-pad, so the box edge is left as it is and the
+#: glyphs — the part that actually drifts — are covered.
 #:
 #: Nothing here names a whole cell or column. A mask paints over the element it
 #: matches, so naming a `<td>` class takes the `<th>` with it and the baseline
@@ -140,7 +147,140 @@ CLOCK_DEPENDENT = [
     # that changes daily, and every baseline would go red the next morning.
     ".createform .dateinput",
     "time",
+    # ---- Three values the list above missed, each found by rendering the page
+    # and asking which selector covered it rather than by reading class names.
+    #
+    # None of them was ever big enough on its own to cross
+    # MAX_DIFFERING_FRACTION, which is the whole reason they survived: a mask
+    # that stops matching fails loudly the next morning, but a value that was
+    # *never* masked just makes the baseline quietly stale. The cost lands on
+    # somebody else — the next unrelated change adds enough differing pixels to
+    # push the total over the limit, and their diff shows regions they did not
+    # touch. That is how the header-branding round found five stale baselines.
+    #
+    # Every one is scoped, because the bare class also renders content
+    # elsewhere: `.foldout__meta` says "kogu osakond · viimane kuu" on
+    # Ülevaade, `.muted` carries register text, and `.interrow__detail` is the
+    # next step in words on every row that has one.
+    #
+    # Minu töö's "viimane 26.8 kell 13:20". The rows *inside* the disclosure
+    # are `.entryline__when` and were masked; the summary line above them, which
+    # is the only part visible while the disclosure is shut, was not.
+    ".workband--entries .foldout__meta",
+    # The closed banner's "(26.8.2026)". `closed_at` is set when the Matter is
+    # closed, and the browser suite closes one on every run, so this is today's
+    # date on every run. The same date in the facts rail is a `<time>` and was
+    # masked by that; the banner renders a bare `.muted` span and was not.
+    ".banner--closed .banner__text .muted",
+    # Ülevaade's ownerless rows: "arvamuse tähtaeg 31.8.2026", built as one
+    # string in `app/matters/overview.py` from `response_deadline`, which the
+    # seeded world computes from today. The reason cell beside it was masked;
+    # the detail line under the title was not. Scoped by the row offering
+    # "Määra →", which is exactly the set of rows whose detail is this string —
+    # every other row's detail is its next step, and masking that would take
+    # real content out of the baseline.
+    #
+    # Unlike the two above, this one is deliberately *not* in REQUIRED_MASKS,
+    # and the reason is worth keeping: on a freshly seeded world the ownerless
+    # row is in the intervention preview, and on the world this suite actually
+    # runs against — after the functional suite has filed its Matters — it is
+    # pushed off the end of a capped list and never captured at all. Requiring
+    # it made `ulevaade` fail the moment CI ran it, for a reason that is not a
+    # defect. Its presence is a function of how many higher-priority rows the
+    # rest of the browser suite happens to create, so it can be masked but not
+    # depended on: absent it paints nothing, and present it is covered rather
+    # than back in the baseline.
+    ".interrow:has(.interrow__assign) .interrow__detail",
+    # The composer's `Toimus`, which defaults to today exactly as the create
+    # form's `Saabus` does. `.createform .dateinput` above was scoped to that
+    # one form for a good reason — unscoped it damaged three register
+    # baselines — but the scoping is also why the identical control in the
+    # composer was left uncovered.
+    #
+    # Found by comparing the committed baselines against a CI rendering rather
+    # than by walking the DOM: this value lives in an `<input value>`, and a
+    # text-node scan does not see it. `teema-koostaja` had been drifting one
+    # day at a time since the day it was taken.
+    #
+    # Scoped to the attachment block, not `.composer .dateinput`: the deadline
+    # and closing blocks hold date controls that are *empty*, and masking an
+    # empty control paints out the one thing that baseline exists to show —
+    # what the three disclosures look like when a lawyer opens them all. When
+    # the block is shut it is `hidden`, so the input has no box and nothing is
+    # painted anywhere else.
+    "#koostaja-manus .dateinput",
+    # ---- Ülevaade's three week-boundary counts (docs/adr/0039).
+    #
+    # These are dates that never render as a date. Each is a plain integer, and
+    # each is computed against a window anchored on *today*: two from this ISO
+    # week's Monday, one from today itself. The seeded world places its rows a
+    # fixed number of days back, so the counts are stable across a day — and
+    # then the run crosses a Monday and a row that was "last week" is suddenly
+    # "this week", with the same database and a different number on the page.
+    # `Uusi sellel nädalal` did exactly that between two of this branch's own
+    # runs, from 17 to 18.
+    #
+    # `Minu tiim` carried two of them until #79 retired it, and the third was
+    # already here; the move put all three on one captured page, which is what
+    # makes them worth naming together rather than one at a time.
+    #
+    # Scoped to the value, through the label rather than through position: the
+    # rail renders every row as the same `.railrow__key` / `.railrow__value`
+    # pair, so the class alone would take all eight of the page's counts — the
+    # year rows beside them, which are *not* clock-derived and are exactly what
+    # this baseline should still be checking. Matching on the label text also
+    # survives a row being reordered inside its block, which a positional
+    # `:nth-child` would not.
+    #
+    # The label, the row, the block, the borders and the spacing all stay in the
+    # comparison. What is painted is one 26x17 box per row.
+    '.railrow:has(.railrow__key:text-is("Uusi sellel nädalal")) .railrow__value',
+    '.railrow:has(.railrow__key:text-is("Sissekandeid sel nädalal")) .railrow__value',
+    '.railrow:has(.railrow__key:text-is("Tähtaegu sel nädalal")) .railrow__value',
 ]
+
+#: The three above, named once so the scenario entries cannot drift apart.
+ULEVAADE_WEEK_COUNTS = (
+    '.railrow:has(.railrow__key:text-is("Uusi sellel nädalal")) .railrow__value',
+    '.railrow:has(.railrow__key:text-is("Sissekandeid sel nädalal")) .railrow__value',
+    '.railrow:has(.railrow__key:text-is("Tähtaegu sel nädalal")) .railrow__value',
+)
+
+#: What each scenario's capture may not silently stop masking.
+#:
+#: A Playwright mask selector that matches nothing does not fail — it paints no
+#: rectangle and the run stays green. That is *why* the three selectors above
+#: were missing for as long as they were, and adding them without a guard would
+#: leave the next markup rename free to make them stop matching just as quietly.
+#:
+#: So a scenario that is known to render a clock-derived value declares it, and
+#: `capture` refuses to take the screenshot if the element is not there. Only
+#: the values found by rendering these pages are listed: this is a check that
+#: known masks still bite, not a claim that the list is complete.
+#: Only values that are on the page unconditionally belong here. A mask whose
+#: element appears or not depending on how many Matters the functional suite
+#: filed is still worth painting, but requiring it would turn an unrelated
+#: browser test into a visual failure — see the `.interrow__detail` note above.
+REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
+    "minu-too": (".workband--entries .foldout__meta",),
+    "minu-too-3440": (".workband--entries .foldout__meta",),
+    "teema-suletud": (".banner--closed .banner__text .muted",),
+    # This scenario opens `+ Manus` itself, so the control is always there.
+    "teema-koostaja": ("#koostaja-manus .dateinput",),
+    # Unlike `.interrow__detail` above, these three are required. They are not
+    # rows of a capped list that a busy world can push off the end: `new_matters`
+    # and `reporting` in `app/matters/overview.py` both return a fixed list of
+    # `CountRow`s, so the row renders whatever the count is — nought included —
+    # for as long as the scope is `Kogu osakond`, which is the scope both these
+    # scenarios capture. If one stops matching, the markup moved and the
+    # selector has to follow it.
+    "ulevaade": ULEVAADE_WEEK_COUNTS,
+    "ulevaade-3440": ULEVAADE_WEEK_COUNTS,
+}
+
+assert not {selector for selectors in REQUIRED_MASKS.values() for selector in selectors} - set(
+    CLOCK_DEPENDENT
+), "a required mask is not in CLOCK_DEPENDENT, so nothing paints it"
 
 STYLE_FIXTURE = """
   *, *::before, *::after {
@@ -157,6 +297,15 @@ STYLE_FIXTURE = """
 def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = None) -> bytes:
     page.add_style_tag(content=STYLE_FIXTURE)
     page.wait_for_load_state("networkidle")
+    for selector in REQUIRED_MASKS.get(name, ()):
+        assert page.locator(selector).count(), (
+            f"{name}: the clock mask {selector!r} matches nothing on this page. "
+            f"Either the markup moved and the selector needs following, or this "
+            f"scenario no longer renders that value and the entry should go. "
+            f"Leaving it unmatched would put a value that changes daily back "
+            f"into the baseline, and the run would stay green until somebody "
+            f"else's unrelated change went red for it."
+        )
     masks = [page.locator(selector) for selector in CLOCK_DEPENDENT]
     target = page.locator(clip_to) if clip_to else page
     image = target.screenshot(
