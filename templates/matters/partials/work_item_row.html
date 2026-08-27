@@ -15,8 +15,31 @@ as late. A WAIT or MONITOR whose review date has passed is ripe for a look,
 which is warning-level and is not lateness (master specification 18.8).
 
 The whole row is a link to the Matter, so Enter opens it from the keyboard.
+
+The 2026-08 pass adds one click to done. The ✓ on the left edge appears on
+hover and on focus, does exactly what the ⋯ menu's «Märgi tehtuks» does, and is
+offered only where the underlying record supports it — an Oluline tähtaeg has no
+completion workflow and is never given a button that would have to invent one.
+`data-workrow` and `data-workdone` are what J/K/X/Enter move over; every one of
+those keys has a visible control on this row (design handoff 1e).
 {% endcomment %}
-<div class="workrow2{% if item.is_overdue %} workrow2--overdue{% elif item.is_review_ripe %} workrow2--review{% endif %}">
+<div class="workrow2{% if item.is_overdue %} workrow2--overdue{% elif item.is_review_ripe %} workrow2--review{% endif %}"
+     data-workrow>
+  {% if item.is_action and can_write %}
+    {% comment %}
+      A real POST to a real service, carrying where to come back to. Not an
+      HTMX swap: completing a step changes which band the row belongs in and
+      what the header counts, so the honest answer is the list re-read
+      (app/matters/views.py, `complete_work_item`).
+    {% endcomment %}
+    <form class="uxdone__form" method="post"
+          action="{% url 'matters:complete_work_item' action_id=item.object_id %}">
+      {% csrf_token %}
+      <input type="hidden" name="next" value="{{ request.get_full_path }}">
+      <button class="uxdone" type="submit" data-workdone
+              title="Märgi tehtuks" aria-label="Märgi tehtuks: {{ item.text }}">✓</button>
+    </form>
+  {% endif %}
   <a class="workrow2__link" href="{{ item.matter_url }}">
     <span class="workrow2__datecell">
       <span class="workrow2__date{% if item.is_overdue %} workrow2__date--overdue{% elif item.is_review_ripe %} workrow2__date--review{% elif item.when == today %} workrow2__date--today{% endif %}">{{ item.short_date }}</span>

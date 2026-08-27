@@ -23,6 +23,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.dates import format_estonian_date
+from app.core.enums import Visibility
 from app.matters import overview as ov
 from app.matters import work_items as wi
 from app.matters.services import add_entry, assign_matter, change_stage, create_matter
@@ -529,3 +530,140 @@ def test_the_l_shortcut_is_advertised_where_it_applies() -> None:
 
     script = (JS_DIR / "ux.js").read_text(encoding="utf-8")
     assert "isEditing" in script, "no shortcut may fire inside a text control"
+
+
+# ---------------------------------------------------------------------------
+# 1e — Minu töö
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_one_click_finishes_a_step_and_returns_to_the_window_it_was_read_in(
+    client, specialist
+) -> None:
+    """The ✓ on the row calls the same service the Matter page calls.
+
+    And it comes back to the list somebody was working through, with the window
+    they chose still in the address — landing on a Matter page would cost them
+    the queue (design handoff 1e).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    action = set_next_action(
+        matter=matter,
+        text="Saada koja arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=timezone.localdate(),
+        actor=specialist,
+    )
+
+    client.force_login(specialist)
+    response = client.post(
+        reverse("matters:complete_work_item", kwargs={"action_id": action.pk}),
+        {"next": "/minu-too/?kuni=koik"},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/minu-too/?kuni=koik"
+    action.refresh_from_db()
+    assert action.status == ActionStatus.COMPLETED
+
+
+@pytest.mark.django_db
+def test_the_quick_complete_refuses_an_off_site_return(client, specialist) -> None:
+    """`next` arrives from a browser and is somebody's input until it is checked.
+
+    The same guard the persona switch applies (app/accounts/views.py).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    action = set_next_action(
+        matter=matter,
+        text="Saada koja arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=timezone.localdate(),
+        actor=specialist,
+    )
+
+    client.force_login(specialist)
+    response = client.post(
+        reverse("matters:complete_work_item", kwargs={"action_id": action.pk}),
+        {"next": "https://example.invalid/"},
+    )
+
+    assert response.headers["Location"] == reverse("matters:my_work")
+
+
+@pytest.mark.django_db
+def test_a_step_on_somebody_elses_restricted_matter_is_not_completable(
+    client, specialist, other_specialist
+) -> None:
+    """404, not 403 — the same answer every other route gives for a record
+    somebody may not touch."""
+    matter = factories.MatterFactory(owner=other_specialist, visibility=Visibility.RESTRICTED)
+    action = set_next_action(
+        matter=matter,
+        text="Saada koja arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=timezone.localdate(),
+        actor=other_specialist,
+    )
+
+    client.force_login(specialist)
+    response = client.post(reverse("matters:complete_work_item", kwargs={"action_id": action.pk}))
+
+    assert response.status_code == 404
+    action.refresh_from_db()
+    assert action.status == ActionStatus.OPEN
+
+
+@pytest.mark.django_db
+def test_an_important_deadline_is_never_offered_a_completion_it_does_not_have(
+    client, specialist
+) -> None:
+    """An Oluline tähtaeg is a milestone the department watches, not a task.
+
+    It has no completion workflow, so it gets no ✓ — the row would otherwise
+    have to invent one (§6.4, design handoff 1e).
+    """
+    from app.intelligence.services import add_important_date
+
+    matter = factories.MatterFactory(owner=specialist)
+    add_important_date(
+        matter=matter,
+        title="Avaliku konsultatsiooni lõpp",
+        date_value=timezone.localdate() + timedelta(days=3),
+        period_end=timezone.localdate() + timedelta(days=3),
+        actor=specialist,
+    )
+
+    client.force_login(specialist)
+    body = client.get(reverse("matters:my_work")).content.decode()
+
+    assert "Avaliku konsultatsiooni lõpp" in body
+    assert "data-workdone" not in body, "a milestone has nothing to complete"
+    assert "data-workrow" in body, "but it is still a row the keys move over"
+
+
+@pytest.mark.django_db
+def test_the_keyboard_hints_appear_only_where_there_is_something_to_move_over(
+    client, specialist
+) -> None:
+    client.force_login(specialist)
+    assert "uxkeys" not in client.get(reverse("matters:my_work")).content.decode()
+
+    matter = factories.MatterFactory(owner=specialist)
+    set_next_action(
+        matter=matter,
+        text="Saada koja arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=timezone.localdate(),
+        actor=specialist,
+    )
+    body = client.get(reverse("matters:my_work")).content.decode()
+    flat = " ".join(body.split())
+    assert "uxkeys" in body
+    for key in ("J", "K", "X", "Enter"):
+        assert f'<kbd class="key">{key}</kbd>' in flat

@@ -5,6 +5,15 @@ from app.matters import department_views, views
 urlpatterns = [
     path("ulevaade/", views.overview, name="overview"),
     path("minu-too/", views.my_work, name="my_work"),
+    # One click to done, from the list rather than from the Matter. Its own
+    # route because it ends where the reader was rather than on a Matter page,
+    # and it calls the same service the Matter page's «✓ Tehtud» calls
+    # (design handoff 1e).
+    path(
+        "minu-too/valmis/<uuid:action_id>/",
+        views.complete_work_item,
+        name="complete_work_item",
+    ),
     path("osakonna-too/", department_views.department_work, name="department_work"),
     path("saabunud/", views.inbox, name="inbox"),
     path("saabunud/lisa/", views.intake, name="intake"),

@@ -767,6 +767,12 @@
   position: relative;
 }
 
+/* The form is a wrapper with no box of its own: the button inside it is what
+   is positioned against the row. */
+.uxdone__form {
+  display: contents;
+}
+
 .uxdone {
   position: absolute;
   left: -11px;

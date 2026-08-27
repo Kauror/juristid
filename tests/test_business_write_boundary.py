@@ -219,6 +219,18 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
     ),
     WriteRoute(
+        name="matters:complete_work_item",
+        label="Järgmiseks lõpetamine Minu tööl",
+        # No `pk`: the route is keyed on the action, and the Matter is resolved
+        # from it through the same gate.
+        request=lambda w: ({"action_id": w["review_action"].pk}, {}),
+        probe=lambda w: (
+            w["review_action"]
+            .__class__.objects.values_list("status", flat=True)
+            .get(pk=w["review_action"].pk)
+        ),
+    ),
+    WriteRoute(
         name="matters:defer_action",
         label="Järgmiseks edasilükkamine",
         request=lambda w: ({"pk": w["matter"].pk, "action_id": w["action"].pk}, {"paevad": "7"}),

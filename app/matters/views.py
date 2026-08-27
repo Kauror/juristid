@@ -28,6 +28,7 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
@@ -246,9 +247,63 @@ def my_work(request: HttpRequest) -> HttpResponse:
             # still being edited, so an undated "Excelist" chip invites somebody
             # to act on a sentence that has since moved (ADR 0021).
             "source_snapshot": snapshot_label(),
+            # The ✓ on a row is a write, so the row offers it only to somebody
+            # who may write. The route checks again regardless: this decides
+            # what is drawn, never what is permitted
+            # (app/core/decorators.py, `business_write_required`).
+            "can_write": may_write_business_content(request.user),
             "nav_active": "minu_too",
         },
     )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def complete_work_item(request: HttpRequest, action_id: Any) -> HttpResponse:
+    """Mark one step done from Minu töö, without opening its Matter.
+
+    The whole gesture the ✓ on the row is: the same service the Matter page's
+    «✓ Tehtud» calls, with the same authorization, the same refusal and the same
+    audit row. What is different is only where the reader ends up — back on the
+    list they were working through, with the window they had chosen still in the
+    address (`?kuni=`).
+
+    Reached through `visible_to`, so an action restricted below its Matter is a
+    404 here exactly as it is everywhere else — and `.open()`, because a step
+    somebody has already finished in another tab must not be finished twice
+    (design handoff 1e).
+    """
+    action = get_object_or_404(
+        NextAction.objects.visible_to(request.user).open().select_related("matter"),
+        pk=action_id,
+    )
+    # The Matter itself, through the same gate any other route uses. An action
+    # is only reachable if its Matter is, and asking twice costs nothing.
+    get_visible_matter(request, action.matter_id)
+
+    try:
+        complete_next_action(action=action, actor=request.user)
+    except DomainError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, "Tegevus on märgitud tehtuks.")
+
+    return redirect(_safe_next(request) or reverse("matters:my_work"))
+
+
+def _safe_next(request: HttpRequest) -> str:
+    """A redirect target, only if it points back at this site.
+
+    The same guard `app.accounts.views` applies to the persona switch: a `next`
+    a browser sent is somebody's input until it has been checked.
+    """
+    candidate = request.POST.get("next") or ""
+    if candidate and url_has_allowed_host_and_scheme(
+        candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return candidate
+    return ""
 
 
 @login_required
