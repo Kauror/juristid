@@ -31,7 +31,7 @@ from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, go_to, sign_in, si
 pytestmark = pytest.mark.e2e
 
 WORK_PATH = "/osakonna-too/"
-NAV_NAME = "Osakonna töö"
+NAV_NAME = "Osakond"
 
 
 def card(page, label: str):

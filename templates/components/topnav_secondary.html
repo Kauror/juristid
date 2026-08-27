@@ -10,8 +10,11 @@ Two branches rather than one element moved by CSS because a closed <details>
 hides its contents inside the user agent's own shadow tree, which author CSS
 cannot reach: the row simply never appeared. Measured, not assumed.
 
-Nothing here decides anything. Osakonna töö is offered by role, the value comes
-from the server, and the route enforces the same check again.
+Nothing here decides anything. Osakond is offered by role, the value comes
+from the server, and the route enforces the same check again. The bar says
+`Osakond` and the page it opens is headed `Osakonna töö`: on a bar competing for
+width the short word is the one that fits at 1024px, and the destination names
+itself in full once somebody is on it (design handoff, «Osakond»).
 {% endcomment %}
 {% comment %}
   Arvamused leads this group, and is in this group rather than beside Teemad on
@@ -37,7 +40,7 @@ from the server, and the route enforces the same check again.
 {% if is_department_head %}
   <a class="topnav__link {% if nav_active == 'osakonna_too' %}is-active{% endif %}"
      {% if nav_active == 'osakonna_too' %}aria-current="page"{% endif %}
-     href="{% url 'matters:department_work' %}">Osakonna töö</a>
+     href="{% url 'matters:department_work' %}">Osakond</a>
 {% endif %}
 {% if can_read_opinion_archive %}
   {% comment %}

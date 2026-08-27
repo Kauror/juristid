@@ -11,8 +11,21 @@
     <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
+    {% comment %}
+      The 2026-08-27 UX pass, in its own file and loaded last. Additive by
+      construction: every rule in it names a `ux`-prefixed class, so the order
+      matters only for the one scoped exception it declares
+      (static/css/ux.css).
+    {% endcomment %}
+    <link rel="stylesheet" href="{% static 'css/ux.css' %}">
     <script src="{% static 'vendor/htmx.min.js' %}" defer></script>
     <script src="{% static 'js/app.js' %}" defer></script>
+    {% comment %}
+      Same split on the behaviour side: the keyboard moves and the quick-choice
+      chips the pass adds, bound the way app.js binds everything else — once,
+      idempotently, and again after every HTMX swap (static/js/ux.js).
+    {% endcomment %}
+    <script src="{% static 'js/ux.js' %}" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#sisu">Liigu sisu juurde</a>

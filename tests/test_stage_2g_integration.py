@@ -169,7 +169,9 @@ def test_both_navigation_entries_survive_for_the_head(client, department_head):
     client.force_login(department_head)
     body = client.get(reverse("matters:overview")).content.decode()
 
-    assert "Osakonna töö" in body
+    # The bar says the short word; the page it opens is still headed
+    # `Osakonna töö` (design handoff, «Osakond»).
+    assert ">Osakond</a>" in body
     assert "Jälgimine" in body
 
 
