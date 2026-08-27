@@ -120,6 +120,24 @@ def parse_flexible_date(value: str | None) -> date | None:
 WEEKDAY_LETTERS: tuple[str, ...] = ("E", "T", "K", "N", "R", "L", "P")
 
 
+#: The weekday spelled out, for a group heading that names one day. Estonian
+#: weekday names are lower case in running text; these are printed in a heading
+#: that upper-cases itself, so they are stored as written and cased by the page.
+WEEKDAY_NAMES: tuple[str, ...] = (
+    "esmaspäev",
+    "teisipäev",
+    "kolmapäev",
+    "neljapäev",
+    "reede",
+    "laupäev",
+    "pühapäev",
+)
+
+
+def weekday_name(value: date | None) -> str:
+    return "" if value is None else WEEKDAY_NAMES[value.weekday()]
+
+
 def weekday_letter(value: date | None) -> str:
     return "" if value is None else WEEKDAY_LETTERS[value.weekday()]
 

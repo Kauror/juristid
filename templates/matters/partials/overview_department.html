@@ -142,48 +142,16 @@ the reader never has to work out what "järgmisel" covers and the list behind
             </a>
           {% endwith %}
         {% else %}
+          {% comment %}
+            The row is a partial, shared with Osakond's Eesolev: a deadline must
+            read the same on both department surfaces, and two near-identical
+            blocks are two blocks that drift.
+          {% endcomment %}
           {% for item in group.preview %}
-            <a class="uxdl__row" href="{{ item.matter_url }}">
-              {% comment %}
-                The weekday letter answers "is that a working day" without
-                costing the row a word. Today says «täna» rather than printing
-                its own date back at somebody who is looking at it.
-              {% endcomment %}
-              {% if item.is_today %}
-                <span class="uxdl__date uxdl__date--today">täna</span>
-              {% else %}
-                <span class="uxdl__date">{{ item.weekday_letter }} <b>{{ item.day_month }}</b></span>
-              {% endif %}
-              <span class="uxdl__name">
-                {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter.title }}
-              </span>
-              {% comment %}
-                Initials, with the full name on the badge. Ownerless is a dashed
-                «!» rather than a blank cell: it is the state most worth seeing
-                on this list, and it is not carried by colour alone.
-              {% endcomment %}
-              <span class="uxav{% if not item.responsible %} uxav--none{% endif %}"
-                    title="{{ item.responsible_title }}">{{ item.responsible_initials }}</span>
-            </a>
+            {% include "matters/partials/deadline_row.html" with item=item %}
           {% endfor %}
           {% if group.remaining %}
-            <details class="uxdl__more">
-              <summary>Näita veel {{ group.remaining }} ▾</summary>
-              {% for item in group.rest %}
-                <a class="uxdl__row" href="{{ item.matter_url }}">
-                  {% if item.is_today %}
-                    <span class="uxdl__date uxdl__date--today">täna</span>
-                  {% else %}
-                    <span class="uxdl__date">{{ item.weekday_letter }} <b>{{ item.day_month }}</b></span>
-                  {% endif %}
-                  <span class="uxdl__name">
-                    {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter.title }}
-                  </span>
-                  <span class="uxav{% if not item.responsible %} uxav--none{% endif %}"
-                        title="{{ item.responsible_title }}">{{ item.responsible_initials }}</span>
-                </a>
-              {% endfor %}
-            </details>
+            {% include "matters/partials/deadline_more.html" with rows=group.rest remaining=group.remaining %}
           {% endif %}
         {% endif %}
       </div>

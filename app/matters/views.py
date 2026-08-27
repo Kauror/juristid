@@ -421,6 +421,10 @@ FILTER_LABELS = {
     # action whatsoever (app/matters/work_items.py).
     "too": "Töö seis",
     "too_vastutaja": "Töö vastutaja",
+    # The window `?too=tahtaeg-vahemik` reads. Companions to `?too=`, like the
+    # responsible above them: they narrow it and select nothing on their own.
+    "too_alates": "Töö alates",
+    "too_kuni": "Töö kuni",
     # What the register recorded about the drafting step. A dimension of its own
     # rather than a synonym for `tegevus`: a Matter can carry a next action and
     # an unfinished opinion at the same time, and they are different questions
@@ -632,7 +636,14 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         return MATERIAL_LABELS.get(value, value)
     if name == "andmed":
         return DATA_CLASS_LABELS.get(value, value)
-    if name in register_filters.DATE_FILTERS:
+    if (
+        name
+        in (
+            register_filters.WORK_WINDOW_START_PARAM,
+            register_filters.WORK_WINDOW_END_PARAM,
+        )
+        or name in register_filters.DATE_FILTERS
+    ):
         # The parameter may carry either form — the control submits Estonian and
         # an older link carries ISO — and the chip reads back the one way this
         # application writes a date. An unparseable value is shown as typed, so
@@ -653,9 +664,11 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
         # `?too_vastutaja=` narrows `?too=` and does nothing on its own. A chip
         # for a parameter that changed no rows is a chip that says the list is
         # narrower than it is.
-        if name == register_filters.WORK_RESPONSIBLE_PARAM and not params.get(
-            register_filters.WORK_PARAM
-        ):
+        if name in (
+            register_filters.WORK_RESPONSIBLE_PARAM,
+            register_filters.WORK_WINDOW_START_PARAM,
+            register_filters.WORK_WINDOW_END_PARAM,
+        ) and not params.get(register_filters.WORK_PARAM):
             continue
         without = params.copy()
         without.pop(name, None)

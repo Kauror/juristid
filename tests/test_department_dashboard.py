@@ -27,10 +27,10 @@ from app.legacy_import.current_register import apply_promotion_plan, build_promo
 from app.legacy_import.owner_backfill import apply_backfill_plan, build_backfill_plan
 from app.matters import dashboard as overview
 from app.matters.department_dashboard import (
+    TEAM_COLUMNS,
     build_department_work,
-    lawyer_matrix,
-    summary_cards,
-    unassigned_matters,
+    seis_figures,
+    team_rows,
 )
 from app.matters.models import Matter
 from app.matters.selectors import my_active_matters
@@ -42,7 +42,6 @@ from tests.synthetic_portfolio import (
     HISTORICAL,
     OWNED_CANDIDATE,
     RESTRICTED,
-    UNASSIGNED,
     Portfolio,
     build_portfolio,
 )
@@ -139,14 +138,22 @@ def test_the_navigation_offers_the_page_only_to_the_head(client, portfolio: Port
 # =========================================================================
 
 
-def test_the_head_sees_a_restricted_matter_because_the_role_entitles_it(
+def test_the_head_counts_a_restricted_matter_because_the_role_entitles_it(
     portfolio: Portfolio,
 ) -> None:
-    """Not because this page decided so — DEPARTMENT_HEAD already carries it."""
-    work = build_department_work(portfolio.people.head)
-    counted = {row.matter.title for row in work.attention}
-    counted |= {matter.title for matter in work.incoming}
-    assert RESTRICTED in counted
+    """Not because this page decided so — DEPARTMENT_HEAD already carries it.
+
+    Asserted on the team table, which is where the page counts Matters now: the
+    same person's row, read by two people, gives two different numbers, and the
+    difference is exactly the restricted file.
+    """
+    sandra = portfolio.people.sandra
+    restricted = Matter.objects.get(title=RESTRICTED)
+    assert restricted.owner == sandra
+
+    seen_by_head = cell_of(portfolio.people.head, sandra.display_name, "open").value
+    seen_by_other = cell_of(portfolio.people.martin, sandra.display_name, "open").value
+    assert seen_by_head == seen_by_other + 1
 
 
 def test_a_restricted_matter_the_head_can_count_is_absent_for_an_unrelated_specialist(
@@ -174,21 +181,42 @@ def test_a_specialist_sees_their_own_restricted_matter(portfolio: Portfolio) -> 
 
 
 # =========================================================================
-# The lawyer matrix
+# Meeskond
 # =========================================================================
 
 
-def test_the_matrix_lists_current_caseworkers_alphabetically(portfolio: Portfolio) -> None:
+def people_rows(user):
+    """The team table without the unassigned pile and the total."""
+    return [row for row in team_rows(user) if not row.is_unassigned and not row.is_total]
+
+
+def cell_of(user, name: str, column: str):
+    """One person's cell in one named column, located by the column list."""
+    index = next(
+        position
+        for position, (key, _label, _group, _sep) in enumerate(TEAM_COLUMNS)
+        if key == column
+    )
+    row = next(row for row in team_rows(user) if row.name == name)
+    return row.cells[index]
+
+
+def test_the_team_lists_current_caseworkers_alphabetically(portfolio: Portfolio) -> None:
     """Oversight, not a leaderboard. Ordering is the guard."""
-    rows = lawyer_matrix(portfolio.people.head)
-    names = [row.display_name for row in rows]
+    names = [row.name for row in people_rows(portfolio.people.head)]
     assert names == sorted(names)
 
 
-def test_the_matrix_includes_the_head_and_every_active_specialist(portfolio: Portfolio) -> None:
-    names = {row.display_name for row in lawyer_matrix(portfolio.people.head)}
+def test_the_team_includes_the_head_and_every_active_specialist(portfolio: Portfolio) -> None:
+    names = {row.name for row in people_rows(portfolio.people.head)}
     for person in [*portfolio.people.specialists, portfolio.people.head]:
         assert person.display_name in names
+
+
+def test_the_reader_is_marked_on_their_own_row(portfolio: Portfolio) -> None:
+    rows = {row.name: row for row in people_rows(portfolio.people.head)}
+    assert rows[portfolio.people.head.display_name].is_self
+    assert not rows[portfolio.people.sandra.display_name].is_self
 
 
 def test_a_departed_colleague_appears_only_while_they_still_hold_live_work(
@@ -200,29 +228,41 @@ def test_a_departed_colleague_appears_only_while_they_still_hold_live_work(
     find open files, so the row stays and says why it is there.
     """
     former = portfolio.people.former
-    rows = {row.display_name: row for row in lawyer_matrix(portfolio.people.head)}
+    rows = {row.name: row for row in people_rows(portfolio.people.head)}
     assert former.display_name not in rows, "an archive-only owner is not on today's team"
 
     # Give the departed colleague an open FULL Matter and they reappear, flagged.
     Matter.objects.filter(title=OWNED_CANDIDATE).update(owner=former)
-    rows = {row.display_name: row for row in lawyer_matrix(portfolio.people.head)}
-    assert rows[former.display_name].is_former_member is True
+    rows = {row.name: row for row in people_rows(portfolio.people.head)}
+    assert rows[former.display_name].is_former is True
 
 
-def test_the_active_count_matches_the_list_it_links_to(client, portfolio: Portfolio) -> None:
+def test_work_nobody_carries_has_its_own_row(portfolio: Portfolio) -> None:
+    """It is on nobody's personal list by definition, which is why it is here."""
+    unassigned = next(row for row in team_rows(portfolio.people.head) if row.is_unassigned)
+    assert unassigned.cells[0].value >= 1
+
+
+def test_the_open_count_matches_the_list_it_links_to(client, portfolio: Portfolio) -> None:
     """A number that links to a list is a promise about that list."""
     client.force_login(portfolio.people.head)
-    row = next(
-        r
-        for r in lawyer_matrix(portfolio.people.head)
-        if r.display_name == portfolio.people.sandra.display_name
-    )
-    response = client.get(row.active.url)
+    cell = cell_of(portfolio.people.head, portfolio.people.sandra.display_name, "open")
+    response = client.get(cell.url)
     assert response.status_code == 200
-    assert response.context["page"].paginator.count == row.active.count
+    assert response.context["page"].paginator.count == cell.value
 
 
-def test_an_overdue_count_is_only_ever_a_late_do_action(portfolio: Portfolio) -> None:
+def test_the_three_history_columns_carry_no_link_they_cannot_keep(
+    portfolio: Portfolio,
+) -> None:
+    """The register lists Matters by their current state, so a link from a
+    column counting last week would open a list that does not match it."""
+    row = people_rows(portfolio.people.head)[0]
+    for column in ("changed", "sent_week", "sent_year"):
+        assert cell_of(portfolio.people.head, row.name, column).url == ""
+
+
+def test_an_overdue_figure_is_only_ever_a_late_do_action(portfolio: Portfolio) -> None:
     """A review date reached is not a missed deadline (specification 18.8)."""
     head = portfolio.people.head
     today = timezone.localdate()
@@ -237,9 +277,8 @@ def test_an_overdue_count_is_only_ever_a_late_do_action(portfolio: Portfolio) ->
         actor=head,
     )
 
-    cards = {card.key: card.count for card in summary_cards(head, today)}
-    assert cards["overdue"] == 0, "waiting past a review date is not overdue"
-    assert cards["review_due"] >= 1
+    figures = {figure.key: figure.value for figure in seis_figures(head, today)}
+    assert figures["overdue"] == 0, "waiting past a review date is not overdue"
 
 
 def test_a_genuinely_late_action_is_counted_as_overdue(portfolio: Portfolio) -> None:
@@ -256,8 +295,8 @@ def test_a_genuinely_late_action_is_counted_as_overdue(portfolio: Portfolio) -> 
         actor=head,
     )
 
-    cards = {card.key: card.count for card in summary_cards(head, today)}
-    assert cards["overdue"] == 1
+    figures = {figure.key: figure.value for figure in seis_figures(head, today)}
+    assert figures["overdue"] == 1
 
 
 def test_the_head_page_and_ulevaade_agree_about_what_is_overdue(portfolio: Portfolio) -> None:
@@ -272,20 +311,19 @@ def test_the_head_page_and_ulevaade_agree_about_what_is_overdue(portfolio: Portf
         actor=head,
     )
 
-    head_cards = {card.key: card.count for card in summary_cards(head, today)}
+    figures = {figure.key: figure.value for figure in seis_figures(head, today)}
     overview_cards = {card.key: card.count for card in overview.summary_cards(head, today)}
-    assert head_cards["overdue"] == overview_cards["overdue"]
-    assert head_cards["active"] == overview_cards["active"]
+    assert figures["overdue"] == overview_cards["overdue"]
 
 
-def test_the_matrix_does_not_query_once_per_lawyer(
+def test_the_team_table_does_not_query_once_per_lawyer(
     django_assert_max_num_queries, portfolio: Portfolio
 ) -> None:
-    """Six grouped counts, one for the people, and a few scope lookups.
+    """Nine grouped counts, one for the people, and a few scope lookups.
 
     A budget rather than an exact number, because the interesting property is
-    that it does not move with the headcount. Eleven more colleagues here; a
-    per-lawyer-per-metric implementation would be into the seventies. The real
+    that it does not move with the headcount. Six more colleagues here; a
+    per-lawyer-per-column implementation would be into the hundreds. The real
     department is small enough that the naive shape would work and still be
     wrong — a query count that grows when somebody is hired is a page that
     degrades exactly when it matters (Stage-2F brief 47).
@@ -293,32 +331,70 @@ def test_the_matrix_does_not_query_once_per_lawyer(
     for index in range(6):
         factories.UserFactory(display_name=f"Lisajurist {index}")
 
-    with django_assert_max_num_queries(16):
-        list(lawyer_matrix(portfolio.people.head))
+    with django_assert_max_num_queries(30):
+        list(team_rows(portfolio.people.head))
 
 
 # =========================================================================
-# Unassigned and the rest of the page
+# The page
 # =========================================================================
 
 
-def test_unassigned_holds_live_work_only(portfolio: Portfolio) -> None:
-    titles = {matter.title for matter in unassigned_matters(portfolio.people.head)}
-    assert UNASSIGNED in titles
-    assert HISTORICAL not in titles, "a decade of ownerless archive rows is not a queue"
+def test_the_total_row_reconciles_with_the_risk_strip(portfolio: Portfolio) -> None:
+    """Where two numbers on this page count the same population, they agree.
+
+    The head is the one reader who looks at both, and two figures that ought to
+    match and do not is how somebody stops believing either. Guaranteed by
+    construction — the total is the sum of the rows above it rather than a tenth
+    set of queries — and asserted so the construction cannot quietly change.
+    """
+    today = timezone.localdate()
+    work = build_department_work(portfolio.people.head, today=today)
+    total = next(row for row in work.team if row.is_total)
+    unassigned = next(row for row in work.team if row.is_unassigned)
+    figures = {figure.key: figure.value for figure in work.seis}
+
+    index = {key: position for position, (key, _l, _g, _s) in enumerate(TEAM_COLUMNS)}
+    assert total.cells[index["overdue"]].value == figures["overdue"]
+    assert total.cells[index["week"]].value == figures["week"]
+    assert unassigned.cells[index["open"]].value == figures["unassigned"]
+    assert total.cells[index["open"]].value == work.open_matters
+
+
+def test_the_attention_rail_and_the_strip_agree_about_unassigned_work(
+    portfolio: Portfolio,
+) -> None:
+    """The same filter appears in two places and must not give two answers."""
+    work = build_department_work(portfolio.people.head)
+    figures = {figure.key: figure.value for figure in work.seis}
+    rail = {row.label: row for row in work.attention}
+
+    assert rail["Vastutajata teemad"].count == figures["unassigned"]
+    assert rail["Üle tähtaja"].count == figures["overdue"]
+    assert rail["Uued saabunud, läbi vaatamata"].count == figures["unreviewed"]
 
 
 def test_the_page_renders_every_section(client, portfolio: Portfolio) -> None:
     client.force_login(portfolio.people.head)
     body = client.get(WORK_URL).content.decode()
-    for heading in (
-        "Juristid",
-        "Tähelepanu kogu osakonnas",
-        "Lähenevad kuupäevad",
-        "Vastutajata teemad",
-        "Hiljuti saabunud",
-    ):
+    for heading in ("SEIS", "Meeskond", "Eesolev", "Tehtud", "Vajab tähelepanu", "Aruandlus"):
         assert heading in body
+
+
+def test_the_page_uses_the_words_the_handoff_settled_on(client, portfolio: Portfolio) -> None:
+    """«läbi vaatamata», never «triaaž»; «Muutusteta 30 p», never «seisma jäänud».
+
+    Both replacements name a state of the file. The words they replace name a
+    process nobody here runs, and a judgement about the person carrying it.
+    """
+    client.force_login(portfolio.people.head)
+    body = client.get(WORK_URL).content.decode()
+
+    assert "läbi vaatamata" in body
+    assert "Muutusteta 30 p" in body
+    lowered = body.casefold()
+    assert "triaaž" not in lowered
+    assert "seisma jäänud" not in lowered
 
 
 def test_the_page_never_ranks_or_scores_anybody(client, portfolio: Portfolio) -> None:

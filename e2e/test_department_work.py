@@ -3,8 +3,9 @@
 What a number *means* is proved against the database in
 `tests/test_department_dashboard.py`. What only a browser shows is whether the
 gate really holds for a person who types the URL, whether the page reads as
-oversight rather than as a ranking, and whether a count on the page opens the
-list it claims to.
+oversight rather than as a ranking, whether a count on the page opens the list
+it claims to, and whether nine columns of numbers can be read on a laptop
+without the page itself scrolling sideways.
 
 The role gate is the reason these exist. A gate that is right in a unit test
 and wrong in the template — a navigation item rendered for everybody, a view
@@ -20,11 +21,8 @@ from playwright.sync_api import expect
 from app.core.management.commands.seed_e2e_data import (
     FORMER_NAME,
     FORMER_OWNER_TITLE,
-    NO_ACTION_TITLE,
     OVERDUE_TITLE,
     RESTRICTED_TITLE,
-    REVIEW_DUE_TITLE,
-    UNASSIGNED_TITLE,
 )
 from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, go_to, sign_in, sign_out
 
@@ -34,17 +32,17 @@ WORK_PATH = "/osakonna-too/"
 NAV_NAME = "Osakond"
 
 
-def card(page, label: str):
-    """One summary card, located by the words printed on it."""
-    return page.locator(".statcard").filter(has_text=label).first
+def figure(page, caption: str):
+    """One number on the Seis strip, located by the words printed under it."""
+    return page.locator(".seis__figure").filter(has_text=caption).first
 
 
-def card_value(page, label: str) -> int:
-    return int(card(page, label).locator(".statcard__value").inner_text().strip())
+def figure_value(page, caption: str) -> int:
+    return int(figure(page, caption).locator(".seis__number").inner_text().strip())
 
 
-def lawyer_row(page, name: str):
-    return page.locator("table.table tbody tr").filter(has_text=name).first
+def team_row(page, name: str):
+    return page.locator(".uxstat__row").filter(has_text=name).first
 
 
 def reveal_secondary_navigation(page) -> None:
@@ -52,6 +50,11 @@ def reveal_secondary_navigation(page) -> None:
     trigger = page.locator(".topnav__trigger")
     if trigger.count() and trigger.is_visible():
         trigger.click()
+
+
+def open_work(page, base_url) -> None:
+    page.goto(f"{base_url}{WORK_PATH}")
+    page.wait_for_load_state("networkidle")
 
 
 # =========================================================================
@@ -80,9 +83,6 @@ def test_a_specialist_who_types_the_url_does_not_reach_it(page, base_url):
 def test_the_technical_administrator_does_not_inherit_the_page(page, base_url):
     """Administering the system is not reading the department's work."""
     sign_in(page, base_url, ADMIN)
-    # Opened first, because the secondary destinations live behind it below
-    # 1560px: asserting an absence against a closed disclosure would pass for
-    # the department head too, and prove nothing.
     reveal_secondary_navigation(page)
     expect(page.get_by_role("link", name=NAV_NAME, exact=True)).to_have_count(0)
 
@@ -110,78 +110,65 @@ def test_the_head_is_offered_the_page_and_opens_it(page, base_url, screenshots):
     go_to(page, NAV_NAME)
     page.wait_for_url(f"{base_url}{WORK_PATH}")
 
-    expect(page.get_by_role("heading", name=NAV_NAME, exact=True)).to_be_visible()
+    expect(page.get_by_role("heading", name="Osakonna töö", exact=True)).to_be_visible()
     screenshots(page, "osakonna-too")
 
 
 # =========================================================================
-# What the page says
+# Seis
 # =========================================================================
-
-
-def open_work(page, base_url) -> None:
-    page.goto(f"{base_url}{WORK_PATH}")
-    page.wait_for_load_state("networkidle")
 
 
 def test_a_review_date_reached_is_never_counted_as_a_missed_deadline(page, base_url):
     """The distinction the whole work model rests on.
 
-    The seeded world holds exactly one genuinely late DO and exactly one WAIT
-    whose review date has passed. If those two ever land in the same number,
-    waiting on a ministry starts reading as a failure and the department stops
-    believing the queue (specification 18.8).
+    The seeded world holds exactly one genuinely late DO and one WAIT whose
+    review date has passed. If those two ever land in the same number, waiting on
+    a ministry starts reading as a failure and the department stops believing the
+    queue (specification 18.8).
     """
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    assert card_value(page, "Tegevuse tähtaeg möödas") == 1
-    assert card_value(page, "Ülevaatus või ootamine vajab pilku") == 1
-    expect(card(page, "Ülevaatus või ootamine vajab pilku")).to_contain_text("Ei ole hilinemine")
+    assert figure_value(page, "üle tähtaja") == 1
 
 
-def test_the_overdue_card_reaches_the_matter_that_is_actually_late(page, base_url):
+def test_the_overdue_figure_reaches_the_matter_that_is_actually_late(page, base_url):
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    card(page, "Tegevuse tähtaeg möödas").click()
+    figure(page, "üle tähtaja").click()
     page.wait_for_load_state("networkidle")
     expect(page.get_by_role("link", name=OVERDUE_TITLE)).to_be_visible()
-    expect(page.get_by_role("link", name=REVIEW_DUE_TITLE)).to_have_count(0)
 
 
-def test_matters_with_no_instruction_are_counted_and_listed(page, base_url):
-    """`Järgmiseks puudub` is a state to act on, not a hole to fill with a guess."""
+def test_work_with_nobody_on_it_is_counted_and_reachable(page, base_url):
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    assert card_value(page, "Järgmiseks puudub") >= 1
-    card(page, "Järgmiseks puudub").click()
+    counted = figure_value(page, "vastutajata")
+    assert counted >= 1
+
+    figure(page, "vastutajata").click()
     page.wait_for_load_state("networkidle")
-    expect(page.get_by_role("link", name=NO_ACTION_TITLE)).to_be_visible()
+    expect(page.locator(".pagehead__context")).to_have_text(f"{counted} teemat")
 
 
-def test_work_with_nobody_on_it_is_visible_and_reachable(page, base_url):
+def test_the_wording_the_handoff_settled_on_is_what_is_on_screen(page, base_url):
+    """«läbi vaatamata», never «triaaž». «Muutusteta 30 p», never «seisma jäänud»."""
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    assert card_value(page, "Vastutajata") >= 1
-    section = page.locator("section").filter(has_text="Vastutajata teemad").first
-    expect(section.get_by_role("link", name=UNASSIGNED_TITLE)).to_be_visible()
-
-
-def test_upcoming_dates_keep_their_meanings_apart(page, base_url):
-    """Four kinds of date share one column and must not read alike."""
-    sign_in(page, base_url, HEAD)
-    open_work(page, base_url)
-
-    upcoming = page.locator("section").filter(has_text="Lähenevad kuupäevad").first
-    expect(upcoming).to_be_visible()
-    expect(upcoming).to_contain_text("Tähendus")
+    body = page.content()
+    assert "läbi vaatamata" in body
+    assert "Muutusteta 30 p" in body
+    lowered = body.casefold()
+    assert "triaaž" not in lowered
+    assert "seisma jäänud" not in lowered
 
 
 # =========================================================================
-# The lawyer table
+# Meeskond
 # =========================================================================
 
 
@@ -189,15 +176,14 @@ def test_the_team_table_lists_lawyers_and_never_ranks_them(page, base_url, scree
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    table = page.locator("section").filter(has_text="Juristid").first
-    expect(table.get_by_role("row").filter(has_text=SANDRA.display_name)).to_be_visible()
-    expect(table.get_by_role("row").filter(has_text=MARTIN.display_name)).to_be_visible()
+    expect(team_row(page, SANDRA.display_name)).to_be_visible()
+    expect(team_row(page, MARTIN.display_name)).to_be_visible()
 
     body = page.content().casefold()
     for forbidden in ("töökoormus", "tulemuslikkus", "produktiivsus", "edetabel"):
         assert forbidden not in body, f"{forbidden!r} would make this a staff evaluation"
 
-    screenshots(page, "osakonna-too-juristid")
+    screenshots(page, "osakonna-too-meeskond")
 
 
 def test_the_lawyers_are_listed_alphabetically(page, base_url):
@@ -205,22 +191,26 @@ def test_the_lawyers_are_listed_alphabetically(page, base_url):
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    section = page.locator("section").filter(has_text="Juristid").first
-    names = [name.strip() for name in section.locator(".lawyer__name").all_inner_texts()]
+    names = [
+        name.strip()
+        for name in page.locator(".uxstat__row .uxteam__name").all_inner_texts()
+        # The unassigned pile and the total are not people and sit last.
+        if name.strip() not in ("Vastutajata", "Kokku")
+    ]
+    names = [name.replace("· sina", "").strip() for name in names]
     assert names, "the team table rendered no lawyers at all"
     assert names == sorted(names)
 
 
-def test_a_lawyers_active_count_opens_exactly_that_list(page, base_url):
+def test_a_lawyers_open_count_opens_exactly_that_list(page, base_url):
     """Every number is a promise that a list exists behind it."""
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    row = lawyer_row(page, MARTIN.display_name)
-    link = row.locator("td a").first
-    expected = int(link.inner_text().strip().rstrip("*"))
+    row = team_row(page, MARTIN.display_name)
+    expected = int(row.locator(".uxstat__num").first.inner_text().strip())
 
-    link.click()
+    row.click()
     page.wait_for_load_state("networkidle")
     expect(page.locator(".pagehead__context")).to_have_text(f"{expected} teemat")
 
@@ -230,8 +220,7 @@ def test_a_departed_colleague_holding_live_work_is_surfaced_not_hidden(page, bas
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    section = page.locator("section").filter(has_text="Juristid").first
-    row = section.get_by_role("row").filter(has_text=FORMER_NAME)
+    row = team_row(page, FORMER_NAME)
     expect(row).to_be_visible()
     expect(row.locator(".badge")).to_be_visible()
 
@@ -243,12 +232,76 @@ def test_the_departed_colleague_is_not_offered_as_somebody_to_choose(page, base_
     assert FORMER_NAME not in page.content()
 
 
+def test_nine_columns_scroll_inside_their_block_rather_than_moving_the_page(page, base_url):
+    """The one horizontal scroll in the application, and it is deliberate.
+
+    A manager on a laptop must be able to read the last column, and the page
+    itself must never move sideways to let them (design handoff, Osakond §2).
+    """
+    sign_in(page, base_url, HEAD)
+    page.set_viewport_size({"width": 1024, "height": 900})
+    open_work(page, base_url)
+
+    assert not page.evaluate(
+        "() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1"
+    ), "the page must not scroll horizontally"
+    assert page.evaluate(
+        "() => { const t = document.querySelector('.uxstat');"
+        " return t.scrollWidth > t.clientWidth; }"
+    ), "the team table must be the thing that scrolls"
+
+
+# =========================================================================
+# Eesolev and Tehtud
+# =========================================================================
+
+
+def test_the_period_control_lives_in_the_url(page, base_url):
+    """A report somebody is reading can be sent to somebody else."""
+    sign_in(page, base_url, HEAD)
+    open_work(page, base_url)
+
+    page.get_by_role("link", name="30 päeva", exact=True).click()
+    page.wait_for_load_state("networkidle")
+    assert "periood=30" in page.url
+    expect(page.locator(".uxchip.is-selected").filter(has_text="30 päeva")).to_be_visible()
+
+
+def test_a_custom_period_is_a_real_date_control(page, base_url):
+    sign_in(page, base_url, HEAD)
+    open_work(page, base_url)
+
+    page.get_by_text("Vali periood…", exact=True).click()
+    field = page.locator("input[name=alates]")
+    expect(field).to_be_visible()
+    field.fill("1.1.2026")
+    page.locator("input[name=kuni]").fill("31.12.2026")
+    page.get_by_role("button", name="Näita").click()
+    page.wait_for_load_state("networkidle")
+    assert "periood=vahemik" in page.url
+
+
+def test_an_upcoming_group_opens_exactly_its_own_window(page, base_url):
+    """`kõik N →` is a promise about the list behind it."""
+    sign_in(page, base_url, HEAD)
+    open_work(page, base_url)
+
+    link = page.locator(".uxdl__all").first
+    if not link.count():
+        pytest.skip("the seeded world holds no upcoming deadlines today")
+    expected = int(link.inner_text().split()[1])
+
+    link.click()
+    page.wait_for_load_state("networkidle")
+    expect(page.locator(".pagehead__context")).to_have_text(f"{expected} teemat")
+
+
 # =========================================================================
 # Restricted content
 # =========================================================================
 
 
-def test_the_head_sees_restricted_work_and_a_reader_does_not(page, base_url):
+def test_the_head_counts_restricted_work_and_a_reader_does_not(page, base_url):
     """One Matter, two readers, two correct answers.
 
     The head sees it because DEPARTMENT_HEAD is entitled to; a reader does not,
@@ -256,12 +309,13 @@ def test_the_head_sees_restricted_work_and_a_reader_does_not(page, base_url):
     because a leak here would be a leak in rendering, not in a query.
     """
     sign_in(page, base_url, HEAD)
-    open_work(page, base_url)
+    page.goto(f"{base_url}/teemad/?olek=koik")
+    page.wait_for_load_state("networkidle")
     expect(page.get_by_text(RESTRICTED_TITLE).first).to_be_visible()
     sign_out(page, base_url)
 
     sign_in(page, base_url, READER)
-    page.goto(f"{base_url}/teemad/")
+    page.goto(f"{base_url}/teemad/?olek=koik")
     page.wait_for_load_state("networkidle")
     assert RESTRICTED_TITLE not in page.content()
 
@@ -274,6 +328,8 @@ def test_the_former_owners_matter_reaches_its_own_page(page, base_url):
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
+    team_row(page, FORMER_NAME).click()
+    page.wait_for_load_state("networkidle")
     page.get_by_role("link", name=FORMER_OWNER_TITLE).first.click()
     page.wait_for_load_state("networkidle")
     expect(page.get_by_role("heading", name=FORMER_OWNER_TITLE)).to_be_visible()

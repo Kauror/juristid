@@ -596,6 +596,13 @@ WORK_DEADLINE_30_DAYS = "tahtaeg-30"
 #: all until it became next week's problem (design handoff 1a, KAUGEMAL).
 WORK_DEADLINE_BEYOND = "tahtaeg-kaugemal"
 WORK_NEEDS_ATTENTION = "sekkumist"
+#: Real deadlines inside a window the caller names, or every one of them from
+#: today on when it names none. The one population that takes an argument, and
+#: it exists because Osakond's *Eesolev* groups the whole department's dates by
+#: today, tomorrow, next week and next month — four windows read once, not worth
+#: four fixed names, and still obliged to open the exact list they counted
+#: (`?too_alates=`, `?too_kuni=`; design handoff, Osakond §3).
+WORK_DEADLINE_WINDOW = "tahtaeg-vahemik"
 #: Open work nothing has happened on for a month. Not a date population: it is
 #: read from the derived last-activity fact, which is why it is resolved as a
 #: queryset in `work_population_ids` rather than out of the item list.
@@ -616,6 +623,7 @@ WORK_POPULATION_LABELS: dict[str, str] = {
     WORK_DEADLINE_NEXT_WEEK: "Tähtaeg järgmisel nädalal",
     WORK_DEADLINE_30_DAYS: "Tähtaeg 30 päeva jooksul",
     WORK_DEADLINE_BEYOND: "Tähtaeg kaugemal",
+    WORK_DEADLINE_WINDOW: "Tähtaeg ees",
     WORK_NEEDS_ATTENTION: "Vajab sekkumist",
     WORK_QUIET_30: f"Muutusteta {QUIET_DAYS} p",
 }
@@ -658,23 +666,41 @@ def deadline_window(key: str, today: date) -> tuple[date, date | None]:
     return month_end + timedelta(days=1), None
 
 
-def work_population_items(items: list[WorkItem], key: str, today: date) -> list[WorkItem]:
+def _deadlines_between(items: list[WorkItem], start: date, end: date | None) -> list[WorkItem]:
+    return [
+        item
+        for item in real_deadlines(items)
+        if item.when is not None and start <= item.when and (end is None or item.when <= end)
+    ]
+
+
+def work_population_items(
+    items: list[WorkItem],
+    key: str,
+    today: date,
+    *,
+    window: tuple[date, date | None] | None = None,
+) -> list[WorkItem]:
     """The rows of one named population, out of an already-read work model.
 
     Ülevaade passes the list it already holds; the register filter reads its
     own. Same function either way, which is the whole point.
+
+    ``window`` is read by :data:`WORK_DEADLINE_WINDOW` and ignored by every
+    other key. Omitted, it means "from today on", so that population is a
+    legitimate thing to pick from the register's own control rather than a value
+    that selects nothing without two companion parameters.
     """
     if key == WORK_OVERDUE:
         return overdue_items(items)
     if key == WORK_RIPE:
         return review_ripe_items(items)
+    if key == WORK_DEADLINE_WINDOW:
+        start, end = window or (today, None)
+        return _deadlines_between(items, start, end)
     if key in DEADLINE_WINDOW_KEYS:
         start, end = deadline_window(key, today)
-        return [
-            item
-            for item in real_deadlines(items)
-            if item.when is not None and start <= item.when and (end is None or item.when <= end)
-        ]
+        return _deadlines_between(items, start, end)
     if key == WORK_NEEDS_ATTENTION:
         # The dated half. The two undated halves — no next action, no owner —
         # are querysets rather than work items and are added by the caller that
@@ -697,6 +723,7 @@ def work_population_ids(
     responsible: Any = ANY_PERSON,
     quiet: QuerySet[Matter] | None = None,
     ownerless: QuerySet[Matter] | None = None,
+    window: tuple[date, date | None] | None = None,
 ) -> set[Any]:
     """The Matter primary keys one named population holds, for this reader.
 
@@ -718,7 +745,7 @@ def work_population_ids(
     today = today or timezone.localdate()
     if items is None:
         items = work_items(user, today=today)
-    ids = {item.matter_id for item in work_population_items(items, key, today)}
+    ids = {item.matter_id for item in work_population_items(items, key, today, window=window)}
     if key == WORK_QUIET_30:
         # Nobody's work in particular: silence is a property of the file, and
         # narrowing it by a responsible person would answer a question the
@@ -803,7 +830,12 @@ def quiet_matters(user: Any, today: date | None = None, *, days: int = QUIET_DAY
 
     today = today or timezone.localdate()
     cutoff = today - timedelta(days=days)
-    population = annotate_last_activity(open_matters(user), user).only("id", "received_date")
+    # No `.only()`. `activity_of` reads six annotations *and* four stored
+    # columns — the closure date, the received date, the origin and
+    # `updated_at` — so deferring anything here turns one query into one per
+    # row, silently, and looks fine on a development database with twelve
+    # Matters in it (app/matters/activity.py).
+    population = annotate_last_activity(open_matters(user), user)
     quiet = []
     for matter in population:
         fact = activity_of(matter)
@@ -830,6 +862,7 @@ __all__ = [
     "WORK_DEADLINE_BEYOND",
     "WORK_DEADLINE_NEXT_WEEK",
     "WORK_DEADLINE_THIS_WEEK",
+    "WORK_DEADLINE_WINDOW",
     "WORK_NEEDS_ATTENTION",
     "WORK_OVERDUE",
     "WORK_POPULATIONS",

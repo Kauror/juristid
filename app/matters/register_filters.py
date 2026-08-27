@@ -38,7 +38,7 @@ from urllib.parse import urlencode
 from django.db.models import Count, Exists, OuterRef, Q, QuerySet
 from django.utils import timezone
 
-from app.core.dates import format_estonian_date
+from app.core.dates import format_estonian_date, parse_flexible_date
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters import selectors
 from app.matters.enums import RecordMode
@@ -85,6 +85,15 @@ WORK_PARAM = "too"
 #: them (master specification 18.1). `?vastutaja=` answers the ownership half;
 #: this answers the responsibility half.
 WORK_RESPONSIBLE_PARAM = "too_vastutaja"
+
+#: The window `?too=tahtaeg-vahemik` reads, both ends inclusive. Companions to
+#: `?too=` exactly as `?too_vastutaja=` is: they narrow it and do nothing on
+#: their own. Separate from `?tahtaeg_alates=`, which filters a Matter's own
+#: `Arvamuse tähtaeg` column — a different fact from the dated work model, and
+#: conflating them would give the same words two meanings in one URL
+#: (app/matters/work_items.py).
+WORK_WINDOW_START_PARAM = "too_alates"
+WORK_WINDOW_END_PARAM = "too_kuni"
 
 #: The year a Matter was closed in. Its own parameter rather than `?aasta=`,
 #: which is the *reporting* year — the year the file belongs to, not the year
@@ -208,6 +217,8 @@ def filter_by_work_state(
     value: str,
     responsible_raw: str = "",
     today: date | None = None,
+    window_start_raw: str = "",
+    window_end_raw: str = "",
 ) -> QuerySet[Matter]:
     """Apply `?too=`, through the read model Ülevaade counted with.
 
@@ -238,7 +249,20 @@ def filter_by_work_state(
             for item in wi.work_items(user, today=today)
             if (item.responsible.pk if item.responsible is not None else None) == responsible
         ]
-    ids = wi.work_population_ids(user, value, today=today, items=items, responsible=responsible)
+    # An unreadable window empties the list rather than being ignored, for the
+    # same reason an unreadable date does anywhere else in this module: a chip
+    # above the whole register is a lie the reader has no way to catch.
+    window: tuple[date, date | None] | None = None
+    if window_start_raw or window_end_raw:
+        start = parse_flexible_date(window_start_raw) if window_start_raw else today
+        end = parse_flexible_date(window_end_raw) if window_end_raw else None
+        if start is None or (window_end_raw and end is None):
+            return queryset.none()
+        window = (start or (today or timezone.localdate()), end)
+
+    ids = wi.work_population_ids(
+        user, value, today=today, items=items, responsible=responsible, window=window
+    )
     return queryset.filter(pk__in=ids)
 
 
@@ -332,6 +356,8 @@ def apply_register_filters(
             work_state,
             (params.get(WORK_RESPONSIBLE_PARAM) or "").strip(),
             today,
+            (params.get(WORK_WINDOW_START_PARAM) or "").strip(),
+            (params.get(WORK_WINDOW_END_PARAM) or "").strip(),
         )
     for parameter, (field, many) in ORGANISATION_FILTERS.items():
         raw = params.get(parameter)

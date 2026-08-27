@@ -26,8 +26,20 @@ from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.matters import overview as ov
 from app.matters import work_items as wi
-from app.matters.services import add_entry, assign_matter, change_stage, create_matter
-from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
+from app.matters.services import (
+    add_entry,
+    assign_matter,
+    change_stage,
+    close_matter,
+    create_matter,
+)
+from app.workflow.enums import (
+    ActionKind,
+    ActionStatus,
+    DatePrecision,
+    DateSemantics,
+    Disposition,
+)
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
 from tests import factories
@@ -794,3 +806,137 @@ def test_a_reader_who_may_not_write_sees_the_state_rather_than_a_control(
 
     assert "Vastutajata" in body
     assert "uxassign" not in body
+
+
+# ---------------------------------------------------------------------------
+# Osakond
+# ---------------------------------------------------------------------------
+
+
+def _department_world(head, *, people: int, matters: int):
+    """A synthetic department: `people` caseworkers carrying `matters` files."""
+    owners = [factories.UserFactory(display_name=f"Jurist {index:02d}") for index in range(people)]
+    today = timezone.localdate()
+    for index in range(matters):
+        owner = owners[index % len(owners)]
+        matter = create_matter(title=f"Teema {index}", owner=owner, reference_year=2026, actor=head)
+        set_next_action(
+            matter=matter,
+            text="Saada arvamus",
+            kind=ActionKind.DO,
+            date_semantics=DateSemantics.DEADLINE,
+            target_date=today + timedelta(days=index % 40),
+            responsible=owner,
+            actor=head,
+        )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(("people", "matters"), [(3, 3), (12, 12), (30, 30), (12, 60)])
+def test_osakond_costs_the_same_whatever_the_department_holds(
+    client, department_head, django_assert_max_num_queries, people, matters
+) -> None:
+    """Bounded, and measured at four shapes rather than asserted at one.
+
+    The page is a stack of aggregates, so the failure mode is a helper that
+    quietly reads a column per row — which is exactly what a `.only()` on the
+    last-activity population did here, turning one query into sixty and looking
+    fine on a development database with twelve Matters in it.
+    """
+    _department_world(department_head, people=people, matters=matters)
+    client.force_login(department_head)
+
+    with django_assert_max_num_queries(75):
+        response = client.get(reverse("matters:department_work"))
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_the_eesolev_groups_are_consecutive_and_open_their_own_window(
+    department_head,
+) -> None:
+    """Four windows: today, tomorrow, the rest of next week, the month after.
+
+    Consecutive by construction, and each link narrows the register to exactly
+    its own dates rather than to a window that merely contains them
+    (`?too=tahtaeg-vahemik`).
+    """
+    from urllib.parse import parse_qsl, urlparse
+
+    from app.matters.department_dashboard import upcoming_groups
+    from app.matters.register_filters import register_population
+
+    today = timezone.localdate()
+    for offset in (0, 1, 3, 20):
+        _due(department_head, days=offset, title=f"Tähtaeg {offset} päeva pärast")
+
+    groups = upcoming_groups(department_head, today)
+    assert [group.key for group in groups] == ["tana", "homme", "nadal", "kuu"]
+    assert groups[0].starts == today
+    for earlier, later in pairwise(groups):
+        assert earlier.ends is not None
+        assert later.starts == earlier.ends + timedelta(days=1)
+
+    for group in groups:
+        query = dict(parse_qsl(urlparse(group.url).query))
+        listed = register_population(department_head, query, today=today)
+        assert listed.count() == group.matter_count, f"{group.key} promises what it cannot show"
+
+
+@pytest.mark.django_db
+def test_the_tehtud_period_lives_in_the_url_and_a_bad_range_falls_back(
+    department_head,
+) -> None:
+    from app.matters.department_dashboard import PERIOD_7, PERIOD_CUSTOM, period_from
+
+    today = date(2026, 8, 27)
+    assert period_from({}, today).key == PERIOD_7
+    assert period_from({"periood": "30"}, today).start == today - timedelta(days=30)
+
+    chosen = period_from({"periood": "vahemik", "alates": "1.1.2026", "kuni": "31.3.2026"}, today)
+    assert chosen.key == PERIOD_CUSTOM
+    assert (chosen.start, chosen.end) == (date(2026, 1, 1), date(2026, 3, 31))
+
+    # An inverted or unreadable range is not silently obeyed.
+    assert period_from({"periood": "vahemik", "alates": "1.4.2026", "kuni": "1.1.2026"}, today).key
+    assert period_from({"periood": "vahemik", "alates": "31.02.2026"}, today).key == PERIOD_7
+
+
+@pytest.mark.django_db
+def test_the_digest_reports_what_the_period_actually_holds(client, department_head) -> None:
+    """The summary counts the same populations the rows come from."""
+    from app.matters.department_dashboard import build_digest, period_from
+
+    today = timezone.localdate()
+    closed = create_matter(
+        title="Suletud teema", owner=department_head, reference_year=2026, actor=department_head
+    )
+    close_matter(
+        matter=closed,
+        actor=department_head,
+        disposition=Disposition.COMPLETED,
+        reason="Menetlus lõppes",
+    )
+    open_one = create_matter(
+        title="Avatud teema", owner=department_head, reference_year=2026, actor=department_head
+    )
+    add_entry(matter=open_one, author=department_head, body="<p>Käisin kohtumisel.</p>")
+
+    digest = build_digest(department_head, period_from({"periood": "30"}, today))
+    assert digest.closed == 1
+    assert digest.entries == 1
+    kinds = {row.kind for row in digest.rows}
+    assert {"closed", "entry"} <= kinds
+    assert digest.total == len(digest.rows)
+
+
+@pytest.mark.django_db
+def test_the_osakond_page_states_its_wording_rules(client, department_head) -> None:
+    client.force_login(department_head)
+    body = client.get(reverse("matters:department_work")).content.decode()
+
+    assert "läbi vaatamata" in body
+    assert "Muutusteta 30 p" in body
+    lowered = body.casefold()
+    assert "triaaž" not in lowered
+    assert "seisma jäänud" not in lowered
