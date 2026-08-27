@@ -191,6 +191,24 @@ CLOCK_DEPENDENT = [
     # depended on: absent it paints nothing, and present it is covered rather
     # than back in the baseline.
     ".interrow:has(.interrow__assign) .interrow__detail",
+    # The composer's `Toimus`, which defaults to today exactly as the create
+    # form's `Saabus` does. `.createform .dateinput` above was scoped to that
+    # one form for a good reason — unscoped it damaged three register
+    # baselines — but the scoping is also why the identical control in the
+    # composer was left uncovered.
+    #
+    # Found by comparing the committed baselines against a CI rendering rather
+    # than by walking the DOM: this value lives in an `<input value>`, and a
+    # text-node scan does not see it. `teema-koostaja` had been drifting one
+    # day at a time since the day it was taken.
+    #
+    # Scoped to the attachment block, not `.composer .dateinput`: the deadline
+    # and closing blocks hold date controls that are *empty*, and masking an
+    # empty control paints out the one thing that baseline exists to show —
+    # what the three disclosures look like when a lawyer opens them all. When
+    # the block is shut it is `hidden`, so the input has no box and nothing is
+    # painted anywhere else.
+    "#koostaja-manus .dateinput",
 ]
 
 #: What each scenario's capture may not silently stop masking.
@@ -212,6 +230,8 @@ REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     "minu-too": (".workband--entries .foldout__meta",),
     "minu-too-3440": (".workband--entries .foldout__meta",),
     "teema-suletud": (".banner--closed .banner__text .muted",),
+    # This scenario opens `+ Manus` itself, so the control is always there.
+    "teema-koostaja": ("#koostaja-manus .dateinput",),
 }
 
 assert not {selector for selectors in REQUIRED_MASKS.values() for selector in selectors} - set(
