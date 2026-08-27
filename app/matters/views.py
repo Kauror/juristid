@@ -33,6 +33,7 @@ from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
 from app.accounts.selectors import (
+    assignable_business_users,
     assignable_including,
     is_person_identifier,
     named_owner_in,
@@ -796,6 +797,15 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "nav_active": "teemad",
     }
 
+    # Only on the full page. The chips sit above the filter bar, outside the
+    # results region a keystroke swaps, and four extra counts per keystroke
+    # would be four queries for something the reader cannot even see move
+    # (Stage-2E.1 brief 14).
+    context["saved_views"] = register_filters.saved_views(request.user, params)
+    # The view *is* the address. «Salvesta praegune filter vaatena» offers this
+    # link; there is nothing else to save, and nothing is stored.
+    context["current_view_url"] = request.build_absolute_uri()
+
     if _wants_fragment(request):
         # The whole results surface, not a patched piece of it: one render from
         # one queryset cannot disagree with itself about how many rows there are
@@ -839,8 +849,26 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         ],
         "chosen_organisation": _organisation_or_none(params.get("asutus", "")),
         "organisation_options": _organisation_options(""),
+        # Who a row may be handed to, current reader first. The same population
+        # the Matter header's own control offers, so the two cannot disagree
+        # about who work may be given to (app/accounts/selectors.py, ADR 0036).
+        "assignable_people": _assignable_first(request.user),
+        # The row control is a write. Drawn by capability, enforced by the route
+        # (app/core/decorators.py, `business_write_required`).
+        "can_assign_owner": may_write_business_content(request.user),
     }
     return render(request, "matters/matter_list.html", context)
+
+
+def _assignable_first(reader: Any) -> list[User]:
+    """Everybody work may be given to, with the reader at the top.
+
+    "(mina)" first because the commonest triage decision is *I will take this*,
+    and a list that made somebody hunt for their own name in an alphabetical
+    column would make the two-click gesture a three-click one.
+    """
+    people = list(assignable_business_users())
+    return sorted(people, key=lambda person: (person.pk != getattr(reader, "pk", None),))
 
 
 #: The register dimensions that name an institution, and what each is called on
@@ -855,6 +883,42 @@ ORGANISATION_CHOOSER_FIELDS = {
 #: How many organisations the chooser offers at a time. Enough to scan, few
 #: enough that the response stays small on a catalogue with hundreds of rows.
 ORGANISATION_CHOICES = 20
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def assign_owner(request: HttpRequest, pk: Any) -> HttpResponse:
+    """Give an unassigned Matter an owner, from the row it was read on.
+
+    Nothing is done differently here from the header's own owner control: the
+    same form validates the choice against `assignable_including`, and the same
+    `assign_matter` service writes it, moves the open step that was following
+    the previous owner, and records the change event. What is different is only
+    where the reader ends up — back on the register, with their filters intact,
+    because triaging four unassigned files should not cost four round trips
+    through four Matter pages (app/matters/services.py, docs/adr/0036).
+    """
+    matter = get_visible_matter(request, pk)
+    form = MatterFieldForm(request.POST, matter=matter)
+    if not form.is_valid():
+        messages.error(request, "Vigane väärtus.")
+        return redirect(_safe_next(request) or reverse("matters:matter_list"))
+
+    try:
+        assign_matter(matter=matter, owner=form.cleaned_data.get("owner"), actor=request.user)
+    except DomainError as error:
+        messages.error(request, str(error))
+    else:
+        matter.refresh_from_db()
+        messages.success(
+            request,
+            f"«{matter.title}» vastutaja on {matter.owner.get_short_name()}."
+            if matter.owner
+            else f"«{matter.title}» on nüüd vastutajata.",
+        )
+
+    return redirect(_safe_next(request) or reverse("matters:matter_list"))
 
 
 def _organisation_options(term: str) -> list[Organisation]:

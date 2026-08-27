@@ -20,6 +20,50 @@ localStorage (Stage-2E.1 brief 12).
     <span class="pagehead__context">{{ total }} teemat</span>
   </div>
 
+  {% comment %}
+    Saved views. Not a stored object anywhere: this register has always kept its
+    whole state in the URL, so a view is a *named* link — bookmarkable, pasteable
+    and reachable with Back. Naming the four combinations everybody rebuilds by
+    hand every morning is the whole feature, and adding a preferences table for
+    it would give the product a second place where "what am I looking at" lives
+    (master specification 7.4, design handoff 2d).
+
+    Each chip's count comes from running its own parameters through the
+    register's filter pipeline, so a chip reading 12 opens twelve rows.
+  {% endcomment %}
+  <div class="uxviews" role="group" aria-label="Salvestatud vaated">
+    {% for view in saved_views %}
+      <a class="uxchip{% if view.active %} is-selected{% endif %}{% if view.warn and view.count %} uxchip--warn{% endif %}"
+         {% if view.active %}aria-current="true"{% endif %}
+         href="?{{ view.query }}">{{ view.label }} · {{ view.count }}</a>
+    {% endfor %}
+
+    {% comment %}
+      «Salvesta praegune filter vaatena» — and what it saves is the address,
+      because the address is the view. The control hands over the link rather
+      than pretending to store something: a name typed here would have to live
+      somewhere, and there is nowhere for it to live that a bookmark does not
+      already cover better.
+    {% endcomment %}
+    <details class="uxviews__save" data-uxpopover>
+      <summary class="uxchip uxchip--dashed">+ Salvesta praegune filter vaatena</summary>
+      <div class="uxviews__savebody">
+        <p class="uxviews__note">
+          Vaade elab aadressis. Kopeeri link ja pane järjehoidjasse või saada kolleegile —
+          ta näeb täpselt seda, mida sina praegu näed.
+        </p>
+        <div class="uxviews__saverow">
+          <label class="visually-hidden" for="teemad-vaate-link">Praeguse vaate link</label>
+          <input class="field__input field__input--compact uxviews__url"
+                 id="teemad-vaate-link" type="text" readonly
+                 value="{{ current_view_url }}">
+          <button class="button button--quiet button--tiny" type="button"
+                  data-copy-from="teemad-vaate-link" data-label-done="Kopeeritud">Kopeeri</button>
+        </div>
+      </div>
+    </details>
+  </div>
+
   <div class="filters">
     {% comment %}
       A GET form around the search box, so pressing Enter still works and the

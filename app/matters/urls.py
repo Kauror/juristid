@@ -23,6 +23,11 @@ urlpatterns = [
     # because it swaps one field; the register itself deliberately does not
     # have one (app/matters/views.py, `_wants_fragment`).
     path("teemad/asutused/", views.organisation_choices, name="organisation_choices"),
+    # Assigning an owner from a register row. Its own route because it returns
+    # the reader to the list rather than to a Matter page: the whole point of
+    # the control is that triaging four unassigned files does not cost four
+    # round trips through four Matters (design handoff 2d).
+    path("teemad/<uuid:pk>/vastutaja/", views.assign_owner, name="assign_owner"),
     path("teemad/<uuid:pk>/", views.matter_detail, name="matter_detail"),
     # `Arvamused` on one Matter. No longer a tab — the Matter has exactly two —
     # but still a destination, reached from the position block and the sent-

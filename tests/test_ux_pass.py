@@ -667,3 +667,130 @@ def test_the_keyboard_hints_appear_only_where_there_is_something_to_move_over(
     assert "uxkeys" in body
     for key in ("J", "K", "X", "Enter"):
         assert f'<kbd class="key">{key}</kbd>' in flat
+
+
+# ---------------------------------------------------------------------------
+# 2d — saved views and assigning an owner from the row
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_every_saved_view_chip_opens_exactly_the_rows_it_counted(specialist) -> None:
+    """The chip is a promise about the list behind it.
+
+    Checked by running each chip's own query string back through the register's
+    filter pipeline, so it cannot pass by two similar conditions agreeing with
+    each other (app/matters/register_filters.py).
+    """
+    from urllib.parse import parse_qsl
+
+    from app.matters.register_filters import register_population, saved_views
+
+    today = timezone.localdate()
+    factories.MatterFactory(owner=specialist, title="Minu oma")
+    factories.MatterFactory(owner=None, title="Kellegi oma")
+    _due(specialist, days=2, title="Kuu jooksul — eelnõu")
+
+    for view in saved_views(specialist, {}, today=today):
+        listed = register_population(specialist, dict(parse_qsl(view.query)), today=today)
+        assert listed.count() == view.count, f"«{view.label}» promises what it cannot show"
+
+
+@pytest.mark.django_db
+def test_a_saved_view_lives_in_the_url_and_nothing_is_stored(client, specialist) -> None:
+    """No model, no session, no preferences table.
+
+    The register has always kept its whole state in the address, so a view is a
+    named link (master specification 7.4, design handoff 2d). This asserts the
+    two halves that make that true: the chip is a link somebody can paste, and
+    «Salvesta» hands over that link rather than pretending to store anything.
+    """
+    client.force_login(specialist)
+    body = client.get(reverse("matters:matter_list")).content.decode()
+
+    assert 'href="?olek=avatud&amp;ulatus=minu"' in body, "the chip is a shareable link"
+    assert "Kogu osakond" in body
+    # The bare register and `?olek=avatud` are the same view and must not light
+    # up two different chips.
+    assert body.count('class="uxchip is-selected"') == 1
+
+    assert "Vaade elab aadressis" in body
+    assert "data-copy-from=" in body
+    assert "session" not in body.lower().split("uxviews")[1].split("</div>")[0]
+
+
+@pytest.mark.django_db
+def test_assigning_from_a_row_uses_the_service_and_comes_back_to_the_list(
+    client, specialist
+) -> None:
+    """Same service, same validation, same audit row as the header's control.
+
+    What the row saves is the trip through the Matter page and back
+    (app/matters/services.py, `assign_matter`).
+    """
+    from app.audit.enums import ChangeEventType
+    from app.audit.models import ChangeEvent
+
+    matter = factories.MatterFactory(owner=None, title="Vastutajata eelnõu")
+
+    client.force_login(specialist)
+    response = client.post(
+        reverse("matters:assign_owner", kwargs={"pk": matter.pk}),
+        {"owner": str(specialist.pk), "next": "/teemad/?olek=avatud&vastutaja=puudub"},
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == "/teemad/?olek=avatud&vastutaja=puudub"
+    matter.refresh_from_db()
+    assert matter.owner == specialist
+    assert ChangeEvent.objects.filter(
+        matter=matter, event_type=ChangeEventType.MATTER_ASSIGNED
+    ).exists(), "the assignment is on the record, not only in the database"
+
+
+@pytest.mark.django_db
+def test_assigning_from_a_row_refuses_somebody_work_may_not_be_given_to(
+    client, specialist, administrator
+) -> None:
+    """The row control offers the same population the header offers, and the
+    route refuses anything else — a crafted POST is not a wider door
+    (app/accounts/selectors.py, docs/adr/0036)."""
+    matter = factories.MatterFactory(owner=None)
+
+    client.force_login(specialist)
+    client.post(
+        reverse("matters:assign_owner", kwargs={"pk": matter.pk}),
+        {"owner": str(administrator.pk)},
+    )
+
+    matter.refresh_from_db()
+    assert matter.owner is None
+
+
+@pytest.mark.django_db
+def test_the_row_offers_the_reader_first_and_only_where_they_may_write(client, specialist) -> None:
+    factories.MatterFactory(owner=None, title="Vastutajata eelnõu")
+
+    client.force_login(specialist)
+    body = client.get(reverse("matters:matter_list") + "?olek=koik").content.decode()
+
+    assert "Määra ▾" in body
+    menu = body.split('class="uxassign__menu"')[1].split("</form>")[0]
+    assert menu.index("(mina)") < len(menu), "the reader is offered"
+    assert menu.split("(mina)")[0].count("<button") == 1, "and offered first"
+
+
+@pytest.mark.django_db
+def test_a_reader_who_may_not_write_sees_the_state_rather_than_a_control(
+    client, django_user_model
+) -> None:
+    from app.accounts.enums import UserRole
+
+    factories.MatterFactory(owner=None, title="Vastutajata eelnõu")
+    reader = factories.UserFactory(role=UserRole.READER)
+
+    client.force_login(reader)
+    body = client.get(reverse("matters:matter_list") + "?olek=koik").content.decode()
+
+    assert "Vastutajata" in body
+    assert "uxassign" not in body
