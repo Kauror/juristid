@@ -443,16 +443,54 @@ def test_the_direct_file_url_serves_nothing_to_a_refused_persona(
 # ---------------------------------------------------------------------------
 
 
-def test_the_archive_is_offered_in_the_navigation_to_a_reader(behind_the_gate, reader, binary):
+def test_the_archive_browse_is_no_longer_a_navigation_destination(
+    behind_the_gate, reader, specialist, binary
+):
+    """The bar carried two answers to one question, and now carries one.
+
+    «Arvamused» and «Arvamuste arhiiv» asked a reader to tell a canonical
+    Submission from a held historical letter before they could choose where to
+    go. The distinction is kept where it can be captioned — inside the
+    workspace — and the bar stops asking (docs/adr/0044).
+
+    Asserted for the persona `may_read_archive` admits as well as for the one
+    it refuses. The reader is the one who used to get the second item, so if it
+    is gone for them it is gone; the specialist never had it and still does
+    not.
+    """
+    assert may_read_archive(reader)
+
     act_as(behind_the_gate, reader)
-    body = behind_the_gate.get(reverse("matters:overview")).content.decode()
-    assert browse_url() in body
+    assert browse_url() not in behind_the_gate.get(reverse("matters:overview")).content.decode()
 
-
-def test_the_archive_is_not_offered_to_anybody_else(behind_the_gate, specialist):
     act_as(behind_the_gate, specialist)
-    body = behind_the_gate.get(reverse("matters:overview")).content.decode()
-    assert browse_url() not in body
+    assert browse_url() not in behind_the_gate.get(reverse("matters:overview")).content.decode()
+
+
+def test_the_workspace_offers_the_archive_tab_to_a_reader(behind_the_gate, reader, binary):
+    """Where the presentation decision moved to, and still presentation.
+
+    `may_read_archive` decides whether the tab is drawn exactly as it decided
+    whether the bar item was. The route is still the boundary, and the tests
+    above still prove it refuses a crafted URL.
+    """
+    act_as(behind_the_gate, reader)
+    body = behind_the_gate.get(reverse("submissions:sent")).content.decode()
+    assert reverse("submissions:archive") in body
+    assert ">Arhiiv" in body
+
+
+def test_the_workspace_does_not_offer_the_archive_tab_to_anybody_else(behind_the_gate, specialist):
+    """And says the corpus exists rather than pretending it does not.
+
+    A refused reader is told the archive is held and administratively read,
+    which is a different statement from a page that silently omits it — and no
+    count appears with it (docs/adr/0028).
+    """
+    act_as(behind_the_gate, specialist)
+    body = behind_the_gate.get(reverse("submissions:sent")).content.decode()
+    assert reverse("submissions:archive") not in body
+    assert "arvamuste arhiiv on eraldi hoiul" in body
 
 
 def test_the_candidate_queue_is_not_offered_to_a_reader_who_cannot_use_it(
