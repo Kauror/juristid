@@ -53,6 +53,7 @@ consequences and reversibility.
 | [0042](0042-department-wide-lawyer-access.md) | Department-wide access for the legal team | Accepted |
 
 | [0043](0043-the-ux-pass-and-the-managers-page.md) | The 2026-08-27 UX pass: an additive layer, views that live in the address, and Osakond narrowed to three questions | Accepted |
+| [0044](0044-one-arvamused-destination-and-live-header-search.md) | One `Arvamused` destination, and live suggestions under the header search | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -91,3 +92,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0042 — department-wide access for the legal team: the confidentiality boundary is the application rather than the Matter, both lawyer roles read the whole department, ownership and collaborators go back to meaning responsibility, the collaborative write model is unchanged, and `ADMINISTRATOR`, `DepartmentViewer` and `READER` are all deliberately left where they were
 
 - 0043 — the 2026-08-27 UX pass: an additive `ux` stylesheet and script, saved views that are named URLs rather than stored rows, one parameterised `?too=tahtaeg-vahemik` so every deadline group opens exactly its own window, deferring as two existing services behind one control, and Osakond narrowed to what the team is doing, what is ahead and what is done
+- 0044 — one `Arvamused` destination on the bar with the held archive as its own tab, and live suggestions under the header search: five Matter rows bounded in SQL, the existing authorized ranking reused rather than reimplemented, a request token that stops a stale answer painting over a newer one, and a plain GET form still underneath it all

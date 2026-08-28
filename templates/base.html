@@ -128,7 +128,7 @@
                 worth saying is only "you are in here" — which the same inset
                 brand underline the bar uses everywhere else already says.
               {% endcomment %}
-              <summary class="topnav__trigger{% if nav_active == 'arvamused' or nav_active == 'jalgimine' or nav_active == 'statistika' or nav_active == 'osakonna_too' or nav_active == 'haldus' %} is-active{% endif %}">Veel</summary>
+              <summary class="topnav__trigger{% if nav_active == 'arvamused' or nav_active == 'jalgimine' or nav_active == 'statistika' or nav_active == 'osakonna_too' %} is-active{% endif %}">Veel</summary>
               <div class="topnav__menu">
                 {% include "components/topnav_secondary.html" %}
               </div>
@@ -137,7 +137,31 @@
 
           <span class="topbar__spacer"></span>
 
-          <form class="searchfield" role="search" method="get" action="{% url 'search:search' %}">
+          {% comment %}
+            The search field, and — once app.js has upgraded it — the live
+            suggestions under it.
+
+            The form is a plain GET form and stays one. Everything the dropdown
+            adds is bound by script onto markup that already worked: with
+            JavaScript off, or before it runs, or after the endpoint fails,
+            typing and pressing Enter still submits to the full results page.
+            The suggestions are a shortcut past that page, never the only way to
+            reach it (master specification 17.7).
+
+            The combobox roles are set by the script rather than written here
+            for the same reason. `role="combobox" aria-expanded="false"` on a
+            field nothing can expand is markup describing behaviour the page
+            does not have — a screen reader would announce a collapsed listbox
+            that will never open.
+
+            `data-live-search` carries the endpoint, so the URL is resolved by
+            Django and the script contains no route of its own.
+          {% endcomment %}
+          <form class="searchfield"
+                role="search"
+                method="get"
+                action="{% url 'search:search' %}"
+                data-live-search="{% url 'search:suggestions' %}">
             <label class="visually-hidden" for="global-search">Otsi teemat, viidet või asutust</label>
             <input class="searchfield__input"
                    id="global-search"
@@ -155,6 +179,18 @@
                    autocomplete="off">
             <kbd class="searchfield__hint" aria-hidden="true">Ctrl K</kbd>
             <button class="visually-hidden" type="submit">Otsi</button>
+            {% comment %}
+              Empty and hidden at rest; the script fills it and reveals it. It
+              lives inside the form so it can be positioned against
+              `.searchfield`, which is already the positioning context.
+            {% endcomment %}
+            <div class="searchfield__results" id="global-search-results" hidden></div>
+            {% comment %}
+              What happened, for somebody who cannot see the list appear. Kept
+              off-screen and polite: an assertive region would interrupt the
+              typing it is describing.
+            {% endcomment %}
+            <p class="visually-hidden" id="global-search-status" role="status" aria-live="polite"></p>
           </form>
 
           {% if user.is_authenticated and can_write_business_content %}

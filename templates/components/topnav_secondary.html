@@ -42,15 +42,20 @@ itself in full once somebody is on it (design handoff, «Osakond»).
      {% if nav_active == 'osakonna_too' %}aria-current="page"{% endif %}
      href="{% url 'matters:department_work' %}">Osakond</a>
 {% endif %}
-{% if can_read_opinion_archive %}
-  {% comment %}
-    The held opinion archive. Behind the disclosure with the other reading
-    surfaces rather than on the bar, because it is migration work: several
-    hundred unfiled letters are not something a lawyer navigates past all day
-    (Stage-2H brief 62). Offered by capability, and the routes refuse a crafted
-    URL regardless (docs/adr/0028).
-  {% endcomment %}
-  <a class="topnav__link {% if nav_active == 'haldus' %}is-active{% endif %}"
-     {% if nav_active == 'haldus' %}aria-current="page"{% endif %}
-     href="{% url 'legacy_import:opinion_archive_browse' %}">Arvamuste arhiiv</a>
-{% endif %}
+{% comment %}
+  The held opinion archive is deliberately *not* a destination of its own here.
+
+  It was, and the bar then offered two answers to one question: «Arvamused» and
+  «Arvamuste arhiiv», a pair a reader has to tell apart before they can pick
+  one. The distinction between a canonical Submission and a held historical
+  letter is real and worth keeping — it is simply not a navigation decision. The
+  Arvamused workspace already asks it, in a tab strip that names both sources
+  and captions them (templates/submissions/base.html), so the archive is one
+  click further in and one fewer thing to read on arrival.
+
+  Nothing about access moved with the link. `may_read_archive` still decides who
+  may open the workspace's Arhiiv tab, the administrative browse keeps its own
+  route and refuses a crafted URL with a 403 exactly as before, and every
+  existing archive URL still resolves (app/legacy_import/opinion_access.py,
+  docs/adr/0028).
+{% endcomment %}
