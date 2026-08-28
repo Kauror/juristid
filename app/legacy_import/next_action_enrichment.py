@@ -185,7 +185,6 @@ class Proposal:
 
     matter_id: UUID
     matter_reference: str
-    state_id: UUID
     source_reference_id: UUID
     snapshot_sha256: str
     #: The sentence's identity, not the sentence. A plan file an operator can
@@ -620,11 +619,11 @@ def build_plan(
             Proposal(
                 matter_id=state.matter_id,
                 matter_reference=matter.display_reference,
-                # Null for a projected row, which has not been saved and has no
-                # identity yet. The apply re-reads the real row by Matter, so
-                # the plan digest must not depend on an id the projection was
-                # never going to have.
-                state_id=state.id,
+                # Deliberately no state id. A plan may be built over *projected*
+                # rows, which the refresh derives twice — once to report and once
+                # to write — so any id carried here would name a row that never
+                # existed. The apply re-reads the real row by Matter and checks
+                # its snapshot, which is the identity that actually holds.
                 source_reference_id=state.source_reference_id,
                 snapshot_sha256=state.source_snapshot_sha256,
                 source_text_sha256=source_text_digest(state.next_action_text.strip()),
