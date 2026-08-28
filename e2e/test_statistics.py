@@ -165,8 +165,9 @@ def test_the_headline_agrees_with_the_register_for_each_persona(page, base_url):
 
     The Statistika card and the Teemad register compute their totals through
     entirely different code. If either forgot to scope, they would disagree —
-    and Sandra, who owns the restricted file, must see strictly more than Martin,
-    who does not.
+    and Sandra, a lawyer, must see strictly more than a reader, who is outside
+    the legal team (docs/adr/0042). Martin cannot play that part any more: since
+    that decision he reads the department exactly as Sandra does.
 
     Deliberately *not* an assertion on absolute numbers: this suite shares one
     seeded database with tests that create Matters. The exact arithmetic of
@@ -190,7 +191,7 @@ def test_the_headline_agrees_with_the_register_for_each_persona(page, base_url):
         )
         sign_out(page, base_url)
 
-    assert totals[SANDRA.upn] > totals[MARTIN.upn]
+    assert totals[SANDRA.upn] > totals[READER.upn]
 
 
 def test_a_csv_export_respects_the_filter_that_was_on_screen(page, base_url):
