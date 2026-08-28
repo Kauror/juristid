@@ -165,6 +165,7 @@ jobs:
           uv run python manage.py migrate workflow 0005 --noinput
           uv run python manage.py migrate submissions 0004 --noinput
           uv run python manage.py migrate search 0006 --noinput
+          uv run python manage.py migrate legacy_import 0012 --noinput
           uv run python manage.py migrate --noinput
 
       - name: Estonian search capabilities are available

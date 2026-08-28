@@ -150,7 +150,18 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
     """
     queryset = (
         Matter.objects.visible_to(request.user)
-        .select_related("owner", "stage", "addressee_organisation", "superseded_by")
+        .select_related(
+            "owner",
+            "stage",
+            "addressee_organisation",
+            "superseded_by",
+            # The derived register row. Joined rather than reached for, because
+            # the page asks it two separate questions — what the register's own
+            # JÄRGMISEKS says, and what it observed around the outreach — and a
+            # reverse one-to-one costs a query at the first access even when the
+            # answer is that there is no row at all.
+            "current_register_state",
+        )
         .prefetch_related(
             "source_organisations",
             "policy_areas",
