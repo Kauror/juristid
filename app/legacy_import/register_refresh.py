@@ -263,6 +263,19 @@ class RefreshPlan:
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _action_signature(plan: enrichment.EnrichmentPlan) -> list[dict[str, Any]]:
+    """The writing set of one enrichment plan, comparably.
+
+    Sorted and stripped of nothing: two plans that would write the same actions
+    to the same Matters for the same reasons are the same plan, whichever route
+    reached them.
+    """
+    return sorted(
+        (proposal.digest_row() for proposal in plan.writing),
+        key=lambda row: (row["matter_id"], row["outcome"]),
+    )
+
+
 #: The reconciliation outcomes that change something. ``KEEP_CURRENT`` is in
 #: here because it is the branch that also refreshes fields — a Matter that
 #: stays current is exactly the one whose owner and deadline may have moved.
@@ -589,9 +602,35 @@ def apply_refresh_plan(
 
     # Re-planned against the state rows the cutover has now written, rather than
     # against the projection: the projection was the basis for approval, and
-    # what is applied has to be what the database actually holds. The digest
-    # comparison above already proved the two agree.
-    actions = enrichment.build_plan(snapshot_sha256=plan.snapshot_sha256, today=plan.today)
+    # what is applied has to be what the database actually holds.
+    #
+    # The rows are read back and passed in rather than looked up by the planner
+    # itself, and that is not a shortcut. `build_plan`'s own lookup fails closed
+    # when the table carries more than one snapshot digest, which is the right
+    # answer for somebody running the enrichment on its own and the wrong one
+    # here: a Matter the previous workbook named and this one does not keeps its
+    # old row, legitimately, and refusing the whole apply because of it would
+    # make a workbook unusable for having lost a line.
+    written = list(
+        CurrentRegisterState.objects.filter(source_snapshot_sha256=plan.snapshot_sha256)
+        .select_related("matter")
+        .order_by("matter_id")
+    )
+    actions = enrichment.build_plan(
+        snapshot_sha256=plan.snapshot_sha256, today=plan.today, states=written
+    )
+
+    # And then compared against what was approved, because "re-derive it" is
+    # only a safety property if somebody checks the answer. Without this the
+    # projection would be the basis for approval and the re-plan the basis for
+    # writing, with nothing at all connecting the two — the exact shape of a
+    # plan/apply gate that has stopped gating anything.
+    if _action_signature(actions) != _action_signature(fresh.next_actions):
+        raise PlanChanged(
+            "The next-action set derived after the reconciliation is not the one "
+            "the plan described. Nothing further was written."
+        )
+
     action_result = enrichment.apply_plan(actions, expect_plan_sha256=actions.digest, actor=actor)
 
     engagements = outreach.OutreachResult(created=0, updated=0, unchanged=0, mapping_sha256="")

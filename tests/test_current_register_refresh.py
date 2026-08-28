@@ -21,8 +21,9 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
+from django.utils import timezone
 
-from app.legacy_import.current_state import CurrentRegisterState
+from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
 from app.legacy_import.final_cutover import build_cutover_plan, rebuild_current_state
 from app.legacy_import.next_action_enrichment import Outcome, action_ownership
 from app.legacy_import.register_refresh import (
@@ -980,3 +981,87 @@ def test_the_structured_action_reaches_the_page(world, client):
 
     body = signed_in_page(client, world.people.sandra, matter)
     assert WAIT_AND_REVIEW in body
+
+
+# ---------------------------------------------------------------------------
+# Query shape
+# ---------------------------------------------------------------------------
+
+
+def test_ownership_costs_two_queries_however_many_matters(world, django_assert_num_queries):
+    """A batch operation, so the precedence question is asked once for the set.
+
+    Two queries: the actions, and the audit events about them. Not one per
+    Matter — the register carries four hundred rows and a per-row lookup is how
+    a five-second command becomes a five-minute one (brief 38).
+    """
+    matters = [
+        add_matter(
+            world,
+            title=f"Sünteetiline mahueelnõu {index}",
+            reference=200 + index,
+            next_action_cell=REVIEW_SEPTEMBER,
+        )
+        for index in range(6)
+    ]
+    plan = refresh()
+    apply_refresh_plan(plan, expect_plan_sha256=plan.digest)
+
+    with django_assert_num_queries(2):
+        ownership = action_ownership([matter.pk for matter in matters])
+
+    assert len(ownership) == 6
+    assert all(not own.human_touched for own in ownership.values())
+
+
+def test_ownership_asks_nothing_when_there_is_nothing_to_ask(world, django_assert_num_queries):
+    """An empty set is not a query, and a set with no actions is one.
+
+    The second is the ordinary case on a first run: every Matter is new, so the
+    events query has nothing to look for and is not made.
+    """
+    with django_assert_num_queries(0):
+        assert action_ownership([]) == {}
+
+    matter = add_matter(world, title="Sünteetiline uus eelnõu", reference=210)
+    with django_assert_num_queries(1):
+        assert action_ownership([matter.pk]) == {}
+
+
+def test_a_row_the_newer_workbook_dropped_does_not_block_the_apply(world):
+    """A Matter the previous workbook named and this one does not.
+
+    Its derived row legitimately keeps the older digest, so the table carries
+    two. The standalone enrichment command fails closed on that — correctly,
+    because it cannot tell which workbook it would be speaking for. Inside a
+    refresh the question is already settled by the plan digest, so the rows are
+    read back for *this* snapshot and passed in, and a workbook is not made
+    unusable for having lost a line.
+    """
+    kept = add_matter(
+        world, title="Sünteetiline alles eelnõu", reference=60, next_action_cell=REVIEW_SEPTEMBER
+    )
+    dropped = add_matter(world, title="Sünteetiline kadunud eelnõu", reference=61)
+
+    # A state row from a workbook this refresh does not mention.
+    CurrentRegisterState.objects.create(
+        matter=dropped,
+        source_reference=dropped.source_references.first(),
+        source_snapshot_sha256=OLDER_SNAPSHOT,
+        source_sheet="2026",
+        source_row_number=999,
+        currency=RegisterCurrency.CURRENT,
+        observed_at=timezone.now(),
+    )
+
+    plan = refresh()
+    result = apply_refresh_plan(plan, expect_plan_sha256=plan.digest)
+
+    assert result.actions_created == 1
+    assert NextAction.objects.filter(matter=kept, status=ActionStatus.OPEN).exists()
+    assert (
+        CurrentRegisterState.objects.values_list("source_snapshot_sha256", flat=True)
+        .distinct()
+        .count()
+        == 1
+    )
