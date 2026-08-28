@@ -382,7 +382,7 @@ def test_timeline_never_shows_security_audit_events(normal_matter, specialist):
 
 
 def test_timeline_hides_a_restricted_entry_from_an_uninvolved_user(
-    normal_matter, specialist, other_specialist
+    normal_matter, specialist, reader
 ):
     add_entry(matter=normal_matter, body="<p>Avalik</p>", author=specialist)
     add_entry(
@@ -392,7 +392,7 @@ def test_timeline_hides_a_restricted_entry_from_an_uninvolved_user(
         visibility_override=Visibility.RESTRICTED,
     )
 
-    items, _ = matter_timeline(matter=normal_matter, user=other_specialist)
+    items, _ = matter_timeline(matter=normal_matter, user=reader)
     bodies = " ".join(item.entry.body for item in items if item.is_entry)
     assert "Salajane" not in bodies
     assert "Avalik" in bodies

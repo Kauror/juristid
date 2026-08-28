@@ -68,6 +68,7 @@ class People:
     anneli: User
     head: User
     former: User
+    reader: User
 
     @property
     def specialists(self) -> list[User]:
@@ -106,6 +107,13 @@ def build_people() -> People:
             upn="juht@example.invalid",
             display_name="Tiina Juhataja",
             role=UserRole.DEPARTMENT_HEAD,
+        ),
+        # Since docs/adr/0042 both lawyer roles read the department, so a test
+        # asking what an unauthorized reader sees needs somebody outside it.
+        reader=_person(
+            upn="lugeja@example.invalid",
+            display_name="Liisi Lugeja",
+            role=UserRole.READER,
         ),
         former=_person(
             upn="kadri@example.invalid",

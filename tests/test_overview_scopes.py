@@ -140,7 +140,7 @@ def test_an_ownerless_matter_reaches_the_intervention_list_and_the_count(departm
 
 
 def test_a_restricted_matter_is_counted_for_the_head_and_invisible_to_others(
-    department_head, specialist, other_specialist, today
+    department_head, specialist, reader, today
 ):
     """The whole boundary, from both sides.
 
@@ -157,7 +157,7 @@ def test_a_restricted_matter_is_counted_for_the_head_and_invisible_to_others(
     )
 
     head_page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    stranger_page = ov.build_overview(other_specialist, scope=ov.SCOPE_DEPARTMENT, today=today)
+    stranger_page = ov.build_overview(reader, scope=ov.SCOPE_DEPARTMENT, today=today)
 
     head_open = next(f for f in head_page.figures if f.key == "open")
     stranger_open = next(f for f in stranger_page.figures if f.key == "open")
@@ -167,7 +167,7 @@ def test_a_restricted_matter_is_counted_for_the_head_and_invisible_to_others(
 
 
 def test_a_restricted_title_never_reaches_a_non_participants_page(
-    client, specialist, other_specialist, today
+    client, specialist, reader, today
 ):
     create_matter(
         title="Konkurentsiseaduse järelevalvemenetlus",
@@ -176,7 +176,7 @@ def test_a_restricted_title_never_reaches_a_non_participants_page(
         visibility=Visibility.RESTRICTED,
         actor=specialist,
     )
-    client.force_login(other_specialist)
+    client.force_login(reader)
 
     body = client.get(reverse(OVERVIEW) + "?vaade=osakond").content.decode()
 

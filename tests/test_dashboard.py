@@ -83,8 +83,8 @@ def test_the_owner_counts_both(world, specialist) -> None:
     assert _card(specialist, "active").count == 2
 
 
-def test_an_unrelated_specialist_counts_only_what_they_see(world, other_specialist) -> None:
-    assert _card(other_specialist, "active").count == 1
+def test_an_unrelated_specialist_counts_only_what_they_see(world, reader) -> None:
+    assert _card(reader, "active").count == 1
 
 
 def test_a_department_head_counts_both(world, department_head) -> None:
@@ -105,10 +105,10 @@ def test_an_anonymous_caller_counts_nothing(world) -> None:
     assert dashboard.stage_distribution(AnonymousUser()) == []
 
 
-def test_a_hidden_matter_changes_no_total(world, specialist, other_specialist) -> None:
+def test_a_hidden_matter_changes_no_total(world, specialist, reader) -> None:
     """Every card, from two viewpoints, differs by exactly the hidden row."""
     mine = {card.key: card.count for card in dashboard.summary_cards(specialist)}
-    theirs = {card.key: card.count for card in dashboard.summary_cards(other_specialist)}
+    theirs = {card.key: card.count for card in dashboard.summary_cards(reader)}
 
     assert mine["active"] - theirs["active"] == 1
     assert mine["deadlines"] - theirs["deadlines"] == 1
@@ -117,38 +117,34 @@ def test_a_hidden_matter_changes_no_total(world, specialist, other_specialist) -
     assert theirs["overdue"] == 0
 
 
-def test_a_hidden_matter_does_not_appear_in_attention(world, other_specialist) -> None:
-    titles = [row.matter.title for row in dashboard.attention_rows(other_specialist)]
+def test_a_hidden_matter_does_not_appear_in_attention(world, reader) -> None:
+    titles = [row.matter.title for row in dashboard.attention_rows(reader)]
     assert RESTRICTED_TITLE not in titles
 
 
-def test_a_hidden_matter_does_not_appear_in_upcoming(world, other_specialist) -> None:
-    result = dashboard.upcoming_rows(other_specialist)
+def test_a_hidden_matter_does_not_appear_in_upcoming(world, reader) -> None:
+    result = dashboard.upcoming_rows(reader)
     assert RESTRICTED_TITLE not in [row.matter.title for row in result.rows]
 
 
-def test_a_hidden_matter_does_not_appear_in_recent_incoming(world, other_specialist) -> None:
-    titles = [matter.title for matter in dashboard.recent_incoming(other_specialist)]
+def test_a_hidden_matter_does_not_appear_in_recent_incoming(world, reader) -> None:
+    titles = [matter.title for matter in dashboard.recent_incoming(reader)]
     assert RESTRICTED_TITLE not in titles
 
 
-def test_owner_counts_exclude_what_the_reader_cannot_see(
-    world, specialist, other_specialist
-) -> None:
+def test_owner_counts_exclude_what_the_reader_cannot_see(world, specialist, reader) -> None:
     """The tally that would otherwise say "somebody has a file you can't see"."""
-    theirs = {row.label: row.count for row in dashboard.owner_inventory(other_specialist)}
+    theirs = {row.label: row.count for row in dashboard.owner_inventory(reader)}
     assert specialist.display_name not in theirs
 
     mine = {row.label: row.count for row in dashboard.owner_inventory(specialist)}
     assert mine[specialist.display_name] == 1
 
 
-def test_stage_counts_exclude_what_the_reader_cannot_see(
-    world, specialist, other_specialist
-) -> None:
+def test_stage_counts_exclude_what_the_reader_cannot_see(world, specialist, reader) -> None:
     label = world["stage"].label_et
     mine = {row.label: row.count for row in dashboard.stage_distribution(specialist)}
-    theirs = {row.label: row.count for row in dashboard.stage_distribution(other_specialist)}
+    theirs = {row.label: row.count for row in dashboard.stage_distribution(reader)}
     assert mine[label] == 2
     assert theirs[label] == 1
 
@@ -239,8 +235,8 @@ def test_the_root_opens_ulevaade(world, client, specialist) -> None:
     assert response["Location"] == reverse("matters:overview")
 
 
-def test_the_page_renders_and_hides_what_it_should(world, client, other_specialist) -> None:
-    client.force_login(other_specialist)
+def test_the_page_renders_and_hides_what_it_should(world, client, reader) -> None:
+    client.force_login(reader)
     response = client.get(reverse("matters:overview"))
     assert response.status_code == 200
     body = response.content.decode()

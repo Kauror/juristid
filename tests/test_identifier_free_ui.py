@@ -707,7 +707,7 @@ def test_a_restricted_matter_a_reader_cannot_open_is_not_in_their_feed(
 
 
 def test_the_rendered_feed_never_mentions_a_matter_the_reader_cannot_open(
-    client, other_specialist, specialist
+    client, reader, specialist
 ):
     hidden = factories.MatterFactory(
         owner=specialist,
@@ -717,7 +717,7 @@ def test_the_rendered_feed_never_mentions_a_matter_the_reader_cannot_open(
         visibility=Visibility.RESTRICTED,
     )
     factories.EntryFactory(matter=hidden, author=specialist)
-    client.force_login(other_specialist)
+    client.force_login(reader)
 
     body = _get(client, OVERVIEW, "?vaade=osakond")
 
@@ -773,9 +773,7 @@ def test_a_restricted_matters_engagement_is_not_in_a_strangers_feed(other_specia
     assert rows == []
 
 
-def test_a_restricted_matters_important_date_is_not_in_a_strangers_feed(
-    client, other_specialist, specialist
-):
+def test_a_restricted_matters_important_date_is_not_in_a_strangers_feed(client, reader, specialist):
     hidden = factories.MatterFactory(
         owner=specialist,
         title="Salajane ettevalmistus konkurentsiameti menetluseks",
@@ -790,7 +788,7 @@ def test_a_restricted_matters_important_date_is_not_in_a_strangers_feed(
         period_end=timezone.localdate(),
         actor=specialist,
     )
-    client.force_login(other_specialist)
+    client.force_login(reader)
 
     body = _get(client, OVERVIEW, "?vaade=osakond")
 

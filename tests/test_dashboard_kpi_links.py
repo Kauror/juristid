@@ -213,15 +213,15 @@ def test_active_excludes_closed_and_archive_rows(world, other_specialist):
 
 
 @pytest.mark.parametrize("key", CLICKABLE)
-def test_a_restricted_matter_is_absent_from_both_halves(world, other_specialist, key):
+def test_a_restricted_matter_is_absent_from_both_halves(world, reader, key):
     """The disclosure that is easy to miss, because nothing on screen looks wrong.
 
     Hiding a row at render time while leaving it inside the total tells the
     reader it exists. Both halves come from `visible_to`, so this asserts the
     property rather than the implementation.
     """
-    entry = card(other_specialist, key)
-    assert world["hidden"].pk not in register_ids(other_specialist, entry.url)
+    entry = card(reader, key)
+    assert world["hidden"].pk not in register_ids(reader, entry.url)
 
 
 def test_the_owner_of_a_restricted_matter_sees_it_in_both_halves(world, specialist):

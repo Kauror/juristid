@@ -152,14 +152,20 @@ def test_the_head_sees_a_restricted_matter_because_the_role_entitles_it(
 def test_a_restricted_matter_the_head_can_count_is_absent_for_an_unrelated_specialist(
     portfolio: Portfolio,
 ) -> None:
-    """The same number, two readers, two different answers — by design."""
+    """The same number, three readers — by design.
+
+    Both lawyers count it since docs/adr/0042; somebody outside the legal team
+    does not, which is the scoping this asserts.
+    """
     restricted = Matter.objects.get(title=RESTRICTED)
     assert restricted.owner == portfolio.people.sandra
 
     head_total = overview.active_matters(portfolio.people.head).filter(pk=restricted.pk).count()
-    other_total = overview.active_matters(portfolio.people.martin).filter(pk=restricted.pk).count()
+    lawyer_total = overview.active_matters(portfolio.people.martin).filter(pk=restricted.pk).count()
+    reader_total = overview.active_matters(portfolio.people.reader).filter(pk=restricted.pk).count()
     assert head_total == 1
-    assert other_total == 0
+    assert lawyer_total == 1
+    assert reader_total == 0
 
 
 def test_a_specialist_sees_their_own_restricted_matter(portfolio: Portfolio) -> None:
