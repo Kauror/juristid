@@ -618,10 +618,15 @@ def test_the_quick_complete_refuses_an_off_site_return(client, specialist) -> No
 
 @pytest.mark.django_db
 def test_a_step_on_somebody_elses_restricted_matter_is_not_completable(
-    client, specialist, other_specialist
+    client, reader, other_specialist
 ) -> None:
     """404, not 403 — the same answer every other route gives for a record
-    somebody may not touch."""
+    somebody may not touch.
+
+    Asked as a reader: since docs/adr/0042 a lawyer reaches a colleague's
+    restricted Matter and may complete its step, exactly as they could on a
+    NORMAL one. The route still refuses somebody outside the legal team.
+    """
     matter = factories.MatterFactory(owner=other_specialist, visibility=Visibility.RESTRICTED)
     action = set_next_action(
         matter=matter,
@@ -632,7 +637,7 @@ def test_a_step_on_somebody_elses_restricted_matter_is_not_completable(
         actor=other_specialist,
     )
 
-    client.force_login(specialist)
+    client.force_login(reader)
     response = client.post(reverse("matters:complete_work_item", kwargs={"action_id": action.pk}))
 
     assert response.status_code == 404

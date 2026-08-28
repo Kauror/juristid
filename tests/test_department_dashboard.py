@@ -144,16 +144,19 @@ def test_the_head_counts_a_restricted_matter_because_the_role_entitles_it(
     """Not because this page decided so — DEPARTMENT_HEAD already carries it.
 
     Asserted on the team table, which is where the page counts Matters now: the
-    same person's row, read by two people, gives two different numbers, and the
-    difference is exactly the restricted file.
+    same person's row, read by three people. Both lawyers agree since
+    docs/adr/0042; somebody outside the legal team is short by exactly the
+    restricted file.
     """
     sandra = portfolio.people.sandra
     restricted = Matter.objects.get(title=RESTRICTED)
     assert restricted.owner == sandra
 
     seen_by_head = cell_of(portfolio.people.head, sandra.display_name, "open").value
-    seen_by_other = cell_of(portfolio.people.martin, sandra.display_name, "open").value
-    assert seen_by_head == seen_by_other + 1
+    seen_by_lawyer = cell_of(portfolio.people.martin, sandra.display_name, "open").value
+    seen_by_reader = cell_of(portfolio.people.reader, sandra.display_name, "open").value
+    assert seen_by_head == seen_by_lawyer
+    assert seen_by_head == seen_by_reader + 1
 
 
 def test_a_restricted_matter_the_head_can_count_is_absent_for_an_unrelated_specialist(
