@@ -19,6 +19,7 @@ appears in a fixture (master specification 5.3, 23.5).
 from __future__ import annotations
 
 import datetime as dt
+import hashlib
 
 import pytest
 from django.utils import timezone
@@ -1332,3 +1333,38 @@ def test_a_second_identical_apply_changes_nothing_including_engagements(world):
     assert result.engagements_created == 0
     assert result.engagements_updated == 0
     assert census() == after_first
+
+
+def test_the_command_refuses_an_uncatalogued_workbook(world, tmp_path, monkeypatch):
+    """The gate reaches the operator, not just the service.
+
+    A refusal only a caller of ``apply_refresh_plan`` could hit would be advice:
+    the person who forgets the catalogue step is the person running the command,
+    and what they see is a report. This asserts they see an error instead.
+    """
+    from django.core.management import CommandError, call_command
+
+    from app.legacy_import.final_cutover import ReviewedSnapshot
+
+    workbook = tmp_path / "synthetic-register.xlsx"
+    workbook.write_bytes(b"not a workbook, and never opened: only hashed")
+    digest = hashlib.sha256(workbook.read_bytes()).hexdigest()
+
+    monkeypatch.setattr(
+        "app.legacy_import.final_cutover.REVIEWED_SNAPSHOTS",
+        (
+            ReviewedSnapshot(
+                sha256=digest,
+                label="sünteetiline kataloogimata",
+                current_years=frozenset({2025, 2026}),
+                snapshot_date=SNAPSHOT_DATE,
+            ),
+        ),
+    )
+
+    with pytest.raises(CommandError) as refusal:
+        call_command("refresh_current_register", "plan", "--workbook", str(workbook))
+
+    message = str(refusal.value)
+    assert "not catalogued" in message
+    assert CATALOGUE_COMMAND in message

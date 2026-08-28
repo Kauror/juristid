@@ -33,6 +33,30 @@ The **mapping** digest names the links a person actually approved. Candidates
 are never links: without ``--links`` this command reports campaign candidates
 and writes none of them.
 
+The operator sequence
+---------------------
+Six steps, and the third cannot be reached without the second:
+
+1. **Verify the workbook.** Hash the file and confirm the digest is the one a
+   person reviewed; this command refuses any other.
+2. **Catalogue it** with the existing Stage-2A importer — ``manage.py
+   import_legacy_register <workbook> --apply``. That is what writes the
+   immutable ``MatterSourceReference`` rows this refresh reads back, and there
+   is no second importer. Skipping it used to produce a plan reporting zero
+   changes; it now produces a refusal.
+3. **Plan** — ``refresh_current_register plan``, with ``--campaigns`` if
+   outreach candidates are wanted, and ``--rows``/``--candidates`` for the
+   review files.
+4. **Review** the currency changes, the canonical field changes, the next
+   actions, the unresolved owner and organisation values, and the campaign
+   candidates.
+5. **Prepare the reviewed outreach mapping** from those candidates, if any
+   engagement is to be recorded. Nothing else can create one.
+6. **Apply** with the pinned digests: ``--expect-plan-sha256`` always, plus
+   ``--links`` and ``--expect-mapping-sha256`` when outreach is included. The
+   same campaign export must be supplied, because the campaign set is inside
+   the plan digest.
+
 What stays out of the repository
 --------------------------------
 Everything the command reads and most of what it writes. The workbook holds
@@ -67,10 +91,12 @@ from app.legacy_import.register_outreach import (
 )
 from app.legacy_import.register_refresh import (
     PlanChanged,
+    SnapshotNotCatalogued,
     UnreviewedSnapshot,
     apply_refresh_plan,
     build_refresh_plan,
     protected_rows,
+    require_catalogued,
     summary,
 )
 
@@ -185,6 +211,30 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"Workbook  {snapshot.label}")
         self.stdout.write(f"          {digest}")
+
+        # A reviewed digest says a person approved these bytes. It says nothing
+        # about whether anybody imported them, and the reconciliation reads only
+        # what the importer wrote. Without this, a forgotten catalogue step
+        # produces a clean report full of zeros — which reads as "the newer
+        # workbook changes nothing" and is the one wrong answer an operator
+        # would believe.
+        try:
+            catalogue = require_catalogued(digest)
+        except SnapshotNotCatalogued as error:
+            raise CommandError(str(error)) from error
+
+        self.stdout.write(
+            f"Catalogue {catalogue.real_rows} rows of {catalogue.references} source references"
+        )
+        if catalogue.looks_partial:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"          an import batch for this snapshot recorded "
+                    f"{catalogue.batch_row_count} source rows, more than the "
+                    f"{catalogue.references} references this database holds — the "
+                    "catalogue may be incomplete."
+                )
+            )
         return digest
 
     def _campaigns(self, options: dict[str, Any]) -> tuple[list[Campaign], dict[str, int]]:
@@ -200,7 +250,12 @@ class Command(BaseCommand):
                 raise CommandError(f"The campaign export is missing columns: {missing}.")
             since, until = CAMPAIGN_WINDOW
             campaigns, tally = read_campaigns(reader, since=since, until=until)
-        self.stdout.write(f"Campaigns {path.name} — {file_digest(path)}")
+        # The file's bytes, named as the file's bytes. What an apply is held to
+        # is the *set* digest inside the plan digest, which the report prints
+        # beside this one (register_outreach.campaign_set_digest).
+        self.stdout.write(f"Campaigns {path.name}")
+        self.stdout.write(f"          file {file_digest(path)}")
+        self._campaign_file_sha256 = file_digest(path)
         return campaigns, tally
 
     def _links(self, options: dict[str, Any]) -> Any:
@@ -239,6 +294,7 @@ class Command(BaseCommand):
         )
         if plan.outreach is not None:
             plan.outreach.read_tally = tally
+            plan.outreach.campaign_file_sha256 = getattr(self, "_campaign_file_sha256", "")
 
         figures = summary(plan)
         if options["json"]:
