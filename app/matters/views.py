@@ -61,6 +61,7 @@ from app.documents.services import link_working_document
 from app.documents.uploads import UploadRejected
 from app.intelligence.selectors import matter_intelligence
 from app.legacy_import.register_display import (
+    register_facts_for,
     snapshot_label,
     source_instruction_for,
     source_instructions_for,
@@ -1286,6 +1287,15 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # `Kaasamine`. Read here for the same reason as everything else on this
         # dict: the template must not be able to start querying.
         "engagements": engagements,
+        # What the register observed *around* the outreach: how many members
+        # were asked and how many answered, whether the opinion went out, and
+        # whether KELLELE named more bodies than the canonical field can hold.
+        #
+        # Decided in Python because a template cannot tell `None` from `0`, and
+        # that distinction is the whole point of the two counts: `{{ value|
+        # default:"—" }}` renders a measured zero as a missing one
+        # (`register_display.MemberFeedback`).
+        "register_facts": register_facts_for(matter),
         # `(record, is_editing)`. One bound form is shared by the add form and
         # every row's edit form, so exactly one of them may render the rejected
         # values — and the row's disclosure and the fields inside it have to

@@ -262,7 +262,26 @@ def complete_next_action(*, action: NextAction, actor: Any = None) -> NextAction
 
 
 @transaction.atomic
-def cancel_next_action(*, action: NextAction, actor: Any = None, reason: str = "") -> NextAction:
+def cancel_next_action(
+    *,
+    action: NextAction,
+    actor: Any = None,
+    reason: str = "",
+    provenance: dict[str, Any] | None = None,
+) -> NextAction:
+    """Withdraw the current action. It stays in the history.
+
+    ``provenance`` is the same keyword ``set_next_action`` carries and exists
+    for the same callers: an enrichment run that withdraws an instruction it
+    wrote itself has no ``actor``, and "who cancelled this" would otherwise read
+    as a blank on a row somebody may need to account for years later.
+
+    The pairing matters more here than it does on ``set``. A cancellation with a
+    null actor is precisely what tells a later run that no person has touched
+    this action — the test that decides whether the register may speak about the
+    Matter at all — so the reason it was null has to be recorded beside it
+    rather than inferred from its absence (brief 19).
+    """
     if action.status != ActionStatus.OPEN:
         raise DomainError("Ainult kehtivat tegevust saab tühistada.")
 
@@ -271,13 +290,19 @@ def cancel_next_action(*, action: NextAction, actor: Any = None, reason: str = "
     action.ended_by = actor
     action.save(update_fields=["status", "ended_at", "ended_by", "updated_at"])
 
+    payload: dict[str, Any] = {"reason": reason[:500]}
+    if provenance:
+        # Nested, so a provenance key can never shadow `reason` and quietly
+        # change what the event says — the same rule `set_next_action` follows.
+        payload["provenance"] = provenance
+
     record_change_event(
         event_type=ChangeEventType.NEXT_ACTION_CANCELLED,
         matter=action.matter,
         actor=actor,
         obj=action,
         summary=action.text[:200],
-        payload={"reason": reason[:500]},
+        payload=payload,
     )
     return action
 

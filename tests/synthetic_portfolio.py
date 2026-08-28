@@ -202,15 +202,24 @@ def add_source_reference(
     received_cell: str = "",
     deadline_cell: str = "",
     addressee_cell: str = "",
+    instrument_cell: str = "",
+    feedback_responded_cell: str = "",
+    feedback_requested_cell: str = "",
     snapshot: str | None = None,
     conflict_state: str = "NONE",
 ) -> MatterSourceReference:
     """Attach one verbatim register row to a Matter.
 
-    The four optional cells below arrived with the final cutover (ADR 0021),
-    which reads columns Stage 2F had no use for. Written through the same
-    contract lookup as the rest, so a fixture still cannot disagree with the
-    parser about which letter holds what.
+    The optional cells below arrived with the final cutover (ADR 0021) and the
+    current-register refresh, each of which reads columns the stage before it
+    had no use for. Written through the same contract lookup as the rest, so a
+    fixture still cannot disagree with the parser about which letter holds what.
+
+    The three feedback and instrument cells take ``""`` to mean *the fixture did
+    not write in this cell*, which is how a blank is expressed — and a blank
+    feedback count is emphatically not a zero. To write a measured zero, pass
+    the string ``"0"``; the two produce different stored values and the tests
+    that matter here assert exactly that difference.
     """
     values = {"owner_name": owner_cell}
     for canonical, cell in (
@@ -218,6 +227,9 @@ def add_source_reference(
         ("received_date", received_cell),
         ("response_deadline", deadline_cell),
         ("addressee_organisation", addressee_cell),
+        ("legal_instrument", instrument_cell),
+        ("member_feedback_responded", feedback_responded_cell),
+        ("member_feedback_requested", feedback_requested_cell),
     ):
         if cell:
             values[canonical] = cell

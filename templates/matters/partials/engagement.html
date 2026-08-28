@@ -57,6 +57,79 @@ know (Teema redesign §14.2).
       <p class="formerror" role="alert">{{ engagement_error }}</p>
     {% endif %}
 
+    {% comment %}
+      What the maintained register observed, above the pointers Koda recorded
+      here. Two counts, and they are two independent observations — not a
+      numerator and a denominator. Nothing computes a response rate from them:
+      the register's own contract says the columns are not subsets of one
+      another, and the real data holds rows where more members answered than
+      were asked directly.
+
+      Labelled as the register's observation, and deliberately not as live
+      campaign analytics. A mailing's recipient count is a different population
+      from "members we asked directly" — 234 addresses against 273 members on
+      one 2026 file — and it appears, when it appears at all, on the
+      EMAIL_CAMPAIGN row below where it belongs (brief 11, 24, 26).
+
+      `teadmata` rather than an omission or a zero. A blank cell means nobody
+      wrote the number down; a written zero means somebody measured and the
+      answer was none. Rendering the first as `0` would invent a measurement,
+      and it is the reading a template filter would silently produce.
+    {% endcomment %}
+    {% if register_facts and register_facts.feedback.known %}
+      <p class="factnote">
+        <span class="factnote__label">Liikmete tagasiside · registri vaatlus</span>
+        otse küsitud {{ register_facts.feedback.requested_label }} ·
+        vastas {{ register_facts.feedback.responded_label }}
+      </p>
+    {% endif %}
+
+    {% comment %}
+      `ei saatnud` in words, because that is what the register wrote. It is a
+      recorded decision, not an unfinished draft and not a send date whose value
+      was lost — and it can never become a Submission, which needs immutable
+      final evidence a spreadsheet cell is not (ADR 0011, DATA-001).
+    {% endcomment %}
+    {% if register_facts and register_facts.opinion_not_sent %}
+      <p class="factnote">
+        <span class="factnote__label">Arvamus · registri vaatlus</span>
+        registrisse on märgitud „ei saatnud“
+      </p>
+    {% endif %}
+
+    {% comment %}
+      The complete KELLELE cell where it names more than one body. `Matter`
+      holds one addressee and this release does not change that; showing the
+      whole cell here is how a three-ministry consultation stops reading as a
+      one-ministry one, without inventing a relationship the model cannot
+      express (brief 7).
+    {% endcomment %}
+    {% if register_facts and register_facts.has_multiple_addressees %}
+      <p class="factnote">
+        <span class="factnote__label">Adressaadid registris</span>
+        {% for name in register_facts.addressees %}{{ name }}{% if not forloop.last %} · {% endif %}{% endfor %}
+      </p>
+    {% endif %}
+
+    {% comment %}
+      A continuation the register named, as a link when this database holds the
+      Matter it points at and as plain text when it does not. No canonical
+      relationship is created either way: the reference is read at render time
+      from the derived state, exactly as it was written (brief 29).
+    {% endcomment %}
+    {% if register_facts and register_facts.continues_under_reference %}
+      <p class="factnote">
+        <span class="factnote__label">Registri järgi jätkub</span>
+        {% if register_facts.continues_under_id %}
+          <a href="{% url 'matters:matter_detail' pk=register_facts.continues_under_id %}">
+            teema {{ register_facts.continues_under_reference }}
+          </a>
+        {% else %}
+          teema {{ register_facts.continues_under_reference }}
+        {% endif %}
+      </p>
+    {% endif %}
+
     {% if engagements %}
       <ul class="factlist factlist--compact">
         {% comment %}

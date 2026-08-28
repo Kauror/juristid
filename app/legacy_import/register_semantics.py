@@ -189,3 +189,161 @@ def has_send_date(opinion_sent_raw: str | None) -> bool:
     was sent says nothing about whether the proceeding is still running.
     """
     return bool((opinion_sent_raw or "").strip())
+
+
+# ---------------------------------------------------------------------------
+# VÄLJA, as three answers rather than two
+# ---------------------------------------------------------------------------
+#
+# `has_send_date` answers the portfolio's question — is the drafting step
+# recorded as finished — and answers it from presence alone, which is right and
+# stays exactly as it is. What it cannot answer is what the reader of a Matter
+# page needs: the 28.08 workbook writes sixteen 2026 rows as **ei saatnud**,
+# and a surface that knows only "something is recorded" renders those as a sent
+# opinion whose date it failed to parse. That is the opposite of what the
+# register said.
+
+
+class OpinionSentState:
+    """What ``VÄLJA`` says, in the three shapes it actually takes.
+
+    Derived and displayable. Deliberately *not* a Submission state and not a
+    stage: a formal outbound opinion is a ``Submission`` with immutable final
+    evidence, and none of these values may ever produce one (ADR 0011,
+    DATA-001).
+    """
+
+    #: A parseable date. The opinion went out and the register says when.
+    DATE = "DATE"
+    #: The register wrote, in words, that Koda did not send one. A decision,
+    #: recorded — not a missing value and not an unfinished draft.
+    NOT_SENT = "NOT_SENT"
+    #: Something else is written that the date parser cannot read. Presence is
+    #: recorded; what it means is a data-quality question for the register
+    #: owner, and inventing an answer here would be the third wrong reading.
+    RECORDED_OTHER = "RECORDED_OTHER"
+    #: Nothing is written. Not "no opinion was sent" — not recorded.
+    BLANK = "BLANK"
+
+
+OPINION_SENT_STATES: tuple[str, ...] = (
+    OpinionSentState.DATE,
+    OpinionSentState.NOT_SENT,
+    OpinionSentState.RECORDED_OTHER,
+    OpinionSentState.BLANK,
+)
+
+#: The wordings that mean Koda decided not to send. A closed allowlist on the
+#: same discipline as the status vocabulary: the 28.08 workbook writes one form
+#: sixteen times, and a stem match would also swallow *ei saatnud veel*, which
+#: says the opposite about whether the work is finished.
+NOT_SENT_FORMS: frozenset[str] = frozenset({"ei saatnud", "ei saadetud", "ei saada"})
+
+
+def opinion_sent_state(raw: str | None, *, parsed_date: object | None = None) -> str:
+    """Which of the four things ``VÄLJA`` is saying.
+
+    ``parsed_date`` is the caller's own parse rather than a second one made
+    here: the register's dates are read by :mod:`app.legacy_import.dates`, and
+    a module that re-decided what counts as a date would be a second answer to
+    a question that already has one.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return OpinionSentState.BLANK
+    if parsed_date is not None:
+        return OpinionSentState.DATE
+    if text.casefold() in NOT_SENT_FORMS:
+        return OpinionSentState.NOT_SENT
+    return OpinionSentState.RECORDED_OTHER
+
+
+# ---------------------------------------------------------------------------
+# KELLELE, when it names more than one body
+# ---------------------------------------------------------------------------
+
+
+class AddresseeCardinality:
+    """How many organisations one ``KELLELE`` cell names."""
+
+    BLANK = "BLANK"
+    SINGLE = "SINGLE"
+    MULTIPLE = "MULTIPLE"
+
+
+#: What separates two organisations in one cell.
+#:
+#: Comma, semicolon, slash, and the standalone conjunction ``ning``. **Not**
+#: ``ja``, and that omission is the whole rule: the ministries Koda writes to
+#: are called *Majandus- ja Kommunikatsiooniministeerium*, *Justiits- ja
+#: Digiministeerium*, *Regionaal- ja Põllumajandusministeerium*. Splitting on
+#: ``ja`` reads 193 single addressees in the 28.08 workbook as pairs and
+#: invents an organisation called *Kommunikatsiooniministeerium* for each one.
+#: With this separator set the same workbook yields thirteen genuinely multiple
+#: cells, every one of which a person can read as such.
+_ADDRESSEE_SEPARATOR = re.compile(r"[,;/]|\bning\b", re.IGNORECASE)
+
+
+def split_addressees(raw: str | None) -> tuple[str, ...]:
+    """The organisations one ``KELLELE`` cell names, in source order.
+
+    Whitespace-trimmed and de-duplicated, and otherwise untouched: an
+    abbreviation the register uses (``MKM``) stays the abbreviation, because
+    expanding it here would be a resolution decision made in the wrong place.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return ()
+    parts = [part.strip() for part in _ADDRESSEE_SEPARATOR.split(text)]
+    return tuple(dict.fromkeys(part for part in parts if part))
+
+
+def addressee_cardinality(raw: str | None) -> str:
+    """Whether this cell names none, one, or several organisations."""
+    parts = split_addressees(raw)
+    if not parts:
+        return AddresseeCardinality.BLANK
+    return AddresseeCardinality.SINGLE if len(parts) == 1 else AddresseeCardinality.MULTIPLE
+
+
+# ---------------------------------------------------------------------------
+# The two member-feedback counts
+# ---------------------------------------------------------------------------
+
+
+def parse_member_count(value: object) -> int | None:
+    """A feedback count, or ``None`` when the register recorded none.
+
+    ``None`` and ``0`` are different answers and the whole reason this function
+    exists rather than an ``int(... or 0)`` at each call site. A blank cell
+    means nobody wrote the number down; a written zero means somebody measured
+    and the answer was none. In the 28.08 workbook the 2026 sheet holds 124
+    written zeros against 19 blanks in one of these columns, so collapsing them
+    would report 124 measured facts as gaps — or, worse, 19 gaps as measured
+    zeros (2026 era contract, columns I and J).
+
+    Anything that is not a non-negative whole number is ``None`` as well. A
+    count is not a place to guess.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float):
+        return int(value) if value >= 0 and float(value).is_integer() else None
+
+    text = str(value).strip()
+    if not text:
+        return None
+    # A spreadsheet routinely stores an integer as "273.0"; the decimal comma
+    # is how it is written when the sheet's locale is Estonian.
+    normalised = text.replace(",", ".")
+    try:
+        number = float(normalised)
+    except ValueError:
+        return None
+    if number < 0 or not number.is_integer():
+        return None
+    return int(number)

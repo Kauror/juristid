@@ -30,6 +30,7 @@ OVERVIEW = "excel-era-overview.md"
 _AUTHORITY_LABELS = {
     "authoritative": "kanooniline",
     "optional": "valikuline",
+    "derived": "tuletatud",
     "deferred": "edasi lükatud",
     "unknown": "tundmatu",
 }

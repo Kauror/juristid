@@ -59,7 +59,7 @@ from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 #: plan digest, the operator report and the audit provenance, so two runs that
 #: read the same sentence differently can never be mistaken for each other
 #: (brief 70).
-REGISTER_NEXT_ACTION_PARSER_VERSION = "1.2"
+REGISTER_NEXT_ACTION_PARSER_VERSION = "2.0"
 
 
 class Verdict:
@@ -115,9 +115,16 @@ class ReviewReason:
     #: apart, and the sentence does not say which (brief C, I).
     DATE_IN_RELATIVE_CLAUSE = "DATE_IN_RELATIVE_CLAUSE"
     #: The sentence names Koda's work *and* a review of it — "ootan 2. lugemist
-    #: riigikogus, vaata üle septembris". Two actionable timings, and converting
-    #: one silently discards the other (brief B).
+    #: riigikogus, vaata üle septembris" — and no single date settles when the
+    #: wait is next looked at. Where exactly one actionable date *is* written,
+    #: 2.0 reads the pair as one instruction instead; see
+    #: :func:`parse_instruction`. This reason is what remains when it cannot.
     WAIT_AND_REVIEW = "WAIT_AND_REVIEW"
+    #: Every date in the sentence is written about the past — "Kooskõlastusringi
+    #: tähtaeg oli 26.08", "Viimati vaatasin 06.08.2026". A note about what has
+    #: already happened instructs nobody, and reading one as a target puts a
+    #: date that is over on somebody's list as though it were coming.
+    HISTORIC_DATE = "HISTORIC_DATE"
 
 
 # ---------------------------------------------------------------------------
@@ -255,10 +262,45 @@ ENTRY_INTO_FORCE_FORMS: tuple[str, ...] = (
 
 _ENTRY_INTO_FORCE = _forms_pattern(ENTRY_INTO_FORCE_FORMS)
 
+#: Wording that puts a date in the past. The maintained register keeps a running
+#: note of what has already happened beside the instruction — *Kooskõlastusringi
+#: tähtaeg oli 26.08*, *Viimati vaatasin 06.08.2026*, *esimene lugemine toimus
+#: ELis 29.04.2026* — and those dates are the sentence's *context*, never its
+#: target. Before 2.0 a second date of this shape made an otherwise clear
+#: instruction ambiguous, so the review date beside it was thrown away with it.
+#:
+#: Closed forms, on the same discipline as every other class here. A past-tense
+#: stem would also match `olime`, `oleks` and `olukord`, which govern nothing.
+HISTORIC_FORMS: tuple[str, ...] = (
+    "oli",
+    "olid",
+    "möödus",
+    "möödusid",
+    "lõppes",
+    "lõppesid",
+    "toimus",
+    "toimusid",
+    "vaatasin",
+    "vaatasime",
+    "vaatas",
+)
+
+_HISTORIC = _forms_pattern(HISTORIC_FORMS)
+
 #: What ends the clause a verb governs. Estonian marks a new clause with
 #: punctuation far more reliably than with word order, and where the writer
 #: left it out, the next instruction verb marks it instead.
-_CLAUSE_BREAK = re.compile(r"[.,;:!?]")
+#:
+#: Digit-aware, for the reason :data:`_REVIEW_CLAUSE_BREAK` is: the register
+#: writes dates with full stops inside them, and a naive ``[.,;:!?]`` read the
+#: stop in *2027. aasta 17. juunil* as a new clause. That handed the month back
+#: to the sentence as though nobody governed it, so "Vaatan üle 15.09,
+#: muudatused jõustuvad 2027. aasta 17. juunil" carried two competing dates and
+#: was refused — losing the review date to a date that was never anybody's
+#: instruction. The two patterns are stated separately because they answer
+#: questions about different verbs, and merging them would tie the review
+#: particle's scope to the governance rules by accident.
+_CLAUSE_BREAK = re.compile(r"[,;:!?]|(?<!\d)\.(?!\d)")
 
 
 # ---------------------------------------------------------------------------
@@ -380,6 +422,16 @@ _DAY_MONTHNAME_YEAR = re.compile(
     re.IGNORECASE,
 )
 
+#: The same date with the year in front: "2027. aasta 17. juunil". The register
+#: writes both orders, and without this one the phrase fell apart into a bare
+#: year and a bare month — two mentions where the source wrote one date, and a
+#: month that then looked year-less enough for the snapshot year to be applied
+#: to it. One span, one EXACT date, is what the sentence actually says.
+_YEAR_THEN_DAY_MONTHNAME = re.compile(
+    rf"\b{_YEAR_WORD}\s+(?P<day>\d{{1,2}})\.\s*(?P<month>{_MONTH_ALTERNATION})\b",
+    re.IGNORECASE,
+)
+
 # ---------------------------------------------------------------------------
 # Dates written without a year
 # ---------------------------------------------------------------------------
@@ -416,6 +468,61 @@ _BARE_MONTH = re.compile(rf"\b(?P<month>{_MONTH_ALTERNATION})\b", re.IGNORECASE)
 #: been written at all, which is the exact failure the guard exists to prevent.
 _ANY_QUARTER = re.compile(r"\b(?P<ordinal>\d+|[ivx]+)\s*\.?\s*kvartal", re.IGNORECASE)
 _ANY_HALF = re.compile(r"\b(?P<ordinal>\d+|[ivx]+)\s*\.?\s*poolaasta", re.IGNORECASE)
+
+
+@dataclass(frozen=True)
+class ParseContext:
+    """Which snapshot a sentence was read from, and off which sheet.
+
+    The parser is otherwise a pure function of one string, and stays one: this
+    carries no database, no clock and no configuration. What it carries is the
+    only fact that can settle a year the writer left out — *which year's sheet
+    of which dated workbook this cell was on* — and it is passed in rather than
+    read from anywhere, so a test states it and a run records it.
+
+    Omit it and the parser behaves exactly as 1.2 did: a year-less date is
+    refused, because with no snapshot there is nothing to resolve it against.
+    """
+
+    #: The register sheet the row sits on, as a year. ``None`` when unknown.
+    sheet_year: int | None = None
+    #: The date the workbook was taken. ``None`` when unknown.
+    snapshot_date: dt.date | None = None
+
+    @property
+    def yearless_year(self) -> int | None:
+        """The year a year-less date on this sheet means, or ``None``.
+
+        **Only when the sheet year and the snapshot year are the same**, and
+        that single condition is the whole rule. On the 2026 sheet of a workbook
+        taken on 28 August 2026, *vaata üle 15.09* was written this year about
+        this year: the sheet says which year's work this is and the snapshot
+        says the file was maintained inside it, so the omitted year is not a
+        guess but the one thing both agree on.
+
+        On the 2025 sheet of the same workbook they disagree, and the answer is
+        ``None`` — deliberately, and not because 2025 is old. A 2025 row is
+        still maintained: somebody may have edited that cell in November 2025 or
+        in August 2026, the sheet cannot say which, and *15.09* is therefore two
+        different days a year apart. The register's own writers resolve it by
+        remembering when they typed it, which is not evidence this parser has
+        (brief 15).
+
+        The inference is *year = sheet year*, never *the next such date after
+        today*. A 2026 row reading "vaata 15.07 üle" in an August snapshot means
+        15 July 2026 — a date that has passed, which the enrichment planner
+        reports as stale — and it must never become 15 July 2027, which the
+        source did not say (brief 14).
+        """
+        if self.sheet_year is None or self.snapshot_date is None:
+            return None
+        return self.sheet_year if self.sheet_year == self.snapshot_date.year else None
+
+
+#: No snapshot, no sheet: refuse every year-less date. The 1.2 behaviour, and
+#: the default, so a caller that has not thought about provenance cannot
+#: accidentally acquire a year.
+NO_CONTEXT = ParseContext()
 
 
 @dataclass(frozen=True)
@@ -487,8 +594,13 @@ class DateScan:
     undated: tuple[str, ...] = ()
 
 
-def _scan_dates(text: str) -> DateScan:
-    """Every written date in ``text``, classified by what may be done with it."""
+def _scan_dates(text: str, *, yearless_year: int | None = None) -> DateScan:
+    """Every written date in ``text``, classified by what may be done with it.
+
+    ``yearless_year`` is the year a date written without one means, from
+    :attr:`ParseContext.yearless_year`. ``None`` — the default — keeps every
+    such date in ``undated``, where the caller refuses it.
+    """
     mentions: list[DateMention] = []
     unreadable = False
 
@@ -542,16 +654,19 @@ def _scan_dates(text: str) -> DateScan:
                 DateMention(match.start(), match.end(), anchor, DatePrecision.HALF_YEAR.value)
             )
 
-    for match in _DAY_MONTHNAME_YEAR.finditer(text):
-        value = _safe_date(
-            int(match.group("year")),
-            ALL_MONTH_FORMS[match.group("month").casefold()],
-            int(match.group("day")),
-        )
-        if value is None:
-            unreadable = True
-            continue
-        mentions.append(DateMention(match.start(), match.end(), value, DatePrecision.EXACT.value))
+    for pattern in (_DAY_MONTHNAME_YEAR, _YEAR_THEN_DAY_MONTHNAME):
+        for match in pattern.finditer(text):
+            value = _safe_date(
+                int(match.group("year")),
+                ALL_MONTH_FORMS[match.group("month").casefold()],
+                int(match.group("day")),
+            )
+            if value is None:
+                unreadable = True
+                continue
+            mentions.append(
+                DateMention(match.start(), match.end(), value, DatePrecision.EXACT.value)
+            )
 
     for pattern in (_MONTH_THEN_YEAR, _YEAR_THEN_MONTH):
         for match in pattern.finditer(text):
@@ -596,7 +711,13 @@ def _scan_dates(text: str) -> DateScan:
     # Dates the sentence wrote and left year-less. Collected only where no fuller
     # phrase already covers the span, so the month inside "2026. aasta oktoobris"
     # is a read date rather than a refused one.
+    #
+    # With a `yearless_year` these become ordinary mentions instead: the sheet
+    # and the snapshot agree on the year, so the sentence is complete after all.
+    # Without one they stay here and the caller refuses them, which is 1.2's
+    # behaviour and still the default.
     undated: list[str] = []
+    resolved: list[DateMention] = []
     for pattern in (_BARE_DAY_MONTH, _BARE_MONTH):
         for match in pattern.finditer(text):
             if any(other.start <= match.start() and match.end() <= other.end for other in kept):
@@ -608,7 +729,34 @@ def _scan_dates(text: str) -> DateScan:
                 if not (1 <= month <= 12 and 1 <= day <= 31):
                     unreadable = True
                     continue
+                if yearless_year is not None:
+                    value = _safe_date(yearless_year, month, day)
+                    if value is None:
+                        # 29.02 in a year that has no 29 February. The day and
+                        # the month are each plausible and the pair is not, so
+                        # this is unreadable rather than year-less.
+                        unreadable = True
+                        continue
+                    resolved.append(
+                        DateMention(match.start(), match.end(), value, DatePrecision.EXACT.value)
+                    )
+                    continue
+            elif yearless_year is not None:
+                number = ALL_MONTH_FORMS[match.group("month").casefold()]
+                anchor = _anchor(DatePrecision.MONTH.value, year=yearless_year, month=number)
+                if anchor is None:  # pragma: no cover - bounds_for accepts this range
+                    unreadable = True
+                    continue
+                resolved.append(
+                    DateMention(match.start(), match.end(), anchor, DatePrecision.MONTH.value)
+                )
+                continue
             undated.append(match.group(0).casefold())
+
+    # Appended after the fuller phrases, then re-sorted, so the mention order
+    # still follows the sentence whichever rule produced each one.
+    kept.extend(resolved)
+    kept.sort(key=lambda mention: mention.start)
 
     return DateScan(kept, unreadable, tuple(dict.fromkeys(undated)))
 
@@ -672,7 +820,53 @@ def _matched(pattern: re.Pattern[str], text: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(match.group(0).casefold() for match in pattern.finditer(text)))
 
 
-def parse_instruction(text: str) -> ParsedInstruction:
+def _actionable(source: str, mentions: list[DateMention]) -> tuple[list[DateMention], str]:
+    """The dates that could be an instruction's target, and why the rest are not.
+
+    Two clause types own a date without instructing anybody, and the maintained
+    register writes both constantly beside a real instruction:
+
+    * entry into force — *muudatused jõustuvad 2027. aasta 17. juunil*, which is
+      when the act starts applying and not when anybody looks at anything;
+    * the past — *Kooskõlastusringi tähtaeg oli 26.08*, a note about a round
+      that has closed.
+
+    Until 2.0 these were only checked once a sentence had exactly one date, so a
+    sentence carrying one of each was *ambiguous* and both were discarded — the
+    review date with the commentary. Filtering first is what lets clause
+    ownership answer the question it was written to answer: **the review date
+    wins because the other date demonstrably belongs to another clause**, not
+    because it was first, last or nearest (brief 17).
+
+    The second element is a refusal reason, set only when filtering removed
+    every date there was. That case is unchanged from 1.2 and must stay so:
+    *ootan RT linki, jõustub 1.01.2028* has one date, it belongs to the act, and
+    the answer is a named refusal rather than a dateless WAIT.
+    """
+    kept: list[DateMention] = []
+    entry_governed = historic = False
+    for mention in mentions:
+        if _governed_by_entry_into_force(source, mention):
+            entry_governed = True
+            continue
+        if _governed_by_history(source, mention):
+            historic = True
+            continue
+        kept.append(mention)
+    if kept or not mentions:
+        return kept, ""
+    # Entry into force first when both fired: it is the older, load-bearing
+    # protection and the one an operator reading the report will recognise.
+    return [], (
+        ReviewReason.DATE_GOVERNED_BY_ANOTHER_CLAUSE
+        if entry_governed
+        else ReviewReason.HISTORIC_DATE
+        if historic
+        else ""
+    )
+
+
+def parse_instruction(text: str, *, context: ParseContext = NO_CONTEXT) -> ParsedInstruction:
     """Read one ``JÄRGMISEKS`` sentence.
 
     The order is fixed and each step can only narrow: kind first, because a
@@ -680,6 +874,10 @@ def parse_instruction(text: str) -> ParsedInstruction:
     then the date, because a date that cannot be read makes an otherwise clear
     instruction unconvertible; then the semantics, which is the only step where
     the two interact.
+
+    ``context`` says which sheet of which dated workbook the sentence came from.
+    It changes exactly one thing — whether a date written without a year can be
+    read — and changes nothing at all when omitted (see :class:`ParseContext`).
     """
     source = (text or "").strip()
     if not source:
@@ -696,39 +894,55 @@ def parse_instruction(text: str) -> ParsedInstruction:
     forms = wait + monitor + do + review
     classes = [bool(wait), bool(monitor or review), bool(do)]
 
-    # A wait and a review of it are the commonest shape in this corpus —
-    # "ootan 2. lugemist riigikogus, vaata üle septembris" — and they are two
-    # actionable timings, not one instruction with decoration. Named separately
-    # from AMBIGUOUS_KIND because the operator report should be able to say how
-    # many sentences carry a review the department would lose by converting
-    # them (brief B).
-    if wait and review:
-        return _review(source, ReviewReason.WAIT_AND_REVIEW, forms=forms)
-    if sum(classes) > 1:
-        return _review(source, ReviewReason.AMBIGUOUS_KIND, forms=forms)
     if not any(classes):
         return _review(source, ReviewReason.NO_KIND)
 
-    scan = _scan_dates(source)
+    # A wait and a review *of that wait* is the commonest shape in the
+    # maintained register — "ootan valitsusele saatmist, vaata üle 15.09" — and
+    # 1.2 refused all of it as two competing timings. On the 28.08 workbook that
+    # refusal covered around forty current rows, and reading them shows the two
+    # halves are not competing at all: the wait names no date of its own, the
+    # review names one, and the date says when Koda next looks at the wait.
+    #
+    # So the pair is read as one instruction *only* in that exact shape — a WAIT
+    # and a review, nothing else beside them, and exactly one actionable date.
+    # Anything wider and the ambiguity is real again (brief 16).
+    wait_review = bool(wait) and bool(review) and not do and not monitor
+    if sum(classes) > 1 and not wait_review:
+        return _review(source, ReviewReason.AMBIGUOUS_KIND, forms=forms)
+
+    scan = _scan_dates(source, yearless_year=context.yearless_year)
     if scan.unreadable:
         return _review(source, ReviewReason.UNREADABLE_DATE, forms=forms)
 
     # Refused before ambiguity is counted, and before a dateless reading can be
     # reached. A year-less date is one the sentence wrote; the question is what
-    # year it means, and nothing here may answer it (brief E).
+    # year it means, and only the context may answer it (brief E, 13, 15).
     if scan.undated:
         return _review(source, ReviewReason.DATE_WITHOUT_YEAR, forms=forms)
 
-    mentions = scan.mentions
+    mentions, governed = _actionable(source, scan.mentions)
+    if governed:
+        return _review(source, governed, forms=forms)
+
     distinct = {mention.identity for mention in mentions}
     if len(distinct) > 1:
         return _review(source, ReviewReason.AMBIGUOUS_DATE, forms=forms)
     mention = mentions[0] if mentions else None
 
-    if mention is not None and _governed_by_entry_into_force(source, mention):
-        return _review(source, ReviewReason.DATE_GOVERNED_BY_ANOTHER_CLAUSE, forms=forms)
     if mention is not None and _governed_by_relative_clause(source, mention):
         return _review(source, ReviewReason.DATE_IN_RELATIVE_CLAUSE, forms=forms)
+
+    if wait_review:
+        if mention is None:
+            # "ootan 2. lugemist riigikogus, vaata üle" with no date at all.
+            # The pair still names two timings and neither is written down.
+            return _review(source, ReviewReason.WAIT_AND_REVIEW, forms=forms)
+        # WAIT, because Koda is not the one who has to act; REVIEW_ON, because
+        # the date says when Koda looks at the wait rather than when the other
+        # party is due. A WAIT can never be reported overdue, which is what
+        # keeps somebody else's timetable off this department's late list.
+        return _understood(source, ActionKind.WAIT, DateSemantics.REVIEW_ON, mention, forms)
 
     if wait:
         return _understood(source, ActionKind.WAIT, DateSemantics.EXPECTED_AROUND, mention, forms)
@@ -821,6 +1035,37 @@ def _governed_by_entry_into_force(source: str, mention: DateMention) -> bool:
         if _CLAUSE_BREAK.search(between):
             continue
         if _WAIT.search(between) or _MONITOR.search(between) or _DO.search(between):
+            continue
+        return True
+    return False
+
+
+def _governed_by_history(source: str, mention: DateMention) -> bool:
+    """Whether a past-tense clause owns this date.
+
+    *Kooskõlastusringi tähtaeg oli 26.08* and *Viimati vaatasin 06.08.2026* are
+    the register keeping a note of what has happened, written beside the
+    instruction rather than as part of it. The date is real and it is over, and
+    a next action pointed at it would be due the day it was created.
+
+    Same shape as :func:`_governed_by_entry_into_force`, and for the same
+    reason: what matters is what the verb still governs when the date arrives,
+    and both punctuation and a following instruction verb end that. In *Vaata
+    26.10.2026 üle, kas eelnõu on Riigikogus edasi liikunud* nothing is
+    governed, because the historic verb is not there at all; in *Vaatan 21.10
+    üle, kas eelnõu on jõudnud valitsusse. Kooskõlastusringi tähtaeg oli 26.08*
+    the second date is governed and the first is not, which is the distinction
+    the whole sentence turns on.
+    """
+    for match in _HISTORIC.finditer(source):
+        if match.end() > mention.start:
+            continue
+        between = source[match.end() : mention.start]
+        if _CLAUSE_BREAK.search(between):
+            continue
+        if _WAIT.search(between) or _MONITOR.search(between) or _DO.search(between):
+            continue
+        if _REVIEW_VERB.search(between):
             continue
         return True
     return False

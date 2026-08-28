@@ -13,6 +13,7 @@ with.
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Any
 
 from django.utils import timezone
@@ -42,22 +43,38 @@ CARRY_SHEET = 2025
 REVIEWED_YEARS = frozenset({CARRY_SHEET, CURRENT_SHEET})
 
 
+#: The day the synthetic workbook was taken. The 2026 sheet is the snapshot's
+#: own year, so a year-less date on it resolves and the same date on the 2025
+#: sheet does not — which is the whole of the year rule, reproduced here rather
+#: than described (``register_next_actions.ParseContext``).
+SNAPSHOT_DATE = dt.date(2026, 8, 28)
+
+
 def approve_snapshot(
     monkeypatch: Any,
     *,
     sha256: str,
     years: frozenset[int] = REVIEWED_YEARS,
+    snapshot_date: dt.date | None = SNAPSHOT_DATE,
 ) -> None:
     """Approve a snapshot the way a reviewed code change approves a real one.
 
     One helper rather than three copies of the same monkeypatch, so that the
-    day the policy grows a third field the tests learn about it in one place.
+    day the policy grows a third field the tests learn about it in one place —
+    which is what happened when it grew ``snapshot_date``.
     """
     from app.legacy_import.final_cutover import ReviewedSnapshot
 
     monkeypatch.setattr(
         "app.legacy_import.final_cutover.REVIEWED_SNAPSHOTS",
-        (ReviewedSnapshot(sha256=sha256, label="sünteetiline", current_years=years),),
+        (
+            ReviewedSnapshot(
+                sha256=sha256,
+                label="sünteetiline",
+                current_years=years,
+                snapshot_date=snapshot_date,
+            ),
+        ),
     )
 
 

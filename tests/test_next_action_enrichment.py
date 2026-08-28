@@ -186,20 +186,23 @@ def test_an_instruction_whose_period_has_passed_is_not_created_today():
 
 
 @pytest.mark.parametrize("status", [ActionStatus.CANCELLED, ActionStatus.SUPERSEDED])
-def test_any_prior_action_history_stops_the_enrichment(status, specialist):
-    """Not "any open one". Any at all.
+def test_any_action_this_operation_did_not_write_stops_the_enrichment(status, specialist):
+    """Not "any open one", and not "any at all" either. Any *person's*.
 
-    A cancelled or superseded action proves somebody has already worked this
-    file through the structured workflow. Reviving an Excel sentence over their
-    decision is the one failure this operation must not have.
+    The test the rule performs moved from existence to authorship, and this
+    case is unchanged by that: an action with no ``CURRENT_REGISTER``
+    provenance is somebody's own work whatever state it is in, and reviving an
+    Excel sentence over their decision is the one failure this operation must
+    not have.
     """
     matter = factories.MatterFactory(owner=specialist)
     factories.NextActionFactory(matter=matter, target_date=dt.date(2026, 1, 1), status=status)
     state = _state(text=WAIT_QUARTER, row=1, matter=matter)
 
     plan = build_plan(snapshot_sha256=SNAPSHOT)
-    assert _outcome_for(plan, state.matter_id) == Outcome.SKIP_EXISTING_ACTION_HISTORY
+    assert _outcome_for(plan, state.matter_id) == Outcome.HUMAN_WINS
     assert plan.auto == ()
+    assert plan.writing == ()
 
 
 def test_a_completed_action_protects_the_matter_too(specialist):
@@ -214,7 +217,7 @@ def test_a_completed_action_protects_the_matter_too(specialist):
     state = _state(text=WAIT_QUARTER, row=1, matter=matter)
 
     plan = build_plan(snapshot_sha256=SNAPSHOT)
-    assert _outcome_for(plan, state.matter_id) == Outcome.SKIP_EXISTING_ACTION_HISTORY
+    assert _outcome_for(plan, state.matter_id) == Outcome.HUMAN_WINS
 
 
 def test_a_hand_made_open_action_is_left_exactly_as_it_was(specialist):
@@ -379,10 +382,16 @@ def test_an_action_appearing_between_plan_and_apply_stops_the_run(specialist):
 
 
 def test_a_second_apply_creates_nothing_and_raises_no_second_event(specialist):
-    """Idempotency, and it falls out of the precedence rule rather than a flag.
+    """Idempotency, and it falls out of the reading rather than a flag.
 
-    Once an enrichment action exists the Matter has action history, so the next
-    plan classifies it exactly as it classifies a hand-made one.
+    It used to fall out of the precedence rule — the action this operation had
+    just written was history, so the next plan refused the Matter. That answer
+    was right by accident and it stopped the operation being repeatable at all.
+
+    Now the second plan recognises the action as its own, reads the same
+    sentence to the same four values, and says so: ``IMPORTED_UP_TO_DATE``
+    writes nothing. Same guarantee, arrived at by comparing rather than by
+    declining to look.
     """
     matter = factories.MatterFactory(owner=specialist)
     state = _state(text=WAIT_QUARTER, row=1, matter=matter)
@@ -391,8 +400,9 @@ def test_a_second_apply_creates_nothing_and_raises_no_second_event(specialist):
     apply_plan(first, expect_plan_sha256=first.digest)
 
     second = build_plan(snapshot_sha256=SNAPSHOT)
-    assert _outcome_for(second, state.matter_id) == Outcome.SKIP_EXISTING_ACTION_HISTORY
+    assert _outcome_for(second, state.matter_id) == Outcome.IMPORTED_UP_TO_DATE
     assert second.auto == ()
+    assert second.writing == ()
 
     result = apply_plan(second, expect_plan_sha256=second.digest)
     assert result.created == 0

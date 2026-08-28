@@ -73,19 +73,36 @@ def test_2021_header_row_is_the_second_row() -> None:
     assert contract.header_row == 2, "the 2021 sheet puts a title above its headers"
 
 
-def test_member_feedback_columns_appear_in_2018_and_stay_deferred() -> None:
+def test_member_feedback_columns_appear_in_2018_and_are_derived_where_maintained() -> None:
+    """Present since 2018; given a home only for the years still maintained.
+
+    2025 and 2026 are ``derived``: the product owner has decided these two
+    observations belong on the file, and the decision names where they live —
+    ``CurrentRegisterState``, rebuilt from the reviewed snapshot, never a
+    ``Matter`` field and never edited in the application.
+
+    2018 to 2024 stay ``deferred``, and the difference is a scope statement
+    rather than an oversight. This refresh speaks for the maintained years; the
+    older sheets keep "read, stored, undecided" until somebody reviews them.
+    Neither level writes to the canonical model, which is why the same importer
+    handles both without knowing the difference.
+    """
     assert contract_for_year(2017) is not None
     assert contract_for_year(2017).column_for("member_feedback_responded") is None
 
     for year in range(2018, 2027):
         contract = contract_for_year(year)
         assert contract is not None
+        expected = "derived" if year in (2025, 2026) else "deferred"
         for canonical in ("member_feedback_responded", "member_feedback_requested"):
             column = contract.column_for(canonical)
             assert column is not None
-            # Consultation is Stage 2C. Reading these now and computing anything
-            # from them are different things, and only the first is authorised.
-            assert column.authority == "deferred"
+            assert column.authority == expected, f"{year} {canonical}"
+            # Neither level reaches a canonical field. A rate is never computed
+            # from these two, in any year: the columns are independent
+            # observations and the real data holds rows where more members
+            # answered than were asked directly.
+            assert not column.is_written_to_canonical_model
 
 
 def test_status_appears_in_2023_and_next_action_in_2025() -> None:

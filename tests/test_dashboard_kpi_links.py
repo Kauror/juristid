@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from app.core.enums import Visibility
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
+from app.legacy_import.register_semantics import OpinionSentState
 from app.matters import dashboard
 from app.matters.enums import RecordMode
 from app.matters.register_filters import register_population
@@ -51,7 +52,15 @@ def register_ids(user, card_url: str) -> set:
 
 
 def _register_state(matter, *, sent_recorded: bool) -> None:
-    """A current register row, enough to answer `?arvamus=`."""
+    """A current register row, enough to answer `?arvamus=`.
+
+    Both derivations of ``VÄLJA`` are set, and a check constraint requires it:
+    presence and the four-way reading describe one cell, so a row saying
+    "something is recorded" and "nothing is written" at once is a state the
+    database refuses. Which of the three non-blank readings this is does not
+    matter to the cards — they ask about presence — so the fixture writes the
+    one that claims least (ADR 0044).
+    """
     reference = factories.MatterSourceReferenceFactory(matter=matter)
     CurrentRegisterState.objects.create(
         matter=matter,
@@ -61,6 +70,9 @@ def _register_state(matter, *, sent_recorded: bool) -> None:
         source_row_number=reference.source_row_number,
         currency=RegisterCurrency.CURRENT,
         opinion_sent_recorded=sent_recorded,
+        opinion_sent_state=(
+            OpinionSentState.RECORDED_OTHER if sent_recorded else OpinionSentState.BLANK
+        ),
         observed_at=timezone.now(),
     )
 

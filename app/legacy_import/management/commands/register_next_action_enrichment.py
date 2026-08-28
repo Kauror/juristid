@@ -44,9 +44,12 @@ from app.legacy_import.next_action_enrichment import (
 
 _OUTCOME_LABELS: dict[str, str] = {
     "AUTO": "would become a next action",
+    "REFRESH_IMPORTED": "imported action the newer snapshot moves",
+    "IMPORTED_UP_TO_DATE": "imported action already says this",
+    "REMOVE_STALE_IMPORTED": "imported action the newer snapshot withdraws",
     "REVIEW_REQUIRED": "review required",
     "STALE_SOURCE": "understood, but its period has passed",
-    "SKIP_EXISTING_ACTION_HISTORY": "a person already worked this file",
+    "HUMAN_WINS": "a person already worked this file",
     "SKIP_NOT_CURRENT": "not current in the register",
     "SKIP_CLOSED": "Matter is closed",
     "SKIP_ARCHIVE_RECORD": "archive record, not current work",
@@ -65,6 +68,7 @@ _REASON_LABELS: dict[str, str] = {
     "DATE_GOVERNED_BY_ANOTHER_CLAUSE": "the only date belongs to another clause",
     "DATE_IN_RELATIVE_CLAUSE": "the date describes the thing waited for, not the waiting",
     "DATE_WITHOUT_YEAR": "a day or month written with no year",
+    "HISTORIC_DATE": "every date in the sentence is written about the past",
     "WAIT_AND_REVIEW": "a wait and a review of it — two actionable timings",
 }
 

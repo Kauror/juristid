@@ -54,6 +54,7 @@ consequences and reversibility.
 
 | [0043](0043-the-ux-pass-and-the-managers-page.md) | The 2026-08-27 UX pass: an additive layer, views that live in the address, and Osakond narrowed to three questions | Accepted |
 | [0044](0044-one-arvamused-destination-and-live-header-search.md) | One `Arvamused` destination, and live suggestions under the header search | Accepted |
+| [0045](0045-the-repeatable-current-register-refresh.md) | The repeatable current-register refresh: authorship decides, and the sheet's own year settles a date | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -93,3 +94,5 @@ Naming: `NNNN-short-decision-title.md`.
 
 - 0043 — the 2026-08-27 UX pass: an additive `ux` stylesheet and script, saved views that are named URLs rather than stored rows, one parameterised `?too=tahtaeg-vahemik` so every deadline group opens exactly its own window, deferring as two existing services behind one control, and Osakond narrowed to what the team is doing, what is ahead and what is done
 - 0044 — one `Arvamused` destination on the bar with the held archive as its own tab, and live suggestions under the header search: five Matter rows bounded in SQL, the existing authorized ranking reused rather than reimplemented, a request token that stops a stale answer painting over a newer one, and a plain GET form still underneath it all
+
+- 0045 — the repeatable current-register refresh: authorship rather than existence decides whether the register may speak, a year-less date takes the sheet's year only where the snapshot agrees, a wait beside its own review is one instruction, clause ownership removes a date instead of being defeated by it, the two member-feedback counts live on the derived table with `NULL` kept distinct from a measured zero, and outreach pointers are proposed by a matcher that never writes and created only by a reviewed mapping

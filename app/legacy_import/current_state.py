@@ -42,6 +42,11 @@ from django.db import models
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import matter_visibility_q, scope_for_user
 from app.core.models import BaseModel
+from app.legacy_import.register_semantics import (
+    OPINION_SENT_STATES,
+    AddresseeCardinality,
+    OpinionSentState,
+)
 
 
 class RegisterCurrency(models.TextChoices):
@@ -154,6 +159,110 @@ class CurrentRegisterState(BaseModel):
             "kui VÄLJA on märgitud. Ei ole Submission."
         ),
     )
+    #: Which of the four things ``VÄLJA`` is saying, as one comparable value.
+    #:
+    #: ``opinion_sent_recorded`` answers the portfolio's question and answers it
+    #: from presence alone, which is right and unchanged. This answers the
+    #: reader's. The 28.08 workbook writes sixteen 2026 rows as **ei saatnud** —
+    #: a decision somebody recorded, not a missing value — and a page that knew
+    #: only "something is written here" rendered every one of them as an opinion
+    #: that went out on a date the parser could not read. That is the opposite
+    #: of what the register said (``register_semantics.OpinionSentState``).
+    #:
+    #: Still not a ``Submission`` and still incapable of becoming one. A sent
+    #: opinion's canonical record needs immutable final evidence; ``DATE`` here
+    #: is a spreadsheet cell (ADR 0011, DATA-001).
+    opinion_sent_state = models.CharField(
+        max_length=32,
+        choices=[
+            (OpinionSentState.DATE, "Kuupäev"),
+            (OpinionSentState.NOT_SENT, "Ei saatnud"),
+            (OpinionSentState.RECORDED_OTHER, "Muu märge"),
+            (OpinionSentState.BLANK, "Märkimata"),
+        ],
+        default=OpinionSentState.BLANK,
+        db_index=True,
+        verbose_name="VÄLJA seis",
+        help_text="Kas VÄLJA on kuupäev, sõnaline 'ei saatnud', muu märge või tühi.",
+    )
+    #: ``KELLELE`` exactly as the register wrote it, however many bodies it
+    #: names.
+    #:
+    #: ``Matter.addressee_organisation`` is singular and stays singular: this
+    #: refresh does not redesign that cardinality. What it must not do is let a
+    #: cell reading *Rahandusministeerium, Kaitseministeerium, Kliimaministeerium*
+    #: reach the canonical field as whichever name came first, which would state
+    #: — with no marker of the choice — that Koda wrote to one ministry when it
+    #: wrote to three. So the complete cell is kept here, the canonical field is
+    #: written only from a cell naming exactly one organisation, and the page
+    #: shows this beside it (brief 7).
+    addressee_raw = models.CharField(
+        max_length=500,
+        blank=True,
+        verbose_name="KELLELE allikas",
+        help_text=(
+            "Adressaat allika sõnastuses; kanooniline adressaat on Matter.addressee_organisation."
+        ),
+    )
+    addressee_cardinality = models.CharField(
+        max_length=16,
+        choices=[
+            (AddresseeCardinality.BLANK, "Märkimata"),
+            (AddresseeCardinality.SINGLE, "Üks asutus"),
+            (AddresseeCardinality.MULTIPLE, "Mitu asutust"),
+        ],
+        default=AddresseeCardinality.BLANK,
+        db_index=True,
+        verbose_name="adressaatide arv",
+    )
+    #: ``ÕIGUSAKT``, verbatim. Source metadata with no canonical home, and
+    #: deliberately still not mapped to ``Track``: the column names the kind of
+    #: *instrument* and ``Track`` names the kind of *proceeding*, its notation
+    #: changed from single letters to words across the years, and reconciling
+    #: the two is a lawyers' decision rather than an importer's (2026 era
+    #: contract, column C). Carried here so the Matter page can show what the
+    #: register said without a per-row read through the era contract.
+    legal_instrument_raw = models.CharField(
+        max_length=200, blank=True, verbose_name="ÕIGUSAKT allikas"
+    )
+    #: How many members answered, and how many were asked directly.
+    #:
+    #: Two independent observations the register keeps, and the product owner
+    #: has now asked for both on the file. They live here rather than on
+    #: ``Matter`` because that is what they are: a statement the latest reviewed
+    #: workbook makes *about* the Matter, rebuilt whenever a newer snapshot is
+    #: approved, never edited in the application and attributed to no particular
+    #: outreach (brief 10).
+    #:
+    #: **Nullable, and null is not zero.** The 28.08 workbook's 2026 sheet holds
+    #: 124 written zeros against 19 blanks in the first column: a zero is a
+    #: measurement — nobody replied — and a blank is the absence of one. Storing
+    #: both as ``0`` would report 124 measured facts and 19 gaps as one number,
+    #: and no later run could tell them apart again
+    #: (``register_semantics.parse_member_count``).
+    #:
+    #: Neither is a rate and neither is the other's denominator. The register's
+    #: own contract note says so, and the real data agrees: rows exist where more
+    #: members answered than were asked directly, because members respond through
+    #: channels nobody enumerated. Nothing in this codebase divides one by the
+    #: other.
+    #:
+    #: Not to be confused with a campaign's recipient count either. Sendsmaily
+    #: enqueued 234 addresses for the mailing behind one of these Matters and the
+    #: register records 273 members asked; those are two populations, both true,
+    #: and each belongs to its own record (brief 24).
+    member_feedback_responded = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="tagasisidet andnud liikmeid",
+        help_text="Registri vaatlus. Tühi tähendab, et arvu ei ole kirjas — mitte nulli.",
+    )
+    member_feedback_requested = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name="otse küsitud liikmeid",
+        help_text="Registri vaatlus. Tühi tähendab, et arvu ei ole kirjas — mitte nulli.",
+    )
     #: ``JÄRGMISEKS``, verbatim. Displayed as a source instruction and never
     #: converted into a ``NextAction``: the same sentence carries a deadline, a
     #: reminder and a guess about somebody else's timetable, and the structured
@@ -200,6 +309,25 @@ class CurrentRegisterState(BaseModel):
                 condition=models.Q(currency__in=RegisterCurrency.values),
                 name="legacy_register_currency_vocabulary",
             ),
+            models.CheckConstraint(
+                condition=models.Q(opinion_sent_state__in=OPINION_SENT_STATES),
+                name="legacy_register_opinion_sent_vocabulary",
+            ),
+            # Presence and the four-way reading are two derivations of one cell
+            # and must not be able to disagree. Only BLANK means nothing was
+            # written; the other three all mean something was. Without this a
+            # later edit to one of the two derivations would leave the drafting
+            # queryset and the Matter page saying opposite things about the same
+            # row, which is exactly the failure the four-way reading exists to
+            # end.
+            models.CheckConstraint(
+                condition=models.Q(
+                    opinion_sent_recorded=True, opinion_sent_state__in=OPINION_SENT_STATES
+                )
+                & ~models.Q(opinion_sent_recorded=True, opinion_sent_state=OpinionSentState.BLANK)
+                | models.Q(opinion_sent_recorded=False, opinion_sent_state=OpinionSentState.BLANK),
+                name="legacy_register_opinion_sent_presence_agrees",
+            ),
             # A continuation reference is meaningful only for the verdict that
             # produces one. Without this a later edit could leave a SUPERSEDED
             # row pointing nowhere, or a CURRENT row claiming it moved.
@@ -234,6 +362,35 @@ class CurrentRegisterState(BaseModel):
     @property
     def has_source_instruction(self) -> bool:
         return bool(self.next_action_text.strip())
+
+    @property
+    def opinion_not_sent(self) -> bool:
+        """The register says, in words, that Koda did not send one."""
+        return self.opinion_sent_state == OpinionSentState.NOT_SENT
+
+    @property
+    def has_multiple_addressees(self) -> bool:
+        return self.addressee_cardinality == AddresseeCardinality.MULTIPLE
+
+    @property
+    def addressees(self) -> tuple[str, ...]:
+        """The organisations ``KELLELE`` names, in source order."""
+        from app.legacy_import.register_semantics import split_addressees
+
+        return split_addressees(self.addressee_raw)
+
+    @property
+    def has_member_feedback(self) -> bool:
+        """Whether the register recorded either count.
+
+        Either, not both, and not "is non-zero": a row saying 220 were asked and
+        0 answered is two measurements and the most informative shape this pair
+        takes. A surface that required both, or required them to be positive,
+        would hide exactly the rows worth reading.
+        """
+        return (
+            self.member_feedback_responded is not None or self.member_feedback_requested is not None
+        )
 
     @property
     def source_responsibility(self) -> str:

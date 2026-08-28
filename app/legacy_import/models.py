@@ -364,6 +364,110 @@ from app.legacy_import.source_pages import (  # noqa: E402
     SourceSystem,
 )
 
+
+class OutreachChannel(models.TextChoices):
+    """Which reviewed source an imported engagement pointer came from."""
+
+    EMAIL_CAMPAIGN = "EMAIL_CAMPAIGN", "Sendsmaily kampaania"
+    PUBLIC_PAGE = "PUBLIC_PAGE", "koda.ee avalik konsultatsioon"
+
+
+class RegisterEngagementImport(BaseModel):
+    """This reviewed outreach pointer is why that ``MatterEngagement`` exists.
+
+    The idempotency key, and the reason it is a row here rather than a column
+    there. ``MatterEngagement`` is a five-field pointer a person fills in by
+    hand; it has no import identity, and the only thing an importer could
+    otherwise match on is the title string. Titles are edited — that is the
+    whole of what ``Kaasamine`` supports, since there is no delete — so a second
+    run after somebody corrected a campaign's wording would find no match and
+    record the same mailing twice, with the first copy still on the page.
+
+    So identity lives beside the import, exactly as ``OpinionSubmissionImport``
+    holds it for the opinion archive rather than putting it on ``Submission``.
+    Three things follow, and each of them is why this shape was chosen:
+
+    **The engagement model is untouched.** No migration on ``matters``, no
+    import-only column on a record the department fills in by hand, and nothing
+    for the composer form to ignore.
+
+    **Hand-made and imported rows stay distinguishable.** A row with no
+    ``RegisterEngagementImport`` is somebody's own work, and a future refresh
+    that wanted to correct what it wrote can find precisely what it wrote —
+    the same distinction ``native_activity`` already draws for submissions.
+
+    **The key is the source's own identity, not a rendering of it.** For a
+    campaign that is the Sendsmaily template URL, which is stable across the
+    title and note edits a person may make afterwards. For a public
+    consultation it is the page URL. Neither is derived from anything this
+    application controls, so re-running the same approved mapping finds the same
+    row whatever happened to the engagement in between (brief 27).
+
+    Deliberately not a provider integration. Nothing here fetches, polls or
+    authenticates; a reviewed mapping file is prepared by a person and this
+    records what it said.
+    """
+
+    engagement = models.ForeignKey(
+        "matters.MatterEngagement",
+        on_delete=models.CASCADE,
+        related_name="register_imports",
+        verbose_name="kaasamine",
+    )
+    #: Denormalised from the engagement, and it earns its place: the uniqueness
+    #: rule below is per Matter, and expressing it through the FK would make
+    #: every check a join. ``CASCADE`` on both means a Matter's removal takes
+    #: the pointer and its identity together.
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.CASCADE,
+        related_name="register_engagement_imports",
+        verbose_name="teema",
+    )
+    channel = models.CharField(
+        max_length=32, choices=OutreachChannel.choices, db_index=True, verbose_name="kanal"
+    )
+    #: The source's own stable identifier — a template URL, a public page URL.
+    #: Never a title and never a hash of one.
+    source_key = models.CharField(max_length=1000, verbose_name="allika tunnus")
+    #: SHA-256 of the reviewed mapping file this row was written from, so an
+    #: operator can tell which approval produced which pointer.
+    mapping_sha256 = models.CharField(
+        max_length=64, blank=True, db_index=True, verbose_name="ülevaadatud vaste SHA-256"
+    )
+    #: True when this run created the engagement; false when it attached
+    #: provenance to one that was already there. The difference between
+    #: recording outreach and double-counting it.
+    created_engagement = models.BooleanField(default=False, verbose_name="loodi siin")
+
+    class Meta:
+        verbose_name = "registri kaasamise import"
+        verbose_name_plural = "registri kaasamise impordid"
+        ordering = ["matter", "channel", "source_key"]
+        constraints = [
+            # One approved source, one pointer, per Matter. This is the whole
+            # idempotency guarantee, and it is enforced by the database rather
+            # than by the importer remembering to check: a re-run that raced
+            # itself would otherwise leave two engagements on the page with no
+            # way to tell which was which.
+            models.UniqueConstraint(
+                fields=["matter", "channel", "source_key"],
+                name="legacy_register_one_engagement_per_source",
+            ),
+            models.CheckConstraint(
+                condition=~models.Q(source_key=""),
+                name="legacy_register_engagement_source_key_required",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(channel__in=OutreachChannel.values),
+                name="legacy_register_engagement_channel_vocabulary",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.channel} {self.source_key[:60]}"
+
+
 __all__ = [
     "CandidateClass",
     "CandidateState",
@@ -387,8 +491,10 @@ __all__ = [
     "OpinionArchiveText",
     "OpinionMatchCandidate",
     "OpinionSubmissionImport",
+    "OutreachChannel",
     "ReconciliationStatus",
     "RegisterCurrency",
+    "RegisterEngagementImport",
     "ResourceImportState",
     "ResourceKind",
     "SourceMatchClass",

@@ -258,7 +258,33 @@ def test_the_approved_snapshot_carries_the_maintained_years():
     policy = reviewed_snapshot("f38906c255f5ad6a58711ce833dd61da5fad7ce7ffd74fb8d2b057c6e8a58df2")
     assert policy is not None
     assert policy.current_years == frozenset({2025, 2026})
-    assert len(REVIEWED_SNAPSHOTS) == 1
+
+
+def test_every_reviewed_snapshot_carries_a_scope_and_a_date():
+    """The guard that used to be ``len(REVIEWED_SNAPSHOTS) == 1``.
+
+    Counting the list stopped being the right check the moment a second
+    workbook was approved, and the count was never what the check was about: it
+    was about a digest entering the list without somebody deciding what it
+    speaks for. So the property is asserted of every entry instead, which is
+    both what the incident actually requires and a guard that keeps working as
+    the department approves further snapshots.
+
+    The date is here for the same reason the scope is. A year-less
+    ``JÄRGMISEKS`` date is read as the sheet's year only where the sheet year
+    and the snapshot year agree, so a snapshot with no date silently turns that
+    reading off — a quiet loss of conversions with no error anywhere
+    (``register_next_actions.ParseContext``).
+    """
+    assert REVIEWED_SNAPSHOTS
+    for snapshot in REVIEWED_SNAPSHOTS:
+        assert snapshot.current_years == frozenset({2025, 2026}), snapshot.label
+        assert snapshot.snapshot_date is not None, snapshot.label
+        assert len(snapshot.sha256) == 64
+        assert snapshot.label.strip()
+
+    digests = [snapshot.sha256 for snapshot in REVIEWED_SNAPSHOTS]
+    assert len(set(digests)) == len(digests)
 
 
 def test_an_unreviewed_digest_has_no_scope_and_activates_nothing(world):

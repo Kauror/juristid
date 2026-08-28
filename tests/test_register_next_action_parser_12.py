@@ -1,5 +1,12 @@
 """Parser 1.2 — the grammar it learned, and everything it now refuses.
 
+Kept under its own name after 2.0 shipped, because most of what 1.2 decided is
+still exactly what the parser does and deleting the module would take the
+reasoning with it. Five assertions here moved: 2.0 reads a WAIT beside a dated
+review as one instruction, and lets clause ownership remove a date rather than
+be defeated by it. Each of the five says so where it stands, and the new
+contract is asserted in ``test_register_next_action_parser_20``.
+
 1.0 read a waiting verb, a monitoring verb and a stated deadline. Measured
 against the 159 maintained instructions the register actually holds, that
 produced 54 conversions, and reading them showed the reading was often right by
@@ -105,31 +112,49 @@ def test_every_reviewed_review_form_is_recognised(form):
 # ---------------------------------------------------------------------------
 
 
-def test_a_wait_beside_a_review_is_refused_rather_than_flattened():
+def test_a_wait_beside_an_undated_review_is_still_refused():
     """1.0's worst reading, and the commonest shape in the corpus.
 
     Eleven maintained rows say this. Each produced a dateless WAIT, and the
     review instruction — the half with the date on it — was discarded without a
     trace.
+
+    2.0 reads the pair as one instruction *when a date settles it*, and this
+    module parses with no context, so ``septembris`` has no year and the pair
+    still cannot be settled. The refusal stands; only its named reason moves
+    forward, to the thing that actually blocks the reading. The settled form is
+    asserted in ``test_register_next_action_parser_20``.
     """
     assert reasons("ootan 2. lugemist riigikogus, vaata üle septembris") == (
-        ReviewReason.WAIT_AND_REVIEW,
+        ReviewReason.DATE_WITHOUT_YEAR,
     )
 
 
-def test_the_review_clause_date_is_not_borrowed_by_the_wait():
+def test_the_review_clause_date_is_no_longer_borrowed_but_read():
     """The sharpest form of the same defect: a date from the wrong clause.
 
-    1.0 read this as "waiting, expected around August 2026". The August belongs
-    to the review, and what is being waited for has no stated timing at all.
+    1.0 read this as "waiting, expected around August 2026" — the August belongs
+    to the review, not to what is being waited for, and ``EXPECTED_AROUND`` said
+    the ministry was due then. 1.2 refused the sentence outright rather than
+    keep asserting that.
+
+    2.0 keeps 1.0's date and fixes what was actually wrong with it. The August
+    *is* the review's, so it is stored with the meaning the review gives it —
+    ``REVIEW_ON``, the day Koda looks again — and never as a prediction about
+    the other party. A WAIT can never be reported overdue, so nothing here can
+    put somebody else's timetable on this department's late list (brief 16).
     """
-    assert reasons("ootan 2. kooskõlastusringi, Vaata üle augustis 2026") == (
-        ReviewReason.WAIT_AND_REVIEW,
-    )
+    parsed = parse_instruction("ootan 2. kooskõlastusringi, Vaata üle augustis 2026")
+
+    assert parsed.verdict == Verdict.UNDERSTOOD
+    assert parsed.kind == ActionKind.WAIT
+    assert parsed.date_semantics == DateSemantics.REVIEW_ON
+    assert parsed.target_date == dt.date(2026, 8, 1)
+    assert parsed.date_precision == DatePrecision.MONTH
 
 
 def test_order_does_not_change_the_answer():
-    assert reasons("vaata üle septembris, ootan 2. lugemist") == (ReviewReason.WAIT_AND_REVIEW,)
+    assert reasons("vaata üle septembris, ootan 2. lugemist") == (ReviewReason.DATE_WITHOUT_YEAR,)
 
 
 # ---------------------------------------------------------------------------
@@ -264,18 +289,44 @@ def test_an_impossible_bare_day_is_unreadable_rather_than_undated():
 # ---------------------------------------------------------------------------
 
 
-def test_two_dated_instructions_are_refused_never_first_wins():
-    assert reasons("Vaata 01.12.2026 üle, kas on uusi arenguid. Viimati vaatasin 01.08.2026.") == (
-        ReviewReason.AMBIGUOUS_DATE,
+def test_a_note_about_the_past_is_not_a_second_instruction():
+    """1.2 counted the second date; 2.0 asks which clause wrote it.
+
+    *Viimati vaatasin 01.08.2026* is the register telling itself when this file
+    was last looked at. It is a real date and it is over, so it can never be a
+    target — and treating it as a rival candidate discarded the December review
+    the same sentence states plainly. Clause ownership decides, not order:
+    reverse the two halves and the answer is the same, because the past-tense
+    verb travels with its own date (brief 17).
+    """
+    parsed = parse_instruction(
+        "Vaata 01.12.2026 üle, kas on uusi arenguid. Viimati vaatasin 01.08.2026."
     )
 
+    assert parsed.verdict == Verdict.UNDERSTOOD
+    assert parsed.target_date == dt.date(2026, 12, 1)
+    assert reasons("Viimati vaatasin 01.08.2026, vaata üle") == (ReviewReason.HISTORIC_DATE,)
 
-def test_a_second_actionable_timing_is_not_silently_dropped():
-    """1.0 took the quarter and never noticed the member-state deadline."""
-    assert reasons(
+
+def test_a_transposition_deadline_is_not_kodas_timing():
+    """1.0 took the quarter and never noticed the member-state deadline.
+
+    1.2 noticed it and refused the sentence. 2.0 notices it, reads *whose*
+    deadline it is — ``jõustama`` governs it, and the obligation is the member
+    states' — and keeps the quarter Koda is actually waiting through. This is
+    the entry-into-force protection doing its job rather than being bypassed:
+    the date is still refused as a target, and refusing it no longer costs the
+    instruction beside it.
+    """
+    parsed = parse_instruction(
         "Ootan eelnõud 2028. aasta 2. kvartalis. Liikmesriigid peavad direktiivi "
         "jõustama 22. jaanuariks 2029."
-    ) == (ReviewReason.AMBIGUOUS_DATE,)
+    )
+
+    assert parsed.verdict == Verdict.UNDERSTOOD
+    assert parsed.kind == ActionKind.WAIT
+    assert parsed.target_date == dt.date(2028, 4, 1)
+    assert parsed.date_precision == DatePrecision.QUARTER
 
 
 def test_the_same_date_written_twice_is_one_date():
