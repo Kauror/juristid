@@ -312,14 +312,14 @@ def test_link_coverage_counts_a_multi_matter_letter_once(world, archive_world, r
     """One letter on two Matters is one covered letter, not two (brief 74)."""
     result = compute(keys.OPINION_ARCHIVE_LINK_COVERAGE, reporting_context(world.martin))
     assert result.coverage_denominator == 10
-    assert result.coverage_count == 2
-    assert result.value == 20
+    assert result.coverage_count == 3
+    assert result.value == 30
 
 
 def test_link_coverage_separates_linked_from_unlinked(world, archive_world, reporting_context):
     by_state = segments(world.martin, keys.OPINION_ARCHIVE_LINK_COVERAGE, reporting_context)
-    assert by_state["Teemaga seotud"] == 2
-    assert by_state["Teemaga sidumata"] == 8
+    assert by_state["Teemaga seotud"] == 3
+    assert by_state["Teemaga sidumata"] == 7
 
 
 def test_an_unlinked_letter_is_never_called_a_missing_opinion(
@@ -342,10 +342,10 @@ def test_a_letter_on_two_lawyers_matters_appears_under_both(
     """
     result = compute(keys.OPINION_ARCHIVE_LINKED_BY_RESPONSIBILITY, reporting_context(world.martin))
     by_person = {segment.label: segment.value for segment in result.segments}
-    assert by_person["Sandra Testjurist"] == 2
+    assert by_person["Sandra Testjurist"] == 3
     assert by_person["Martin Testjurist"] == 1
-    assert sum(by_person.values()) == 3
-    assert result.value == 2
+    assert sum(by_person.values()) == 4
+    assert result.value == 3
 
 
 def test_the_multiplicity_is_stated_rather_than_left_to_be_discovered(
@@ -366,10 +366,13 @@ def test_the_month_matrix_counts_a_letter_once_per_lawyer_per_month(
     )
     matrix = result.matrix
     assert matrix is not None
-    assert [row.label for row in matrix.rows] == ["Jaan", "Märts"]
-    january = matrix.rows[0]
+    # Sandra's restricted letter is February 2022, and a lawyer reads it since
+    # docs/adr/0042 — so the axis spans two years and switches from short month
+    # names to `YYYY-MM`, which is the metric's own cross-year behaviour.
+    assert [row.label for row in matrix.rows] == ["2022-02", "2023-01", "2023-03"]
+    january = matrix.rows[1]
     assert january.total == 2
-    assert matrix.grand_total == 3
+    assert matrix.grand_total == 4
 
 
 def test_a_pending_candidate_is_not_a_link(world, archive_world, reporting_context):
@@ -410,7 +413,7 @@ def test_a_link_to_a_restricted_matter_never_reaches_another_reader(
     """
     martin = compute(keys.OPINION_ARCHIVE_LINK_COVERAGE, reporting_context(world.martin))
     sandra = compute(keys.OPINION_ARCHIVE_LINK_COVERAGE, reporting_context(world.sandra))
-    assert martin.coverage_count == 2
+    assert martin.coverage_count == 3
     assert sandra.coverage_count == 3
     assert martin.coverage_denominator == sandra.coverage_denominator == 10
 
@@ -430,7 +433,7 @@ def test_the_restricted_matters_responsibility_does_not_appear(
             keys.OPINION_ARCHIVE_LINKED_BY_RESPONSIBILITY, reporting_context(world.sandra)
         ).segments
     }
-    assert martin["Sandra Testjurist"] == 2
+    assert martin["Sandra Testjurist"] == 3
     assert sandra["Sandra Testjurist"] == 3
     assert martin["Martin Testjurist"] == sandra["Martin Testjurist"] == 1
 
@@ -459,7 +462,7 @@ def test_the_archive_trend_and_the_submission_metric_are_independent(
     archive_total = compute(keys.OPINION_ARCHIVE_BY_YEAR, reporting_context(world.martin)).value
     sent = compute(keys.SUBMISSIONS_SENT, reporting_context(world.martin)).value
     assert archive_total == 10
-    assert sent == 3
+    assert sent == 4
 
 
 def test_a_new_canonical_submission_moves_only_the_canonical_metric(

@@ -146,8 +146,8 @@ def test_a_narrowed_period_changes_the_numbers(client, world):
     client.force_login(world.martin)
     everything = client.get("/statistika/teemad/", {"periood": "koik"})
     this_year = client.get("/statistika/teemad/", {"periood": "kaesolev"})
-    assert everything.context["cards"][0].value == 11
-    assert this_year.context["cards"][0].value == 5
+    assert everything.context["cards"][0].value == 12
+    assert this_year.context["cards"][0].value == 6
 
 
 def test_only_the_tabs_that_can_use_a_filter_offer_it(client, world):
@@ -169,7 +169,7 @@ def test_the_submission_list_is_the_products_only_list_of_them(client, world):
     client.force_login(world.martin)
     response = client.get("/statistika/arvamused/", {"periood": "koik"})
     assert response.status_code == 200
-    assert response.context["total"] == 3
+    assert response.context["total"] == 4
     body = response.content.decode()
     assert "Esimene arvamus" in body
     assert "Koostamisel arvamus" not in body  # a draft is not a submission
@@ -178,7 +178,7 @@ def test_the_submission_list_is_the_products_only_list_of_them(client, world):
 def test_the_material_list_shows_occurrences_with_their_content_hash(client, world):
     client.force_login(world.martin)
     response = client.get("/statistika/materjalid/", {"periood": "koik"})
-    assert response.context["total"] == 8
+    assert response.context["total"] == 9
     body = response.content.decode()
     assert "eelnou.pdf" in body
     assert "eelnou-koopia.pdf" in body  # the same bytes, a second occurrence
@@ -230,7 +230,7 @@ def test_the_matter_export_carries_provenance_columns(client, world):
         "paritolu",
         "aruandlusaasta",
     ]
-    assert len(body.strip().splitlines()) == 12  # header plus eleven visible Matters
+    assert len(body.strip().splitlines()) == 13  # header plus eleven visible Matters
 
 
 def test_the_export_opens_in_a_spreadsheet_here(client, world):
@@ -247,8 +247,8 @@ def test_the_export_respects_the_active_filters(client, world):
     client.force_login(world.martin)
     everything = csv_body(client.get("/statistika/eksport/teemad.csv", {"periood": "koik"}))
     narrowed = csv_body(client.get("/statistika/eksport/teemad.csv", {"periood": "kaesolev"}))
-    assert len(everything.strip().splitlines()) == 12
-    assert len(narrowed.strip().splitlines()) == 6
+    assert len(everything.strip().splitlines()) == 13
+    assert len(narrowed.strip().splitlines()) == 7
 
 
 def test_the_submission_export_keeps_addressees_and_copies_apart(client, world):
@@ -266,9 +266,9 @@ def test_the_material_export_shows_the_duplicate_as_two_rows(client, world):
     client.force_login(world.martin)
     body = csv_body(client.get("/statistika/eksport/materjalid.csv", {"periood": "koik"}))
     rows = body.strip().splitlines()[1:]
-    assert len(rows) == 8
+    assert len(rows) == 9
     hashes = [row.split(";")[5] for row in rows]
-    assert len(set(hashes)) == 7  # one SHA-256 appears twice, on purpose
+    assert len(set(hashes)) == 8  # one SHA-256 appears twice, on purpose
 
 
 def test_the_quality_export_marks_which_rows_are_limitations(client, world):
@@ -482,6 +482,9 @@ def test_a_year_that_exists_only_in_restricted_records_is_not_offered(client, wo
         visibility=Visibility.RESTRICTED,
         owner=factories.UserFactory(),
     )
-    client.force_login(world.martin)
+    # A lawyer may see the restricted record since docs/adr/0042, so the year it
+    # alone occupies is legitimately offered to one. Asked as a reader, for whom
+    # the year would still be a disclosure of a record they cannot open.
+    client.force_login(world.reader)
 
     assert "1998" not in _year_labels(client.get(reverse("reporting:overview")))

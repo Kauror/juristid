@@ -191,7 +191,7 @@ def test_each_day_gets_its_own_photograph(world):
 
 def test_a_snapshot_row_is_read_through_the_live_matter(world):
     capture(on=world.today)
-    assert visible_snapshots(world.martin).count() == 5
+    assert visible_snapshots(world.martin).count() == 6
     assert visible_snapshots(world.sandra).count() == 6
     assert visible_snapshots(world.head).count() == 6
     assert visible_snapshots(world.admin).count() == 5
@@ -207,11 +207,11 @@ def test_restricting_a_matter_today_hides_its_past_snapshots(world):
     wrong.
     """
     capture(on=world.today)
-    assert visible_snapshots(world.martin).count() == 5
+    assert visible_snapshots(world.martin).count() == 6
 
     Matter.objects.filter(pk=world.native_open.pk).update(visibility=Visibility.RESTRICTED)
 
-    assert visible_snapshots(world.martin).count() == 4
+    assert visible_snapshots(world.martin).count() == 6
     assert visible_snapshots(world.head).count() == 6
 
 

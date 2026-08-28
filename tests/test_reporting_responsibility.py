@@ -75,21 +75,21 @@ def test_active_by_stage_counts_only_open_full_matters(world, reporting_context)
     rows. All five open ones carry the fixture's stage except `native_quiet`.
     """
     result = compute(keys.ACTIVE_FULL_MATTERS_BY_STAGE, reporting_context(world.martin))
-    assert result.value == 5
+    assert result.value == 6
     by_stage = {segment.label: segment.value for segment in result.segments}
-    assert by_stage["Kooskõlastusringil"] == 4
+    assert by_stage["Kooskõlastusringil"] == 5
     assert by_stage["Hetkeseis määramata"] == 1
 
 
 def test_active_by_stage_never_includes_the_archive(world, reporting_context):
     """The archive rows have no stage, and must not appear as unassigned work."""
     result = compute(keys.ACTIVE_FULL_MATTERS_BY_STAGE, reporting_context(world.martin))
-    assert sum(segment.value for segment in result.segments) == 5
+    assert sum(segment.value for segment in result.segments) == 6
     # `MATTERS_BY_STAGE` over the whole corpus counts eleven, five of them
     # unassigned archive rows. The two metrics answer different questions and
     # the difference is the point of adding the second one.
     corpus = compute(keys.MATTERS_BY_STAGE, reporting_context(world.martin))
-    assert corpus.value == 11
+    assert corpus.value == 12
 
 
 def test_the_active_stage_segments_open_only_the_active_population(
@@ -136,7 +136,7 @@ def test_current_staff_appear_under_their_own_display_name(
     by_person = segments(
         world.martin, keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context
     )
-    assert by_person["Sandra Testjurist"] == 2
+    assert by_person["Sandra Testjurist"] == 3
     assert by_person["Martin Testjurist"] == 2
 
 
@@ -144,7 +144,7 @@ def test_the_responsibility_segments_add_up_to_the_population(
     world, responsibility_world, reporting_context
 ):
     result = compute(keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(world.martin))
-    assert sum(segment.value for segment in result.segments) == result.value == 7
+    assert sum(segment.value for segment in result.segments) == result.value == 8
 
 
 def test_responsibility_segments_are_alphabetical_with_unassigned_last(
@@ -181,7 +181,7 @@ def test_the_year_matrix_reconciles_with_the_matter_population(
     assert sum(row.total for row in matrix.rows) == matrix.grand_total
     assert sum(matrix.column_totals) == matrix.grand_total
     # Eleven visible Matters plus the two the extension added.
-    assert matrix.grand_total == 13
+    assert matrix.grand_total == 14
 
 
 def test_the_year_matrix_keeps_the_historical_name_as_its_own_column(
@@ -252,19 +252,23 @@ def test_a_wide_matrix_folds_its_tail_into_a_labelled_column() -> None:
 def test_the_restricted_matter_moves_no_responsibility_total(
     world, responsibility_world, reporting_context
 ):
-    """Sandra owns one restricted Matter; Martin may not see it.
+    """Sandra owns one restricted Matter, and since docs/adr/0042 Martin sees it.
 
-    Every aggregate that groups by a person has to be off by exactly one
-    between the two readers, and by nothing else.
+    Every aggregate that groups by a person has to agree between two lawyers,
+    and to be off by exactly one against somebody outside the legal team.
     """
     martin = compute(keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(world.martin))
     sandra = compute(keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(world.sandra))
-    assert sandra.value == martin.value + 1
+    reader = compute(keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(world.reader))
+    assert sandra.value == martin.value
+    assert sandra.value == reader.value + 1
 
     by_martin = {segment.label: segment.value for segment in martin.segments}
     by_sandra = {segment.label: segment.value for segment in sandra.segments}
-    assert by_sandra["Sandra Testjurist"] == by_martin["Sandra Testjurist"] + 1
-    assert by_sandra[responsibility.UNASSIGNED_LABEL] == by_martin[responsibility.UNASSIGNED_LABEL]
+    by_reader = {segment.label: segment.value for segment in reader.segments}
+    assert by_sandra["Sandra Testjurist"] == by_martin["Sandra Testjurist"]
+    assert by_sandra["Sandra Testjurist"] == by_reader["Sandra Testjurist"] + 1
+    assert by_sandra[responsibility.UNASSIGNED_LABEL] == by_reader[responsibility.UNASSIGNED_LABEL]
 
 
 def test_the_department_scope_never_sees_the_restricted_matter(
@@ -273,17 +277,17 @@ def test_the_department_scope_never_sees_the_restricted_matter(
     department = compute(
         keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(DEPARTMENT_VIEWER)
     )
-    martin = compute(keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(world.martin))
-    assert department.value == martin.value
+    reader = compute(keys.ACTIVE_FULL_MATTERS_BY_RESPONSIBILITY, reporting_context(world.reader))
+    assert department.value == reader.value
 
 
 def test_the_year_matrix_is_scoped_before_it_is_grouped(
     world, responsibility_world, reporting_context
 ):
-    martin = matrix_of(world.martin, keys.MATTERS_BY_YEAR_AND_RESPONSIBILITY, reporting_context)
+    reader = matrix_of(world.reader, keys.MATTERS_BY_YEAR_AND_RESPONSIBILITY, reporting_context)
     sandra = matrix_of(world.sandra, keys.MATTERS_BY_YEAR_AND_RESPONSIBILITY, reporting_context)
-    assert martin is not None and sandra is not None
-    assert sandra.grand_total == martin.grand_total + 1
+    assert reader is not None and sandra is not None
+    assert sandra.grand_total == reader.grand_total + 1
 
 
 # ---------------------------------------------------------------------------
