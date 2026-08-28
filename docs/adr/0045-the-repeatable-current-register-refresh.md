@@ -1,8 +1,4 @@
-<<<<<<< HEAD
-# ADR 0045 — The repeatable current-register refresh: authorship decides, and the sheet's own year settles a date
-=======
 # ADR 0045 — The repeatable current-register refresh: authorship decides, the sheet's own year settles a date, and the plan reads the portfolio it is about to write
->>>>>>> 4dac9d3 (Plan the outreach against the portfolio the refresh would produce)
 
 - Status: accepted
 - Date: 2026-08-28
