@@ -384,8 +384,13 @@ def test_the_department_scope_never_sees_restricted_by_role():
 
 
 def test_a_persona_still_sees_only_what_that_persona_may_see(behind_the_gate):
-    """The gate changes who is asked, not what authorization answers."""
-    marko = factories.UserFactory()
+    """The gate changes who is asked, not what authorization answers.
+
+    Marko is a reader rather than a second lawyer: since docs/adr/0042 two
+    lawyers see the same department, so only a persona from outside the legal
+    team can show that the switch is answered by authorization at all.
+    """
+    marko = factories.ReaderFactory()
     ireen = factories.UserFactory()
     factories.MatterFactory(
         owner=ireen, title="Ireeni piiratud teema", visibility=Visibility.RESTRICTED

@@ -22,7 +22,7 @@ from app.core.management.commands.seed_e2e_data import (
     RESTRICTED_TITLE,
     SUBMISSION_TITLE,
 )
-from e2e.conftest import ADMIN, MARTIN, SANDRA, go_to, sign_in, sign_out
+from e2e.conftest import ADMIN, MARTIN, READER, SANDRA, go_to, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -165,8 +165,9 @@ def test_the_headline_agrees_with_the_register_for_each_persona(page, base_url):
 
     The Statistika card and the Teemad register compute their totals through
     entirely different code. If either forgot to scope, they would disagree —
-    and Sandra, who owns the restricted file, must see strictly more than Martin,
-    who does not.
+    and Sandra, a lawyer, must see strictly more than a reader, who is outside
+    the legal team (docs/adr/0042). Martin cannot play that part any more: since
+    that decision he reads the department exactly as Sandra does.
 
     Deliberately *not* an assertion on absolute numbers: this suite shares one
     seeded database with tests that create Matters. The exact arithmetic of
@@ -175,11 +176,11 @@ def test_the_headline_agrees_with_the_register_for_each_persona(page, base_url):
     surfaces agree and that the title never leaks.
     """
     totals = {}
-    for persona in (MARTIN, SANDRA):
+    for persona in (READER, SANDRA):
         sign_in(page, base_url, persona)
         open_statistics(page, base_url, "teemad/")
         totals[persona.upn] = headline(page)
-        if persona is MARTIN:
+        if persona is READER:
             assert RESTRICTED_TITLE not in page.content()
 
         page.goto(f"{base_url}/teemad/?olek=koik")
@@ -190,11 +191,13 @@ def test_the_headline_agrees_with_the_register_for_each_persona(page, base_url):
         )
         sign_out(page, base_url)
 
-    assert totals[SANDRA.upn] > totals[MARTIN.upn]
+    assert totals[SANDRA.upn] > totals[READER.upn]
 
 
 def test_a_csv_export_respects_the_filter_that_was_on_screen(page, base_url):
-    sign_in(page, base_url, MARTIN)
+    # A reader, because the assertion below is that the restricted row is not in
+    # the export — and since docs/adr/0042 a lawyer's export legitimately has it.
+    sign_in(page, base_url, READER)
     open_statistics(page, base_url, "teemad/", period="kaesolev")
 
     with page.expect_download() as download:

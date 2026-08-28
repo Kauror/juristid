@@ -25,7 +25,7 @@ from app.core.management.commands.seed_e2e_data import (
     OPEN_TITLE,
     RESTRICTED_TITLE,
 )
-from e2e.conftest import ADMIN, MARTIN, SANDRA, sign_in, sign_out
+from e2e.conftest import ADMIN, MARTIN, READER, SANDRA, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -106,7 +106,7 @@ def test_a_restricted_matters_history_is_as_unreachable_as_the_matter(page, base
     expect(page.get_by_role("link", name=RESTRICTED_TITLE).first).to_be_visible()
     sign_out(page, base_url)
 
-    sign_in(page, base_url, MARTIN)
+    sign_in(page, base_url, READER)
     page.goto(f"{base_url}/teemad/")
     expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_have_count(0)
 

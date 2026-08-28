@@ -319,7 +319,7 @@ def test_an_imported_matter_never_falls_back_to_its_row_timestamp(specialist):
 # -- authorization ----------------------------------------------------------
 
 
-def test_a_restricted_entry_does_not_announce_itself_through_the_date(specialist, other_specialist):
+def test_a_restricted_entry_does_not_announce_itself_through_the_date(specialist, reader):
     """A date column is a channel like any other.
 
     Somebody who cannot open the entry must not learn from the register that
@@ -334,7 +334,7 @@ def test_a_restricted_entry_does_not_announce_itself_through_the_date(specialist
     )
 
     assert _fact(matter, specialist).basis == ActivityBasis.ENTRY
-    assert _fact(matter, other_specialist).basis == ActivityBasis.RECEIVED
+    assert _fact(matter, reader).basis == ActivityBasis.RECEIVED
 
 
 # -- cost -------------------------------------------------------------------

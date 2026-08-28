@@ -352,15 +352,15 @@ def test_the_filter_is_visible_on_arrival(client, department_head, world, today,
 
 
 @pytest.mark.parametrize("scope", ALL_SCOPES)
-def test_a_restricted_matter_is_absent_from_both_halves(client, other_specialist, world, scope):
+def test_a_restricted_matter_is_absent_from_both_halves(client, reader, world, scope):
     """Hiding a row while leaving it in the total tells the reader it exists.
 
     Asserted across every drill-down at once, because the property belongs to
     the page rather than to any one figure: both halves come from
     ``visible_to``, so neither may leak.
     """
-    client.force_login(other_specialist)
-    page = ov.build_overview(other_specialist, scope=scope)
+    client.force_login(reader)
+    page = ov.build_overview(reader, scope=scope)
 
     for claim in register_claims(page):
         assert "Piiratud teema" not in rows_at(client, claim.url), f"{scope}/{claim.where}"

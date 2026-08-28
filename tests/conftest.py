@@ -23,6 +23,19 @@ def department_head(db):
 
 
 @pytest.fixture
+def reader(db):
+    """An authenticated colleague with no legal-business authorization.
+
+    Since docs/adr/0042 a second specialist is not an outsider, so the tests
+    that ask "may somebody who is not authorized to this see it" need somebody
+    who genuinely is not. `READER` is that person: a real, active, authenticated
+    account with a real role, deliberately left outside
+    `ROLES_WITH_RESTRICTED_ACCESS` and outside `ROLES_WITH_BUSINESS_WRITE`.
+    """
+    return factories.ReaderFactory()
+
+
+@pytest.fixture
 def administrator(db):
     return factories.AdministratorFactory()
 

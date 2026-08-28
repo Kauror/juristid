@@ -448,7 +448,7 @@ External member companies are not application users in MVP.
 MVP has two visibility scopes:
 
 - `NORMAL` — visible to authorized department users;
-- `RESTRICTED` — visible only to the Matter owner, explicit collaborators and configured business roles such as department head.
+- `RESTRICTED` — visible to the configured business roles, which since [ADR 0042](adr/0042-department-wide-lawyer-access.md) are both lawyer roles (`Spetsialist / jurist` and `Osakonnajuht`), and otherwise only to the Matter owner and explicit collaborators. It separates the legal team from technical administration, a shared-gate visitor and anyone outside the application; it does not separate one lawyer from another.
 
 The Matter sets the default. Child records inherit that visibility automatically. A child may be **more restrictive** than its parent but may never become less restrictive than the effective parent scope.
 

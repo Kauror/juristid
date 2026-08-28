@@ -275,9 +275,7 @@ def test_the_database_refuses_restricting_a_submission_past_its_evidence(normal_
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_submissions_evidence_does_not_leak(
-    client, normal_matter, specialist, other_specialist
-):
+def test_a_restricted_submissions_evidence_does_not_leak(client, normal_matter, specialist, reader):
     """The Matter is visible to everyone; the submission and its text are not."""
     submission = create_submission(
         matter=normal_matter,
@@ -295,7 +293,7 @@ def test_a_restricted_submissions_evidence_does_not_leak(
     submission.refresh_from_db()
     mark_submission_sent(submission=submission, actor=specialist)
 
-    client.force_login(other_specialist)
+    client.force_login(reader)
 
     # The Matter itself is readable.
     detail = client.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
@@ -366,7 +364,7 @@ def test_relaxing_a_matter_over_weaker_final_evidence_is_refused(restricted_matt
 
 
 def test_a_refused_relaxation_leaves_the_matter_and_its_evidence_alone(
-    client, restricted_matter, specialist, other_specialist
+    client, restricted_matter, specialist, reader
 ):
     _submission, version = _stranded_pair(restricted_matter, specialist)
 
@@ -378,7 +376,7 @@ def test_a_refused_relaxation_leaves_the_matter_and_its_evidence_alone(
     restricted_matter.refresh_from_db()
     assert restricted_matter.visibility == Visibility.RESTRICTED
 
-    client.force_login(other_specialist)
+    client.force_login(reader)
     assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 404
 
 

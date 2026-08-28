@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, SANDRA, sign_in, sign_out
+from e2e.conftest import READER, SANDRA, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -148,9 +148,7 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     expect(page.get_by_role("heading", name="Tuletatud eelvaade")).to_be_visible()
 
 
-def test_a_restricted_document_is_invisible_to_an_unrelated_lawyer(
-    page, base_url, synthetic_pdf
-) -> None:
+def test_a_restricted_document_is_invisible_to_a_reader(page, base_url, synthetic_pdf) -> None:
     """The count is the test.
 
     Not "the row is absent" — a hidden document must not move a number either,
@@ -177,7 +175,7 @@ def test_a_restricted_document_is_invisible_to_an_unrelated_lawyer(
     owner_summary = page.locator(".pagehead__context").inner_text()
 
     sign_out(page, base_url)
-    sign_in(page, base_url, MARTIN)
+    sign_in(page, base_url, READER)
     page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill(ONLY_INSIDE_THE_PDF)
     page.keyboard.press("Enter")
 

@@ -97,13 +97,11 @@ def test_the_owner_sees_both_matters(world, specialist):
     assert rows.count() == 4  # two milestones and two commencements
 
 
-def test_an_unrelated_specialist_sees_neither_the_row_nor_the_count(world, other_specialist):
-    rows = selectors.calendar_rows(
-        user=other_specialist, today=date(2030, 1, 1), direction=selectors.ALL
-    )
+def test_an_unrelated_specialist_sees_neither_the_row_nor_the_count(world, reader):
+    rows = selectors.calendar_rows(user=reader, today=date(2030, 1, 1), direction=selectors.ALL)
     assert rows.count() == 2
 
-    entries = selectors.hydrate_calendar(list(rows), other_specialist)
+    entries = selectors.hydrate_calendar(list(rows), reader)
     assert all("piiratud" not in entry.title for entry in entries)
 
 
@@ -129,7 +127,7 @@ def test_a_collaborator_reaches_the_restricted_matters_facts(world, other_specia
     assert rows.count() == 4
 
 
-def test_the_year_options_do_not_leak_a_restricted_matters_year(specialist, other_specialist):
+def test_the_year_options_do_not_leak_a_restricted_matters_year(specialist, reader):
     restricted = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     add_important_date(
         matter=restricted,
@@ -140,24 +138,28 @@ def test_the_year_options_do_not_leak_a_restricted_matters_year(specialist, othe
     )
 
     assert 2042 in selectors.important_date_years(specialist)
-    assert 2042 not in selectors.important_date_years(other_specialist)
+    assert 2042 not in selectors.important_date_years(reader)
 
 
-def test_the_work_victory_counts_are_scoped_before_they_are_counted(
-    world, specialist, other_specialist
-):
+def test_the_work_victory_counts_are_scoped_before_they_are_counted(world, specialist, reader):
+    """Scoped, and the scope is now the department for a lawyer.
+
+    Both lawyers count the same two candidates, because both may read both
+    Matters. The scoping itself is still load-bearing and still asserted — by a
+    reader, who may read neither the restricted Matter nor its claim.
+    """
     assert selectors.work_victory_counts(specialist)[WorkVictoryStatus.CANDIDATE.value] == 2
-    assert selectors.work_victory_counts(other_specialist)[WorkVictoryStatus.CANDIDATE.value] == 1
+    assert selectors.work_victory_counts(reader)[WorkVictoryStatus.CANDIDATE.value] == 1
 
 
-def test_the_undated_commencement_count_is_scoped(specialist, other_specialist):
+def test_the_undated_commencement_count_is_scoped(specialist, reader):
     from app.intelligence.enums import EffectiveDateKind
 
     restricted = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     add_effective_date(matter=restricted, kind=EffectiveDateKind.GENERAL_ORDER, actor=specialist)
 
     assert selectors.undated_effective_count(specialist) == 1
-    assert selectors.undated_effective_count(other_specialist) == 0
+    assert selectors.undated_effective_count(reader) == 0
 
 
 def test_the_shared_gate_viewer_sees_normal_records_only(world):
@@ -245,11 +247,26 @@ def test_a_specialist_may_write_on_a_matter_they_do_not_own(client, world, other
     assert record.created_by == other_specialist
 
 
-def test_a_restricted_matter_is_not_writable_by_an_unrelated_specialist(
-    client, world, other_specialist
-):
-    """404 rather than 403: a 403 would confirm the Matter exists."""
+def test_a_restricted_matter_is_writable_by_any_lawyer(client, world, other_specialist):
+    """Collaborative write, on the wider set of Matters docs/adr/0042 opened.
+
+    This asserted 404 until the department-wide decision. `may_write_business_content`
+    was always role-based and already said ownership is not the write boundary,
+    so what changed here is the set of Matters a lawyer can reach, not the rule
+    applied to them: a specialist may now work a colleague's RESTRICTED file
+    exactly as they could already work their NORMAL one.
+    """
     client.force_login(other_specialist)
+    response = client.post(
+        _add_url(world["restricted"]),
+        {"title": "Kolleegi lisatud", "precision": "YEAR", "year": "2030"},
+    )
+    assert response.status_code in (200, 302), response.status_code
+
+
+def test_a_restricted_matter_is_not_writable_by_a_reader(client, world, reader):
+    """404 rather than 403: a 403 would confirm the Matter exists."""
+    client.force_login(reader)
     response = client.post(
         _add_url(world["restricted"]),
         {"title": "Ei tohiks", "precision": "YEAR", "year": "2030"},

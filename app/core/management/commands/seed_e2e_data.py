@@ -37,6 +37,9 @@ PERSONAS = [
     ("martin@example.invalid", "Martin Testjurist", UserRole.SPECIALIST, False),
     ("juht@example.invalid", "Testosakonnajuht", UserRole.DEPARTMENT_HEAD, False),
     ("admin@example.invalid", "Testadministraator", UserRole.ADMINISTRATOR, True),
+    # Since docs/adr/0042 both lawyer roles read the whole department, so a
+    # browser test asking what somebody unauthorized sees needs somebody who is.
+    ("lugeja@example.invalid", "Testlugeja", UserRole.READER, False),
 ]
 
 MINISTRY = "Näidisministeerium"

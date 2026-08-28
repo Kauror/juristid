@@ -38,20 +38,21 @@ def segments(viewer, key, reporting_context, **kwargs) -> dict[str, int]:
 
 
 def test_intake_is_grouped_by_the_day_the_material_arrived(world, reporting_context):
-    """Three native Matters arrived in January, February and March.
+    """Four native Matters arrived, in January, February, March and April.
 
     Every one of them was written to the database today, which is exactly the
-    trap: a `created_at` axis would put all three in one bar.
+    trap: a `created_at` axis would put all four in one bar. April is Sandra's
+    restricted one, which a lawyer reads since docs/adr/0042.
     """
     by_month = segments(world.martin, keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH, reporting_context)
-    assert by_month == {"Jaan": 1, "Veebr": 1, "Märts": 1}
+    assert by_month == {"Jaan": 1, "Veebr": 1, "Märts": 1, "Apr": 1}
 
 
 def test_the_axis_runs_between_the_first_and_last_measured_date(world, reporting_context):
     """It does not run to December. Nothing was measured there (brief 31)."""
     by_month = segments(world.martin, keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH, reporting_context)
     assert "Dets" not in by_month
-    assert list(by_month) == ["Jaan", "Veebr", "Märts"]
+    assert list(by_month) == ["Jaan", "Veebr", "Märts", "Apr"]
 
 
 def test_an_imported_register_row_never_enters_the_intake_metric(world, reporting_context):
@@ -114,7 +115,7 @@ def test_a_quiet_month_inside_the_window_is_a_measured_zero(world, reporting_con
         received_date=date(world.current_year, 5, 5),
     )
     by_month = segments(world.martin, keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH, reporting_context)
-    assert by_month["Apr"] == 0
+    assert by_month["Apr"] == 1
     assert by_month["Mai"] == 1
     assert "Juuni" not in by_month
 
@@ -146,12 +147,12 @@ def test_intake_declines_when_nothing_carries_an_arrival_date(world, reporting_c
 
 
 def test_the_month_matrix_places_each_arrival_under_one_name(world, reporting_context):
-    """January to Martin, February to Sandra, March to nobody."""
+    """January to Martin, February to Sandra, March to nobody, April restricted."""
     matrix = compute(
         keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH, reporting_context(world.martin)
     ).matrix
     assert matrix is not None
-    assert [row.label for row in matrix.rows] == ["Jaan", "Veebr", "Märts"]
+    assert [row.label for row in matrix.rows] == ["Jaan", "Veebr", "Märts", "Apr"]
 
     def cell(row_label: str, column: str) -> int:
         row = next(row for row in matrix.rows if row.label == row_label)
@@ -167,7 +168,7 @@ def test_the_month_matrix_totals_reconcile_in_both_directions(world, reporting_c
         keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH, reporting_context(world.martin)
     ).matrix
     assert matrix is not None
-    assert sum(row.total for row in matrix.rows) == matrix.grand_total == 3
+    assert sum(row.total for row in matrix.rows) == matrix.grand_total == 4
     assert sum(matrix.column_totals) == matrix.grand_total
 
 
@@ -182,21 +183,25 @@ def test_a_matter_in_two_policy_areas_is_not_counted_twice(world, reporting_cont
         keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH, reporting_context(world.martin)
     ).matrix
     assert matrix is not None
-    assert matrix.grand_total == 3
+    assert matrix.grand_total == 4
 
 
 def test_the_restricted_matter_is_absent_from_the_intake_matrix(world, reporting_context):
-    """It arrived in April and is owned by Sandra."""
-    martin = compute(
-        keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH, reporting_context(world.martin)
+    """It arrived in April and is owned by Sandra.
+
+    Absent for a reader, who may not open it. A lawyer reads it since
+    docs/adr/0042, so April is legitimately a row for Martin and for Sandra.
+    """
+    reader = compute(
+        keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH, reporting_context(world.reader)
     ).matrix
     sandra = compute(
         keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH, reporting_context(world.sandra)
     ).matrix
-    assert martin is not None and sandra is not None
-    assert martin.grand_total == 3
+    assert reader is not None and sandra is not None
+    assert reader.grand_total == 3
     assert sandra.grand_total == 4
-    assert "Apr" not in [row.label for row in martin.rows]
+    assert "Apr" not in [row.label for row in reader.rows]
 
 
 # ---------------------------------------------------------------------------

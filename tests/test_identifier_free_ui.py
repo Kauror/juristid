@@ -682,9 +682,7 @@ def test_the_old_query_value_still_selects_that_bucket(signed_in, specialist, ma
 # ---------------------------------------------------------------------------
 
 
-def test_a_restricted_matter_a_reader_cannot_open_is_not_in_their_feed(
-    other_specialist, specialist
-):
+def test_a_restricted_matter_a_reader_cannot_open_is_not_in_their_feed(reader, specialist):
     """No row, so no title, no reference and no description of the activity.
 
     The rule the change relies on: `activity_feed` builds items *from* the
@@ -700,14 +698,14 @@ def test_a_restricted_matter_a_reader_cannot_open_is_not_in_their_feed(
     )
     factories.EntryFactory(matter=hidden, author=specialist, body="<p>Piiratud märkus.</p>")
 
-    rows = _feed(other_specialist)
+    rows = _feed(reader)
 
     assert all(row.matter is None or row.matter.pk != hidden.pk for row in rows)
     assert all(hidden.title not in row.matter_title for row in rows)
 
 
 def test_the_rendered_feed_never_mentions_a_matter_the_reader_cannot_open(
-    client, other_specialist, specialist
+    client, reader, specialist
 ):
     hidden = factories.MatterFactory(
         owner=specialist,
@@ -717,7 +715,7 @@ def test_the_rendered_feed_never_mentions_a_matter_the_reader_cannot_open(
         visibility=Visibility.RESTRICTED,
     )
     factories.EntryFactory(matter=hidden, author=specialist)
-    client.force_login(other_specialist)
+    client.force_login(reader)
 
     body = _get(client, OVERVIEW, "?vaade=osakond")
 
@@ -747,7 +745,7 @@ def test_a_participant_sees_the_restricted_topic_by_name(signed_in, specialist):
     assert "Piiratud teema" in feed
 
 
-def test_a_restricted_matters_engagement_is_not_in_a_strangers_feed(other_specialist, specialist):
+def test_a_restricted_matters_engagement_is_not_in_a_strangers_feed(reader, specialist):
     """A newly-carried event family, checked at the same boundary as the rest.
 
     `Kaasamine` reached the feed in this round. It is a child record, so the
@@ -768,14 +766,12 @@ def test_a_restricted_matters_engagement_is_not_in_a_strangers_feed(other_specia
         actor=specialist,
     )
 
-    rows = _feed(other_specialist)
+    rows = _feed(reader)
 
     assert rows == []
 
 
-def test_a_restricted_matters_important_date_is_not_in_a_strangers_feed(
-    client, other_specialist, specialist
-):
+def test_a_restricted_matters_important_date_is_not_in_a_strangers_feed(client, reader, specialist):
     hidden = factories.MatterFactory(
         owner=specialist,
         title="Salajane ettevalmistus konkurentsiameti menetluseks",
@@ -790,7 +786,7 @@ def test_a_restricted_matters_important_date_is_not_in_a_strangers_feed(
         period_end=timezone.localdate(),
         actor=specialist,
     )
-    client.force_login(other_specialist)
+    client.force_login(reader)
 
     body = _get(client, OVERVIEW, "?vaade=osakond")
 
@@ -801,9 +797,7 @@ def test_a_restricted_matters_important_date_is_not_in_a_strangers_feed(
     assert "lisas olulise tähtaja" not in body
 
 
-def test_a_restricted_child_on_an_ordinary_matter_is_not_announced(
-    client, other_specialist, specialist
-):
+def test_a_restricted_child_on_an_ordinary_matter_is_not_announced(client, reader, specialist):
     """The case that makes the child scoping load-bearing rather than decorative.
 
     The Matter is NORMAL and every colleague can open it. One deadline on it is
@@ -831,13 +825,13 @@ def test_a_restricted_child_on_an_ordinary_matter_is_not_announced(
     )
     record.visibility_override = Visibility.RESTRICTED
     record.save(update_fields=["visibility_override"])
-    client.force_login(other_specialist)
+    client.force_login(reader)
 
     # The reader may open the Matter, and the register still lists it.
     assert open_matter.title in _get(client, "matters:matter_list")
 
     # The feed says nothing about the deadline.
-    assert _feed(other_specialist) == []
+    assert _feed(reader) == []
     assert "lisas olulise tähtaja" not in _get(client, OVERVIEW, "?vaade=osakond")
 
 

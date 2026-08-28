@@ -100,6 +100,7 @@ class World:
     martin: User
     head: User
     admin: User
+    reader: User
 
     ministry: Organisation
     committee: Organisation
@@ -335,6 +336,9 @@ def build_world(today: date | None = None) -> World:
     martin = _user("martin@example.invalid", "Martin Testjurist", UserRole.SPECIALIST)
     head = _user("juht@example.invalid", "Testosakonnajuht", UserRole.DEPARTMENT_HEAD)
     admin = _user("admin@example.invalid", "Testadministraator", UserRole.ADMINISTRATOR)
+    # Since docs/adr/0042 both lawyers read the department, so the "may not
+    # see the restricted Matter" baseline needs somebody who is not a lawyer.
+    reader = _user("lugeja@example.invalid", "Testlugeja", UserRole.READER)
 
     ministry = Organisation.objects.create(
         name=MINISTRY, organisation_type=OrganisationType.MINISTRY
@@ -792,6 +796,7 @@ def build_world(today: date | None = None) -> World:
         today=today,
         sandra=sandra,
         martin=martin,
+        reader=reader,
         head=head,
         admin=admin,
         ministry=ministry,

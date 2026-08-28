@@ -133,7 +133,7 @@ def test_search_can_be_rebuilt_without_re_importing(imported, specialist) -> Non
 
 
 def test_a_restricted_imported_matter_is_visible_only_to_its_owner(
-    imported, specialist, other_specialist, administrator, department_head
+    imported, specialist, reader, administrator, department_head
 ) -> None:
     matter = imported["recent"]
     matter.owner = specialist
@@ -142,9 +142,7 @@ def test_a_restricted_imported_matter_is_visible_only_to_its_owner(
 
     assert RECENT_TITLE in _titles(search_matters(query="käibemaksuseaduse", user=specialist))
     assert RECENT_TITLE in _titles(search_matters(query="käibemaksuseaduse", user=department_head))
-    assert RECENT_TITLE not in _titles(
-        search_matters(query="käibemaksuseaduse", user=other_specialist)
-    )
+    assert RECENT_TITLE not in _titles(search_matters(query="käibemaksuseaduse", user=reader))
     # Technical administration is not business access.
     assert RECENT_TITLE not in _titles(
         search_matters(query="käibemaksuseaduse", user=administrator)
@@ -152,29 +150,27 @@ def test_a_restricted_imported_matter_is_visible_only_to_its_owner(
 
 
 def test_a_hidden_imported_matter_does_not_change_the_visible_count(
-    imported, specialist, other_specialist
+    imported, specialist, reader
 ) -> None:
     matter = imported["recent"]
     matter.owner = specialist
     matter.save(update_fields=["owner", "updated_at"])
 
-    assert result_count(query="Sünteetiline", user=other_specialist) == 2
+    assert result_count(query="Sünteetiline", user=reader) == 2
     set_matter_visibility(matter=matter, visibility=Visibility.RESTRICTED)
-    assert result_count(query="Sünteetiline", user=other_specialist) == 1
+    assert result_count(query="Sünteetiline", user=reader) == 1
     assert result_count(query="Sünteetiline", user=specialist) == 2
 
 
-def test_importing_a_matter_gives_it_no_second_route_past_authorization(
-    imported, other_specialist
-) -> None:
+def test_importing_a_matter_gives_it_no_second_route_past_authorization(imported, reader) -> None:
     """An imported record is a Matter like any other, including its permissions."""
     for matter in Matter.objects.all():
         set_matter_visibility(matter=matter, visibility=Visibility.RESTRICTED)
 
-    assert search_matters(query="Sünteetiline", user=other_specialist) == []
-    assert search_matters(query="2017_42", user=other_specialist) == []
-    assert search_matters(query="Näidisministeerium", user=other_specialist) == []
-    assert result_count(query="Sünteetiline", user=other_specialist) == 0
+    assert search_matters(query="Sünteetiline", user=reader) == []
+    assert search_matters(query="2017_42", user=reader) == []
+    assert search_matters(query="Näidisministeerium", user=reader) == []
+    assert result_count(query="Sünteetiline", user=reader) == 0
 
 
 # -- performance -----------------------------------------------------------

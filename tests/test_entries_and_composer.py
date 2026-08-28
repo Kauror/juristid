@@ -155,15 +155,13 @@ def test_editing_to_the_same_text_is_not_an_edit(normal_matter, specialist):
     assert EntryRevision.objects.filter(entry=entry).count() == 0
 
 
-def test_entry_inherits_matter_visibility(restricted_matter, specialist, other_specialist):
+def test_entry_inherits_matter_visibility(restricted_matter, specialist, reader):
     add_entry(matter=restricted_matter, body="<p>Tundlik</p>", author=specialist)
-    assert Entry.objects.visible_to(other_specialist).count() == 0
+    assert Entry.objects.visible_to(reader).count() == 0
     assert Entry.objects.visible_to(specialist).count() == 1
 
 
-def test_an_entry_can_be_more_restrictive_than_its_matter(
-    normal_matter, specialist, other_specialist
-):
+def test_an_entry_can_be_more_restrictive_than_its_matter(normal_matter, specialist, reader):
     add_entry(matter=normal_matter, body="<p>Avalik</p>", author=specialist)
     add_entry(
         matter=normal_matter,
@@ -171,7 +169,7 @@ def test_an_entry_can_be_more_restrictive_than_its_matter(
         author=specialist,
         visibility_override=Visibility.RESTRICTED,
     )
-    assert Entry.objects.visible_to(other_specialist).count() == 1
+    assert Entry.objects.visible_to(reader).count() == 1
     assert Entry.objects.visible_to(specialist).count() == 2
 
 

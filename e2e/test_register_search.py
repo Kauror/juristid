@@ -14,7 +14,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, sign_in
+from e2e.conftest import MARTIN, READER, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -158,7 +158,7 @@ def test_a_restricted_matter_reaches_neither_the_rows_nor_the_count(page, base_u
 
     The count leaks its existence as surely as the title would (brief 2, 16).
     """
-    sign_in(page, base_url, MARTIN)
+    sign_in(page, base_url, READER)
     open_register(page, base_url)
 
     page.locator("#teemad-otsing").press_sequentially(RESTRICTED_WORD, delay=30)

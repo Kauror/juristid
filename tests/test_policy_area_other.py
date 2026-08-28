@@ -130,8 +130,8 @@ def test_the_inline_edit_re_renders_the_surface_it_lives_on(signed_in, specialis
     assert "Kosmoseõigus" in body
 
 
-def test_a_matter_nobody_may_see_is_a_404_here_too(client, other_specialist, restricted_matter):
-    client.force_login(other_specialist)
+def test_a_matter_nobody_may_see_is_a_404_here_too(client, reader, restricted_matter):
+    client.force_login(reader)
     url = reverse(
         "matters:update_field",
         kwargs={"pk": restricted_matter.pk, "field": "policy_area_other"},

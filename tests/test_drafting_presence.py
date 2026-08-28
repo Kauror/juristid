@@ -231,11 +231,13 @@ def test_drafting_responsibility_counts_only_blank_cells(applied):
     assert CURRENT_SENT_UNPARSEABLE not in drafting
 
 
-def test_the_count_is_still_authorized_before_it_is_counted(applied, specialist):
+def test_the_count_is_still_authorized_before_it_is_counted(applied):
     """A hidden Matter must not appear in somebody else's total.
 
     The fix changes which column the filter reads and nothing about where
-    authorization happens; this is here so that stays true.
+    authorization happens; this is here so that stays true. Counted for the
+    reader, because since docs/adr/0042 a lawyer reads the department and so
+    cannot show a restriction taking effect.
     """
     from app.core.enums import Visibility
     from app.matters.models import Matter
@@ -244,7 +246,7 @@ def test_the_count_is_still_authorized_before_it_is_counted(applied, specialist)
     assert visible.count() >= 1
 
     Matter.objects.filter(pk__in=[m.pk for m in visible]).update(visibility=Visibility.RESTRICTED)
-    assert dashboard.drafting_matters(specialist).count() == 0
+    assert dashboard.drafting_matters(applied.people.reader).count() == 0
 
 
 def test_rebuilding_the_derived_state_changes_nothing(applied):

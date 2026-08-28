@@ -229,17 +229,17 @@ def test_unlinking_one_matter_leaves_the_other_matters_page_searchable(
 
 
 def test_a_historical_page_on_a_restricted_matter_is_invisible(
-    linked_page, specialist, other_specialist
+    linked_page, specialist, reader
 ) -> None:
     """A source page has no restriction of its own, so its Matter's is the whole
     answer — and that answer is read live, from the Matter, on every query."""
     matter, _, link = linked_page
-    assert [r for r in search(query="koosolekul", user=other_specialist) if r.source_page_id]
+    assert [r for r in search(query="koosolekul", user=reader) if r.source_page_id]
 
     Matter.objects.filter(pk=matter.pk).update(visibility=Visibility.RESTRICTED)
 
-    assert search(query="koosolekul", user=other_specialist) == []
-    assert result_count(query="koosolekul", user=other_specialist) == 0
+    assert search(query="koosolekul", user=reader) == []
+    assert result_count(query="koosolekul", user=reader) == 0
     assert [r for r in search(query="koosolekul", user=specialist) if r.source_page_id == link.pk]
 
 

@@ -16,7 +16,7 @@ is wrong.
 The matrix covers the five readers the product actually has:
 
 * the **department scope** — past the shared gate, no persona chosen;
-* an **unrelated specialist**, who owns none of it;
+* a **reader**, who is authenticated and outside the legal team (docs/adr/0042);
 * the **owner**, who does;
 * the **department head**, who reads RESTRICTED content by role;
 * the **technical administrator**, who does *not*. That is not an oversight: the
@@ -60,8 +60,15 @@ def _values(viewer, reporting_context) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
-def test_an_unrelated_specialist_sees_none_of_the_restricted_matter(world, reporting_context):
-    assert _values(world.martin, reporting_context) == {
+def test_a_reader_sees_none_of_the_restricted_matter(world, reporting_context):
+    """The baseline this matrix is measured against.
+
+    It used to be an unrelated specialist. Since docs/adr/0042 that person reads
+    the department, so the viewer who may *not* see the restricted Matter is
+    somebody outside the legal team — here a reader, who is authenticated, real
+    and deliberately not widened by that decision.
+    """
+    assert _values(world.reader, reporting_context) == {
         keys.MATTERS_TOTAL: 11,
         keys.ACTIVE_FULL_MATTERS: 5,
         keys.MATTERS_WITH_HISTORICAL_SOURCE: 3,
@@ -73,7 +80,7 @@ def test_an_unrelated_specialist_sees_none_of_the_restricted_matter(world, repor
 
 def test_the_owner_sees_exactly_one_more_of_everything(world, reporting_context):
     """Participation, not role. Sandra owns it, so it is hers to read."""
-    unrelated = _values(world.martin, reporting_context)
+    unrelated = _values(world.reader, reporting_context)
     owner = _values(world.sandra, reporting_context)
     assert owner == {key: unrelated[key] + 1 for key in unrelated}
 
@@ -89,7 +96,7 @@ def test_the_technical_administrator_does_not(world, reporting_context):
     time-bounded, audited break-glass grant is the route, and it is not this
     (master specification 5.2, app/core/authorization.py).
     """
-    assert _values(world.admin, reporting_context) == _values(world.martin, reporting_context)
+    assert _values(world.admin, reporting_context) == _values(world.reader, reporting_context)
 
 
 def test_the_department_scope_works_without_a_persona_and_stays_normal(world, reporting_context):
@@ -100,7 +107,7 @@ def test_the_department_scope_works_without_a_persona_and_stays_normal(world, re
     (Stage-2D auth brief 6).
     """
     department = _values(DEPARTMENT_VIEWER, reporting_context)
-    assert department == _values(world.martin, reporting_context)
+    assert department == _values(world.reader, reporting_context)
     assert department[keys.MATTERS_TOTAL] == 11
 
 
@@ -119,7 +126,7 @@ def test_a_restricted_matter_does_not_appear_in_a_year_bar(world, reporting_cont
         result = compute(keys.MATTERS_BY_REPORTING_YEAR, reporting_context(viewer))
         return next((s.value for s in result.segments if s.label == str(world.current_year)), 0)
 
-    assert year_bar(world.martin) == 5
+    assert year_bar(world.reader) == 5
     assert year_bar(world.sandra) == 6
 
 
@@ -128,7 +135,7 @@ def test_a_restricted_matter_does_not_appear_in_an_owner_tally(world, reporting_
         result = compute(keys.MATTERS_BY_OWNER, reporting_context(viewer))
         return next((s.value for s in result.segments if s.label == "Sandra Testjurist"), 0)
 
-    assert sandra_total(world.martin) == 2
+    assert sandra_total(world.reader) == 2
     assert sandra_total(world.sandra) == 3
 
 
@@ -137,7 +144,7 @@ def test_a_restricted_matter_does_not_inflate_a_policy_area(world, reporting_con
         result = compute(keys.MATTERS_BY_POLICY_AREA, reporting_context(viewer))
         return next((s.value for s in result.segments if s.label == "Maksud"), 0)
 
-    assert tax_total(world.martin) == 1
+    assert tax_total(world.reader) == 1
     assert tax_total(world.sandra) == 2
 
 
@@ -150,25 +157,25 @@ def test_a_restricted_matter_does_not_reveal_an_organisation_it_alone_names(
     reader with no access to the single record that names it.
     """
     for key in (keys.MATTERS_BY_SOURCE_ORGANISATION, keys.SUBMISSIONS_BY_RECIPIENT):
-        labels = {s.label for s in compute(key, reporting_context(world.martin)).segments}
+        labels = {s.label for s in compute(key, reporting_context(world.reader)).segments}
         assert world.partner.name not in labels
         privileged = {s.label for s in compute(key, reporting_context(world.head)).segments}
         assert world.partner.name in privileged
 
 
 def test_a_restricted_matter_does_not_move_a_coverage_denominator(world, reporting_context):
-    unrelated = compute(keys.MATTERS_BY_POLICY_AREA, reporting_context(world.martin))
+    outsider = compute(keys.MATTERS_BY_POLICY_AREA, reporting_context(world.reader))
     owner = compute(keys.MATTERS_BY_POLICY_AREA, reporting_context(world.sandra))
-    assert unrelated.coverage_denominator == 11
+    assert outsider.coverage_denominator == 11
     assert owner.coverage_denominator == 12
-    assert unrelated.coverage_count == 2
+    assert outsider.coverage_count == 2
     assert owner.coverage_count == 3
 
 
 def test_a_restricted_matters_files_are_not_in_the_material_totals(world, reporting_context):
     """One page and one file behind a restricted Matter, in three metrics."""
     for viewer, pages, occurrences, byte_gap in (
-        (world.martin, 4, 8, 0),
+        (world.reader, 4, 8, 0),
         (world.head, 5, 9, 4),
     ):
         context = reporting_context(viewer)
@@ -178,9 +185,9 @@ def test_a_restricted_matters_files_are_not_in_the_material_totals(world, report
 
 
 def test_a_restricted_matters_document_is_not_in_the_extraction_totals(world, reporting_context):
-    unrelated = compute(keys.EXTRACTION_SUCCESS, reporting_context(world.martin)).value
+    outsider = compute(keys.EXTRACTION_SUCCESS, reporting_context(world.reader)).value
     privileged = compute(keys.EXTRACTION_SUCCESS, reporting_context(world.head)).value
-    assert privileged == unrelated + 2  # its submission evidence and its material
+    assert privileged == outsider + 2  # its submission evidence and its material
 
 
 def test_an_other_bucket_cannot_smuggle_a_restricted_row_into_a_total(world, reporting_context):
@@ -190,7 +197,7 @@ def test_an_other_bucket_cannot_smuggle_a_restricted_row_into_a_total(world, rep
     `total - shown` from an unscoped total is exactly how a restricted row
     reappears as an anonymous number.
     """
-    result = compute(keys.MATTERS_BY_ORIGIN, reporting_context(world.martin))
+    result = compute(keys.MATTERS_BY_ORIGIN, reporting_context(world.reader))
     assert result.segment_total == 11
 
 
@@ -206,7 +213,7 @@ def _csv(client, url: str) -> str:
 
 
 def test_a_csv_export_carries_no_restricted_row(client, world):
-    client.force_login(world.martin)
+    client.force_login(world.reader)
     body = _csv(client, "/statistika/eksport/teemad.csv?periood=koik")
     assert world.restricted.title not in body
     assert world.native_open.title in body
@@ -218,14 +225,14 @@ def test_a_csv_export_carries_no_restricted_row(client, world):
 
 def test_a_csv_export_never_says_how_much_it_withheld(client, world):
     """A file that reports the size of its own omission has not omitted it."""
-    client.force_login(world.martin)
+    client.force_login(world.reader)
     body = _csv(client, "/statistika/eksport/teemad.csv?periood=koik").lower()
     for word in ("piiratud", "peidetud", "varjatud", "restricted"):
         assert word not in body
 
 
 def test_restricted_material_never_reaches_the_material_export(client, world):
-    client.force_login(world.martin)
+    client.force_login(world.reader)
     body = _csv(client, "/statistika/eksport/materjalid.csv?periood=koik")
     assert "liige.pdf" not in body
     assert "eelnou.pdf" in body
@@ -237,7 +244,7 @@ def test_restricted_narrative_never_reaches_any_statistika_page(client, world):
     Asserting on the word rather than on a count covers labels, chips, chart
     titles and table cells in one go.
     """
-    client.force_login(world.martin)
+    client.force_login(world.reader)
     for path in (
         "/statistika/",
         "/statistika/teemad/",
@@ -254,7 +261,7 @@ def test_restricted_narrative_never_reaches_any_statistika_page(client, world):
 
 def test_a_filter_naming_an_unreadable_owner_empties_the_population(world, reporting_context):
     """Not "ignore the filter and show everything" under a chip saying one name."""
-    context = reporting_context(world.martin, owner_unreadable=True)
+    context = reporting_context(world.reader, owner_unreadable=True)
     assert compute(keys.MATTERS_TOTAL, context).value == 0
 
 
@@ -268,7 +275,7 @@ def test_a_section_picker_only_offers_sections_the_reader_can_reach(world, repor
     from app.reporting.filters import source_sections
     from tests.synthetic_statistics import SECTION_RESTRICTED
 
-    assert source_sections(reporting_context(world.martin)) == [
+    assert source_sections(reporting_context(world.reader)) == [
         "ARHIIV keskkond",
         "ARHIIV maksud ja toll",
     ]

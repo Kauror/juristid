@@ -121,7 +121,7 @@ def test_a_contaminated_pre_fix_row_is_not_searchable_without_a_rebuild(speciali
     If this test starts passing only after a rebuild, the security boundary is
     incomplete and the verdict changes.
     """
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter = _matter(specialist)
     _restricted_engagement(matter, specialist, title=HIDDEN, note=f"{HIDDEN} märkus")
 
@@ -160,7 +160,7 @@ def test_the_stale_gate_is_what_stops_it(specialist):
     and asserting it here means a future change that drops the filter breaks a
     test that explains itself rather than one that merely goes red.
     """
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter = _matter(specialist, number=502)
     _restricted_engagement(matter, specialist, title=HIDDEN, note="")
 
@@ -225,7 +225,7 @@ def test_an_engagement_gets_its_own_row_joined_to_the_live_record(specialist):
 
 
 def test_a_restricted_engagement_is_invisible_to_a_stranger_after_rebuild(specialist):
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter = _matter(specialist, number=506)
     _restricted_engagement(matter, specialist, title=HIDDEN, note=f"{HIDDEN} märkus")
 
@@ -258,7 +258,7 @@ def test_the_department_head_still_reads_restricted_engagements(specialist, depa
 
 def test_an_ordinary_engagement_stays_searchable_for_everybody(specialist):
     """The fix must not have made every Kaasamine private."""
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter = _matter(specialist, number=509)
     add_engagement(
         matter=matter,
@@ -281,7 +281,7 @@ def test_restricting_an_engagement_takes_effect_without_reindexing(specialist):
     restricting a consultation has to remove it from search on the next query,
     not on the next rebuild.
     """
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter = _matter(specialist, number=510)
     engagement = add_engagement(
         matter=matter,
@@ -302,7 +302,7 @@ def test_restricting_an_engagement_takes_effect_without_reindexing(specialist):
 
 def test_restricting_the_matter_hides_its_engagement_row_too(specialist):
     """The child is bounded by its parent as well as by its own override."""
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter = _matter(specialist, number=511)
     add_engagement(
         matter=matter,
@@ -332,7 +332,7 @@ def test_no_snippet_ever_carries_restricted_engagement_text(client, specialist):
     A Matter a reader may open can still leak a child through `ts_headline`,
     which is why this asserts the page rather than the population.
     """
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter = _matter(specialist, number=512)
     # A second phrase the reader never types, so its appearance anywhere on the
     # page can only have come from the restricted note. Asserting on HIDDEN
@@ -437,7 +437,7 @@ def test_a_restricted_documents_filename_is_not_in_the_timeline(specialist):
     """
     from app.matters.timeline import matter_timeline
 
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter, document = _matter_with_restricted_document(specialist)
 
     items, _ = matter_timeline(matter=matter, user=stranger, limit=50)
@@ -479,7 +479,7 @@ def test_matter_level_timeline_events_are_untouched(specialist):
     from app.matters.services import close_matter, create_matter
     from app.matters.timeline import matter_timeline
 
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter = create_matter(title="Ajaloo teema", actor=specialist, owner=specialist)
     close_matter(matter=matter, actor=specialist, disposition="COMPLETED")
 
@@ -518,7 +518,7 @@ def _hidden_owner_and_matter():
 
 
 def test_a_crafted_owner_filter_does_not_name_a_hidden_colleague_on_teemad(client):
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     hidden, matter = _hidden_owner_and_matter()
     client.force_login(stranger)
 
@@ -535,7 +535,7 @@ def test_a_crafted_owner_filter_does_not_name_a_hidden_colleague_on_teemad(clien
 
 
 def test_a_crafted_owner_filter_does_not_name_a_hidden_colleague_on_statistika(client):
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     hidden, matter = _hidden_owner_and_matter()
     client.force_login(stranger)
 
@@ -598,7 +598,7 @@ def test_a_restricted_next_action_is_not_printed_on_the_register(client, special
     Unscoped it printed a restricted step's text — and the colleague responsible
     for it — onto a row anybody could read.
     """
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter, _ = _matter_with_restricted_action(specialist)
     client.force_login(stranger)
 
@@ -638,7 +638,7 @@ def test_a_restricted_final_evidence_file_is_not_named_on_the_opinion_card(clien
     from app.documents.services import add_evidence_version, create_document
     from app.submissions.enums import SubmissionStatus
 
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter = _matter(specialist, number=541)
     document = create_document(
         matter=matter,

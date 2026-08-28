@@ -253,15 +253,13 @@ def test_superseding_is_recorded(normal_matter, specialist):
 # -- visibility -------------------------------------------------------------
 
 
-def test_submissions_inherit_matter_visibility(restricted_matter, specialist, other_specialist):
+def test_submissions_inherit_matter_visibility(restricted_matter, specialist, reader):
     _draft(restricted_matter, specialist)
-    assert Submission.objects.visible_to(other_specialist).count() == 0
+    assert Submission.objects.visible_to(reader).count() == 0
     assert Submission.objects.visible_to(specialist).count() == 1
 
 
-def test_a_submission_can_be_more_restrictive_than_its_matter(
-    normal_matter, specialist, other_specialist
-):
+def test_a_submission_can_be_more_restrictive_than_its_matter(normal_matter, specialist, reader):
     _draft(normal_matter, specialist, title="Avalik")
     create_submission(
         matter=normal_matter,
@@ -269,7 +267,7 @@ def test_a_submission_can_be_more_restrictive_than_its_matter(
         actor=specialist,
         visibility_override=Visibility.RESTRICTED,
     )
-    assert Submission.objects.visible_to(other_specialist).count() == 1
+    assert Submission.objects.visible_to(reader).count() == 1
     assert Submission.objects.visible_to(specialist).count() == 2
 
 

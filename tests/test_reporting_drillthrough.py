@@ -127,8 +127,8 @@ def test_a_period_filter_travels_into_the_drill_through(client, world, reporting
     client.force_login(world.martin)
     result = compute(keys.MATTERS_TOTAL, reporting_context(world.martin, period="kaesolev"))
     assert "aasta=" in result.drillthrough_url
-    assert result.value == 5
-    assert total_at(client, result.drillthrough_url) == 5
+    assert result.value == 6
+    assert total_at(client, result.drillthrough_url) == 6
 
 
 def test_a_corpus_wide_card_does_not_carry_a_year_into_its_link(client, world, reporting_context):
@@ -142,7 +142,7 @@ def test_a_corpus_wide_card_does_not_carry_a_year_into_its_link(client, world, r
         keys.MATTERS_WITH_HISTORICAL_SOURCE, reporting_context(world.martin, period="kaesolev")
     )
     assert "aasta=" not in result.drillthrough_url
-    assert total_at(client, result.drillthrough_url) == result.value == 3
+    assert total_at(client, result.drillthrough_url) == result.value == 4
 
 
 def test_a_section_bar_narrows_the_tab_rather_than_opening_the_file_list(

@@ -119,9 +119,9 @@ def test_a_restricted_matter_is_chipped_and_says_nothing_more(signed_in, special
     assert "lockchip--restricted" in body
 
 
-def test_a_restricted_matter_is_unreachable_for_an_outsider(client, other_specialist, specialist):
+def test_a_restricted_matter_is_unreachable_for_an_outsider(client, reader, specialist):
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
-    client.force_login(other_specialist)
+    client.force_login(reader)
 
     response = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
@@ -276,10 +276,10 @@ def test_the_summary_is_searchable(normal_matter, specialist):
     assert "liikmesettevõtet" in row.body_text
 
 
-def test_the_summary_respects_matter_visibility(client, other_specialist, specialist):
+def test_the_summary_respects_matter_visibility(client, reader, specialist):
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     set_brief_summary(matter=matter, value="Ei tohi lekkida.", actor=specialist)
-    client.force_login(other_specialist)
+    client.force_login(reader)
 
     response = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
@@ -1205,9 +1205,7 @@ def test_the_documents_tab_filters_by_role(signed_in, specialist):
     assert "protokoll.pdf" not in body
 
 
-def test_a_restricted_document_never_reaches_an_unauthorised_reader(
-    client, specialist, other_specialist
-):
+def test_a_restricted_document_never_reaches_an_unauthorised_reader(client, specialist, reader):
     """Not masked — absent. Nothing about it is rendered, not even its size."""
     matter = factories.MatterFactory(owner=specialist)
     document = create_document(
@@ -1228,7 +1226,7 @@ def test_a_restricted_document_never_reaches_an_unauthorised_reader(
     # A colleague who may read the Matter and is not a participant in it. A
     # collaborator legitimately *does* see a restricted child, so testing with
     # one would prove nothing.
-    client.force_login(other_specialist)
+    client.force_login(reader)
     body = _body(client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk})))
 
     assert "selgitused.pdf" not in body

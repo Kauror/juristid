@@ -447,7 +447,7 @@ def restricted_pair(specialist, when):
 
 
 def test_a_restricted_child_is_absent_from_all_three_counts_for_a_stranger(specialist, midweek):
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()
     restricted_pair(specialist, midweek)
 
     counts = aruandlus(ov.build_overview(stranger, scope=ov.SCOPE_DEPARTMENT, today=midweek))
@@ -474,7 +474,7 @@ def test_the_stranger_still_sees_the_matter_itself(client, specialist, midweek):
     """The restriction is on the children, so hiding the Matter would prove nothing."""
     from app.matters.models import Matter
 
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()  # not a lawyer: docs/adr/0042
     matter = restricted_pair(specialist, midweek)
     client.force_login(stranger)
 
@@ -499,7 +499,7 @@ def test_the_department_head_reads_the_restricted_children_by_role(
 
 def test_a_restricted_matters_children_are_hidden_from_the_counts_too(specialist, midweek):
     """The parent path, since the child rule derives from it every time."""
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()
     matter = a_matter(specialist, title="Piiratud teema")
     matter.visibility = Visibility.RESTRICTED
     matter.save(update_fields=["visibility"])
