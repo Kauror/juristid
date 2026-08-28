@@ -1,0 +1,1310 @@
+/*
+ * Koda Õigusloome — the 2026-08-27 UX pass.
+ *
+ * Loaded after `app.css` and additive to it: every rule here names a class
+ * carrying the `ux` prefix, so nothing an existing surface renders changes
+ * because this file exists. One exception is declared and scoped —
+ * `.workrow2 { position: relative }` — which the quick-complete control on Minu
+ * töö needs as its containing block and which changes no pixel on its own.
+ *
+ * The two rules `app.css` opens with hold here unchanged:
+ *
+ *   1. No raw colour values. Everything resolves through a semantic token
+ *      (docs/adr/0009), including the two primitives the existing avatar
+ *      already consumes.
+ *   2. Status is never colour alone. Every emphasised number, pill and row in
+ *      here also states its reason in words — «täna», «TÄHTAEG MÖÖDAS · 6 p»,
+ *      «Vastutajata» — so the page reads the same to somebody who cannot see
+ *      the difference.
+ *
+ * Radii follow the design handoff: rows 5–6px, cards 8px, chips 3–4px. Never a
+ * pill, which would read as a tag rather than as a control.
+ */
+
+/* ====================================================================
+ * Shared: the initials badge that names who carries a dated row
+ * ==================================================================== */
+
+/* `--primitive-neutral-600` rather than a surface token, because this is the
+   same disc the existing `.avatar` draws and two greys beside each other would
+   read as two different kinds of person. */
+.uxav {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--primitive-neutral-600);
+  color: var(--text-secondary);
+  font: 600 9px/20px var(--typography-font-sans);
+  text-align: center;
+}
+
+/* Nobody carries it. Dashed and exclaimed as well as warning-coloured, and its
+   `title` says the word — a state carried by tint alone would be invisible to
+   the reader most likely to be scanning for it. */
+.uxav--none {
+  background: transparent;
+  border: 1px dashed var(--status-warning);
+  color: var(--status-warning);
+  font: 700 11px/18px var(--typography-font-sans);
+  box-sizing: border-box;
+}
+
+/* ====================================================================
+ * 1a — Tähtajad, on Ülevaade and again as Eesolev on Osakond
+ * ==================================================================== */
+
+.uxdl {
+  display: block;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 10px;
+}
+
+.uxdl:first-of-type {
+  border-top: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.uxdl__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 0 8px 4px;
+  flex-wrap: wrap;
+}
+
+.uxdl__title {
+  font: 700 11px/1 var(--typography-font-sans);
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+/* Today's group. The word «täna» on the row says it too. */
+.uxdl__title--today {
+  color: var(--status-warning);
+}
+
+/* Beyond the last real window. Quieter than the groups above it because it is
+   a pointer to the register rather than a list to work from. */
+.uxdl__title--far {
+  color: var(--text-muted);
+}
+
+.uxdl__range {
+  font: 400 11px/1 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+.uxdl__all {
+  margin-left: auto;
+  font: 600 11.5px/1 var(--typography-font-sans);
+  color: var(--accent-link);
+  text-decoration: none;
+}
+
+.uxdl__all:hover {
+  color: var(--accent-hover);
+}
+
+.uxdl__row {
+  display: grid;
+  grid-template-columns: 60px minmax(0, 1fr) 24px;
+  gap: 0 10px;
+  align-items: center;
+  padding: 5px 8px;
+  border-radius: 5px;
+  text-decoration: none;
+}
+
+.uxdl__row:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+/* The KAUGEMAL line carries no owner: it stands for several Matters. */
+.uxdl__row--far {
+  grid-template-columns: 60px minmax(0, 1fr);
+}
+
+.uxdl__date {
+  font: 400 12px/1.3 var(--typography-font-sans);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.uxdl__date b {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.uxdl__date--today {
+  font-weight: 700;
+  color: var(--status-warning);
+}
+
+.uxdl__name {
+  font: 400 13.5px/1.35 var(--typography-font-sans);
+  color: var(--text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uxdl__far {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.uxdl__farlink {
+  color: var(--accent-link);
+  font-weight: 600;
+}
+
+.uxdl__empty {
+  margin: 0;
+  padding: 4px 8px 6px;
+  font: 400 12.5px/1.4 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+/* «Näita veel N ▾». A real disclosure, so it opens with no script and the
+   trigger disappears once what it promised is on screen. Also used by the
+   Tehtud digest, which asks the same question of a longer list. */
+.uxdl__more summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 5px 8px;
+  border-radius: 5px;
+  font: 600 12.5px/1.4 var(--typography-font-sans);
+  color: var(--accent-link);
+}
+
+.uxdl__more summary:hover {
+  background: var(--surface-hover);
+}
+
+.uxdl__more summary::-webkit-details-marker {
+  display: none;
+}
+
+.uxdl__more[open] > summary {
+  display: none;
+}
+
+/* ====================================================================
+ * 1b — Ajajoon
+ * ==================================================================== */
+
+.uxtl {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 0 14px;
+}
+
+/* `display: contents` so the rail and the body of one item land in the two
+   grid columns while the item itself stays one element for scripting and for
+   the accessibility tree. */
+.uxtl__item {
+  display: contents;
+}
+
+.uxtl__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.uxtl__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-top: 4px;
+  flex: none;
+}
+
+.uxtl__dot--entry {
+  background: var(--accent-primary);
+}
+
+.uxtl__dot--sent {
+  background: var(--status-success);
+}
+
+.uxtl__dot--meeting {
+  background: var(--status-info);
+}
+
+/* Smaller and neutral. A system row is a fact the application recorded, not a
+   professional act, and the spine says so before the words do. */
+.uxtl__dot--sys {
+  width: 6px;
+  height: 6px;
+  background: var(--border-strong);
+  margin-top: 6px;
+}
+
+.uxtl__line {
+  width: 2px;
+  flex: 1;
+  background: var(--border-default);
+}
+
+.uxtl__body {
+  padding-bottom: 20px;
+  min-width: 0;
+}
+
+.uxtl__meta {
+  margin: 0 0 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.uxtl__author {
+  font: 600 13px/1.3 var(--typography-font-sans);
+  color: var(--text-primary);
+}
+
+.uxtl__kind {
+  font: 700 10px/1.4 var(--typography-font-sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+}
+
+.uxtl__kind--entry {
+  background: var(--accent-soft);
+  color: var(--accent-link);
+}
+
+.uxtl__kind--sent {
+  background: var(--status-success-soft);
+  color: var(--status-success);
+}
+
+.uxtl__kind--meeting {
+  background: var(--status-info-soft);
+  color: var(--status-info);
+}
+
+.uxtl__kind--closed {
+  background: var(--surface-elevated);
+  color: var(--text-secondary);
+}
+
+.uxtl__kind--win {
+  background: var(--status-warning-soft);
+  color: var(--status-warning);
+}
+
+.uxtl__did {
+  font: 400 12.5px/1.3 var(--typography-font-sans);
+  color: var(--text-secondary);
+}
+
+.uxtl__where {
+  font: 400 11.5px/1.3 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+.uxtl__time {
+  margin-left: auto;
+  font: 400 11.5px/1.3 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+.uxtl__text {
+  margin: 0;
+  font: 400 13px/1.55 var(--typography-font-sans);
+  color: var(--text-body);
+  max-width: 66ch;
+}
+
+.uxtl__sub {
+  margin: 2px 0 0;
+  font: 400 11.5px/1.4 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+/* What one save decided, on its own strip under what it said. */
+.uxtl__next {
+  margin-top: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  background: var(--surface-capture);
+  border: 1px solid var(--accent-border);
+  border-radius: 5px;
+  flex-wrap: wrap;
+}
+
+.uxtl__nextmode {
+  font: 700 10px/1 var(--typography-font-sans);
+  letter-spacing: 0.06em;
+  color: var(--accent-link);
+}
+
+.uxtl__nexttext {
+  font: 400 12.5px/1.3 var(--typography-font-sans);
+  color: var(--text-body);
+}
+
+.uxtl__nextdate {
+  font: 600 11px/1.3 var(--typography-font-sans);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.uxtl__sysrow {
+  margin: 0;
+  font: 400 12px/1.4 var(--typography-font-sans);
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.uxtl__sys summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.uxtl__sys summary::-webkit-details-marker {
+  display: none;
+}
+
+.uxtl__sysshow {
+  color: var(--accent-link);
+  font-weight: 600;
+  font-size: 11.5px;
+}
+
+.uxtl__sys[open] .uxtl__sysshow {
+  display: none;
+}
+
+.uxtl__sysbody {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* The closed accordion's own line: what was last said, what is owed, how much
+   there is. A bare counter told a reader nothing they could decide on. */
+.uxtl__preview {
+  flex: 1;
+  min-width: 0;
+  font: 400 12.5px/1.3 var(--typography-font-sans);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uxtl__previewnext {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: var(--surface-capture);
+  border: 1px solid var(--accent-border);
+  border-radius: 4px;
+  white-space: nowrap;
+  font: 400 12px/1.2 var(--typography-font-sans);
+  color: var(--text-body);
+}
+
+.uxtl__previewnext b {
+  font: 700 9.5px/1 var(--typography-font-sans);
+  letter-spacing: 0.06em;
+  color: var(--accent-link);
+}
+
+/* Two children of the grid that are not items: the empty state, and the button
+   that fetches older lines in place. Both span the whole width rather than
+   landing in the 20px spine column. */
+.uxtl__none,
+.uxtl__older {
+  grid-column: 1 / -1;
+}
+
+.uxtl__none {
+  margin: 0;
+  font: 400 13px/1.5 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+.uxtl__older {
+  justify-self: start;
+  margin-top: 12px;
+}
+
+.uxtl__count {
+  font: 400 12px/1 var(--typography-font-sans);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* ====================================================================
+ * 1c — Järgmiseks
+ * ==================================================================== */
+
+.uxnext {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--surface-capture);
+  border: 1px solid var(--border-control);
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+/* Lateness is the state of the row, not a word beside it. The flag inside it
+   still says «TÄHTAEG MÖÖDAS · 6 p», so the halo is emphasis and never the
+   only carrier. */
+.uxnext--overdue {
+  border-color: var(--status-danger-border);
+  box-shadow: 0 0 0 3px var(--status-danger-halo);
+}
+
+.uxnext__label {
+  font: 700 10px/1 var(--typography-font-sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.uxnext__label--warning {
+  color: var(--status-warning);
+}
+
+.uxnext__text {
+  font: 600 15px/1.3 var(--typography-font-sans);
+  color: var(--text-primary);
+}
+
+.uxnext__text--source {
+  font-weight: 400;
+  color: var(--text-body);
+}
+
+.uxnext__empty {
+  font: 400 13.5px/1.3 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+/* What the date means, always in words. «TÄHTAEG MÖÖDAS · 6 p» and «VAATAN ÜLE
+   · 15.09» are two different obligations that share a column of digits, and a
+   reader must never have to remember which one they are looking at. */
+.uxnext__flag {
+  font: 700 10px/1.4 var(--typography-font-sans);
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+
+.uxnext__flag--overdue {
+  background: var(--status-danger-soft);
+  color: var(--status-danger);
+  border-color: var(--status-danger-border);
+}
+
+/* Waiting is not lateness. A review date that has come round is a reason to
+   look, which is warning-level and never danger (specification 18.8). */
+.uxnext__flag--review {
+  background: var(--status-warning-soft);
+  color: var(--status-warning);
+  border-color: var(--status-warning-border);
+}
+
+.uxnext__flag--source {
+  background: var(--surface-elevated);
+}
+
+.uxnext__spacer {
+  flex: 1;
+}
+
+.uxnext__defer {
+  position: relative;
+}
+
+.uxnext__defersum {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border: 1px solid var(--border-control);
+  border-radius: 5px;
+  font: 600 12.5px/1.2 var(--typography-font-sans);
+  color: var(--text-body);
+  cursor: pointer;
+  list-style: none;
+  background: var(--surface-raised);
+}
+
+.uxnext__defersum::-webkit-details-marker {
+  display: none;
+}
+
+.uxnext__menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 190px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  box-shadow: var(--shadow-menu);
+  padding: 4px;
+  z-index: 30;
+}
+
+.uxnext__menu button,
+.uxnext__menu a {
+  padding: 6px 10px;
+  border-radius: 4px;
+  font: 400 13px/1.3 var(--typography-font-sans);
+  color: var(--text-body);
+  text-decoration: none;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.uxnext__menu button:hover,
+.uxnext__menu a:hover {
+  background: var(--surface-overlay-hover);
+}
+
+/* The free date, inside the same popover. A real form rather than a prompt, so
+   it works with the keyboard and with no script at all. */
+.uxnext__menuform {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 2px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 4px;
+}
+
+.uxnext__menuform .field__input {
+  width: 108px;
+}
+
+/* ====================================================================
+ * 1d — the composer, closed by default
+ * ==================================================================== */
+
+.uxcomp {
+  background: var(--surface-capture);
+  border: 1px solid var(--border-control);
+  border-radius: 8px;
+}
+
+.uxcomp[open] {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-halo);
+}
+
+.uxcomp__collapsed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.uxcomp__collapsed::-webkit-details-marker {
+  display: none;
+}
+
+.uxcomp[open] .uxcomp__collapsed {
+  display: none;
+}
+
+.uxcomp__avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primitive-neutral-600);
+  color: var(--text-secondary);
+  font: 600 10px/24px var(--typography-font-sans);
+  text-align: center;
+  flex: none;
+}
+
+.uxcomp__prompt {
+  flex: 1;
+  font: 400 13px/1.3 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+.uxcomp__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+/* Two corrections the capture box needs inside the new column layout, both
+   scoped to this form so neither can reach the composer's other surfaces.
+
+   `.composer__body` carries `flex: 1`, which was inert while its parent form
+   was a block; in a column flex container a `flex-basis: 0%` against an
+   auto-height parent resolves as content sizing instead, and the field grew to
+   four lines.
+
+   And its height is the working one for as long as the composer is open.
+   `app.css` grows the field on `:focus-within` and shrinks it again when focus
+   leaves — which was right when the composer stood open on every visit and the
+   page had to stay compact around it. Now the composer *is* the disclosure:
+   somebody has opened it in order to write, and clicking a mode chip or a date
+   box must not reflow four lines of their text under the pointer
+   (static/css/app.css, `.composer:focus-within .composer__body`). */
+.uxcomp__form > .composer__body {
+  flex: none;
+}
+
+.uxcomp[open] .composer__body {
+  height: 108px;
+}
+
+.uxcomp__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.uxcomp__q {
+  font: 600 12px/1.3 var(--typography-font-sans);
+  color: var(--text-secondary);
+  margin-right: 2px;
+}
+
+.uxcomp__morebody {
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-base);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The exact-date box, behind the «Kuupäev…» chip. A `<details>`, so the field
+   is reachable and submittable with scripting switched off entirely. */
+.uxcomp__date {
+  position: relative;
+}
+
+.uxcomp__more {
+  position: relative;
+}
+
+.uxcomp__datebody {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface-base);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* ====================================================================
+ * Chips: quick choices in the composer, the register and the period control
+ * ==================================================================== */
+
+.uxchip {
+  display: inline-flex;
+  align-items: center;
+  font: 600 12px/1.3 var(--typography-font-sans);
+  padding: 4px 10px;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-control);
+  cursor: pointer;
+  background: transparent;
+  text-decoration: none;
+}
+
+.uxchip--mode {
+  font: 700 10px/1.6 var(--typography-font-sans);
+  letter-spacing: 0.06em;
+}
+
+.uxchip.is-selected {
+  background: var(--accent-soft);
+  color: var(--accent-link);
+  border-color: var(--accent-border);
+}
+
+.uxchip--quiet {
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
+}
+
+.uxchip--dashed {
+  border-style: dashed;
+  color: var(--text-muted);
+  list-style: none;
+}
+
+.uxchip--dashed::-webkit-details-marker {
+  display: none;
+}
+
+.uxchip--warn {
+  color: var(--status-warning);
+  border-color: var(--status-warning-border);
+}
+
+/* ====================================================================
+ * 1e — Minu töö: one click to done, and the keys that do it
+ * ==================================================================== */
+
+/* The one existing class this file touches, and only to give the button above
+   it a containing block. It changes nothing on its own. */
+.workrow2 {
+  position: relative;
+}
+
+/* The form is a wrapper with no box of its own: the button inside it is what
+   is positioned against the row. */
+.uxdone__form {
+  display: contents;
+}
+
+.uxdone {
+  position: absolute;
+  left: -11px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--status-success);
+  background: var(--surface-base);
+  color: var(--status-success);
+  font: 700 12px/1 var(--typography-font-sans);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity var(--motion-duration-fast) var(--motion-easing-standard);
+  z-index: 2;
+}
+
+/* Hover reveals it; focus reveals it too, so it is not a mouse-only control.
+   The ⋯ menu beside the row still offers the same act in words. */
+.workrow2:hover .uxdone,
+.workrow2:focus-within .uxdone,
+.uxdone:focus-visible {
+  opacity: 1;
+}
+
+/* The selected row, when somebody is moving with J and K. A left bar as well
+   as a tint: the selection must be visible to a reader who sees no colour. */
+.workrow2.is-selected {
+  background: var(--surface-hover);
+  box-shadow: inset 3px 0 0 0 var(--accent-primary);
+}
+
+.workrow2.is-selected .uxdone {
+  opacity: 1;
+}
+
+.uxkeys {
+  margin: 2px 0 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 400 11.5px/1.4 var(--typography-font-sans);
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+
+/* ====================================================================
+ * 2d — saved views and assigning an owner from the row
+ * ==================================================================== */
+
+.uxviews {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 0 12px;
+}
+
+.uxviews a:hover {
+  border-color: var(--border-strong);
+}
+
+.uxviews__save {
+  position: relative;
+}
+
+.uxviews__savebody {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 320px;
+  max-width: min(520px, calc(100vw - var(--spacing-6)));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  box-shadow: var(--shadow-menu);
+}
+
+.uxviews__saverow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.uxviews__url {
+  flex: 1;
+  min-width: 0;
+}
+
+.uxviews__note {
+  margin: 0;
+  font: 400 11.5px/1.45 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+.uxassign {
+  position: relative;
+  display: inline-block;
+}
+
+.uxassign__trigger {
+  display: inline-flex;
+  align-items: center;
+  font: 600 12px/1.3 var(--typography-font-sans);
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--status-warning);
+  border: 1px solid var(--status-warning-border);
+  cursor: pointer;
+  list-style: none;
+  background: transparent;
+}
+
+.uxassign__trigger::-webkit-details-marker {
+  display: none;
+}
+
+/* `fixed`, not `absolute`, and this one is not a style choice.
+
+   The register's table sits in `.tablewrap`, which is `overflow-x: auto` so a
+   wide table can scroll on a narrow screen — and a scroll container clips its
+   absolutely positioned descendants in *both* axes. Anchored to the row, the
+   menu was cut off one line below the trigger: the reader could see the first
+   colleague and no other. A fixed box escapes the scroller; `static/js/ux.js`
+   places it under its trigger and keeps it inside the window. */
+.uxassign__menu {
+  position: fixed;
+  min-width: 170px;
+  max-height: 280px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  box-shadow: var(--shadow-menu);
+  padding: 4px;
+  z-index: 30;
+}
+
+.uxassign__menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font: 400 13px/1.3 var(--typography-font-sans);
+  color: var(--text-body);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.uxassign__menu button:hover {
+  background: var(--surface-overlay-hover);
+}
+
+/* ====================================================================
+ * Osakond
+ * ==================================================================== */
+
+/* The one modifier this file adds to an existing family rather than to a `ux`
+   name. `railrow__value--warning` exists in app.css and its danger sibling
+   does not; a rail row that is genuinely late needs the stronger of the two,
+   and inventing `.uxrailvalue` beside it would leave two spellings of the same
+   idea in one rail. Additive: no existing rule changes. Its row still says
+   «Üle tähtaja» in words. */
+.railrow__value--danger {
+  color: var(--status-danger);
+}
+
+/* ---- the team table ------------------------------------------------- */
+
+.uxteam__who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.uxteam__name {
+  font: 600 13.5px/1.3 var(--typography-font-sans);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uxteam__name--none {
+  color: var(--status-warning);
+}
+
+.uxteam__self {
+  font: 400 11px/1.3 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+/* Nine columns of numbers do not fit a narrow viewport and must not be allowed
+   to widen the page. The block scrolls; the page never does. */
+.uxstat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-x: auto;
+  /* A containing block for what is inside it. Every number carries a
+     visually-hidden label naming its column, and `.visually-hidden` is
+     absolutely positioned — without a positioned ancestor those boxes resolve
+     against the initial containing block, escape the scroller and put the whole
+     912px grid into the *document's* scrollable width. Measured: the page was
+     914px wide inside a 375px window (design handoff, Osakond §2). */
+  position: relative;
+}
+
+.uxstat > * {
+  min-width: min-content;
+}
+
+.uxstat__cols,
+.uxstat__row,
+.uxstat__grp {
+  display: grid;
+  grid-template-columns: 220px repeat(8, minmax(72px, 1fr));
+  gap: 0 12px;
+  align-items: center;
+}
+
+.uxstat__grp {
+  padding: 0 10px 2px;
+  font: 700 10px/1.4 var(--typography-font-sans);
+  letter-spacing: 0.08em;
+  color: var(--accent-link);
+}
+
+.uxstat__grp span {
+  text-align: right;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 3px;
+}
+
+/* The three group headings span the columns they head. In the stylesheet
+   rather than in a `style` attribute, because a span is layout and layout
+   belongs here (tests/test_ui_contract.py). */
+.uxstat__grp .uxstat__grpblank {
+  border-bottom: 0;
+}
+
+.uxstat__grp--now {
+  grid-column: 2 / span 5;
+}
+
+.uxstat__grp--week {
+  grid-column: 7 / span 2;
+}
+
+.uxstat__grp--year {
+  grid-column: 9;
+}
+
+.uxstat__sep {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.uxstat__cols {
+  padding: 0 10px 4px;
+  font: 700 10px/1.4 var(--typography-font-sans);
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.uxstat__cols span {
+  text-align: right;
+}
+
+.uxstat__cols span:first-child {
+  text-align: left;
+}
+
+.uxstat__row {
+  padding: 8px 10px;
+  border-radius: 6px;
+  text-decoration: none;
+}
+
+a.uxstat__row:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+.uxstat__num {
+  font: 600 13.5px/1.3 var(--typography-font-sans);
+  color: var(--text-secondary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.uxstat__num--bad {
+  color: var(--status-danger);
+}
+
+.uxstat__num--warn {
+  color: var(--status-warning);
+}
+
+/* An em dash, muted. A grid of noughts reads as a data-quality problem. */
+.uxstat__num--zero {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.uxstat__row--total {
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  margin-top: 4px;
+  padding-top: 10px;
+}
+
+.uxstat__row--total .uxstat__num {
+  color: var(--text-primary);
+}
+
+/* ====================================================================
+ * Osakond — the Tehtud digest
+ * ==================================================================== */
+
+.uxdg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.uxdg__sum {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font: 400 12.5px/1.4 var(--typography-font-sans);
+  color: var(--text-secondary);
+  padding: 2px 10px 10px;
+}
+
+.uxdg__sum b {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.uxdg__row {
+  display: grid;
+  grid-template-columns: 52px 130px minmax(0, 1fr) 24px;
+  gap: 0 12px;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 5px;
+  text-decoration: none;
+}
+
+.uxdg__row:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+.uxdg__date {
+  font: 400 12px/1.3 var(--typography-font-sans);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.uxdg__text {
+  font: 400 13.5px/1.35 var(--typography-font-sans);
+  color: var(--text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.uxdg__kind {
+  min-width: 0;
+}
+
+.uxdg__more {
+  margin: 4px 0 0;
+  padding: 0 10px;
+  font: 400 12.5px/1.4 var(--typography-font-sans);
+  color: var(--text-muted);
+}
+
+/* The period control, as one group in the section head. The head itself does
+   not wrap — it is one line of title, spacer and meta on every other section —
+   so the five chips wrap inside their own box instead of pushing the last of
+   them past the right edge of a 375px viewport. Measured: without this the
+   Osakond page was 31px wider than the window on a phone. */
+.uxperiods {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The free period, beside the fixed ones. */
+.uxdg__period {
+  position: relative;
+}
+
+.uxdg__periodbody {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  box-shadow: var(--shadow-menu);
+}
+
+.uxdg__periodbody .field__input {
+  width: 118px;
+}
+
+/* ====================================================================
+ * Narrower viewports
+ *
+ * The page must never scroll sideways. The team table is the one exception and
+ * it scrolls inside its own block, which is what `.uxstat` above already does.
+ * ==================================================================== */
+
+@media (max-width: 900px) {
+  .uxdl__row {
+    grid-template-columns: 54px minmax(0, 1fr) 24px;
+  }
+
+  .uxdg__row {
+    grid-template-columns: 46px 108px minmax(0, 1fr) 24px;
+  }
+
+  .uxnext__menu,
+  .uxassign__menu {
+    /* Right-anchored so a control near the right edge cannot push its popover
+       off-screen. Measured at 375px, where the register's owner cell is the
+       last column on the row. */
+    left: auto;
+    right: 0;
+  }
+
+  .uxviews__savebody {
+    left: 0;
+    right: auto;
+    min-width: 0;
+    width: min(320px, calc(100vw - var(--spacing-6)));
+  }
+
+  /* The closed timeline's three facts do not all fit on a narrow row. The
+     step pill goes first: it is on the Järgmiseks row a few centimetres above,
+     and it is the one of the three that cannot shrink — it and the count are
+     `nowrap`, so keeping it pushed «Ava ajajoon» 108px past the right edge of a
+     480px window. What is left is the quote, which ellipsises, and the count.
+     Both stay in the accessibility tree at every width. */
+  .uxtl__previewnext {
+    display: none;
+  }
+
+  .uxdg__periodbody {
+    /* Stacked rather than side by side: two 118px date boxes and a button do
+       not fit beside each other in a popover bounded by the window. */
+    flex-direction: column;
+    align-items: stretch;
+    max-width: calc(100vw - var(--spacing-6));
+  }
+}
+
+@media (max-width: 620px) {
+  /* The digest loses its kind column to the row beneath the text rather than
+     squeezing four cells into 320px. The kind is still written out. */
+  .uxdg__row {
+    grid-template-columns: 46px minmax(0, 1fr) 24px;
+  }
+
+  .uxdg__kind {
+    grid-column: 2;
+    grid-row: 2;
+  }
+
+  .uxdg__text {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .uxdone {
+    /* Inside the row rather than hanging off its edge: at this width the row
+       has no gutter to hang into. */
+    left: 2px;
+  }
+
+  /* And below this the quote goes too. «Ajajoon · 14 kirjet · Ava ajajoon» is
+     what a phone has room for. */
+  .uxtl__preview {
+    display: none;
+  }
+}

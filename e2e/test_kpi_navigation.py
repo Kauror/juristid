@@ -49,7 +49,10 @@ SCOPES = ("osakond", "valdkonniti")
 NUMBERED_LINKS: tuple[tuple[str, str], ...] = (
     (".seis__figure", ".seis__number"),
     (".ovsection__head .ovsection__link", ""),
-    (".deadlinegroup__more a", ""),
+    # The deadline panel's own header links, one per window. The footer row
+    # they replace is gone: each group now states its interval and links to
+    # exactly its own population (design handoff 1a).
+    (".uxdl__all", ""),
     ("a.loadrow__open", ""),
     ("a.loadrow__overdue", ""),
     (".loadrow--unassigned", ".loadrow__open"),

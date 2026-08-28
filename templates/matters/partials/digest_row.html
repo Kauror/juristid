@@ -1,0 +1,19 @@
+{% comment %}
+One thing the department finished, in the period Tehtud is reporting on.
+
+The kind is a badge with a word in it, never a colour on its own: «Arvamus
+välja», «Töövõit», «Teema suletud», «Sissekanne». The row opens the Matter it
+belongs to, because that is the only place the whole story is
+(design handoff, Osakond §4).
+{% endcomment %}
+<a class="uxdg__row" href="{{ row.url }}">
+  <span class="uxdg__date">{{ row.when|date:"d.m" }}</span>
+  <span class="uxdg__kind">
+    <span class="uxtl__kind uxtl__kind--{{ row.kind }}">{{ row.kind_label }}</span>
+  </span>
+  <span class="uxdg__text">{{ row.text }}</span>
+  <span class="uxav" title="{{ row.actor_name|default:'Teadmata' }}">
+    <span aria-hidden="true">{{ row.initials }}</span>
+    <span class="visually-hidden">{{ row.actor_name|default:'Teadmata' }}</span>
+  </span>
+</a>

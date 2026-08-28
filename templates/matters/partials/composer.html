@@ -1,7 +1,7 @@
 {% comment %}
-`TEGEVUSE KIRJELDUS` — the primary surface of the whole application.
+`Mis juhtus?` — the primary surface of the whole application.
 
-One box, three mode chips, and three quiet disclosures. Everything a lawyer
+One box, three mode chips, and a set of quiet disclosures. Everything a lawyer
 records after a meeting goes in here and saves once: what happened, what
 happens next, the file they were handed, the deadline they were told about,
 and — when the work is finished — the closure itself.
@@ -20,8 +20,38 @@ one sentence into two by guessing would be inventing the register's content
 **One save, one professional update.** The POST goes to one service inside one
 transaction; it may write six canonical records and the timeline shows one line
 (app/matters/services.py, app/audit/operations.py).
+
+The 2026-08 pass closes it by default (design handoff 1d). A Matter is read far
+more often than it is written to, and an eight-line form standing open under the
+Järgmiseks row pushed the file's actual content below the fold on every visit.
+Closed it is one line; `L` or a click opens it, and it opens by itself whenever
+a save was refused, so nobody loses what they typed.
+
+**Nothing was dropped to make it smaller.** Every field the open form carried is
+still here and still saves: the mode chips, the exact date, the precision, the
+stored date meaning, the attachment and its role, the entry kind, the
+organisation, the date it happened, the important deadline, and the whole
+closure block. What changed is that the two questions asked on every save —
+*mis edasi* and *millal* — are one row of chips each, and the rest sits behind
+one «Täpsemalt…».
+
+`.composer` stays on the element beside `.uxcomp`: the focus treatment for the
+textarea is `.composer:focus-within`, and dropping the class would leave the
+field with no visible focus at all (static/css/app.css).
 {% endcomment %}
-<section class="composer" id="teema-koostaja" aria-labelledby="koostaja-pealkiri">
+<details class="composer uxcomp" id="teema-koostaja"
+         {% if composer_error or composer_form.errors %}open{% endif %}>
+  <summary class="uxcomp__collapsed">
+    <span class="uxcomp__avatar" aria-hidden="true">{{ user.initials }}</span>
+    <span class="uxcomp__prompt">Mis juhtus? Kirjuta lühidalt, mida tegid või mida teada said…</span>
+    {% comment %}
+      The shortcut is advertised where it applies, and it is never the only way
+      in — this whole row is the disclosure's own trigger (AGENTS.md, UX
+      quality: every keyboard shortcut must have an obvious click equivalent).
+    {% endcomment %}
+    <kbd class="key">L</kbd>
+  </summary>
+
   <h2 class="visually-hidden" id="koostaja-pealkiri">Lisa tegevuse kirjeldus</h2>
 
   {% if composer_error %}
@@ -31,14 +61,14 @@ transaction; it may write six canonical records and the timeline shows one line
     <p class="formerror" role="alert">{{ composer_form.non_field_errors|first }}</p>
   {% endif %}
 
-  <form data-composer
+  <form class="uxcomp__form" data-composer
+        aria-labelledby="koostaja-pealkiri"
         hx-post="{% url 'matters:compose' pk=matter.pk %}"
         hx-target="#teema-vaade"
         hx-swap="outerHTML"
         hx-encoding="multipart/form-data">
     {% csrf_token %}
 
-    <span class="composer__label">Tegevuse kirjeldus</span>
     <label class="visually-hidden" for="{{ composer_form.body.id_for_label }}">
       Tegevuse kirjeldus
     </label>
@@ -53,53 +83,82 @@ transaction; it may write six canonical records and the timeline shows one line
       than a checkbox plus a select, because the question is genuinely
       three-valued and the answer carries a different date meaning each time.
     {% endcomment %}
-    <div class="composer__next">
-      <span class="composer__sublabel" id="mis-edasi">Mis edasi?</span>
-      <div class="modeselect" role="radiogroup" aria-labelledby="mis-edasi" id="koostaja-liik">
-        {% for value, label in composer_form.next_kind.field.choices %}
-          {% if value %}
-            <span class="modeselect__option">
-              <input type="radio" class="modechip__input" name="next_kind"
-                     id="next_kind_{{ value }}" value="{{ value }}"
-                     {% if composer_form.next_kind.value == value %}checked{% endif %}>
-              <label class="modechip modechip--{{ value|lower }} modechip--choice"
-                     for="next_kind_{{ value }}">{{ label|upper }}</label>
-            </span>
-          {% endif %}
-        {% endfor %}
-        {% comment %}
-          The way back to "no change". Without it, choosing a mode by mistake
-          could not be undone without reloading the page — and a radio group
-          with no neutral option is a control that cannot say "leave it alone".
-        {% endcomment %}
-        <span class="modeselect__option">
-          <input type="radio" class="modechip__input" name="next_kind" id="next_kind_none"
-                 value="" {% if not composer_form.next_kind.value %}checked{% endif %}>
-          <label class="modechip modechip--none modechip--choice" for="next_kind_none">
-            Ei muuda
-          </label>
-        </span>
-      </div>
+    <div class="uxcomp__row" role="radiogroup" aria-labelledby="mis-edasi" id="koostaja-liik">
+      <span class="uxcomp__q" id="mis-edasi">Mis edasi?</span>
+      {% for value, label in composer_form.next_kind.field.choices %}
+        {% if value %}
+          <span class="modeselect__option">
+            <input type="radio" class="modechip__input" name="next_kind"
+                   id="next_kind_{{ value }}" value="{{ value }}"
+                   {% if composer_form.next_kind.value == value %}checked{% endif %}>
+            <label class="modechip modechip--{{ value|lower }} modechip--choice"
+                   for="next_kind_{{ value }}">{{ label|upper }}</label>
+          </span>
+        {% endif %}
+      {% endfor %}
+      {% comment %}
+        The way back to "no change". Without it, choosing a mode by mistake
+        could not be undone without reloading the page — and a radio group
+        with no neutral option is a control that cannot say "leave it alone".
+      {% endcomment %}
+      <span class="modeselect__option">
+        <input type="radio" class="modechip__input" name="next_kind" id="next_kind_none"
+               value="" {% if not composer_form.next_kind.value %}checked{% endif %}>
+        <label class="modechip modechip--none modechip--choice" for="next_kind_none">
+          Ei muuda
+        </label>
+      </span>
+    </div>
 
-      <label class="composer__date">
-        <span class="visually-hidden">{{ composer_form.next_date.label }}</span>
-        {{ composer_form.next_date }}
-      </label>
-      {% if composer_form.next_date.errors %}
-        <p class="field__error">{{ composer_form.next_date.errors|first }}</p>
-      {% endif %}
+    {% comment %}
+      MILLAL? Four spans and the exact box behind them. The chips do not store
+      anything of their own: each one writes the day it names into the date
+      field below, which is the field that is submitted and validated. So the
+      server sees one value however it was chosen, and the form works with the
+      chips ignored entirely.
+    {% endcomment %}
+    <div class="uxcomp__row" data-quickdate-group="{{ composer_form.next_date.id_for_label }}">
+      <span class="uxcomp__q">Millal?</span>
+      {% for choice in quick_dates %}
+        <button type="button" class="uxchip" aria-pressed="false"
+                data-quickdate="{{ choice.value }}"
+                data-label-default="{{ choice.label }}"
+                data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
+      {% endfor %}
 
       {% comment %}
-        Approximate timing, behind a disclosure. `JÄLGIN` genuinely means
-        "september 2026" or "III kvartal 2026" more often than it means a day,
-        and storing 1 September as though somebody had committed to it would
-        manufacture certainty the source never had. The control asks for the
-        period; `app.workflow.dates` turns it into the anchor the database
-        stores, and nobody types an anchor (Teema redesign §9.2).
+        A real disclosure rather than a scripted panel, so the exact date is
+        reachable and submittable with JavaScript switched off entirely. Open
+        whenever it holds a value or a refusal, so a rejected save never hides
+        the box the reader has to correct.
       {% endcomment %}
-      <details class="disclosure disclosure--inline">
-        <summary class="disclosure__summary">Ligikaudne aeg</summary>
-        <div class="disclosure__body">
+      <details class="uxcomp__date"
+               {% if composer_form.next_date.value or composer_form.next_date.errors %}open{% endif %}>
+        <summary class="uxchip">Kuupäev…</summary>
+        <div class="uxcomp__datebody">
+          <label class="visually-hidden" for="{{ composer_form.next_date.id_for_label }}">
+            {{ composer_form.next_date.label }}
+          </label>
+          {{ composer_form.next_date }}
+          {% if composer_form.next_date.errors %}
+            <span class="field__error">{{ composer_form.next_date.errors|first }}</span>
+          {% endif %}
+        </div>
+      </details>
+
+      {% comment %}
+        Approximate timing and the stored date meaning, one level deeper.
+        `JÄLGIN` genuinely means "september 2026" or "III kvartal 2026" more
+        often than it means a day, and storing 1 September as though somebody
+        had committed to it would manufacture certainty the source never had.
+        The control asks for the period; `app.workflow.dates` turns it into the
+        anchor the database stores, and nobody types an anchor
+        (Teema redesign §9.2, §9.3).
+      {% endcomment %}
+      <details class="uxcomp__more"
+               {% if composer_form.next_precision.errors or composer_form.next_date_semantics.value %}open{% endif %}>
+        <summary class="uxchip uxchip--dashed">Täpsemalt…</summary>
+        <div class="uxcomp__morebody">
           <fieldset class="choiceset">
             <legend class="visually-hidden">Kuupäeva täpsus</legend>
             {% for choice in composer_form.next_precision %}
@@ -120,12 +179,6 @@ transaction; it may write six canonical records and the timeline shows one line
               {% include "intelligence/partials/field.html" with field=composer_form.next_year %}
             </div>
           </div>
-          {% comment %}
-            The stored date meaning, one level deeper still. It derives from the
-            chosen mode when left alone; the model permits pairs the derivation
-            does not produce, and the register's own parser uses them
-            (app/workflow/enums.py, Teema redesign §9.3).
-          {% endcomment %}
           {% include "intelligence/partials/field.html" with field=composer_form.next_date_semantics %}
         </div>
       </details>
@@ -279,4 +332,4 @@ transaction; it may write six canonical records and the timeline shows one line
       </fieldset>
     </div>
   </form>
-</section>
+</details>

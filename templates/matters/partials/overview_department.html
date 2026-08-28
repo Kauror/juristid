@@ -99,40 +99,67 @@ Only what the department may honestly call a deadline: DO deadlines and
 Olulised tähtajad. A WAIT's expected date is not a commitment anybody made and
 belongs in the intervention list above, where it reads as "look at this again"
 (master specification 18.8).
+
+Four windows, and the fourth is the point of the redesign. The panel used to
+end at next week, so a deadline five weeks out was on no screen anywhere until
+it became next week's problem. KAUGEMAL is one line — the next date, and how
+many more sit behind it — because a list a month out is a plan nobody can act
+on today, and a number with nothing to open is a figure nobody can check
+(design handoff 1a).
+
+Each group states its own interval and links to exactly its own population, so
+the reader never has to work out what "järgmisel" covers and the list behind
+`kõik N →` holds exactly those Matters (`?too=`, app/matters/work_items.py).
 {% endcomment %}
 <section class="ovsection" aria-label="Tähtajad">
   <div class="ovsection__head">
     <h2 class="ovsection__title">Tähtajad</h2>
   </div>
   {% for group in page.deadlines %}
-    <div class="deadlinegroup">
-      <span class="deadlinegroup__label">{{ group.label|upper }} · {{ group.count }}</span>
-      <div class="deadlinegroup__rows">
-        {% for item in group.preview %}
-          <a class="deadlinerow" href="{{ item.matter_url }}">
-            <span class="deadlinerow__when">{% if item.when == today %}täna{% else %}{{ item.short_date }}{% endif %}</span>
-            <span class="deadlinerow__title">
-              {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter.title }}
-            </span>
-            <span class="deadlinerow__owner{% if not item.responsible %} deadlinerow__owner--none{% endif %}">{{ item.responsible_name }}</span>
-          </a>
-        {% empty %}
-          <p class="railblock__empty">Tähtaegu ei ole.</p>
-        {% endfor %}
-      </div>
-      {% if group.count %}
-        <p class="deadlinegroup__more">
+    {% if group.count %}
+      <div class="uxdl">
+        <div class="uxdl__head">
+          <span class="uxdl__title{% if group.is_far %} uxdl__title--far{% endif %}">{{ group.label|upper }}</span>
+          {% if group.range_label %}<span class="uxdl__range">{{ group.range_label }}</span>{% endif %}
+          {% if not group.is_far %}
+            {% comment %}
+              Matters, not rows: the link opens a register list and two
+              deadlines on one file are one file to open. The heading beside it
+              is the window, so the number needs no further qualification.
+            {% endcomment %}
+            <a class="uxdl__all" href="{{ group.url }}">kõik {{ group.matter_count }} →</a>
+          {% endif %}
+        </div>
+
+        {% if group.is_far %}
+          {% with item=group.first %}
+            <a class="uxdl__row uxdl__row--far" href="{{ group.url }}">
+              <span class="uxdl__date">{{ item.day_month }}</span>
+              <span class="uxdl__name uxdl__far">
+                {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter.title }}{% if group.beyond_first %} ja veel {{ group.beyond_first }}{% endif %} ·
+                <span class="uxdl__farlink">registris →</span>
+              </span>
+            </a>
+          {% endwith %}
+        {% else %}
           {% comment %}
-            The group's own population, not the whole register sorted by date.
-            "Näita ülejäänud 3" opened two thousand rows and left the reader to
-            find the three; the link now holds exactly this window's Matters
-            (`?too=`, app/matters/work_items.py).
+            The row is a partial, shared with Osakond's Eesolev: a deadline must
+            read the same on both department surfaces, and two near-identical
+            blocks are two blocks that drift.
           {% endcomment %}
-          <a href="{{ group.url }}">Ava kõik {{ group.matter_count }} teemat →</a>
-        </p>
-      {% endif %}
-    </div>
+          {% for item in group.preview %}
+            {% include "matters/partials/deadline_row.html" with item=item %}
+          {% endfor %}
+          {% if group.remaining %}
+            {% include "matters/partials/deadline_more.html" with rows=group.rest remaining=group.remaining scope=group.label %}
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endif %}
   {% endfor %}
+  {% if not page.has_deadlines %}
+    <p class="railblock__empty">Ühtegi tähtaega ei ole ees.</p>
+  {% endif %}
 </section>
 
 {% comment %}

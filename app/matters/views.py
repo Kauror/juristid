@@ -16,6 +16,7 @@ Two conventions worth knowing:
 from __future__ import annotations
 
 import uuid
+from datetime import date, timedelta
 from typing import Any
 
 from django.contrib import messages
@@ -27,10 +28,12 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
 from app.accounts.selectors import (
+    assignable_business_users,
     assignable_including,
     is_person_identifier,
     named_owner_in,
@@ -43,7 +46,12 @@ from app.core.authorization import (
     may_write_business_content,
     scope_for_user,
 )
-from app.core.dates import format_estonian_date, parse_flexible_date
+from app.core.dates import (
+    format_estonian_date,
+    parse_flexible_date,
+    short_day_month,
+    weekday_letter,
+)
 from app.core.decorators import business_write_required, gate_required, viewer_for
 from app.core.enums import Visibility
 from app.core.errors import DomainError
@@ -101,7 +109,13 @@ from app.matters.services import (
     set_tags,
     update_engagement,
 )
-from app.matters.timeline import TIMELINE_FILTER_ALL, TIMELINE_FILTERS, matter_timeline
+from app.matters.timeline import (
+    TIMELINE_FILTER_ALL,
+    TIMELINE_FILTERS,
+    collapse_system_runs,
+    latest_authored,
+    matter_timeline,
+)
 from app.organisations.models import Organisation
 from app.search import services as search_services
 from app.submissions.enums import RecipientRole, SubmissionStatus
@@ -109,7 +123,7 @@ from app.submissions.forms import SubmissionCreateForm
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
-from app.workflow.enums import ActionKind, Disposition, Track
+from app.workflow.enums import REVIEW_KINDS, ActionKind, Disposition, Track
 from app.workflow.models import NextAction, StageVocabulary
 from app.workflow.services import (
     acknowledge_review,
@@ -234,9 +248,63 @@ def my_work(request: HttpRequest) -> HttpResponse:
             # still being edited, so an undated "Excelist" chip invites somebody
             # to act on a sentence that has since moved (ADR 0021).
             "source_snapshot": snapshot_label(),
+            # The ✓ on a row is a write, so the row offers it only to somebody
+            # who may write. The route checks again regardless: this decides
+            # what is drawn, never what is permitted
+            # (app/core/decorators.py, `business_write_required`).
+            "can_write": may_write_business_content(request.user),
             "nav_active": "minu_too",
         },
     )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def complete_work_item(request: HttpRequest, action_id: Any) -> HttpResponse:
+    """Mark one step done from Minu töö, without opening its Matter.
+
+    The whole gesture the ✓ on the row is: the same service the Matter page's
+    «✓ Tehtud» calls, with the same authorization, the same refusal and the same
+    audit row. What is different is only where the reader ends up — back on the
+    list they were working through, with the window they had chosen still in the
+    address (`?kuni=`).
+
+    Reached through `visible_to`, so an action restricted below its Matter is a
+    404 here exactly as it is everywhere else — and `.open()`, because a step
+    somebody has already finished in another tab must not be finished twice
+    (design handoff 1e).
+    """
+    action = get_object_or_404(
+        NextAction.objects.visible_to(request.user).open().select_related("matter"),
+        pk=action_id,
+    )
+    # The Matter itself, through the same gate any other route uses. An action
+    # is only reachable if its Matter is, and asking twice costs nothing.
+    get_visible_matter(request, action.matter_id)
+
+    try:
+        complete_next_action(action=action, actor=request.user)
+    except DomainError as error:
+        messages.error(request, str(error))
+    else:
+        messages.success(request, "Tegevus on märgitud tehtuks.")
+
+    return redirect(_safe_next(request) or reverse("matters:my_work"))
+
+
+def _safe_next(request: HttpRequest) -> str:
+    """A redirect target, only if it points back at this site.
+
+    The same guard `app.accounts.views` applies to the persona switch: a `next`
+    a browser sent is somebody's input until it has been checked.
+    """
+    candidate = request.POST.get("next") or ""
+    if candidate and url_has_allowed_host_and_scheme(
+        candidate, allowed_hosts={request.get_host()}, require_https=request.is_secure()
+    ):
+        return candidate
+    return ""
 
 
 @login_required
@@ -353,6 +421,10 @@ FILTER_LABELS = {
     # action whatsoever (app/matters/work_items.py).
     "too": "Töö seis",
     "too_vastutaja": "Töö vastutaja",
+    # The window `?too=tahtaeg-vahemik` reads. Companions to `?too=`, like the
+    # responsible above them: they narrow it and select nothing on their own.
+    "too_alates": "Töö alates",
+    "too_kuni": "Töö kuni",
     # What the register recorded about the drafting step. A dimension of its own
     # rather than a synonym for `tegevus`: a Matter can carry a next action and
     # an unfinished opinion at the same time, and they are different questions
@@ -564,7 +636,14 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         return MATERIAL_LABELS.get(value, value)
     if name == "andmed":
         return DATA_CLASS_LABELS.get(value, value)
-    if name in register_filters.DATE_FILTERS:
+    if (
+        name
+        in (
+            register_filters.WORK_WINDOW_START_PARAM,
+            register_filters.WORK_WINDOW_END_PARAM,
+        )
+        or name in register_filters.DATE_FILTERS
+    ):
         # The parameter may carry either form — the control submits Estonian and
         # an older link carries ISO — and the chip reads back the one way this
         # application writes a date. An unparseable value is shown as typed, so
@@ -585,9 +664,11 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
         # `?too_vastutaja=` narrows `?too=` and does nothing on its own. A chip
         # for a parameter that changed no rows is a chip that says the list is
         # narrower than it is.
-        if name == register_filters.WORK_RESPONSIBLE_PARAM and not params.get(
-            register_filters.WORK_PARAM
-        ):
+        if name in (
+            register_filters.WORK_RESPONSIBLE_PARAM,
+            register_filters.WORK_WINDOW_START_PARAM,
+            register_filters.WORK_WINDOW_END_PARAM,
+        ) and not params.get(register_filters.WORK_PARAM):
             continue
         without = params.copy()
         without.pop(name, None)
@@ -729,6 +810,15 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "nav_active": "teemad",
     }
 
+    # Only on the full page. The chips sit above the filter bar, outside the
+    # results region a keystroke swaps, and four extra counts per keystroke
+    # would be four queries for something the reader cannot even see move
+    # (Stage-2E.1 brief 14).
+    context["saved_views"] = register_filters.saved_views(request.user, params)
+    # The view *is* the address. «Salvesta praegune filter vaatena» offers this
+    # link; there is nothing else to save, and nothing is stored.
+    context["current_view_url"] = request.build_absolute_uri()
+
     if _wants_fragment(request):
         # The whole results surface, not a patched piece of it: one render from
         # one queryset cannot disagree with itself about how many rows there are
@@ -772,8 +862,26 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         ],
         "chosen_organisation": _organisation_or_none(params.get("asutus", "")),
         "organisation_options": _organisation_options(""),
+        # Who a row may be handed to, current reader first. The same population
+        # the Matter header's own control offers, so the two cannot disagree
+        # about who work may be given to (app/accounts/selectors.py, ADR 0036).
+        "assignable_people": _assignable_first(request.user),
+        # The row control is a write. Drawn by capability, enforced by the route
+        # (app/core/decorators.py, `business_write_required`).
+        "can_assign_owner": may_write_business_content(request.user),
     }
     return render(request, "matters/matter_list.html", context)
+
+
+def _assignable_first(reader: Any) -> list[User]:
+    """Everybody work may be given to, with the reader at the top.
+
+    "(mina)" first because the commonest triage decision is *I will take this*,
+    and a list that made somebody hunt for their own name in an alphabetical
+    column would make the two-click gesture a three-click one.
+    """
+    people = list(assignable_business_users())
+    return sorted(people, key=lambda person: (person.pk != getattr(reader, "pk", None),))
 
 
 #: The register dimensions that name an institution, and what each is called on
@@ -788,6 +896,42 @@ ORGANISATION_CHOOSER_FIELDS = {
 #: How many organisations the chooser offers at a time. Enough to scan, few
 #: enough that the response stays small on a catalogue with hundreds of rows.
 ORGANISATION_CHOICES = 20
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def assign_owner(request: HttpRequest, pk: Any) -> HttpResponse:
+    """Give an unassigned Matter an owner, from the row it was read on.
+
+    Nothing is done differently here from the header's own owner control: the
+    same form validates the choice against `assignable_including`, and the same
+    `assign_matter` service writes it, moves the open step that was following
+    the previous owner, and records the change event. What is different is only
+    where the reader ends up — back on the register, with their filters intact,
+    because triaging four unassigned files should not cost four round trips
+    through four Matter pages (app/matters/services.py, docs/adr/0036).
+    """
+    matter = get_visible_matter(request, pk)
+    form = MatterFieldForm(request.POST, matter=matter)
+    if not form.is_valid():
+        messages.error(request, "Vigane väärtus.")
+        return redirect(_safe_next(request) or reverse("matters:matter_list"))
+
+    try:
+        assign_matter(matter=matter, owner=form.cleaned_data.get("owner"), actor=request.user)
+    except DomainError as error:
+        messages.error(request, str(error))
+    else:
+        matter.refresh_from_db()
+        messages.success(
+            request,
+            f"«{matter.title}» vastutaja on {matter.owner.get_short_name()}."
+            if matter.owner
+            else f"«{matter.title}» on nüüd vastutajata.",
+        )
+
+    return redirect(_safe_next(request) or reverse("matters:matter_list"))
 
 
 def _organisation_options(term: str) -> list[Organisation]:
@@ -1120,6 +1264,13 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "source_instruction": source_instruction,
         "source_snapshot": snapshot_label() if source_instruction else "",
         "timeline_items": items,
+        # What the spine renders: the same items, with adjacent system events
+        # folded into one row each. The flat list stays beside it because the
+        # closed summary counts lines rather than rows (app/matters/timeline.py).
+        "timeline_rows": collapse_system_runs(items),
+        # The last thing a colleague actually wrote, for the closed summary. A
+        # system row would quote the application back at the reader.
+        "timeline_preview": latest_authored(items),
         "timeline_has_more": has_more,
         "timeline_count": len(items) + (1 if has_more else 0),
         "timeline_only": timeline_only,
@@ -1160,6 +1311,13 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "engagement_add_open": False,
         "can_write": may_write_business_content(request.user),
         "can_review_victory": may_review_work_victory(request.user),
+        # «Lükka edasi», with the day each option lands on. Offered only on an
+        # exact date: deferring a step recorded as *september 2026* by a day
+        # would turn a period somebody deliberately left vague into a day they
+        # never named (master specification 3.5).
+        "defer_choices": defer_choices(timezone.localdate()),
+        "quick_dates": quick_date_choices(timezone.localdate()),
+        "can_defer": current_action is not None and not current_action.is_approximate,
         "today": timezone.localdate(),
     }
 
@@ -1630,6 +1788,144 @@ def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse
     return _render_overview(request, matter)
 
 
+#: What the composer's «Millal?» row offers. Four spans that cover almost every
+#: next step somebody sets from a meeting they have just come back from; the
+#: exact box behind «Kuupäev…» covers the rest, and it is the field that is
+#: actually submitted either way (design handoff 1d).
+QUICK_DATES: tuple[tuple[int, str], ...] = (
+    (0, "Täna"),
+    (1, "Homme"),
+    (7, "+1 nädal"),
+    (14, "+2 nädalat"),
+)
+
+
+def quick_date_choices(today: date) -> list[dict[str, Any]]:
+    """The quick spans, each carrying the day it resolves to.
+
+    Resolved on the server, in Europe/Tallinn, and delivered on the control. The
+    chip shows the actual date once it is chosen — «+1 nädal → N 03.09» — so
+    nobody sets a step for a day they did not read. Working it out in the
+    browser would answer in the reader's own timezone, which is the whole class
+    of defect `app/core/dates.py` exists to prevent.
+    """
+    return [
+        {
+            "value": format_estonian_date(today + timedelta(days=days)),
+            "label": label,
+            "when": f"{weekday_letter(today + timedelta(days=days))} "
+            f"{short_day_month(today + timedelta(days=days))}",
+        }
+        for days, label in QUICK_DATES
+    ]
+
+
+#: What «Lükka edasi» offers, and how far each option moves the date. Counted
+#: from today rather than from the date on the step: somebody deferring a
+#: deadline that passed six days ago means "give me another week", not "make it
+#: a day later than the day I already missed" (design handoff 1c).
+DEFER_OPTIONS: tuple[tuple[int, str], ...] = ((1, "+1 päev"), (7, "+1 nädal"))
+
+#: How far the free-date box will accept a deferral. Two years is well past any
+#: planning horizon the department has and short of the typo that would file a
+#: live instruction in 2226.
+DEFER_MAX_DAYS = 730
+
+
+def defer_choices(today: date) -> list[dict[str, Any]]:
+    """The quick options, with the day each one actually lands on.
+
+    Resolved here, in Europe/Tallinn, and rendered on the control. A chip that
+    said only "+1 nädal" would leave the reader to do the arithmetic, and one
+    that worked it out in the browser would answer in the reader's timezone
+    rather than in the department's.
+    """
+    return [
+        {
+            "days": days,
+            "label": label,
+            "when": f"{weekday_letter(today + timedelta(days=days))} "
+            f"{short_day_month(today + timedelta(days=days))}",
+        }
+        for days, label in DEFER_OPTIONS
+    ]
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def defer_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """Move the current step's date, by the service the step's kind requires.
+
+    Two different acts wearing one control. A **DO** carries a commitment Koda
+    made, and moving it is a new instruction that supersedes the old one — which
+    is what `set_next_action_for_new_work` does, chain and audit row included. A
+    **WAIT** or **MONITOR** carries a review date, and moving that is
+    acknowledging the review: the Matter is still waiting on the same thing, so
+    the action keeps its identity and only its date moves.
+
+    Nothing new is decided here. Both services validate, both write their own
+    change event, and both refuse a closed Matter — this view chooses between
+    them and computes no business rule of its own (app/workflow/services.py).
+    """
+    matter = get_visible_matter(request, pk)
+    action = get_object_or_404(
+        NextAction.objects.visible_to(request.user).open(), pk=action_id, matter=matter
+    )
+
+    today = timezone.localdate()
+    raw_days = (request.POST.get("paevad") or "").strip()
+    raw_date = (request.POST.get("kuupaev") or "").strip()
+    target: date | None = None
+    if raw_days:
+        try:
+            days = int(raw_days)
+        except ValueError:
+            days = 0
+        if 0 < days <= DEFER_MAX_DAYS:
+            target = today + timedelta(days=days)
+    elif raw_date:
+        target = parse_flexible_date(raw_date)
+
+    if target is None or target > today + timedelta(days=DEFER_MAX_DAYS):
+        return _overview_error(request, matter, "Kirjuta kuupäev kujul 7.9.2026.")
+
+    try:
+        if action.kind in REVIEW_KINDS:
+            acknowledge_review(action=action, actor=request.user, next_review_date=target)
+        else:
+            # The same person stays responsible. Left to the default it would
+            # fall back to the Matter's owner, quietly moving somebody else's
+            # instruction onto the owner's queue (app/workflow/services.py,
+            # `responsible_for_new_work`).
+            set_next_action_for_new_work(
+                matter=matter,
+                text=action.text,
+                kind=action.kind,
+                date_semantics=action.date_semantics,
+                target_date=target,
+                responsible=action.responsible,
+                actor=request.user,
+            )
+    except DomainError as error:
+        return _overview_error(request, matter, str(error))
+
+    return _render_overview(request, matter)
+
+
+def _overview_error(request: HttpRequest, matter: Matter, message: str) -> HttpResponse:
+    """The Matter surface again, with the refusal on it.
+
+    The shape every write on this page already uses: 400 with the re-rendered
+    view, so somebody pressing a button that could not do what it said reads why
+    (static/js/app.js, `responseHandling`).
+    """
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    context["composer_error"] = message
+    return render(request, "matters/partials/overview.html", context, status=400)
+
+
 FIELD_SERVICES = {
     "owner",
     "stage",
@@ -2051,7 +2347,7 @@ def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
         "matters/partials/timeline_items.html",
         {
             "matter": matter,
-            "timeline_items": items,
+            "timeline_rows": collapse_system_runs(items),
             "timeline_has_more": has_more,
             "next_offset": offset + TIMELINE_PAGE_SIZE,
             "timeline_only": only,

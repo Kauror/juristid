@@ -96,6 +96,20 @@ Nothing on this page is anybody else's work.
         </section>
       {% endif %}
 
+      {% if work.has_work %}
+        {% comment %}
+          The keys, said out loud where they work. Every one of them has a
+          visible control on the row it acts on — the ✓ button, the row's own
+          link, the ⋯ menu — so this is a shortcut hint and never the only way
+          to do any of it (AGENTS.md, UX quality; design handoff 1e).
+        {% endcomment %}
+        <p class="uxkeys">
+          <kbd class="key">J</kbd><kbd class="key">K</kbd> liigu ·
+          <kbd class="key">X</kbd> tehtud ·
+          <kbd class="key">Enter</kbd> ava teema
+        </p>
+      {% endif %}
+
       <section class="workband workband--entries" aria-label="Minu viimased sissekanded">
         <details class="foldout">
           <summary class="foldout__trigger">

@@ -30,7 +30,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import FORMER_NAME, FORMER_OWNER_TITLE
-from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, sign_in
+from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, open_composer, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -151,6 +151,7 @@ def test_a_new_step_on_a_departed_colleagues_matter_is_refused_on_the_page(page,
     sign_in(page, base_url, MARTIN)
     _open_matter(page, base_url, FORMER_OWNER_TITLE)
 
+    open_composer(page)
     page.locator(".composer__body").fill("Ootan ministeeriumi vastust.")
     page.locator("#next_kind_WAIT").check(force=True)
     page.locator("[data-composer-submit]").click()
@@ -192,8 +193,10 @@ def test_a_register_filtered_on_a_departed_colleague_still_finds_their_work(page
     page.goto(f"{base_url}/osakonna-too/")
     page.wait_for_load_state("networkidle")
 
-    row = page.get_by_role("row").filter(has_text=FORMER_NAME).first
-    row.locator("td a").first.click()
+    # The team table is a grid of links now, not a <table>: its rows are links,
+    # and a row of cells wrapped in an anchor is not valid table markup
+    # (docs/adr/0043).
+    page.locator(".uxstat__row").filter(has_text=FORMER_NAME).first.click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator("select[name='vastutaja']")).to_contain_text(FORMER_NAME.split()[0])

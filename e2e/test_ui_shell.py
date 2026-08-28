@@ -24,7 +24,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import OPEN_TITLE
-from e2e.conftest import SANDRA, sign_in
+from e2e.conftest import SANDRA, open_composer, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -795,28 +795,37 @@ def test_the_matter_rail_sits_beside_or_below_but_never_over(page, base_url, wid
     assert not document_overflows(page)
 
 
-def test_the_composer_starts_as_one_field(page, base_url):
+def test_the_composer_starts_as_one_row(page, base_url):
     """Routine capture is one box and Ctrl+Enter; everything else is disclosed.
 
-    A four-row textarea at rest is the difference between "note this down" and
-    "fill in this form", and the adoption argument is the former.
+    The resting state moved with the 2026-08 pass. It used to be a short
+    textarea standing open on every visit; it is now the closed disclosure —
+    one row saying what the box is for — because a Matter is read far more often
+    than it is written to (design handoff 1d, docs/adr/0043). Opened, the field
+    is at its working height and stays there while the composer is open: a mode
+    chip taking the focus must not reflow four lines of somebody's text under
+    the pointer.
     """
     sign_in(page, base_url, SANDRA)
     open_first_matter(page, base_url)
 
+    closed = page.locator("summary.uxcomp__collapsed")
+    expect(closed).to_be_visible()
+    resting = closed.bounding_box()["height"]
+    # One row of an Estonian sentence, its avatar and the key hint. The number
+    # is the difference between "note this down" and "fill in this form".
+    assert resting <= 48, f"the closed composer is {resting}px tall"
+    expect(page.locator(".composer__body")).to_be_hidden()
+
+    open_composer(page)
     field = page.locator(".composer__body")
     expect(field).to_be_visible()
-    collapsed = field.evaluate("element => getComputedStyle(element).height")
-    # 62px is the design's resting height for the capture box, and it is the
-    # difference between "note this down" and "fill in this form" — three lines
-    # of an Estonian sentence rather than one (Teema redesign §9).
-    assert float(collapsed.removesuffix("px")) <= 72, f"the composer rests at {collapsed}"
+    working = field.bounding_box()["height"]
+    assert working >= 90, f"the opened composer gives {working}px to write in"
 
-    field.click()
-    expect(page.locator(".composer:focus-within")).to_have_count(1)
-    # Retried rather than measured once: the field grows over 150ms, and a box
-    # read the instant after the click is a reading of the animation.
-    expect(field).not_to_have_css("height", collapsed)
+    # And it does not shrink back when focus moves to a control beside it.
+    page.locator("#next_kind_DO").click(force=True)
+    expect(field).to_have_css("height", f"{working:g}px")
 
 
 def test_the_intelligence_sections_do_not_render_when_they_are_empty(page, base_url):

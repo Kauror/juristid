@@ -343,6 +343,29 @@ class NextAction(VisibilityInheritingModel):
         return self.target_date <= (today or timezone.localdate())
 
     @property
+    def is_review_kind(self) -> bool:
+        """Whether this step's date is a review date rather than a commitment.
+
+        Read by the Järgmiseks row, which calls the same control «Vaatasin üle»
+        here and «Lükka edasi» on a DO: moving a review date is doing the work
+        of checking, and moving a deadline is changing a promise
+        (master specification 18.8).
+        """
+        return self.kind in REVIEW_KINDS
+
+    @property
+    def days_late(self) -> int:
+        """How many days past a missed deadline this is. Never negative.
+
+        Only for something genuinely overdue: a review date that has come round
+        is not late, and a number of days beside it would read as a tally of
+        failure for waiting on a ministry (master specification 18.8).
+        """
+        if not self.is_overdue() or self.target_date is None:
+            return 0
+        return (timezone.localdate() - self.target_date).days
+
+    @property
     def display_date(self) -> str:
         """The date rendered at the precision it was actually known to.
 

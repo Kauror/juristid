@@ -2,299 +2,274 @@
 {% block title %}Osakonna töö · {{ application_name }}{% endblock %}
 
 {% comment %}
-Osakonna töö is an oversight surface, not a staff evaluation.
+Osakonna töö, built around the three questions the 2026-08 redesign states:
+what is the team doing, what is ahead, and what has been done.
 
-Every column is a count of observable states — how many files sit with
-somebody, how many carry a late instruction, how many carry none. There is no
-ranking, no score, no rate, no percentage and no colour grading of people, and
-the table is ordered alphabetically on purpose: sorting it by any of its
-numbers would turn it into a leaderboard, which the specification forbids
-(18.8) and which would make the underlying data worth gaming.
+It is an oversight surface, not a staff evaluation. Every column is a count of
+observable states — how many files sit with somebody, how many carry a late
+instruction, how many carry none. There is no ranking, no score, no rate, no
+percentage and no colour grading of people, and the table is ordered
+alphabetically on purpose: sorting it by any of its numbers would turn it into a
+leaderboard, which the specification forbids (18.8) and which would make the
+underlying data worth gaming.
 
 A count of open matters is inventory. One can be a two-line monitoring note and
 the next a year of consultation, so it measures neither effort nor performance.
 
-Urgency is never carried by colour alone: every emphasised cell also states its
-reason in words, so the page reads the same to somebody who cannot see the
-difference.
+Urgency is never carried by colour alone: every emphasised number sits under a
+heading that says what it counts, and every row of the rail states its reason in
+words. The wording rules are the handoff's — «läbi vaatamata», never «triaaž»;
+«Muutusteta 30 p», never «seisma jäänud».
 
-Colleagues appear by short name in the ordinary rows and in full in the Juristid
-matrix above them, where the name is the subject of the row rather than one
-attribute of a file, and two people sharing a first name must stay apart.
+The page reuses Ülevaade's own shell — `page--overview`, `ovhead`, `seis`,
+`ovsection`, `railblock`, `railrow` — so the head reads two department surfaces
+that look like one product (design handoff, Osakond).
 {% endcomment %}
 
 {% block content %}
-<div class="page">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Osakonna töö</h1>
-    <span class="pagehead__context">{{ today|date:"l, j. F Y" }}</span>
+<div class="page page--overview">
+  <div class="ovhead">
+    <h1 class="ovhead__title">Osakonna töö</h1>
+    <span class="ovhead__date">
+      <time datetime="{{ work.today|date:'Y-m-d' }}">{{ work.today|date:"l, j. F Y" }}</time>
+    </span>
+    <span class="ovhead__spacer"></span>
+    <span class="ovhead__date">{{ work.people }} inimest · {{ work.open_matters }} avatud teemat</span>
   </div>
 
-  <p class="field__help">
-    Osakonna praegune töö juristide kaupa. Arvud näitavad teemade hulka ja seisu,
-    mitte töömahtu ega töötulemust.
-  </p>
-
-  <section class="cardrow" aria-label="Koondnäitajad">
-    {% for card in work.cards %}
-      <a class="statcard {% if card.count and card.key == 'overdue' %}statcard--alert{% endif %}"
-         href="{{ card.url }}">
-        <span class="statcard__value">{{ card.count }}</span>
-        <span class="statcard__label">{{ card.label }}</span>
-        {% if card.note %}<span class="statcard__note">{{ card.note }}</span>{% endif %}
+  {% comment %}
+    Seis — the head's risks, not the department's counters. Each figure opens
+    exactly the rows it counted, and each says in words what it is, so the two
+    tinted ones are emphasised rather than encoded.
+  {% endcomment %}
+  <div class="seis">
+    <span class="seis__label">SEIS</span>
+    {% for figure in work.seis %}
+      <a class="seis__figure" href="{{ figure.url }}">
+        <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
+        <span class="seis__caption">{{ figure.caption }}</span>
       </a>
     {% endfor %}
-  </section>
+  </div>
 
-  <section aria-labelledby="juristid-heading">
-    <h2 class="sectionlabel" id="juristid-heading">
-      Juristid
-      <span class="sectionlabel__count">{{ work.lawyers|length }}</span>
-    </h2>
-    <p class="field__help">
-      Tähestikulises järjekorras. Iga arv avab täpselt selle nimekirja, mille pealt
-      ta on loetud; tärniga tähistatud arvu puhul on nimekiri laiem, sest registril
-      ei ole selle kohta veel filtrit.
-    </p>
+  <div class="ovbody">
+    <div class="ovbody__main">
 
-    {% if work.lawyers %}
-      <div class="tablewrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th scope="col">Jurist</th>
-              <th scope="col">Aktiivsed teemad</th>
-              <th scope="col">Arvamuse tähtaeg 7 päeva</th>
-              <th scope="col">Tegevuse tähtaeg möödas</th>
-              <th scope="col">Järgmiseks puudub</th>
-              <th scope="col">Ülevaatus või ootamine käes</th>
-              <th scope="col">Saabunud 14 päeva jooksul</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for row in work.lawyers %}
-              <tr>
-                <th scope="row">
-                  {% comment %}
-                    The name in its own element, so a test — and a reader —
-                    can tell the person apart from the badge beside them.
-                  {% endcomment %}
-                  <span class="lawyer__name">{{ row.display_name }}</span>
-                  {% if row.is_former_member %}
-                    <span class="badge badge--restricted"
-                          title="Kasutaja ei ole enam aktiivne, kuid tal on avatud teemasid">
-                      endine
-                    </span>
-                  {% endif %}
-                </th>
-                {% for cell in row.cells %}
-                  <td class="table__date">
-                    {% if cell.count %}
-                      <a href="{{ cell.url }}">{{ cell.count }}{% if cell.approximate %}*{% endif %}</a>
-                    {% else %}
-                      <span class="table__missing">0</span>
-                    {% endif %}
-                  </td>
-                {% endfor %}
-              </tr>
+      <section class="ovsection" aria-label="Meeskond">
+        <div class="ovsection__head">
+          <h2 class="ovsection__title">Meeskond</h2>
+          <span class="ovsection__meta">tähestikuliselt · arvud on teemade hulk, mitte töömaht</span>
+        </div>
+
+        {% comment %}
+          Nine columns of numbers do not fit a narrow viewport, so the block
+          scrolls inside itself. The page never scrolls sideways — that is the
+          one exception in the whole application and it is deliberate
+          (static/css/ux.css, `.uxstat`).
+
+          Not a <table>. The rows are links, and a row of cells wrapped in an
+          anchor is not valid table markup. The grid carries the same reading
+          order, and because no column header can be *associated* with a number
+          in a grid, every number names its own column instead — including which
+          of the three groups that column belongs to, so the two «ARVAMUSI
+          VÄLJA» columns are told apart. The two visible label rows are then
+          hidden from the accessibility tree: read out, they would be a stray
+          row of words with nothing attached to them.
+
+          The group headings and the column headings are two rows rather than
+          one, because "last week" beside "right now" is two different questions
+          and a reader must be able to tell which is which.
+        {% endcomment %}
+        <div class="uxstat">
+          <div class="uxstat__grp" aria-hidden="true">
+            <span class="uxstat__grpblank"></span>
+            <span class="uxstat__grp--now">PRAEGU</span>
+            <span class="uxstat__grp--week">EELMINE NÄDAL · {{ work.previous_week_label }}</span>
+            <span class="uxstat__grp--year">{{ work.today|date:"Y" }}</span>
+          </div>
+          <div class="uxstat__cols" aria-hidden="true">
+            <span>KES</span>
+            {% for key, label, group, sep in team_columns %}
+              <span{% if sep %} class="uxstat__sep"{% endif %}>{{ label }}</span>
             {% endfor %}
-          </tbody>
-        </table>
-      </div>
-      {% if work.has_former_members %}
+          </div>
+
+          {% for row in work.team %}
+            {% if row.is_total %}
+              <div class="uxstat__row uxstat__row--total">
+                <span class="uxteam__name">{{ row.name }}</span>
+                {% for cell in row.cells %}
+                  <span class="uxstat__num{% if cell.is_zero %} uxstat__num--zero{% elif cell.tone %} uxstat__num--{{ cell.tone }}{% endif %}{% if cell.sep %} uxstat__sep{% endif %}"><span class="visually-hidden">{{ cell.label }}: </span>{% if cell.is_zero %}<span aria-hidden="true">—</span><span class="visually-hidden">0</span>{% else %}{{ cell.value }}{% endif %}</span>
+                {% endfor %}
+              </div>
+            {% else %}
+              <a class="uxstat__row" href="{{ row.url }}">
+                <span class="uxteam__who">
+                  {% if row.is_unassigned %}
+                    <span class="uxav uxav--none" title="Vastutajata" aria-hidden="true">!</span>
+                  {% else %}
+                    <span class="avatar avatar--sm" aria-hidden="true">{{ row.initials }}</span>
+                  {% endif %}
+                  <span class="uxteam__name{% if row.is_unassigned %} uxteam__name--none{% endif %}">
+                    {{ row.name }}{% if row.is_self %} <span class="uxteam__self">· sina</span>{% endif %}
+                  </span>
+                  {% comment %}
+                    A colleague who has left but still holds live work. Surfaced
+                    rather than hidden: dropping the row would take the Matter
+                    off this page entirely, and an active file owned by somebody
+                    who has left is exactly what a department head needs to see.
+                  {% endcomment %}
+                  {% if row.is_former %}
+                    <span class="badge badge--restricted"
+                          title="Kasutaja ei ole enam aktiivne, kuid tal on avatud teemasid">endine</span>
+                  {% endif %}
+                </span>
+                {% for cell in row.cells %}
+                  <span class="uxstat__num{% if cell.is_zero %} uxstat__num--zero{% elif cell.tone %} uxstat__num--{{ cell.tone }}{% endif %}{% if cell.sep %} uxstat__sep{% endif %}"><span class="visually-hidden">{{ cell.label }}: </span>{% if cell.is_zero %}<span aria-hidden="true">—</span><span class="visually-hidden">0</span>{% else %}{{ cell.value }}{% endif %}</span>
+                {% endfor %}
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+
         <p class="field__help">
-          Märkega <em>endine</em> tähistatud kasutaja ei ole enam aktiivne, kuid tema
-          nimel on avatud teemasid. Need vajavad uut vastutajat.
+          Rea avamine näitab selle inimese avatud teemasid registris. Kolm viimast
+          veergu loevad möödunut — mis nädalaga muutus ja mis välja läks — ja neid
+          register praeguse seisuna väljendada ei oska, seega need arvud linki ei kanna.
         </p>
-      {% endif %}
-    {% else %}
-      <p class="empty">Ühtki juristi ei ole veel kirjas.</p>
-    {% endif %}
-  </section>
-
-  <div class="dashgrid">
-    <div class="dashgrid__main">
-      <section aria-labelledby="osakond-tahelepanu-heading">
-        <h2 class="sectionlabel {% if work.attention %}sectionlabel--overdue{% endif %}"
-            id="osakond-tahelepanu-heading">
-          Tähelepanu kogu osakonnas
-          <span class="sectionlabel__count">{{ work.attention|length }}</span>
-        </h2>
-        {% if work.attention %}
-          <div class="tablewrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th scope="col">Teema</th>
-                  <th scope="col">Vastutaja</th>
-                  <th scope="col">Põhjus</th>
-                  <th scope="col">Kuupäev</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in work.attention %}
-                  <tr>
-                    <td class="table__title"><a href="{{ row.url }}">{{ row.matter.title }}</a></td>
-                    <td>{{ row.owner_name }}</td>
-                    <td>{{ row.reason }}</td>
-                    <td class="table__date">
-                      {% if row.when %}
-                        {% comment %}
-                          The label travels with the date. Four different kinds
-                          of date share this column and must not read alike:
-                          a review date reached is not a missed deadline.
-                        {% endcomment %}
-                        <span class="muted">{{ row.date_label }}</span><br>
-                        {{ row.when|date:"j.n.Y" }}
-                      {% else %}—{% endif %}
-                    </td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <p class="empty">Praegu ei vaja osakonnas miski tähelepanu.</p>
-        {% endif %}
-      </section>
-
-      <section aria-labelledby="osakond-lahenevad-heading">
-        <h2 class="sectionlabel" id="osakond-lahenevad-heading">
-          Lähenevad kuupäevad
-          <span class="sectionlabel__count">{{ work.upcoming|length }}</span>
-        </h2>
-        {% if work.upcoming %}
-          <div class="tablewrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th scope="col">Kuupäev</th>
-                  <th scope="col">Tähendus</th>
-                  <th scope="col">Teema</th>
-                  <th scope="col">Vastutaja</th>
-                  <th scope="col">Hetkeseis</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in work.upcoming %}
-                  <tr>
-                    <td class="table__date">{{ row.when|date:"j.n.Y" }}</td>
-                    <td><span class="muted">{{ row.meaning }}</span></td>
-                    <td class="table__title"><a href="{{ row.url }}">{{ row.matter.title }}</a></td>
-                    <td>{{ row.owner_name }}</td>
-                    <td>{{ row.stage_label }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <p class="empty">Järgmise kahe nädala jooksul kuupäevi ei ole.</p>
-        {% endif %}
-      </section>
-
-      <section aria-labelledby="osakond-vastutajata-heading">
-        <h2 class="sectionlabel" id="osakond-vastutajata-heading">
-          Vastutajata teemad
-          <span class="sectionlabel__count">{{ work.unassigned_total }}</span>
-        </h2>
-        <p class="field__help">Avatud teemad, millel ei ole vastutajat. Arhiivikirjeid siin ei ole.</p>
-        {% if work.unassigned %}
-          <div class="tablewrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th scope="col">Teema</th>
-                  <th scope="col">Saatja</th>
-                  <th scope="col">Arvamuse tähtaeg</th>
-                  <th scope="col">Hetkeseis</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for matter in work.unassigned %}
-                  <tr>
-                    <td class="table__title">
-                      <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
-                    </td>
-                    <td>{% include "matters/partials/senders.html" with matter=matter %}</td>
-                    <td class="table__date">
-                      {% if matter.response_deadline %}{{ matter.response_deadline|date:"j.n.Y" }}
-                      {% else %}<span class="table__missing">—</span>{% endif %}
-                    </td>
-                    <td>{{ matter.stage.label_et|default:"—" }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
+        {% if work.has_former_members %}
           <p class="field__help">
-            <a href="{% url 'matters:inbox' %}">Saabunud</a> —
-            sealt saab teemale vastutaja määrata.
+            Märkega <em>endine</em> tähistatud kasutaja ei ole enam aktiivne, kuid tema
+            nimel on avatud teemasid. Need vajavad uut vastutajat.
           </p>
-        {% else %}
-          <p class="empty">Kõikidel avatud teemadel on vastutaja.</p>
         {% endif %}
       </section>
 
-      <section aria-labelledby="osakond-saabunud-heading">
-        <h2 class="sectionlabel" id="osakond-saabunud-heading">Hiljuti saabunud</h2>
-        <p class="field__help">Saabumise kuupäeva järgi, mitte importimise aja järgi.</p>
-        {% if work.incoming %}
-          <div class="tablewrap">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th scope="col">Saabus</th>
-                  <th scope="col">Teema</th>
-                  <th scope="col">Saatja</th>
-                  <th scope="col">Vastutaja</th>
-                  <th scope="col">Hetkeseis</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for matter in work.incoming %}
-                  <tr>
-                    <td class="table__date">{{ matter.received_date|date:"j.n.Y" }}</td>
-                    <td class="table__title">
-                      <a href="{% url 'matters:matter_detail' pk=matter.pk %}">{{ matter.title }}</a>
-                    </td>
-                    <td>{% include "matters/partials/senders.html" with matter=matter %}</td>
-                    <td>
-                      {% if matter.owner %}
-                        <span title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
-                      {% else %}Vastutajata{% endif %}
-                    </td>
-                    <td>{{ matter.stage.label_et|default:"—" }}</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <p class="empty">Viimase kahe nädala jooksul ei ole uusi materjale saabunud.</p>
+      <section class="ovsection" aria-label="Eesolev">
+        <div class="ovsection__head">
+          <h2 class="ovsection__title">Eesolev</h2>
+          <span class="ovsection__spacer"></span>
+          <a class="ovsection__link" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;too=tahtaeg-vahemik">Kõik tähtajad registris →</a>
+        </div>
+
+        {% for group in work.upcoming %}
+          {% if group.count %}
+            <div class="uxdl">
+              <div class="uxdl__head">
+                <span class="uxdl__title{% if group.key == 'tana' %} uxdl__title--today{% endif %}">{{ group.label|upper }}</span>
+                <span class="uxdl__range">{{ group.range_label }}</span>
+                <a class="uxdl__all" href="{{ group.url }}">kõik {{ group.matter_count }} →</a>
+              </div>
+              {% for item in group.preview %}
+                {% include "matters/partials/deadline_row.html" with item=item %}
+              {% endfor %}
+              {% if group.remaining %}
+                {% comment %}
+                  Opened in place, ten at a time, until the group is exhausted.
+                  A manager scanning next month should not have to leave the
+                  page to see the eleventh date (design handoff, Osakond §3).
+                {% endcomment %}
+                {% include "matters/partials/deadline_more.html" with rows=group.rest remaining=group.remaining scope=group.label %}
+              {% endif %}
+            </div>
+          {% endif %}
+        {% endfor %}
+        {% if not work.has_upcoming %}
+          <p class="uxdl__empty">Järgmise kuu jooksul ei ole ühtegi tähtaega.</p>
         {% endif %}
+      </section>
+
+      <section class="ovsection" aria-label="Tehtud">
+        <div class="ovsection__head">
+          <h2 class="ovsection__title">Tehtud</h2>
+          <span class="ovsection__spacer"></span>
+          {% comment %}
+            The period is in the URL, so a report somebody is reading can be
+            sent to somebody else and open on the same window.
+          {% endcomment %}
+          <span class="uxperiods">
+          {% for option in work.periods %}
+            <a class="uxchip{% if option.active %} is-selected{% endif %}"
+               {% if option.active %}aria-current="true"{% endif %}
+               href="?{{ option.query }}">{{ option.label }}</a>
+          {% endfor %}
+          <details class="uxdg__period" data-uxpopover
+                   {% if work.digest.period.is_custom %}open{% endif %}>
+            <summary class="uxchip uxchip--dashed{% if work.digest.period.is_custom %} is-selected{% endif %}">
+              {% if work.digest.period.is_custom %}{{ work.digest.period.label }}{% else %}Vali periood…{% endif %}
+            </summary>
+            <div class="uxdg__periodbody">
+              <form method="get">
+                <input type="hidden" name="periood" value="vahemik">
+                <label class="field">
+                  <span class="field__label field__label--plain">Alates</span>
+                  <input class="field__input field__input--compact dateinput" type="text"
+                         inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                         name="alates" value="{{ work.digest.period.start|date:'j.n.Y' }}">
+                </label>
+                <label class="field">
+                  <span class="field__label field__label--plain">Kuni</span>
+                  <input class="field__input field__input--compact dateinput" type="text"
+                         inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                         name="kuni" value="{{ work.digest.period.end|date:'j.n.Y' }}">
+                </label>
+                <button class="button button--quiet button--tiny" type="submit">Näita</button>
+              </form>
+            </div>
+          </details>
+          </span>
+        </div>
+
+        <div class="uxdg">
+          {% comment %}
+            The summary counts the same four populations the rows below come
+            from, so the sentence and the list cannot disagree.
+          {% endcomment %}
+          <p class="uxdg__sum">
+            <span><b>{{ work.digest.sent }}</b> arvamust välja</span>
+            <span><b>{{ work.digest.closed }}</b> teemat suletud</span>
+            <span><b>{{ work.digest.victories }}</b> töövõitu</span>
+            <span><b>{{ work.digest.entries }}</b> sissekannet</span>
+          </p>
+
+          {% for row in work.digest.preview %}
+            {% include "matters/partials/digest_row.html" with row=row %}
+          {% empty %}
+            <p class="uxdl__empty">Valitud perioodil ei ole midagi lõpetatud.</p>
+          {% endfor %}
+
+          {% if work.digest.rest %}
+            <details class="uxdl__more">
+              <summary>Näita kõiki {{ work.digest.total }} sissekannet ▾</summary>
+              {% for row in work.digest.rest %}
+                {% include "matters/partials/digest_row.html" with row=row %}
+              {% endfor %}
+            </details>
+          {% endif %}
+        </div>
       </section>
     </div>
 
-    <aside class="dashgrid__rail" aria-label="Andmete seis">
-      <div class="railcard">
-        <span class="railcard__label">Täiendamist vajav</span>
-        {% comment %}
-          Operational triage only, and only for fields the current workflow
-          expects. An archive row without a stage is complete history, not a
-          defect, and calling it one would bury the few rows that matter. The
-          full picture lives on Statistika → Andmekvaliteet.
-        {% endcomment %}
-        {% for signal in work.quality %}
-          <a class="countrow" href="{{ signal.url }}" title="{{ signal.help_text }}">
-            <span class="countrow__label">{{ signal.label }}</span>
-            <span class="countrow__value">{{ signal.count }}</span>
+    <aside class="ovbody__rail" aria-label="Juhi otsused">
+      <section class="railblock" aria-label="Vajab tähelepanu">
+        <h2 class="railblock__label railblock__label--warning">Vajab tähelepanu</h2>
+        {% for row in work.attention %}
+          <a class="railrow" href="{{ row.url }}">
+            <span class="railrow__key">{{ row.label }}</span>
+            <span class="railrow__value{% if row.tone and row.count %} railrow__value--{{ row.tone }}{% endif %}">{{ row.count }}</span>
           </a>
         {% endfor %}
-        <p class="field__help">
-          Ainult praegused aktiivsed teemad. Arhiivikirje tühi väli on ajalugu, mitte viga.
-        </p>
-      </div>
+      </section>
+
+      <section class="railblock" aria-label="Aruandlus">
+        <h2 class="railblock__label">Aruandlus {{ work.today|date:"Y" }}</h2>
+        {% for row in work.reporting %}
+          <a class="railrow" href="{{ row.url }}">
+            <span class="railrow__key">{{ row.label }}</span>
+            <span class="railrow__value">{{ row.count }}</span>
+          </a>
+        {% endfor %}
+      </section>
     </aside>
   </div>
 </div>

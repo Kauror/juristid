@@ -521,10 +521,18 @@ def test_a_page_of_results_does_not_cost_a_query_per_row(signed_in, django_asser
     # printed a restricted step onto rows anybody could read — which costs one
     # break-glass lookup for the page.
     #
+    # 32 rather than 26 since the saved-view chips: four counts, one shared
+    # break-glass lookup for all of them, and one read of who a row may be
+    # handed to. Each of those is a promise the strip makes about the list
+    # behind it, and the alternative to counting is a chip that shows a number
+    # it did not measure (app/matters/register_filters.py, `saved_views`).
+    #
     # Constant, which is the only thing this test is about. Measured at 10, 25
-    # and 60 rows the page issues 26 queries every time: the property is that a
-    # keystroke does not scale with the register, and it still does not.
-    with django_assert_max_num_queries(26):
+    # and 60 rows the page issues 32 queries every time: the property is that a
+    # keystroke does not scale with the register, and it still does not. A
+    # keystroke pays none of the six either — the chips sit outside the results
+    # region HTMX swaps, and the fragment branch returns before they are built.
+    with django_assert_max_num_queries(32):
         response = signed_in.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik"})
     assert total_of(response) == 25
 

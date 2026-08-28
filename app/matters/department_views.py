@@ -16,7 +16,7 @@ from django.shortcuts import render
 from django.utils import timezone
 
 from app.core.authorization import is_department_head
-from app.matters.department_dashboard import build_department_work
+from app.matters.department_dashboard import TEAM_COLUMNS, build_department_work
 
 
 @login_required
@@ -44,12 +44,21 @@ def department_work(request: HttpRequest) -> HttpResponse:
     if not is_department_head(request.user):
         raise Http404("This surface is for the department head.")
 
+    today = timezone.localdate()
     return render(
         request,
         "matters/department_work.html",
         {
-            "work": build_department_work(request.user),
-            "today": timezone.localdate(),
+            # `request.GET`, because the Tehtud period lives in the URL like
+            # every other choice in this product: a period somebody picked
+            # survives a refresh and can be pasted to a colleague
+            # (app/matters/department_dashboard.py, `period_from`).
+            "work": build_department_work(request.user, today=today, params=request.GET),
+            "today": today,
+            # The column headings, read from the same tuple the cells are built
+            # from, so a column added later cannot arrive under the wrong
+            # heading (app/matters/department_dashboard.py, `TEAM_COLUMNS`).
+            "team_columns": TEAM_COLUMNS,
             "nav_active": "osakonna_too",
         },
     )

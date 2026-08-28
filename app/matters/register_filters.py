@@ -30,11 +30,15 @@ way to catch. The one deliberate exception is ``?andmed=``, whose own default is
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 from django.db.models import Count, Exists, OuterRef, Q, QuerySet
+from django.utils import timezone
 
+from app.core.dates import format_estonian_date, parse_flexible_date
 from app.legacy_import.source_pages import MatterSourcePage
 from app.matters import selectors
 from app.matters.enums import RecordMode
@@ -81,6 +85,15 @@ WORK_PARAM = "too"
 #: them (master specification 18.1). `?vastutaja=` answers the ownership half;
 #: this answers the responsibility half.
 WORK_RESPONSIBLE_PARAM = "too_vastutaja"
+
+#: The window `?too=tahtaeg-vahemik` reads, both ends inclusive. Companions to
+#: `?too=` exactly as `?too_vastutaja=` is: they narrow it and do nothing on
+#: their own. Separate from `?tahtaeg_alates=`, which filters a Matter's own
+#: `Arvamuse tähtaeg` column — a different fact from the dated work model, and
+#: conflating them would give the same words two meanings in one URL
+#: (app/matters/work_items.py).
+WORK_WINDOW_START_PARAM = "too_alates"
+WORK_WINDOW_END_PARAM = "too_kuni"
 
 #: The year a Matter was closed in. Its own parameter rather than `?aasta=`,
 #: which is the *reporting* year — the year the file belongs to, not the year
@@ -204,6 +217,8 @@ def filter_by_work_state(
     value: str,
     responsible_raw: str = "",
     today: date | None = None,
+    window_start_raw: str = "",
+    window_end_raw: str = "",
 ) -> QuerySet[Matter]:
     """Apply `?too=`, through the read model Ülevaade counted with.
 
@@ -234,7 +249,20 @@ def filter_by_work_state(
             for item in wi.work_items(user, today=today)
             if (item.responsible.pk if item.responsible is not None else None) == responsible
         ]
-    ids = wi.work_population_ids(user, value, today=today, items=items, responsible=responsible)
+    # An unreadable window empties the list rather than being ignored, for the
+    # same reason an unreadable date does anywhere else in this module: a chip
+    # above the whole register is a lie the reader has no way to catch.
+    window: tuple[date, date | None] | None = None
+    if window_start_raw or window_end_raw:
+        start = parse_flexible_date(window_start_raw) if window_start_raw else today
+        end = parse_flexible_date(window_end_raw) if window_end_raw else None
+        if start is None or (window_end_raw and end is None):
+            return queryset.none()
+        window = (start or (today or timezone.localdate()), end)
+
+    ids = wi.work_population_ids(
+        user, value, today=today, items=items, responsible=responsible, window=window
+    )
     return queryset.filter(pk__in=ids)
 
 
@@ -328,6 +356,8 @@ def apply_register_filters(
             work_state,
             (params.get(WORK_RESPONSIBLE_PARAM) or "").strip(),
             today,
+            (params.get(WORK_WINDOW_START_PARAM) or "").strip(),
+            (params.get(WORK_WINDOW_END_PARAM) or "").strip(),
         )
     for parameter, (field, many) in ORGANISATION_FILTERS.items():
         raw = params.get(parameter)
@@ -384,7 +414,13 @@ def as_text(params: Any) -> dict[str, str]:
     }
 
 
-def register_population(user: Any, params: Any, *, today: date | None = None) -> QuerySet[Matter]:
+def register_population(
+    user: Any,
+    params: Any,
+    *,
+    today: date | None = None,
+    population: QuerySet[Matter] | None = None,
+) -> QuerySet[Matter]:
     """The exact rows ``matters:matter_list?<params>`` would page through.
 
     ``.distinct()`` because that is what the register paginates, and a count
@@ -395,8 +431,135 @@ def register_population(user: Any, params: Any, *, today: date | None = None) ->
     Deliberately *not* ``matter_list_queryset``: that annotates six correlated
     subqueries so a row can render *viimane tegevus*, and a KPI renders no rows
     at all. The visibility scope is identical, which is the part that has to be.
+
+    ``population`` is an authorized queryset the caller has already resolved,
+    for the one shape that asks this question several times about one reader.
+    ``visible_to`` asks the database whether this person holds a break-glass
+    grant, so four calls to it for four figures on one page is four identical
+    lookups. It must be ``Matter.objects.visible_to(user)`` or a narrowing of
+    it; anything wider would be this function counting rows the reader may not
+    see (app/core/authorization.py).
     """
-    queryset, _ = apply_register_filters(
-        Matter.objects.visible_to(user), user, as_text(params), today=today
-    )
+    base = Matter.objects.visible_to(user) if population is None else population
+    queryset, _ = apply_register_filters(base, user, as_text(params), today=today)
     return queryset.distinct()
+
+
+# ---------------------------------------------------------------------------
+# Saved views
+#
+# The register has always kept its whole state in the URL: a narrowing is a link
+# somebody can bookmark, paste into a chat and reach with Back (master
+# specification 7.4). A saved view is therefore not a stored object — it is a
+# *named* URL, and naming four of them removes the four filter combinations
+# everybody rebuilds by hand every morning (design handoff 2d).
+#
+# Nothing here introduces persistence. There is no model, no user-preferences
+# table and no session state: adding one would give the product a second place
+# where "what am I looking at" lives, and the first place already survives a
+# refresh, a colleague and a browser restart.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SavedView:
+    """One named narrowing, its count, and the link that reproduces it."""
+
+    key: str
+    label: str
+    params: dict[str, str]
+    count: int
+    active: bool
+    #: Rendered in the warning tint. Reserved for a view whose whole point is
+    #: that it should be empty, so a number beside it is a number to act on.
+    warn: bool = False
+
+    @property
+    def query(self) -> str:
+        return urlencode(self.params)
+
+
+def _month_bounds(today: date) -> tuple[date, date]:
+    """The first and last day of ``today``'s month."""
+    first = today.replace(day=1)
+    last = date(
+        first.year + (1 if first.month == 12 else 0),
+        1 if first.month == 12 else first.month + 1,
+        1,
+    ) - timedelta(days=1)
+    return first, last
+
+
+def saved_view_definitions(today: date) -> list[tuple[str, str, dict[str, str], bool]]:
+    """The four approved views, as the register parameters that define them.
+
+    The parameters *are* the definition. The count is produced by running
+    exactly these through the register's own filter pipeline and the link is
+    exactly these as a query string, so a chip reading *12* opens twelve rows —
+    the same discipline every figure on Ülevaade already keeps
+    (app/matters/dashboard.py, master specification 18.9).
+    """
+    first, last = _month_bounds(today)
+    return [
+        ("minu", "Minu avatud", {"olek": "avatud", "ulatus": "minu"}, False),
+        (
+            "kuu",
+            "Tähtaeg sel kuul",
+            {
+                "olek": "avatud",
+                "tahtaeg_alates": format_estonian_date(first),
+                "tahtaeg_kuni": format_estonian_date(last),
+            },
+            False,
+        ),
+        (
+            "vastutajata",
+            "Vastutajata",
+            {"olek": "avatud", "vastutaja": selectors.MISSING},
+            True,
+        ),
+        ("osakond", "Kogu osakond", {"olek": "avatud"}, False),
+    ]
+
+
+def _current_view_params(params: Any) -> dict[str, str]:
+    """What the reader is looking at now, comparably to a view's definition.
+
+    `?leht=` is pagination rather than a narrowing, and an absent `olek` means
+    `avatud` — that is the register's own default, so a bare `/teemad/` and
+    `/teemad/?olek=avatud` are the same view and must not light up two
+    different chips.
+    """
+    current = {
+        str(key): str(value)
+        for key, value in (params.items() if hasattr(params, "items") else ())
+        if value and str(key) != "leht"
+    }
+    current.setdefault("olek", "avatud")
+    return current
+
+
+def saved_views(user: Any, params: Any, *, today: date | None = None) -> list[SavedView]:
+    """The chip strip above the filters, counted for this reader.
+
+    Four counts, whatever the register holds — the query cost does not grow with
+    the number of rows, the number of colleagues or the page somebody is on.
+    """
+    today = today or timezone.localdate()
+    current = _current_view_params(params)
+    # Resolved once for all four. `visible_to` asks the database about
+    # break-glass grants, and four chips are not four different readers.
+    population = Matter.objects.visible_to(user)
+    return [
+        SavedView(
+            key=key,
+            label=label,
+            params=view_params,
+            count=register_population(
+                user, view_params, today=today, population=population
+            ).count(),
+            active=current == view_params,
+            warn=warn,
+        )
+        for key, label, view_params, warn in saved_view_definitions(today)
+    ]

@@ -219,6 +219,38 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
     ),
     WriteRoute(
+        name="matters:assign_owner",
+        label="Vastutaja määramine registrist",
+        request=lambda w: ({"pk": w["unowned"].pk}, {"owner": str(w["author"].pk)}),
+        probe=lambda w: (
+            w["unowned"]
+            .__class__.objects.values_list("owner_id", flat=True)
+            .get(pk=w["unowned"].pk)
+        ),
+    ),
+    WriteRoute(
+        name="matters:complete_work_item",
+        label="Järgmiseks lõpetamine Minu tööl",
+        # No `pk`: the route is keyed on the action, and the Matter is resolved
+        # from it through the same gate.
+        request=lambda w: ({"action_id": w["review_action"].pk}, {}),
+        probe=lambda w: (
+            w["review_action"]
+            .__class__.objects.values_list("status", flat=True)
+            .get(pk=w["review_action"].pk)
+        ),
+    ),
+    WriteRoute(
+        name="matters:defer_action",
+        label="Järgmiseks edasilükkamine",
+        request=lambda w: ({"pk": w["matter"].pk, "action_id": w["action"].pk}, {"paevad": "7"}),
+        probe=lambda w: (
+            w["action"]
+            .__class__.objects.values_list("target_date", flat=True)
+            .get(pk=w["action"].pk)
+        ),
+    ),
+    WriteRoute(
         name="matters:compose",
         label="Sissekande lisamine",
         request=lambda w: ({"pk": w["matter"].pk}, {"body": "<p>Loata sissekanne.</p>"}),
@@ -418,8 +450,15 @@ def world(db):
         final_version=version,
     )
 
+    # Its own Matter, and unowned: the register's «Määra ▾» exists only on a row
+    # that has nobody, and firing at an owned one would prove nothing.
+    unowned = factories.MatterFactory(
+        owner=None, title="Vastutajata teema", reference_year=2099, reference_number=911
+    )
+
     return {
         "matter": matter,
+        "unowned": unowned,
         "closed": closed,
         "author": author,
         "other_specialist": other,

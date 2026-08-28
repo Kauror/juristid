@@ -5,6 +5,15 @@ from app.matters import department_views, views
 urlpatterns = [
     path("ulevaade/", views.overview, name="overview"),
     path("minu-too/", views.my_work, name="my_work"),
+    # One click to done, from the list rather than from the Matter. Its own
+    # route because it ends where the reader was rather than on a Matter page,
+    # and it calls the same service the Matter page's «✓ Tehtud» calls
+    # (design handoff 1e).
+    path(
+        "minu-too/valmis/<uuid:action_id>/",
+        views.complete_work_item,
+        name="complete_work_item",
+    ),
     path("osakonna-too/", department_views.department_work, name="department_work"),
     path("saabunud/", views.inbox, name="inbox"),
     path("saabunud/lisa/", views.intake, name="intake"),
@@ -14,6 +23,11 @@ urlpatterns = [
     # because it swaps one field; the register itself deliberately does not
     # have one (app/matters/views.py, `_wants_fragment`).
     path("teemad/asutused/", views.organisation_choices, name="organisation_choices"),
+    # Assigning an owner from a register row. Its own route because it returns
+    # the reader to the list rather than to a Matter page: the whole point of
+    # the control is that triaging four unassigned files does not cost four
+    # round trips through four Matters (design handoff 2d).
+    path("teemad/<uuid:pk>/vastutaja/", views.assign_owner, name="assign_owner"),
     path("teemad/<uuid:pk>/", views.matter_detail, name="matter_detail"),
     # `Arvamused` on one Matter. No longer a tab — the Matter has exactly two —
     # but still a destination, reached from the position block and the sent-
@@ -45,6 +59,16 @@ urlpatterns = [
         "teemad/<uuid:pk>/jargmiseks/<uuid:action_id>/vaadatud/",
         views.review_action,
         name="review_action",
+    ),
+    # `Lükka edasi`. Its own route rather than a flag on the two above it,
+    # because it is one gesture whose meaning depends on the step: a deadline
+    # moves by superseding the instruction, and a review date moves by
+    # acknowledging the review. The view branches; the caller does not have to
+    # know which service it is asking for (design handoff 1c).
+    path(
+        "teemad/<uuid:pk>/jargmiseks/<uuid:action_id>/lukka/",
+        views.defer_action,
+        name="defer_action",
     ),
     path("teemad/<uuid:pk>/vali/<str:field>/", views.update_field, name="update_field"),
     path("teemad/<uuid:pk>/luhikokkuvote/", views.update_summary, name="update_summary"),

@@ -2,10 +2,7 @@
 `JÄRGMISEKS` — one line, always visible, never collapsed.
 
 It is the answer to the only question a lawyer opening a file always has, so it
-is the first row under the header and it is never behind a disclosure. It is
-also deliberately *one line*: the card it replaces carried a mode chip, a date,
-a date-meaning label, a responsible person, a note explaining what WAIT means
-and two buttons, and the thing somebody actually needed was the sentence.
+is the first row under the header and it is never behind a disclosure.
 
 Three states carry three different meanings, and none of them relies on colour
 alone (Teema redesign §8):
@@ -16,63 +13,126 @@ alone (Teema redesign §8):
   check, and a passed one is not lateness.
 * **JÄLGIN** is a file to look at again later. A passed review date is a
   warning, never a danger.
+
+The 2026-08 pass makes that distinction impossible to miss (design handoff 1c).
+The date no longer appears as digits qualified by a small word elsewhere on the
+row: it appears as one flag that names what it is — «TÄHTAEG MÖÖDAS · 6 p»,
+«VAATAN ÜLE · 15.09» — so nobody has to remember which of the three they are
+looking at. Lateness is the state of the row itself, and only a DO with a
+deadline can be in it.
+
+The row also gained a second verb. «✓ Tehtud» finishes the step; «Lükka edasi»
+moves it, in one gesture, without opening the composer to retype a sentence
+nobody wanted to change. On a WAIT or a MONITOR the same control is called
+«Vaatasin üle», because that is what moving a review date is.
 {% endcomment %}
 {% if not matter.is_open %}
-  <div class="nextrow nextrow--closed">
-    <span class="nextrow__label">Järgmiseks</span>
-    <span class="nextrow__empty">
+  <div class="uxnext">
+    <span class="uxnext__label">Järgmiseks</span>
+    <span class="uxnext__empty">
       Puudub — teema on suletud. Uut sammu ei saa määrata ilma taasavamiseta.
     </span>
   </div>
 {% elif current_action %}
-  <div class="nextrow {% if current_action.is_overdue %}nextrow--overdue{% endif %}">
-    <span class="nextrow__label">Järgmiseks</span>
+  <div class="uxnext {% if current_action.is_overdue %}uxnext--overdue{% endif %}">
+    <span class="uxnext__label">Järgmiseks</span>
     <span class="modechip modechip--{{ current_action.kind|lower }}">
       {{ current_action.get_kind_display|upper }}
     </span>
-    <span class="nextrow__text">{{ current_action.text }}</span>
+    <span class="uxnext__text">{{ current_action.text }}</span>
+
     {% if current_action.target_date %}
       {% comment %}
-        The date says what it means. A deadline prints as a bare date because
-        that is how a deadline reads; a review date prints "vaatan üle 18.09",
-        because the same digits under OOTAN mean something entirely different
-        and a reader must never have to remember which.
+        One flag, and it always says what the date means. «6 p» rides with
+        «TÄHTAEG MÖÖDAS» rather than standing alone, because a number of days is
+        only readable once you know what it is counting from.
       {% endcomment %}
-      <span class="nextrow__date
-                   {% if current_action.is_overdue %}nextrow__date--overdue
-                   {% elif current_action.is_due_for_review %}nextrow__date--review{% endif %}">
-        {% if current_action.date_semantics == 'DEADLINE' %}
-          · {{ current_action.display_date }}
-        {% else %}
-          · vaatan üle {{ current_action.display_date }}
-        {% endif %}
-      </span>
       {% if current_action.is_overdue %}
-        <span class="flag flag--overdue">Tähtaeg möödas</span>
+        <span class="uxnext__flag uxnext__flag--overdue">
+          TÄHTAEG MÖÖDAS · {{ current_action.days_late }} p
+        </span>
       {% elif current_action.is_due_for_review %}
-        <span class="flag flag--review">Ülevaatus möödas</span>
+        <span class="uxnext__flag uxnext__flag--review">
+          ÜLEVAATUS MÖÖDAS · {{ current_action.display_date }}
+        </span>
+      {% else %}
+        <span class="uxnext__flag">
+          {{ current_action.date_label|upper }} · {{ current_action.display_date }}
+        </span>
       {% endif %}
     {% endif %}
-    <span class="nextrow__spacer"></span>
+
+    <span class="uxnext__spacer"></span>
+
     {% if can_write %}
       <form hx-post="{% url 'matters:complete_action' pk=matter.pk action_id=current_action.pk %}"
             hx-target="#teema-vaade" hx-swap="outerHTML">
         {% csrf_token %}
-        <button class="button button--secondary" type="submit">✓ Tehtud</button>
+        <button class="button button--primary" type="submit">✓ Tehtud</button>
       </form>
+
+      {% if can_defer %}
+        {% comment %}
+          The same disclosure pattern the rest of the application uses: a real
+          <details>, closed until asked for, closing on Escape and on a click
+          elsewhere (static/js/ux.js). Every option inside it is a POST, because
+          each one changes a stored record — a link here would be a state change
+          a browser is entitled to prefetch.
+
+          Offered only where the date is exact. A step recorded to a month is
+          deliberately vague and a day added to it would be a day nobody chose.
+        {% endcomment %}
+        <details class="uxnext__defer" data-uxpopover>
+          <summary class="uxnext__defersum">
+            {% if current_action.is_review_kind %}Vaatasin üle ▾{% else %}Lükka edasi ▾{% endif %}
+          </summary>
+          <div class="uxnext__menu">
+            <form hx-post="{% url 'matters:defer_action' pk=matter.pk action_id=current_action.pk %}"
+                  hx-target="#teema-vaade" hx-swap="outerHTML">
+              {% csrf_token %}
+              {% for choice in defer_choices %}
+                {% comment %}
+                  The day the option lands on, worked out on the server in
+                  Europe/Tallinn. «+1 nädal» alone would leave the reader doing
+                  the arithmetic, and a browser doing it would answer in the
+                  reader's own timezone.
+                {% endcomment %}
+                <button type="submit" name="paevad" value="{{ choice.days }}">
+                  {{ choice.label }} · {{ choice.when }}
+                </button>
+              {% endfor %}
+            </form>
+            <form class="uxnext__menuform"
+                  hx-post="{% url 'matters:defer_action' pk=matter.pk action_id=current_action.pk %}"
+                  hx-target="#teema-vaade" hx-swap="outerHTML">
+              {% csrf_token %}
+              <label class="visually-hidden" for="jargmiseks-lukka-{{ current_action.pk }}">
+                Uus kuupäev
+              </label>
+              <input class="field__input field__input--compact dateinput"
+                     id="jargmiseks-lukka-{{ current_action.pk }}"
+                     type="text" inputmode="numeric" autocomplete="off"
+                     placeholder="pp.kk.aaaa" name="kuupaev">
+              <button class="button button--quiet button--tiny" type="submit">Kuupäev…</button>
+            </form>
+          </div>
+        </details>
+      {% endif %}
+
       {% comment %}
         "Muuda" focuses the composer rather than opening a second editor for the
-        same value. There is exactly one place a next step is written, and it is
-        the box the page is built around — a separate inline form here would be
-        a competing implementation of the same domain call (Teema redesign §26.3).
+        same value. There is exactly one place a next step is *written*, and it
+        is the box the page is built around — the defer control above changes a
+        date, which is a different act from rewriting the instruction
+        (Teema redesign §26.3).
       {% endcomment %}
       <button class="button button--quiet" type="button"
               data-focus="teema-koostaja">Muuda</button>
     {% endif %}
   </div>
 {% else %}
-  <div class="nextrow nextrow--unset">
-    <span class="nextrow__label nextrow__label--warning">Järgmiseks</span>
+  <div class="uxnext">
+    <span class="uxnext__label uxnext__label--warning">Järgmiseks</span>
     {% comment %}
       A Matter imported from the register may carry the register's own
       instruction and no structured action. That is not a broken record: the
@@ -81,15 +141,15 @@ alone (Teema redesign §8):
       the three meanings it carried (ADR 0021, Teema redesign §8.3).
     {% endcomment %}
     {% if source_instruction %}
-      <span class="nextrow__source-label">Excelist</span>
-      <span class="nextrow__text nextrow__text--source">{{ source_instruction }}</span>
+      <span class="uxnext__flag uxnext__flag--source">Excelist</span>
+      <span class="uxnext__text uxnext__text--source">{{ source_instruction }}</span>
       {% if source_snapshot %}
-        <span class="nextrow__snapshot">{{ source_snapshot }}</span>
+        <span class="uxnext__flag">{{ source_snapshot }}</span>
       {% endif %}
     {% else %}
-      <span class="nextrow__empty">Järgmine samm on määramata</span>
+      <span class="uxnext__empty">Järgmine samm on määramata</span>
     {% endif %}
-    <span class="nextrow__spacer"></span>
+    <span class="uxnext__spacer"></span>
     {% if can_write %}
       <button class="button button--quiet" type="button"
               data-focus="teema-koostaja">Määra allpool ↓</button>

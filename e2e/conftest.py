@@ -152,6 +152,28 @@ def sign_out(page, base_url: str) -> None:
     page.wait_for_load_state("networkidle")
 
 
+def open_composer(page) -> None:
+    """Open the Matter composer, which is a disclosure and starts closed.
+
+    A Matter is read far more often than it is written to, so the box that
+    writes to it folds until somebody asks for it (design handoff 1d,
+    docs/adr/0043). Every test that types into the composer goes through here,
+    so the day it stops being a disclosure this is the only line that changes.
+    """
+    composer = page.locator("details.uxcomp")
+    if composer.count() and composer.evaluate("node => !node.open"):
+        composer.locator("summary.uxcomp__collapsed").click()
+    page.locator(".composer__body").wait_for(state="visible")
+
+    # And the exact-date box behind «Kuupäev…». The quick chips write into it,
+    # so it is closed at rest — but it is still the field every test that sets a
+    # next step fills, and it is still what the server validates.
+    date_box = page.locator("details.uxcomp__date")
+    if date_box.count() and date_box.evaluate("node => !node.open"):
+        date_box.locator("summary").click()
+        page.locator("#id_next_date").wait_for(state="visible")
+
+
 def go_to(page, name: str) -> None:
     """Follow a top-bar destination by name, wherever the bar is keeping it.
 

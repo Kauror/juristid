@@ -80,6 +80,36 @@ list by.
           <td class="table__owner">
             {% if matter.owner %}
               <span class="table__clip" title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
+            {% elif can_assign_owner %}
+              {% comment %}
+                «Määra ▾» rather than the word «Vastutajata», where the reader
+                may actually act on it. The same service and the same validated
+                choice as the Matter header's own control; what it saves is the
+                trip through the Matter page and back (design handoff 2d).
+
+                A real <details> and a real POST per person: each option
+                changes a stored record, so none of them may be a link a
+                browser is entitled to prefetch.
+              {% endcomment %}
+              <details class="uxassign" data-uxpopover>
+                {% comment %}
+                  One of these per unassigned row, so the accessible name says
+                  which file it would assign.
+                {% endcomment %}
+                <summary class="uxassign__trigger">Määra<span class="visually-hidden"> vastutaja: {{ matter.title }}</span> ▾</summary>
+                <div class="uxassign__menu" data-uxfloat>
+                  <form method="post" action="{% url 'matters:assign_owner' pk=matter.pk %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    {% for person in assignable_people %}
+                      <button type="submit" name="owner" value="{{ person.pk }}">
+                        <span class="uxav" aria-hidden="true">{{ person.initials }}</span>
+                        {{ person.get_short_name }}{% if person.pk == user.pk %} (mina){% endif %}
+                      </button>
+                    {% endfor %}
+                  </form>
+                </div>
+              </details>
             {% else %}<span class="table__missing">Vastutajata</span>{% endif %}
           </td>
 
