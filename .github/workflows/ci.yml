@@ -82,7 +82,14 @@ jobs:
   tests:
     name: PostgreSQL 18 test suite
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25, not 15. The suite has been finishing at 13:46 and 13:52 on main
+    # against a 15-minute ceiling, so which runner the job lands on decides
+    # whether it passes — a red build that means "this runner was slow today"
+    # teaches people to press re-run without reading, which is the state in
+    # which a real failure gets re-run too. The headroom is deliberate slack,
+    # not a target: if the suite ever approaches this number the answer is to
+    # find what got slow, and the number is here to be noticed when it does.
+    timeout-minutes: 25
 
     services:
       postgres:
