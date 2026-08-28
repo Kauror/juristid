@@ -1368,3 +1368,95 @@ def test_the_command_refuses_an_uncatalogued_workbook(world, tmp_path, monkeypat
     message = str(refusal.value)
     assert "not catalogued" in message
     assert CATALOGUE_COMMAND in message
+
+
+def test_the_command_renders_a_full_report_with_campaigns(world, tmp_path, monkeypatch, capsys):
+    """The operator's own code path, end to end, including the outreach block.
+
+    The report reads keys out of the summary dictionaries by name, and a renamed
+    key there is a ``KeyError`` nothing else would catch — the service tests call
+    ``summary()`` and never the printer. This runs the command the way an
+    operator does and asserts the two campaign digests are told apart on screen.
+    """
+    from django.core.management import call_command
+
+    from app.legacy_import.final_cutover import ReviewedSnapshot
+
+    add_matter(
+        world,
+        title="Sünteetiline aruande eelnõu",
+        reference=80,
+        owner_cell="Sandra",
+        received_cell="16.02.2026",
+        deadline_cell="10.03.2026",
+        next_action_cell=REVIEW_SEPTEMBER,
+        feedback_requested_cell="220",
+        feedback_responded_cell="0",
+    )
+
+    workbook = tmp_path / "synthetic-register.xlsx"
+    workbook.write_bytes(b"hashed, never opened: the catalogue is what is read")
+    digest = hashlib.sha256(workbook.read_bytes()).hexdigest()
+    monkeypatch.setattr(
+        "app.legacy_import.final_cutover.REVIEWED_SNAPSHOTS",
+        (
+            ReviewedSnapshot(
+                sha256=digest,
+                label="sünteetiline aruanne",
+                current_years=frozenset({2025, 2026}),
+                snapshot_date=SNAPSHOT_DATE,
+            ),
+        ),
+    )
+    # The catalogue this refresh reads back carries the workbook's own digest.
+    matter = Matter.objects.get(reference_number=80)
+    add_source_reference(
+        world,
+        matter,
+        snapshot=digest,
+        status_cell=LIVE_STATUS,
+        owner_cell="Sandra",
+        received_cell="16.02.2026",
+        deadline_cell="10.03.2026",
+        next_action_cell=REVIEW_SEPTEMBER,
+    )
+
+    export = tmp_path / "campaigns.csv"
+    export.write_text(
+        "\n".join(
+            [
+                '"Section name";"Template name";"Template preview";"Due at";"Enqueues"',
+                ";".join(
+                    [
+                        '"Mida arvad sünteetilise pakendiseaduse muudatustest?"',
+                        '"pakendid 05.03.26 Sandra"',
+                        '"https://example.invalid/templates/aaaa-1111/html/"',
+                        '"2026-03-05 10:00:00"',
+                        '"789"',
+                    ]
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    call_command(
+        "refresh_current_register",
+        "plan",
+        "--workbook",
+        str(workbook),
+        "--campaigns",
+        str(export),
+        "--today",
+        SNAPSHOT_DATE.isoformat(),
+    )
+
+    printed = capsys.readouterr().out
+    assert "Catalogue" in printed
+    assert "campaign set (pinned in the plan digest)" in printed
+    assert "campaign file (evidence only)" in printed
+    assert "Plan digest" in printed
+    assert "Nothing was written" in printed
+    # And it really wrote nothing.
+    assert CurrentRegisterState.objects.count() == 0
+    assert NextAction.objects.count() == 0
