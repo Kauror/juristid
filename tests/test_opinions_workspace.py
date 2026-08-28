@@ -165,10 +165,10 @@ def test_drafts_are_excluded_until_asked_for(signed_in, specialist, capture_evid
 
 
 def test_a_submission_on_a_matter_the_reader_cannot_see_is_not_listed(
-    client, other_specialist, specialist, capture_evidence
+    client, reader, specialist, capture_evidence
 ):
     """Visibility is inherited, never re-derived on this surface."""
-    hidden = factories.MatterFactory(owner=other_specialist, visibility=Visibility.RESTRICTED)
+    hidden = factories.MatterFactory(owner=reader, visibility=Visibility.RESTRICTED)
     sent_submission(
         hidden,
         evidence=final_evidence(capture_evidence, hidden),

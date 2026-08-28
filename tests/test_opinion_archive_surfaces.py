@@ -236,9 +236,9 @@ def test_matter_coverage_counts_a_settled_file(context, specialist, normal_matte
 
 
 def test_a_candidate_naming_a_restricted_matter_is_not_counted_for_everyone(
-    context, specialist, other_specialist
+    context, specialist, reader
 ):
-    restricted = factories.MatterFactory(owner=other_specialist, visibility=Visibility.RESTRICTED)
+    restricted = factories.MatterFactory(owner=reader, visibility=Visibility.RESTRICTED)
     batch, item = catalogue()
     candidate(batch, item, matter=restricted)
 

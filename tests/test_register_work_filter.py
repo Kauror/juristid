@@ -203,7 +203,7 @@ def test_an_unparseable_person_empties_the_list(late_world, department_head):
     assert rows(department_head, too=wi.WORK_OVERDUE, too_vastutaja="mitte-uuid") == set()
 
 
-def test_a_restricted_matter_reaches_neither_half(late_world, specialist, other_specialist, today):
+def test_a_restricted_matter_reaches_neither_half(late_world, specialist, reader, today):
     """Both the count and the list come from ``visible_to``, so neither may leak."""
     from app.core.enums import Visibility
 
@@ -224,7 +224,7 @@ def test_a_restricted_matter_reaches_neither_half(late_world, specialist, other_
     )
 
     assert "Piiratud hilinenud" in rows(specialist, too=wi.WORK_OVERDUE)
-    assert "Piiratud hilinenud" not in rows(other_specialist, too=wi.WORK_OVERDUE)
+    assert "Piiratud hilinenud" not in rows(reader, too=wi.WORK_OVERDUE)
 
 
 # ---------------------------------------------------------------------------

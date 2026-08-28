@@ -66,7 +66,7 @@ def restricted_evidence(normal_matter, department_head, evidence_root):
 
 
 def test_the_restricted_document_really_is_invisible_to_the_reader(
-    restricted_evidence, specialist, other_specialist, department_head
+    restricted_evidence, specialist, reader, department_head
 ):
     """The fixture's premise, asserted rather than assumed.
 
@@ -76,7 +76,7 @@ def test_the_restricted_document_really_is_invisible_to_the_reader(
     """
     from app.documents.models import Document
 
-    assert Document.objects.visible_to(other_specialist).count() == 0
+    assert Document.objects.visible_to(reader).count() == 0
     # The owner participates, so they do see it. Stated here so the next reader
     # does not "simplify" the test back to the specialist who owns the Matter.
     assert Document.objects.visible_to(specialist).count() == 1
@@ -84,7 +84,7 @@ def test_the_restricted_document_really_is_invisible_to_the_reader(
 
 
 def test_a_specialist_cannot_bind_evidence_they_may_not_read(
-    client, other_specialist, normal_matter, restricted_evidence
+    client, reader, normal_matter, restricted_evidence
 ):
     """The post the interface never offers, which is not the same as refused.
 
@@ -95,7 +95,7 @@ def test_a_specialist_cannot_bind_evidence_they_may_not_read(
     """
     from app.documents.models import Document, DocumentVersion
 
-    submission = create_submission(matter=normal_matter, title="Arvamus", actor=other_specialist)
+    submission = create_submission(matter=normal_matter, title="Arvamus", actor=reader)
 
     # The two halves of the difference, pinned rather than assumed. The rule
     # this view used to apply would have found the version; the rule it applies
@@ -105,10 +105,10 @@ def test_a_specialist_cannot_bind_evidence_they_may_not_read(
         restricted_evidence
     )
     assert not DocumentVersion.objects.filter(
-        document__in=Document.objects.visible_to(other_specialist).filter(matter=normal_matter)
+        document__in=Document.objects.visible_to(reader).filter(matter=normal_matter)
     ).contains(restricted_evidence)
 
-    client.force_login(other_specialist)
+    client.force_login(reader)
     response = client.post(
         reverse("submissions:attach_evidence", kwargs={"pk": submission.pk}),
         {"existing_version": str(restricted_evidence.pk)},

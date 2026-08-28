@@ -154,14 +154,14 @@ def test_materials_present_and_absent_partition_the_register(specialist):
     assert present.count() + absent.count() == base.count()
 
 
-def test_a_restricted_document_does_not_make_a_matter_look_material(other_specialist, specialist):
+def test_a_restricted_document_does_not_make_a_matter_look_material(reader, specialist):
     """Answering from the raw table would tell somebody that material they
     cannot open exists (docs/adr/0014)."""
     matter = factories.MatterFactory(title="Nähtav teema", owner=specialist)
     factories.DocumentFactory(matter=matter, visibility_override=Visibility.RESTRICTED)
 
     present = selectors.filter_by_materials(
-        Matter.objects.all(), other_specialist, selectors.MATERIALS_PRESENT
+        Matter.objects.all(), reader, selectors.MATERIALS_PRESENT
     )
     assert list(present) == []
 

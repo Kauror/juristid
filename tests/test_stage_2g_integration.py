@@ -141,7 +141,7 @@ def test_a_promoted_matter_can_carry_structured_facts(specialist):
     assert matter.important_dates.count() == 1
 
 
-def test_restoring_an_archive_owner_does_not_widen_fact_authorization(specialist, other_specialist):
+def test_restoring_an_archive_owner_does_not_widen_fact_authorization(specialist, reader):
     """Stage 2F's backfill sets owners. Visibility still decides who reads.
 
     An unrelated specialist must not reach a restricted Matter's facts merely
@@ -158,7 +158,7 @@ def test_restoring_an_archive_owner_does_not_widen_fact_authorization(specialist
     matter.owner = specialist
     matter.save(update_fields=["owner", "updated_at"])
 
-    reachable = MatterImportantDate.objects.visible_to(other_specialist)
+    reachable = MatterImportantDate.objects.visible_to(reader)
     assert not reachable.filter(matter=matter).exists()
 
 

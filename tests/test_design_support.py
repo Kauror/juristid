@@ -300,8 +300,8 @@ def test_an_archive_matter_is_not_flagged_either(specialist):
     assert archive.id not in found
 
 
-def test_the_query_respects_authorization(specialist, other_specialist):
+def test_the_query_respects_authorization(specialist, reader):
     from app.core.enums import Visibility
 
-    factories.MatterFactory(owner=other_specialist, visibility=Visibility.RESTRICTED)
-    assert selectors.matters_without_next_action(specialist).count() == 0
+    factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
+    assert selectors.matters_without_next_action(reader).count() == 0

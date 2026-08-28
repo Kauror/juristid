@@ -657,18 +657,18 @@ def test_the_write_control_follows_the_central_policy(client, specialist):
     assert may_write_business_content(reader) is False
 
 
-def test_an_engagement_on_a_restricted_matter_does_not_leak(client, specialist, other_specialist):
+def test_an_engagement_on_a_restricted_matter_does_not_leak(client, specialist, reader):
     restricted = factories.MatterFactory(
-        owner=other_specialist, visibility=Visibility.RESTRICTED, title="Piiratud teema"
+        owner=reader, visibility=Visibility.RESTRICTED, title="Piiratud teema"
     )
     engagement = add_engagement(
         matter=restricted,
         kind=EngagementKind.WEB_CALL,
         title="Salajane kaasamiskutse",
-        actor=other_specialist,
+        actor=reader,
     )
 
-    assert MatterEngagement.objects.visible_to(other_specialist).filter(pk=engagement.pk).exists()
+    assert MatterEngagement.objects.visible_to(reader).filter(pk=engagement.pk).exists()
     assert not MatterEngagement.objects.visible_to(specialist).filter(pk=engagement.pk).exists()
 
     client.force_login(specialist)

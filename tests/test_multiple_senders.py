@@ -566,14 +566,14 @@ def test_usage_counts_distinct_matters_per_sender(specialist):
     assert second in ranked
 
 
-def test_a_hidden_matter_does_not_rank_its_sender(specialist, other_specialist):
+def test_a_hidden_matter_does_not_rank_its_sender(specialist, reader):
     """Ordering derived from records nobody can see would disclose them."""
     hidden_sender = factories.OrganisationFactory(name="Salajane saatja")
     open_sender = factories.OrganisationFactory(name="Avalik saatja")
 
     for _ in range(4):
         factories.MatterFactory(
-            owner=other_specialist,
+            owner=reader,
             visibility=Visibility.RESTRICTED,
             source_organisations=[hidden_sender],
         )

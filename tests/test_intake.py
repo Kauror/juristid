@@ -177,7 +177,7 @@ def test_the_received_date_defaults_to_today(client, specialist) -> None:
     assert Matter.objects.get(title="Täna saabunud").received_date == timezone.localdate()
 
 
-def test_a_restricted_intake_stays_restricted(client, specialist, other_specialist) -> None:
+def test_a_restricted_intake_stays_restricted(client, specialist, reader) -> None:
     client.force_login(specialist)
     _post(
         client,
@@ -188,12 +188,10 @@ def test_a_restricted_intake_stays_restricted(client, specialist, other_speciali
 
     matter = Matter.objects.get(title="Piiratud saadetis")
     assert matter.visibility == Visibility.RESTRICTED
-    assert not Matter.objects.visible_to(other_specialist).filter(pk=matter.pk).exists()
+    assert not Matter.objects.visible_to(reader).filter(pk=matter.pk).exists()
 
 
-def test_incoming_evidence_downloads_only_for_the_authorized(
-    client, specialist, other_specialist
-) -> None:
+def test_incoming_evidence_downloads_only_for_the_authorized(client, specialist, reader) -> None:
     client.force_login(specialist)
     # An owner, deliberately. A RESTRICTED Matter with nobody on it is invisible
     # even to whoever filed it, because restricted access follows participation
@@ -209,7 +207,7 @@ def test_incoming_evidence_downloads_only_for_the_authorized(
 
     assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 200
 
-    client.force_login(other_specialist)
+    client.force_login(reader)
     # 404 rather than 403: a 403 would confirm the file exists.
     assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 404
 

@@ -170,15 +170,13 @@ def test_a_query_and_a_filter_intersect(signed_in, specialist):
     assert titles_on(response) == [wanted.title]
 
 
-def test_a_restricted_matter_never_reaches_the_search_or_its_count(
-    client, other_specialist, specialist
-):
+def test_a_restricted_matter_never_reaches_the_search_or_its_count(client, reader, specialist):
     """The count leaks existence as surely as the title would (brief 16)."""
     indexed(factories.MatterFactory(title="Pakendiseaduse avalik osa", owner=specialist))
     indexed(
         factories.MatterFactory(
             title="Pakendiseaduse piiratud osa",
-            owner=other_specialist,
+            owner=reader,
             visibility=Visibility.RESTRICTED,
         )
     )
@@ -393,14 +391,12 @@ def test_the_materials_filter_asks_about_files(signed_in, specialist):
     assert titles_on(absent) == [without.title]
 
 
-def test_a_document_nobody_may_open_does_not_count_as_material(
-    client, specialist, other_specialist
-):
+def test_a_document_nobody_may_open_does_not_count_as_material(client, specialist, reader):
     """A document can be restricted below its Matter (brief 2)."""
     matter = factories.MatterFactory(title="Nähtav teema", owner=specialist)
     factories.DocumentFactory(matter=matter, visibility_override=Visibility.RESTRICTED)
 
-    client.force_login(other_specialist)
+    client.force_login(reader)
     present = client.get(REGISTER, {"materjalid": "on", "olek": "koik"})
     absent = client.get(REGISTER, {"materjalid": "puudub", "olek": "koik"})
 

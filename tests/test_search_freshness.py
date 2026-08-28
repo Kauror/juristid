@@ -728,7 +728,7 @@ def test_a_restricted_engagement_refreshed_automatically_stays_invisible(special
     engagement.visibility_override = Visibility.RESTRICTED
     engagement.save(update_fields=["visibility_override"])
 
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()
     assert found("SALAJANE-KAASAMINE", stranger) == []
     assert found("SALAJANE-KAASAMINE", specialist) == [
         (SearchSourceKind.ENGAGEMENT.value, str(matter.pk))
@@ -741,7 +741,7 @@ def test_restricting_an_engagement_takes_effect_without_any_refresh(specialist):
     engagement = add_engagement(
         matter=matter, kind="SURVEY", title="KAASAMINE-NÄHTAV", actor=specialist
     )
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()
     assert found("KAASAMINE-NÄHTAV", stranger)
 
     engagement.visibility_override = Visibility.RESTRICTED
@@ -764,7 +764,7 @@ def test_a_rebuild_paying_off_debt_preserves_child_restrictions(specialist):
     organisation.save()
     consume()
 
-    stranger = factories.UserFactory()
+    stranger = factories.ReaderFactory()
     assert found("SALAJANE-KAASAMINE", stranger) == []
     assert found("Uus ministeerium", stranger) == [(SearchSourceKind.MATTER.value, str(matter.pk))]
 
