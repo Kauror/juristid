@@ -58,6 +58,9 @@ SANDRA = Persona("sandra@example.invalid", "Sandra Testjurist")
 MARTIN = Persona("martin@example.invalid", "Martin Testjurist")
 HEAD = Persona("juht@example.invalid", "Testosakonnajuht")
 ADMIN = Persona("admin@example.invalid", "Testadministraator")
+#: The viewer who may not read the department's restricted work. Since
+#: docs/adr/0042 a lawyer may, so a specialist can no longer play this part.
+READER = Persona("lugeja@example.invalid", "Testlugeja")
 
 
 @pytest.fixture(scope="session")

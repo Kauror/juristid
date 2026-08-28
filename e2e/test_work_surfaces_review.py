@@ -162,14 +162,15 @@ def test_the_area_accordion_is_a_real_disclosure(page, base_url):
     _shoot(page, "ulevaade-valdkonniti-avatud")
 
 
-def test_a_specialist_sees_no_restricted_title_on_the_department_view(page, base_url):
-    """Martin is not a participant in Sandra's restricted Matter.
+def test_a_reader_sees_no_restricted_title_on_the_department_view(page, base_url):
+    """A reader is outside the legal team (docs/adr/0042).
 
     The page aggregates colleagues; that must not widen what anybody may read.
+    A lawyer reads the department either way, so only a reader can show it.
     """
     from app.core.management.commands.seed_e2e_data import RESTRICTED_TITLE
-    from e2e.conftest import MARTIN
+    from e2e.conftest import READER
 
-    _open(page, base_url, MARTIN, "/ulevaade/?vaade=osakond", 1440)
+    _open(page, base_url, READER, "/ulevaade/?vaade=osakond", 1440)
 
     assert RESTRICTED_TITLE not in page.content()

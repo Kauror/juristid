@@ -17,7 +17,7 @@ from datetime import date, timedelta
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, sign_in, sign_out
+from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -396,8 +396,8 @@ class TestRestrictedMatterIsUnreachable:
         page.locator(".topnav__link", has_text="Teemad").click()
         expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_be_visible()
 
-    def test_an_unrelated_specialist_does_not(self, page, base_url):
-        sign_in(page, base_url, MARTIN)
+    def test_a_reader_does_not(self, page, base_url):
+        sign_in(page, base_url, READER)
 
         # Not on Ülevaade — not in its attention list, and not in its counts.
         # Signing in lands here now, which makes this the stronger check: a
@@ -438,7 +438,7 @@ class TestRestrictedMatterIsUnreachable:
         restricted_url = page.url
         sign_out(page, base_url)
 
-        sign_in(page, base_url, MARTIN)
+        sign_in(page, base_url, READER)
         response = page.goto(restricted_url)
         assert response is not None
         assert response.status == 404

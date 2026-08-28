@@ -25,7 +25,7 @@ from app.core.management.commands.seed_e2e_data import (
     OPEN_TITLE,
     RESTRICTED_TITLE,
 )
-from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, go_to, sign_in
+from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, go_to, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -354,7 +354,7 @@ def test_a_restricted_matters_facts_never_reach_the_department_pages(page, base_
     it may appear on a page built by combining everybody's records
     (Stage-2G brief 31).
     """
-    sign_in(page, base_url, MARTIN)
+    sign_in(page, base_url, READER)
     open_watchlist(page, base_url, path, "?suund=koik")
 
     expect(page.get_by_text("Konfidentsiaalne")).to_have_count(0)

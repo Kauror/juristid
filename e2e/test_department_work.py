@@ -26,7 +26,7 @@ from app.core.management.commands.seed_e2e_data import (
     REVIEW_DUE_TITLE,
     UNASSIGNED_TITLE,
 )
-from e2e.conftest import ADMIN, HEAD, MARTIN, SANDRA, go_to, sign_in, sign_out
+from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, go_to, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -248,11 +248,11 @@ def test_the_departed_colleague_is_not_offered_as_somebody_to_choose(page, base_
 # =========================================================================
 
 
-def test_the_head_sees_restricted_work_and_a_specialist_does_not(page, base_url):
+def test_the_head_sees_restricted_work_and_a_reader_does_not(page, base_url):
     """One Matter, two readers, two correct answers.
 
-    The head sees it because DEPARTMENT_HEAD is entitled to; Martin does not,
-    because he is neither its owner nor a collaborator. Asserted in a browser
+    The head sees it because DEPARTMENT_HEAD is entitled to; a reader does not,
+    because a reader is outside the legal team (docs/adr/0042). Asserted in a browser
     because a leak here would be a leak in rendering, not in a query.
     """
     sign_in(page, base_url, HEAD)
@@ -260,7 +260,7 @@ def test_the_head_sees_restricted_work_and_a_specialist_does_not(page, base_url)
     expect(page.get_by_text(RESTRICTED_TITLE).first).to_be_visible()
     sign_out(page, base_url)
 
-    sign_in(page, base_url, MARTIN)
+    sign_in(page, base_url, READER)
     page.goto(f"{base_url}/teemad/")
     page.wait_for_load_state("networkidle")
     assert RESTRICTED_TITLE not in page.content()
