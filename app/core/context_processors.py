@@ -12,7 +12,6 @@ from django.utils.dateparse import parse_datetime
 from app.accounts import shared_gate
 from app.accounts.selectors import persona_candidates
 from app.core.authorization import is_department_head, may_write_business_content
-from app.legacy_import.opinion_access import may_read_archive
 
 
 @lru_cache(maxsize=8)
@@ -79,13 +78,15 @@ def application(request: HttpRequest) -> dict[str, Any]:
         # rendering nothing rather than loudly. The route enforces the same
         # check again — this only decides whether the link is shown.
         "is_department_head": is_department_head(getattr(request, "user", None)),
-        # Whether to offer the archive workspace in the navigation. Same
-        # reasoning as the line above, and the same predicate the routes call:
-        # a template comparing roles itself would be a copy of an authorization
-        # rule in a file nothing type-checks. Hiding the link is presentation
-        # only — every archive view asks again and refuses a crafted URL with a
-        # 403 (app/legacy_import/opinion_access.py, docs/adr/0028).
-        "can_read_opinion_archive": may_read_archive(getattr(request, "user", None)),
+        # `can_read_opinion_archive` used to live here, for the second bar item
+        # that opened the administrative archive browse. That item is gone —
+        # one `Arvamused` destination, with the held corpus as its own tab
+        # inside the workspace — and the tab is decided by the workspace, which
+        # calls `may_read_archive` itself with the viewer it resolved
+        # (app/submissions/workspace_views.py, docs/adr/0044). Nothing about
+        # access moved: every archive view asks again and refuses a crafted URL
+        # with a 403 regardless (app/legacy_import/opinion_access.py).
+        #
         # Whether to offer "+ Uus teema" on the bar and in the empty states.
         # Same reasoning again, and the same predicate `matter_create` now
         # calls: a READER may read the register and change nothing in it, and
