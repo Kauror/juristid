@@ -766,8 +766,9 @@ def test_the_register_filter_does_not_name_an_owner_of_work_this_reader_cannot_s
 ):
     """The boundary the union is drawn inside.
 
-    `former` owns one RESTRICTED Matter and nothing else. Somebody outside the legal team may not read it (docs/adr/0042) — and an option in a
-    dropdown is a name on a page. Offering it would disclose the person, the
+    `former` owns one RESTRICTED Matter and nothing else. Somebody outside the
+    legal team may not read it (docs/adr/0042) — and an option in a dropdown is
+    a name on a page. Offering it would disclose the person, the
     fact that they hold something, and that it is something this reader is not
     allowed to open.
     """
