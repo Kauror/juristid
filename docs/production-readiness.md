@@ -37,6 +37,18 @@ back independently.
 | 1.3 | Back up, immediately before the schema moves | `scripts/deploy/juristid-backup.sh` |
 | 1.4 | Migrate, then replace | the same README section, same exported identity |
 | 1.5 | Post-flight | `manage.py deployment_readiness`, then the A–L browser list in the same README |
+| 1.5a | **If the release moves `INDEX_VERSION`** — one rebuild, then prove it | `manage.py rebuild_search_index`, then `manage.py check_search_integrity` — `deploy/unraid-main/README.md` §11 |
+
+**1.5a is not part of every release, and it is not optional on the ones it
+belongs to.** The query chokepoint reads only rows carrying the current
+`INDEX_VERSION`, so a release that changes it leaves the whole existing corpus
+ineligible the moment it starts serving. Nothing converges that on its own: the
+`searchindex` worker discharges `SearchRebuildDebt`, every row of which is
+written by a *vocabulary edit*, and a deploy is not one — so the worker is
+healthy, `check_search_freshness` is clear, and search answers nothing. All
+three are true together and none of them is lying. Only
+`check_search_integrity` distinguishes them, and any finding it reports stops
+the release.
 
 The build sits ahead of the backup on purpose: the migration plan is a question
 about the *target* image, so that image has to exist before it can be asked, and

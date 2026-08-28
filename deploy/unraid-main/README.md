@@ -416,6 +416,21 @@ the register in front of you — not something a deployment decides at half past
 eight. Nothing here repairs anything automatically, and nothing here should
 grow that ability.
 
+**Read the findings, not the exit status.** The command exits non-zero when it
+found *anything*, and what it found decides what to do — three different
+answers, and only the first two have a summary paragraph naming them:
+
+| It reported | Which means | What to do |
+| --- | --- | --- |
+| `foreign-final-evidence`, `evidence-less-restricted`, `foreign-current-version` | a relationship is wrong; the bytes are intact and point somewhere they may not | **Stop.** A human decision about the record of what Koda sent. No automatic repair, and **no restore** — a backup holds the same relationship. |
+| `missing-object`, `size-mismatch`, `sha-mismatch`, `unreadable-object` | evidence is not intact | **Stop.** A restore, by [`RECOVERY.md`](RECOVERY.md). Never edit rows to match what the store now holds: a row corrected to fit missing bytes turns a detected loss into an undetectable one. |
+| anything else — `version-number-gap`, `stuck-processing` | neither of the above, and neither summary line is printed | **Stop and find out what it is.** A version number gap means something reached the table outside the application; a stuck extraction is a worker question. Neither is caused by this release and neither is answered by continuing past it. |
+
+A run that did not finish — the command missing from the image, the container
+failing to start, the database unreachable, a traceback instead of a report —
+is **not a pass**. It is an audit that did not happen, and the release waits
+until it has.
+
 Whether a given release needs this step is a property of that release, and the
 release note says so. Do not make it unconditional: a check for a constraint the
 target release does not contain is a command that either does not exist in the
@@ -478,6 +493,16 @@ build does not, a missing or wrongly-mounted storage root, a PostgreSQL major
 that is too old, or a build that cannot say which commit it came from. It reads
 and reports; it never migrates.
 
+It also prints the authenticator this process resolved, and that line is worth
+reading rather than scrolling past. `AUTH_MODE` lives in the host's environment
+file, which is deliberately outside Git, so nothing in this repository can tell
+you what it says — only the running process can, and this is where it does.
+**Confirm it is the mode this deployment is supposed to be running** (`shared_gate`
+today; `cloudflare_access` after the Access application exists). A real-data
+process with no authenticator would already have been refused at step 9 by
+`juristid.E006`, so what this catches is the subtler case: a mode that starts
+cleanly and is not the one anybody intended.
+
 Then confirm the running revision is the one that was deployed:
 
 ```bash
@@ -493,7 +518,87 @@ Anything beyond this is release-specific and the release note names it. A
 release that changes how something is indexed, projected or derived may need a
 rebuild afterwards; a release that changes none of those needs nothing here.
 Run what that release asks for, against the running new image — so `exec`, like
-the readiness check above.
+the readiness check above. Step 11 is the one this repository currently owes.
+
+### 11. The search index contract, when the release changes it
+
+Conditional, like step 7, and conditional on the same kind of fact: a release
+that leaves `app.search.models.INDEX_VERSION` alone needs nothing here.
+
+**Why a release can need it at all.** Every `SearchDocument` records the
+contract it was built under, and the query chokepoint reads only rows carrying
+the current one (`app.search.services.visible_documents`). So a release that
+changes `INDEX_VERSION` makes every existing row ineligible the moment it starts
+serving — deliberately, and before any rebuild. A row indexed under the old
+contract can hold text the new contract would not put in it, and no predicate
+can take words back out of a stored vector, so the only safe answer is to stop
+reading the row. Search then returns too little and the reader can tell, rather
+than returning something they should not see and cannot.
+
+**Why nothing does it for you.** `searchindex` is running by now — step 9's
+unqualified `up -d` started it with everything else, and it needs no separate
+command. But what it consumes is `SearchRebuildDebt`, and every row in that
+table is recorded by a *vocabulary edit*: an Organisation renamed, an alias
+changed, a Tag or a PolicyArea renamed, a person's display name changed
+(`app/search/freshness.py`, ADR 0041). Nothing writes a row meaning "the
+contract changed at deploy", and the table arrives from its own migration empty.
+
+So the worker is healthy, `check_search_freshness` is green, and the whole
+corpus is unreadable — all three at once, and truthfully. **A green
+`searchindex` says nobody has renamed anything. It does not say the corpus was
+rebuilt.** The two questions are answered by two different commands, and this is
+the one that answers the second:
+
+```bash
+docker compose -p juristid-main -f compose.yml exec -T web python manage.py rebuild_search_index
+```
+
+`exec`, like the readiness check: by now the running image *is* the target
+image. The rebuild empties and refills inside one transaction, so readers keep
+the previous complete index for its whole run and a failure leaves that index in
+place — which is why it is safe here and safe to run again. It is safe beside
+the worker too: both take the same rebuild gate, so if they overlap one waits.
+
+Then prove it, rather than assuming it:
+
+```bash
+docker compose -p juristid-main -f compose.yml exec -T web python manage.py check_search_integrity
+```
+
+**Any finding stops the release.** Rows left on an older index version means the
+rebuild did not take and the corpus is still unreadable; a completeness finding
+means a canonical record is not projected; a null vector is a row that exists
+and can never match; a row claiming a Matter its own source does not belong to
+is a projection that disagrees with the register. None of those is repaired
+here, and none of them is a reason to declare the release done. `check_search_integrity`
+reads and reports; `rebuild_search_index` is the repair, and it is the only one.
+
+Last, the other question — is anything *owed* that has not been done:
+
+```bash
+docker compose -p juristid-main -f compose.yml exec -T web python manage.py check_search_freshness
+```
+
+```bash
+docker compose -p juristid-main -f compose.yml ps
+```
+
+Nothing should be owed, and `ps` should show `juristid-main-searchindex`
+running beside the other four. From here on the worker keeps the index fresh on
+its own, and this step is not part of an ordinary release again until something
+changes `INDEX_VERSION` a second time.
+
+**Today that release exists.** `INDEX_VERSION` is `AUTH003.1`, set by ADR 0038,
+and the `searchindex` service arrived with ADR 0041 — both in the range a
+production instance still on an earlier revision has not crossed. Such an
+instance owes this step once, on the release that first serves `AUTH003.1`.
+
+It is named here rather than left to a release note for the same reason step 7
+is: the condition is a fact about the deployment in front of you rather than a
+claim this repository can make about it. Run the step. If the corpus was already
+rebuilt under this contract, `rebuild_search_index` costs a few seconds and
+`check_search_integrity` confirms it; if it was not, those few seconds are the
+difference between a search that works and one that silently answers nothing.
 
 ### Rolling back
 
@@ -607,6 +712,14 @@ From a new private window, in this order:
 | J | there is no direct origin bypass — no host port answers |
 | K | signing out ends both the persona and the gate |
 | L | historical data survives a container restart |
+| M | a search for a term that certainly matches returns results |
 
 A–L are covered by `tests/test_shared_gate.py` as logic. Doing them in a real
 browser is what catches the difference between the logic and the deployment.
+
+M is not covered by anything here, and cannot be: every test suite builds its
+own index, so the one state this catches — a real corpus projected under a
+contract the running code will not read — is unreachable from a test. Search a
+Matter title you know exists. An empty result is what step 11 exists to prevent,
+and it is the only symptom it has: nothing is red, nothing is logged, and every
+container is healthy.
