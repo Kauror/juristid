@@ -405,7 +405,7 @@ def test_a_historical_page_is_no_less_confidential_for_being_old(applied, client
 
     link = MatterSourcePage.objects.get(matter=matter, source_page__page_key="p-exact")
 
-    client.force_login(factories.UserFactory())
+    client.force_login(factories.ReaderFactory())
     assert client.get(f"/ajalugu/{link.pk}/").status_code == 404
     assert client.get(f"/ajalugu/{link.pk}/lahtefail/").status_code == 404
 

@@ -135,7 +135,7 @@ def test_a_restricted_document_is_a_404_on_both_routes(client, stored, specialis
     hidden = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     version = stored(corpus.government_pdf(), "kaaskiri.pdf", PDF, matter=hidden)
 
-    client.force_login(factories.UserFactory())
+    client.force_login(factories.ReaderFactory())
     assert client.get(reverse("documents:open", kwargs={"pk": version.pk})).status_code == 404
     assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 404
 

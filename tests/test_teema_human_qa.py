@@ -311,9 +311,9 @@ def test_a_reader_cannot_reach_the_edit_page(client, specialist):
     assert matter.title != "Kaaperdatud"
 
 
-def test_the_edit_page_respects_matter_visibility(client, specialist, other_specialist):
+def test_the_edit_page_respects_matter_visibility(client, specialist, reader):
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
-    client.force_login(other_specialist)
+    client.force_login(reader)
 
     assert client.get(_edit_url(matter)).status_code == 404
 

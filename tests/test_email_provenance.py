@@ -311,7 +311,7 @@ def test_a_thumbnail_is_served_inline_and_the_original_never_is(
 
 
 def test_a_restricted_documents_thumbnail_is_not_served(
-    restricted_matter, capture_evidence, extract, client, other_specialist
+    restricted_matter, capture_evidence, extract, client, reader
 ) -> None:
     """A preview that leaked where a download did not would be the more
     embarrassing of the two."""
@@ -322,7 +322,7 @@ def test_a_restricted_documents_thumbnail_is_not_served(
         restricted_matter, corpus.government_pdf(), "salajane.pdf", "application/pdf"
     )
     extract(version)
-    client.force_login(other_specialist)
+    client.force_login(reader)
 
     thumbnail = DocumentDerivative.objects.get(
         version=version, kind=DerivativeKind.THUMBNAIL, status=DerivativeStatus.ACTIVE

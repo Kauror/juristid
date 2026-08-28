@@ -93,16 +93,14 @@ def test_a_submission_renders_beside_structured_facts(client, specialist):
     assert "Sünteetiline tähtaeg" in response.content.decode()
 
 
-def test_a_restricted_matters_facts_and_submissions_stay_restricted(
-    client, specialist, other_specialist
-):
+def test_a_restricted_matters_facts_and_submissions_stay_restricted(client, specialist, reader):
     """One refusal, not two: Stage 2H changed nothing about who may read a
     Matter, and the page it added context to is still the Matter page."""
     matter = _matter_with_everything(specialist)
     matter.visibility = Visibility.RESTRICTED
     matter.save(update_fields=["visibility", "updated_at"])
 
-    client.force_login(other_specialist)
+    client.force_login(reader)
     response = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
     assert response.status_code == 404
