@@ -18,6 +18,7 @@ Nothing in this module creates, infers or dates anything. It returns text.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -84,3 +85,126 @@ def snapshot_label() -> str:
         return ""
     snapshot = reviewed_snapshot(digest)
     return snapshot.label if snapshot else ""
+
+
+# ---------------------------------------------------------------------------
+# What else the register observed about this Matter
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class MemberFeedback:
+    """The two counts the register recorded, ready to render.
+
+    A value class rather than a template reaching into the model, for the same
+    reason everything else on the Matter page is decided in Python: ``None`` and
+    ``0`` are different answers here, and Django templates cannot tell them
+    apart. ``{{ state.member_feedback_responded|default:"—" }}`` renders a
+    measured zero as an em dash, because ``0`` is falsy — which is precisely the
+    conflation the whole feature exists to avoid (brief 10, 11).
+    """
+
+    #: How many members answered. ``None`` means the register did not record it.
+    responded: int | None
+    #: How many were asked directly. ``None`` means the same.
+    requested: int | None
+
+    @property
+    def known(self) -> bool:
+        return self.responded is not None or self.requested is not None
+
+    @property
+    def responded_label(self) -> str:
+        return "teadmata" if self.responded is None else str(self.responded)
+
+    @property
+    def requested_label(self) -> str:
+        return "teadmata" if self.requested is None else str(self.requested)
+
+
+@dataclass(frozen=True)
+class RegisterFacts:
+    """What the latest reviewed snapshot says about one Matter, for display.
+
+    Read once, in the view. Everything here is derived and everything here is
+    labelled as the register's observation on screen — never as a Submission, a
+    live analytics figure or a canonical relationship.
+    """
+
+    feedback: MemberFeedback
+    #: ``DATE`` / ``NOT_SENT`` / ``RECORDED_OTHER`` / ``BLANK``.
+    opinion_sent_state: str
+    opinion_sent_date: object | None
+    #: Every organisation ``KELLELE`` names. One canonical addressee is stored;
+    #: this is the complete cell, so a three-ministry consultation reads as one.
+    addressees: tuple[str, ...]
+    has_multiple_addressees: bool
+    legal_instrument: str
+    #: ``YYYY_N`` when the register says the work continued elsewhere.
+    continues_under_reference: str = ""
+    #: The Matter that reference names, when this database holds it — so the
+    #: reference can be followed instead of read. No canonical relationship is
+    #: created: this is a lookup at render time, and a reference naming nothing
+    #: stays plain text rather than becoming a broken link (brief 29).
+    continues_under_id: object | None = None
+
+    @property
+    def opinion_not_sent(self) -> bool:
+        return self.opinion_sent_state == "NOT_SENT"
+
+    @property
+    def has_anything(self) -> bool:
+        return bool(
+            self.feedback.known
+            or self.opinion_not_sent
+            or self.has_multiple_addressees
+            or self.continues_under_reference
+        )
+
+
+def register_facts_for(matter: Any) -> RegisterFacts | None:
+    """The derived register observations for one Matter, or ``None``.
+
+    At most one extra query, and only for the continuation link — which is
+    asked for at most once per page and only when the register actually named a
+    successor.
+    """
+    state = getattr(matter, "current_register_state", None)
+    if state is None:
+        return None
+
+    successor_id = None
+    if state.continues_under_reference:
+        from app.matters.models import Matter
+
+        successor_id = (
+            Matter.objects.filter(reference_number__isnull=False)
+            .filter(reference_number=_reference_number(state.continues_under_reference))
+            .values_list("pk", flat=True)
+            .first()
+        )
+
+    return RegisterFacts(
+        feedback=MemberFeedback(
+            responded=state.member_feedback_responded,
+            requested=state.member_feedback_requested,
+        ),
+        opinion_sent_state=state.opinion_sent_state,
+        opinion_sent_date=state.opinion_sent_date,
+        addressees=state.addressees,
+        has_multiple_addressees=state.has_multiple_addressees,
+        legal_instrument=state.legal_instrument_raw,
+        continues_under_reference=state.continues_under_reference,
+        continues_under_id=successor_id,
+    )
+
+
+def _reference_number(reference: str) -> int:
+    """The numeric half of ``YYYY_N``, or ``-1`` when it is not one.
+
+    ``-1`` rather than ``None`` so the caller's filter matches nothing instead
+    of matching every Matter without a number, which is what a ``None`` would
+    quietly do.
+    """
+    _, _, number = (reference or "").partition("_")
+    return int(number) if number.isdigit() else -1

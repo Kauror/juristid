@@ -268,8 +268,8 @@ Ilmub JÄRGMISEKS, kuid ainult osal ridadest. Tekst säilib sõna-sõnalt ja sed
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
 | G | `KELLELE` | `addressee_organisation` | `text` | valikuline | Tühi tähendab teadmata asutust, mitte asutuse puudumist. |
 | H | `VASTUTAJA` | `owner_name` | `text` | valikuline | Tühi tähendab, et vastutajat ei ole kirjas. |
-| I | `LIIKMETE ARV, KES ANDSID TAGASISIDET` | `member_feedback_responded` | `count` | edasi lükatud | Tühi ei ole null. Mõõdetud null on eraldi fakt ja need kaks ei tohi kokku langeda. |
-| J | `LIIKMETE ARV, KELLELT OTSE KÜSISIME TAGASISIDET` | `member_feedback_requested` | `count` | edasi lükatud | Tühi ei ole null. |
+| I | `LIIKMETE ARV, KES ANDSID TAGASISIDET` | `member_feedback_responded` | `count` | tuletatud | Tühi ei ole null. Mõõdetud null on eraldi fakt ja need kaks ei tohi kokku langeda. |
+| J | `LIIKMETE ARV, KELLELT OTSE KÜSISIME TAGASISIDET` | `member_feedback_requested` | `count` | tuletatud | Tühi ei ole null. |
 | K | `HETKESEIS` | `legacy_status` | `status_label` | kanooniline | Tühi tähendab, et seisu ei märgitud. |
 | L | `JÄRGMISEKS` | `next_action_text` | `text` | edasi lükatud | Tühi tähendab, et järgmist sammu ei ole kirja pandud. |
 
@@ -287,7 +287,7 @@ Praegune standardiseeritud tööstruktuur. Kõik algne tekst säilib. Igast reas
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
 | G | `KELLELE` | `addressee_organisation` | `text` | valikuline | Tühi tähendab teadmata asutust, mitte asutuse puudumist. |
 | H | `VASTUTAJA` | `owner_name` | `text` | valikuline | Tühi tähendab, et vastutajat ei ole kirjas. |
-| I | `LIIKMETE ARV, KES ANDSID TAGASISIDET` | `member_feedback_responded` | `count` | edasi lükatud | Tühi ei ole null. Mõõdetud null on eraldi fakt ja need kaks ei tohi kokku langeda. |
-| J | `LIIKMETE ARV, KELLELT OTSE KÜSISIME TAGASISIDET` | `member_feedback_requested` | `count` | edasi lükatud | Tühi ei ole null. |
+| I | `LIIKMETE ARV, KES ANDSID TAGASISIDET` | `member_feedback_responded` | `count` | tuletatud | Tühi ei ole null. Mõõdetud null on eraldi fakt ja need kaks ei tohi kokku langeda. |
+| J | `LIIKMETE ARV, KELLELT OTSE KÜSISIME TAGASISIDET` | `member_feedback_requested` | `count` | tuletatud | Tühi ei ole null. |
 | K | `HETKESEIS` | `legacy_status` | `status_label` | kanooniline | Tühi tähendab, et seisu ei märgitud. |
 | L | `JÄRGMISEKS` | `next_action_text` | `text` | edasi lükatud | Tühi tähendab, et järgmist sammu ei ole kirja pandud. |

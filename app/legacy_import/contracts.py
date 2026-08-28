@@ -77,9 +77,22 @@ PARSERS: frozenset[str] = frozenset(
 #:
 #: ``authoritative`` — the importer writes it to a canonical field;
 #: ``optional``      — written when present, absent is normal;
-#: ``deferred``      — a real field with no canonical home yet; raw only;
+#: ``derived``       — a real field whose home is the derived current-state
+#:                     table, rebuilt from source and never a Matter field;
+#: ``deferred``      — a real field with no home at all yet; raw only;
 #: ``unknown``       — semantics not established; raw only, and a review finding.
-AUTHORITY_LEVELS: frozenset[str] = frozenset({"authoritative", "optional", "deferred", "unknown"})
+#:
+#: ``derived`` and ``deferred`` are close enough to be worth separating.
+#: ``deferred`` is a decision nobody has made — the column is read and stored
+#: verbatim and the department will one day say where it belongs. ``derived``
+#: is a decision that *has* been made: this value has a home, that home is
+#: ``CurrentRegisterState``, and it is rebuilt from the reviewed snapshot rather
+#: than edited. Reading the two as one would let "we have not decided" and "we
+#: decided it is derived" look the same in a reviewed contract, which is exactly
+#: the distinction an era contract exists to keep.
+AUTHORITY_LEVELS: frozenset[str] = frozenset(
+    {"authoritative", "optional", "derived", "deferred", "unknown"}
+)
 
 #: Which organisation column this is. Never inferred from the header text.
 DIRECTIONS: frozenset[str] = frozenset({"", "source", "addressee"})

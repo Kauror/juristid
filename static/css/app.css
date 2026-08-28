@@ -8461,3 +8461,29 @@ a.loadrow__overdue--bad {
     display: none;
   }
 }
+
+/* Register observations above the Kaasamine pointers.
+   -------------------------------------------------------------------------
+   Quieter than a `factrow`, and deliberately so: a factrow is something
+   somebody recorded here, and these are things the maintained spreadsheet
+   observed. The label carries that distinction in words as well as in weight,
+   because a colour difference alone would not survive somebody reading the
+   page quickly (current-register refresh, brief 11). */
+.factnote {
+  margin: 0 0 var(--spacing-15);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  line-height: var(--typography-line-normal);
+}
+
+.factnote:last-of-type {
+  margin-bottom: var(--spacing-3);
+}
+
+.factnote__label {
+  display: block;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--typography-tracking-label);
+  font-size: var(--typography-size-label);
+}

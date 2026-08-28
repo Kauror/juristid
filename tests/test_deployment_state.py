@@ -553,7 +553,6 @@ SETTLED_LEAVES = {
     "core": "0001_initial",
     "documents": "0006_legacy_material_role",
     "intelligence": "0001_initial",
-    "legacy_import": "0012_opinion_recipient_provenance",
     "matters": "0011_matter_successor",
     "organisations": "0001_initial",
     "reporting": "0001_initial",

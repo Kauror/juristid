@@ -50,6 +50,7 @@ register holds none of them.
 
 from __future__ import annotations
 
+import datetime as dt
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
@@ -62,10 +63,15 @@ from app.legacy_import.dates import parse_date
 from app.legacy_import.models import MatterSourceReference
 from app.legacy_import.parser import SOURCE_SYSTEM
 from app.legacy_import.register_semantics import (
+    AddresseeCardinality,
+    addressee_cardinality,
     detect_continuation,
     has_send_date,
     is_real_row,
     is_terminal_status,
+    opinion_sent_state,
+    parse_member_count,
+    split_addressees,
 )
 from app.legacy_import.resolution import (
     KnownPeople,
@@ -87,7 +93,7 @@ from app.search.indexing import indexable_matters, refresh_matters
 from app.workflow.enums import ActionStatus
 
 #: Bumped when this operation's rules change. Recorded on every row it touches.
-CUTOVER_VERSION = "2J.2.0"
+CUTOVER_VERSION = "2J.3.0"
 
 
 @dataclass(frozen=True)
@@ -106,6 +112,15 @@ class ReviewedSnapshot:
     #: The sheet years this snapshot may make current. Every other real row it
     #: contains is still classified, and classified as history.
     current_years: frozenset[int]
+    #: The day the workbook was taken off somebody's desktop.
+    #:
+    #: Recorded because one rule needs it and nothing else can supply it: a
+    #: ``JÄRGMISEKS`` date written without a year means the sheet's year, and
+    #: that reading is only available where the sheet year and the snapshot year
+    #: are the same. Deriving it from a filename or a file timestamp would make
+    #: the reading depend on how the file reached us
+    #: (``register_next_actions.ParseContext``).
+    snapshot_date: dt.date | None = None
 
 
 #: The snapshots a person has approved as authoritative for current state, each
@@ -126,6 +141,23 @@ REVIEWED_SNAPSHOTS: tuple[ReviewedSnapshot, ...] = (
         # the department stopped recording HETKESEIS for them, and a column the
         # source never had cannot be read as "still live" (docs/adr/0021).
         current_years=frozenset({2025, 2026}),
+        snapshot_date=dt.date(2026, 8, 21),
+    ),
+    # The refresh snapshot. Added beside the one before it rather than in place
+    # of it: the earlier digest is the identity of an interpretation this
+    # database may still be holding, and a state row that named a snapshot the
+    # reviewed list had forgotten would be evidence with no provenance. Both
+    # stay; which one is authoritative is decided by which one was applied last,
+    # and that is recorded per row (brief 2).
+    #
+    # Same scope, and that is the reviewed decision, not an inherited default:
+    # 2025 and 2026 are the years the department maintains, 2024 and earlier are
+    # history, and this refresh does not move that line in either direction.
+    ReviewedSnapshot(
+        sha256="89495f825b8d48cbcb08fb5f6b4074c6c9f973888611433979b5a80fbe38a678",
+        label="Tööd eelnõudega28.08.xlsx",
+        current_years=frozenset({2025, 2026}),
+        snapshot_date=dt.date(2026, 8, 28),
     ),
 )
 
@@ -211,10 +243,37 @@ class Observation:
     addressee_raw: str
     received_raw: str
     deadline_raw: str
+    #: ``ÕIGUSAKT``, ``LIIKMETE ARV …`` — source facts with no canonical home,
+    #: carried so the derived table can hold them without a second read of the
+    #: same row through the same contract (brief 10, 28).
+    legal_instrument_raw: str = ""
+    feedback_responded_raw: str = ""
+    feedback_requested_raw: str = ""
 
     @property
     def is_real_row(self) -> bool:
         return is_real_row(self.reference.matter.display_reference, self.title)
+
+    @property
+    def addressees(self) -> tuple[str, ...]:
+        """The organisations ``KELLELE`` names, in source order."""
+        return split_addressees(self.addressee_raw)
+
+    @property
+    def addressee_cardinality(self) -> str:
+        return addressee_cardinality(self.addressee_raw)
+
+    @property
+    def names_one_addressee(self) -> bool:
+        """Whether the canonical singular field may be written from this cell.
+
+        Exactly one organisation, or nothing. Thirteen cells in the 28.08
+        workbook name two or three — *Rahandusministeerium, Kaitseministeerium,
+        Kliimaministeerium* — and taking the first would record, with no trace
+        of the choice, that Koda wrote to one body when it wrote to three
+        (brief 7).
+        """
+        return self.addressee_cardinality == AddresseeCardinality.SINGLE
 
 
 @dataclass(frozen=True)
@@ -376,6 +435,9 @@ def _observation(reference: MatterSourceReference, contracts: Any) -> Observatio
         addressee_raw=cell("addressee_organisation"),
         received_raw=cell("received_date"),
         deadline_raw=cell("response_deadline"),
+        legal_instrument_raw=cell("legal_instrument"),
+        feedback_responded_raw=cell("member_feedback_responded"),
+        feedback_requested_raw=cell("member_feedback_requested"),
     )
 
 
@@ -653,7 +715,7 @@ class CutoverResult:
     examined: int
 
 
-def _resolved_fields(
+def resolved_fields(
     observation: Observation, *, people: KnownPeople, mappings: MappingTables
 ) -> dict[str, Any]:
     """The fields the source settles for one current Matter.
@@ -662,6 +724,13 @@ def _resolved_fields(
     ``None`` is a value the register asserts ("no deadline is recorded"); an
     absent key means "do not touch this field", and conflating the two would let
     an unreadable cell erase a date somebody entered.
+
+    Public because two callers need the same answer and only one of them writes
+    it. The apply spreads this over ``refresh_matter_from_register``; the
+    refresh report and the outreach matcher read it to say what the newer
+    workbook *would* make true. A second copy of these rules would let the plan
+    an operator approves and the write it authorises drift apart on exactly the
+    fields the register is authoritative for.
     """
     resolved: dict[str, Any] = {}
 
@@ -683,8 +752,14 @@ def _resolved_fields(
         if parsed.value is not None:
             resolved[field_name] = parsed.value
 
-    if observation.addressee_raw:
-        addressee = resolve_organisation(observation.addressee_raw, mappings)
+    # Only from a cell naming exactly one organisation. A multi-addressee cell
+    # leaves the canonical field alone and keeps its complete text in the
+    # derived state, where the Matter page shows it: `Matter` is singular in
+    # this release and pretending a three-ministry consultation was a
+    # one-ministry one is worse than leaving the field as somebody set it
+    # (brief 7).
+    if observation.names_one_addressee:
+        addressee = resolve_organisation(observation.addressees[0], mappings)
         if addressee.value is not None:
             resolved["addressee_organisation"] = addressee.value
 
@@ -737,7 +812,7 @@ def apply_cutover_plan(plan: CutoverPlan, *, actor: Any = None) -> CutoverResult
                 # Spread, so a field the source could not settle is simply
                 # absent and keeps its `_UNSET` default rather than arriving as
                 # a `None` that would erase what somebody entered.
-                **_resolved_fields(candidate.observation, people=people, mappings=mappings),
+                **resolved_fields(candidate.observation, people=people, mappings=mappings),
             )
             if changed:
                 refreshed += 1
@@ -775,21 +850,18 @@ def _activate(matter: Matter, candidate: Candidate, provenance: dict[str, Any], 
         promote_matter_to_full(matter=matter, actor=actor, reason=reason, provenance=provenance)
 
 
-def rebuild_current_state(plan: CutoverPlan) -> int:
-    """Rewrite the derived state table for this snapshot. Idempotent.
+def projected_state_rows(plan: CutoverPlan) -> list[CurrentRegisterState]:
+    """What the derived table *would* hold for this snapshot. Unsaved, no writes.
 
-    Delete-then-insert for the Matters this plan covers, rather than update: one
-    shape of statement regardless of whether a row existed before, so a
-    half-built table and a complete one converge — the same reasoning the search
-    projection uses, and the same reason it is safe to do at all. Nothing
-    canonical reads this table.
+    Split out of :func:`rebuild_current_state` so the dry-run and the apply
+    derive the same rows from the same code. The refresh report has to say what
+    the next-action planner will decide, and that planner reads this table —
+    which does not yet describe the new snapshot when the report is being read.
+    Projecting it in memory is how the operator sees the whole operation before
+    approving any of it; deriving it *twice*, once here and once in the writer,
+    is how the report and the apply would quietly stop agreeing.
     """
     now = timezone.now()
-    matter_ids = [candidate.matter.pk for candidate in plan.candidates]
-    if not matter_ids:
-        return 0
-
-    CurrentRegisterState.objects.filter(matter_id__in=matter_ids).delete()
     people = KnownPeople.load()
     mappings = MappingTables.empty()
 
@@ -812,14 +884,50 @@ def rebuild_current_state(plan: CutoverPlan) -> int:
                 # parser could make of it.
                 opinion_sent_recorded=has_send_date(observation.opinion_sent_raw),
                 opinion_sent_date=sent.value,
+                # And the third derivation of the same cell: which of the four
+                # things it is saying. Read from the raw text *and* the parse,
+                # so "ei saatnud" is NOT_SENT rather than an unreadable date —
+                # sixteen 2026 rows in the 28.08 workbook say exactly that, and
+                # rendering them as a send date whose value was lost is the
+                # opposite of what the register recorded (brief 9).
+                opinion_sent_state=opinion_sent_state(
+                    observation.opinion_sent_raw, parsed_date=sent.value
+                ),
                 next_action_text=observation.next_action_text,
                 owner_raw=observation.owner_raw[:200],
                 owner_resolved=owner.value is not None,
+                # The complete KELLELE cell, however many bodies it names. The
+                # canonical singular field was written only where it named one.
+                addressee_raw=observation.addressee_raw[:500],
+                addressee_cardinality=observation.addressee_cardinality,
+                legal_instrument_raw=observation.legal_instrument_raw[:200],
+                # Blank stays NULL and a written zero stays zero. They are
+                # different answers and this is the only place that decides so.
+                member_feedback_responded=parse_member_count(observation.feedback_responded_raw),
+                member_feedback_requested=parse_member_count(observation.feedback_requested_raw),
                 continues_under_reference=candidate.continues_under[:40],
                 review_reason=candidate.review_reason,
                 observed_at=now,
             )
         )
+    return rows
+
+
+def rebuild_current_state(plan: CutoverPlan) -> int:
+    """Rewrite the derived state table for this snapshot. Idempotent.
+
+    Delete-then-insert for the Matters this plan covers, rather than update: one
+    shape of statement regardless of whether a row existed before, so a
+    half-built table and a complete one converge — the same reasoning the search
+    projection uses, and the same reason it is safe to do at all. Nothing
+    canonical reads this table.
+    """
+    matter_ids = [candidate.matter.pk for candidate in plan.candidates]
+    if not matter_ids:
+        return 0
+
+    rows = projected_state_rows(plan)
+    CurrentRegisterState.objects.filter(matter_id__in=matter_ids).delete()
     CurrentRegisterState.objects.bulk_create(rows)
     return len(rows)
 
@@ -865,7 +973,9 @@ __all__ = [
     "build_cutover_plan",
     "currency_of",
     "native_activity",
+    "projected_state_rows",
     "rebuild_current_state",
+    "resolved_fields",
     "reviewed_snapshot",
     "sheet_year",
     "summary",

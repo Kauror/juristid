@@ -7,7 +7,7 @@ year = 2025
 sheet = "2025"
 era = "2025"
 header_row = 1
-contract_version = "1.0"
+contract_version = "1.1"
 status = "reviewed"
 reviewed_by = "Stage 2A parser owner — iga veerg kontrollitud 2026-08 hetktõmmise vastu; osakonna sisuline kinnitus on veel andmata"
 notes = """
@@ -136,7 +136,7 @@ letter = "I"
 header = "LIIKMETE ARV, KES ANDSID TAGASISIDET"
 canonical_field = "member_feedback_responded"
 parser = "count"
-authority = "deferred"
+authority = "derived"
 meaning = """
 Tagasisidet andnud liikmete arv. Iseseisev vaatlus.
 """
@@ -144,7 +144,7 @@ null_semantics = """
 Tühi ei ole null. Mõõdetud null on eraldi fakt ja need kaks ei tohi kokku langeda.
 """
 notes = """
-Edasi lükatud Stage 2C Kaasamisele. Vastamismäära sellest ei arvutata: see veerg ei ole järgmise alamhulk ja tegelikes andmetes on ridu, kus vastanuid on rohkem kui otse küsituid. Veergude järjekord on ootusele vastupidine — vastanute arv seisab küsitute arvu ees.
+Elab tuletatud tabelis CurrentRegisterState.member_feedback_responded, mitte Matteri küljes: see on väide, mille uusim ülevaadatud töövihik teema *kohta* teeb, ja see ehitatakse hetktõmmisest uuesti, mitte ei toimetata rakenduses. Vastamismäära sellest ei arvutata: see veerg ei ole järgmise alamhulk ja tegelikes andmetes on ridu, kus vastanuid on rohkem kui otse küsituid. Veergude järjekord on ootusele vastupidine — vastanute arv seisab küsitute arvu ees. Seda ei asendata kunagi kampaania saajate arvuga: Sendsmaily adressaadid on teine hulk ja elavad MatterEngagementi küljes.
 """
 
 [[column]]
@@ -152,7 +152,7 @@ letter = "J"
 header = "LIIKMETE ARV, KELLELT OTSE KÜSISIME TAGASISIDET"
 canonical_field = "member_feedback_requested"
 parser = "count"
-authority = "deferred"
+authority = "derived"
 meaning = """
 Liikmete arv, kellelt Koda otse tagasisidet küsis. Iseseisev vaatlus.
 """
@@ -160,7 +160,7 @@ null_semantics = """
 Tühi ei ole null.
 """
 notes = """
-Edasi lükatud Stage 2C Kaasamisele. Vt eelmise veeru märkust.
+Elab tuletatud tabelis CurrentRegisterState.member_feedback_requested. Vt eelmise veeru märkust: kaks vaatlust, mitte lugeja ja nimetaja, ning kumbki ei ole Sendsmaily adressaatide arv.
 """
 
 [[column]]

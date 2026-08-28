@@ -132,6 +132,12 @@ DRAFTING_TITLE = "Koostamisel olev sünteetiline arvamus"
 DRAFTING_SENT_TITLE = "Saadetud sünteetiline arvamus"
 REGISTER_SNAPSHOT_SHA = hashlib.sha256(b"juristid-e2e-current-register").hexdigest()
 
+#: What the seeded "opinion sent" row holds in VÄLJA. A day and a month with no
+#: year — the shape the register writes constantly and the date parser declines
+#: to read — so the seeded world exercises "recorded, but not a readable date"
+#: rather than the easy case.
+SEED_SENT_CELL = "12.03"
+
 
 #: The archive's synthetic snapshot, and the letters inside it. Invented, like
 #: everything else here: no Koda opinion, ministry or filename may appear in a
@@ -666,6 +672,7 @@ class Command(BaseCommand):
         """
         from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
         from app.legacy_import.models import MatterSourceReference
+        from app.legacy_import.register_semantics import opinion_sent_state
 
         if Matter.objects.filter(title=DRAFTING_TITLE).exists():
             return
@@ -689,7 +696,7 @@ class Command(BaseCommand):
                 source_snapshot_sha256=REGISTER_SNAPSHOT_SHA,
                 source_sheet=str(today.year),
                 source_row_number=index,
-                source_row_raw={"VALJA": "12.03" if sent_recorded else ""},
+                source_row_raw={"VALJA": SEED_SENT_CELL if sent_recorded else ""},
                 source_title=title,
                 source_era=str(today.year),
             )
@@ -702,6 +709,18 @@ class Command(BaseCommand):
                 currency=RegisterCurrency.CURRENT,
                 status_label="Kooskolastusringil",
                 opinion_sent_recorded=sent_recorded,
+                # Derived from the same cell as the flag beside it, through the
+                # one function that decides it. A check constraint requires the
+                # two to agree, and the seed used to set only the flag — so the
+                # world it built was one the database refuses, which no unit
+                # test could see because none of them seed (ADR 0045).
+                opinion_sent_state=opinion_sent_state(
+                    SEED_SENT_CELL if sent_recorded else "",
+                    # No parsed date: the cell is a day and a month with no
+                    # year, which is exactly what the register writes and
+                    # exactly what the date parser declines to read.
+                    parsed_date=None,
+                ),
                 owner_raw=actor.get_short_name(),
                 owner_resolved=True,
                 observed_at=timezone.now(),
