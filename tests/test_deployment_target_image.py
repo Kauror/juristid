@@ -492,11 +492,10 @@ def test_the_search_transition_is_conditional_and_says_what_the_condition_is(
         "a table that arrives empty reads as nothing owed; that is the trap and it has to be "
         "written down"
     )
-    for stop in ("stops the release", "stop"):
-        if stop in lowered:
-            break
-    else:  # pragma: no cover - the loop above always breaks while the text is correct
-        raise AssertionError("a search integrity finding has to stop the release")
+    assert "stops the release" in lowered, (
+        "an integrity finding has to stop the release, and the step has to say so in those "
+        "words — 'investigate' is what an operator does at nine the next morning"
+    )
 
 
 def test_the_search_transition_does_not_promise_the_worker_will_do_it(readme: str) -> None:
