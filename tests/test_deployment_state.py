@@ -517,3 +517,166 @@ def test_skipping_the_byte_pass_says_that_it_skipped_it(tmp_path: Path) -> None:
     assert fingerprint["evidence"]["bytes_verified"] is False
     assert fingerprint["evidence"]["objects_verified"] == 0
     assert fingerprint["evidence"]["version_count"] == 1
+
+
+# --------------------------------------------------------------------------
+# The state a deployment starts from
+# --------------------------------------------------------------------------
+#
+# CI migrates from zero, and then steps back and forward again through the
+# migrations a release carries, because from zero is the easy direction and the
+# one a deployment never takes. Which migrations those are is a judgement, so
+# the targets are written down in the workflow rather than derived — and a
+# written-down list is a list that goes out of date.
+#
+# It did. SEARCH-001 added `search/0007` and left the targets where DATA-001 had
+# put them, so the one migration that release carried into an existing database
+# was never reversed in CI. The instruction to move them was already there, in
+# prose, directly above the step. Prose is not a check.
+
+#: The migration each app is stepped back to before the suite migrates forward
+#: again, read out of the workflow rather than repeated here.
+DEPLOYMENT_STATE_STEP = "And forwards again from the state a deployment is in"
+
+#: Apps this step does not step back through, and the leaf each one had when
+#: that was last reviewed.
+#:
+#: Not a claim about what production has applied — this repository cannot know
+#: that. It is a record of what has already been decided about, so that changing
+#: an app's leaf forces the decision to be taken again: either the release
+#: carries that migration into an existing database, and the workflow steps back
+#: through it, or it does not and this record moves. Both are one line; only one
+#: of them is silent, and it is the one that is now impossible.
+SETTLED_LEAVES = {
+    "accounts": "0003_sharedgatethrottle",
+    "audit": "0015_matter_title_event",
+    "core": "0001_initial",
+    "documents": "0006_legacy_material_role",
+    "intelligence": "0001_initial",
+    "legacy_import": "0012_opinion_recipient_provenance",
+    "matters": "0011_matter_successor",
+    "organisations": "0001_initial",
+    "reporting": "0001_initial",
+}
+
+
+def _migration_names(app_label: str) -> list[str]:
+    """Every numbered migration an app ships, in order, off the filesystem.
+
+    The filesystem rather than the migration loader, because this asks what the
+    repository contains rather than what a particular database has seen.
+    """
+    directory = Path(deployment.__file__).resolve().parent.parent / app_label / "migrations"
+    return sorted(
+        path.stem for path in directory.glob("[0-9][0-9][0-9][0-9]_*.py") if path.is_file()
+    )
+
+
+def _apps_with_migrations() -> dict[str, list[str]]:
+    root = Path(deployment.__file__).resolve().parent.parent
+    return {
+        directory.parent.name: _migration_names(directory.parent.name)
+        for directory in sorted(root.glob("*/migrations"))
+        if _migration_names(directory.parent.name)
+    }
+
+
+def _stepped_back_targets() -> dict[str, str]:
+    """`app -> migration number` as the workflow's own step names them."""
+    workflow = (
+        Path(deployment.__file__).resolve().parent.parent.parent
+        / ".github"
+        / "workflows"
+        / "ci.yml"
+    ).read_text(encoding="utf-8")
+    assert DEPLOYMENT_STATE_STEP in workflow, (
+        f"CI no longer has a step named {DEPLOYMENT_STATE_STEP!r}; this test guards that step "
+        "and cannot guard one it cannot find"
+    )
+    body = workflow[workflow.index(DEPLOYMENT_STATE_STEP) :]
+    # The step ends at the next `- name:` entry.
+    end = body.find("- name:", len(DEPLOYMENT_STATE_STEP))
+    return {
+        match.group(1): match.group(2)
+        for match in re.finditer(
+            r"manage\.py migrate ([a-z_]+) (\d{4})\b", body[: end if end > 0 else None]
+        )
+    }
+
+
+def test_ci_steps_back_through_something_at_all() -> None:
+    """Guards the guard: an empty parse would make every assertion below vacuous."""
+    assert len(_stepped_back_targets()) >= 2
+
+
+def test_every_stepped_back_target_is_a_migration_that_exists() -> None:
+    """A typo names a migration Django will refuse, and the step fails obscurely."""
+    available = _apps_with_migrations()
+    for app_label, number in _stepped_back_targets().items():
+        assert app_label in available, f"CI steps back an app with no migrations: {app_label}"
+        assert any(name.startswith(f"{number}_") for name in available[app_label]), (
+            f"CI steps {app_label} back to {number}, which is not a migration this repository "
+            f"has: {', '.join(available[app_label])}"
+        )
+
+
+def test_stepping_an_app_back_to_its_own_leaf_would_exercise_nothing() -> None:
+    """A target that has caught up with its app reverses no migration at all.
+
+    The step would still pass, and would still be listed, and would prove
+    nothing — which is the same failure as leaving the app out, wearing the
+    costume of the fix.
+    """
+    available = _apps_with_migrations()
+    for app_label, number in _stepped_back_targets().items():
+        leaf = available[app_label][-1]
+        assert not leaf.startswith(f"{number}_"), (
+            f"CI steps {app_label} back to {number}, which is already its leaf. Move the target "
+            f"behind the migrations this release carries, or drop the app from the step."
+        )
+
+
+def test_no_app_gains_a_migration_without_a_deployment_state_decision() -> None:
+    """The check SEARCH-001 did not have.
+
+    Every app either appears in the workflow's step — in which case the
+    migrations after its target are the ones a release carries, and CI reverses
+    them — or its leaf is recorded in `SETTLED_LEAVES` as already decided about.
+    An app that is in neither has grown a migration since anybody last thought
+    about this step, which is exactly the state `search` was in.
+    """
+    stepped = _stepped_back_targets()
+    undecided = {}
+    for app_label, names in _apps_with_migrations().items():
+        if app_label in stepped:
+            continue
+        if SETTLED_LEAVES.get(app_label) == names[-1]:
+            continue
+        undecided[app_label] = names[-1]
+
+    assert not undecided, (
+        "these apps' migrations are neither stepped back through by CI's "
+        f"{DEPLOYMENT_STATE_STEP!r} step nor recorded as settled: "
+        + ", ".join(f"{app} ({leaf})" for app, leaf in sorted(undecided.items()))
+        + ". If the next release carries the migration into an existing database, add "
+        "`manage.py migrate <app> <the one before it>` to that step. If it does not, move the "
+        "leaf in SETTLED_LEAVES. Do not do neither."
+    )
+
+
+def test_settled_leaves_names_no_app_ci_already_steps_back() -> None:
+    """One place per app, so the two lists cannot disagree about the same app."""
+    overlap = sorted(SETTLED_LEAVES.keys() & _stepped_back_targets().keys())
+    assert not overlap, (
+        f"{', '.join(overlap)} is both stepped back by CI and recorded as settled; the record "
+        "is for apps the step leaves alone"
+    )
+
+
+def test_settled_leaves_names_no_app_that_has_gone_away() -> None:
+    """A record of an app nobody ships is a line that can never fail usefully."""
+    available = _apps_with_migrations()
+    for app_label in SETTLED_LEAVES:
+        assert app_label in available, (
+            f"SETTLED_LEAVES records {app_label}, which ships no migrations; remove the line"
+        )

@@ -39,13 +39,14 @@ proves the resolution itself rather than re-implementing `${VAR:-default}`.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from django.conf import settings
 
-from tests.test_deployment_runbooks import RUNBOOKS, command_lines
+from tests.test_deployment_runbooks import DEPLOY, RUNBOOKS, command_lines
 
 MAIN = Path(settings.BASE_DIR) / "deploy" / "unraid-main"
 PREFLIGHT = Path(settings.BASE_DIR) / "scripts" / "deploy" / "juristid-deploy-preflight.sh"
@@ -62,6 +63,11 @@ FALLBACK_IMAGE = "juristid-main-web:local"
 DEPLOYMENT_SECTION = ("## Deploying a new build", "## Backup, restore, disaster recovery")
 FAILED_MIGRATION_SECTION = ("### The migration failed partway", "### A data migration")
 AUDIT_SECTION = ("### 7. Release-specific pre-migration audits", "### 8. Back up")
+SEARCH_SECTION = ("### 11. The search index contract", "### Rolling back")
+
+#: Every deployment stack, for the runbook checks that read a stack's own
+#: `compose.yml` rather than a list of service names kept here.
+STACKS = sorted(path.parent for path in DEPLOY.glob("*/compose.yml"))
 
 
 def section(text: str, heading: str, until: str) -> str:
@@ -292,26 +298,219 @@ def test_the_pre_migration_audit_is_target_image_and_not_unconditional(readme: s
         )
 
 
-def test_the_pre_migration_audit_does_not_assume_an_unmerged_release(readme: str) -> None:
-    """Main's runbook has to be executable with nothing else merged.
+@pytest.mark.parametrize("runbook", RUNBOOKS, ids=lambda path: path.parent.name + "/" + path.name)
+def test_no_runbook_tells_an_operator_to_run_a_command_that_does_not_exist(
+    runbook: Path,
+) -> None:
+    """A runbook has to be executable against this repository and nothing else.
 
-    So the step may describe the shape of a release-specific audit, and may show
-    the command, but must not name a migration, a service or a flag that only
-    exists on a branch.
+    This replaces a hard-coded list of two words. The property it was standing in
+    for is real — an operator following a runbook at eleven at night must not be
+    told to run something that only exists on somebody's branch — but the list
+    was a snapshot of which branches were open in August 2026, and it aged the
+    way a snapshot does: `searchindex` and `check_search_freshness` merged in
+    #78, and the assertion went on forbidding two names that had become correct,
+    while a *third* name from a *different* unmerged branch would have sailed
+    through.
 
-    The list is what is *not* on main, so it shrinks as things merge. DATA-001
-    and DATA-002 landed (`submissions/0005` and `0006`), and naming them here is
-    now naming main — which is why the step may say that a production instance
-    which has not yet crossed them owes this audit. `searchindex` and
-    `check_search_freshness` are SEARCH-001's, still unmerged, and stay out:
-    that branch reconciles its own deployment wording when it lands.
+    So it asks the question directly instead. Every `manage.py <command>` a
+    runbook tells somebody to type has to be a command this repository installs.
+    That cannot go stale, it covers the whole runbook rather than one section,
+    and it fails for a name from an unmerged branch exactly as the list did — on
+    the day the name is written, rather than on the day somebody remembers the
+    list exists.
     """
-    text = section(readme, *AUDIT_SECTION)
-    for absent in ("searchindex", "check_search_freshness"):
-        assert absent not in text, (
-            f"the runbook names {absent!r}, which is not on main. A runbook that needs an "
-            "unmerged branch to be correct is a runbook nobody can follow today."
+    from django.core.management import get_commands
+
+    available = set(get_commands())
+    for line in command_lines(runbook.read_text(encoding="utf-8")):
+        for match in re.finditer(r"manage\.py ([a-z_][a-z0-9_]*)", line):
+            name = match.group(1)
+            assert name in available, (
+                f"{runbook.name}: tells an operator to run `manage.py {name}`, which this "
+                f"repository does not install. A runbook that needs an unmerged branch to be "
+                f"correct is a runbook nobody can follow today.\n  {line}"
+            )
+
+
+#: Compose flags whose *next* token is a value rather than a service name.
+#: `logs --tail 100 web` names one service, not a service called `100` — which
+#: this test asserted on its first run, and which is the whole reason the list
+#: is here rather than "anything not starting with a dash".
+FLAGS_TAKING_A_VALUE = ("--tail", "--since", "--until", "--timeout", "--profile", "--scale", "-n")
+
+
+def _service_arguments(tail: str) -> list[str]:
+    """The service names in what follows a Compose verb."""
+    names: list[str] = []
+    skip = False
+    for token in tail.split():
+        if skip:
+            skip = False
+            continue
+        if token in FLAGS_TAKING_A_VALUE:
+            skip = True
+            continue
+        if token.startswith("-") or "/" in token or "=" in token:
+            continue
+        names.append(token)
+    return names
+
+
+@pytest.mark.parametrize("stack", STACKS, ids=lambda path: path.name)
+def test_no_runbook_names_a_service_its_own_stack_does_not_define(stack: Path) -> None:
+    """The other half of the same property, for the other kind of name.
+
+    `searchindex` was the example: a runbook step that named it while it existed
+    only on a branch would have sent an operator to `logs -f searchindex` and a
+    Compose error. Read off each stack's own `compose.yml`, so a service added or
+    removed there moves this with it.
+    """
+    import yaml
+
+    compose = yaml.safe_load((stack / "compose.yml").read_text(encoding="utf-8"))
+    defined = set(compose.get("services", {}))
+    assert defined, f"{stack.name}: compose.yml defines no services"
+
+    for runbook in sorted(stack.glob("*.md")):
+        for line in command_lines(runbook.read_text(encoding="utf-8")):
+            if "docker compose" not in line:
+                continue
+            for verb in (" logs ", " up ", " restart ", " stop ", " start "):
+                if verb not in line:
+                    continue
+                for token in _service_arguments(line.split(verb, 1)[1]):
+                    assert token in defined, (
+                        f"{runbook.name}: names the service {token!r}, which "
+                        f"{stack.name}/compose.yml does not define\n  {line}"
+                    )
+
+
+# -- the search index contract ---------------------------------------------
+
+
+def test_the_release_sequence_rebuilds_the_index_after_it_replaces_the_stack(
+    readme: str,
+) -> None:
+    """The whole sequence, including the two steps that used to be a release note.
+
+    `test_the_sequence_stays_in_the_one_safe_order` pins the half that protects
+    the database. This pins the half that protects the corpus, and the two ends
+    meet: the audit is read before the backup it might cancel, and the rebuild
+    runs after the image that needs it is the one serving.
+
+    Each `<` is load-bearing:
+
+    *audit before backup* — a finding about rows a new constraint would reject
+    stops the release, and a backup taken first is a backup taken for a release
+    that is not happening.
+
+    *replacement before rebuild* — the rebuild has to be the new release's
+    rebuild, projecting under the contract the new code reads. Run against the
+    old image it would refill the table under the *old* index version, which the
+    new code will not read, and the operator would have paid for the rebuild and
+    still have an empty search.
+
+    *rebuild before integrity* — the check is what proves the rebuild took.
+    Asked first it reports the corpus the release is about to replace.
+    """
+    lines = command_lines(section(readme, *DEPLOYMENT_SECTION))
+
+    def first(needle: str, what: str) -> int:
+        found = [index for index, line in enumerate(lines) if needle in line]
+        assert found, f"the deployment sequence no longer has a {what} step"
+        return found[0]
+
+    audit = first("manage.py check_evidence_integrity", "pre-migration audit")
+    backup = first("juristid-backup.sh", "backup")
+    migrate = first("manage.py migrate", "migrate")
+    replace = first("compose.yml up -d", "replacement")
+    rebuild = first("manage.py rebuild_search_index", "search rebuild")
+    integrity = first("manage.py check_search_integrity", "search integrity check")
+
+    assert audit < backup, (
+        "the pre-migration audit is read after the backup, so a finding that stops the release "
+        "arrives too late to stop the work before it"
+    )
+    assert backup < migrate, "the backup is the copy a failed migration is restored to"
+    assert migrate < replace, "the schema moves before the process that expects it"
+    assert replace < rebuild, (
+        "the search rebuild runs before the new image is serving, so it would project the "
+        "corpus under the contract the outgoing release reads"
+    )
+    assert rebuild < integrity, (
+        "the integrity check runs before the rebuild, so it reports the corpus the release is "
+        "about to replace rather than the one it produced"
+    )
+
+
+def test_the_search_transition_runs_against_the_running_image(readme: str) -> None:
+    """`exec`, not `run --rm`, and for the same reason readiness uses it.
+
+    By this point the running container *is* the target image, and the rebuild
+    has to write through the code that will read it. A one-off container is the
+    right shape for a question about an image that is not serving yet, and the
+    wrong shape for a write that has to land under the contract the serving
+    process uses.
+    """
+    lines = [
+        line for line in command_lines(section(readme, *SEARCH_SECTION)) if "manage.py" in line
+    ]
+    assert lines, "the search transition step runs no management command"
+    for line in lines:
+        assert "exec" in line, (
+            f"the search transition acts on the release now serving, so it enters it: {line}"
         )
+        assert "run --rm" not in line, (
+            f"a one-off container is not the process whose index this is: {line}"
+        )
+
+
+def test_the_search_transition_is_conditional_and_says_what_the_condition_is(
+    readme: str,
+) -> None:
+    """Not every release owes this, and a step that reads as unconditional is one
+    an operator stops reading.
+
+    The condition is a property of the release — whether it moves
+    `INDEX_VERSION` — and it has to be *stated*, because the thing that makes
+    this step necessary is invisible from the outside: the worker is green, the
+    freshness check is green, and the corpus is unreadable. A step that showed
+    the command without that sentence would be a step somebody skips on the one
+    release it exists for.
+    """
+    text = section(readme, *SEARCH_SECTION)
+    lowered = text.lower()
+
+    assert "index_version" in lowered, "the condition is a change to INDEX_VERSION; name it"
+    assert "conditional" in lowered, "the step reads as part of every release"
+    assert "searchrebuilddebt" in lowered, (
+        "the step must say what the worker consumes, because that is why the worker cannot "
+        "discharge this"
+    )
+    assert "empty" in lowered, (
+        "a table that arrives empty reads as nothing owed; that is the trap and it has to be "
+        "written down"
+    )
+    assert "stops the release" in lowered, (
+        "an integrity finding has to stop the release, and the step has to say so in those "
+        "words — 'investigate' is what an operator does at nine the next morning"
+    )
+
+
+def test_the_search_transition_does_not_promise_the_worker_will_do_it(readme: str) -> None:
+    """The failure this step exists to prevent is a *green* one.
+
+    `searchindex` healthy and `check_search_freshness` clear are both true of a
+    deployment whose entire corpus is ineligible, because neither asks that
+    question. If the runbook ever loses the sentence separating them, the step
+    becomes one an operator skips after glancing at a green container.
+    """
+    text = section(readme, *SEARCH_SECTION)
+    assert "check_search_freshness" in text, (
+        "the step must name the check that is green while the corpus is unreadable"
+    )
+    assert "green" in text.lower(), "the trap is that the healthy signals are honest; say so"
 
 
 # -- diagnosing a failed migration -----------------------------------------

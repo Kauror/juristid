@@ -146,11 +146,18 @@ jobs:
       # steps past. When a release adds another, move them: leaving them behind
       # quietly narrows this to a range that is no longer the one being
       # deployed.
+      #
+      # That instruction was followed by prose alone and was missed once —
+      # SEARCH-001 added `search/0007` and left this list at the range DATA-001
+      # had set, so the migration carrying the release was never reversed here.
+      # `tests/test_deployment_state.py` now holds the list to the repository's
+      # own migrations, so forgetting is a red build rather than a quiet gap.
       - name: And forwards again from the state a deployment is in
         run: |
           uv run python manage.py migrate taxonomy 0003 --noinput
           uv run python manage.py migrate workflow 0005 --noinput
           uv run python manage.py migrate submissions 0004 --noinput
+          uv run python manage.py migrate search 0006 --noinput
           uv run python manage.py migrate --noinput
 
       - name: Estonian search capabilities are available
