@@ -801,7 +801,7 @@ def test_the_composer_starts_as_one_row(page, base_url):
     The resting state moved with the 2026-08 pass. It used to be a short
     textarea standing open on every visit; it is now the closed disclosure —
     one row saying what the box is for — because a Matter is read far more often
-    than it is written to (design handoff 1d, docs/adr/0042). Opened, the field
+    than it is written to (design handoff 1d, docs/adr/0043). Opened, the field
     is at its working height and stays there while the composer is open: a mode
     chip taking the focus must not reflow four lines of somebody's text under
     the pointer.

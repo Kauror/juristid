@@ -157,7 +157,7 @@ def open_composer(page) -> None:
 
     A Matter is read far more often than it is written to, so the box that
     writes to it folds until somebody asks for it (design handoff 1d,
-    docs/adr/0042). Every test that types into the composer goes through here,
+    docs/adr/0043). Every test that types into the composer goes through here,
     so the day it stops being a disclosure this is the only line that changes.
     """
     composer = page.locator("details.uxcomp")

@@ -195,7 +195,7 @@ def test_a_register_filtered_on_a_departed_colleague_still_finds_their_work(page
 
     # The team table is a grid of links now, not a <table>: its rows are links,
     # and a row of cells wrapped in an anchor is not valid table markup
-    # (docs/adr/0042).
+    # (docs/adr/0043).
     page.locator(".uxstat__row").filter(has_text=FORMER_NAME).first.click()
     page.wait_for_load_state("networkidle")
 
