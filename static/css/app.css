@@ -246,6 +246,106 @@
   pointer-events: none;
 }
 
+/* The live suggestions, directly under the field they belong to.
+
+   Positioned against `.searchfield`, which is already the positioning context,
+   so the panel keeps the field's width and follows it wherever the bar reflows
+   the control to — including the full-width row it takes below 860px.
+
+   Above the page and above the sticky bar's own stacking context, but nothing
+   more: the persona popover and the dialogs stay above it, which is the order
+   somebody actually needs when both are open. */
+.searchfield__results {
+  position: absolute;
+  top: calc(100% + var(--spacing-1));
+  left: 0;
+  /* The field's width, and never wider than the viewport it is in. Anchored
+     left rather than stretched between both edges so the panel cannot pull
+     itself past the right-hand side of a narrow window — which is a horizontal
+     scrollbar on every page, and invisible in a screenshot. */
+  width: 100%;
+  max-width: calc(100vw - var(--spacing-6));
+  z-index: 40;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-popover);
+  padding: var(--spacing-1);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  /* Five rows plus the full-search action fit; anything the browser makes
+     taller scrolls inside the panel rather than off the bottom of the bar. */
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.searchfield__results[hidden] {
+  display: none;
+}
+
+.searchfield__option {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-control);
+  color: var(--text-body);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* Hover and keyboard-active are the same state deliberately: the row under the
+   pointer and the row the arrows are on mean the same thing, and giving them
+   two appearances makes a person work out which one Enter would open.
+
+   The left bar is what carries it, not the tint. A background alone is colour
+   on its own doing the work, which is exactly what a person who cannot separate
+   these two greys cannot see. */
+.searchfield__option:hover,
+.searchfield__option.is-active {
+  background: var(--surface-overlay-hover);
+  color: var(--text-primary);
+  box-shadow: inset 2px 0 0 0 var(--accent-primary);
+}
+
+.searchfield__optiontitle {
+  font-size: var(--typography-size-base);
+  line-height: var(--typography-line-tight);
+  /* One line. A dropdown under a 320px field is a way to recognise a title,
+     not to read one, and a wrapped four-line legal title pushes the rows below
+     it off the bottom of the panel. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.searchfield__optionmeta {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The way out to the full results page, and visibly a different kind of row
+   from the five above it. */
+.searchfield__option--all {
+  border-top: 1px solid var(--border-control);
+  margin-top: 3px;
+  padding-top: var(--spacing-15);
+  border-radius: 0 0 var(--radius-control) var(--radius-control);
+  color: var(--accent-link);
+  font-size: var(--typography-size-meta);
+}
+
+.searchfield__empty {
+  margin: 0;
+  padding: var(--spacing-15) var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
 .topbar__cta,
 .topbar__env,
 .topbar__signout {

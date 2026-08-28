@@ -1188,8 +1188,307 @@
     });
   });
 
+  /* ---- Live suggestions under the header search --------------------------
+   * The compact field already submitted to the full results page, and still
+   * does. This is a shortcut past that page for the case it is nearly always
+   * used for — "open that file" — and it is bound onto the existing form
+   * rather than replacing it: without this script, or before it runs, or after
+   * the endpoint fails, typing and pressing Enter goes exactly where it always
+   * went (master specification 17.7).
+   *
+   * Nothing here decides what may be seen. The endpoint runs the same
+   * authorized, ranked search the results page runs, five rows of it, and this
+   * function renders whatever comes back. There is no filtering in the browser
+   * to get wrong (app/search/views.py).
+   *
+   * No loading indicator, deliberately. The panel keeps the previous answer
+   * while the next one is on its way, so there is never a blank to wait
+   * through — and a spinner blinking on and off under a header field on every
+   * third keystroke is the noise the design asked to avoid.
+   */
+  var SUGGEST_MIN_CHARACTERS = 2;
+  var SUGGEST_DEBOUNCE_MS = 200;
+
+  function bindLiveSearch(scope) {
+    (scope || document).querySelectorAll("form[data-live-search]").forEach(function (form) {
+      if (!once(form, "LiveSearch")) {
+        return;
+      }
+      var input = form.querySelector(".searchfield__input");
+      var panel = form.querySelector(".searchfield__results");
+      var status = form.querySelector("[role=status]");
+      var endpoint = form.getAttribute("data-live-search");
+      /* No fetch means no suggestions and an untouched form, which is the
+         correct outcome rather than a degraded one. */
+      if (!input || !panel || !panel.id || !endpoint || typeof window.fetch !== "function") {
+        return;
+      }
+
+      /* Announced only now that the behaviour exists. Writing these into the
+         template would describe a listbox that nothing can open. */
+      input.setAttribute("role", "combobox");
+      input.setAttribute("aria-autocomplete", "list");
+      input.setAttribute("aria-expanded", "false");
+      input.setAttribute("aria-controls", panel.id);
+      panel.setAttribute("role", "listbox");
+      panel.setAttribute("aria-label", "Otsingusoovitused");
+
+      var options = [];
+      var active = -1;
+      /* The stale-response guard. Every request takes the next number, and only
+         a response still holding the current one may reach the page. The abort
+         below usually stops a superseded request before it resolves; a response
+         already parsed when the abort lands would otherwise arrive after a
+         newer one and overwrite it — "maks" replacing "maksud". */
+      var version = 0;
+      var inFlight = null;
+      var timer = null;
+
+      function announce(text) {
+        if (status) {
+          status.textContent = text;
+        }
+      }
+
+      function close() {
+        panel.hidden = true;
+        panel.textContent = "";
+        options = [];
+        active = -1;
+        input.setAttribute("aria-expanded", "false");
+        input.removeAttribute("aria-activedescendant");
+      }
+
+      function setActive(index) {
+        if (active >= 0 && options[active]) {
+          options[active].setAttribute("aria-selected", "false");
+          options[active].classList.remove("is-active");
+        }
+        active = index;
+        if (active >= 0 && options[active]) {
+          var option = options[active];
+          option.setAttribute("aria-selected", "true");
+          option.classList.add("is-active");
+          /* What the field is pointing at, without moving focus out of it —
+             which is what lets somebody keep typing while a row is selected. */
+          input.setAttribute("aria-activedescendant", option.id);
+          if (option.scrollIntoView) {
+            option.scrollIntoView({ block: "nearest" });
+          }
+        } else {
+          input.removeAttribute("aria-activedescendant");
+        }
+      }
+
+      function makeOption(id, href, modifier) {
+        var option = document.createElement("a");
+        option.className = "searchfield__option" + (modifier ? " " + modifier : "");
+        option.id = id;
+        option.setAttribute("role", "option");
+        option.setAttribute("aria-selected", "false");
+        /* Reachable by the arrows and by the pointer, never by Tab: a listbox
+           is one stop, and five extra tab stops under the header would be a
+           worse keyboard than the one this replaces. */
+        option.setAttribute("tabindex", "-1");
+        option.href = href;
+        return option;
+      }
+
+      function render(payload) {
+        panel.textContent = "";
+        options = [];
+        active = -1;
+        input.removeAttribute("aria-activedescendant");
+
+        var results = payload.results || [];
+        results.forEach(function (result, index) {
+          var option = makeOption(panel.id + "-" + index, result.url, "");
+          var title = document.createElement("span");
+          title.className = "searchfield__optiontitle";
+          /* textContent throughout. Nothing the server sends is ever parsed as
+             markup here, so a Matter titled with a tag stays a title. */
+          title.textContent = result.title;
+          option.appendChild(title);
+          if (result.context) {
+            var context = document.createElement("span");
+            context.className = "searchfield__optionmeta";
+            context.textContent = result.context;
+            option.appendChild(context);
+          }
+          panel.appendChild(option);
+          options.push(option);
+        });
+
+        if (!results.length) {
+          var empty = document.createElement("p");
+          empty.className = "searchfield__empty";
+          /* An option rather than loose text, because the only valid child of a
+             listbox is an option — and a disabled one, because there is nothing
+             here to choose. The arrows skip it: it is never pushed onto
+             `options`. */
+          empty.setAttribute("role", "option");
+          empty.setAttribute("aria-disabled", "true");
+          empty.setAttribute("aria-selected", "false");
+          empty.textContent = "Tulemusi ei leitud";
+          panel.appendChild(empty);
+        } else if (payload.has_more && payload.all_url) {
+          /* The corpus is wider than this list: the full page also answers with
+             entries, sent opinions and pages of annexes. One row leading to it,
+             rather than a second search built into the header. */
+          var all = makeOption(panel.id + "-koik", payload.all_url, "searchfield__option--all");
+          all.textContent = "Vaata kõiki tulemusi";
+          panel.appendChild(all);
+          options.push(all);
+        }
+
+        panel.hidden = false;
+        input.setAttribute("aria-expanded", "true");
+        if (!results.length) {
+          announce("Tulemusi ei leitud");
+        } else if (results.length === 1) {
+          announce("1 soovitus");
+        } else {
+          announce(results.length + " soovitust");
+        }
+      }
+
+      function abortInFlight() {
+        if (inFlight) {
+          inFlight.abort();
+          inFlight = null;
+        }
+      }
+
+      function request(term) {
+        var token = ++version;
+        abortInFlight();
+        var controller = typeof AbortController === "function" ? new AbortController() : null;
+        inFlight = controller;
+        window
+          .fetch(endpoint + "?q=" + encodeURIComponent(term), {
+            credentials: "same-origin",
+            headers: { Accept: "application/json" },
+            signal: controller ? controller.signal : undefined,
+          })
+          .then(function (response) {
+            /* A redirect to the sign-in page arrives here as an HTML 200, and a
+               refusal as a 4xx. Neither is a result set, and both mean the same
+               thing to this control: leave the form alone. */
+            var type = response.headers.get("content-type") || "";
+            if (!response.ok || type.indexOf("application/json") < 0) {
+              throw new Error("otsingusoovitusi ei saadud");
+            }
+            return response.json();
+          })
+          .then(function (payload) {
+            if (token !== version) {
+              return;
+            }
+            render(payload);
+          })
+          .catch(function () {
+            if (token !== version) {
+              return;
+            }
+            /* The suggestions go away; the form does not. Enter still reaches
+               the full results page. */
+            close();
+            announce("");
+          });
+      }
+
+      function schedule() {
+        window.clearTimeout(timer);
+        var term = input.value.replace(/\s+/g, " ").trim();
+        if (term.replace(/\s+/g, "").length < SUGGEST_MIN_CHARACTERS) {
+          /* Below the threshold nothing is asked at all, and anything already
+             asked stops counting — otherwise deleting back to one character
+             would leave the last answer sitting under an all-but-empty field. */
+          version += 1;
+          abortInFlight();
+          close();
+          announce("");
+          return;
+        }
+        timer = window.setTimeout(function () {
+          request(term);
+        }, SUGGEST_DEBOUNCE_MS);
+      }
+
+      input.addEventListener("input", schedule);
+
+      input.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          if (!panel.hidden) {
+            /* Only when there is something to close, so Escape keeps its
+               ordinary meaning for the field the rest of the time. */
+            event.preventDefault();
+            event.stopPropagation();
+            close();
+            announce("");
+            input.focus();
+          }
+          return;
+        }
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          if (panel.hidden || !options.length) {
+            return;
+          }
+          event.preventDefault();
+          var delta = event.key === "ArrowDown" ? 1 : -1;
+          setActive(
+            active < 0
+              ? delta > 0
+                ? 0
+                : options.length - 1
+              : (active + delta + options.length) % options.length
+          );
+          return;
+        }
+        if (event.key === "Enter") {
+          /* Only when a row is selected. With nothing selected this is the
+             ordinary submit, and the ordinary submit is the fallback. */
+          if (!panel.hidden && active >= 0 && options[active]) {
+            event.preventDefault();
+            var target = options[active].href;
+            close();
+            window.location.assign(target);
+          }
+          return;
+        }
+        if (event.key === "Tab") {
+          close();
+        }
+      });
+
+      /* Keeps the focus in the field while a row is being clicked. Without this
+         the blur below fires first, the panel is gone before the click lands,
+         and the row cannot be clicked at all. */
+      panel.addEventListener("mousedown", function (event) {
+        event.preventDefault();
+      });
+
+      input.addEventListener("blur", function () {
+        window.setTimeout(function () {
+          if (!form.contains(document.activeElement)) {
+            close();
+          }
+        }, 0);
+      });
+
+      document.addEventListener("click", function (event) {
+        if (!form.contains(event.target)) {
+          close();
+        }
+      });
+
+      form.addEventListener("submit", close);
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     bind(document);
+    bindLiveSearch(document);
     bindPeriodFields(document);
     bindDatePickers(document);
     bindChoiceFilters(document);

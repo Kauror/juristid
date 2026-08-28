@@ -15,6 +15,8 @@ claim that is easy to believe and hard to verify without opening them.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import expect
 
@@ -24,7 +26,7 @@ from app.core.management.commands.seed_e2e_data import (
     RESTRICTED_TITLE,
     archive_letter_sha,
 )
-from e2e.conftest import ADMIN, HEAD, MARTIN, go_to, sign_in, sign_out
+from e2e.conftest import ADMIN, HEAD, MARTIN, go_to, navigation_targets, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -233,21 +235,52 @@ def test_a_department_head_is_still_refused_outside_the_shared_gate(page, base_u
     assert response.status == 403
 
 
-def test_the_archive_is_in_the_navigation_for_a_reader_and_not_for_anybody_else(page, base_url):
-    """Reachable without knowing the URL, and invisible to those who may not.
+def test_the_archive_is_not_a_destination_of_its_own_on_the_bar(page, base_url):
+    """One question, one answer on the bar.
 
-    Hiding it is presentation; the refusal above is the boundary. Both are
-    needed: a link that 403s is a worse interface, and a hidden link is not
-    a control.
+    «Arvamused» and «Arvamuste arhiiv» were two items a reader had to tell
+    apart before they could pick one. The distinction is real and it is kept —
+    inside the Arvamused workspace, as a captioned tab — so the bar carries
+    Arvamused and nothing beside it, for the persona who may read the archive
+    as much as for the one who may not.
+
+    Removed, not hidden. The refusal above is still the boundary, the route is
+    unchanged, and the test below follows the workspace to it.
     """
-    sign_in(page, base_url, MARTIN)
-    navigation = page.get_by_role("navigation", name="Peamine")
-    expect(navigation.get_by_role("link", name="Arvamuste arhiiv")).to_have_count(0)
-    sign_out(page, base_url)
+    for persona in (MARTIN, ADMIN):
+        sign_in(page, base_url, persona)
+        # By href, not by visible name: below 1560px the reading destinations
+        # live inside a closed <details>, whose contents are out of the
+        # accessibility tree. Asserting by role there would be asserting a
+        # layout decision this test does not care about (e2e/conftest.py).
+        targets = navigation_targets(page)
+        assert ARCHIVE_PATH not in targets, targets
+        assert "/arvamused/" in targets, targets
+        sign_out(page, base_url)
 
+
+def test_the_workspace_tab_is_how_a_reader_reaches_the_archive(page, base_url):
+    """Arvamused → Arhiiv, without knowing a URL.
+
+    The path the removed bar item used to be. It has to work for the persona
+    who may read the corpus, or the cleanup took a destination away instead of
+    moving it.
+    """
     sign_in(page, base_url, ADMIN)
-    go_to(page, "Arvamuste arhiiv")
-    expect(page.get_by_role("heading", name="Arvamuste arhiiv")).to_be_visible()
+    go_to(page, "Arvamused")
+    expect(page.get_by_role("heading", name="Arvamused")).to_be_visible()
+    page.get_by_role("link", name=re.compile(r"^Arhiiv")).click()
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_role("link", name=re.compile(r"^Arhiiv"))).to_have_attribute(
+        "aria-current", "page"
+    )
+    expect(page.get_by_text(UNLINKED_TITLE)).to_be_visible()
+
+
+def test_the_administrative_archive_url_still_opens(page, base_url):
+    """The direct route is untouched; only the link to it left the bar."""
+    sign_in(page, base_url, ADMIN)
+    open_archive(page, base_url)
 
 
 # -- what the workspace promises ----------------------------------------------
