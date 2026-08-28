@@ -762,18 +762,17 @@ def test_the_register_filter_offers_a_departed_colleague_who_owns_visible_work(
 
 
 def test_the_register_filter_does_not_name_an_owner_of_work_this_reader_cannot_see(
-    client, specialist, former
+    client, reader, former
 ):
     """The boundary the union is drawn inside.
 
-    `former` owns one RESTRICTED Matter and nothing else. A plain SPECIALIST who
-    is neither its owner nor a collaborator may not read it — and an option in a
+    `former` owns one RESTRICTED Matter and nothing else. Somebody outside the legal team may not read it (docs/adr/0042) — and an option in a
     dropdown is a name on a page. Offering it would disclose the person, the
     fact that they hold something, and that it is something this reader is not
     allowed to open.
     """
     factories.MatterFactory(owner=former, visibility=Visibility.RESTRICTED)
-    client.force_login(specialist)
+    client.force_login(reader)
 
     response = client.get(reverse("matters:matter_list"))
 
@@ -910,14 +909,14 @@ def test_the_reporting_filter_offers_a_departed_colleague_who_owns_reported_work
     assert former in offered
 
 
-def test_the_reporting_filter_does_not_name_an_owner_of_unreadable_work(client, specialist, former):
+def test_the_reporting_filter_does_not_name_an_owner_of_unreadable_work(client, reader, former):
     """The reported population is `visible_to` narrowed by `real_data`.
 
     Both halves bound the option list. This case is the authorization half; the
     one below is the data-class half.
     """
     factories.MatterFactory(owner=former, visibility=Visibility.RESTRICTED)
-    client.force_login(specialist)
+    client.force_login(reader)
 
     response = client.get(reverse("reporting:matters"))
 

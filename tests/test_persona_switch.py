@@ -447,15 +447,23 @@ def test_the_owning_specialist_persona_does_see_their_restricted_matter(
 
 
 @pytest.mark.parametrize("path", ["/ulevaade/", "/teemad/?olek=koik"])
-def test_a_specialist_persona_never_receives_a_restricted_title(
+def test_a_specialist_persona_receives_the_restricted_title_too(
     behind_the_gate, restricted_world, path
 ):
+    """This asserted `not in` until docs/adr/0042.
+
+    A persona is answered by authorization, and a lawyer's authorization is now
+    the department. `READER` cannot stand in here — `PERSONA_ROLES` is the two
+    lawyer roles, so a reader is not offerable as a persona at all. The viewer
+    who still may not see it is a session with no persona, and that is asserted
+    directly below.
+    """
     _act_as(behind_the_gate, str(restricted_world["specialist"].pk))
 
     page = behind_the_gate.get(path).content.decode()
 
     assert "Avalik eelnõu kõigile" in page
-    assert "Konfidentsiaalne liikmete tagasiside" not in page
+    assert "Konfidentsiaalne liikmete tagasiside" in page
 
 
 def test_the_department_head_persona_sees_what_that_role_entitles(
@@ -480,7 +488,9 @@ def test_switching_away_from_the_head_takes_the_restricted_sight_with_it(
     _act_as(behind_the_gate, str(restricted_world["head"].pk))
     assert "Konfidentsiaalne" in behind_the_gate.get("/teemad/?olek=koik").content.decode()
 
-    _act_as(behind_the_gate, str(restricted_world["specialist"].pk))
+    # Away from every persona, since both lawyer roles now read the department
+    # and switching between them could no longer show anything being dropped.
+    _act_as(behind_the_gate, "")
 
     assert "Konfidentsiaalne" not in behind_the_gate.get("/teemad/?olek=koik").content.decode()
 

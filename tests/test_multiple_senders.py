@@ -573,13 +573,13 @@ def test_a_hidden_matter_does_not_rank_its_sender(specialist, reader):
 
     for _ in range(4):
         factories.MatterFactory(
-            owner=reader,
+            owner=specialist,
             visibility=Visibility.RESTRICTED,
             source_organisations=[hidden_sender],
         )
     factories.MatterFactory(owner=specialist, source_organisations=[open_sender])
 
-    ranked = organisations_by_usage(specialist)
+    ranked = organisations_by_usage(reader)
     assert ranked[0] == open_sender
 
 

@@ -176,12 +176,12 @@ def test_a_restricted_matter_never_reaches_the_search_or_its_count(client, reade
     indexed(
         factories.MatterFactory(
             title="Pakendiseaduse piiratud osa",
-            owner=reader,
+            owner=specialist,
             visibility=Visibility.RESTRICTED,
         )
     )
 
-    client.force_login(specialist)
+    client.force_login(reader)
     response = client.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik"})
 
     assert total_of(response) == 1

@@ -168,14 +168,14 @@ def test_a_submission_on_a_matter_the_reader_cannot_see_is_not_listed(
     client, reader, specialist, capture_evidence
 ):
     """Visibility is inherited, never re-derived on this surface."""
-    hidden = factories.MatterFactory(owner=reader, visibility=Visibility.RESTRICTED)
+    hidden = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     sent_submission(
         hidden,
         evidence=final_evidence(capture_evidence, hidden),
         title="Piiratud arvamus",
     )
 
-    client.force_login(specialist)
+    client.force_login(reader)
     body = client.get(SENT_URL).content.decode()
 
     assert "Piiratud arvamus" not in body
