@@ -233,12 +233,18 @@ def test_matter_list_paginates_and_filters(signed_in, specialist):
     assert len(second.context["page"].object_list) == 5
 
 
-def test_matter_list_counts_exclude_restricted_matters(signed_in, other_specialist):
-    """Authorization runs before the count, not after the page is built."""
-    factories.MatterFactory(owner=other_specialist, visibility=Visibility.RESTRICTED)
-    factories.MatterFactory(owner=other_specialist, visibility=Visibility.NORMAL)
+def test_matter_list_counts_exclude_restricted_matters(client, specialist, reader):
+    """Authorization runs before the count, not after the page is built.
 
-    response = signed_in.get(reverse("matters:matter_list"))
+    Counted for the reader, who may not open the restricted one. A lawyer sees
+    both since docs/adr/0042, so only somebody outside the legal team can show
+    that the count is scoped at all.
+    """
+    factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
+    factories.MatterFactory(owner=specialist, visibility=Visibility.NORMAL)
+
+    client.force_login(reader)
+    response = client.get(reverse("matters:matter_list"))
     assert response.context["page"].paginator.count == 1
 
 
@@ -300,24 +306,24 @@ def test_search_finds_a_matter_by_organisation(specialist):
     assert matter.id in {result.matter.id for result in results}
 
 
-def test_search_never_returns_a_restricted_matter(specialist, other_specialist):
+def test_search_never_returns_a_restricted_matter(specialist, reader):
     factories.MatterFactory(
-        owner=other_specialist,
+        owner=specialist,
         title="Salajane pakendiseaduse teema",
         visibility=Visibility.RESTRICTED,
     )
-    assert search_matters(query="pakendiseaduse", user=specialist) == []
+    assert search_matters(query="pakendiseaduse", user=reader) == []
 
 
-def test_search_by_reference_does_not_leak_a_restricted_matter(specialist, other_specialist):
+def test_search_by_reference_does_not_leak_a_restricted_matter(specialist, reader):
     """Guessing an exact reference must not confirm the record exists."""
     hidden = create_matter(
         title="Salajane",
-        actor=other_specialist,
-        owner=other_specialist,
+        actor=specialist,
+        owner=specialist,
         visibility=Visibility.RESTRICTED,
     )
-    assert search_matters(query=hidden.display_reference, user=specialist) == []
+    assert search_matters(query=hidden.display_reference, user=reader) == []
 
 
 def test_an_empty_query_returns_nothing(specialist):

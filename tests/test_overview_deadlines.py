@@ -206,7 +206,7 @@ def test_the_total_counts_both_sources(specialist) -> None:
 
 
 def test_a_restricted_matter_raises_no_total_for_a_reader_who_cannot_see_it(
-    specialist, other_specialist
+    specialist, reader
 ) -> None:
     """Authorization before arithmetic, in the one place a period could skip it."""
     create_matter(
@@ -218,7 +218,7 @@ def test_a_restricted_matter_raises_no_total_for_a_reader_who_cannot_see_it(
     )
 
     for window in dashboard.DEADLINE_WINDOWS:
-        result = dashboard.upcoming_rows(other_specialist, window=window)
+        result = dashboard.upcoming_rows(reader, window=window)
         assert result.total == 0, window.key
         assert result.rows == [], window.key
 

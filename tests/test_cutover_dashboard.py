@@ -185,7 +185,9 @@ def test_a_restricted_matter_contributes_to_no_breakdown_it_should_not(applied) 
     matter.owner = None
     matter.save(update_fields=["visibility", "owner", "updated_at"])
 
-    outsider = applied.people.anneli
+    # A lawyer reads it since docs/adr/0042; somebody outside the legal team
+    # does not, and that is the scoping this breakdown has to respect.
+    outsider = applied.people.reader
     assert CURRENT_DRAFTING not in titles(dashboard.drafting_matters(outsider))
 
 
