@@ -15,7 +15,9 @@ import datetime as dt
 
 import pytest
 
+from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
+from app.legacy_import.current_state import CurrentRegisterState
 from app.legacy_import.models import OutreachChannel, RegisterEngagementImport
 from app.legacy_import.register_outreach import (
     CAMPAIGN_COLUMNS,
@@ -33,11 +35,13 @@ from app.legacy_import.register_outreach import (
     read_mapping,
     summary,
 )
-from app.legacy_import.register_refresh import build_refresh_plan
+from app.legacy_import.register_refresh import build_refresh_plan, outreach_targets
+from app.legacy_import.resolution import KnownPeople, MappingTables
 from app.matters.enums import EngagementKind, RecordMode
-from app.matters.models import MatterEngagement
+from app.matters.models import Matter, MatterEngagement
 from app.matters.services import create_imported_matter
 from app.search.models import SearchDocument
+from app.workflow.models import NextAction
 from tests.synthetic_cutover import SNAPSHOT_DATE, approve_snapshot
 from tests.synthetic_portfolio import (
     CURRENT_YEAR,
@@ -110,12 +114,25 @@ def add_matter(
     deadline: str = "10.03.2026",
     visibility: str = Visibility.NORMAL,
 ):
+    def as_date(cell: str):
+        if not cell:
+            return None
+        day, month, year = cell.split(".")
+        return dt.date(int(year), int(month), int(day))
+
+    # The canonical record genuinely holds the dates its first snapshot gave
+    # it. Without this the Matter has no window at all, and a test claiming to
+    # prove "the newer workbook's deadline wins" would only be proving "a
+    # deadline appears where there was none" — a weaker statement that a
+    # matcher reading stored state would also satisfy.
     matter = create_imported_matter(
         title=title,
         reference_year=CURRENT_YEAR,
         reference_number=reference,
         record_mode=RecordMode.FULL,
         visibility=visibility,
+        received_date=as_date(received),
+        response_deadline=as_date(deadline),
     )
     add_source_reference(
         register,
@@ -130,16 +147,26 @@ def add_matter(
 
 
 def plan_with(world, rows):
-    """A refresh applied, then the outreach planned over what it left."""
-    from app.legacy_import.register_refresh import apply_refresh_plan
+    """The outreach half of a dry-run, with **nothing applied first**.
 
-    refresh = build_refresh_plan(snapshot_sha256=SNAPSHOT, today=SNAPSHOT_DATE)
-    apply_refresh_plan(refresh, expect_plan_sha256=refresh.digest)
+    This used to apply the refresh and then plan the outreach over what it left,
+    and every assertion below passed because of it — the matcher was reading a
+    database the apply had already brought up to date. That is not the operation
+    being tested: an operator approves campaign candidates *before* anything is
+    written, and against a database that may never have seen this snapshot.
 
+    Planning without applying is what the defect looked like from the outside,
+    and it is what these tests now do.
+    """
     campaigns, _ = read_campaigns(rows, since=WINDOW[0], until=WINDOW[1])
-    return build_outreach_plan(
-        snapshot_sha256=SNAPSHOT, campaigns=campaigns, since=WINDOW[0], until=WINDOW[1]
+    refresh = build_refresh_plan(
+        snapshot_sha256=SNAPSHOT,
+        today=SNAPSHOT_DATE,
+        campaigns=campaigns,
+        campaign_window=WINDOW,
     )
+    assert refresh.outreach is not None
+    return refresh.outreach
 
 
 # ---------------------------------------------------------------------------
@@ -607,3 +634,210 @@ def test_the_search_projection_is_refreshed_for_touched_matters(world):
 
     document = SearchDocument.objects.filter(matter=matter).first()
     assert document is not None
+
+
+# ---------------------------------------------------------------------------
+# The plan matches against the portfolio the refresh would produce
+# ---------------------------------------------------------------------------
+#
+# The matcher used to read `CurrentRegisterState` and `Matter` from the
+# database. Before an apply those describe the *previous* workbook, so a
+# dry-run's campaign candidates were computed from facts the refresh was about
+# to overwrite — and on a database that had never seen the snapshot, from
+# nothing at all. The tests below are the correction, and each one fails against
+# a matcher that reads stored state.
+
+
+def restate(register, matter, **cells):
+    """What a newer workbook says about a Matter that already has a row.
+
+    It adds a row; it does not remove the old one. Source references are
+    immutable evidence, and the reconciliation resolves a Matter to the last row
+    the snapshot names it on.
+    """
+    return add_source_reference(
+        register,
+        matter,
+        snapshot=SNAPSHOT,
+        status_cell=cells.pop("status_cell", "kooskõlastusringil"),
+        **cells,
+    )
+
+
+def test_the_plan_matches_before_anything_has_been_written(world):
+    """The defect, stated as the property it broke.
+
+    Nothing has been applied and the derived state table is empty, which is
+    exactly the state an operator reads a plan in. The campaign still has to
+    find its Matter.
+    """
+    matter = add_matter(world, owner_cell=GIVEN_NAME)
+    rows = [
+        export_row(
+            section="Mida arvad sünteetilise pakendiseaduse muudatustest?",
+            template=f"pakendid 05.03.26 {GIVEN_NAME}",
+        )
+    ]
+
+    assert CurrentRegisterState.objects.count() == 0
+    plan = plan_with(world, rows)
+
+    assert [candidate.matter_id for candidate in plan.high_confidence] == [matter.pk]
+    assert CurrentRegisterState.objects.count() == 0
+
+
+def test_a_deadline_the_newer_workbook_moves_decides_eligibility_in_plan_mode(world):
+    """Window A excludes the campaign; window B includes it.
+
+    The database holds A and the newer snapshot says B, and the plan must
+    answer B — before any write. A matcher reading the stored deadline sees A
+    and reports no candidate, which is the shape of the defect.
+    """
+    matter = add_matter(world, owner_cell=GIVEN_NAME, received="16.02.2026", deadline="20.02.2026")
+    rows = [
+        export_row(
+            section="Mida arvad sünteetilise pakendiseaduse muudatustest?",
+            template=f"pakendid 05.03.26 {GIVEN_NAME}",
+        )
+    ]
+
+    # Window A: the campaign falls after the consultation closed.
+    assert plan_with(world, rows).candidates == []
+
+    # The newer workbook extends the deadline past the campaign.
+    restate(
+        world,
+        matter,
+        owner_cell=GIVEN_NAME,
+        received_cell="16.02.2026",
+        deadline_cell="10.03.2026",
+    )
+
+    plan = plan_with(world, rows)
+    assert [candidate.matter_id for candidate in plan.candidates] == [matter.pk]
+    # Still nothing written: the eligibility came from the projection, and the
+    # canonical record still holds the old deadline.
+    assert CurrentRegisterState.objects.count() == 0
+    matter.refresh_from_db()
+    assert matter.response_deadline == dt.date(2026, 2, 20)
+
+
+def test_an_owner_the_newer_workbook_moves_decides_eligibility_in_plan_mode(world):
+    """The campaign names one lawyer; the register hands the file to another.
+
+    The owner filter is hard, so the same campaign matches under one snapshot
+    and not the other — and the plan must use the newer ``VASTUTAJA``.
+    """
+    matter = add_matter(world, owner_cell=OTHER_GIVEN_NAME)
+    rows = [
+        export_row(
+            section="Mida arvad sünteetilise pakendiseaduse muudatustest?",
+            template=f"pakendid 05.03.26 {GIVEN_NAME}",
+        )
+    ]
+
+    assert plan_with(world, rows).candidates == []
+
+    restate(
+        world,
+        matter,
+        owner_cell=GIVEN_NAME,
+        received_cell="16.02.2026",
+        deadline_cell="10.03.2026",
+    )
+
+    plan = plan_with(world, rows)
+    assert [candidate.matter_id for candidate in plan.candidates] == [matter.pk]
+    assert plan.candidates[0].owner_raw == GIVEN_NAME
+
+
+def test_a_matter_the_newer_workbook_retires_is_not_a_campaign_target(world):
+    """The portfolio the refresh *produces*, not the one it starts from.
+
+    A terminal ``HETKESEIS`` takes the Matter out of current work, so its old
+    dates no longer place anything however well they fit.
+    """
+    matter = add_matter(world, owner_cell=GIVEN_NAME)
+    rows = [
+        export_row(
+            section="Mida arvad sünteetilise pakendiseaduse muudatustest?",
+            template=f"pakendid 05.03.26 {GIVEN_NAME}",
+        )
+    ]
+    assert plan_with(world, rows).candidates
+
+    restate(
+        world,
+        matter,
+        status_cell="rohkem pole tegevusi plaanis",
+        owner_cell=GIVEN_NAME,
+        received_cell="16.02.2026",
+        deadline_cell="10.03.2026",
+    )
+
+    assert plan_with(world, rows).candidates == []
+
+
+def test_the_matcher_asks_the_database_nothing(world, django_assert_num_queries):
+    """A pure computation over the projection and the campaign list.
+
+    Not a performance nicety: a query here is a fact read from the wrong
+    snapshot, which is the whole defect. Zero is the only number that cannot
+    regress back into it.
+    """
+    add_matter(world, owner_cell=GIVEN_NAME)
+    rows = [
+        export_row(
+            section="Mida arvad sünteetilise pakendiseaduse muudatustest?",
+            template=f"pakendid 05.03.26 {GIVEN_NAME}",
+        )
+    ]
+    campaigns, _ = read_campaigns(rows, since=WINDOW[0], until=WINDOW[1])
+    refresh = build_refresh_plan(snapshot_sha256=SNAPSHOT, today=SNAPSHOT_DATE)
+    targets = outreach_targets(
+        refresh.cutover, people=KnownPeople.load(), mappings=MappingTables.empty()
+    )
+
+    with django_assert_num_queries(0):
+        build_outreach_plan(
+            snapshot_sha256=SNAPSHOT,
+            campaigns=campaigns,
+            targets=targets,
+            since=WINDOW[0],
+            until=WINDOW[1],
+        )
+
+
+def test_planning_with_campaigns_writes_nothing_anywhere(world):
+    """Every table the refresh can touch, counted before and after.
+
+    The plan may allocate ordinary objects; it may not leave one behind, and it
+    may not bump a Matter's ``updated_at`` either.
+    """
+    add_matter(world, owner_cell=GIVEN_NAME)
+    rows = [
+        export_row(
+            section="Mida arvad sünteetilise pakendiseaduse muudatustest?",
+            template=f"pakendid 05.03.26 {GIVEN_NAME}",
+        )
+    ]
+
+    def census():
+        return {
+            "matters": Matter.objects.count(),
+            "state": CurrentRegisterState.objects.count(),
+            "actions": NextAction.objects.count(),
+            "engagements": MatterEngagement.objects.count(),
+            "imports": RegisterEngagementImport.objects.count(),
+            "events": ChangeEvent.objects.count(),
+            "matter_rows": sorted(
+                (str(pk), stamp) for pk, stamp in Matter.objects.values_list("pk", "updated_at")
+            ),
+        }
+
+    before = census()
+    plan = plan_with(world, rows)
+    candidate_rows(plan)
+    summary(plan)
+
+    assert census() == before

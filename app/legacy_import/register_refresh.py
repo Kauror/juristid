@@ -62,6 +62,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Count, Sum
 
 from app.legacy_import import next_action_enrichment as enrichment
 from app.legacy_import import register_outreach as outreach
@@ -74,8 +75,16 @@ from app.legacy_import.final_cutover import (
     apply_cutover_plan,
     build_cutover_plan,
     projected_state_rows,
+    resolved_fields,
     reviewed_snapshot,
 )
+from app.legacy_import.models import ImportBatch, MatterSourceReference
+from app.legacy_import.parser import SOURCE_SYSTEM
+
+# Imported by name as well as by module. `RefreshPlan.outreach` is a field, and
+# inside a class body that name shadows the module — so every annotation on a
+# sibling field has to reach these types directly or resolve to the field.
+from app.legacy_import.register_outreach import Campaign, OutreachPlan, OutreachTarget
 from app.legacy_import.register_semantics import (
     AddresseeCardinality,
     OpinionSentState,
@@ -88,6 +97,7 @@ from app.legacy_import.resolution import (
     resolve_owner,
     resolve_status,
 )
+from app.matters.enums import MatterDataClass
 from app.matters.models import Matter
 
 #: Bumped when this operation's composition changes — a phase added, a field
@@ -102,6 +112,92 @@ class PlanChanged(Exception):
 
 class UnreviewedSnapshot(Exception):
     """Applying a workbook nobody approved as authoritative."""
+
+
+class SnapshotNotCatalogued(Exception):
+    """The reviewed workbook's rows are not in this database yet."""
+
+
+#: The command that puts them there. Named once, so the refusal below can tell
+#: an operator what to run rather than what went wrong.
+CATALOGUE_COMMAND = "import_legacy_register"
+
+
+@dataclass(frozen=True)
+class CatalogueState:
+    """What this database holds of one workbook, before a refresh reads it."""
+
+    snapshot_sha256: str
+    #: Source references carrying this exact digest.
+    references: int
+    #: Of those, the ones that describe a Matter rather than a pre-numbered
+    #: padding row. A workbook catalogued as nothing but empty rows is a
+    #: workbook nobody catalogued.
+    real_rows: int
+    #: Import batches recording this digest, and the rows they say they read.
+    #: Reported rather than required: nothing in this schema guarantees that a
+    #: reference's snapshot digest matches its batch's, so a *missing* batch is
+    #: not evidence of a missing catalogue — but a batch that read far more rows
+    #: than this database holds references for is worth an operator's eye.
+    batches: int
+    batch_row_count: int
+
+    @property
+    def is_catalogued(self) -> bool:
+        return self.real_rows > 0
+
+    @property
+    def looks_partial(self) -> bool:
+        return bool(self.batches) and self.batch_row_count > self.references
+
+
+def catalogue_state(snapshot_sha256: str) -> CatalogueState:
+    """How much of this workbook the database holds. Two counts, no writes."""
+    digest = (snapshot_sha256 or "").strip().lower()
+    references = MatterSourceReference.objects.filter(
+        source_system=SOURCE_SYSTEM, source_snapshot_sha256=digest
+    )
+    batches = ImportBatch.objects.filter(
+        source_system=SOURCE_SYSTEM, source_snapshot_sha256=digest
+    ).aggregate(count=Count("id"), rows=Sum("source_row_count"))
+    return CatalogueState(
+        snapshot_sha256=digest,
+        references=references.count(),
+        real_rows=references.exclude(source_title="").count(),
+        batches=batches["count"] or 0,
+        batch_row_count=batches["rows"] or 0,
+    )
+
+
+def require_catalogued(snapshot_sha256: str) -> CatalogueState:
+    """Refuse a workbook whose rows this database has never seen.
+
+    A reviewed digest says a person approved these bytes. It says nothing about
+    whether anybody ran the importer that turns them into
+    ``MatterSourceReference`` rows — and the reconciliation reads only those.
+
+    Without this check a forgotten catalogue step produced a plan with no
+    observations, which prints as a clean report full of zeros: no Matter
+    activated, no field moved, no instruction converted, no campaign placed.
+    That is indistinguishable on the page from "the newer workbook changes
+    nothing", and it is the one wrong answer an operator would believe, because
+    it is the answer they were hoping for.
+
+    Refusing is the only safe reading. A refresh that has nothing to reconcile
+    against has not been given its source.
+    """
+    state = catalogue_state(snapshot_sha256)
+    if not state.is_catalogued:
+        raise SnapshotNotCatalogued(
+            f"Reviewed workbook {state.snapshot_sha256[:16]}… is not catalogued in this "
+            f"database: it holds {state.references} source reference(s) for that snapshot "
+            f"and {state.real_rows} of them describe a Matter. Run the approved register "
+            f"catalogue step first — `manage.py {CATALOGUE_COMMAND} <workbook> --apply` — "
+            "and then plan the refresh again. A refresh cannot reconcile against rows "
+            "nobody has imported, and a plan over none of them reports zero changes "
+            "rather than an error."
+        )
+    return state
 
 
 # ---------------------------------------------------------------------------
@@ -216,10 +312,24 @@ class RefreshPlan:
     field_changes: list[FieldChange] = field(default_factory=list)
     unresolved: list[Unresolved] = field(default_factory=list)
     multi_addressee: list[str] = field(default_factory=list)
-    outreach: outreach.OutreachPlan | None = None
+    outreach: OutreachPlan | None = None
     #: The state rows this database held *before* the refresh, by Matter, so
     #: the report can say what current work looked like beforehand.
     current_before: int = 0
+    #: The campaign input this plan considered, kept so the apply can re-derive
+    #: the identical plan rather than a campaign-less one.
+    campaigns: list[Campaign] = field(default_factory=list)
+    campaign_window: tuple[dt.date, dt.date] | None = None
+
+    @property
+    def campaign_set_sha256(self) -> str:
+        """The identity of the campaigns this plan matched against, or "".
+
+        Empty when no campaign input participated, which is itself a fact the
+        digest carries: a plan approved with campaigns cannot be applied without
+        them, and a plan approved without them cannot quietly acquire some.
+        """
+        return outreach.campaign_set_digest(self.campaigns) if self.campaigns else ""
 
     @property
     def policy(self) -> Any:
@@ -258,9 +368,72 @@ class RefreshPlan:
                 (proposal.digest_row() for proposal in self.next_actions.writing),
                 key=lambda row: (row["matter_id"], row["outcome"]),
             ),
+            # A hard pin, not a reported figure. The campaign export decides
+            # which candidates an operator reviewed, so an apply run against a
+            # different set of campaigns is approving one plan and performing
+            # another — and the mapping digest cannot catch it, because a
+            # reviewed mapping is a list of links and says nothing about the
+            # candidates it was chosen from (brief 10).
+            #
+            # Empty string when no campaigns participated, so "planned without
+            # campaigns" and "planned with campaigns" are different plans.
+            "campaign_set_sha256": self.campaign_set_sha256,
         }
         encoded = json.dumps(body, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+#: The reconciliation outcomes that leave a Matter as current work. A campaign
+#: is placed against the portfolio the refresh *produces*, so a Matter the newer
+#: workbook retires is not a target however well its old dates fit.
+_CURRENT_AFTER: frozenset[str] = frozenset({Action.ACTIVATE, Action.KEEP_CURRENT})
+
+
+def outreach_targets(
+    plan: CutoverPlan, *, people: KnownPeople, mappings: MappingTables
+) -> list[OutreachTarget]:
+    """The portfolio the reconciliation would leave, as the matcher's input.
+
+    Every field is the post-refresh answer, and each comes from the same place
+    the apply gets it:
+
+    * **currency** from the reconciliation's own action, not from a stored row;
+    * **owner** from the newer ``VASTUTAJA`` cell, as a given name — which is
+      what a campaign template names, and what the previous implementation read
+      from a derived row describing the *previous* workbook;
+    * **window** from ``resolved_fields``, which is the function the apply
+      spreads onto the Matter. Where the source settles a date the projection
+      uses the new one; where it cannot, the Matter keeps what it has and so
+      does this. Those two branches are the apply's behaviour restated as a
+      question rather than reimplemented as a rule.
+
+    Nothing here writes, and nothing here mutates a ``Matter``: the resolved
+    values are read into a frozen value class and the model objects are left
+    exactly as they were loaded.
+    """
+    targets: list[OutreachTarget] = []
+    for candidate in plan.candidates:
+        if candidate.action not in _CURRENT_AFTER:
+            continue
+        matter = candidate.matter
+        if matter.data_class == MatterDataClass.TEST:
+            continue
+
+        resolved = resolved_fields(candidate.observation, people=people, mappings=mappings)
+        targets.append(
+            OutreachTarget(
+                matter_id=matter.pk,
+                reference=matter.display_reference,
+                # The register's title for this row where it has one, so the
+                # subject overlap is computed against what the newer workbook
+                # says rather than a title a previous import stored.
+                title=candidate.observation.title or matter.title,
+                owner_raw=candidate.observation.owner_raw.strip(),
+                received_date=resolved.get("received_date", matter.received_date),
+                response_deadline=resolved.get("response_deadline", matter.response_deadline),
+            )
+        )
+    return targets
 
 
 def _action_signature(plan: enrichment.EnrichmentPlan) -> list[dict[str, Any]]:
@@ -286,7 +459,7 @@ def build_refresh_plan(
     *,
     snapshot_sha256: str,
     today: dt.date | None = None,
-    campaigns: list[outreach.Campaign] | None = None,
+    campaigns: list[Campaign] | None = None,
     campaign_window: tuple[dt.date, dt.date] | None = None,
 ) -> RefreshPlan:
     """Decide everything the newer workbook would do. Writes nothing.
@@ -315,6 +488,8 @@ def build_refresh_plan(
         current_before=CurrentRegisterState.objects.filter(
             currency=RegisterCurrency.CURRENT
         ).count(),
+        campaigns=list(campaigns or []),
+        campaign_window=campaign_window,
     )
 
     people = KnownPeople.load()
@@ -370,7 +545,16 @@ def build_refresh_plan(
     if campaigns is not None and campaign_window is not None:
         since, until = campaign_window
         plan.outreach = outreach.build_outreach_plan(
-            snapshot_sha256=digest, campaigns=campaigns, since=since, until=until
+            snapshot_sha256=digest,
+            campaigns=campaigns,
+            # The portfolio this very plan would produce, not the one the
+            # database still holds. Derived from the reconciliation above, so an
+            # operator approving campaign candidates is approving them against
+            # the same owners, dates and currency they are approving everywhere
+            # else on the page.
+            targets=outreach_targets(cutover, people=people, mappings=mappings),
+            since=since,
+            until=until,
         )
 
     return plan
@@ -584,6 +768,8 @@ def apply_refresh_plan(
             "REVIEWED_SNAPSHOTS, not a flag."
         )
 
+    require_catalogued(plan.snapshot_sha256)
+
     expected = (expect_plan_sha256 or "").strip().lower()
     if plan.digest != expected:
         raise PlanChanged(
@@ -591,7 +777,15 @@ def apply_refresh_plan(
             f"{expected[:16] or '(none)'}…. Nothing was written."
         )
 
-    fresh = build_refresh_plan(snapshot_sha256=plan.snapshot_sha256, today=plan.today)
+    # Re-derived with the same campaign input, because the campaign set is
+    # inside the digest: re-deriving without it would compute a different plan
+    # and refuse every apply that included campaigns.
+    fresh = build_refresh_plan(
+        snapshot_sha256=plan.snapshot_sha256,
+        today=plan.today,
+        campaigns=plan.campaigns or None,
+        campaign_window=plan.campaign_window,
+    )
     if fresh.digest != expected:
         raise PlanChanged(
             "The database no longer matches the approved plan "
@@ -656,17 +850,23 @@ def apply_refresh_plan(
 
 
 __all__ = [
+    "CATALOGUE_COMMAND",
     "REFRESHABLE_FIELDS",
     "REFRESH_VERSION",
+    "CatalogueState",
     "FieldChange",
     "PlanChanged",
     "RefreshPlan",
     "RefreshResult",
+    "SnapshotNotCatalogued",
     "Unresolved",
     "UnresolvedKind",
     "UnreviewedSnapshot",
     "apply_refresh_plan",
     "build_refresh_plan",
+    "catalogue_state",
+    "outreach_targets",
     "protected_rows",
+    "require_catalogued",
     "summary",
 ]

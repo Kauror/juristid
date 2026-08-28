@@ -23,20 +23,27 @@ import datetime as dt
 import pytest
 from django.utils import timezone
 
+from app.audit.models import ChangeEvent
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
 from app.legacy_import.final_cutover import build_cutover_plan, rebuild_current_state
+from app.legacy_import.models import OutreachChannel, RegisterEngagementImport
 from app.legacy_import.next_action_enrichment import Outcome, action_ownership
+from app.legacy_import.register_outreach import mapping_digest, read_campaigns, read_mapping
 from app.legacy_import.register_refresh import (
+    CATALOGUE_COMMAND,
     PlanChanged,
+    SnapshotNotCatalogued,
     UnreviewedSnapshot,
     apply_refresh_plan,
     build_refresh_plan,
+    catalogue_state,
     protected_rows,
+    require_catalogued,
     summary,
 )
 from app.legacy_import.register_semantics import AddresseeCardinality, OpinionSentState
 from app.matters.enums import RecordMode
-from app.matters.models import Matter
+from app.matters.models import Matter, MatterEngagement
 from app.matters.services import create_imported_matter
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
@@ -69,6 +76,26 @@ LIVE_STATUS = "kooskõlastusringil"
 #: engagement composer carries a placeholder that begins with the same two
 #: words, so a shorter needle would match a page that rendered no counts.
 FEEDBACK_LABEL = "Liikmete tagasiside · registri vaatlus"
+
+#: The pilot window the command pins, restated here so the gate tests do not
+#: depend on importing a management command.
+WINDOW = (dt.date(2026, 1, 1), dt.date(2026, 8, 28))
+
+
+def _campaign_row(
+    *,
+    template: str,
+    url: str = "https://example.invalid/templates/aaaa-1111/html/",
+    due: str = "2026-03-05 10:00:00",
+) -> dict[str, str]:
+    """One export row, with only the five columns that may be read."""
+    return {
+        "Section name": "Mida arvad sünteetilise pakendiseaduse muudatustest?",
+        "Template name": template,
+        "Template preview": url,
+        "Due at": due,
+        "Enqueues": "789",
+    }
 
 
 @pytest.fixture
@@ -1065,3 +1092,243 @@ def test_a_row_the_newer_workbook_dropped_does_not_block_the_apply(world):
         .count()
         == 1
     )
+
+
+# ---------------------------------------------------------------------------
+# The gates an apply has to pass
+# ---------------------------------------------------------------------------
+
+
+def test_a_reviewed_workbook_nobody_catalogued_is_refused(world):
+    """A reviewed digest is not evidence that anybody imported the rows.
+
+    The reconciliation reads ``MatterSourceReference`` and nothing else, so a
+    forgotten catalogue step used to produce a plan reporting zero changes
+    everywhere — which reads as "the newer workbook changes nothing" and is the
+    one wrong answer an operator would believe, because it is the answer they
+    were hoping for.
+    """
+    # Nothing catalogued for this snapshot at all.
+    with pytest.raises(SnapshotNotCatalogued) as refusal:
+        require_catalogued(SNAPSHOT)
+
+    message = str(refusal.value)
+    assert "not catalogued" in message
+    assert CATALOGUE_COMMAND in message
+
+    state = catalogue_state(SNAPSHOT)
+    assert state.is_catalogued is False
+    assert state.references == 0
+
+
+def test_a_padding_row_is_not_a_catalogue(world):
+    """A pre-numbered row with no title never became work.
+
+    The importer refuses to create a Matter from one, so a snapshot catalogued
+    as nothing but padding has nothing to reconcile — and counting references
+    rather than *rows* would have called that catalogued.
+
+    Built as a padding row rather than made into one: a database trigger holds
+    imported source values immutable, which is the right answer and means a
+    fixture has to write the shape it wants at creation.
+    """
+    add_matter(world, title="Sünteetiline reaalne rida", reference=70, title_cell="")
+
+    state = catalogue_state(SNAPSHOT)
+    assert state.references == 1
+    assert state.real_rows == 0
+
+    with pytest.raises(SnapshotNotCatalogued):
+        require_catalogued(SNAPSHOT)
+
+
+def test_a_catalogued_snapshot_passes_the_prerequisite(world):
+    add_matter(world, title="Sünteetiline kataloogitud rida", reference=71)
+
+    state = require_catalogued(SNAPSHOT)
+    assert state.is_catalogued is True
+    assert state.real_rows == 1
+
+
+def test_the_apply_refuses_a_snapshot_that_was_never_catalogued(world, monkeypatch):
+    """The gate is on the apply as well as the command.
+
+    A caller reaching the service directly must meet the same prerequisite; a
+    check that lived only in the management command would be advice rather than
+    a rule.
+    """
+    matter = add_matter(world, title="Sünteetiline rida", reference=72)
+    plan = refresh()
+
+    # The catalogue is withdrawn between planning and applying. Nothing has been
+    # written yet, so no derived row protects the evidence and it can go.
+    matter.source_references.all().delete()
+
+    with pytest.raises(SnapshotNotCatalogued):
+        apply_refresh_plan(plan, expect_plan_sha256=plan.digest)
+
+
+def test_a_campaign_export_that_moved_between_plan_and_apply_is_refused(world):
+    """The campaign set is a hard pin, not a reported figure.
+
+    The export decides which candidates an operator reviewed, so applying
+    against a different set is approving one plan and performing another — and
+    the mapping digest cannot catch it, because a reviewed mapping is a list of
+    links and says nothing about the candidates it was chosen from.
+    """
+    add_matter(
+        world,
+        title="Sünteetiline kampaania eelnõu",
+        reference=73,
+        owner_cell="Sandra",
+        received_cell="16.02.2026",
+        deadline_cell="10.03.2026",
+    )
+
+    first = read_campaigns(
+        [_campaign_row(template="pakendid 05.03.26 Sandra")], since=WINDOW[0], until=WINDOW[1]
+    )[0]
+    planned = build_refresh_plan(
+        snapshot_sha256=SNAPSHOT,
+        today=SNAPSHOT_DATE,
+        campaigns=first,
+        campaign_window=WINDOW,
+    )
+    approved = planned.digest
+
+    # The operator re-exports and a further campaign has appeared in the window.
+    second = read_campaigns(
+        [
+            _campaign_row(template="pakendid 05.03.26 Sandra"),
+            _campaign_row(
+                template="varjendid 02.03.26 Sandra",
+                url="https://example.invalid/templates/cccc-3333/html/",
+                due="2026-03-02 09:00:00",
+            ),
+        ],
+        since=WINDOW[0],
+        until=WINDOW[1],
+    )[0]
+    later = build_refresh_plan(
+        snapshot_sha256=SNAPSHOT,
+        today=SNAPSHOT_DATE,
+        campaigns=second,
+        campaign_window=WINDOW,
+    )
+
+    assert later.digest != approved
+    with pytest.raises(PlanChanged):
+        apply_refresh_plan(later, expect_plan_sha256=approved)
+    assert NextAction.objects.count() == 0
+
+
+def test_a_plan_approved_with_campaigns_cannot_be_applied_without_them(world):
+    """And the reverse. "Planned with campaigns" is a different plan."""
+    add_matter(
+        world,
+        title="Sünteetiline kampaania eelnõu II",
+        reference=74,
+        owner_cell="Sandra",
+        received_cell="16.02.2026",
+        deadline_cell="10.03.2026",
+    )
+    campaigns = read_campaigns(
+        [_campaign_row(template="pakendid 05.03.26 Sandra")], since=WINDOW[0], until=WINDOW[1]
+    )[0]
+
+    with_campaigns = build_refresh_plan(
+        snapshot_sha256=SNAPSHOT,
+        today=SNAPSHOT_DATE,
+        campaigns=campaigns,
+        campaign_window=WINDOW,
+    )
+    without = build_refresh_plan(snapshot_sha256=SNAPSHOT, today=SNAPSHOT_DATE)
+
+    assert with_campaigns.digest != without.digest
+    assert with_campaigns.campaign_set_sha256
+    assert without.campaign_set_sha256 == ""
+
+    with pytest.raises(PlanChanged):
+        apply_refresh_plan(without, expect_plan_sha256=with_campaigns.digest)
+
+
+def test_a_reviewed_mapping_cannot_stand_in_for_the_plan_digest(world):
+    """The mapping authorises links; it does not authorise the refresh.
+
+    Supplying a perfectly valid mapping alongside a plan digest that no longer
+    describes the database must still refuse everything, engagements included.
+    """
+    matter = add_matter(world, title="Sünteetiline vastefaili eelnõu", reference=75)
+    plan = refresh()
+
+    links = read_mapping(
+        [
+            {
+                "reference": matter.display_reference,
+                "channel": OutreachChannel.EMAIL_CAMPAIGN,
+                "source_key": "https://example.invalid/templates/dddd-4444/html/",
+                "title": "Sünteetiline kiri",
+            }
+        ]
+    )
+
+    with pytest.raises(PlanChanged):
+        apply_refresh_plan(
+            plan,
+            expect_plan_sha256="0" * 64,
+            links=links,
+            expect_mapping_sha256=mapping_digest(links),
+        )
+
+    assert MatterEngagement.objects.count() == 0
+    assert RegisterEngagementImport.objects.count() == 0
+
+
+def test_a_second_identical_apply_changes_nothing_including_engagements(world):
+    """Whole-refresh idempotency, engagements and audit rows included."""
+    matter = add_matter(
+        world,
+        title="Sünteetiline korduse eelnõu",
+        reference=76,
+        next_action_cell=REVIEW_SEPTEMBER,
+    )
+    links = read_mapping(
+        [
+            {
+                "reference": matter.display_reference,
+                "channel": OutreachChannel.EMAIL_CAMPAIGN,
+                "source_key": "https://example.invalid/templates/eeee-5555/html/",
+                "title": "Sünteetiline kiri liikmetele",
+                "occurred_on": "2026-03-05",
+            }
+        ]
+    )
+    digest = mapping_digest(links)
+
+    first = refresh()
+    apply_refresh_plan(
+        first, expect_plan_sha256=first.digest, links=links, expect_mapping_sha256=digest
+    )
+
+    def census():
+        return (
+            NextAction.objects.count(),
+            MatterEngagement.objects.count(),
+            RegisterEngagementImport.objects.count(),
+            ChangeEvent.objects.count(),
+            CurrentRegisterState.objects.count(),
+        )
+
+    after_first = census()
+
+    second = refresh()
+    result = apply_refresh_plan(
+        second, expect_plan_sha256=second.digest, links=links, expect_mapping_sha256=digest
+    )
+
+    assert result.actions_created == 0
+    assert result.actions_refreshed == 0
+    assert result.actions_withdrawn == 0
+    assert result.engagements_created == 0
+    assert result.engagements_updated == 0
+    assert census() == after_first

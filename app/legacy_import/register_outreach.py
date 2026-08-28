@@ -77,9 +77,8 @@ from typing import Any
 
 from django.db import transaction
 
-from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
 from app.legacy_import.models import OutreachChannel, RegisterEngagementImport
-from app.matters.enums import EngagementKind, MatterDataClass, RecordMode
+from app.matters.enums import EngagementKind
 from app.matters.models import Matter, MatterEngagement
 from app.matters.services import add_engagement, update_engagement
 from app.search.indexing import indexable_matters, refresh_matters
@@ -227,13 +226,24 @@ def read_campaigns(
     return kept, dict(sorted(tally.items()))
 
 
-def campaign_digest(campaigns: list[Campaign]) -> str:
+def campaign_set_digest(campaigns: list[Campaign]) -> str:
     """A deterministic identity for the campaign set a plan was built from.
 
-    Over the fields that were read, not over the file: the export is re-taken
-    daily and its byte digest changes when a campaign nobody cares about is
-    added. What must not change silently is the set of campaigns *this plan
-    considered*, which is what this hashes.
+    **Not the file's digest, and the two are deliberately different things.**
+    The export is re-taken whenever somebody opens the vendor's dashboard, and
+    its bytes change when a campaign outside the pilot window is added, when a
+    row's open count ticks up, or when the file is exported with a different
+    column order. None of that changes what the matcher looked at.
+
+    What must not change silently is the set of campaigns *this plan
+    considered*, reduced to the five fields that may be recorded. That is what
+    this hashes, and it is what the plan digest carries — so an apply run
+    against a re-taken export with the same campaigns in it is allowed, and an
+    apply run against an export whose campaigns have moved is refused.
+
+    The file's own byte digest is reported beside it as
+    ``campaign_file_sha256``: it identifies the operator's input, which is the
+    thing they can point at, and it is evidence rather than a gate.
     """
     body = sorted(
         [
@@ -342,6 +352,61 @@ def named_owner(template_name: str, known: frozenset[str]) -> str:
 
 
 @dataclass(frozen=True)
+class OutreachTarget:
+    """One Matter as the newer workbook *would* leave it. Immutable, unsaved.
+
+    The matcher's whole input, and the reason it is a value class rather than a
+    queryset. Every field here is the **post-refresh** answer: the currency the
+    reconciliation would decide, the owner the newer ``VASTUTAJA`` names, and
+    the consultation window the newer ``SISSE`` and ``ARVAMUSE TÄHTAEG`` settle.
+
+    Reading them from the database instead is the defect this replaces. Before
+    an apply, ``CurrentRegisterState`` still describes the *previous* workbook
+    and ``Matter`` still holds the previous dates — so a dry-run matched
+    campaigns against facts the refresh was about to overwrite, and on a
+    database that had never seen this snapshot at all it matched them against
+    nothing and reported no candidates. An operator would have approved an empty
+    outreach plan for a workbook full of consultations.
+
+    Built by :func:`app.legacy_import.register_refresh.outreach_targets` through
+    the same ``resolved_fields`` the apply spreads onto the Matter, so the plan
+    and the write cannot disagree about a date.
+    """
+
+    matter_id: Any
+    reference: str
+    title: str
+    #: ``VASTUTAJA`` as the newer snapshot writes it — a given name, which is
+    #: what a campaign template names. Not the resolved account.
+    owner_raw: str
+    #: The consultation window after the refresh: the newer date where the
+    #: source settles one, and the Matter's existing value where it does not —
+    #: which is exactly what the apply would leave behind.
+    received_date: dt.date | None
+    response_deadline: dt.date | None
+
+    @property
+    def has_window(self) -> bool:
+        return self.received_date is not None and self.response_deadline is not None
+
+    def covers(self, day: dt.date) -> bool:
+        """Whether a campaign sent on ``day`` falls inside this consultation.
+
+        Both bounds are read into locals rather than tested through
+        :attr:`has_window`, so the narrowing is one the type checker can follow
+        and the closed interval is written once.
+        """
+        opened, closes = self.received_date, self.response_deadline
+        if opened is None or closes is None:
+            return False
+        return opened <= day <= closes
+
+    @property
+    def words(self) -> frozenset[str]:
+        return content_words(self.title)
+
+
+@dataclass(frozen=True)
 class Candidate:
     """One (Matter, campaign) pair the operator should look at."""
 
@@ -369,54 +434,50 @@ class OutreachPlan:
     #: consultation nobody can place is a finding rather than an absence.
     unmatched_campaigns: list[Campaign] = field(default_factory=list)
     read_tally: dict[str, int] = field(default_factory=dict)
+    #: SHA-256 of the export file the operator supplied. Evidence, not a gate:
+    #: it names the thing a person can point at, while the set digest below is
+    #: what an apply is actually held to.
+    campaign_file_sha256: str = ""
 
     @property
     def high_confidence(self) -> list[Candidate]:
         return [candidate for candidate in self.candidates if candidate.is_high]
 
     @property
-    def campaign_sha256(self) -> str:
-        return campaign_digest(self.campaigns)
+    def campaign_set_sha256(self) -> str:
+        return campaign_set_digest(self.campaigns)
 
 
 def build_outreach_plan(
-    *, snapshot_sha256: str, campaigns: list[Campaign], since: dt.date, until: dt.date
+    *,
+    snapshot_sha256: str,
+    campaigns: list[Campaign],
+    targets: list[OutreachTarget],
+    since: dt.date,
+    until: dt.date,
 ) -> OutreachPlan:
     """Rank the pairs worth an operator's attention. Writes nothing.
 
-    Three bounded queries regardless of how many campaigns there are: the
-    current register rows, and the Matters behind them. No per-campaign and no
-    per-Matter lookup (brief 38).
+    **No queries at all.** ``targets`` is the projected post-refresh portfolio,
+    derived once by the caller from the reconciliation it is reporting; this
+    function is a pure computation over it and the campaign list. That is what
+    makes the dry-run's answer the same answer the apply would produce, and it
+    is the correction to a matcher that used to read the database and therefore
+    described the previous workbook (see :class:`OutreachTarget`).
     """
     plan = OutreachPlan(
         snapshot_sha256=snapshot_sha256, since=since, until=until, campaigns=campaigns
     )
 
-    states = list(
-        CurrentRegisterState.objects.filter(
-            source_snapshot_sha256=snapshot_sha256, currency=RegisterCurrency.CURRENT
-        )
-        .select_related("matter")
-        .exclude(owner_raw="")
-        .order_by("matter_id")
-    )
-    owners = frozenset(state.owner_raw.strip() for state in states if state.owner_raw.strip())
+    # No window, no candidate. A campaign cannot be placed against a file whose
+    # consultation period the register never recorded, and placing it on owner
+    # and wording alone is the guess this refuses.
+    placeable = [target for target in targets if target.owner_raw and target.has_window]
+    owners = frozenset(target.owner_raw for target in placeable)
 
-    # Preloaded once. The window test needs the Matter's own dates, which the
-    # canonical record holds after the refresh has written them.
-    by_owner: dict[str, list[CurrentRegisterState]] = {}
-    for state in states:
-        matter = state.matter
-        if matter.data_class == MatterDataClass.TEST:
-            continue
-        if matter.record_mode != RecordMode.FULL or not matter.is_open:
-            continue
-        if matter.received_date is None or matter.response_deadline is None:
-            # No window, no candidate. A campaign cannot be placed against a
-            # file whose consultation period the register never recorded, and
-            # placing it on owner and wording alone is the guess this refuses.
-            continue
-        by_owner.setdefault(state.owner_raw.strip(), []).append(state)
+    by_owner: dict[str, list[OutreachTarget]] = {}
+    for target in placeable:
+        by_owner.setdefault(target.owner_raw, []).append(target)
 
     for campaign in campaigns:
         owner = named_owner(campaign.template_name, owners)
@@ -426,18 +487,14 @@ def build_outreach_plan(
 
         words = campaign.words
         found = False
-        for state in by_owner.get(owner, []):
-            matter = state.matter
-            opened, closes = matter.received_date, matter.response_deadline
-            if opened is None or closes is None:  # pragma: no cover - filtered above
+        for target in by_owner.get(owner, []):
+            if not target.covers(campaign.sent_on):
                 continue
-            if not (opened <= campaign.sent_on <= closes):
-                continue
-            shared = tuple(sorted(words & content_words(matter.title)))
+            shared = tuple(sorted(words & target.words))
             plan.candidates.append(
                 Candidate(
-                    matter_id=matter.pk,
-                    reference=matter.display_reference,
+                    matter_id=target.matter_id,
+                    reference=target.reference,
                     campaign=campaign,
                     confidence=Confidence.HIGH if shared else Confidence.CANDIDATE,
                     owner_raw=owner,
@@ -458,7 +515,8 @@ def summary(plan: OutreachPlan) -> dict[str, Any]:
     return {
         "matcher_version": OUTREACH_MATCHER_VERSION,
         "snapshot_sha256": plan.snapshot_sha256,
-        "campaign_sha256": plan.campaign_sha256,
+        "campaign_set_sha256": plan.campaign_set_sha256,
+        "campaign_file_sha256": plan.campaign_file_sha256,
         "window": [plan.since.isoformat(), plan.until.isoformat()],
         "campaigns_read": plan.read_tally,
         "campaigns_in_window": len(plan.campaigns),
@@ -732,11 +790,12 @@ __all__ = [
     "MappingError",
     "OutreachPlan",
     "OutreachResult",
+    "OutreachTarget",
     "ReviewedLink",
     "apply_mapping",
     "build_outreach_plan",
-    "campaign_digest",
     "campaign_note",
+    "campaign_set_digest",
     "candidate_rows",
     "content_words",
     "mapping_digest",

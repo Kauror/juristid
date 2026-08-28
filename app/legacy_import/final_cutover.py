@@ -715,7 +715,7 @@ class CutoverResult:
     examined: int
 
 
-def _resolved_fields(
+def resolved_fields(
     observation: Observation, *, people: KnownPeople, mappings: MappingTables
 ) -> dict[str, Any]:
     """The fields the source settles for one current Matter.
@@ -724,6 +724,13 @@ def _resolved_fields(
     ``None`` is a value the register asserts ("no deadline is recorded"); an
     absent key means "do not touch this field", and conflating the two would let
     an unreadable cell erase a date somebody entered.
+
+    Public because two callers need the same answer and only one of them writes
+    it. The apply spreads this over ``refresh_matter_from_register``; the
+    refresh report and the outreach matcher read it to say what the newer
+    workbook *would* make true. A second copy of these rules would let the plan
+    an operator approves and the write it authorises drift apart on exactly the
+    fields the register is authoritative for.
     """
     resolved: dict[str, Any] = {}
 
@@ -805,7 +812,7 @@ def apply_cutover_plan(plan: CutoverPlan, *, actor: Any = None) -> CutoverResult
                 # Spread, so a field the source could not settle is simply
                 # absent and keeps its `_UNSET` default rather than arriving as
                 # a `None` that would erase what somebody entered.
-                **_resolved_fields(candidate.observation, people=people, mappings=mappings),
+                **resolved_fields(candidate.observation, people=people, mappings=mappings),
             )
             if changed:
                 refreshed += 1
@@ -968,6 +975,7 @@ __all__ = [
     "native_activity",
     "projected_state_rows",
     "rebuild_current_state",
+    "resolved_fields",
     "reviewed_snapshot",
     "sheet_year",
     "summary",

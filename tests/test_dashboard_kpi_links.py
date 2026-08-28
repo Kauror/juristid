@@ -59,7 +59,7 @@ def _register_state(matter, *, sent_recorded: bool) -> None:
     "something is recorded" and "nothing is written" at once is a state the
     database refuses. Which of the three non-blank readings this is does not
     matter to the cards — they ask about presence — so the fixture writes the
-    one that claims least (ADR 0044).
+    one that claims least (ADR 0045).
     """
     reference = factories.MatterSourceReferenceFactory(matter=matter)
     CurrentRegisterState.objects.create(

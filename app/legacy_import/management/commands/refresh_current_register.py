@@ -372,3 +372,7 @@ class Command(BaseCommand):
                 f"  {'written without a reviewed mapping':<44} "
                 f"{reach['writes_without_reviewed_mapping']}"
             )
+            write("")
+            write(f"  campaign set (pinned in the plan digest) {reach['campaign_set_sha256']}")
+            if reach["campaign_file_sha256"]:
+                write(f"  campaign file (evidence only)            {reach['campaign_file_sha256']}")

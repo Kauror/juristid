@@ -713,7 +713,7 @@ class Command(BaseCommand):
                 # one function that decides it. A check constraint requires the
                 # two to agree, and the seed used to set only the flag — so the
                 # world it built was one the database refuses, which no unit
-                # test could see because none of them seed (ADR 0044).
+                # test could see because none of them seed (ADR 0045).
                 opinion_sent_state=opinion_sent_state(
                     SEED_SENT_CELL if sent_recorded else "",
                     # No parsed date: the cell is a day and a month with no

@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # ADR 0045 — The repeatable current-register refresh: authorship decides, and the sheet's own year settles a date
+=======
+# ADR 0045 — The repeatable current-register refresh: authorship decides, the sheet's own year settles a date, and the plan reads the portfolio it is about to write
+>>>>>>> 4dac9d3 (Plan the outreach against the portfolio the refresh would produce)
 
 - Status: accepted
 - Date: 2026-08-28
@@ -211,6 +215,60 @@ machinery: the enrichment reads the derived state table, and at plan time that
 table still describes the previous workbook. So the plan projects the rows the
 reconciliation would write, in memory, through the same function that writes
 them. One derivation, so the report and the apply cannot drift.
+
+### 9. The outreach matcher reads the projection, not the database
+
+Corrected after review. `build_outreach_plan` queried `CurrentRegisterState` and
+`Matter` for the campaign window and the owner — and before an apply those
+describe the **previous** workbook. On a database that had never seen the new
+snapshot they described nothing at all, so a dry-run reported zero campaign
+candidates for a workbook full of consultations and an operator would have
+approved an empty outreach plan.
+
+The matcher now takes `OutreachTarget` values derived from the reconciliation it
+is reporting: the currency the cutover would decide, the owner the newer
+`VASTUTAJA` names, and the window `resolved_fields` settles — the same function
+the apply spreads onto the Matter, so the plan and the write cannot disagree
+about a date. `build_outreach_plan` makes **no queries at all**, which is the
+property that cannot silently regress into reading stored state.
+
+Where the source cannot settle a date the projection keeps the Matter's existing
+value, because that is exactly what the apply would leave behind.
+
+### 10. A reviewed digest is not a catalogue
+
+A reviewed digest says a person approved these bytes. It says nothing about
+whether anybody ran the importer that turns them into `MatterSourceReference`
+rows, and the reconciliation reads only those. A forgotten catalogue step
+therefore produced a plan reporting zero changes everywhere — which reads as
+"the newer workbook changes nothing", and is the one wrong answer an operator
+would believe because it is the answer they were hoping for.
+
+`require_catalogued` refuses unless the database holds at least one source
+reference for that exact digest that describes a Matter rather than a
+pre-numbered padding row. It gates the management command *and* the apply
+service, so a caller reaching past the command meets the same rule. Import-batch
+metadata is reported beside it — a batch that read more rows than the database
+holds references for is worth an eye — but not required, because nothing in the
+schema guarantees a reference's snapshot digest matches its batch's.
+
+### 11. Two campaign digests, and only one of them is a gate
+
+They were conflated. `campaign_file_sha256` identifies the operator's export
+bytes and is **evidence**: the file is re-taken whenever somebody opens the
+vendor's dashboard, and its bytes move when an open count ticks up.
+`campaign_set_sha256` identifies the campaigns the matcher actually considered,
+reduced to the five fields that may be recorded, and it is **inside
+`RefreshPlan.digest`**.
+
+That makes the campaign input a real apply pin rather than a reported figure.
+Applying against an export whose campaigns have moved is refused; re-exporting
+the same campaigns is not. The empty string when no campaigns participated is
+part of the digest too, so a plan approved with campaigns cannot be applied
+without them, or the reverse.
+
+The mapping digest cannot do this job: a reviewed mapping is a list of links and
+says nothing about the candidate set it was chosen from.
 
 ## Consequences
 
