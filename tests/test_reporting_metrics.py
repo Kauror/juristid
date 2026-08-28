@@ -1,9 +1,13 @@
 """What each metric actually counts, against a world with every awkward state.
 
 Read the numbers here as a specification. `tests/synthetic_statistics.py` builds
-eleven Matters Martin can see and one he cannot, and every expectation below is
-derived from that list rather than from running the code and writing down what
-came out.
+twelve Matters, and since docs/adr/0042 Martin — a lawyer — can see all of them:
+the twelfth is Sandra's RESTRICTED one, which used to be the single Matter he
+could not reach. Every expectation below is derived from that list rather than
+from running the code and writing down what came out, and the shift was checked
+against an independent oracle: for all 86 metrics a lawyer on this branch
+reports exactly what the department head already reported on `main`, where the
+restricted Matter was always visible.
 """
 
 from __future__ import annotations
@@ -33,19 +37,19 @@ def segments(viewer, key, reporting_context, **kwargs) -> dict[str, int]:
 
 
 def test_the_total_counts_every_visible_matter_over_all_years(world, reporting_context):
-    assert value(world.martin, keys.MATTERS_TOTAL, reporting_context) == 11
+    assert value(world.martin, keys.MATTERS_TOTAL, reporting_context) == 12
 
 
 def test_the_period_narrows_the_total_to_the_selected_year(world, reporting_context):
     """Five of the eleven carry this year's *register* reporting year."""
-    assert value(world.martin, keys.MATTERS_TOTAL, reporting_context, period="kaesolev") == 5
+    assert value(world.martin, keys.MATTERS_TOTAL, reporting_context, period="kaesolev") == 6
 
 
 def test_the_total_reports_how_many_it_could_not_place_in_the_period(world, reporting_context):
     result = compute(keys.MATTERS_TOTAL, reporting_context(world.martin, period="kaesolev"))
     # The two OneNote-only Matters have no register reporting year.
-    assert result.coverage_count == 9
-    assert result.coverage_denominator == 11
+    assert result.coverage_count == 10
+    assert result.coverage_denominator == 12
     assert any("Teadmata aasta" in note for note in result.notes)
 
 
@@ -58,7 +62,7 @@ def test_a_matters_year_is_never_the_database_row_creation_time(world, reporting
     by_year = segments(world.martin, keys.MATTERS_BY_REPORTING_YEAR, reporting_context)
     assert by_year[str(world.archive_year)] == 2
     assert by_year[str(world.previous_year)] == 2
-    assert by_year[str(world.current_year)] == 5
+    assert by_year[str(world.current_year)] == 6
 
 
 def test_a_onenote_only_matter_lands_in_the_unknown_year_bucket(world, reporting_context):
@@ -70,7 +74,7 @@ def test_a_onenote_only_matter_lands_in_the_unknown_year_bucket(world, reporting
     """
     by_year = segments(world.martin, keys.MATTERS_BY_REPORTING_YEAR, reporting_context)
     assert by_year["Teadmata aasta"] == 2
-    assert sum(by_year.values()) == 11
+    assert sum(by_year.values()) == 12
 
 
 def test_the_unknown_year_bucket_is_a_link_not_a_dropped_row(world, reporting_context):
@@ -92,14 +96,14 @@ def test_only_years_with_records_become_bars(world, reporting_context):
 
 def test_record_mode_separates_live_work_from_the_register_archive(world, reporting_context):
     assert segments(world.martin, keys.MATTERS_BY_RECORD_MODE, reporting_context) == {
-        "Täielik": 6,
+        "Täielik": 7,
         "Arhiiv": 5,
     }
 
 
 def test_origin_distinguishes_a_register_row_from_a_onenote_page(world, reporting_context):
     assert segments(world.martin, keys.MATTERS_BY_ORIGIN, reporting_context) == {
-        "Loodud süsteemis": 6,
+        "Loodud süsteemis": 7,
         "Imporditud registrist": 3,
         "Imporditud OneNote'ist": 2,
     }
@@ -107,12 +111,12 @@ def test_origin_distinguishes_a_register_row_from_a_onenote_page(world, reportin
 
 def test_active_means_open_and_full_never_the_archive(world, reporting_context):
     """Counting a decade of imported rows as active makes every number useless."""
-    assert value(world.martin, keys.ACTIVE_FULL_MATTERS, reporting_context) == 5
+    assert value(world.martin, keys.ACTIVE_FULL_MATTERS, reporting_context) == 6
 
 
 def test_active_ignores_the_period_because_it_is_a_state_not_a_window(world, reporting_context):
     for period in ("koik", "kaesolev", "eelmine"):
-        assert value(world.martin, keys.ACTIVE_FULL_MATTERS, reporting_context, period=period) == 5
+        assert value(world.martin, keys.ACTIVE_FULL_MATTERS, reporting_context, period=period) == 6
 
 
 # ---------------------------------------------------------------------------
@@ -122,20 +126,20 @@ def test_active_ignores_the_period_because_it_is_a_state_not_a_window(world, rep
 
 def test_policy_area_shows_its_unclassified_tail_rather_than_hiding_it(world, reporting_context):
     composition = segments(world.martin, keys.MATTERS_BY_POLICY_AREA, reporting_context)
-    assert composition["Maksud"] == 1
+    assert composition["Maksud"] == 2
     assert composition["Keskkond"] == 1
     assert composition["Klassifitseerimata"] == 9
 
 
 def test_policy_area_coverage_is_measured_over_the_whole_population(world, reporting_context):
     result = compute(keys.MATTERS_BY_POLICY_AREA, reporting_context(world.martin))
-    assert (result.coverage_count, result.coverage_denominator) == (2, 11)
+    assert (result.coverage_count, result.coverage_denominator) == (3, 12)
     assert result.status == MetricStatus.PARTIAL
 
 
 def test_owner_inventory_keeps_the_unassigned_bucket(world, reporting_context):
     composition = segments(world.martin, keys.MATTERS_BY_OWNER, reporting_context)
-    assert composition["Sandra Testjurist"] == 2
+    assert composition["Sandra Testjurist"] == 3
     assert composition["Martin Testjurist"] == 3
     assert composition["Vastutaja määramata"] == 6
 
@@ -161,8 +165,8 @@ def test_matters_with_and_without_a_historical_source_partition_the_population(
 ):
     with_source = value(world.martin, keys.MATTERS_WITH_HISTORICAL_SOURCE, reporting_context)
     without = value(world.martin, keys.MATTERS_WITHOUT_HISTORICAL_SOURCE, reporting_context)
-    assert with_source == 3
-    assert with_source + without == 11
+    assert with_source == 4
+    assert with_source + without == 12
 
 
 def test_the_four_source_classes_add_up_and_stay_distinct(world, reporting_context):
@@ -171,9 +175,9 @@ def test_the_four_source_classes_add_up_and_stay_distinct(world, reporting_conte
         "Registririda koos OneNote'i allikaga": 2,
         "Registririda ilma OneNote'i allikata": 1,
         "Ainult OneNote'i-põhine teema": 2,
-        "Süsteemis loodud teema": 6,
+        "Süsteemis loodud teema": 7,
     }
-    assert sum(composition.values()) == 11
+    assert sum(composition.values()) == 12
 
 
 def test_a_onenote_only_count_survives_a_period_filter(world, reporting_context):
@@ -197,11 +201,11 @@ def test_matters_with_several_source_pages_are_counted_separately(world, reporti
 
 def test_a_submission_is_a_submission_record_and_nothing_else(world, reporting_context):
     """Three sent records. The draft is not one, and neither is a PDF."""
-    assert value(world.martin, keys.SUBMISSIONS_SENT, reporting_context) == 3
+    assert value(world.martin, keys.SUBMISSIONS_SENT, reporting_context) == 4
 
 
 def test_the_period_applies_to_the_send_date_not_the_matters_year(world, reporting_context):
-    assert value(world.martin, keys.SUBMISSIONS_SENT, reporting_context, period="kaesolev") == 2
+    assert value(world.martin, keys.SUBMISSIONS_SENT, reporting_context, period="kaesolev") == 3
     assert value(world.martin, keys.SUBMISSIONS_SENT, reporting_context, period="eelmine") == 1
 
 
@@ -237,14 +241,14 @@ def test_no_submission_records_at_all_is_insufficient_data_not_zero(world, repor
 def test_recipients_are_addressees_only(world, reporting_context):
     """`Teadmiseks` answers a different question and is not counted here."""
     composition = segments(world.martin, keys.SUBMISSIONS_BY_RECIPIENT, reporting_context)
-    assert composition == {"Näidisministeerium": 2, "Näidiskomisjon": 1}
+    assert composition == {"Näidisministeerium": 2, "Näidiskomisjon": 1, "Näidisliit": 1}
 
 
 def test_matters_are_bucketed_by_how_many_submissions_they_produced(world, reporting_context):
     composition = segments(world.martin, keys.MATTERS_BY_SUBMISSION_COUNT, reporting_context)
     assert composition == {
         "Arvamust ei ole saadetud": 4,
-        "Üks arvamus": 1,
+        "Üks arvamus": 2,
         "Kaks või rohkem": 1,
     }
 
@@ -258,7 +262,7 @@ def test_sender_and_addressee_are_never_merged(world, reporting_context):
     """The register's single counterparty column meant both, in different eras."""
     senders = segments(world.martin, keys.MATTERS_BY_SOURCE_ORGANISATION, reporting_context)
     addressees = segments(world.martin, keys.MATTERS_BY_ADDRESSEE_ORGANISATION, reporting_context)
-    assert senders == {"Näidisministeerium": 2}
+    assert senders == {"Näidisministeerium": 2, "Näidisliit": 1}
     assert addressees == {"Näidisministeerium": 1, "Näidiskomisjon": 1}
 
 
@@ -274,7 +278,7 @@ def test_the_organisation_metrics_state_the_era_boundary(world, reporting_contex
 
 def test_only_a_do_with_a_deadline_can_be_overdue(world, reporting_context):
     """A WAIT whose review date has passed is due for a look, never late."""
-    assert value(world.martin, keys.OVERDUE_DO_DEADLINE, reporting_context) == 1
+    assert value(world.martin, keys.OVERDUE_DO_DEADLINE, reporting_context) == 2
     assert value(world.martin, keys.WAIT_REVIEW_DUE, reporting_context) == 1
     assert value(world.martin, keys.MONITOR_REVIEW_DUE, reporting_context) == 1
 
@@ -296,27 +300,27 @@ def test_archive_matters_are_never_counted_as_missing_a_next_action(world, repor
     """Five archive rows have no next action, and none of them is a defect."""
     result = compute(keys.ACTIVE_WITHOUT_NEXT_ACTION, reporting_context(world.martin))
     assert result.value == 1
-    assert result.population_count == 5
+    assert result.population_count == 6
 
 
 def test_next_actions_are_grouped_by_kind_without_being_added_up(world, reporting_context):
     assert segments(world.martin, keys.NEXT_ACTION_BY_KIND, reporting_context) == {
-        "Teen": 2,
+        "Teen": 3,
         "Ootan": 1,
         "Jälgin": 1,
     }
 
 
 def test_entries_are_authored_notes_not_onenote_pages(world, reporting_context):
-    assert value(world.martin, keys.ENTRY_COUNT, reporting_context) == 2
+    assert value(world.martin, keys.ENTRY_COUNT, reporting_context) == 3
 
 
 def test_new_matters_are_measured_on_arrival_not_on_row_creation(world, reporting_context):
     result = compute(
         keys.NEW_NATIVE_FULL_MATTERS, reporting_context(world.martin, period="kaesolev")
     )
-    assert result.value == 3
-    assert result.coverage_denominator == 6
+    assert result.value == 4
+    assert result.coverage_denominator == 7
 
 
 # ---------------------------------------------------------------------------
@@ -328,23 +332,23 @@ def test_an_occurrence_is_not_a_unique_file(world, reporting_context):
     """The same bytes attached to two pages are two occurrences, and stay two."""
     occurrences = value(world.martin, keys.HISTORICAL_RESOURCE_OCCURRENCES, reporting_context)
     unique = value(world.martin, keys.HISTORICAL_UNIQUE_BINARY_CONTENTS, reporting_context)
-    assert occurrences == 8
-    assert unique == 7
+    assert occurrences == 9
+    assert unique == 8
 
 
 def test_bytes_are_summed_over_occurrences(world, reporting_context):
-    assert value(world.martin, keys.HISTORICAL_RESOURCE_BYTES, reporting_context) == 50
+    assert value(world.martin, keys.HISTORICAL_RESOURCE_BYTES, reporting_context) == 54
 
 
 def test_file_types_are_counted_by_extension_and_add_up(world, reporting_context):
     composition = segments(world.martin, keys.HISTORICAL_RESOURCES_BY_TYPE, reporting_context)
-    assert composition["PDF"] == 2
+    assert composition["PDF"] == 3
     assert composition["MSG"] == 1
     assert composition["EML"] == 1
     assert composition["ASICE"] == 1
     assert composition["BDOC"] == 1
     assert composition["DOCX"] == 2
-    assert sum(composition.values()) == 8
+    assert sum(composition.values()) == 9
 
 
 def test_signed_containers_are_a_category_of_their_own(world, reporting_context):
@@ -358,12 +362,12 @@ def test_email_attachments_are_msg_and_eml(world, reporting_context):
 
 
 def test_pages_are_counted_once_however_many_matters_claim_them(world, reporting_context):
-    assert value(world.martin, keys.LEGACY_SOURCE_PAGES, reporting_context) == 4
+    assert value(world.martin, keys.LEGACY_SOURCE_PAGES, reporting_context) == 5
 
 
 def test_the_onenote_section_is_source_history_not_a_policy_area(world, reporting_context):
     composition = segments(world.martin, keys.LEGACY_SOURCE_PAGES_BY_SECTION, reporting_context)
-    assert composition == {"ARHIIV maksud ja toll": 2, "ARHIIV keskkond": 2}
+    assert composition == {"ARHIIV maksud ja toll": 2, "ARHIIV keskkond": 2, "ARHIIV liikmed": 1}
     # The canonical taxonomy has completely different labels, and neither
     # chart's names appear in the other.
     areas = segments(world.martin, keys.MATTERS_BY_POLICY_AREA, reporting_context)
@@ -373,20 +377,24 @@ def test_the_onenote_section_is_source_history_not_a_policy_area(world, reportin
 def test_the_page_year_chart_uses_the_source_timestamp(world, reporting_context):
     """Source history, kept well away from the Matter reporting year."""
     composition = segments(world.martin, keys.LEGACY_SOURCE_PAGES_BY_YEAR, reporting_context)
-    assert composition == {str(world.archive_year): 2, str(world.previous_year): 2}
+    assert composition == {
+        str(world.archive_year): 2,
+        str(world.previous_year): 2,
+        str(world.today.year): 1,
+    }
 
 
 def test_reading_order_ambiguity_is_reported_over_the_visible_pages(world, reporting_context):
     result = compute(keys.READING_ORDER_AMBIGUOUS, reporting_context(world.martin))
     assert result.value == 1
-    assert result.population_count == 4
+    assert result.population_count == 5
 
 
 def test_distributions_use_medians_rather_than_a_mean(world, reporting_context):
     result = compute(keys.RESOURCES_PER_PAGE, reporting_context(world.martin))
     assert result.distribution is not None
-    assert result.distribution.n == 4
-    assert result.distribution.total == 8
+    assert result.distribution.n == 5
+    assert result.distribution.total == 9
     assert result.distribution.maximum == 6
 
 
@@ -398,12 +406,12 @@ def test_distributions_use_medians_rather_than_a_mean(world, reporting_context):
 def test_the_four_materialisation_states_partition_the_occurrences(world, reporting_context):
     composition = segments(world.martin, keys.MATERIALISATION_STATUS, reporting_context)
     assert composition == {
-        "Imporditud": 5,
+        "Imporditud": 6,
         "Kopeerimist ootab": 1,
         "Allikas tühi": 1,
         "Kopeerimine ebaõnnestus": 1,
     }
-    assert sum(composition.values()) == 8
+    assert sum(composition.values()) == 9
 
 
 def test_an_empty_original_is_not_a_copy_failure(world, reporting_context):
@@ -447,7 +455,7 @@ def test_the_sql_materialisation_state_agrees_with_the_rendered_one(world, repor
 
 
 def test_extraction_states_are_reported_separately(world, reporting_context):
-    assert value(world.martin, keys.EXTRACTION_SUCCESS, reporting_context) == 4
+    assert value(world.martin, keys.EXTRACTION_SUCCESS, reporting_context) == 6
     assert value(world.martin, keys.EXTRACTION_FAILED, reporting_context) == 1
     assert value(world.martin, keys.EXTRACTION_NOT_APPLICABLE, reporting_context) == 2
 
@@ -493,10 +501,10 @@ def test_the_reporting_eligibility_rule_is_the_orchestrators_rule(
 def test_searchability_excludes_what_no_parser_opens(world, reporting_context):
     """Two signed containers are not a coverage gap; they are a decision."""
     result = compute(keys.SEARCHABLE_DOCUMENT_COVERAGE, reporting_context(world.martin))
-    assert result.population_count == 9
-    assert result.eligible_count == 7
-    assert result.coverage_count == 4
-    assert result.value == 57
+    assert result.population_count == 11
+    assert result.eligible_count == 9
+    assert result.coverage_count == 6
+    assert result.value == 67
 
 
 def test_searchability_says_what_is_holding_it_back(world, reporting_context, settings):
