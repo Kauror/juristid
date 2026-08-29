@@ -82,15 +82,47 @@ showed twelve rows over a bare "240" would be describing a list it is not
 showing. There is no second pager: one page must not have two "next page"
 controls meaning different things.
 
-**A fragment route of its own, and no pushed URL.** `/arvamused/plokk/` exists
-because the register already answers *any* HTMX request to `/teemad/` with its
-own results (`matters.views._wants_fragment`) — an opinion search made against
-that address would come back as a table of teemad. The fragment is never pushed
-into the address bar: the URL a reader must keep is `/teemad/…`, and pushing the
-fragment route would leave `/arvamused/plokk/?…` in the bar and in whatever they
-paste to a colleague, which is the trap `_wants_fragment` documents for the
-register. The plain GET path still produces a real, shareable address on the
-register's own URL.
+**A fragment route of its own, and the page's address pushed from it.**
+`/arvamused/plokk/` exists because the register already answers *any* HTMX
+request to `/teemad/` with its own results (`matters.views._wants_fragment`) —
+an opinion search made against that address would come back as a table of
+teemad.
+
+That route's *own* address must never reach the bar. It is a piece of a page,
+and a reader who pasted it would send somebody a table with no page around it —
+the trap `_wants_fragment` documents for the register's fragment. But leaving
+the address alone was the wrong correction, and this ADR originally made it: the
+screen moved and the URL silently stayed behind, so every link shared from that
+page was missing the opinion search the sender was looking at.
+
+So the fragment returns `HX-Push-Url` carrying the **Teemad** address the answer
+belongs to, composed server-side in `embedded.page_url` — the path from
+`reverse()`, never from the request. The invariant is now literal: what is on
+screen, what the address bar says, and what a colleague gets if the URL is
+copied are one thing.
+
+Three details that are load-bearing rather than incidental:
+
+- **Pushed, not replaced**, matching the register's own live search, so Back
+  steps through an opinion search as it steps through a register one. htmx does
+  the pushing, from the header, and therefore keeps its own history snapshot in
+  step; a hand-rolled `pushState` beside htmx's bookkeeping is the version of
+  this that restores the wrong DOM on Back.
+- **Empty values are dropped.** Clearing the opinion box takes `arvamus_q` out
+  of the address rather than leaving `arvamus_q=` behind, which would read as a
+  filter that is still applied. `arvamus_vaade` is written only when it is not
+  the default: a bare address already means Saadetud, and the state round-trips
+  identically without a redundant parameter on every link.
+- **The register's state has to be current, not rendered.** The composed URL is
+  built from what the opinion form sends, and the form sits outside the region
+  the register's live search swaps — so stale hidden inputs would push the *old*
+  `?q=` over a correct address bar, which is worse than not pushing at all.
+  `static/js/app.js` resyncs them from `location.search` on every htmx push, and
+  `data-register-state` on the inputs is what lets it replace the register's and
+  leave the opinion box and the tab alone.
+
+The plain GET path is unchanged and still produces the same shareable address
+without any of this.
 
 **Plain GET works with JavaScript off.** The form submits to
 `/teemad/#arvamused` and the section is rendered server-side from the same

@@ -114,8 +114,17 @@ there from here.
       reader is looking at — for the fragment and for the plain GET alike.
     {% endcomment %}
     <input type="hidden" name="{{ opinion_view_param }}" value="{{ opinion_view }}">
+    {% comment %}
+      `data-register-state` marks these as the register's, not the section's.
+
+      They are the one part of this form that goes out of date: the register's
+      live search pushes a new address while this form sits outside the region
+      it swaps, so `static/js/app.js` replaces exactly these on every push. The
+      attribute is what lets it replace the register's inputs and leave the
+      opinion box and the tab alone.
+    {% endcomment %}
     {% for name, value in opinion_register_state %}
-      <input type="hidden" name="{{ name }}" value="{{ value }}">
+      <input type="hidden" name="{{ name }}" value="{{ value }}" data-register-state>
     {% endfor %}
     <button class="button button--quiet" type="submit">Otsi</button>
     <span class="opinionsearch__spinner" aria-hidden="true">…</span>

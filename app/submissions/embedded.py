@@ -37,7 +37,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from django.http import HttpRequest
+from django.http import HttpRequest, QueryDict
 from django.urls import reverse
 from django.utils.http import urlencode
 
@@ -208,3 +208,49 @@ def view_link(params: Any, *, view: str) -> str:
     query = params.copy()
     query[VIEW_PARAM] = view
     return f"?{query.urlencode()}#arvamused"
+
+
+def page_url(params: Any) -> str:
+    """The Teemad address that describes what the section is currently showing.
+
+    Returned as ``HX-Push-Url`` from the fragment route, so a live opinion
+    search leaves the browser holding a URL a colleague can be sent. The
+    invariant this exists for: what is on screen, what the address bar says, and
+    what a pasted link reproduces are one thing.
+
+    The path is built here, never taken from the request. The fragment answers
+    at ``/arvamused/plokk/`` and that address must never reach the bar — it is
+    a piece of a page, and a reader who pasted it would send somebody a table
+    with no page around it (the trap ``matters.views._wants_fragment``
+    documents for the register's own fragment).
+
+    Empty values are dropped rather than written as ``arvamus_q=``: clearing the
+    opinion box must take the parameter out of the address, not leave an empty
+    one behind that reads as a filter which is still applied. ``arvamus_vaade``
+    is written only when it is not the default, for the same reason — a bare
+    address already means Saadetud, and a redundant parameter on every link is
+    noise a reader has to learn to ignore.
+
+    Everything else in ``params`` is the register's and is copied untouched, in
+    the order it arrived: ``q``, the filters, and ``leht``. The register's live
+    search pushes its own state into the address, and `static/js/app.js` keeps
+    the opinion form's hidden inputs in step with it — without that, this would
+    compose a *stale* register state and push it over the correct one, which is
+    worse than not pushing at all.
+    """
+    query = QueryDict(mutable=True)
+    for name, value in params.items():
+        if name not in OWN_PARAMS and value:
+            query[name] = value
+
+    opinion_query = (params.get(QUERY_PARAM) or "").strip()
+    if opinion_query:
+        query[QUERY_PARAM] = opinion_query
+
+    view = (params.get(VIEW_PARAM) or "").strip().lower()
+    if view and view != SENT_VIEW:
+        query[VIEW_PARAM] = view
+
+    address = reverse("matters:matter_list")
+    encoded = query.urlencode()
+    return f"{address}?{encoded}" if encoded else address

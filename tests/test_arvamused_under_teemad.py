@@ -374,8 +374,11 @@ def test_the_opinion_form_carries_the_register_state(signed_in, specialist) -> N
         body_of(signed_in.get(TEEMAD_URL, {"q": "Ükskõik", "jarjestus": "title"}))
     )
 
-    assert '<input type="hidden" name="q" value="Ükskõik">' in section
-    assert '<input type="hidden" name="jarjestus" value="title">' in section
+    # `data-register-state` marks them as the register's, which is what lets
+    # `static/js/app.js` replace exactly these on an htmx push and leave the
+    # opinion box and the tab alone.
+    assert '<input type="hidden" name="q" value="Ükskõik" data-register-state>' in section
+    assert '<input type="hidden" name="jarjestus" value="title" data-register-state>' in section
     # And the form's plain-GET target is the Teemad page, landing on the section.
     assert f'action="{TEEMAD_URL}#arvamused"' in section
 
@@ -741,3 +744,106 @@ def test_the_register_live_search_does_not_pay_for_the_section(
     assert "opinionblock" not in fragment
     for title in OPINION_TITLES:
         assert title not in fragment
+
+
+# ---------------------------------------------------------------------------
+# The address the live search leaves behind
+# ---------------------------------------------------------------------------
+
+
+def test_the_fragment_pushes_the_teemad_address_never_its_own(signed_in, three_pairs) -> None:
+    """``HX-Push-Url`` names the page, not the piece of it that answered.
+
+    The fragment lives at `/arvamused/plokk/`. That address in the bar would be
+    a table with no page around it, and a colleague sent the link would get
+    exactly that — the trap `matters.views._wants_fragment` documents for the
+    register's own fragment. So the header carries the Teemad URL and the path
+    is built server-side rather than taken from the request.
+    """
+    response = signed_in.get(BLOCK_URL, {"arvamus_q": "Beetaseisukoht"})
+
+    assert response.status_code == 200
+    pushed = response.headers["HX-Push-Url"]
+    assert pushed.startswith(TEEMAD_URL)
+    assert BLOCK_URL not in pushed
+    assert "arvamus_q=Beetaseisukoht" in pushed
+
+
+def test_the_pushed_address_keeps_every_register_parameter(signed_in) -> None:
+    """The register's half of the address survives an opinion search.
+
+    Everything the opinion form carries as a hidden input has to come back out
+    in the pushed URL, or a live opinion search would quietly widen the teemad
+    list the moment somebody reloaded.
+    """
+    response = signed_in.get(
+        BLOCK_URL,
+        {
+            "q": "Ehitusseadustiku",
+            "aasta": "2026",
+            "vastutaja": "keegi",
+            "olek": "koik",
+            "leht": "2",
+            "arvamus_q": "Beetaseisukoht",
+        },
+    )
+
+    pushed = response.headers["HX-Push-Url"]
+    for expected in ("q=Ehitusseadustiku", "aasta=2026", "vastutaja=keegi", "olek=koik", "leht=2"):
+        assert expected in pushed, pushed
+    assert "arvamus_q=Beetaseisukoht" in pushed
+
+
+def test_clearing_the_opinion_box_takes_the_parameter_out(signed_in) -> None:
+    """An empty box removes `arvamus_q` rather than leaving `arvamus_q=`.
+
+    A parameter with no value reads as a filter that is still applied, and the
+    reader would have cleared the box and still be looking at an address that
+    says they had not.
+    """
+    pushed = signed_in.get(BLOCK_URL, {"q": "Ehitusseadustiku", "arvamus_q": ""}).headers[
+        "HX-Push-Url"
+    ]
+
+    assert "arvamus_q" not in pushed
+    # ...and the register's search is untouched by the clearing.
+    assert "q=Ehitusseadustiku" in pushed
+
+
+def test_the_default_source_is_not_written_into_the_address(signed_in) -> None:
+    """A bare address already means Saadetud.
+
+    `arvamus_vaade=saadetud` on every link would be a redundant parameter a
+    reader has to learn to ignore, and it round-trips identically without one.
+    """
+    assert "arvamus_vaade" not in signed_in.get(BLOCK_URL, {}).headers["HX-Push-Url"]
+
+
+def test_the_chosen_source_is_written_into_the_address(client, administrator) -> None:
+    """Arhiiv is a choice, so it survives a reload and a pasted link."""
+    client.force_login(administrator)
+
+    pushed = client.get(BLOCK_URL, {"arvamus_vaade": "arhiiv"}).headers["HX-Push-Url"]
+
+    assert "arvamus_vaade=arhiiv" in pushed
+
+
+def test_the_pushed_address_reproduces_both_states_when_followed(signed_in, three_pairs) -> None:
+    """The invariant, checked end to end on the server.
+
+    What the fragment answered with, and what the pushed address renders when
+    somebody actually opens it, have to be the same two lists. A browser test
+    proves the address bar really holds this; this proves the address is worth
+    holding.
+    """
+    fragment = signed_in.get(BLOCK_URL, {"q": "Ehitusseadustiku", "arvamus_q": "Beetaseisukoht"})
+    pushed = fragment.headers["HX-Push-Url"]
+
+    body = body_of(signed_in.get(pushed))
+
+    register = register_section_of(body)
+    section = opinion_section_of(body)
+    assert "Ehitusseadustiku revisjon" in register
+    assert "Pakendiseaduse muudatused" not in register
+    assert "Beetaseisukoht" in section
+    assert "Alfaseisukoht" not in section

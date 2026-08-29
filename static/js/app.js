@@ -423,27 +423,77 @@
     });
   }
 
-  /* ---- The Arvamused tab keeps the register's search ---------------------
+  /* ---- The Arvamused section keeps the register's state ------------------
    * Teemad carries two independent searches: `?q=` narrows teemad and
    * `?arvamus_q=` narrows the Arvamused section under them (docs/adr/0047).
    * Both live in one address, and neither may reset the other.
    *
-   * The Saadetud/Arhiiv tabs are plain links whose href the server built from
-   * the address the page was *rendered* with. That is correct until the
-   * register's own live search runs: it swaps `#teemad-tulemused` and pushes a
-   * new address, and this strip sits outside that region — so following the
-   * stale href would navigate to a URL with the old `?q=` in it and silently
-   * undo the reader's teemad search.
+   * The register's live search swaps `#teemad-tulemused` and pushes a new
+   * address. The Arvamused section sits *outside* that region, so everything
+   * the server baked into it — the tab hrefs, and the hidden inputs the opinion
+   * form carries the register's state in — still describes the address the page
+   * was *rendered* with. Two things then go wrong, and the second is the worse
+   * one:
    *
-   * So the href is rebuilt at click time from what is actually true: the live
-   * address for the register's state, and the live input for the opinion query
-   * (which is deliberately *not* pushed — the address a reader keeps is
-   * `/teemad/`, never the fragment route the box answers from).
+   *   - following a stale tab href navigates to the old `?q=` and silently
+   *     undoes the teemad search somebody just typed;
+   *   - a stale hidden `q` is sent with the opinion search, and the server
+   *     composes `HX-Push-Url` from it — writing the old register state over
+   *     the correct address bar, which is worse than not pushing at all.
+   *
+   * So the section is resynced from what is actually true — `location.search`
+   * for the register's state — whenever htmx pushes a new address, and again at
+   * click time for a tab, which also folds in whatever is in the opinion box
+   * right now.
    *
    * Nothing here is the only way to do anything. With JavaScript off there is
-   * no live search to go stale from, so the server-rendered href is already
-   * right and this never runs. Delegated, so it survives every swap.
+   * no live search for anything to go stale from, so the server-rendered markup
+   * is already right and none of this runs.
    */
+  var OPINION_PARAMS = ["arvamus_q", "arvamus_vaade"];
+
+  function opinionForm() {
+    var box = document.getElementById("arvamused-otsing");
+    return box ? box.form : null;
+  }
+
+  /* The register's half of the current address, as name/value pairs. */
+  function registerState() {
+    var pairs = [];
+    new URL(window.location.href).searchParams.forEach(function (value, name) {
+      if (OPINION_PARAMS.indexOf(name) === -1 && value) {
+        pairs.push([name, value]);
+      }
+    });
+    return pairs;
+  }
+
+  /* Rewrite the opinion form's carried register inputs to match the address.
+   *
+   * The opinion form's own controls are left alone: `arvamus_q` is what
+   * somebody is typing into and `arvamus_vaade` is which tab they are on, and
+   * neither is the register's to set.
+   */
+  function syncOpinionForm() {
+    var form = opinionForm();
+    if (!form) {
+      return;
+    }
+    form.querySelectorAll("input[type=hidden][data-register-state]").forEach(function (input) {
+      input.remove();
+    });
+    registerState().forEach(function (pair) {
+      var input = document.createElement("input");
+      input.type = "hidden";
+      input.name = pair[0];
+      input.value = pair[1];
+      input.setAttribute("data-register-state", "");
+      form.appendChild(input);
+    });
+  }
+
+  document.addEventListener("htmx:pushedIntoHistory", syncOpinionForm);
+
   document.addEventListener("click", function (event) {
     var tab = event.target.closest ? event.target.closest("[data-opinion-tab]") : null;
     if (!tab || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey) {

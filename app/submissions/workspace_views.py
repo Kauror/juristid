@@ -40,7 +40,7 @@ from app.legacy_import.opinion_search import (
     visible_archive,
 )
 from app.submissions import workspace
-from app.submissions.embedded import embedded_context
+from app.submissions.embedded import embedded_context, page_url
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.workspace import PAGE_SIZE, SentFilters, SubmissionQueryRefused
 
@@ -195,8 +195,24 @@ def embedded_block(request: HttpRequest) -> HttpResponse:
     resolves an archive request it may not serve down to Saadetud rather than
     refusing, because this fragment answers a box on somebody else's page
     (``app/submissions/embedded.py``).
+
+    ``HX-Push-Url`` carries the *Teemad* address the answer belongs to, never
+    this route's own. The section is part of a page, and after a live search the
+    browser must be holding a URL somebody can paste: what is on screen, what
+    the address bar says and what a colleague receives are one thing, and
+    without this header the third of those silently lags the first two.
+
+    Pushed rather than replaced, matching the register's own live search, so
+    Back steps through an opinion search exactly as it steps through a register
+    one. htmx does the pushing and therefore keeps its own history snapshot in
+    step; composing the address here rather than in the browser keeps one
+    definition of what the page's state is (``embedded.page_url``).
     """
-    return render(request, "submissions/partials/embedded_results.html", embedded_context(request))
+    response = render(
+        request, "submissions/partials/embedded_results.html", embedded_context(request)
+    )
+    response["HX-Push-Url"] = page_url(request.GET)
+    return response
 
 
 def _archive_years(viewer: Any) -> list[int]:

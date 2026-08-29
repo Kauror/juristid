@@ -16,6 +16,7 @@ claim that is easy to believe and hard to verify without opening them.
 from __future__ import annotations
 
 import re
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from playwright.sync_api import expect
@@ -327,9 +328,15 @@ def test_the_two_searches_on_the_teemad_page_stay_apart(page, base_url):
 
     # The opinion side answered...
     expect(page.locator("#arvamused-tulemused")).to_contain_text("0 vastet")
-    # ...and the register kept its rows and its URL.
+    # ...and the register kept its rows.
     assert page.locator("#teemad-tulemused tbody tr").count() == register_rows
-    assert page.url == address
+    # The address gained the opinion query and stayed on the page it belongs to.
+    # It is emphatically not unchanged: an address that lagged the screen is
+    # the failure `test_the_live_opinion_search_keeps_the_address_honest` below
+    # exists to catch.
+    assert page.url.startswith(address.split("?")[0])
+    assert "arvamus_q=mitteesinevsona" in page.url
+    assert "/arvamused/plokk/" not in page.url
 
 
 def test_the_opinion_tab_does_not_undo_a_live_teemad_search(page, base_url):
@@ -397,3 +404,127 @@ def test_the_unlinked_shortcut_narrows_to_the_review_workload(page, base_url):
     filters.get_by_role("link", name="Sidumata", exact=False).click()
     expect(page.get_by_role("link", name=UNLINKED_TITLE)).to_be_visible()
     expect(page.get_by_role("link", name=LINKED_TITLE)).to_have_count(0)
+
+
+# -- the address a live opinion search leaves behind ---------------------------
+
+
+def opinion_search(page, text: str):
+    """Type into «Otsi arvamustest» and wait for the section to answer.
+
+    Through the box rather than the URL, because what is being checked is what
+    the browser is left holding after a live search — which is precisely what a
+    server-side test cannot see.
+    """
+    box = page.locator("#arvamused-otsing")
+    box.fill(text)
+    # Past the 250ms debounce, then past the request it fires.
+    page.wait_for_timeout(600)
+    page.wait_for_load_state("networkidle")
+
+
+def test_the_live_opinion_search_keeps_the_address_honest(page, base_url):
+    """One invariant, in the one place it can actually be broken.
+
+    What is on screen, what the address bar says, and what a colleague gets if
+    the URL is copied must be the same thing. The live opinion search answers
+    from `/arvamused/plokk/` and swaps a fragment — so without the
+    `HX-Push-Url` the server returns, the screen would move and the address
+    would silently stay behind, and every link shared from that page would be
+    missing the opinion search the sender was looking at.
+
+    Six things, in the order somebody would hit them (docs/adr/0047).
+    """
+    sign_in(page, base_url, ADMIN)
+    go_to(page, "Teemad")
+
+    # 1. A teemad search is active, live, and in the address.
+    page.locator("#teemad-otsing").fill("pakendiseaduse")
+    page.wait_for_timeout(600)
+    page.wait_for_load_state("networkidle")
+    assert "q=pakendiseaduse" in page.url
+    teemad_rows = page.locator("#teemad-tulemused tbody tr").count()
+    assert teemad_rows, "the register matched nothing, so this proves nothing"
+
+    # 2. A live Arvamused search on top of it.
+    opinion_search(page, "ministeeriumile")
+    opinion_rows = page.locator("#arvamused-tulemused tbody tr").count()
+    assert opinion_rows, "the opinion search matched nothing, so this proves nothing"
+
+    # 3. Both parameters are in the visible /teemad/ URL, and the fragment
+    #    route is not.
+    address = urlparse(page.url)
+    parameters = parse_qs(address.query)
+    assert address.path == "/teemad/", page.url
+    assert parameters.get("q") == ["pakendiseaduse"], page.url
+    assert parameters.get("arvamus_q") == ["ministeeriumile"], page.url
+    assert "/arvamused/plokk/" not in page.url
+
+    # 4. Copying that URL reproduces both result states.
+    copied = page.url
+    page.goto(copied)
+    page.wait_for_load_state("networkidle")
+    assert page.locator("#teemad-tulemused tbody tr").count() == teemad_rows
+    assert page.locator("#arvamused-tulemused tbody tr").count() == opinion_rows
+    expect(page.locator(".registercount")).to_contain_text("pakendiseaduse")
+    expect(page.locator("#arvamused-otsing")).to_have_value("ministeeriumile")
+    expect(page.locator("#teemad-otsing")).to_have_value("pakendiseaduse")
+
+    # 5. Clearing the opinion box removes `arvamus_q` and leaves `q` alone.
+    opinion_search(page, "")
+    cleared = parse_qs(urlparse(page.url).query)
+    assert "arvamus_q" not in cleared, page.url
+    assert cleared.get("q") == ["pakendiseaduse"], page.url
+    assert page.locator("#teemad-tulemused tbody tr").count() == teemad_rows
+
+    # 6. And the address never became the fragment's own at any point.
+    assert "/arvamused/plokk/" not in page.url
+
+
+def test_back_returns_to_the_previous_opinion_search(page, base_url):
+    """Pushed, not replaced — so Back steps through it like any other search.
+
+    htmx does the pushing, from the header the server returns, which is why its
+    own history handling stays in step. A hand-rolled `pushState` beside htmx's
+    bookkeeping is the version of this that restores the wrong DOM.
+    """
+    sign_in(page, base_url, ADMIN)
+    go_to(page, "Teemad")
+
+    opinion_search(page, "ministeeriumile")
+    assert "arvamus_q=ministeeriumile" in page.url
+    found = page.locator("#arvamused-tulemused tbody tr").count()
+
+    page.go_back()
+    page.wait_for_load_state("networkidle")
+
+    assert "arvamus_q" not in page.url, page.url
+    assert page.url.endswith("/teemad/") or "arvamus_q" not in page.url
+    # The section came back unfiltered rather than showing a stale answer.
+    assert page.locator("#arvamused-tulemused tbody tr").count() >= found
+
+
+def test_the_register_search_is_not_disturbed_by_the_opinion_push(page, base_url):
+    """The push must carry the register's *current* state, not the rendered one.
+
+    The opinion form's hidden inputs are what the server composes the pushed
+    address from, and they are outside the region the register's live search
+    swaps — so stale ones would push the old `?q=` over a correct address bar,
+    which is worse than not pushing at all. `static/js/app.js` resyncs them on
+    every htmx push; this is what proves it.
+    """
+    sign_in(page, base_url, ADMIN)
+    go_to(page, "Teemad")
+
+    page.locator("#teemad-otsing").fill("pakendiseaduse")
+    page.wait_for_timeout(600)
+    page.wait_for_load_state("networkidle")
+    narrowed = page.locator("#teemad-tulemused tbody tr").count()
+
+    opinion_search(page, "ministeeriumile")
+
+    parameters = parse_qs(urlparse(page.url).query)
+    assert parameters.get("q") == ["pakendiseaduse"], page.url
+    assert parameters.get("arvamus_q") == ["ministeeriumile"], page.url
+    # And the register's own rows never moved.
+    assert page.locator("#teemad-tulemused tbody tr").count() == narrowed
