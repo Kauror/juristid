@@ -117,20 +117,26 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     page.reload()
     expect(page.get_by_text("Tekst olemas")).to_be_visible()
 
-    # -- a safe preview, clearly marked as derived ------------------------
+    # -- the immutable original, and the way to its bytes -----------------
     # Followed by href rather than clicked. The table header is sticky, so a
     # browser scrolling the first row to the top of the viewport puts it under
     # the header — which is a real thing the CSS now accounts for, and not what
     # this test is about.
+    #
+    # The «Tuletatud eelvaade» block left this page with the v2 design, and the
+    # separate download button with it: the filename in the H1 *is* the download
+    # (02-EKRAANID §G, docs/design-v2-compatibility.md DS-10). The extraction is
+    # untouched — the fragment this test is really about is asserted below,
+    # through the search that reads the same derivative.
     preview_link = page.get_by_role("link", name="Vaata sisu").first
     expect(preview_link).to_be_visible()
     page.goto(f"{base_url}{preview_link.get_attribute('href')}")
     expect(page.get_by_role("heading", name="Originaal")).to_be_visible()
-    expect(page.get_by_role("heading", name="Tuletatud eelvaade")).to_be_visible()
-    expect(page.get_by_text("See ei ole originaal", exact=False)).to_be_visible()
-    expect(page.get_by_text("lk 4")).to_be_visible()
-    expect(page.get_by_role("link", name="Laadi alla originaal")).to_be_visible()
-    screenshots(page, "22-eelvaade")
+    expect(page.get_by_text("Muutumatu tõend", exact=False)).to_be_visible()
+    expect(page.locator(".card--derived")).to_have_count(0)
+    heading = page.get_by_role("heading", name="katse-eelnou.pdf")
+    expect(heading.get_by_role("link")).to_have_attribute("href", re.compile(r"/dokumendid/"))
+    screenshots(page, "22-originaal")
 
     # -- and the words inside it are findable, with the page they are on ---
     page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill(ONLY_INSIDE_THE_PDF)
@@ -143,9 +149,12 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     expect(result.locator("mark").first).to_be_visible()
     screenshots(page, "23-otsing-dokumendist")
 
-    # Clicking lands on the document, not merely on the matter.
+    # Clicking lands on the document, not merely on the matter. The document
+    # page is the original and its versions since the v2 design — the derived
+    # preview it used to end on is gone (02-EKRAANID §G).
     result.click()
-    expect(page.get_by_role("heading", name="Tuletatud eelvaade")).to_be_visible()
+    expect(page.get_by_role("heading", name="Originaal")).to_be_visible()
+    expect(page.get_by_role("heading", name="katse-eelnou.pdf")).to_be_visible()
 
 
 def test_a_restricted_document_is_invisible_to_a_reader(page, base_url, synthetic_pdf) -> None:
@@ -224,14 +233,19 @@ def test_an_email_shows_its_sender_and_its_attachments(
         f"{base_url}{message_row.get_by_role('link', name='Vaata sisu').get_attribute('href')}"
     )
 
-    expect(page.get_by_role("heading", name="Tuletatud eelvaade")).to_be_visible()
-    # In the parsed-header list specifically. The name also appears in the
-    # extracted body text and in the sender-address field, and "somewhere on
-    # this page" would pass even if the metadata derivative were missing.
-    fields = page.locator(".card--derived .detailgrid").first
-    expect(fields).to_contain_text("Saatja")
-    expect(fields).to_contain_text("Kadri Näidis")
-    expect(fields).to_contain_text("kadri@naidisministeerium.invalid")
+    # The «Tuletatud eelvaade» block is gone from this page with the v2 design,
+    # and with it the rendered parsed headers (02-EKRAANID §G,
+    # docs/design-v2-compatibility.md DS-10). The extraction itself is untouched
+    # — the worker above ran and the derivative exists — and what the page still
+    # says about the message is what this asserts: the immutable original with
+    # its checksum, and what came inside it.
+    expect(page.get_by_role("heading", name="Originaal")).to_be_visible()
+    expect(page.locator(".card--derived")).to_have_count(0)
+    # The filename in the H1 *is* the download, so there is no separate button.
+    heading = page.get_by_role("heading", name="kooskolastus.eml")
+    expect(heading).to_be_visible()
+    expect(heading.get_by_role("link")).to_have_attribute("href", re.compile(r"/dokumendid/"))
     # And the message names what came inside it, both ways round.
     expect(page.get_by_role("heading", name="Selle kirja manused")).to_be_visible()
-    screenshots(page, "24-kirja-eelvaade")
+    expect(page.get_by_text("lisa-1.pdf").first).to_be_visible()
+    screenshots(page, "24-kirja-originaal")

@@ -5,7 +5,7 @@ same question over the same population, so the one without a population of its
 own was retired. `Kogu osakond` remains.
 
 Three of its counts moved into `Aruandlus` — `Sissekandeid sel nädalal`,
-`Esitatud arvamusi <kuu>` and `Tähtaegu sel nädalal`. The risk in a move like
+`Saadetud arvamusi <kuu>` and `Tähtaegu sel nädalal`. The risk in a move like
 this is not that the rows fail to render. It is that a number quietly changes
 meaning on the way: a population widened because the scope that narrowed it
 disappeared, a restricted child suddenly inside a total, a week that runs from a
@@ -43,7 +43,7 @@ pytestmark = pytest.mark.django_db
 OVERVIEW = "matters:overview"
 
 #: The three that survived, in the order Aruandlus prints them.
-RETAINED = ("Sissekandeid sel nädalal", "Esitatud arvamusi", "Tähtaegu sel nädalal")
+RETAINED = ("Sissekandeid sel nädalal", "Saadetud arvamusi", "Tähtaegu sel nädalal")
 
 #: Everything the retired scope put on the page. Named rather than described,
 #: because "no team content" is only checkable against a list of what team
@@ -206,7 +206,7 @@ def test_aruandlus_holds_the_three_retained_rows_and_the_year_rows(department_he
     labels = [row.label for row in page.reporting]
 
     assert labels[0] == "Sissekandeid sel nädalal"
-    assert labels[1].startswith("Esitatud arvamusi ")
+    assert labels[1].startswith("Saadetud arvamusi ")
     assert labels[2] == "Tähtaegu sel nädalal"
     # The block they moved into, not a block of their own beside it.
     assert f"Suletud teemasid {today.year}" in labels
@@ -234,7 +234,7 @@ def test_each_retained_row_counts_what_the_database_holds(department_head, speci
     """Values come from queries: seed one of each, and each row moves by one."""
     page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=midweek)
     before = aruandlus(page)
-    month_label = row_starting(page, "Esitatud arvamusi ").label
+    month_label = row_starting(page, "Saadetud arvamusi ").label
 
     matter = a_matter(specialist)
     entry_on(matter, midweek, author=specialist)
@@ -274,7 +274,7 @@ def test_the_month_wording_follows_the_date_and_stays_estonian(department_head, 
     """
     page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=when)
 
-    assert row_starting(page, "Esitatud arvamusi ").label == f"Esitatud arvamusi {expected}"
+    assert row_starting(page, "Saadetud arvamusi ").label == f"Saadetud arvamusi {expected}"
 
 
 # ---------------------------------------------------------------------------
@@ -349,7 +349,7 @@ def test_the_month_row_holds_this_month_across_the_transition(department_head, s
 
     page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=midweek)
 
-    assert row_starting(page, "Esitatud arvamusi ").count == 2
+    assert row_starting(page, "Saadetud arvamusi ").count == 2
 
 
 def test_the_month_row_opens_exactly_the_month_it_names(client, department_head, specialist):
@@ -364,7 +364,7 @@ def test_the_month_row_opens_exactly_the_month_it_names(client, department_head,
     sent_on(matter, today, title="Selle kuu arvamus")
 
     page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    row = row_starting(page, "Esitatud arvamusi ")
+    row = row_starting(page, "Saadetud arvamusi ")
 
     assert f"aasta={today.year}" in row.url and f"kuu={today.month}" in row.url
 
@@ -451,7 +451,7 @@ def test_a_restricted_child_is_absent_from_all_three_counts_for_a_stranger(speci
     restricted_pair(specialist, midweek)
 
     counts = aruandlus(ov.build_overview(stranger, scope=ov.SCOPE_DEPARTMENT, today=midweek))
-    month = next(label for label in counts if label.startswith("Esitatud arvamusi "))
+    month = next(label for label in counts if label.startswith("Saadetud arvamusi "))
 
     assert counts["Sissekandeid sel nädalal"] == 0
     assert counts[month] == 0
@@ -463,7 +463,7 @@ def test_the_same_children_are_counted_for_the_colleague_entitled_to_them(specia
     restricted_pair(specialist, midweek)
 
     counts = aruandlus(ov.build_overview(specialist, scope=ov.SCOPE_DEPARTMENT, today=midweek))
-    month = next(label for label in counts if label.startswith("Esitatud arvamusi "))
+    month = next(label for label in counts if label.startswith("Saadetud arvamusi "))
 
     assert counts["Sissekandeid sel nädalal"] == 1
     assert counts[month] == 1

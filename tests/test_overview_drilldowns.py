@@ -16,7 +16,7 @@ The failures were not subtle once they were looked for.
 * *N inimest* on the since-retired Minu tiim opened the whole register.
 * The team strip summed per-person counts, which silently drops every unowned
   file, and linked to a register list that includes them.
-* *Esitatud arvamusi 2026* and *Suletud teemasid 2026* carried the year in the
+* *Saadetud arvamusi 2026* and *Suletud teemasid 2026* carried the year in the
   label and not in the link.
 * *Näita kõiki 41* under Vajab sekkumist carried ``sekkumine=hilinenud``.
 * *Näita ülejäänud 3* under Tähtajad opened the whole register sorted by date.

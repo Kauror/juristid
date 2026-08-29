@@ -56,6 +56,7 @@ from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
 from app.core.dates import end_of_month, format_estonian_date
 from app.core.dates import short_range as format_short_range
+from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.models import (
     MatterEffectiveDate,
     MatterImportantDate,
@@ -1384,7 +1385,7 @@ def organisation_ranking(
 def reporting_counts(user: Any, today: date, pop: Populations | None = None) -> list[CountRow]:
     """Current-year canonical counts, each from the selector its own list uses.
 
-    *Esitatud arvamusi* is SENT ``Submission`` rows. The 767 historical archive
+    *Saadetud arvamusi* is SENT ``Submission`` rows. The 767 historical archive
     files are evidence of past correspondence, not canonical sent opinions, and
     counting them here would inflate the department's year by an order of
     magnitude (ADR 0021).
@@ -1402,20 +1403,34 @@ def reporting_counts(user: Any, today: date, pop: Populations | None = None) -> 
     return [
         CountRow(
             # The year is in the link as well as in the label. It was in the
-            # label alone, so "Esitatud arvamusi 2026" opened every opinion the
+            # label alone, so "Saadetud arvamusi 2026" opened every opinion the
             # department had ever sent (Ülevaade QA §3).
-            label=f"Esitatud arvamusi {year}",
+            label=f"Saadetud arvamusi {year}",
             count=people.submissions.filter(
                 status=SubmissionStatus.SENT, sent_at__year=year
             ).count(),
             url=f"{reverse('submissions:sent')}?aasta={year}",
         ),
         CountRow(
-            # No destination: this product has no list of Kaasamine records
-            # outside the Matter that carries them, and a link to something
-            # adjacent is worse than no link at all.
-            label=f"Kaasamisi {year}",
-            count=MatterEngagement.objects.visible_to(user).filter(occurred_on__year=year).count(),
+            # Confirmed work victories, in place of the `Kaasamisi` count that
+            # stood here. Two reasons, and the design gives the first: the
+            # reporting block is about what the year produced, and a work victory
+            # is the one outcome that block was not naming (02-EKRAANID §B).
+            #
+            # The second is this module's own rule. `Kaasamisi` had no
+            # destination — this product has no list of Kaasamine records
+            # outside the Matter that carries them — and a number that opens
+            # nothing is a number this page does not print. Nothing was lost:
+            # Kaasamine is recorded, edited and read on the Matter exactly as
+            # before (01-EHITUSJUHIS §3.3).
+            label="Töövõite kinnitatud",
+            count=MatterWorkVictory.objects.visible_to(user)
+            .filter(status=WorkVictoryStatus.CONFIRMED, period_date__year=year)
+            .count(),
+            url=(
+                f"{reverse('intelligence:work_victories')}"
+                f"?staatus={WorkVictoryStatus.CONFIRMED}&aasta={year}"
+            ),
         ),
         CountRow(
             label=f"Suletud teemasid {year}",
@@ -1492,7 +1507,7 @@ def period_counts(
             # places on one page: the strip is the headline and this is the
             # reporting row beside the year it belongs to. They cannot drift,
             # because there is one population and one filter behind both.
-            label=f"Esitatud arvamusi {ESTONIAN_MONTHS_IN[today.month - 1]}",
+            label=f"Saadetud arvamusi {ESTONIAN_MONTHS_IN[today.month - 1]}",
             count=sent_this_month(today, people) if sent is None else sent,
             url=f"{reverse('submissions:sent')}?aasta={today.year}&kuu={today.month}",
         ),
