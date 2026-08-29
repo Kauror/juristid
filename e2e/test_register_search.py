@@ -39,7 +39,16 @@ def result_count(page) -> int:
 
 
 def rows(page):
-    return page.locator(".table tbody tr")
+    """The register's rows, named by the register's own class.
+
+    `.table--register` rather than `.table`, and the same everywhere below.
+    Since docs/adr/0047 the Teemad page carries a second table — the Arvamused
+    section under the register — so a bare `.table` is a strict-mode violation
+    and, worse, would sometimes silently assert against the wrong list. The
+    class was always on the markup; only the selector was vaguer than what it
+    meant.
+    """
+    return page.locator(".table--register tbody tr")
 
 
 def chip_text(page) -> str:
@@ -78,7 +87,7 @@ def test_results_update_without_pressing_enter(page, base_url):
 
     expect(page.locator(".registercount")).to_contain_text("Tavaline")
     expect(rows(page)).to_have_count(1)
-    expect(page.locator(".table")).to_contain_text(OPEN_TITLE)
+    expect(page.locator(".table--register")).to_contain_text(OPEN_TITLE)
     assert result_count(page) < before
 
 
@@ -165,7 +174,7 @@ def test_a_restricted_matter_reaches_neither_the_rows_nor_the_count(page, base_u
     expect(page.locator(".registercount strong")).to_have_text("0")
     # No rows, and no link to a Matter — the word itself is legitimately on the
     # page twice, in the box that was typed into and in the count echoing it.
-    expect(page.locator(".table")).to_have_count(0)
+    expect(page.locator(".table--register")).to_have_count(0)
     expect(page.locator("#teemad-tulemused a[href*='/teemad/']")).to_have_count(0)
 
 
@@ -194,8 +203,8 @@ def test_the_owner_filter_narrows_the_register(page, base_url):
 
     page.wait_for_url(re.compile(r"vastutaja="))
     assert "Vastutaja" in chip_text(page)
-    expect(page.locator(".table")).to_contain_text(OPEN_TITLE)
-    expect(page.locator(".table")).not_to_contain_text(ARCHIVE_TITLE)
+    expect(page.locator(".table--register")).to_contain_text(OPEN_TITLE)
+    expect(page.locator(".table--register")).not_to_contain_text(ARCHIVE_TITLE)
 
 
 def test_the_organisation_chooser_narrows_by_typing(page, base_url):
@@ -215,7 +224,7 @@ def test_the_organisation_chooser_narrows_by_typing(page, base_url):
 
     page.wait_for_url(re.compile(r"asutus="))
     assert MINISTRY in chip_text(page)
-    expect(page.locator(".table")).to_contain_text(OPEN_TITLE)
+    expect(page.locator(".table--register")).to_contain_text(OPEN_TITLE)
 
 
 def test_the_received_date_range_narrows_the_register(page, base_url):
@@ -239,12 +248,12 @@ def test_the_register_scope_segments_work(page, base_url):
     segments = page.locator(".segmented")
     segments.get_by_role("link", name=re.compile(r"^Arhiiv")).click()
     page.wait_for_url(re.compile(r"olek=arhiiv"))
-    expect(page.locator(".table")).to_contain_text(ARCHIVE_TITLE)
-    expect(page.locator(".table")).not_to_contain_text(OPEN_TITLE)
+    expect(page.locator(".table--register")).to_contain_text(ARCHIVE_TITLE)
+    expect(page.locator(".table--register")).not_to_contain_text(OPEN_TITLE)
 
     segments.get_by_role("link", name=re.compile(r"^Avatud")).click()
     page.wait_for_url(re.compile(r"olek=avatud"))
-    expect(page.locator(".table")).to_contain_text(OPEN_TITLE)
+    expect(page.locator(".table--register")).to_contain_text(OPEN_TITLE)
 
 
 def test_a_query_and_a_filter_mean_both(page, base_url):

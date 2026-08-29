@@ -321,7 +321,8 @@ def test_the_register_keeps_its_row_rhythm(page, base_url):
     open_register(page, base_url)
 
     heights = page.eval_on_selector_all(
-        ".table tbody tr", "rows => rows.map(r => Math.round(r.getBoundingClientRect().height))"
+        ".table--register tbody tr",
+        "rows => rows.map(r => Math.round(r.getBoundingClientRect().height))",
     )
     assert heights, "the register rendered no rows"
     assert max(heights) <= 40, f"rows grew past the dense rhythm: {sorted(set(heights))}"
@@ -705,7 +706,7 @@ def test_a_restricted_matter_says_so_in_words(page, base_url):
     """The badge is a word plus a tint, never a tint alone."""
     sign_in(page, base_url, SANDRA)
     open_register(page, base_url)
-    expect(page.locator(".table .badge--restricted").first).to_contain_text("Piiratud")
+    expect(page.locator(".table--register .badge--restricted").first).to_contain_text("Piiratud")
 
 
 # ---------------------------------------------------------------------------
