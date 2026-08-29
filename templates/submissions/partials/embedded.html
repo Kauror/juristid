@@ -1,0 +1,125 @@
+{% comment %}
+Arvamused, as the second section of the Teemad page.
+
+The information architecture, stated once: a Teema is the object the department
+works on, and an arvamus is usually one of the things that work finishes with.
+So the bar no longer offers Arvamused as a destination beside Teemad — it offers
+Teemad, and Arvamused is a full-width section underneath the register
+(docs/adr/0047).
+
+What has emphatically *not* happened is a merger. There are two searches here,
+and they answer different questions: «Otsi teemadest» finds the file somebody is
+working on, «Otsi arvamustest» finds the letter somebody sent. They keep separate
+parameters (`q` and `arvamus_q`), separate populations, separate authorization
+and separate result lists, and neither box can narrow the other's list. The two
+models are untouched; nothing here turns a Submission into a Matter or back.
+
+The section is a way in, not a replacement. The standalone workspace still lives
+at its own address with its full filter set and its pager, every existing
+Arvamused URL still resolves, and «Vaata kõiki arvamusi» is how a reader gets
+there from here.
+{% endcomment %}
+<section class="opinionblock" id="arvamused" aria-labelledby="arvamused-pealkiri">
+  <div class="opinionblock__head">
+    <h2 class="opinionblock__title" id="arvamused-pealkiri">Arvamused</h2>
+    <p class="opinionblock__caption">Saadetud seisukohad ja ajalooline arhiiv</p>
+  </div>
+
+  {% comment %}
+    The two sources, kept apart exactly as the standalone workspace keeps them.
+
+    Plain links, not a swap. Switching source is a deliberate act a few times a
+    day rather than something a keystroke does, and the strip has to sit above
+    the search box to read correctly — which would put it inside the region a
+    keystroke replaces, where it would be rebuilt on every letter typed.
+
+    Each link carries the whole current address, so choosing a source keeps
+    every register filter, the register's page number and whatever is in the
+    opinion box; and each lands on `#arvamused`, so a reader who has scrolled
+    down to this section is not sent back to the top of the register.
+
+    `data-opinion-tab` is what stops that href going stale. The register's own
+    live search swaps `#teemad-tulemused` and pushes a new address; this strip
+    is outside that region, so the `?q=` baked into these hrefs is the one the
+    page was *rendered* with. Following it after a live search would silently
+    reset the register's search — the exact failure the two-parameter design
+    exists to prevent. A dozen lines in `static/js/app.js` rebuild the href from
+    the live address on click, and with JavaScript off there is no live search
+    to go stale from, so the server-rendered href is already correct.
+
+    Arhiiv appears only for a reader `may_read_archive` admits, and the same
+    predicate decides whether the archive is queried at all — the tab's absence
+    is the visible half of a boundary enforced in Python before anything is
+    counted (app/submissions/embedded.py, docs/adr/0028).
+  {% endcomment %}
+  <nav class="segmented" aria-label="Arvamuste allikas">
+    <a class="segmented__option {% if opinion_view == opinion_sent_view %}is-active{% endif %}"
+       {% if opinion_view == opinion_sent_view %}aria-current="true"{% endif %}
+       data-opinion-tab="{{ opinion_sent_view }}"
+       href="{{ opinion_sent_link }}">Saadetud
+      <span class="segmented__count">{{ opinion_sent_count }}</span></a>
+    {% if opinion_can_read_archive %}
+      <a class="segmented__option {% if opinion_view == opinion_archive_view %}is-active{% endif %}"
+         {% if opinion_view == opinion_archive_view %}aria-current="true"{% endif %}
+         data-opinion-tab="{{ opinion_archive_view }}"
+         href="{{ opinion_archive_link }}">Arhiiv
+        <span class="segmented__count">{{ opinion_archive_total }}</span></a>
+    {% endif %}
+  </nav>
+
+  {% comment %}
+    «Otsi arvamustest» — the second search on this page, and never the first one.
+
+    A plain GET form that works with JavaScript switched off entirely: it
+    submits to the Teemad page, which renders this section server-side from the
+    same builder, and the `#arvamused` fragment on the action brings the reader
+    back to the section they submitted from. HTMX only makes the same request
+    earlier and swaps a smaller piece of the answer.
+
+    `hx-get` points at the section's own fragment route rather than at
+    `/teemad/`, because the register answers *any* HTMX request to that address
+    with a table of teemad — an opinion search made there would come back as the
+    wrong list entirely (app/submissions/urls.py).
+
+    `hx-push-url` is deliberately absent. The address a reader must keep is
+    `/teemad/…`, and pushing the fragment route would leave `/arvamused/plokk/?…`
+    in the bar and in whatever they paste to a colleague. The plain GET path
+    still produces a real, shareable address on the register's own URL.
+
+    The register's every parameter travels as a hidden input. Without them a
+    plain-GET opinion search would drop the year and the owner somebody had
+    already chosen and the teemad list would silently widen — the same failure
+    the register's own box carries hidden inputs to avoid.
+  {% endcomment %}
+  <form class="opinionsearch" method="get" role="search"
+        action="{% url 'matters:matter_list' %}#arvamused"
+        hx-get="{{ opinion_fragment_url }}"
+        hx-target="#arvamused-tulemused"
+        hx-swap="outerHTML"
+        hx-trigger="input changed delay:250ms from:#arvamused-otsing, search from:#arvamused-otsing, submit"
+        hx-indicator=".opinionsearch__spinner">
+    <label class="opinionsearch__field">
+      <span class="visually-hidden">Otsi arvamustest</span>
+      <input class="field__input field__input--prominent"
+             type="search"
+             name="{{ opinion_query_param }}"
+             id="arvamused-otsing"
+             value="{{ opinion_query }}"
+             maxlength="500"
+             autocomplete="off"
+             placeholder="{% if opinion_view == opinion_archive_view %}Otsi arvamustest — kirja pealkiri, saaja või viide{% else %}Otsi arvamustest — pealkiri, viide, teema või saaja{% endif %}">
+    </label>
+    {% comment %}
+      Which source is being searched, so the answer comes back from the tab the
+      reader is looking at — for the fragment and for the plain GET alike.
+    {% endcomment %}
+    <input type="hidden" name="{{ opinion_view_param }}" value="{{ opinion_view }}">
+    {% for name, value in opinion_register_state %}
+      <input type="hidden" name="{{ name }}" value="{{ value }}">
+    {% endfor %}
+    <button class="button button--quiet" type="submit">Otsi</button>
+    <span class="opinionsearch__spinner" aria-hidden="true">…</span>
+  </form>
+
+  {% include "submissions/partials/embedded_results.html" %}
+</section>

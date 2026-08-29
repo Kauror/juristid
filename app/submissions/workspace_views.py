@@ -40,6 +40,7 @@ from app.legacy_import.opinion_search import (
     visible_archive,
 )
 from app.submissions import workspace
+from app.submissions.embedded import embedded_context
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.workspace import PAGE_SIZE, SentFilters, SubmissionQueryRefused
 
@@ -66,7 +67,13 @@ def _shell(request: HttpRequest, viewer: Any, tab: str) -> dict[str, Any]:
         "can_read_archive": can_read_archive,
         "archive_total": archive_counts(viewer).get("total", 0) if can_read_archive else 0,
         "sent_counts": workspace.sent_counts(viewer),
-        "nav_active": "arvamused",
+        # Teemad, not an `arvamused` of its own: the bar no longer carries an
+        # Arvamused item, and a page that marked a destination nobody can see
+        # would leave the bar with nothing current on it while the reader is
+        # plainly somewhere. Arvamused is part of the Teemad area now, and the
+        # bar says which area they are in — which is what `is-active` has always
+        # meant here (docs/adr/0047).
+        "nav_active": "teemad",
     }
 
 
@@ -176,6 +183,20 @@ def archive(request: HttpRequest) -> HttpResponse:
             "body_search_available": counts["with_body"] > 0,
         },
     )
+
+
+@gate_required
+def embedded_block(request: HttpRequest) -> HttpResponse:
+    """The Arvamused section's results, for the Teemad page's live search.
+
+    `gate_required` and nothing else, matching the two tabs above: the block
+    reads exactly what they read, through the same selectors, for the same
+    viewer. It is deliberately *not* `require_archive_reader` — the section
+    resolves an archive request it may not serve down to Saadetud rather than
+    refusing, because this fragment answers a box on somebody else's page
+    (``app/submissions/embedded.py``).
+    """
+    return render(request, "submissions/partials/embedded_results.html", embedded_context(request))
 
 
 def _archive_years(viewer: Any) -> list[int]:

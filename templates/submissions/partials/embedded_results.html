@@ -1,0 +1,185 @@
+{% comment %}
+The Arvamused section's answer: how many, which rows, and the way out to the
+full workspace.
+
+One fragment, re-rendered whole, exactly as the register's own results block is
+— the count and the rows come from one build in one render, so no arrangement of
+swaps leaves the number disagreeing with the list under it.
+
+Swapped by the search box, which sits *outside* it: replacing the input somebody
+is typing into would move the caret on every keystroke. The tab strip is outside
+it too, and is plain links — switching source is a deliberate act a few times a
+day, not something a keystroke does, and a strip that swapped itself would have
+to be inside the region and therefore under the box (docs/adr/0047).
+
+Two row shapes, because there are two sources and they are not interchangeable.
+A canonical Submission is a recorded outbound act and names the Teema it came
+from; a held archive letter is evidence of past correspondence and deliberately
+names no Teema at all — that identity would make the archive a route into the
+register and is resolved on the detail page instead (docs/adr/0028).
+{% endcomment %}
+<div id="arvamused-tulemused">
+  {% if opinion_refusal %}
+    <p class="notice notice--warning">{{ opinion_refusal }}</p>
+  {% else %}
+    {% comment %}
+      Printed whether or not anything came back, and outside the branch that
+      renders the rows: a section whose count vanishes when the answer is nought
+      is a section a reader has to take on trust.
+
+      `polite`, so a keystroke's answer is heard without the focus leaving the
+      box, and without interrupting on every letter.
+
+      The bound is stated beside the total rather than implied. "12 of 240" is
+      the honest description of a section that shows twelve; "240 vastet" over
+      twelve rows would be a page lying about its own list.
+    {% endcomment %}
+    <p class="opinionblock__count" role="status" aria-live="polite">
+      {% if opinion_query %}
+        <strong>{{ opinion_total }}</strong> vastet otsingule „{{ opinion_query }}”
+      {% else %}
+        <strong>{{ opinion_total }}</strong> vastet
+      {% endif %}
+      {% if opinion_total > opinion_bound %}
+        <span class="opinionblock__note">· kuvatud {{ opinion_bound }}</span>
+      {% endif %}
+    </p>
+  {% endif %}
+
+  {% if opinion_rows and not opinion_refusal %}
+    <div class="tablewrap tablewrap--evidence">
+      {% if opinion_view == opinion_archive_view %}
+        <table class="table">
+          <caption class="visually-hidden">Koja varasemad väljasaadetud kirjad</caption>
+          <thead>
+            <tr>
+              <th scope="col">Kuupäev</th>
+              <th scope="col">Kiri</th>
+              <th scope="col">Saaja</th>
+              <th scope="col">Seisund</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in opinion_rows %}
+              <tr>
+                <td class="table__date">
+                  {% if row.document_date %}
+                    <time datetime="{{ row.document_date|date:'Y-m-d' }}">{{ row.document_date|date:"j.n.Y" }}</time>
+                  {% else %}
+                    <span class="table__missing">—</span>
+                  {% endif %}
+                </td>
+                <td class="table__title">
+                  <a href="{% url 'legacy_import:opinion_archive_detail' pk=row.binary_id %}">
+                    {{ row.title|default:"Pealkirjata kiri"|truncatechars:90 }}
+                  </a>
+                </td>
+                <td>{{ row.recipient|default:"—"|truncatechars:50 }}</td>
+                <td>
+                  {% if row.has_submission %}
+                    <span class="reviewstate reviewstate--applied">Kanooniline arvamus</span>
+                  {% elif row.is_linked %}
+                    <span class="reviewstate reviewstate--linked">Teemaga seotud</span>
+                  {% else %}
+                    <span class="reviewstate reviewstate--pending">Sidumata</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <table class="table">
+          <caption class="visually-hidden">Selles süsteemis saadetud arvamused</caption>
+          <thead>
+            <tr>
+              <th scope="col">Saadetud</th>
+              <th scope="col">Arvamus</th>
+              <th scope="col">Teema</th>
+              <th scope="col">Adressaat</th>
+              <th scope="col">Tõend</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for submission in opinion_rows %}
+              <tr>
+                <td class="table__date">
+                  {% comment %}
+                    The register supplies a date and this system supplies a
+                    timestamp, and the difference is rendered rather than
+                    flattened — printing "00:00" beside a reconstructed date
+                    tells a lawyer the letter went out at midnight, which no
+                    source ever said (Stage-2H brief 20).
+                  {% endcomment %}
+                  {% if submission.sent_at %}
+                    {% if submission.sent_at_precision == "DATE" %}
+                      {{ submission.sent_at|date:"j.n.Y" }}
+                    {% else %}
+                      {{ submission.sent_at|date:"j.n.Y H:i" }}
+                    {% endif %}
+                  {% else %}
+                    <span class="table__missing">—</span>
+                  {% endif %}
+                </td>
+                <td class="table__title">
+                  <a href="{% url 'matters:matter_position' pk=submission.matter_id %}">{{ submission.title }}</a>
+                  <span class="muted">· {{ submission.get_kind_display }}</span>
+                </td>
+                <td>
+                  {% comment %}
+                    The way back to the work. An arvamus is an outcome of a
+                    teema, and a reader who found the letter must not have to
+                    search again to reach the file it came out of — which is the
+                    whole reason this section sits under the register.
+                  {% endcomment %}
+                  <a href="{% url 'matters:matter_detail' pk=submission.matter_id %}">{{ submission.matter.title }}</a>
+                </td>
+                <td>
+                  {% for row in submission.recipient_rows.all %}
+                    {% if row.role == "ADDRESSEE" %}{{ row.organisation.name }}{% if not forloop.last %}, {% endif %}{% endif %}
+                  {% empty %}
+                    <span class="table__missing">—</span>
+                  {% endfor %}
+                </td>
+                <td>
+                  {% if submission.final_version_id %}
+                    <a href="{% url 'documents:open' pk=submission.final_version.document_id %}">Ava</a>
+                  {% else %}
+                    <span class="table__missing">—</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </div>
+  {% elif opinion_refusal %}
+  {% elif opinion_query %}
+    <p class="empty">Selle otsinguga arvamusi ei leitud.</p>
+  {% elif opinion_view == opinion_archive_view %}
+    <p class="empty">Arhiivis ei ole ühtegi kirja.</p>
+  {% else %}
+    {% comment %}
+      The production state, said plainly. The alternative reading — "the Chamber
+      has never sent an opinion" — is both alarming and false, and this section
+      sits under a register with two and a half thousand rows in it, which makes
+      an unexplained empty table read as a broken page.
+    {% endcomment %}
+    <p class="empty">
+      Selles süsteemis ei ole veel ühtegi arvamust välja saadetud. Kanooniline
+      arvamuse kirje tekib siis, kui arvamus siit välja saadetakse. Varem
+      saadetud kirjad on Koja arvamuste arhiivis.
+    </p>
+  {% endif %}
+
+  {% comment %}
+    The way out, and the reason this section may be short. Everything here is a
+    bounded view of a workspace that still exists at its own address, keeps its
+    own filters and pages properly — so the link carries the search rather than
+    dropping the reader at an unfiltered list they would have to retype.
+  {% endcomment %}
+  <p class="opinionblock__foot">
+    <a class="opinionblock__more" href="{{ opinion_full_url }}">Vaata kõiki arvamusi →</a>
+  </p>
+</div>

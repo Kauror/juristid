@@ -423,6 +423,45 @@
     });
   }
 
+  /* ---- The Arvamused tab keeps the register's search ---------------------
+   * Teemad carries two independent searches: `?q=` narrows teemad and
+   * `?arvamus_q=` narrows the Arvamused section under them (docs/adr/0047).
+   * Both live in one address, and neither may reset the other.
+   *
+   * The Saadetud/Arhiiv tabs are plain links whose href the server built from
+   * the address the page was *rendered* with. That is correct until the
+   * register's own live search runs: it swaps `#teemad-tulemused` and pushes a
+   * new address, and this strip sits outside that region — so following the
+   * stale href would navigate to a URL with the old `?q=` in it and silently
+   * undo the reader's teemad search.
+   *
+   * So the href is rebuilt at click time from what is actually true: the live
+   * address for the register's state, and the live input for the opinion query
+   * (which is deliberately *not* pushed — the address a reader keeps is
+   * `/teemad/`, never the fragment route the box answers from).
+   *
+   * Nothing here is the only way to do anything. With JavaScript off there is
+   * no live search to go stale from, so the server-rendered href is already
+   * right and this never runs. Delegated, so it survives every swap.
+   */
+  document.addEventListener("click", function (event) {
+    var tab = event.target.closest ? event.target.closest("[data-opinion-tab]") : null;
+    if (!tab || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey) {
+      return;
+    }
+    var address = new URL(window.location.href);
+    address.hash = "arvamused";
+    address.searchParams.set("arvamus_vaade", tab.getAttribute("data-opinion-tab"));
+
+    var box = document.getElementById("arvamused-otsing");
+    if (box && box.value) {
+      address.searchParams.set("arvamus_q", box.value);
+    } else if (box) {
+      address.searchParams.delete("arvamus_q");
+    }
+    tab.setAttribute("href", address.pathname + address.search + "#arvamused");
+  });
+
   /* ---- Menus close the way people expect --------------------------------
    * A <details> menu stays open until its own summary is clicked again, which
    * is right for a disclosure inside a page and wrong for one that floats over

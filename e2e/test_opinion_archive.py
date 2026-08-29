@@ -235,17 +235,21 @@ def test_a_department_head_is_still_refused_outside_the_shared_gate(page, base_u
     assert response.status == 403
 
 
-def test_the_archive_is_not_a_destination_of_its_own_on_the_bar(page, base_url):
-    """One question, one answer on the bar.
+def test_neither_arvamused_nor_the_archive_is_a_destination_on_the_bar(page, base_url):
+    """Two cleanups, one assertion, and both still true.
 
-    «Arvamused» and «Arvamuste arhiiv» were two items a reader had to tell
-    apart before they could pick one. The distinction is real and it is kept —
-    inside the Arvamused workspace, as a captioned tab — so the bar carries
-    Arvamused and nothing beside it, for the persona who may read the archive
-    as much as for the one who may not.
+    ADR 0044 took «Arvamuste arhiiv» off the bar: it and «Arvamused» were two
+    items a reader had to tell apart before they could pick one, and the
+    distinction — real and load-bearing — belongs inside the workspace as a
+    captioned tab rather than in the navigation.
 
-    Removed, not hidden. The refusal above is still the boundary, the route is
-    unchanged, and the test below follows the workspace to it.
+    ADR 0047 then took «Arvamused» off too. An arvamus is an outcome of a teema
+    rather than a parallel place to be, so the whole workspace is a section of
+    the Teemad page and the bar carries Teemad.
+
+    Removed, not hidden, and for both personas: the refusal above is still the
+    boundary, both routes are unchanged, and the tests below follow the
+    interface to them.
     """
     for persona in (MARTIN, ADMIN):
         sign_in(page, base_url, persona)
@@ -255,26 +259,114 @@ def test_the_archive_is_not_a_destination_of_its_own_on_the_bar(page, base_url):
         # layout decision this test does not care about (e2e/conftest.py).
         targets = navigation_targets(page)
         assert ARCHIVE_PATH not in targets, targets
-        assert "/arvamused/" in targets, targets
+        assert "/arvamused/" not in targets, targets
+        assert "/teemad/" in targets, targets
         sign_out(page, base_url)
 
 
-def test_the_workspace_tab_is_how_a_reader_reaches_the_archive(page, base_url):
-    """Arvamused → Arhiiv, without knowing a URL.
+def test_the_teemad_section_is_how_a_reader_reaches_the_archive(page, base_url):
+    """Teemad → Arvamused → Arhiiv, without knowing a URL.
 
-    The path the removed bar item used to be. It has to work for the persona
-    who may read the corpus, or the cleanup took a destination away instead of
-    moving it.
+    The path both removed bar items used to be. It has to work for the persona
+    who may read the corpus, or the consolidation took a destination away
+    instead of moving it.
+
+    The tab is a plain link that carries the whole address and lands on
+    `#arvamused`, so this also covers the part a database test cannot: that
+    somebody who scrolled to the section is not thrown back to the top of a
+    register they have already read past.
     """
     sign_in(page, base_url, ADMIN)
-    go_to(page, "Arvamused")
-    expect(page.get_by_role("heading", name="Arvamused")).to_be_visible()
-    page.get_by_role("link", name=re.compile(r"^Arhiiv")).click()
+    go_to(page, "Teemad")
+    section = page.locator("#arvamused")
+    expect(section.get_by_role("heading", name="Arvamused")).to_be_visible()
+
+    section.get_by_role("link", name=re.compile(r"^Arhiiv")).click()
     page.wait_for_load_state("networkidle")
-    expect(page.get_by_role("link", name=re.compile(r"^Arhiiv"))).to_have_attribute(
-        "aria-current", "page"
+    expect(section.get_by_role("link", name=re.compile(r"^Arhiiv"))).to_have_attribute(
+        "aria-current", "true"
     )
-    expect(page.get_by_text(UNLINKED_TITLE)).to_be_visible()
+    expect(section.get_by_text(UNLINKED_TITLE)).to_be_visible()
+
+
+def test_the_section_hands_over_to_the_full_workspace(page, base_url):
+    """«Vaata kõiki arvamusi» — the bounded section's way out.
+
+    The section shows twelve rows and no pager; the destination it links to is
+    the workspace that was not deleted, with its own filters and its own paging.
+    If this link stops working the consolidation has quietly removed a surface.
+    """
+    sign_in(page, base_url, ADMIN)
+    go_to(page, "Teemad")
+    page.locator("#arvamused").get_by_role(
+        "link", name=re.compile(r"^Vaata kõiki arvamusi")
+    ).click()
+    page.wait_for_load_state("networkidle")
+
+    assert "/arvamused/" in page.url
+    expect(page.get_by_role("heading", name="Arvamused", level=1)).to_be_visible()
+
+
+def test_the_two_searches_on_the_teemad_page_stay_apart(page, base_url):
+    """The hard requirement, in the one place a database test cannot check it.
+
+    Both boxes are on one page and both are wired to HTMX. What only a browser
+    proves is that typing in the opinion box swaps the opinion results and
+    leaves the register's rows — and its address — alone; a fragment route
+    misrouted or a target id mistyped would swap the wrong region, and the
+    server-side tests would still pass.
+    """
+    sign_in(page, base_url, ADMIN)
+    go_to(page, "Teemad")
+    register_rows = page.locator("#teemad-tulemused tbody tr").count()
+    address = page.url
+
+    page.locator("#arvamused-otsing").fill("mitteesinevsona")
+    page.wait_for_timeout(600)
+    page.wait_for_load_state("networkidle")
+
+    # The opinion side answered...
+    expect(page.locator("#arvamused-tulemused")).to_contain_text("0 vastet")
+    # ...and the register kept its rows and its URL.
+    assert page.locator("#teemad-tulemused tbody tr").count() == register_rows
+    assert page.url == address
+
+
+def test_the_opinion_tab_does_not_undo_a_live_teemad_search(page, base_url):
+    """The stale-href failure, and the only place it is reachable.
+
+    The register's live search swaps `#teemad-tulemused` and pushes a new
+    address. The opinion tab strip is outside that region, so the `?q=` the
+    server baked into its hrefs is the one the page was *rendered* with —
+    following it would navigate to the old address and silently undo the search
+    the reader had just typed. `static/js/app.js` rebuilds the href from the
+    live address on click; with JavaScript off there is no live search for it to
+    go stale from, so nothing needs rebuilding there.
+
+    Only a browser can show this: server-side the page is always freshly
+    rendered and the href is always right, which is exactly why it went
+    unnoticed until the section was driven by hand.
+    """
+    sign_in(page, base_url, ADMIN)
+    go_to(page, "Teemad")
+
+    page.locator("#teemad-otsing").fill("pakendiseaduse")
+    page.wait_for_timeout(600)
+    page.wait_for_load_state("networkidle")
+    narrowed = page.locator("#teemad-tulemused tbody tr").count()
+    expect(page.locator(".registercount")).to_contain_text("pakendiseaduse")
+
+    page.locator("#arvamused").get_by_role("link", name=re.compile(r"^Arhiiv")).click()
+    page.wait_for_load_state("networkidle")
+
+    # The archive opened...
+    expect(
+        page.locator("#arvamused").get_by_role("link", name=re.compile(r"^Arhiiv"))
+    ).to_have_attribute("aria-current", "true")
+    # ...and the register is still holding the search that was typed into it.
+    assert "q=pakendiseaduse" in page.url
+    expect(page.locator(".registercount")).to_contain_text("pakendiseaduse")
+    assert page.locator("#teemad-tulemused tbody tr").count() == narrowed
 
 
 def test_the_administrative_archive_url_still_opens(page, base_url):

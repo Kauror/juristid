@@ -453,11 +453,24 @@ def navigation_of(response) -> str:
     return body[start : body.index("</nav>", start)]
 
 
-def test_the_bar_offers_arvamused(client, specialist) -> None:
+def test_the_bar_no_longer_offers_arvamused(client, specialist) -> None:
+    """ADR 0044 put one `Arvamused` on the bar; ADR 0047 took it off entirely.
+
+    Not a reversal of 0044 — its decision that `Saadetud` and `Arhiiv` belong to
+    one destination is intact, and that destination still exists at
+    `/arvamused/`. What moved is where the bar puts it: an arvamus is an outcome
+    of a teema rather than a parallel place to be, so the workspace is a section
+    of the Teemad page and the bar carries Teemad.
+
+    `tests/test_arvamused_under_teemad.py` is where that section is tested. This
+    file keeps the assertion the header-search work made, pointing the other way.
+    """
     client.force_login(specialist)
     navigation = navigation_of(client.get(reverse("matters:overview")))
-    assert ">Arvamused<" in navigation
-    assert reverse("submissions:sent") in navigation
+    assert ">Arvamused<" not in navigation
+    assert reverse("submissions:sent") not in navigation
+    # The destination it moved under is still on the bar.
+    assert reverse("matters:matter_list") in navigation
 
 
 def test_the_bar_no_longer_offers_a_separate_archive(client, administrator) -> None:
