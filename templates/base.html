@@ -56,13 +56,19 @@
         {% if user.is_authenticated or gate_passed %}
           {% comment %}
             Priority navigation. The destinations a lawyer moves between all day
-            stay on the bar; everything else — Arvamused first — sits in the
-            group that lays out inline when there is room and folds into "Veel"
-            when there is not. A fifth fixed item puts a horizontal scrollbar on
-            the shell at 1024px, which is measured rather than guessed:
-            e2e/test_ui_shell.py fails on exactly that. This is a presentation
-            decision only — every route below is still enforced server-side, and
-            "Veel" contains links, not permission logic.
+            stay on the bar; the reading surfaces sit in the group that lays out
+            inline when there is room and folds into "Veel" when there is not. A
+            fifth fixed item puts a horizontal scrollbar on the shell at 1024px,
+            which is measured rather than guessed: e2e/test_ui_shell.py fails on
+            exactly that. This is a presentation decision only — every route
+            below is still enforced server-side, and "Veel" contains links, not
+            permission logic.
+
+            Arvamused is not on the bar at any width, and is not in "Veel"
+            either. It is a section of the Teemad page now, because an arvamus
+            is an outcome of a teema rather than a parallel place to be. The
+            workspace itself is untouched and still answers at `/arvamused/`
+            (docs/adr/0047).
 
             Saabunud is not on the bar. It is a triage surface somebody opens
             when they are triaging, not a destination in the daily rotation, and
@@ -128,7 +134,7 @@
                 worth saying is only "you are in here" — which the same inset
                 brand underline the bar uses everywhere else already says.
               {% endcomment %}
-              <summary class="topnav__trigger{% if nav_active == 'arvamused' or nav_active == 'jalgimine' or nav_active == 'statistika' or nav_active == 'osakonna_too' %} is-active{% endif %}">Veel</summary>
+              <summary class="topnav__trigger{% if nav_active == 'jalgimine' or nav_active == 'statistika' or nav_active == 'osakonna_too' %} is-active{% endif %}">Veel</summary>
               <div class="topnav__menu">
                 {% include "components/topnav_secondary.html" %}
               </div>

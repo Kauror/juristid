@@ -45,6 +45,23 @@ def _future(days: int) -> str:
     return f"{on.day}.{on.month}.{on.year}"
 
 
+def register_row(page, title: str):
+    """The register's own link to a Matter, by title.
+
+    Scoped to `#teemad-tulemused` rather than asked of the whole page. Since
+    docs/adr/0047 the Teemad page carries the Arvamused section underneath the
+    register, and an opinion row names the Teema it came out of — so the same
+    title is legitimately a link twice on one page, and a page-wide lookup is a
+    strict-mode violation.
+
+    Two links to one Matter is not a defect: they sit in different tables, under
+    different captions and column headings, and a reader hears which is which
+    from that context. What was too broad is the question these tests were
+    asking, and they have always meant the register's row.
+    """
+    return page.locator("#teemad-tulemused").get_by_role("link", name=title)
+
+
 def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     """Scenario A, B, C and D in one pass, in the order the work happens."""
     sign_in(page, base_url, SANDRA)
@@ -308,7 +325,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # -- Teemad ----------------------------------------------------------
     page.locator(".topnav__link", has_text="Teemad").click()
     expect(page.get_by_role("heading", name="Teemad")).to_be_visible()
-    expect(page.get_by_role("link", name=MATTER_TITLE)).to_be_visible()
+    expect(register_row(page, MATTER_TITLE)).to_be_visible()
     screenshots(page, "08-teemad")
 
     # Filters narrow the register and survive in the URL. The disclosure is
@@ -318,7 +335,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.locator("select[name='ulatus']").select_option("minu")
     page.locator("select[name='hetkeseis']").select_option("consultation")
     page.get_by_role("button", name="Filtreeri").click()
-    expect(page.get_by_role("link", name=MATTER_TITLE)).to_be_visible()
+    expect(register_row(page, MATTER_TITLE)).to_be_visible()
     assert "ulatus=minu" in page.url
     assert "hetkeseis=consultation" in page.url
     # Active filters render as removable chips built from the same query string.
@@ -384,7 +401,7 @@ def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(pa
     """A refused save must not half-apply, and must not discard what was typed."""
     sign_in(page, base_url, MARTIN)
     page.locator(".topnav__link", has_text="Teemad").click()
-    page.get_by_role("link", name="Tavaline avatud teema kõigile nähtav").click()
+    register_row(page, "Tavaline avatud teema kõigile nähtav").click()
 
     open_composer(page)
     page.locator(".composer__body").fill("See tekst peab alles jääma.")

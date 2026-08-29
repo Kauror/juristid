@@ -691,12 +691,18 @@ def test_rendering_many_senders_costs_no_query_per_row(
     # break-glass lookup, and one read of who a row may be handed to. None of
     # them scales with rows, which is what this test is about — so it is
     # measured at two sizes rather than one (docs/adr/0042).
+    # 36 rather than 31 since the Arvamused section moved onto this page. Five
+    # queries, and all five are constant: the bounded opinion rows with their
+    # recipient prefetch (three), the real total beside them (one), and the
+    # Saadetud tab's figure (one). None of them touches a Matter, so none scales
+    # with the register — which is what this test is about, and why it is still
+    # measured at two sizes (docs/adr/0047).
     add(20)
-    with django_assert_max_num_queries(31):
+    with django_assert_max_num_queries(36):
         signed_in.get(REGISTER, {"olek": "koik"}).content.decode()
 
     add(20)
-    with django_assert_max_num_queries(31):
+    with django_assert_max_num_queries(36):
         signed_in.get(REGISTER, {"olek": "koik"}).content.decode()
 
 

@@ -409,5 +409,21 @@ localStorage (Stage-2E.1 brief 12).
   <section id="tulemused" tabindex="-1" aria-label="Tulemused">
     {% include "matters/partials/register_results.html" %}
   </section>
+
+  {% comment %}
+    The page's second section.
+
+    Everything above this line is the register and is unchanged: the same saved
+    views, the same «Otsi teemadest», the same status segments, the same
+    Täpsem otsing, the same results. What is new is what follows it — Arvamused,
+    which used to be a destination of its own on the bar and is now a section of
+    the page whose work produces it (docs/adr/0047).
+
+    Two searches on one page, and they never meet. `q` narrows teemad; `arvamus_q`
+    narrows arvamused; the section below reads only the second and the register
+    above reads only the first, so a keystroke in either box leaves the other
+    list exactly as it was.
+  {% endcomment %}
+  {% include "submissions/partials/embedded.html" %}
 </div>
 {% endblock %}

@@ -8487,3 +8487,100 @@ a.loadrow__overdue--bad {
   letter-spacing: var(--typography-tracking-label);
   font-size: var(--typography-size-label);
 }
+
+/* -- Arvamused, as the second section of the Teemad page --------------------
+ *
+ * A full-width section under the register, not a sidebar widget and not a card.
+ * The hierarchy has to say two things at once: this belongs to the Teemad page,
+ * and it is its own workspace with its own search. So a rule and generous space
+ * separate it from the results above, and the heading is a step below the page
+ * title rather than a step above the small uppercase `sectionlabel` used inside
+ * a card — that one would read as a caption on the register (docs/adr/0047).
+ *
+ * Every rule here is `.opinionblock`-scoped on purpose. The section reuses the
+ * shared `.segmented`, `.table`, `.tablewrap`, `.empty` and `.field__input`
+ * components unchanged, and adds nothing to them: a shared-component change to
+ * place one section is a change to every page that uses it. */
+.opinionblock {
+  margin-top: var(--spacing-6);
+  padding-top: var(--spacing-5);
+  border-top: 1px solid var(--border-default);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.opinionblock__head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-3);
+  flex-wrap: wrap;
+}
+
+.opinionblock__title {
+  margin: 0;
+  font-size: var(--typography-size-matter-title);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-title);
+}
+
+.opinionblock__caption {
+  margin: 0;
+  font-size: var(--typography-size-base);
+  color: var(--text-muted);
+}
+
+/* Laid out like the register's own search row, so the two boxes on this page
+   read as siblings — which is exactly what they are. They are never the same
+   control: different names, different populations, different lists. */
+.opinionsearch {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: 0;
+}
+
+.opinionsearch__field {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+/* A character rather than a spinner, for the reason the register states: an
+   indicator must not shift the layout of a control somebody is typing into. */
+.opinionsearch__spinner {
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 120ms linear;
+}
+
+.opinionsearch.htmx-request .opinionsearch__spinner {
+  opacity: 1;
+}
+
+.opinionblock__count {
+  margin: 0 0 var(--spacing-2);
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+}
+
+/* "kuvatud 12" beside the real total. Quieter than the count, because it
+   qualifies the number rather than competing with it. */
+.opinionblock__note {
+  color: var(--text-muted);
+}
+
+.opinionblock__foot {
+  margin: var(--spacing-2) 0 0;
+  text-align: right;
+}
+
+.opinionblock__more {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--accent-primary);
+  text-decoration: none;
+}
+
+.opinionblock__more:hover {
+  text-decoration: underline;
+}

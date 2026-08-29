@@ -56,6 +56,7 @@ consequences and reversibility.
 | [0044](0044-one-arvamused-destination-and-live-header-search.md) | One `Arvamused` destination, and live suggestions under the header search | Accepted |
 | [0045](0045-the-repeatable-current-register-refresh.md) | The repeatable current-register refresh: authorship decides, and the sheet's own year settles a date | Accepted |
 | [0046](0046-two-deadline-groups-a-week-and-the-rest-of-the-month.md) | Tähtajad in two groups: the calendar week whole, the rest of the month behind «Näita veel», and one line past it | Accepted |
+| [0047](0047-arvamused-as-a-section-of-teemad.md) | Arvamused as a section of Teemad, with two searches that never meet | Proposed, on a feature branch |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -97,4 +98,6 @@ Naming: `NNNN-short-decision-title.md`.
 - 0044 — one `Arvamused` destination on the bar with the held archive as its own tab, and live suggestions under the header search: five Matter rows bounded in SQL, the existing authorized ranking reused rather than reimplemented, a request token that stops a stale answer painting over a newer one, and a plain GET form still underneath it all
 
 - 0045 — the repeatable current-register refresh: authorship rather than existence decides whether the register may speak, a year-less date takes the sheet's year only where the snapshot agrees, a wait beside its own review is one instruction, clause ownership removes a date instead of being defeated by it, the two member-feedback counts live on the derived table with `NULL` kept distinct from a measured zero, and outreach pointers are proposed by a matcher that never writes and created only by a reviewed mapping
+
 - 0046 — Tähtajad in two groups: the calendar week cut by the calendar and never truncated, the rest of the month behind the existing «Näita veel», the one-line pointer past it kept so nothing dated falls off the page, every group linking through the parameterised `?too=tahtaeg-vahemik` rather than a fixed name, and `WORK_DEADLINE_THIS_WEEK` deliberately left counting from today for the SEIS strip beside it
+- 0047 — Arvamused as a section of the Teemad page rather than a destination on the bar: the workspace moves one level in with its Saadetud/Arhiiv strip intact, the two searches stay two searches on separate parameters (`q` and `arvamus_q`) so neither box can narrow the other's list, the section is bounded at twelve rows and states its real total, a fragment route of its own keeps the register from answering an opinion search with teemad, and `may_read_archive` is asked before anything is counted — an archive request it may not serve resolves to Saadetud rather than taking the register down

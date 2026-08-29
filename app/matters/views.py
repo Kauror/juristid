@@ -119,6 +119,7 @@ from app.matters.timeline import (
 )
 from app.organisations.models import Organisation
 from app.search import services as search_services
+from app.submissions import embedded as opinions
 from app.submissions.enums import RecipientRole, SubmissionStatus
 from app.submissions.forms import SubmissionCreateForm
 from app.submissions.models import Submission
@@ -882,6 +883,18 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # (app/core/decorators.py, `business_write_required`).
         "can_assign_owner": may_write_business_content(request.user),
     }
+
+    # Arvamused, as this page's second section. Built after the fragment branch
+    # above has already returned, so a keystroke in the register's search box
+    # does not pay for an opinion list nobody is going to see — and the
+    # section's own keystrokes go to its own route, never through here.
+    #
+    # Composed, not re-implemented: every population, every count and the whole
+    # archive boundary come from the selectors the standalone Arvamused
+    # workspace uses. This page decides where the section sits and nothing else
+    # (app/submissions/embedded.py, docs/adr/0047).
+    context |= opinions.embedded_context(request)
+
     return render(request, "matters/matter_list.html", context)
 
 

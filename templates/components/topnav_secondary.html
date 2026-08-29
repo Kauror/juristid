@@ -17,20 +17,25 @@ width the short word is the one that fits at 1024px, and the destination names
 itself in full once somebody is on it (design handoff, «Osakond»).
 {% endcomment %}
 {% comment %}
-  Arvamused leads this group, and is in this group rather than beside Teemad on
-  the fixed part of the bar for a measured reason: a fifth always-visible item
-  pushes the shell into a horizontal scrollbar at 1024px, which the browser
-  suite catches. Here it sits on the bar at generous widths — first, next to
-  Teemad, which is where it belongs — and folds into "Veel" with the other
-  reading destinations when the viewport cannot hold it.
+  Arvamused is no longer here, and is no longer a first-level destination at
+  all.
 
-  Offered to everybody, because canonical Submissions carry ordinary Matter
-  visibility. The historical archive tab inside the workspace is a separate
-  question, and the workspace asks it for itself (docs/adr/0028).
+  A Teema is the object the department works on; an arvamus is usually one of
+  the things that work finishes with. Two sibling items on the bar said the
+  opposite — that these are two parallel places to be — and left a reader who
+  had found a letter with no route back to the file it came out of but a second
+  search. So the whole Arvamused workspace moved one level in: it is a
+  full-width section on the Teemad page, under the register, with its own tab
+  strip and its own search (templates/submissions/partials/embedded.html).
+
+  Moved, not removed, and this is the part to check rather than assume:
+  `/arvamused/` and `/arvamused/arhiiv/` still resolve, still carry their own
+  filters and their own pager, and are still where «Vaata kõiki arvamusi»
+  leads. Every bookmark, every internal link and every historical archive link
+  still works. Nothing about access moved either — `may_read_archive` decides
+  the Arhiiv tab in both places, and decides it before anything is counted
+  (docs/adr/0028, docs/adr/0047).
 {% endcomment %}
-<a class="topnav__link {% if nav_active == 'arvamused' %}is-active{% endif %}"
-   {% if nav_active == 'arvamused' %}aria-current="page"{% endif %}
-   href="{% url 'submissions:sent' %}">Arvamused</a>
 <a class="topnav__link {% if nav_active == 'jalgimine' %}is-active{% endif %}"
    {% if nav_active == 'jalgimine' %}aria-current="page"{% endif %}
    href="{% url 'intelligence:important_dates' %}">Jälgimine</a>

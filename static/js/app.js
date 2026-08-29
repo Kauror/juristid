@@ -423,6 +423,95 @@
     });
   }
 
+  /* ---- The Arvamused section keeps the register's state ------------------
+   * Teemad carries two independent searches: `?q=` narrows teemad and
+   * `?arvamus_q=` narrows the Arvamused section under them (docs/adr/0047).
+   * Both live in one address, and neither may reset the other.
+   *
+   * The register's live search swaps `#teemad-tulemused` and pushes a new
+   * address. The Arvamused section sits *outside* that region, so everything
+   * the server baked into it — the tab hrefs, and the hidden inputs the opinion
+   * form carries the register's state in — still describes the address the page
+   * was *rendered* with. Two things then go wrong, and the second is the worse
+   * one:
+   *
+   *   - following a stale tab href navigates to the old `?q=` and silently
+   *     undoes the teemad search somebody just typed;
+   *   - a stale hidden `q` is sent with the opinion search, and the server
+   *     composes `HX-Push-Url` from it — writing the old register state over
+   *     the correct address bar, which is worse than not pushing at all.
+   *
+   * So the section is resynced from what is actually true — `location.search`
+   * for the register's state — whenever htmx pushes a new address, and again at
+   * click time for a tab, which also folds in whatever is in the opinion box
+   * right now.
+   *
+   * Nothing here is the only way to do anything. With JavaScript off there is
+   * no live search for anything to go stale from, so the server-rendered markup
+   * is already right and none of this runs.
+   */
+  var OPINION_PARAMS = ["arvamus_q", "arvamus_vaade"];
+
+  function opinionForm() {
+    var box = document.getElementById("arvamused-otsing");
+    return box ? box.form : null;
+  }
+
+  /* The register's half of the current address, as name/value pairs. */
+  function registerState() {
+    var pairs = [];
+    new URL(window.location.href).searchParams.forEach(function (value, name) {
+      if (OPINION_PARAMS.indexOf(name) === -1 && value) {
+        pairs.push([name, value]);
+      }
+    });
+    return pairs;
+  }
+
+  /* Rewrite the opinion form's carried register inputs to match the address.
+   *
+   * The opinion form's own controls are left alone: `arvamus_q` is what
+   * somebody is typing into and `arvamus_vaade` is which tab they are on, and
+   * neither is the register's to set.
+   */
+  function syncOpinionForm() {
+    var form = opinionForm();
+    if (!form) {
+      return;
+    }
+    form.querySelectorAll("input[type=hidden][data-register-state]").forEach(function (input) {
+      input.remove();
+    });
+    registerState().forEach(function (pair) {
+      var input = document.createElement("input");
+      input.type = "hidden";
+      input.name = pair[0];
+      input.value = pair[1];
+      input.setAttribute("data-register-state", "");
+      form.appendChild(input);
+    });
+  }
+
+  document.addEventListener("htmx:pushedIntoHistory", syncOpinionForm);
+
+  document.addEventListener("click", function (event) {
+    var tab = event.target.closest ? event.target.closest("[data-opinion-tab]") : null;
+    if (!tab || event.defaultPrevented || event.metaKey || event.ctrlKey || event.shiftKey) {
+      return;
+    }
+    var address = new URL(window.location.href);
+    address.hash = "arvamused";
+    address.searchParams.set("arvamus_vaade", tab.getAttribute("data-opinion-tab"));
+
+    var box = document.getElementById("arvamused-otsing");
+    if (box && box.value) {
+      address.searchParams.set("arvamus_q", box.value);
+    } else if (box) {
+      address.searchParams.delete("arvamus_q");
+    }
+    tab.setAttribute("href", address.pathname + address.search + "#arvamused");
+  });
+
   /* ---- Menus close the way people expect --------------------------------
    * A <details> menu stays open until its own summary is clicked again, which
    * is right for a disclosure inside a page and wrong for one that floats over

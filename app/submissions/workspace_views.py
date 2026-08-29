@@ -40,6 +40,7 @@ from app.legacy_import.opinion_search import (
     visible_archive,
 )
 from app.submissions import workspace
+from app.submissions.embedded import embedded_context, page_url
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.workspace import PAGE_SIZE, SentFilters, SubmissionQueryRefused
 
@@ -66,7 +67,13 @@ def _shell(request: HttpRequest, viewer: Any, tab: str) -> dict[str, Any]:
         "can_read_archive": can_read_archive,
         "archive_total": archive_counts(viewer).get("total", 0) if can_read_archive else 0,
         "sent_counts": workspace.sent_counts(viewer),
-        "nav_active": "arvamused",
+        # Teemad, not an `arvamused` of its own: the bar no longer carries an
+        # Arvamused item, and a page that marked a destination nobody can see
+        # would leave the bar with nothing current on it while the reader is
+        # plainly somewhere. Arvamused is part of the Teemad area now, and the
+        # bar says which area they are in — which is what `is-active` has always
+        # meant here (docs/adr/0047).
+        "nav_active": "teemad",
     }
 
 
@@ -176,6 +183,36 @@ def archive(request: HttpRequest) -> HttpResponse:
             "body_search_available": counts["with_body"] > 0,
         },
     )
+
+
+@gate_required
+def embedded_block(request: HttpRequest) -> HttpResponse:
+    """The Arvamused section's results, for the Teemad page's live search.
+
+    `gate_required` and nothing else, matching the two tabs above: the block
+    reads exactly what they read, through the same selectors, for the same
+    viewer. It is deliberately *not* `require_archive_reader` — the section
+    resolves an archive request it may not serve down to Saadetud rather than
+    refusing, because this fragment answers a box on somebody else's page
+    (``app/submissions/embedded.py``).
+
+    ``HX-Push-Url`` carries the *Teemad* address the answer belongs to, never
+    this route's own. The section is part of a page, and after a live search the
+    browser must be holding a URL somebody can paste: what is on screen, what
+    the address bar says and what a colleague receives are one thing, and
+    without this header the third of those silently lags the first two.
+
+    Pushed rather than replaced, matching the register's own live search, so
+    Back steps through an opinion search exactly as it steps through a register
+    one. htmx does the pushing and therefore keeps its own history snapshot in
+    step; composing the address here rather than in the browser keeps one
+    definition of what the page's state is (``embedded.page_url``).
+    """
+    response = render(
+        request, "submissions/partials/embedded_results.html", embedded_context(request)
+    )
+    response["HX-Push-Url"] = page_url(request.GET)
+    return response
 
 
 def _archive_years(viewer: Any) -> list[int]:
