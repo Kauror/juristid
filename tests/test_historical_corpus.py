@@ -183,7 +183,14 @@ def test_the_manifest_digest_is_order_independent(corpus, tmp_path):
 
     shuffled = tmp_path / "shuffled.tsv"
     lines = manifest.read_text(encoding="utf-8").strip("\n").split("\n")
-    shuffled.write_text("\r\n".join(reversed(lines)) + "\r\n", encoding="utf-8")
+
+    # Written as bytes, not text: write_text() opens in text mode, and on
+    # Windows that translates the "\n" inside each CRLF again, putting
+    # "\r\r\n" on disk. The digest would then differ for a reason this test
+    # is not about — and only on one platform.
+    shuffled_bytes = ("\r\n".join(reversed(lines)) + "\r\n").encode("utf-8")
+    shuffled.write_bytes(shuffled_bytes)
+    assert shuffled.read_bytes() == shuffled_bytes
     assert manifest_sha256(shuffled) == canonical
 
 
