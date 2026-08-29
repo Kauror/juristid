@@ -440,6 +440,20 @@ def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = No
             f"else's unrelated change went red for it."
         )
     for selector, canonical in NORMALISED_TEXT:
+        # Only a value that is actually there may be replaced. Masking already
+        # hides whatever this element says, and normalising on top of that would
+        # hide one thing more: an element that had stopped rendering its value
+        # at all. Empty, the box would shrink and the baseline would go red —
+        # which is the signal. Writing the canonical string into it would paint
+        # over that signal with a date that never was.
+        elements = page.locator(visible(selector))
+        for index in range(elements.count()):
+            assert elements.nth(index).inner_text().strip(), (
+                f"{name}: {selector!r} matched an element with no text, so there "
+                f"is no clock-derived value here to hold still. Normalising it "
+                f"would write {canonical!r} into a baseline as though the page "
+                f"had rendered it."
+            )
         page.eval_on_selector_all(
             selector,
             "(elements, text) => { for (const element of elements) element.textContent = text }",

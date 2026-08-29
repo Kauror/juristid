@@ -494,6 +494,29 @@ def test_show_all_under_the_intervention_list_shows_all_of_it(department_head, w
     assert len(whole.intervention_preview) == whole.intervention_total
 
 
+def test_naita_veel_holds_the_remainder_of_the_same_list(department_head, world, today):
+    """The rows behind «Näita veel N ▾» are the rest of the list above them.
+
+    The v2 design replaced the footer link — which reloaded the page with a
+    wider filter — with a disclosure holding the remainder of the same read
+    (02-EKRAANID §B). The browser test that followed the old link went with it,
+    and this is what it was really asserting: the number on the control, the
+    rows on screen and the rows behind it are three readings of one answer, not
+    a second query that can disagree with the first.
+    """
+    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
+
+    assert page.intervention_preview + page.intervention_rest == page.interventions
+    assert page.intervention_remaining == len(page.intervention_rest)
+    assert page.intervention_total == len(page.interventions)
+
+    # And no row is on screen *and* behind the disclosure. Two copies of a row
+    # is the defect a slice can produce without changing any count.
+    shown = [id(row) for row in page.intervention_preview]
+    hidden = [id(row) for row in page.intervention_rest]
+    assert not set(shown) & set(hidden)
+
+
 def test_the_area_footer_opens_every_area_including_the_empty_ones(department_head, world, today):
     """A number of areas opens a list of areas, and all of them are in it."""
     folded = ov.build_overview(department_head, scope=ov.SCOPE_AREAS, today=today)

@@ -114,9 +114,17 @@ the brief says to record rather than improvise.
 - The register shows twelve rows by default and offers 30 / 50 / kõik. Anything
   that assumed twenty-five had to be updated, which is four tests and no
   behaviour.
-- The visual-regression baselines for every redesigned screen are stale by
-  construction. They are **not** refreshed in this change: the correct new
-  baseline is the one taken from a CI run whose screens somebody has looked at.
+- The visual-regression baselines for every redesigned screen were stale by
+  construction, and refreshing them found two defects in the harness rather
+  than in the design. Masks were being painted for elements inside a closed
+  `details.pw-more`, in the page's own colour, over headings and rows on
+  Ülevaade and the Teema pages; and the register's Arvamused timestamp moved
+  the meta line it sits on, so a baseline taken from one run was red on the
+  next. Masks are now built through `visible()`, that one value is held still
+  before the capture, and a closed disclosure contributing a mask is a test of
+  its own. Twenty-eight baselines — the ones that intentionally changed — were
+  then taken from a Linux CI run whose screens were read one at a time; the
+  seven that still matched were left alone. Visual regression passes.
 
 ## Reversibility
 

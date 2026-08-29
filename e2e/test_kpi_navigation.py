@@ -276,18 +276,17 @@ def test_the_sent_figure_still_opens_the_canonical_sent_list(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_show_all_under_the_intervention_list_shows_all_of_it(page, base_url):
-    """The footer promised the whole list and carried `sekkumine=hilinenud`."""
-    sign_in(page, base_url, HEAD)
-    open_overview(page, base_url, "osakond")
-    more = page.locator(".ovsection__more a").first
-    if not more.count():
-        pytest.skip("the seeded world does not fill the intervention list past its preview")
-
-    claimed = first_number(more.inner_text())
-    more.click()
-    page.wait_for_load_state("networkidle")
-    assert page.locator(".interrow").count() == claimed
+# The footer link this file used to follow — `.ovsection__more a`, which
+# reloaded the page with a wider filter — is gone. The v2 design opens the rest
+# of the list where the reader is standing, in a `details.pw-more` holding the
+# remainder of the same list, so there is no second page load to assert
+# (02-EKRAANID §B). The test that followed the link had begun skipping itself
+# with a message about the seeded world, which was not what had happened.
+#
+# What the link proved — that the number and the rows behind it are one answer —
+# is a property of the split rather than of a navigation now, and is asserted
+# directly in `tests/test_overview_drilldowns.py::
+# test_naita_veel_holds_the_remainder_of_the_same_list`.
 
 
 def test_the_intervention_heading_opens_every_reason_at_once(page, base_url):

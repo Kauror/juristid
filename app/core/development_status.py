@@ -429,4 +429,34 @@ ITEMS: tuple[StatusItem, ...] = (
         ),
         sources=("e2e/test_ui_regression.py", "e2e/baselines/otsing.png"),
     ),
+    StatusItem(
+        key="DS-23",
+        area="Tühjad seisud · neli lauset",
+        issue=(
+            "Neli tühja seisu on sõnastatud siin, mitte disainis: «Muudatusi ei "
+            "ole.» (Minu asjad, Viimati muudetud), «Selles vaates ei ole ühtegi "
+            "teemat.» (Minu asjad, Aktiivsed teemad chipi all), «Valitud vaates "
+            "ei ole midagi loendada.» (Statistika segmenditabel) ja «Ühelgi "
+            "inimesel ei ole avatud teemasid.» (Statistika ülevaate rail-plokk "
+            "«Inimesed»)."
+        ),
+        why=(
+            "Prototüübi #tuhjad kaader ütleb «viis kohta, kus andmeid ei ole» ja "
+            "annab viis lauset. Need neli kohta ei ole nende hulgas, aga plokid "
+            "ise on disainis olemas ja tühjana peavad nad midagi ütlema. "
+            "Sõnastus on neutraalne ja faktiline, mitte selgitav — aga see on "
+            "siiski meie sõnastus, mitte tellija oma."
+        ),
+        state=DEVIATION,
+        next_step=(
+            "Kinnitada või asendada neli lauset. Ainsad kohad, kus neid muuta "
+            "tuleb, on mallid, kus nad praegu seisavad; loogikat see ei puuduta."
+        ),
+        sources=(
+            "prototüüp #tuhjad",
+            "templates/matters/my_work.html",
+            "templates/reporting/_segment_table.html",
+            "templates/reporting/overview.html",
+        ),
+    ),
 )
