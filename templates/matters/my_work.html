@@ -149,7 +149,7 @@ what has no honest place on a timeline.
               summary and the rows behind it cannot disagree (03-BACKEND §1).
             {% endcomment %}
             <details class="pw-more">
-              <summary>Näita veel {{ band.remaining }}<span class="visually-hidden"> — {{ band.label }}</span> ▾</summary>
+              <summary>Näita veel {{ band.remaining }} ▾<span class="visually-hidden"> — {{ band.label }}</span></summary>
               <div class="workband__rows">
                 {% for item in band.rest %}
                   {% include "matters/partials/work_item_row.html" with item=item today=today %}
@@ -226,7 +226,7 @@ what has no honest place on a timeline.
 
         {% if work.portfolio.remaining %}
           <details class="pw-more">
-            <summary>Näita veel {{ work.portfolio.remaining }}<span class="visually-hidden"> — aktiivsed teemad</span> ▾</summary>
+            <summary>Näita veel {{ work.portfolio.remaining }} ▾<span class="visually-hidden"> — aktiivsed teemad</span></summary>
             <div class="pw-matters">
               {% for row in work.portfolio.rest %}
                 {% include "matters/partials/portfolio_row.html" with row=row %}
