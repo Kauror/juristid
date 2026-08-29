@@ -155,33 +155,60 @@ def _due(owner, *, days: int, title: str, actor=None):
     return matter
 
 
-@pytest.mark.django_db
-def test_the_four_deadline_windows_are_consecutive_and_exhaustive(department_head) -> None:
+def test_the_deadline_windows_are_consecutive_and_exhaustive() -> None:
     """Nothing dated can fall between two windows, or into both.
 
     Asserted over a whole year of days rather than one, because the boundaries
-    move with the weekday and an off-by-one that only shows on a Sunday is
-    exactly the kind that reaches production.
+    move with the weekday *and* with the length of the month, and an off-by-one
+    that only shows on a Sunday in February is exactly the kind that reaches
+    production. Every day of the year is walked, not every seventh: the month
+    end is what the middle window is cut by, and it lands on a different
+    weekday every month.
     """
-    for offset in range(0, 366, 7):
-        today = date(2026, 1, 5) + timedelta(days=offset)
-        for shift in range(0, 8):
-            day = today + timedelta(days=shift)
-            windows = [wi.deadline_window(key, day) for key in wi.DEADLINE_WINDOW_KEYS]
-            assert windows[0][0] == day, "the first window starts today"
-            assert windows[-1][1] is None, "the last window is open-ended"
-            for (_, ends), (starts, _) in pairwise(windows):
-                assert ends is not None
-                assert starts == ends + timedelta(days=1), (
-                    f"gap or overlap at {day}: {ends} then {starts}"
-                )
+    for offset in range(0, 366):
+        day = date(2026, 1, 1) + timedelta(days=offset)
+        windows = ov.deadline_windows(day)
+        assert [key for key, *_ in windows] == ["sel_nadalal", "ulejaanud_kuu", "kaugemal"]
+        assert windows[0][2] == day - timedelta(days=day.weekday()), (
+            "the first window starts on Monday of this week, not today"
+        )
+        assert windows[0][3] == day + timedelta(days=6 - day.weekday()), (
+            "the first window ends on Sunday of this week"
+        )
+        assert windows[-1][3] is None, "the last window is open-ended"
+        for (*_, ends), (_, _, starts, _) in pairwise(windows):
+            assert ends is not None
+            assert starts == ends + timedelta(days=1), (
+                f"gap or overlap at {day}: {ends} then {starts}"
+            )
+
+
+def test_the_rest_of_the_month_never_reads_backwards() -> None:
+    """The week that runs past the month end leaves no days behind it.
+
+    The middle window would then start on Monday and have ended on Sunday. It
+    is allowed to be that empty interval — it holds nothing by construction —
+    but it must not print a heading over a range read backwards, and the far
+    window must start after the *week* rather than after the month, or the days
+    between them would be on no screen at all.
+    """
+    for offset in range(0, 366):
+        day = date(2026, 1, 1) + timedelta(days=offset)
+        _, (_, _, rest_start, rest_end), (_, _, far_start, _) = ov.deadline_windows(day)
+        week_end = day + timedelta(days=6 - day.weekday())
+        assert rest_end is not None
+        assert far_start > week_end, f"the far window reopens this week at {day}"
+        if rest_start > rest_end:
+            group = ov.DeadlineGroup("ulejaanud_kuu", "Ülejäänud kuu", [], 5, rest_start, rest_end)
+            assert group.is_empty_window
+            assert group.range_label == "", f"a backwards range printed at {day}"
 
 
 @pytest.mark.django_db
-def test_a_deadline_past_thirty_days_is_on_the_page_rather_than_nowhere(
+def test_a_deadline_past_the_month_is_on_the_page_rather_than_nowhere(
     client, department_head
 ) -> None:
-    """The reason the fourth window exists.
+    """The reason the far window exists.
 
     Before it, the panel ended at next week and a deadline five weeks out was on
     no screen at all until it became next week's problem (design handoff 1a).
@@ -226,8 +253,22 @@ def test_each_group_link_opens_exactly_the_matters_it_counted(department_head) -
 
 @pytest.mark.django_db
 def test_today_says_today_and_nobody_says_so_in_more_than_colour(client, department_head) -> None:
+    """Two rows in one group, so «kõik 2 →» is a claim about a group.
+
+    The second is dated on this week's own Sunday rather than two days out.
+    Two days out is in the same group as today from Monday to Friday and in the
+    next one on a Saturday, so the count under the heading depended on the day
+    the suite ran — which is what this assertion is least about
+    (`ov.deadline_windows`).
+    """
+    week_end = wi.end_of_iso_week(timezone.localdate())
     _due(department_head, days=0, title="Täna tähtaeg — eelnõu")
-    _due(None, days=2, title="Vastutajata — eelnõu", actor=department_head)
+    _due(
+        None,
+        days=(week_end - timezone.localdate()).days,
+        title="Vastutajata — eelnõu",
+        actor=department_head,
+    )
 
     client.force_login(department_head)
     body = client.get(reverse("matters:overview") + "?vaade=osakond").content.decode()
