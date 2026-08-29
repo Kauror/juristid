@@ -335,6 +335,34 @@ ULEVAADE_WEEK_COUNTS = (
 OPINION_SENT = ('.submission__meta div:has(dt:text-is("Saadetud")) dd',)
 PORTFOLIO_WHEN = (".pw-matter__when",)
 
+#: Values that have to be held still, not merely covered.
+#:
+#: A mask hides glyphs. It does not stop the element being as wide as whatever
+#: is inside it, and where that element sits on a line with other facts, its
+#: width is *their* position. The register's Arvamused rows are the one place in
+#: this suite where that matters: the sent timestamp is an inline `<dd>` on a
+#: content-sized meta line, so a minute with narrower digits pulls «Teema»,
+#: «Adressaat» and the file link a pixel left and 0.3% of the page differs —
+#: measured between two runs of the same commit, and again with the mask in
+#: place, which is how this was found rather than assumed.
+#:
+#: Barlow's tabular figures would fix the minute and not the date: `j.n.Y` drops
+#: leading zeros, so `1.9.2026` is six pixels narrower than `29.8.2026` and the
+#: line moves again on the first of the month. The product deliberately does not
+#: zero-pad, and this suite does not get to ask it to.
+#:
+#: So the text is replaced with one of the same shape before the capture. The
+#: layout in the baseline is then a layout the product really produces, for a
+#: value that never changes. Nobody reads the placeholder: the same element is
+#: in REQUIRED_MASKS for these scenarios, so a mask that stopped matching would
+#: fail the capture rather than write a fictional date into a baseline.
+#:
+#: Nothing else is normalised. Everywhere else a masked value sits in a fixed
+#: cell or at the end of its line, where a moving box edge leaves a sliver of
+#: unpainted background and moves nothing — the drift this suite has always
+#: accepted, and measured at a pixel or six.
+NORMALISED_TEXT: tuple[tuple[str, str], ...] = ((OPINION_SENT[0], "29.8.2026 19:35"),)
+
 REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     "minu-too": (".workband--entries .foldout__meta", *PORTFOLIO_WHEN),
     "minu-too-3440": (".workband--entries .foldout__meta", *PORTFOLIO_WHEN),
@@ -410,6 +438,12 @@ def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = No
             f"Leaving it unmatched would put a value that changes daily back "
             f"into the baseline, and the run would stay green until somebody "
             f"else's unrelated change went red for it."
+        )
+    for selector, canonical in NORMALISED_TEXT:
+        page.eval_on_selector_all(
+            selector,
+            "(elements, text) => { for (const element of elements) element.textContent = text }",
+            canonical,
         )
     masks = [page.locator(visible(selector)) for selector in CLOCK_DEPENDENT]
     target = page.locator(clip_to) if clip_to else page
