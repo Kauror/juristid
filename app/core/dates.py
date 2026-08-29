@@ -30,7 +30,7 @@ wrong half the time without ever saying so.
 from __future__ import annotations
 
 import re
-from datetime import date
+from datetime import date, timedelta
 
 from django.utils.dateparse import parse_date
 
@@ -145,6 +145,24 @@ def weekday_letter(value: date | None) -> str:
 def short_day_month(value: date | None) -> str:
     """``28.08``. Zero-padded, because these are read in a column."""
     return "" if value is None else f"{value.day:02d}.{value.month:02d}"
+
+
+def end_of_month(value: date) -> date:
+    """The last day of the calendar month ``value`` falls in.
+
+    Written by hand rather than with ``calendar.monthrange`` because the one
+    thing that can go wrong here is December: the first of the *next* month is
+    January of the *next* year, and an arithmetic that forgets it produces a
+    month thirteen. Two callers share it — Osakond's *Eesolev* and Ülevaade's
+    *Tähtajad* — and a month boundary computed twice is a month boundary that
+    eventually disagrees with itself.
+    """
+    first_next = date(
+        value.year + (1 if value.month == 12 else 0),
+        1 if value.month == 12 else value.month + 1,
+        1,
+    )
+    return first_next - timedelta(days=1)
 
 
 def short_range(start: date | None, end: date | None) -> str:

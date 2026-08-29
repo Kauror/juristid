@@ -55,6 +55,7 @@ consequences and reversibility.
 | [0043](0043-the-ux-pass-and-the-managers-page.md) | The 2026-08-27 UX pass: an additive layer, views that live in the address, and Osakond narrowed to three questions | Accepted |
 | [0044](0044-one-arvamused-destination-and-live-header-search.md) | One `Arvamused` destination, and live suggestions under the header search | Accepted |
 | [0045](0045-the-repeatable-current-register-refresh.md) | The repeatable current-register refresh: authorship decides, and the sheet's own year settles a date | Accepted |
+| [0046](0046-two-deadline-groups-a-week-and-the-rest-of-the-month.md) | Tähtajad in two groups: the calendar week whole, the rest of the month behind «Näita veel», and one line past it | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -96,3 +97,4 @@ Naming: `NNNN-short-decision-title.md`.
 - 0044 — one `Arvamused` destination on the bar with the held archive as its own tab, and live suggestions under the header search: five Matter rows bounded in SQL, the existing authorized ranking reused rather than reimplemented, a request token that stops a stale answer painting over a newer one, and a plain GET form still underneath it all
 
 - 0045 — the repeatable current-register refresh: authorship rather than existence decides whether the register may speak, a year-less date takes the sheet's year only where the snapshot agrees, a wait beside its own review is one instruction, clause ownership removes a date instead of being defeated by it, the two member-feedback counts live on the derived table with `NULL` kept distinct from a measured zero, and outreach pointers are proposed by a matcher that never writes and created only by a reviewed mapping
+- 0046 — Tähtajad in two groups: the calendar week cut by the calendar and never truncated, the rest of the month behind the existing «Näita veel», the one-line pointer past it kept so nothing dated falls off the page, every group linking through the parameterised `?too=tahtaeg-vahemik` rather than a fixed name, and `WORK_DEADLINE_THIS_WEEK` deliberately left counting from today for the SEIS strip beside it

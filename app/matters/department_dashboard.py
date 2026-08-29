@@ -77,6 +77,7 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
 from app.core.dates import (
+    end_of_month,
     format_estonian_date,
     parse_flexible_date,
     short_range,
@@ -198,11 +199,6 @@ UNREVIEWED_WINDOW_DAYS = INCOMING_WINDOW_DAYS
 SENT_WINDOW_DAYS = 7
 
 
-def _week_start(today: date) -> date:
-    """Monday of the week ``today`` falls in."""
-    return today - timedelta(days=today.weekday())
-
-
 def _unreviewed_params(today: date) -> dict[str, Any]:
     """«Uued saabunud, läbi vaatamata», as register parameters.
 
@@ -226,7 +222,7 @@ def _unreviewed_params(today: date) -> dict[str, Any]:
 def _arrived_this_week_params(today: date) -> dict[str, Any]:
     return {
         **_open_full(),
-        "saabus_alates": format_estonian_date(_week_start(today)),
+        "saabus_alates": format_estonian_date(wi.start_of_iso_week(today)),
         "saabus_kuni": format_estonian_date(today),
     }
 
@@ -380,7 +376,7 @@ _ACTIVITY_EVENT_TYPES: tuple[str, ...] = (
 
 def previous_week(today: date) -> tuple[date, date]:
     """Monday to Sunday of the week before the one ``today`` falls in."""
-    start = _week_start(today) - timedelta(days=7)
+    start = wi.start_of_iso_week(today) - timedelta(days=7)
     return start, start + timedelta(days=6)
 
 
@@ -636,15 +632,6 @@ UPCOMING_PREVIEW = 5
 UPCOMING_BATCH = 10
 
 
-def _end_of_month(value: date) -> date:
-    first_next = date(
-        value.year + (1 if value.month == 12 else 0),
-        1 if value.month == 12 else value.month + 1,
-        1,
-    )
-    return first_next - timedelta(days=1)
-
-
 def upcoming_groups(user: Any, today: date | None = None) -> list[UpcomingGroup]:
     """Today, tomorrow, the rest of next week, and the month after it.
 
@@ -662,7 +649,7 @@ def upcoming_groups(user: Any, today: date | None = None) -> list[UpcomingGroup]
         ("tana", "Täna", today, today),
         ("homme", weekday_name(tomorrow), tomorrow, tomorrow),
         ("nadal", "Järgmine nädal", tomorrow + timedelta(days=1), next_week_end),
-        ("kuu", "Järgmine kuu", month_start, _end_of_month(month_start)),
+        ("kuu", "Järgmine kuu", month_start, end_of_month(month_start)),
     )
 
     items = wi.real_deadlines(wi.work_items(user, today=today))

@@ -100,16 +100,29 @@ Olulised tähtajad. A WAIT's expected date is not a commitment anybody made and
 belongs in the intervention list above, where it reads as "look at this again"
 (master specification 18.8).
 
-Four windows, and the fourth is the point of the redesign. The panel used to
-end at next week, so a deadline five weeks out was on no screen anywhere until
-it became next week's problem. KAUGEMAL is one line — the next date, and how
-many more sit behind it — because a list a month out is a plan nobody can act
-on today, and a number with nothing to open is a figure nobody can check
-(design handoff 1a).
+Two windows a reader plans in, and one line for what lies past them.
 
-Each group states its own interval and links to exactly its own population, so
-the reader never has to work out what "järgmisel" covers and the list behind
-`kõik N →` holds exactly those Matters (`?too=`, app/matters/work_items.py).
+SEL NÄDALAL is the calendar week, Monday to Sunday, and it is never cut short:
+a week with nine deadlines in it prints nine rows, because the whole point of
+the group is that somebody can see their week without opening anything.
+
+ÜLEJÄÄNUD KUU is what is left of the month after that Sunday — five rows and
+«Näita veel N», which opens where the reader is standing rather than sending
+them to another page.
+
+KAUGEMAL is one line: the next date, and how many more sit behind it. A list a
+month out is a plan nobody can act on today, and a number with nothing to open
+is a figure nobody can check (design handoff 1a). It stays because without it a
+deadline in November is on no screen at all until November.
+
+The three windows touch and the last is open-ended, so a dated commitment is in
+exactly one of them — including in the week that crosses a month end, where the
+middle window holds no days at all and `group.count` drops it (`deadline_windows`,
+app/matters/overview.py).
+
+Each group states its own interval and links to exactly the window it counted,
+so the list behind `kõik N →` holds exactly those Matters
+(`?too=tahtaeg-vahemik`, app/matters/work_items.py).
 {% endcomment %}
 <section class="ovsection" aria-label="Tähtajad">
   <div class="ovsection__head">

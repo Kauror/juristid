@@ -460,6 +460,11 @@ def sort_items(items: list[WorkItem]) -> list[WorkItem]:
 # ---------------------------------------------------------------------------
 
 
+def start_of_iso_week(today: date) -> date:
+    """Monday of the week ``today`` falls in. ISO weeks run Monday–Sunday."""
+    return today - timedelta(days=today.weekday())
+
+
 def end_of_iso_week(today: date) -> date:
     """Sunday of the week ``today`` falls in. ISO weeks run Monday–Sunday."""
     return today + timedelta(days=6 - today.weekday())
@@ -588,20 +593,17 @@ WORK_OVERDUE = "hilinenud"
 WORK_RIPE = "ulevaatamiseks"
 WORK_DEADLINE_THIS_WEEK = "tahtaeg-nadalal"
 WORK_DEADLINE_NEXT_WEEK = "tahtaeg-jargmisel"
-#: The rest of the month, past next week. The third group on Ülevaade's
-#: Tähtajad panel; the fourth group below it is what falls past its end.
+#: The month ahead, past next week, counted as thirty days from today.
 WORK_DEADLINE_30_DAYS = "tahtaeg-30"
-#: Everything dated past the thirty-day horizon. It exists because the panel
-#: used to end at next week, so a deadline five weeks out was on no screen at
-#: all until it became next week's problem (design handoff 1a, KAUGEMAL).
+#: Everything dated past that thirty-day horizon.
 WORK_DEADLINE_BEYOND = "tahtaeg-kaugemal"
 WORK_NEEDS_ATTENTION = "sekkumist"
 #: Real deadlines inside a window the caller names, or every one of them from
 #: today on when it names none. The one population that takes an argument, and
-#: it exists because Osakond's *Eesolev* groups the whole department's dates by
-#: today, tomorrow, next week and next month — four windows read once, not worth
-#: four fixed names, and still obliged to open the exact list they counted
-#: (`?too_alates=`, `?too_kuni=`; design handoff, Osakond §3).
+#: what both deadline panels now link through: their windows move with the
+#: weekday and with the length of the month, so a fixed name could only ever
+#: approximate them, and each is still obliged to open the exact list it counted
+#: (`?too_alates=`, `?too_kuni=`; design handoff, Osakond §3; ADR 0046).
 WORK_DEADLINE_WINDOW = "tahtaeg-vahemik"
 #: Open work nothing has happened on for a month. Not a date population: it is
 #: read from the derived last-activity fact, which is why it is resolved as a
@@ -631,11 +633,15 @@ WORK_POPULATION_LABELS: dict[str, str] = {
 WORK_POPULATIONS: tuple[str, ...] = tuple(WORK_POPULATION_LABELS)
 
 
-#: The four consecutive deadline windows Ülevaade's Tähtajad panel is made of.
-#: Consecutive and exhaustive by construction: each one starts the day after the
-#: previous one ends, and the last has no end. A deadline dated in the future can
-#: therefore land in exactly one of them, which is what stops a date thirty-one
-#: days out from being on no screen at all (design handoff 1a).
+#: The four fixed deadline windows, in order. Consecutive and exhaustive by
+#: construction: each starts the day after the previous one ends, and the last
+#: has no end, so a future date lands in exactly one of them.
+#:
+#: These are register populations — a chip, a bookmark, a pasted link. Ülevaade's
+#: *Tähtajad* panel no longer reads them: since ADR 0046 it cuts the calendar
+#: week and the rest of the calendar month, neither of which a fixed name can
+#: express, and it links through `WORK_DEADLINE_WINDOW` instead. Nothing here
+#: changed meaning, so nothing anybody saved stopped working.
 DEADLINE_WINDOW_KEYS: tuple[str, ...] = (
     WORK_DEADLINE_THIS_WEEK,
     WORK_DEADLINE_NEXT_WEEK,
@@ -897,6 +903,7 @@ __all__ = [
     "real_deadlines",
     "review_ripe_items",
     "sort_items",
+    "start_of_iso_week",
     "undated_actions",
     "week_items",
     "work_items",
