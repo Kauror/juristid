@@ -26,6 +26,7 @@ from app.matters.entry_enums import EntryKind
 from app.matters.enums import DataQualityTier, EngagementKind, MatterOrigin, RecordMode
 from app.matters.models import Matter
 from app.matters.services import add_engagement, add_entry, create_matter
+from app.matters.work_items import start_of_iso_week
 from app.organisations.models import Organisation, OrganisationType
 from app.taxonomy.models import PolicyArea
 from app.workflow.enums import ActionKind, DateSemantics, Track
@@ -556,7 +557,14 @@ class Command(BaseCommand):
             text="Saada arvamus ministeeriumile",
             kind=ActionKind.DO,
             date_semantics=DateSemantics.DEADLINE,
-            target_date=date.today() - timedelta(days=3),
+            # Three days before *this week*, not three days before today. Both
+            # are equally overdue, and every test that reads this row only asks
+            # that it is — but Ülevaade's Tähtajad panel now cuts the calendar
+            # week, so `today - 3` is inside the week group from Thursday on and
+            # outside it until then. A visual baseline whose height depends on
+            # the weekday the job runs is a baseline that goes red for a reason
+            # nobody changed (ADR 0046).
+            target_date=start_of_iso_week(date.today()) - timedelta(days=3),
             actor=martin,
         )
 

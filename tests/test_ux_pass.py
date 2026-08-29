@@ -25,6 +25,7 @@ from django.utils import timezone
 from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.matters import overview as ov
+from app.matters import work_items as wi
 from app.matters.services import (
     add_entry,
     assign_matter,
@@ -252,8 +253,22 @@ def test_each_group_link_opens_exactly_the_matters_it_counted(department_head) -
 
 @pytest.mark.django_db
 def test_today_says_today_and_nobody_says_so_in_more_than_colour(client, department_head) -> None:
+    """Two rows in one group, so «kõik 2 →» is a claim about a group.
+
+    The second is dated on this week's own Sunday rather than two days out.
+    Two days out is in the same group as today from Monday to Friday and in the
+    next one on a Saturday, so the count under the heading depended on the day
+    the suite ran — which is what this assertion is least about
+    (`ov.deadline_windows`).
+    """
+    week_end = wi.end_of_iso_week(timezone.localdate())
     _due(department_head, days=0, title="Täna tähtaeg — eelnõu")
-    _due(None, days=2, title="Vastutajata — eelnõu", actor=department_head)
+    _due(
+        None,
+        days=(week_end - timezone.localdate()).days,
+        title="Vastutajata — eelnõu",
+        actor=department_head,
+    )
 
     client.force_login(department_head)
     body = client.get(reverse("matters:overview") + "?vaade=osakond").content.decode()
