@@ -532,7 +532,17 @@ def test_a_page_of_results_does_not_cost_a_query_per_row(signed_in, django_asser
     # keystroke does not scale with the register, and it still does not. A
     # keystroke pays none of the six either — the chips sit outside the results
     # region HTMX swaps, and the fragment branch returns before they are built.
-    with django_assert_max_num_queries(32):
+    # 37 rather than 32 since the Arvamused section moved onto this page: the
+    # bounded opinion rows with their recipient prefetch (three), the real total
+    # beside them (one), and the Saadetud tab's figure (one). Five, and all five
+    # constant — none of them touches a Matter, so the property this test is
+    # about is untouched.
+    #
+    # A keystroke still pays none of them. The section is composed after the
+    # fragment branch has already returned, which
+    # `tests/test_arvamused_under_teemad.py` asserts rather than assumes
+    # (docs/adr/0047).
+    with django_assert_max_num_queries(37):
         response = signed_in.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik"})
     assert total_of(response) == 25
 

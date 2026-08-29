@@ -46,10 +46,12 @@ from app.legacy_import.opinion_access import may_read_archive
 from app.legacy_import.opinion_search import (
     ArchiveFilters,
     ArchiveQueryRefused,
-    archive_counts,
     search_archive,
+    visible_archive,
 )
 from app.submissions import workspace
+from app.submissions.enums import SubmissionStatus
+from app.submissions.models import Submission
 from app.submissions.workspace import SentFilters, SubmissionQueryRefused
 
 #: How many opinion rows the embedded section shows before it hands over.
@@ -134,10 +136,19 @@ def embedded_context(request: HttpRequest) -> dict[str, Any]:
     else:
         rows, total, refusal = _sent_rows(viewer, query)
 
-    counts = workspace.sent_counts(viewer)
-    # Asked only of a reader who may read it. A refused reader must not learn
-    # the size of the corpus from a tab they are not offered.
-    archive_total = archive_counts(viewer).get("total", 0) if can_read_archive else 0
+    # One count each, not the workspace's full headline sets.
+    #
+    # The section is a passenger on a page that already does plenty, so it asks
+    # for exactly what it prints: the Saadetud tab's figure, and the Arhiiv
+    # tab's. ``workspace.sent_counts`` answers three questions and
+    # ``archive_counts`` four; six of those seven would be computed for a strip
+    # with two numbers on it. The standalone workspace still uses both, where
+    # the rest of the figures are actually shown.
+    sent_count = Submission.objects.visible_to(viewer).filter(status=SubmissionStatus.SENT).count()
+    # Asked only of a reader who may read it, and through ``visible_archive``
+    # rather than the manager: a refused reader must not learn the size of the
+    # corpus from a tab they are not offered.
+    archive_total = visible_archive(viewer).count() if can_read_archive else 0
 
     # Where «Vaata kõiki arvamusi» goes, carrying the same search. The full
     # workspace reads `?q=` — its own parameter, on its own page, with nothing
@@ -153,7 +164,7 @@ def embedded_context(request: HttpRequest) -> dict[str, Any]:
         "opinion_total": total,
         "opinion_refusal": refusal,
         "opinion_bound": EMBEDDED_ROWS,
-        "opinion_sent_count": counts["sent"],
+        "opinion_sent_count": sent_count,
         "opinion_archive_total": archive_total,
         "opinion_can_read_archive": can_read_archive,
         "opinion_full_url": full_url,

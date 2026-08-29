@@ -134,9 +134,20 @@ now, and `is-active` has always meant "the area you are in".
 - One fewer thing to read on the bar, and one fewer decision on arrival.
 - The relationship is visible in both directions: an opinion row names its Teema
   and links to it, and the register page shows the opinions its work produces.
-- The Teemad page does more work per request. The section's counts and rows are
-  built only in the full-page branch — the register's own live search returns
-  before them — so a keystroke in `Otsi teemadest` pays for nothing here.
+- The Teemad page costs five more queries per full render, measured: the bounded
+  opinion rows with their recipient prefetch (three), the real total beside them
+  (one), and the Saadetud tab's figure (one). A sixth appears for a reader who
+  may read the archive. All of them are constant — none touches a Matter — so
+  the register's own "cost does not scale with rows" property is unchanged, and
+  the two budget tests that hold it moved from 32→37 and 31→36 with that
+  arithmetic written down rather than a number simply raised.
+- The section asks for one count each rather than `sent_counts` and
+  `archive_counts`, which answer three and four questions for a strip that shows
+  two numbers. The standalone workspace still uses both, where the rest of those
+  figures are actually printed.
+- A keystroke in `Otsi teemadest` pays none of it: the section is composed after
+  the register's fragment branch has already returned, which
+  `tests/test_arvamused_under_teemad.py` asserts rather than assumes.
 - The bounded section is not a replacement for the workspace, and the link out is
   load-bearing rather than decorative. Anybody needing status, kind, recipient or
   owner filters is one click from them.
