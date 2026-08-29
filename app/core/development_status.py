@@ -407,4 +407,26 @@ ITEMS: tuple[StatusItem, ...] = (
         ),
         sources=("02-EKRAANID §C", "templates/matters/matter_position.html"),
     ),
+    StatusItem(
+        key="DS-22",
+        area="Otsing · visuaaltestid",
+        issue=(
+            "Otsingutulemuste leht kuvab kirjeid, mille tekstis on iga käivituse "
+            "kohta uus UUID. Selle tõttu erineb `otsing` võrdluspilt kahe sama "
+            "koodi peal tehtud CI-käivituse vahel 0,04% võrra."
+        ),
+        why=(
+            "See on vanem kui v2 disain ja jääb praegu alla 0,2% lävendi, nii et "
+            "test on roheline. Kaks eraldi asja lahenevad koos: kas fikstuur "
+            "annab püsivad tunnused või ei kuva leht neid üldse — kumbki ei ole "
+            "selle vooru töö."
+        ),
+        state=OPEN,
+        next_step=(
+            "Enne järgmist otsingulehe muudatust: otsustada, kas identifikaator "
+            "on lugejale vajalik. Kui ei ole, kaob triiv koos sellega; kui on, "
+            "peab seeme need fikseerima."
+        ),
+        sources=("e2e/test_ui_regression.py", "e2e/baselines/otsing.png"),
+    ),
 )
