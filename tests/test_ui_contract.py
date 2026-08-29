@@ -267,12 +267,12 @@ def test_no_remote_asset_is_fetched_at_runtime() -> None:
 def test_focus_is_never_removed() -> None:
     """`outline: none` is only acceptable where something else shows focus.
 
-    One selector is allowed: the composer's textarea is a borderless field
-    inside a card, and `.composer:focus-within` gives the card a brand border
+    Two selectors are allowed, and both are the same shape: a borderless
+    textarea inside a card whose `:focus-within` gives the card a brand border
     and a halo — so focus is visible, on the surface a person is looking at.
     Anything else removing an outline is removing focus.
     """
-    allowed = {".composer__body:focus"}
+    allowed = {".composer__body:focus", ".pw-note textarea:focus"}
     offenders = set()
     for path in CSS_FILES:
         text = strip_comments(path.read_text(encoding="utf-8"))
@@ -282,9 +282,10 @@ def test_focus_is_never_removed() -> None:
     assert offenders <= allowed, (
         f"focus removed without a replacement: {sorted(offenders - allowed)}"
     )
-    assert re.search(r"\.composer:focus-within\s*\{", all_css()), (
-        "the composer removes its field's outline and must show focus on the card instead"
-    )
+    for card in (".composer:focus-within", ".pw-note:focus-within"):
+        assert re.search(re.escape(card) + r"\s*\{", all_css()), (
+            f"{card} removes its field's outline and must show focus on the card instead"
+        )
 
 
 def test_every_form_control_in_a_template_has_a_label() -> None:

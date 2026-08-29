@@ -32,35 +32,6 @@ rather than read.
   <div class="matterhead__crumbs">
     <a href="{% url 'matters:matter_list' %}">Teemad</a>
 
-    <span class="matterhead__state">
-      {% comment %}
-        State is legible without colour: a dot *and* the word. A reader who
-        cannot tell #4fbf95 from #3d4954 still reads AVATUD (Teema redesign §5.3).
-      {% endcomment %}
-      {% if matter.is_open %}
-        <span class="badge badge--state badge--open">
-          <span class="badge__dot" aria-hidden="true"></span>Avatud
-        </span>
-      {% else %}
-        <span class="badge badge--state badge--closed">
-          <span class="badge__dot" aria-hidden="true"></span>
-          {% if matter.record_mode == "ARCHIVE" %}Arhiiv{% else %}Suletud{% endif %}
-        </span>
-      {% endif %}
-      {% if matter.is_test_data %}
-        {% comment %}
-          A badge, not a banner. It has to be impossible to mistake a
-          development record for business data — and it also has to stay
-          proportionate: an alarm bar across a page a developer opens fifty
-          times a day is an alarm bar they stop seeing (Agent-C brief 22).
-        {% endcomment %}
-        <span class="badge badge--test">TEST</span>
-      {% endif %}
-      {% if matter.record_mode == "ARCHIVE" and matter.is_open %}
-        <span class="badge badge--archive">Arhiiv</span>
-      {% endif %}
-    </span>
-
     {% comment %}
       The one secondary-action slot the header has. Everything a lawyer does
       daily is somewhere it can be read; what lands here is the rest — today,
@@ -113,6 +84,39 @@ rather than read.
 
   <h1 class="matterhead__title">
     {{ matter.title }}
+    {% comment %}
+      Hetkeseis, beside the title rather than up in the crumb row.
+
+      The badge answers "is this live", which is the first thing a reader asks
+      of the file they have just opened — and it was sitting a row above the
+      name of that file, in the middle of the page, where it read as belonging
+      to the breadcrumb (02-EKRAANID §C).
+
+      State is legible without colour: a dot *and* the word. A reader who cannot
+      tell one tint from another still reads Avatud (Teema redesign §5.3).
+    {% endcomment %}
+    {% if matter.is_open %}
+      <span class="badge badge--state badge--open">
+        <span class="badge__dot" aria-hidden="true"></span>Avatud
+      </span>
+    {% else %}
+      <span class="badge badge--state badge--closed">
+        <span class="badge__dot" aria-hidden="true"></span>
+        {% if matter.record_mode == "ARCHIVE" %}Arhiiv{% else %}Suletud{% endif %}
+      </span>
+    {% endif %}
+    {% if matter.is_test_data %}
+      {% comment %}
+        A badge, not a banner. It has to be impossible to mistake a development
+        record for business data — and it also has to stay proportionate: an
+        alarm bar across a page a developer opens fifty times a day is an alarm
+        bar they stop seeing (Agent-C brief 22).
+      {% endcomment %}
+      <span class="badge badge--test">TEST</span>
+    {% endif %}
+    {% if matter.record_mode == "ARCHIVE" and matter.is_open %}
+      <span class="badge badge--archive">Arhiiv</span>
+    {% endif %}
     {% comment %}
       The restriction chip sits beside the title rather than in the state slot,
       because it answers a different question: the state says whether work is

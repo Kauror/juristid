@@ -28,7 +28,7 @@ SPECIALIST = "Sandra"
 HEAD = "Testosakonnajuht"
 ADMINISTRATOR = "Testadministraator"
 
-MY_WORK = "/minu-too/"
+MY_WORK = "/minu-asjad/"
 DEPARTMENT_WORK = "/osakonna-too/"
 OVERVIEW = "/ulevaade/"
 

@@ -380,7 +380,10 @@ def test_the_attention_rail_and_the_strip_agree_about_unassigned_work(
 def test_the_page_renders_every_section(client, portfolio: Portfolio) -> None:
     client.force_login(portfolio.people.head)
     body = client.get(WORK_URL).content.decode()
-    for heading in ("SEIS", "Meeskond", "Eesolev", "Tehtud", "Vajab tähelepanu", "Aruandlus"):
+    # No «SEIS» label in front of the strip and «Vajab sekkumist» in the rail:
+    # the figures caption themselves, and the wording is the one 01-EHITUSJUHIS
+    # §4 settles (docs/design-v2-compatibility.md, DS-01, DS-11).
+    for heading in ("Meeskond", "Eesolev", "Tehtud", "Vajab sekkumist", "Aruandlus"):
         assert heading in body
 
 

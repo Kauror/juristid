@@ -113,11 +113,25 @@ def _sent_submission(matter, *, title: str, sent, sent_by=None):
 
 
 def test_the_matter_page_names_the_topic_and_not_the_record(signed_in, marked_matter):
-    """Title in the <h1> and in the tab title; the reference in neither."""
+    """Title in the <h1> and in the tab title; the reference in neither.
+
+    The v2 design put the reference back in one place on this page — the
+    «Teema andmed» facts rail, under the label `Teemaviide`, beside the other
+    things somebody looks up (02-EKRAANID §C). The rule this file is about is
+    unchanged and is what the assertions below check: the *topic* is named by
+    its title, in the heading, the crumb and the tab title, and the reference
+    identifies rather than names.
+    """
     body = _get(signed_in, "matters:matter_detail", pk=marked_matter.pk)
 
     assert TITLE in body
-    assert REFERENCE not in body
+    heading = body.split('matterhead__title">', 1)[1].split("</h1>", 1)[0]
+    assert TITLE in heading
+    assert REFERENCE not in heading
+    assert f"<title>{REFERENCE}" not in body
+    # Once, in the rail, under a label.
+    assert body.count(REFERENCE) == 1
+    assert f'class="railcard__ref">{REFERENCE}</span>' in body
 
 
 def test_the_breadcrumb_stops_at_teemad(signed_in, marked_matter):
@@ -247,11 +261,13 @@ def test_the_edit_page_states_provenance_without_the_reference(signed_in, marked
     """
     body = _get(signed_in, "matters:matter_edit", pk=marked_matter.pk)
 
-    panel = body.split('aria-label="Muutumatud andmed"', 1)[1].split("</section>", 1)[0]
+    # The panel is a compact `Muutumatu` strip since the v2 rebuild, not a card
+    # (02-EKRAANID §C). What it holds did not change.
+    panel = body.split('class="uxfixed"', 1)[1].split("</div>", 1)[0]
     assert "Päritolu" in panel
     assert "Viide" not in panel
     assert REFERENCE not in panel
-    # The page as a whole, not only the panel: nowhere on it.
+    # The page as a whole, not only the strip: nowhere on it.
     assert REFERENCE not in body
     assert TITLE in body
 

@@ -73,7 +73,7 @@ def _no_horizontal_overflow(page) -> None:
 
 @pytest.mark.parametrize("width", WIDTHS)
 def test_minu_too(page, base_url, width):
-    _open(page, base_url, SANDRA, "/minu-too/", width)
+    _open(page, base_url, SANDRA, "/minu-asjad/", width)
     _shoot(page, f"minu-too-{width}")
     _no_horizontal_overflow(page)
 
@@ -85,7 +85,7 @@ def test_minu_too_states_what_every_date_means(page, base_url):
     amber and worded *ülevaatamiseks küps*; only a DO deadline and an
     Oluline tähtaeg are ever red (master specification 18.8).
     """
-    _open(page, base_url, SANDRA, "/minu-too/", 1440)
+    _open(page, base_url, SANDRA, "/minu-asjad/", 1440)
 
     # Every rendered row carries its meaning in words beside the date.
     meanings = page.locator(".workrow2__meaning")
@@ -98,7 +98,7 @@ def test_minu_too_states_what_every_date_means(page, base_url):
 
 
 def test_a_ripe_review_is_never_styled_as_late(page, base_url):
-    _open(page, base_url, SANDRA, "/minu-too/", 1440)
+    _open(page, base_url, SANDRA, "/minu-asjad/", 1440)
 
     ripe = page.locator(".workrow2--review")
     for index in range(ripe.count()):
@@ -109,7 +109,7 @@ def test_a_ripe_review_is_never_styled_as_late(page, base_url):
 
 def test_the_range_control_is_in_the_url(page, base_url):
     """A window a lawyer chose has to survive a refresh and paste into a message."""
-    _open(page, base_url, SANDRA, "/minu-too/?kuni=koik", 1440)
+    _open(page, base_url, SANDRA, "/minu-asjad/?kuni=koik", 1440)
 
     assert "kuni=koik" in page.url
     _shoot(page, "minu-too-koik-tahtajad")

@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Arendusseis · {{ application_name }}{% endblock %}
+
+{% comment %}
+The v2 rebuild's worklist. An internal surface, not a product screen: it is
+under /haldus/, it is on no navigation bar, and it holds no Matter, member or
+company content whatsoever.
+
+Every row comes from app/core/development_status.py, which is where the rows are
+edited — in a pull request, beside the code they describe.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Arendusseis</h1>
+    <span class="pagehead__context">
+      Lahtised otsused ja teadlikud kõrvalekalded v2 disainist.
+    </span>
+  </div>
+
+  <div class="tablewrap">
+    <table class="table">
+      <caption class="visually-hidden">Lahendamata disaini- ja teostusküsimused</caption>
+      <thead>
+        <tr>
+          <th scope="col">Kood</th>
+          <th scope="col">Ala</th>
+          <th scope="col">Küsimus</th>
+          <th scope="col">Seis</th>
+          <th scope="col">Järgmine samm</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          <tr id="{{ item.key|lower }}">
+            <td class="mono">{{ item.key }}</td>
+            <td>{{ item.area }}</td>
+            <td>
+              {{ item.issue }}
+              <span class="muted">{{ item.why }}</span>
+              {% if item.sources %}
+                <span class="muted">{% for source in item.sources %}{{ source }}{% if not forloop.last %} · {% endif %}{% endfor %}</span>
+              {% endif %}
+            </td>
+            <td>{{ item.state }}</td>
+            <td>
+              {{ item.next_step }}
+              {% if item.reference %}<span class="muted">{{ item.reference }}</span>{% endif %}
+            </td>
+          </tr>
+        {% empty %}
+          <tr>
+            <td colspan="5"><span class="empty">Lahtiseid punkte ei ole.</span></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

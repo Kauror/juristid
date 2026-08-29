@@ -27,70 +27,33 @@ definition, which is exactly why it has to be on this one.
     {% else %}
       <span class="ovsection__meta">{{ page.intervention_total }} rida · järjestatud kiireloomulisuse järgi</span>
       <span class="ovsection__spacer"></span>
-      <a class="ovsection__link" href="{{ page.intervention_url }}">Ava kõik {{ page.intervention_matters }} teemat registris →</a>
+      <a class="ovsection__link" href="{{ page.intervention_url }}">Ava kõik {{ page.intervention_matters }} teemat →</a>
     {% endif %}
   </div>
 
   <div class="ovsection__rows">
     {% for row in page.intervention_preview %}
-      <div class="interrow interrow--{{ row.tone }}">
-        <a class="interrow__link" href="{{ row.url }}">
-          <span class="interrow__reason">
-            <span class="interrow__value interrow__value--{{ row.tone }}">{{ row.value }}</span>
-            {% comment %}
-              Conditional, because one reason has nothing to add. A row saying
-              only "tähtaeg puudub" is the whole fact; an empty element under it
-              would still take the gap above it and pull the reason off the
-              row's optical centre (human QA §11).
-            {% endcomment %}
-            {% if row.meaning %}<span class="interrow__meaning">{{ row.meaning }}</span>{% endif %}
-          </span>
-          <span class="interrow__body">
-            <span class="interrow__title">
-              {% if row.matter.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ row.matter.title }}
-            </span>
-            <span class="interrow__detail">
-              {% comment %}
-                The topic is named by the title on the line above. `2026_10` was
-                the second half of this line and named nothing a reader was
-                looking for (human QA §13).
-              {% endcomment %}
-              {{ row.detail }}
-            </span>
-          </span>
-          <span class="interrow__stage">{{ row.stage_label }}</span>
-          <span class="interrow__owner">
-            {% if row.is_ownerless %}
-              <span class="interrow__assign">Määra →</span>
-            {% else %}
-              {{ row.owner_name }}
-            {% endif %}
-          </span>
-        </a>
-        <details class="rowmenu">
-          <summary class="rowmenu__trigger" aria-label="Rea tegevused">⋯</summary>
-          <div class="rowmenu__menu">
-            <a class="rowmenu__item" href="{{ row.url }}">Ava teema</a>
-            {% if row.is_ownerless %}
-              <a class="rowmenu__item" href="{{ row.url }}#vastutaja">Määra vastutaja</a>
-            {% endif %}
-          </div>
-        </details>
-      </div>
+      {% include "matters/partials/intervention_row.html" with row=row %}
     {% empty %}
       <p class="workempty">Praegu ei vaja ükski teema sekkumist.</p>
     {% endfor %}
   </div>
 
   {% if page.intervention_remaining %}
-    <p class="ovsection__more">
-      {% comment %}
-        `sekkumine=koik`, not `sekkumine=hilinenud`. The footer promises the
-        whole list and used to open the late rows only, so a link reading
-        "Näita kõiki 41" produced nine.
-      {% endcomment %}
-      <a href="?vaade=osakond&amp;sekkumine=koik">Näita kõiki {{ page.intervention_total }} rida</a>
-    </p>
+    {% comment %}
+      Opened where the reader is standing rather than reloading the page with a
+      wider filter. The rows are the remainder of the list the count above was
+      taken from, so the number and what appears cannot disagree
+      (02-EKRAANID §B).
+    {% endcomment %}
+    <details class="pw-more">
+      <summary>Näita veel {{ page.intervention_remaining }}<span class="visually-hidden"> — vajab sekkumist</span> ▾</summary>
+      <div class="ovsection__rows">
+        {% for row in page.intervention_rest %}
+          {% include "matters/partials/intervention_row.html" with row=row %}
+        {% endfor %}
+      </div>
+    </details>
   {% endif %}
 </section>
 

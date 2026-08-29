@@ -1,0 +1,44 @@
+{% comment %}
+One row of Jõustuvad aktid.
+
+**A commencement is not a deadline.** It creates no NextAction, it is on nobody's
+«Järgmiseks» list, and a date that has passed is never red here: the act came
+into force, which is the thing everybody was waiting for
+(02-EKRAANID §D, 03-BACKEND §6).
+
+The official source, where the record carries one, is a check on the row rather
+than its destination — the Matter is what a lawyer needs (Stage-2G brief 18).
+{% endcomment %}
+<tr>
+  <td class="table__date">
+    <span class="datemeaning">{% if row.effective_date.period_end < today %}Jõustus{% else %}Jõustub{% endif %}</span>
+    <span class="dateline {% if row.effective_date.is_approximate %}dateline--approximate{% endif %}">
+      {{ row.effective_date.display_date }}
+    </span>
+  </td>
+  <td class="table__title">
+    <span class="table__titlecell">
+      <a class="table__titlelink"
+         href="{% url 'matters:matter_detail' pk=row.effective_date.matter.pk %}"
+         title="{{ row.effective_date.description }}">{{ row.effective_date.description|default:"—" }}</a>
+      {% if row.effective_date.source_url %}
+        <a class="factrow__source"
+           href="{{ row.effective_date.source_url }}"
+           rel="noopener noreferrer external"
+           target="_blank">Ametlik allikas</a>
+      {% endif %}
+    </span>
+  </td>
+  <td class="table__matter">
+    <span class="table__clip" title="{{ row.effective_date.matter.title }}">
+      <a href="{% url 'matters:matter_detail' pk=row.effective_date.matter.pk %}">{{ row.effective_date.matter.title }}</a>
+    </span>
+  </td>
+  <td class="table__owner">
+    {% if row.effective_date.matter.owner %}
+      <span class="table__clip" title="{{ row.effective_date.matter.owner.display_name }}">{{ row.effective_date.matter.owner.get_short_name }}</span>
+    {% else %}
+      <span class="table__clip" title="Vastutajata">—</span>
+    {% endif %}
+  </td>
+</tr>

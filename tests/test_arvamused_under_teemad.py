@@ -249,7 +249,11 @@ def test_the_teemad_page_carries_an_arvamused_section(signed_in) -> None:
     assert 'id="arvamused"' in body
     section = opinion_section_of(body)
     assert "Arvamused" in section
-    assert "Saadetud seisukohad ja ajalooline arhiiv" in section
+    # The caption under the heading is gone: the tab strip immediately below it
+    # names both sources, and a sentence repeating them is a line a reader steps
+    # over on every visit (02-EKRAANID §C).
+    assert "Saadetud seisukohad ja ajalooline arhiiv" not in section
+    assert "Saadetud" in section
 
 
 def test_the_section_offers_its_own_search_box(signed_in) -> None:

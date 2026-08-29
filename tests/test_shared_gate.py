@@ -75,7 +75,7 @@ def behind_the_gate(client, gate_url):
 
 @pytest.mark.parametrize(
     "path",
-    ["/", "/ulevaade/", "/minu-too/", "/teemad/", "/saabunud/", "/otsing/?q=eeln%C3%B5u"],
+    ["/", "/ulevaade/", "/minu-asjad/", "/teemad/", "/saabunud/", "/otsing/?q=eeln%C3%B5u"],
 )
 def test_nothing_is_reachable_before_the_password(client, path, gate_url):
     response = client.get(path)
@@ -233,7 +233,7 @@ def test_selecting_a_persona_changes_whose_work_is_shown(behind_the_gate):
     factories.MatterFactory(owner=marko, title="Marko oma teema", is_open=True)
 
     behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(marko.pk)})
-    response = behind_the_gate.get("/minu-too/")
+    response = behind_the_gate.get("/minu-asjad/")
     assert response.status_code == 200
     assert response.wsgi_request.user.pk == marko.pk
     assert "Marko oma teema" in response.content.decode()
@@ -246,10 +246,10 @@ def test_changing_persona_changes_the_context(behind_the_gate):
     factories.MatterFactory(owner=ireen, title="Ireeni oma teema", is_open=True)
 
     behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(marko.pk)})
-    first = behind_the_gate.get("/minu-too/").content.decode()
+    first = behind_the_gate.get("/minu-asjad/").content.decode()
 
     behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(ireen.pk)})
-    second = behind_the_gate.get("/minu-too/").content.decode()
+    second = behind_the_gate.get("/minu-asjad/").content.decode()
 
     assert "Marko oma teema" in first and "Ireeni oma teema" not in first
     assert "Ireeni oma teema" in second and "Marko oma teema" not in second
@@ -509,7 +509,7 @@ def test_a_page_behind_the_gate_is_never_stored(behind_the_gate):
 def test_a_page_for_a_selected_persona_is_never_stored(behind_the_gate):
     marko = factories.UserFactory()
     behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(marko.pk)})
-    assert "no-store" in behind_the_gate.get("/minu-too/")["Cache-Control"]
+    assert "no-store" in behind_the_gate.get("/minu-asjad/")["Cache-Control"]
 
 
 def test_the_gate_page_itself_may_be_cached(client, gate_url):

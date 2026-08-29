@@ -22,6 +22,16 @@ somebody is typing into would move the caret on every keystroke.
     {% else %}
       <strong>{{ total }}</strong> teemat
     {% endif %}
+    {% comment %}
+      How many rows are on this page, and how many a reader may ask for
+      instead. In the URL like every other choice here, so a size somebody
+      picked survives a refresh and travels in a pasted link
+      (02-EKRAANID §C).
+    {% endcomment %}
+    <span class="registercount__note">
+      · kuvatud {{ page.object_list|length }} · näita korraga
+      {% for option in page_size_options %}{% if option.active %}<b>{{ option.label }}</b>{% else %}<a href="?{{ option.query }}#tulemused">{{ option.label }}</a>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
+    </span>
   </p>
 
   {% if active_filters or query %}

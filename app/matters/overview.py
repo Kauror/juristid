@@ -1586,6 +1586,19 @@ class Overview:
         return self.interventions[:INTERVENTION_PREVIEW]
 
     @property
+    def intervention_rest(self) -> list[InterventionRow]:
+        """The rows behind «Näita veel N ▾».
+
+        The remainder of the *same* list, not a second read. The v2 design opens
+        this where the reader is standing rather than reloading the page with a
+        wider filter — a scan that costs a page load is a scan nobody finishes
+        (02-EKRAANID §B).
+        """
+        if self.intervention_filter:
+            return []
+        return self.interventions[INTERVENTION_PREVIEW:]
+
+    @property
     def intervention_label(self) -> str:
         return INTERVENTION_LABELS.get(self.intervention_filter, "")
 

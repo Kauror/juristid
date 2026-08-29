@@ -1,0 +1,88 @@
+{% comment %}
+One catalogued metric, printed as a table instead of a chart.
+
+The segments are unchanged — same definition, same population, same
+drill-through — and each row still opens exactly the records it counted. What
+changed is that a reader reads the number instead of estimating a bar
+(02-EKRAANID §E).
+
+Five rows on screen and the rest in a second `tbody` of the same table behind
+«Näita veel N ▾». A second table would take its column widths from its own
+first row group and line up somewhere else entirely (01-EHITUSJUHIS §5).
+
+The unknown bucket — «Teadmata aasta», «Klassifitseerimata», «Vastutaja
+määramata» — is marked and never dropped: it is part of the denominator and
+hiding it would make every other row look larger than it is (Stage-2E brief 42).
+{% endcomment %}
+<section class="ovsection" aria-labelledby="stat-{{ result.key|lower }}-heading">
+  <div class="ovsection__head">
+    <h2 class="ovsection__title" id="stat-{{ result.key|lower }}-heading">
+      {{ result.definition.label_et }}
+    </h2>
+    <span class="ovsection__meta">
+      {% if result.definition.respects_period %}{{ reporting.period.label }}{% else %}Kogu korpus{% endif %}
+      · kokku {{ result.value }}
+    </span>
+  </div>
+
+  {% if result.segments %}
+    <div class="tablewrap">
+      <table class="table table--stats">
+        <caption class="visually-hidden">{{ result.definition.label_et }}</caption>
+        {% comment %}
+          The first column heading is the section heading, so printing it again
+          above the rows says the same thing twice within thirty pixels of
+          itself. It stays in the accessibility tree, because a column of
+          numbers with no header is a column a screen reader cannot describe.
+
+          One value column, and that is the honest shape today: the design draws
+          three, and only one of the three has a monthly definition in the
+          catalogue (docs/design-v2-compatibility.md, DS-19).
+        {% endcomment %}
+        <thead>
+          <tr>
+            <th scope="col"><span class="visually-hidden">{{ result.definition.label_et }}</span></th>
+            <th scope="col" class="table__date">Teemasid</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for segment in result.segments|slice:":5" %}
+            <tr>
+              <td>
+                {% if segment.url %}
+                  <a href="{{ segment.url }}">{{ segment.label }}</a>
+                {% else %}{{ segment.label }}{% endif %}
+                {% if segment.is_unknown %}<span class="muted">· teadmata</span>{% endif %}
+              </td>
+              <td class="table__date">{{ segment.value }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+        {% if result.segments|length > 5 %}
+          <tbody class="uxextra">
+            {% for segment in result.segments|slice:"5:" %}
+              <tr>
+                <td>
+                  {% if segment.url %}
+                    <a href="{{ segment.url }}">{{ segment.label }}</a>
+                  {% else %}{{ segment.label }}{% endif %}
+                  {% if segment.is_unknown %}<span class="muted">· teadmata</span>{% endif %}
+                </td>
+                <td class="table__date">{{ segment.value }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        {% endif %}
+      </table>
+    </div>
+    {% if result.segments|length > 5 %}
+      <details class="pw-more">
+        <summary>
+          Näita veel {{ result.segments|length|add:"-5" }}<span class="visually-hidden"> — {{ result.definition.label_et }}</span> ▾
+        </summary>
+      </details>
+    {% endif %}
+  {% else %}
+    <p class="empty">Valitud vaates ei ole midagi loendada.</p>
+  {% endif %}
+</section>

@@ -41,7 +41,6 @@ dead end teaches people to distrust the number.
   </div>
 
   <div class="seis">
-    <span class="seis__label">SEIS</span>
     {% for figure in page.figures %}
       <a class="seis__figure" href="{{ figure.url }}">
         <span class="seis__number{% if figure.tone %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.count }}</span>

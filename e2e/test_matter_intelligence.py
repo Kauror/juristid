@@ -45,7 +45,7 @@ def section(page, name: str):
     return page.get_by_role("region", name=name)
 
 
-def open_watchlist(page, base_url: str, path: str = "olulised-tahtajad", query: str = "") -> None:
+def open_watchlist(page, base_url: str, path: str = "jalgimine/tahtajad", query: str = "") -> None:
     page.goto(f"{base_url}/{path}/{query}")
     page.wait_for_load_state("networkidle")
 
@@ -261,7 +261,7 @@ def test_the_department_head_confirms_a_proposed_candidate(page, base_url, scree
 def test_jalgimine_is_one_navigation_item_with_three_views(page, base_url, screenshots):
     sign_in(page, base_url, MARTIN)
     go_to(page, "Jälgimine")
-    page.wait_for_url(f"{base_url}/olulised-tahtajad/")
+    page.wait_for_url(f"{base_url}/jalgimine/tahtajad/")
 
     tabs = page.get_by_label("Jälgimise vaated")
     for label in ("Olulised tähtajad", "Jõustuvad aktid", "Töövõidud"):
@@ -275,10 +275,14 @@ def test_the_calendar_shows_both_event_kinds_and_says_which_is_which(page, base_
     sign_in(page, base_url, MARTIN)
     open_watchlist(page, base_url, query="?suund=koik")
 
-    watchlist = page.get_by_role("region", name="Olulised tähtajad")
+    # The v2 page draws named sections over a register table rather than one
+    # region headed «Olulised tähtajad», so the rows are scoped to the table
+    # (02-EKRAANID §D). What is asserted is unchanged: both event kinds reach
+    # this page, and each row says which kind it is.
+    watchlist = page.locator("table.table--register")
     expect(watchlist.get_by_text("Jõustumine").first).to_be_visible()
     expect(watchlist.get_by_text("Tähtaeg").first).to_be_visible()
-    expect(watchlist.get_by_text("Eeldatav VTK avalikustamine")).to_be_visible()
+    expect(watchlist.get_by_text("Eeldatav VTK avalikustamine").first).to_be_visible()
 
 
 def test_an_approximate_period_keeps_its_precision_on_the_department_page(page, base_url):
@@ -294,7 +298,7 @@ def test_the_source_selector_narrows_the_calendar(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_watchlist(page, base_url, query="?suund=koik&allikad=joustumised")
 
-    watchlist = page.get_by_role("region", name="Olulised tähtajad")
+    watchlist = page.locator("table.table--register")
     expect(watchlist.get_by_text("Eeldatav VTK avalikustamine")).to_have_count(0)
     expect(watchlist.get_by_text("Jõustumine").first).to_be_visible()
 
@@ -310,7 +314,7 @@ def test_a_calendar_row_opens_its_matter(page, base_url):
 
 def test_the_commencement_page_is_grouped_and_the_undated_are_apart(page, base_url, screenshots):
     sign_in(page, base_url, MARTIN)
-    open_watchlist(page, base_url, "joustuvad-aktid", "?suund=koik")
+    open_watchlist(page, base_url, "jalgimine/joustumised", "?suund=koik")
 
     expect(page.get_by_role("heading", name="Jõustuvad aktid")).to_be_visible()
     expect(page.get_by_text("põhiosa")).to_be_visible()
@@ -326,7 +330,7 @@ def test_the_commencement_page_is_grouped_and_the_undated_are_apart(page, base_u
 
 def test_the_work_victory_page_filters_by_state(page, base_url, screenshots):
     sign_in(page, base_url, MARTIN)
-    open_watchlist(page, base_url, "toovoidud")
+    open_watchlist(page, base_url, "jalgimine/toovoidud")
 
     expect(page.get_by_role("heading", name="Töövõidud")).to_be_visible()
     expect(
@@ -346,7 +350,9 @@ def test_the_work_victory_page_filters_by_state(page, base_url, screenshots):
 # -- authorization ----------------------------------------------------------
 
 
-@pytest.mark.parametrize("path", ["olulised-tahtajad", "joustuvad-aktid", "toovoidud"])
+@pytest.mark.parametrize(
+    "path", ["jalgimine/tahtajad", "jalgimine/joustumised", "jalgimine/toovoidud"]
+)
 def test_a_restricted_matters_facts_never_reach_the_department_pages(page, base_url, path):
     """Not the row, not the title, not the Matter behind it.
 

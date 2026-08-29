@@ -21,6 +21,23 @@ whose addressee nobody recorded should look short, not incomplete.
     <span class="railcard__label">Teema andmed</span>
 
     {% comment %}
+      The register reference, back in the rail.
+
+      It is not a *name* — the topic is named by its title, on every list and in
+      every heading, and putting `2026_47` where a title belongs is what the
+      identifier-free pass took out. It is an identity, and identity is exactly
+      what a facts block is for: it is what a lawyer quotes in a letter, what a
+      colleague asks for on the phone, and what the register's exact search
+      matches (02-EKRAANID §C, identifier-free UI §4).
+    {% endcomment %}
+    {% if matter.display_reference %}
+      <p class="railcard__row">
+        <span class="railcard__key">Teemaviide</span>
+        <span class="railcard__ref">{{ matter.display_reference }}</span>
+      </p>
+    {% endif %}
+
+    {% comment %}
       Four facts that used to be in the header band, where they competed with
       the four a lawyer actually reads at a glance. They are looked up rather
       than read, so they are here — and they are still edited where they are
@@ -183,12 +200,13 @@ whose addressee nobody recorded should look short, not incomplete.
       </span>
     </p>
 
-    {% if matter.reporting_year %}
-      <p class="railcard__row">
-        <span class="railcard__key">Aruandlusaasta</span>
-        <span>{{ matter.reporting_year }}</span>
-      </p>
-    {% endif %}
+    {% comment %}
+      `Aruandlusaasta` is not here any more. It is a reporting dimension — it
+      decides which year a Matter is counted in, and the place to see and use it
+      is Statistika and the register's own `?aasta=` filter. On this rail it was
+      a number beside a label that answered a question nobody was asking while
+      reading a file (02-EKRAANID §C).
+    {% endcomment %}
     {% comment %}
       Kirje liik is shown only when it is not the ordinary one. Every current
       Matter is FULL, and a row saying so on every page is a row nobody reads.

@@ -601,7 +601,7 @@ def test_search_results(page, base_url):
 
 def test_watchlist(page, base_url):
     """Jälgimine: a newer surface, built from the same components."""
-    signed_in(page, base_url, "/olulised-tahtajad/")
+    signed_in(page, base_url, "/jalgimine/tahtajad/")
     compare("jalgimine", capture(page, "jalgimine"))
 
 
@@ -624,7 +624,7 @@ def test_my_work(page, base_url):
     a row lands in depends on the weekday the job runs, which is why the dates
     themselves are masked and the bands are asserted in Python instead.
     """
-    signed_in(page, base_url, "/minu-too/")
+    signed_in(page, base_url, "/minu-asjad/")
     compare("minu-too", capture(page, "minu-too"))
 
 
@@ -659,7 +659,7 @@ ULTRAWIDE = {"width": 3440, "height": 900}
     "name,path",
     [
         ("ulevaade-3440", "/ulevaade/"),
-        ("minu-too-3440", "/minu-too/"),
+        ("minu-too-3440", "/minu-asjad/"),
         ("teemad-3440", "/teemad/"),
         ("statistika-3440", "/statistika/"),
     ],

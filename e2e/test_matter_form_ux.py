@@ -424,7 +424,7 @@ def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
     # this test is actually about, so it is checked where it is visible: the
     # step appears in that person's own Minu töö queue.
     expect(page.locator(".uxnext__text")).to_have_text("Jälgi menetluse käiku")
-    go_to(page, "Minu töö")
+    go_to(page, "Minu asjad")
     expect(page.get_by_text("Jälgi menetluse käiku").first).to_be_visible()
 
 

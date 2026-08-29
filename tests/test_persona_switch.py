@@ -592,7 +592,7 @@ def test_an_administrator_cannot_reach_the_department_surface_by_becoming_one(
 def test_the_pill_is_on_every_ordinary_page(behind_the_gate, department):
     _act_as(behind_the_gate, str(department["specialist"].pk))
 
-    for path in ["/ulevaade/", "/teemad/", "/minu-too/"]:
+    for path in ["/ulevaade/", "/teemad/", "/minu-asjad/"]:
         page = behind_the_gate.get(path).content.decode()
         assert 'id="persona-pill"' in page, path
         assert 'id="persona-menu"' in page, path

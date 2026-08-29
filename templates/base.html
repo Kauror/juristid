@@ -88,7 +88,7 @@
                {% if nav_active == 'ulevaade' %}aria-current="page"{% endif %}
                href="{% url 'matters:overview' %}">Ülevaade</a>
             {% comment %}
-              Minu töö is offered only when there is a "minu". Past the shared
+              Minu asjad is offered only when there is a "minu". Past the shared
               door with no persona selected there is no personal queue to show,
               and the surface itself agrees: `login_required` sends that reader
               to the persona page rather than inventing somebody's work for
@@ -98,9 +98,9 @@
               (Vali kasutaja brief 23).
             {% endcomment %}
             {% if user.is_authenticated %}
-              <a class="topnav__link {% if nav_active == 'minu_too' %}is-active{% endif %}"
-                 {% if nav_active == 'minu_too' %}aria-current="page"{% endif %}
-                 href="{% url 'matters:my_work' %}">Minu töö</a>
+              <a class="topnav__link {% if nav_active == 'minu_asjad' %}is-active{% endif %}"
+                 {% if nav_active == 'minu_asjad' %}aria-current="page"{% endif %}
+                 href="{% url 'matters:my_work' %}">Minu asjad</a>
             {% endif %}
             <a class="topnav__link {% if nav_active == 'teemad' %}is-active{% endif %}"
                {% if nav_active == 'teemad' %}aria-current="page"{% endif %}

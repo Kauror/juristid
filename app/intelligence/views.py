@@ -21,6 +21,8 @@ worth more than the half-second it saves (Stage-2G brief 74).
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import Any
 
 from django.contrib import messages
@@ -36,7 +38,7 @@ from django.views.decorators.http import require_http_methods
 from app.core.authorization import may_review_work_victory, may_write_business_content
 from app.core.decorators import WRITE_REFUSED, gate_required, viewer_for
 from app.core.errors import DomainError
-from app.intelligence import filters, selectors, services
+from app.intelligence import filters, sections, selectors, services
 from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.forms import (
     EffectiveDateForm,
@@ -53,6 +55,28 @@ from app.matters.models import Matter
 
 PAGE_SIZE = 50
 
+#: The columns each Jälgimine table carries, and the class that sizes each one.
+#: In the view rather than in the template because the section partial is shared
+#: and a template cannot build a list literal to hand it (02-EKRAANID §D).
+DEADLINE_COLUMNS = (
+    ("Kuupäev", "table__date"),
+    ("Tähtaeg", "table__title"),
+    ("Teema", "table__matter"),
+    ("Vastutaja", "table__owner"),
+)
+EFFECTIVE_COLUMNS = (
+    ("Jõustub", "table__date"),
+    ("Tähtaeg", "table__title"),
+    ("Teema", "table__matter"),
+    ("Vastutaja", "table__owner"),
+)
+VICTORY_COLUMNS = (
+    ("Kuupäev", "table__date"),
+    ("Mis muutus", "table__title"),
+    ("Teema", "table__matter"),
+    ("Tõend", "table__action"),
+)
+
 #: The tab strip over the three generated views. One navigation item and three
 #: tabs rather than three top-level items, which is the shape Statistika already
 #: uses and the shell already styles (Stage-2G brief 38).
@@ -63,10 +87,17 @@ TABS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+#: The heading each tab carries. One navigation item, three destinations, and
+#: each page names itself rather than every one of them being headed
+#: «Jälgimine» with the answer in a tab strip below it (02-EKRAANID §D).
+TAB_TITLES: dict[str, str] = {key: label for key, label, _ in TABS}
+
+
 def _shell(request: HttpRequest, tab: str) -> dict[str, Any]:
     return {
         "tabs": TABS,
         "active_tab": tab,
+        "page_title": TAB_TITLES[tab],
         "nav_active": "jalgimine",
         "today": timezone.localdate(),
         "query_string": request.GET.urlencode(),
@@ -147,7 +178,18 @@ def important_dates(request: HttpRequest) -> HttpResponse:
         {
             "page": page,
             "total": paginator.count,
-            "groups": selectors.group_by_period(entries),
+            "sections": (
+                sections.split_near_and_later(
+                    entries,
+                    today,
+                    near_label="Järgmised 30 päeva",
+                    later_label="Hiljem",
+                )
+                if direction == selectors.UPCOMING
+                else sections.one_section("valitud", dict(selectors.DIRECTIONS)[direction], entries)
+            ),
+            "seis": _deadline_figures(viewer, today),
+            "columns": DEADLINE_COLUMNS,
             "direction_options": filters.options(
                 selectors.DIRECTIONS, parameter="suund", current=direction, base=base
             ),
@@ -161,6 +203,44 @@ def important_dates(request: HttpRequest) -> HttpResponse:
         }
     )
     return render(request, "intelligence/important_dates.html", context)
+
+
+@dataclass(frozen=True)
+class Figure:
+    """One number on a Jälgimine strip, and the list it opens.
+
+    Every figure here carries a destination, and the destination is the same
+    query the number was counted with. A figure whose population this page
+    cannot express is not printed at all — that is the rule, not a shortfall
+    (01-EHITUSJUHIS §3.3, docs/design-v2-compatibility.md DS-16).
+    """
+
+    value: int
+    caption: str
+    url: str
+    tone: str = ""
+
+
+def _deadline_figures(viewer: Any, today: date) -> list[Figure]:
+    """Olulised tähtajad: what is watched, what has passed, what is near.
+
+    «30 päeva jooksul» points at the first section of this very page, because
+    that section *is* the population it counts. A link into a list somebody can
+    see without moving is still a link to exactly the rows the number came from.
+    """
+    horizon = today + timedelta(days=sections.NEAR_DAYS)
+    # Read once. `calendar_rows` is a union, which Django will not let a caller
+    # filter further, so the near window is counted in Python over the rows
+    # already fetched rather than by asking the database a third time.
+    ahead = list(selectors.calendar_rows(user=viewer, today=today, direction=selectors.UPCOMING))
+    passed = selectors.calendar_rows(user=viewer, today=today, direction=selectors.PAST).count()
+    near = sum(1 for row in ahead if row["date_value"] is not None and row["date_value"] <= horizon)
+    upcoming = len(ahead)
+    return [
+        Figure(upcoming, "tähtaega jälgimisel", f"?suund={selectors.UPCOMING}"),
+        Figure(passed, "üle tähtaja", f"?suund={selectors.PAST}", "danger"),
+        Figure(near, "30 päeva jooksul", "#jalgimine-lahedal", "warning"),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -190,9 +270,9 @@ def effective_dates(request: HttpRequest) -> HttpResponse:
             "total": paginator.count,
             # The undated ones are grouped separately, never sorted into a
             # chronology they have no place on.
-            "groups": (
-                [] if direction == selectors.UNDATED else selectors.group_by_period(entries)
-            ),
+            "sections": _effective_sections(viewer, today, direction, entries),
+            "seis": _effective_figures(viewer, today),
+            "columns": EFFECTIVE_COLUMNS,
             "undated": list(page.object_list) if direction == selectors.UNDATED else [],
             "undated_count": selectors.undated_effective_count(viewer),
             "direction": direction,
@@ -208,6 +288,81 @@ def effective_dates(request: HttpRequest) -> HttpResponse:
         }
     )
     return render(request, "intelligence/effective_dates.html", context)
+
+
+def _effective_sections(
+    viewer: Any, today: date, direction: str, entries: list[Any]
+) -> list[sections.Section]:
+    """«Jõustub varsti» and «Jõustunud», or the one window a filter asked for.
+
+    The design's two sections are not two halves of one list: they are two
+    directions in time, and the default view shows both because the question
+    somebody opens this page with is «mis on tulemas ja mis on juba jõustunud»
+    (02-EKRAANID §D). A reader who has asked for `Möödunud` or a year has
+    already said which window they want, and splitting that answer again is the
+    page arguing with them.
+    """
+    if direction == selectors.UNDATED:
+        return []
+    if direction != selectors.HORIZON:
+        return sections.one_section(
+            "valitud", dict(selectors.EFFECTIVE_DIRECTIONS)[direction], entries
+        )
+
+    horizon = today + timedelta(days=sections.SOON_DAYS)
+    soon = [
+        entry
+        for entry in entries
+        if entry.effective_date.date_value is not None
+        and entry.effective_date.date_value <= horizon
+    ]
+    in_force = [
+        selectors.EffectiveDateEntry(record)
+        for record in selectors.effective_dates(
+            user=viewer, today=today, direction=selectors.PAST
+        ).filter(date_value__year=today.year)
+    ]
+    built: list[sections.Section] = []
+    if soon:
+        built.append(sections.Section(key="lahedal", label="Jõustub varsti", rows=soon))
+    if in_force:
+        built.append(sections.Section(key="joustunud", label="Jõustunud", rows=in_force))
+    return built
+
+
+def _effective_figures(viewer: Any, today: date) -> list[Figure]:
+    """Jõustuvad aktid: what is being watched, what lands soon, what has landed.
+
+    A commencement is **not** anybody's deadline. Nothing here creates a
+    NextAction and nothing here appears in a «Järgmiseks» list: an act coming
+    into force is a fact about the world, not an instruction to a lawyer
+    (02-EKRAANID §D, 03-BACKEND §6).
+    """
+    horizon = today + timedelta(days=sections.SOON_DAYS)
+    watched = selectors.effective_dates(
+        user=viewer, today=today, direction=selectors.HORIZON
+    ).count()
+    soon = (
+        selectors.effective_dates(user=viewer, today=today, direction=selectors.HORIZON)
+        .filter(date_value__lte=horizon)
+        .count()
+    )
+    in_force = (
+        selectors.effective_dates(user=viewer, today=today, direction=selectors.PAST)
+        .filter(date_value__year=today.year)
+        .count()
+    )
+    return [
+        Figure(watched, "jõustumist jälgimisel", f"?suund={selectors.HORIZON}"),
+        Figure(
+            soon, f"jõustub {sections.SOON_DAYS} päeva jooksul", "#jalgimine-lahedal", "warning"
+        ),
+        Figure(
+            in_force,
+            "jõustunud sel aastal",
+            f"?suund={selectors.PAST}&aasta={today.year}",
+        ),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +401,13 @@ def work_victories(request: HttpRequest) -> HttpResponse:
         {
             "page": page,
             "total": paginator.count,
+            "sections": sections.by_year(
+                list(page.object_list),
+                period_of=lambda row: row.period_date.year if row.period_date else None,
+                unknown_label="Teadmata periood",
+            ),
+            "seis": _victory_figures(viewer, timezone.localdate()),
+            "columns": VICTORY_COLUMNS,
             "status": status,
             "status_options": [
                 {**option, "count": counts.get(option["key"])}
@@ -269,6 +431,31 @@ def work_victories(request: HttpRequest) -> HttpResponse:
         }
     )
     return render(request, "intelligence/work_victories.html", context)
+
+
+def _victory_figures(viewer: Any, today: date) -> list[Figure]:
+    """Töövõidud: this year and this month, and nothing that ranks anybody.
+
+    Counts of a stored state, each opening the same list it was counted from.
+    No rate, no ministry league table, no per-lawyer figure — none of them has
+    a defensible denominator or an attribution model behind it
+    (master specification 3.5, Stage-2G brief 40, 41).
+    """
+    confirmed = selectors.work_victories(user=viewer, status=WorkVictoryStatus.CONFIRMED)
+    claimed = selectors.work_victories(user=viewer, status=WorkVictoryStatus.CANDIDATE)
+    return [
+        Figure(
+            confirmed.filter(period_date__year=today.year).count(),
+            "töövõitu sel aastal",
+            f"?staatus={WorkVictoryStatus.CONFIRMED}&aasta={today.year}",
+        ),
+        Figure(
+            claimed.count(),
+            dict(WorkVictoryStatus.choices)[WorkVictoryStatus.CANDIDATE].lower(),
+            f"?staatus={WorkVictoryStatus.CANDIDATE}",
+            "warning",
+        ),
+    ]
 
 
 # ---------------------------------------------------------------------------

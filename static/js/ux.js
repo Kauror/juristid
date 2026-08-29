@@ -172,7 +172,12 @@
       return;
     }
     var key = event.key.toLowerCase();
-    if (key !== "j" && key !== "k" && key !== "x" && event.key !== "Enter") {
+    /* J/K/Enter only. `X` went with the ✓ button it pressed: completing a step
+       without setting the follow-up is half a transaction, so completion now
+       goes through the ⋯ menu to the Matter page, and a shortcut for a control
+       that is not on the row is a shortcut that does nothing
+       (01-EHITUSJUHIS §3.6). */
+    if (key !== "j" && key !== "k" && event.key !== "Enter") {
       return;
     }
     var rows = workRows();
@@ -192,14 +197,6 @@
       return;
     }
     var row = rows[index];
-    if (key === "x") {
-      var done = row.querySelector("[data-workdone]");
-      if (done) {
-        event.preventDefault();
-        done.click();
-      }
-      return;
-    }
     /* Enter on the row link is the browser's own behaviour; this only matters
        when the focus ring sits somewhere else in the row. */
     if (event.target.closest && event.target.closest("a")) {
@@ -350,12 +347,43 @@
     });
   }
 
+  /* ------------------------------------------------------------------
+     Aktiivsed teemad — the scoped quick filter.
+
+     A narrowing over rows that are already on the page, not a search: the
+     person's whole open portfolio is rendered, so there is nothing to fetch and
+     nothing to submit. With scripting off the input simply does nothing and
+     every row stays visible, which is the correct fallback for a control whose
+     only job is to hide some of them (design handoff, Minu asjad §G).
+     ------------------------------------------------------------------ */
+  function bindRowFilter(root) {
+    var inputs = root.querySelectorAll("[data-filter-rows]");
+    Array.prototype.forEach.call(inputs, function (input) {
+      if (input.dataset.filterBound === "1") {
+        return;
+      }
+      input.dataset.filterBound = "1";
+      var selector = input.getAttribute("data-filter-rows");
+      input.addEventListener("input", function () {
+        var needle = input.value.trim().toLowerCase();
+        var groups = document.querySelectorAll(selector);
+        Array.prototype.forEach.call(groups, function (group) {
+          Array.prototype.forEach.call(group.children, function (row) {
+            var text = (row.textContent || "").toLowerCase();
+            row.hidden = needle !== "" && text.indexOf(needle) === -1;
+          });
+        });
+      });
+    });
+  }
+
   function bindAll(scope) {
     var root = scope && scope.querySelectorAll ? scope : document;
     bindQuickDates(root);
     bindWorkRows(root);
     bindExclusivePopovers(root);
     bindCopyLink(root);
+    bindRowFilter(root);
   }
 
   document.addEventListener("DOMContentLoaded", function () {

@@ -20,9 +20,13 @@ item rather than another tab on the dashboard (Stage-2E brief 6).
     <span class="pagehead__context">
       {% if reporting.period.is_all %}Kõik aastad{% else %}{{ reporting.period.label }}{% endif %}
     </span>
+    {% comment %}
+      Definitsioonid moved onto the tab strip with the other four destinations,
+      so what is left here is the page's own action — the export, where there is
+      one (02-EKRAANID §E).
+    {% endcomment %}
     <div class="pagehead__actions statspage__actions">
       {% block page_actions %}{% endblock %}
-      <a class="button button--quiet" href="{% url 'reporting:definitions' %}">Definitsioonid</a>
     </div>
   </div>
 

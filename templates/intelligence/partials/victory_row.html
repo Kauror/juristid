@@ -1,0 +1,50 @@
+{% comment %}
+One row of Töövõidud: when, what changed, on which file, and the evidence.
+
+**Tõend is the point of the row.** A work victory is written down only when the
+change is visible in the text — a draft version and a section, a page of the
+explanatory memorandum, the date of a committee's minutes — and a row with no
+evidence is a claim rather than a win (02-EKRAANID §D).
+
+The state is a labelled chip, never a tint alone: a candidate and a confirmed
+victory are different statements and the row says which it is in words.
+{% endcomment %}
+<tr>
+  <td class="table__date">
+    {% if row.has_period %}
+      <span class="dateline {% if row.is_approximate %}dateline--approximate{% endif %}">{{ row.display_period }}</span>
+    {% else %}
+      <span class="table__missing">Teadmata periood</span>
+    {% endif %}
+  </td>
+  <td class="table__title">
+    <span class="table__titlecell">
+      <a class="table__titlelink"
+         href="{% url 'matters:matter_detail' pk=row.matter.pk %}"
+         title="{{ row.title }}">{{ row.title }}</a>
+      <span class="table__flags">
+        <span class="victorystate victorystate--{{ row.status|lower }}">{{ row.get_status_display }}</span>
+      </span>
+    </span>
+  </td>
+  <td class="table__matter">
+    <span class="table__clip" title="{{ row.matter.title }}">
+      <a href="{% url 'matters:matter_detail' pk=row.matter.pk %}">{{ row.matter.title }}</a>
+    </span>
+  </td>
+  <td class="table__action">
+    {% if row.detail or row.source_url %}
+      <span class="table__actioncell">
+        {% if row.source_url %}
+          <a class="table__actiontext" href="{{ row.source_url }}"
+             rel="noopener noreferrer external" target="_blank"
+             title="{{ row.detail|default:row.source_url }}">{{ row.detail|default:"Ametlik allikas" }}</a>
+        {% else %}
+          <span class="table__actiontext" title="{{ row.detail }}">{{ row.detail }}</span>
+        {% endif %}
+      </span>
+    {% else %}
+      <span class="table__missing">—</span>
+    {% endif %}
+  </td>
+</tr>

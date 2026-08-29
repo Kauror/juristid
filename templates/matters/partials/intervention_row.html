@@ -1,0 +1,51 @@
+{% comment %}
+One row of «Vajab sekkumist»: why it is here, which file it is, where that file
+stands, and who carries it.
+
+Its own partial because the section renders it twice — the first six, and the
+rest behind «Näita veel N ▾» — and two copies of a row are two rows that drift.
+{% endcomment %}
+<div class="interrow interrow--{{ row.tone }}">
+  <a class="interrow__link" href="{{ row.url }}">
+    <span class="interrow__reason">
+      <span class="interrow__value interrow__value--{{ row.tone }}">{{ row.value }}</span>
+      {% comment %}
+        Conditional, because one reason has nothing to add. A row saying
+        only "tähtaeg puudub" is the whole fact; an empty element under it
+        would still take the gap above it and pull the reason off the
+        row's optical centre (human QA §11).
+      {% endcomment %}
+      {% if row.meaning %}<span class="interrow__meaning">{{ row.meaning }}</span>{% endif %}
+    </span>
+    <span class="interrow__body">
+      <span class="interrow__title">
+        {% if row.matter.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ row.matter.title }}
+      </span>
+      <span class="interrow__detail">
+        {% comment %}
+          The topic is named by the title on the line above. `2026_10` was
+          the second half of this line and named nothing a reader was
+          looking for (human QA §13).
+        {% endcomment %}
+        {{ row.detail }}
+      </span>
+    </span>
+    <span class="interrow__stage">{{ row.stage_label }}</span>
+    <span class="interrow__owner">
+      {% if row.is_ownerless %}
+        <span class="interrow__assign">Määra →</span>
+      {% else %}
+        {{ row.owner_name }}
+      {% endif %}
+    </span>
+  </a>
+  <details class="rowmenu">
+    <summary class="rowmenu__trigger" aria-label="Rea tegevused">⋯</summary>
+    <div class="rowmenu__menu">
+      <a class="rowmenu__item" href="{{ row.url }}">Ava teema</a>
+      {% if row.is_ownerless %}
+        <a class="rowmenu__item" href="{{ row.url }}#vastutaja">Määra vastutaja</a>
+      {% endif %}
+    </div>
+  </details>
+</div>

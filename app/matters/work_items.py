@@ -94,21 +94,41 @@ _SEMANTICS_MEANING: dict[str, str] = {
 }
 
 #: The bands of the timeline, in reading order.
+#:
+#: Four, not five. *Ülevaatamiseks küps* and *Täna* are gone as blocks: a review
+#: that has come round is ordinary dated work and belongs in the week it is
+#: being looked at, and today is the first day of this week rather than a
+#: heading of its own. What has emphatically **not** gone is the semantics —
+#: a WAIT or a MONITOR is still never late and still never red; that is now a
+#: mark on the row rather than a block around it (design handoff 03 §1).
 BAND_OVERDUE = "ule_tahtaja"
-BAND_RIPE = "ulevaatamiseks_kups"
-BAND_TODAY = "tana"
 BAND_WEEK = "sel_nadalal"
+BAND_NEXT_30 = "jargmised_30_paeva"
 BAND_LATER = "hiljem"
 
 BAND_LABELS: dict[str, str] = {
     BAND_OVERDUE: "Üle tähtaja",
-    BAND_RIPE: "Ülevaatamiseks küps",
-    BAND_TODAY: "Täna",
     BAND_WEEK: "Sel nädalal",
+    BAND_NEXT_30: "Järgmised 30 päeva",
     BAND_LATER: "Hiljem",
 }
 
-BAND_ORDER: tuple[str, ...] = (BAND_OVERDUE, BAND_RIPE, BAND_TODAY, BAND_WEEK, BAND_LATER)
+BAND_ORDER: tuple[str, ...] = (BAND_OVERDUE, BAND_WEEK, BAND_NEXT_30, BAND_LATER)
+
+#: How many rows of each band are on screen before the rest go behind
+#: «Näita veel N ▾». The rest are the *same* list, sliced — not a second query —
+#: so opening the disclosure cannot show a row the count above it did not
+#: include. ``None`` means the band shows everything it holds: work that is
+#: already late is exactly what nobody may have to click to see.
+BAND_VISIBLE: dict[str, int | None] = {
+    BAND_OVERDUE: None,
+    BAND_WEEK: 10,
+    BAND_NEXT_30: 5,
+    BAND_LATER: 2,
+}
+
+#: How far past this week *Järgmised 30 päeva* reaches.
+NEXT_30_DAYS = 30
 
 #: How many rows a page may render before it stops being read. The count above
 #: each list is the honest total either way.
@@ -219,13 +239,22 @@ class WorkItem:
             return f"{late} p üle" if self.is_overdue else f"{late} p"
         if self.when == self.today:
             return "täna"
-        if self.display_date and self._is_approximate:
+        if self.display_date and self.is_approximate:
             return self.display_date
         return f"{self.when.day:02d}.{self.when.month:02d}"
 
     @property
-    def _is_approximate(self) -> bool:
-        return "." not in self.display_date
+    def is_approximate(self) -> bool:
+        """Whether the source named a period rather than a day.
+
+        Read from the stored precision — a period whose last day is not its
+        anchor — rather than from what the printed string happens to look like.
+        Banding depends on this now: *Järgmised 30 päeva* takes day-precise
+        dates only, and a heuristic over punctuation is not something to put a
+        band boundary on (01 §3.2).
+        """
+        end = self.period_end or self.when
+        return end is not None and end != self.when
 
     # -- what a deadline row prints -------------------------------------
     #
@@ -242,14 +271,14 @@ class WorkItem:
     def weekday_letter(self) -> str:
         """``R``. Empty for a date recorded to a month or a quarter, where
         naming a weekday would name a day nobody chose."""
-        return "" if self._is_approximate else dates.weekday_letter(self.when)
+        return "" if self.is_approximate else dates.weekday_letter(self.when)
 
     @property
     def day_month(self) -> str:
         """``28.08``, or the stored period verbatim when that is all there is."""
         if self.when is None:
             return "—"
-        return self.display_date if self._is_approximate else dates.short_day_month(self.when)
+        return self.display_date if self.is_approximate else dates.short_day_month(self.when)
 
     @property
     def responsible_initials(self) -> str:
@@ -276,15 +305,35 @@ class WorkItem:
 
 @dataclass(frozen=True)
 class WorkBand:
-    """One band of the timeline. Rendered only when it holds something."""
+    """One band of the timeline. Rendered only when it holds something.
+
+    ``visible`` is how many rows are on screen; ``rest`` is the remainder of the
+    *same* list. One query produces both, so the number in the heading, the rows
+    under it and the number on «Näita veel N ▾» are three readings of one answer
+    and cannot disagree.
+    """
 
     key: str
     label: str
     items: list[WorkItem]
+    #: ``None`` shows everything.
+    visible: int | None = None
 
     @property
     def count(self) -> int:
         return len(self.items)
+
+    @property
+    def preview(self) -> list[WorkItem]:
+        return self.items if self.visible is None else self.items[: self.visible]
+
+    @property
+    def rest(self) -> list[WorkItem]:
+        return [] if self.visible is None else self.items[self.visible :]
+
+    @property
+    def remaining(self) -> int:
+        return len(self.rest)
 
 
 # ---------------------------------------------------------------------------
@@ -470,31 +519,55 @@ def end_of_iso_week(today: date) -> date:
     return today + timedelta(days=6 - today.weekday())
 
 
-def band_of(item: WorkItem, today: date, week_end: date, horizon: date | None) -> str | None:
+def band_of(
+    item: WorkItem,
+    today: date,
+    week_end: date,
+    horizon: date | None,
+    *,
+    next_30_end: date | None = None,
+) -> str | None:
     """Which band this item belongs to, or ``None`` if it is beyond the window.
 
     The last day of a period is what decides whether it is behind us. An
     expectation recorded as *III kvartal 2026* has not passed on 2 July, and
     banding it on its anchor would call a quarter that has barely started late.
 
-    A past item that is not genuinely overdue lands in *Ülevaatamiseks küps*.
-    That covers the WAIT and MONITOR the band is named for, and it also catches
-    the case the old banding lost entirely: a DO whose source named a vague
-    month is stored as an expectation rather than a deadline, so it can never be
-    overdue and used to fall out of every band and off the page
+    A past item that is not genuinely overdue is *ripe for a look*, and this is
+    where the redesign changed shape: it used to have a block of its own headed
+    «Ülevaatamiseks küps» with a sentence under it explaining that waiting is
+    not lateness. It now sits at the top of **Sel nädalal**, in date order with
+    everything else, carrying a neutral ``N p`` rather than ``N p üle``. The
+    sentence is gone because the row no longer needs defending; the semantics
+    are unchanged and are still enforced by ``is_overdue``
+    (design handoff 03 §1, 01 §3.1).
+
+    That also catches the case the old banding lost entirely: a DO whose source
+    named a vague month is stored as an expectation rather than a deadline, so
+    it can never be overdue and used to fall out of every band and off the page
     (app/legacy_import/register_next_actions.py).
+
+    **Järgmised 30 päeva takes only day-precise dates.** A month or a quarter
+    landing inside the next thirty days is not a date somebody can plan a
+    Tuesday around, and putting *september 2026* in a band headed by a number of
+    days would read as a precision the source never gave (01 §3.2).
+
+    ``?kuni=`` narrows **Hiljem only**. It is that band's own control and it
+    must not be able to hide something due next week.
     """
     when = item.when
     if when is None:
         return None
     end = item.period_end or when
     if end < today:
-        return BAND_OVERDUE if item.is_overdue else BAND_RIPE
-    if when <= today:
-        # Either today exactly, or a period already running. Both are now.
-        return BAND_TODAY
+        # Genuinely late, or merely come round. Both are now; only one is red.
+        return BAND_OVERDUE if item.is_overdue else BAND_WEEK
     if when <= week_end:
+        # Today, a period already running, or a day still inside this week.
         return BAND_WEEK
+    next_30_end = next_30_end or today + timedelta(days=NEXT_30_DAYS)
+    if when <= next_30_end and not item.is_approximate:
+        return BAND_NEXT_30
     if horizon is None or when <= horizon:
         return BAND_LATER
     return None
@@ -509,24 +582,31 @@ def band_items(
 ) -> list[WorkBand]:
     """The bands that actually hold something, in reading order.
 
-    An empty band is omitted rather than rendered empty: five headings above
-    five "ei ole ühtegi" lines is a page that looks like a data-quality problem
+    An empty band is omitted rather than rendered empty: four headings above
+    four "ei ole ühtegi" lines is a page that looks like a data-quality problem
     rather than a quiet morning.
     """
     week_end = week_end or end_of_iso_week(today)
+    next_30_end = today + timedelta(days=NEXT_30_DAYS)
     grouped: dict[str, list[WorkItem]] = {key: [] for key in BAND_ORDER}
     for item in items:
-        key = band_of(item, today, week_end, horizon)
+        key = band_of(item, today, week_end, horizon, next_30_end=next_30_end)
         if key is not None:
             grouped[key].append(item)
 
-    # Most overdue first inside the red band; everything else earliest first,
-    # which `sort_items` has already arranged.
+    # Most overdue first inside the red band. Everything else is left in the
+    # chronological order `sort_items` already put it in — which is what puts
+    # the ripe reviews, whose dates are the oldest in the band, at the top of
+    # *Sel nädalal* (design handoff 03 §1: «vanimad ees»).
     grouped[BAND_OVERDUE].sort(key=lambda item: item.period_end or item.when or date.max)
-    grouped[BAND_RIPE].sort(key=lambda item: item.period_end or item.when or date.max)
 
     return [
-        WorkBand(key=key, label=BAND_LABELS[key], items=grouped[key][:BAND_LIMIT])
+        WorkBand(
+            key=key,
+            label=BAND_LABELS[key],
+            items=grouped[key][:BAND_LIMIT],
+            visible=BAND_VISIBLE[key],
+        )
         for key in BAND_ORDER
         if grouped[key]
     ]
@@ -620,7 +700,7 @@ DEADLINE_MONTH_DAYS = 30
 #: What each value selects, and how it reads in a filter chip.
 WORK_POPULATION_LABELS: dict[str, str] = {
     WORK_OVERDUE: "Üle tähtaja",
-    WORK_RIPE: "Ülevaatamiseks küps",
+    WORK_RIPE: "Ülevaatamiseks",
     WORK_DEADLINE_THIS_WEEK: "Tähtaeg sel nädalal",
     WORK_DEADLINE_NEXT_WEEK: "Tähtaeg järgmisel nädalal",
     WORK_DEADLINE_30_DAYS: "Tähtaeg 30 päeva jooksul",
@@ -863,10 +943,10 @@ def quiet_matters(user: Any, today: date | None = None, *, days: int = QUIET_DAY
 __all__ = [
     "BAND_LABELS",
     "BAND_LATER",
+    "BAND_NEXT_30",
     "BAND_ORDER",
     "BAND_OVERDUE",
-    "BAND_RIPE",
-    "BAND_TODAY",
+    "BAND_VISIBLE",
     "BAND_WEEK",
     "MEANING_DEADLINE",
     "MEANING_EXPECTED",

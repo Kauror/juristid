@@ -25,165 +25,26 @@ list by.
     </thead>
     <tbody>
       {% for matter in matters %}
-        {% with action=matter.open_actions|first %}
-        <tr>
-          {% comment %}
-            The title truncates; the state badges beside it never do. A row that
-            drops "Piiratud" to fit a long title has hidden the one thing about
-            it a reader must not miss, so the flags keep their width and the
-            title takes what is left. Full text is on the Matter page and in the
-            title attribute.
-          {% endcomment %}
-          <td class="table__title">
-            <span class="table__titlecell">
-              <a class="table__titlelink"
-                 href="{% url 'matters:matter_detail' pk=matter.pk %}" title="{{ matter.title }}">
-                {{ matter.title }}
-              </a>
-              {% if matter.record_mode == "ARCHIVE" or matter.is_restricted or not matter.is_open or matter.is_test_data %}
-                <span class="table__flags">
-                  {% comment %}
-                    First of the flags, and never truncated, for the reason the
-                    comment above gives: a development record that reads as
-                    ordinary business data in the register is the exact
-                    confusion this classification exists to prevent
-                    (Agent-C brief 22, 23).
-                  {% endcomment %}
-                  {% if matter.is_test_data %}
-                    <span class="badge badge--test">TEST</span>
-                  {% endif %}
-                  {% if matter.record_mode == "ARCHIVE" %}
-                    <span class="badge badge--archive">Arhiiv</span>
-                  {% endif %}
-                  {% if matter.is_restricted %}
-                    <span class="badge badge--restricted">Piiratud</span>
-                  {% endif %}
-                  {% if not matter.is_open %}
-                    <span class="badge badge--closed">Suletud</span>
-                  {% endif %}
-                </span>
-              {% endif %}
-            </span>
-          </td>
-
-          <td class="table__stage">
-            {% if matter.stage %}
-              <span class="table__clip" title="{{ matter.stage.label_et }}">{{ matter.stage.label_et }}</span>
-            {% else %}<span class="muted">—</span>{% endif %}
-          </td>
-
-          {% comment %}
-            The short name in the cell, the full one in the tooltip. The model
-            owns what a person is called informally (`User.get_short_name`);
-            this is not a first-token split written into a template.
-          {% endcomment %}
-          <td class="table__owner">
-            {% if matter.owner %}
-              <span class="table__clip" title="{{ matter.owner.display_name }}">{{ matter.owner.get_short_name }}</span>
-            {% elif can_assign_owner %}
-              {% comment %}
-                «Määra ▾» rather than the word «Vastutajata», where the reader
-                may actually act on it. The same service and the same validated
-                choice as the Matter header's own control; what it saves is the
-                trip through the Matter page and back (design handoff 2d).
-
-                A real <details> and a real POST per person: each option
-                changes a stored record, so none of them may be a link a
-                browser is entitled to prefetch.
-              {% endcomment %}
-              <details class="uxassign" data-uxpopover>
-                {% comment %}
-                  One of these per unassigned row, so the accessible name says
-                  which file it would assign.
-                {% endcomment %}
-                <summary class="uxassign__trigger">Määra<span class="visually-hidden"> vastutaja: {{ matter.title }}</span> ▾</summary>
-                <div class="uxassign__menu" data-uxfloat>
-                  <form method="post" action="{% url 'matters:assign_owner' pk=matter.pk %}">
-                    {% csrf_token %}
-                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
-                    {% for person in assignable_people %}
-                      <button type="submit" name="owner" value="{{ person.pk }}">
-                        <span class="uxav" aria-hidden="true">{{ person.initials }}</span>
-                        {{ person.get_short_name }}{% if person.pk == user.pk %} (mina){% endif %}
-                      </button>
-                    {% endfor %}
-                  </form>
-                </div>
-              </details>
-            {% else %}<span class="table__missing">Vastutajata</span>{% endif %}
-          </td>
-
-          <td class="table__action">
-            <span class="table__actioncell">
-              {% if action %}
-                <span class="mode mode--{{ action.kind|lower }}">{{ action.get_kind_display }}</span>
-                <span class="table__actiontext" title="{{ action.text }}">{{ action.text }}</span>
-              {% elif source_instructions|get_item:matter.pk %}
-                {% comment %}
-                  The register's own instruction, where no structured one exists.
-                  Labelled as Excel's so a reader can tell a decision made here
-                  from a sentence carried over, and carrying no kind, no date and
-                  no overdue state — the source says all three at once and the
-                  importer refuses to choose (ADR 0021).
-                {% endcomment %}
-                <span class="table__sourcelabel">Excelist{% if source_snapshot %} · {{ source_snapshot }}{% endif %}</span>
-                <span class="table__actiontext table__actiontext--source"
-                      title="{{ source_instructions|get_item:matter.pk }}">
-                  {{ source_instructions|get_item:matter.pk }}
-                </span>
-              {% else %}
-                <span class="table__missing">Järgmine samm puudub</span>
-              {% endif %}
-            </span>
-          </td>
-
-          {% comment %}
-            Meaning and value on one line. What kind of date this is stays
-            written out — a bare "15.08" does not say whether missing it
-            matters — but it does not cost the row a second line to say so.
-          {% endcomment %}
-          <td class="table__date">
-            {% if action and action.target_date %}
-              <span class="datemeaning">{{ action.date_label }}</span>
-              <span class="dateline
-                           {% if action.is_overdue %}dateline--overdue
-                           {% elif action.date_semantics == 'DEADLINE' %}dateline--deadline{% endif %}
-                           {% if action.is_approximate %}dateline--approximate{% endif %}">
-                {{ action.display_date }}
-              </span>
-            {% elif matter.response_deadline %}
-              <span class="datemeaning">Arvamuse tähtaeg</span>
-              <span class="dateline dateline--deadline">{{ matter.response_deadline|date:"j.n.Y" }}</span>
-            {% else %}
-              <span class="muted">—</span>
-            {% endif %}
-          </td>
-
-          {% comment %}
-            The derived activity fact, not `updated_at`. For an imported row
-            `updated_at` is the moment the 2026 cutover touched it, so a file
-            whose last real work was a OneNote page edited in 2018 read as
-            though somebody had been on it this morning — and most of this
-            register is imported (ADR 0026).
-
-            No known date renders an em dash. Falling back to the import
-            timestamp is the exact mistake this replaces, and a dash is the
-            honest statement that nothing is recorded.
-          {% endcomment %}
-          <td class="table__date table__lastactivity">
-            {% with activity=matter|last_activity %}
-              {% if activity %}
-                <span class="muted" title="{{ activity.label }}">
-                  {{ activity.occurred_on|date:"j.n.Y" }}
-                </span>
-              {% else %}
-                <span class="muted">—</span>
-              {% endif %}
-            {% endwith %}
-          </td>
-        </tr>
-        {% endwith %}
+        {% include "matters/partials/matter_row.html" with matter=matter %}
       {% endfor %}
     </tbody>
+    {% comment %}
+      The rest of the same list, as a second row group rather than a second
+      table. `table-layout: fixed` takes its column widths from the first row
+      group, so a separate table lines its columns up somewhere else entirely
+      (01-EHITUSJUHIS §5, static/css/app.css `tbody.uxextra`).
+    {% endcomment %}
+    {% if extra %}
+      <tbody class="uxextra">
+        {% for matter in extra %}
+          {% include "matters/partials/matter_row.html" with matter=matter %}
+        {% endfor %}
+      </tbody>
+    {% endif %}
   </table>
 </div>
+{% if extra %}
+  <details class="pw-more">
+    <summary>Näita veel {{ extra|length }}<span class="visually-hidden"> — {{ extra_label|default:"rida" }}</span> ▾</summary>
+  </details>
+{% endif %}

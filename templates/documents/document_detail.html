@@ -3,14 +3,14 @@
 {% block title %}{{ document.title }} · {{ matter.title }} · {{ application_name }}{% endblock %}
 
 {% comment %}
-  Original and derivative are the load-bearing distinction on this page, and the
-  layout carries it rather than a footnote. The original is a solid card with a
-  checksum and a download; everything below it sits under a heading that says
-  the words "tuletatud eelvaade" and names the parser that produced it.
+  The original, and what it is made of. The file's own name is the heading and
+  the heading is the download: a page about one file does not need a button
+  repeating the name printed above it (02-EKRAANID §G).
 
-  Nothing on this page renders the source format. The preview is text the view
-  already reduced to plain strings, escaped like any other template variable
-  (app/documents/preview.py).
+  The «Tuletatud eelvaade» block is gone from this page. The extraction pipeline
+  behind it — the parsers, the fragments, the thumbnails, the routes and the
+  search index built from them — is untouched; what the redesign removed is this
+  page's rendering of it (docs/design-v2-compatibility.md, DS-10).
 {% endcomment %}
 
 {% block content %}
@@ -20,11 +20,18 @@
   </nav>
 
   <header class="pagehead">
-    <h1>{{ document.title }}</h1>
-    <p class="pagehead__meta">
+    {% comment %}
+      The file's own name, and it is the way to the bytes. Through the
+      authorization-checked download route exactly as the button was — the
+      control moved, the check did not (app/documents/views.py).
+    {% endcomment %}
+    <h1 class="pagehead__title">
+      {% if version %}<a href="{% url 'documents:download' pk=version.pk %}">{{ version.original_filename }}</a>{% else %}{{ document.title }}{% endif %}
+    </h1>
+    <span class="pagehead__context">
       {{ document.get_role_display }}
       {% if document.is_restricted %}<span class="badge badge--restricted">Piiratud</span>{% endif %}
-    </p>
+    </span>
   </header>
 
   {% if version %}
@@ -43,12 +50,6 @@
           <dd><span class="statechip statechip--{{ preview.state_tone }}">{{ preview.state_label }}</span></dd>
         </div>
       </dl>
-
-      <p class="form__actions">
-        <a class="button button--primary" href="{% url 'documents:download' pk=version.pk %}">
-          Laadi alla originaal
-        </a>
-      </p>
 
       <details class="disclosure">
         <summary>Tehnilised andmed</summary>
@@ -92,79 +93,9 @@
       </section>
     {% endif %}
 
-    <section class="card card--derived" aria-labelledby="eelvaade-heading">
-      <h2 class="sectionlabel" id="eelvaade-heading">Tuletatud eelvaade</h2>
-      <p class="cardnote">
-        See ei ole originaal. Tekst on masinaga eraldatud ja selle võib igal ajal
-        uuesti luua. Kahtluse korral vaata originaali.
-      </p>
-
-      {% if preview.note %}
-        <p class="formnote">{{ preview.note }}</p>
-      {% endif %}
-
-      {% if preview.email_fields %}
-        <dl class="detailgrid">
-          {% for field in preview.email_fields %}
-            <div><dt>{{ field.label }}</dt><dd>{{ field.value }}</dd></div>
-          {% endfor %}
-        </dl>
-      {% endif %}
-
-      {% if preview.thumbnail_id %}
-        {% comment %}
-          A generated PNG, not the uploaded file. These bytes were produced by
-          Pillow from the original, so nothing interesting about the upload's
-          structure survived — which is why this one may be shown inline while
-          the original is always a download (app/documents/extraction/thumbnails.py).
-        {% endcomment %}
-        <figure class="thumbnail">
-          <img src="{% url 'documents:thumbnail' pk=preview.thumbnail_id %}"
-               alt="Dokumendi esimese lehe pisipilt" loading="lazy">
-          <figcaption>Masinaga loodud pisipilt, mitte originaal.</figcaption>
-        </figure>
-      {% elif preview.is_image %}
-        <p class="cardnote">
-          Pildifail. Ava originaal allalaadimise kaudu — Juristid ei kuva üleslaaditud
-          faile lehel sees.
-        </p>
-      {% endif %}
-
-      {% if preview.fragments %}
-        <ol class="fragments">
-          {% for fragment in preview.fragments %}
-            <li class="fragment">
-              <p class="fragment__locator">
-                {{ fragment.locator_label|default:"—" }}
-                {% if fragment.from_ocr %}
-                  <span class="badge badge--ocr" title="Tekst on loetud pildilt tähetuvastusega">OCR</span>
-                {% endif %}
-              </p>
-              <p class="fragment__text">{{ fragment.text }}</p>
-            </li>
-          {% endfor %}
-        </ol>
-        {% if preview.truncated %}
-          <p class="cardnote">
-            Eelvaade on lühendatud. Kokku {{ preview.total_fragments }} osa; kogu sisu on
-            otsingus ja originaalis.
-          </p>
-        {% endif %}
-      {% elif not preview.email_fields and not preview.is_image %}
-        <p class="empty">Sellest failist ei ole teksti eraldatud.</p>
-      {% endif %}
-
-      {% if preview.generator %}
-        <p class="cardnote">
-          Eraldas {{ preview.generator }} {{ preview.generator_version }}{% if preview.built_at %},
-          {{ preview.built_at|date:"j.n.Y H:i" }}{% endif %}.
-        </p>
-      {% endif %}
-    </section>
-
     {% if versions|length > 1 %}
       <section class="card" aria-labelledby="versioonid-heading">
-        <h2 class="sectionlabel" id="versioonid-heading">Versioonid</h2>
+        <h2 class="sectionlabel" id="versioonid-heading">Versioonid <span class="sectionlabel__count">{{ versions|length }}</span></h2>
         <div class="tablewrap">
           <table class="table">
             <thead>
@@ -172,7 +103,7 @@
                 <th scope="col">Versioon</th>
                 <th scope="col">Fail</th>
                 <th scope="col">Suurus</th>
-                <th scope="col">Saadi</th>
+                <th scope="col" class="table__date">Saadi</th>
                 <th scope="col">Töötlemine</th>
               </tr>
             </thead>

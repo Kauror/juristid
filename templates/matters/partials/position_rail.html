@@ -23,10 +23,13 @@ Three states:
 <div class="railcard" id="koja-seisukoht">
   <span class="railcard__label">Koja seisukoht</span>
 
+  {% comment %}
+    The position, never the reasoning. A Matter that carries only a `Põhjendus`
+    has no stated position, and printing the reasoning in the position's place
+    said it had one (02-EKRAANID §C).
+  {% endcomment %}
   {% if matter.position_summary %}
     <p class="railposition__text">{{ matter.position_summary|truncatechars:220 }}</p>
-  {% elif matter.rationale_summary %}
-    <p class="railposition__text">{{ matter.rationale_summary|truncatechars:220 }}</p>
   {% elif not position_opinion %}
     <span class="railposition__none">Seisukohta ei ole</span>
   {% endif %}

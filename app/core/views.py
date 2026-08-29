@@ -7,9 +7,12 @@ from __future__ import annotations
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.db import DatabaseError, connection
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.templatetags.static import static
+
+from app.core.authorization import is_department_head
+from app.core.development_status import ITEMS as DEVELOPMENT_STATUS_ITEMS
 
 
 def healthz(request: HttpRequest) -> JsonResponse:
@@ -95,4 +98,31 @@ def design_tokens(request: HttpRequest) -> HttpResponse:
         request,
         "core/design_tokens.html",
         {"surface_tokens": SURFACE_TOKENS, "text_tokens": TEXT_TOKENS},
+    )
+
+
+@login_required
+def development_status(request: HttpRequest) -> HttpResponse:
+    """What the v2 rebuild could not settle, for the people who can settle it.
+
+    Under `/haldus/`, with the rest of the internal tooling, and not on any
+    navigation bar: this is a worklist about the build, not a product screen. It
+    renders `app/core/development_status.py` and nothing else — there is no
+    Matter, no member and no company content on it, so it needs no visibility
+    scoping of its own.
+
+    The gate is the department head or the technical administrator, both read
+    from rules that already exist. 404 rather than 403, the convention every
+    other restricted surface in this application follows: a 403 would confirm
+    the page is there and that somebody else may read it.
+    """
+    from app.legacy_import.opinion_access import may_use_opinion_queue
+
+    if not (is_department_head(request.user) or may_use_opinion_queue(request.user)):
+        raise Http404("Arendusseis on halduse töövahend.")
+
+    return render(
+        request,
+        "core/development_status.html",
+        {"items": DEVELOPMENT_STATUS_ITEMS, "nav_active": "haldus"},
     )

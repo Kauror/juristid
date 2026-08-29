@@ -2,86 +2,107 @@
 {% block title %}Statistika · {{ application_name }}{% endblock %}
 
 {% comment %}
-Üldpilt — five groups, in the order somebody arriving actually needs them.
+Ülevaade — counts and tables, and nothing that has to be interpreted.
 
-Põhinäitajad says how much there is. Teemade trend and Arvamuste trend say how
-that has moved, over two axes that deliberately start in different years: the
-register begins in 2011 and the opinions archive in 2020, and drawing nine years
-of archive zeros to make the two charts line up would publish a false fact
-(Stage-2E brief 24, 43).
-
-Praegune portfell is the only point-in-time group: open FULL Matters, by stage
-and by responsibility. Andmekatvus says how far the data reaches, which is a
-statement about the corpus and never a score.
+The charts are gone. Every number that was a bar is a row now, in a table with
+its own heading, and every row still opens the exact records it counted. A
+reader who could measure a bar and then open it can now read the value directly
+and open it; nothing was lost but the estimating (02-EKRAANID §E).
 
 None of these is a performance indicator. They are counts of records that exist,
 each linked to the records it counted where a truthful link exists, and none is
 compared to a target or a colleague (master specification 18.8).
+
+What this page cannot yet fill honestly is stated rather than approximated: the
+design's month table draws three columns and only one of them has a monthly
+definition in the catalogue (docs/design-v2-compatibility.md, DS-19).
 {% endcomment %}
 
+{% block page_actions %}
+  <a class="button button--quiet" href="{{ export_url }}">Laadi alla CSV</a>
+{% endblock %}
+
 {% block statistics %}
-  <section aria-labelledby="ulevaade-naitajad-heading">
-    <h2 class="sectionlabel" id="ulevaade-naitajad-heading">Põhinäitajad</h2>
-    <div class="metricgrid">
-      {% for result in cards %}
-        {% include "reporting/_metric.html" with result=result %}
+  {% comment %}
+    The strip, in the same component and the same shape as every other surface.
+    Zeros are dropped, and each figure opens the population it counted
+    (01-EHITUSJUHIS §3.3, §3.7).
+  {% endcomment %}
+  <div class="seis">
+    {% for figure in seis %}
+      {% if figure.value %}
+        <a class="seis__figure" href="{{ figure.url }}">
+          <span class="seis__number{% if figure.tone %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
+          <span class="seis__caption">{{ figure.caption }}</span>
+        </a>
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <div class="ovbody">
+    <div class="ovbody__main">
+      {% for result in tables %}
+        {% include "reporting/_segment_table.html" with result=result %}
       {% endfor %}
     </div>
-  </section>
 
-  {% if comparisons %}
-    <section aria-labelledby="ulevaade-muutus-heading">
-      <h2 class="sectionlabel" id="ulevaade-muutus-heading">Muutus eelmise aastaga</h2>
-      <p class="chart__summary">
-        Mõlemad pooled on lõigatud samal kuupäeval, et osalist aastat ei võrreldaks
-        terve aastaga. Muutus on maht, mitte tulemuslikkus — rohkem ei ole
-        iseenesest parem.
-      </p>
-      <div class="metricgrid">
-        {% for result in comparisons %}
-          {% include "reporting/_comparison.html" with result=result %}
+    <aside class="ovbody__rail" aria-label="Faktid">
+      {% for block in rail %}
+        <section class="railblock" aria-label="{{ block.label }}">
+          <h2 class="railblock__label">{{ block.label }}</h2>
+          {% for row in block.rows %}
+            <a class="railrow" href="{{ row.url }}">
+              <span class="railrow__key">{{ row.caption }}</span>
+              <span class="railrow__value{% if row.tone and row.value %} railrow__value--{{ row.tone }}{% endif %}">{{ row.value }}</span>
+            </a>
+          {% endfor %}
+        </section>
+      {% endfor %}
+
+      {% comment %}
+        Who holds what. Inventory, in the department's own order — never a
+        ranking, and never a workload: one open Matter can be a two-line
+        monitoring note and the next a year of consultation
+        (master specification 18.8).
+      {% endcomment %}
+      <section class="railblock" aria-label="Inimesed">
+        <h2 class="railblock__label">Inimesed</h2>
+        {% for segment in people.segments %}
+          {% if segment.url %}
+            <a class="railrow" href="{{ segment.url }}">
+              <span class="railrow__key">{{ segment.label }}</span>
+              <span class="railrow__value">{{ segment.value }}</span>
+            </a>
+          {% else %}
+            <span class="railrow">
+              <span class="railrow__key">{{ segment.label }}</span>
+              <span class="railrow__value">{{ segment.value }}</span>
+            </span>
+          {% endif %}
+        {% empty %}
+          <p class="railblock__empty">Ühelgi inimesel ei ole avatud teemasid.</p>
         {% endfor %}
-      </div>
-    </section>
-  {% endif %}
+      </section>
 
-  <section aria-labelledby="ulevaade-trendid-heading">
-    <h2 class="sectionlabel" id="ulevaade-trendid-heading">Pikk ajajoon</h2>
-    <p class="chart__summary">
-      Kaks eri algusaastat, ja see on õige: register algab 2011. aastast,
-      arvamuste arhiiv 2020. aastast. Aastaid, mille kohta mõõtmist ei ole, ei
-      joonistata nullidena.
-    </p>
-    <div class="chartgrid">
-      {% for item in trends %}
-        {% include "reporting/_trend.html" with item=item %}
-      {% endfor %}
-    </div>
-  </section>
-
-  <section aria-labelledby="ulevaade-portfell-heading">
-    <h2 class="sectionlabel" id="ulevaade-portfell-heading">Praegune portfell</h2>
-    <p class="chart__summary">
-      Ainult avatud täielikud teemad. Arhiivikirjed ei ole aktiivne töö.
-      Vastutuse jaotus on inventuur, mitte töökoormus ega juristide järjestus.
-    </p>
-    <div class="chartgrid">
-      {% for item in portfolio %}
-        {% include "reporting/_composition.html" with item=item %}
-      {% endfor %}
-    </div>
-  </section>
-
-  <section aria-labelledby="ulevaade-katvus-heading">
-    <h2 class="sectionlabel" id="ulevaade-katvus-heading">Andmekatvus</h2>
-    <p class="chart__summary">
-      Kui kaugele andmed ulatuvad. Katvuse puudumine ei ole hinnang tehtud tööle:
-      sidumata arhiivifail on olemasolev tõendus, mis ootab teemaga sidumist.
-    </p>
-    <div class="metricgrid">
-      {% for result in coverage %}
-        {% include "reporting/_metric.html" with result=result %}
-      {% endfor %}
-    </div>
-  </section>
+      {% comment %}
+        The four words this page is built out of, said once, where somebody
+        reading a number can reach them. The full catalogue — every definition,
+        its version and its population — is the Definitsioonid tab, which is on
+        the strip above.
+      {% endcomment %}
+      <section class="railblock" aria-label="Definitsioonid">
+        <details class="foldout">
+          <summary class="foldout__trigger">
+            <span class="foldout__label">Mida need arvud tähendavad</span>
+          </summary>
+          <div class="foldout__body">
+            <p class="cardnote">Avatud teema — teema, mis ei ole lõpetatud ega arhiveeritud.</p>
+            <p class="cardnote">Arvamus välja — süsteemis saadetuks märgitud arvamus koos failiga.</p>
+            <p class="cardnote">Töövõit — muudatus, mis on eelnõu või seletuskirja tekstis näha.</p>
+            <p class="cardnote">Üle tähtaja — TEEN-tegevus, mille tähtaeg on möödas. OOTAN ja JÄLGIN siia ei loe.</p>
+          </div>
+        </details>
+      </section>
+    </aside>
+  </div>
 {% endblock %}

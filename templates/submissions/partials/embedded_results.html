@@ -47,8 +47,19 @@ register and is resolved on the detail page instead (docs/adr/0028).
   {% endif %}
 
   {% if opinion_rows and not opinion_refusal %}
-    <div class="tablewrap tablewrap--evidence">
-      {% if opinion_view == opinion_archive_view %}
+    {% comment %}
+      Two row shapes, because there are two sources and they are not
+      interchangeable. A canonical Submission is a recorded outbound act and
+      names the Teema it came from; a held archive letter is evidence of past
+      correspondence and deliberately names no Teema at all — that identity
+      would make the archive a route into the register and is resolved on the
+      detail page instead (docs/adr/0028).
+
+      The archive keeps its table: its four columns are the same four facts on
+      every row, which is exactly what a table is for.
+    {% endcomment %}
+    {% if opinion_view == opinion_archive_view %}
+      <div class="tablewrap tablewrap--evidence">
         <table class="table">
           <caption class="visually-hidden">Koja varasemad väljasaadetud kirjad</caption>
           <thead>
@@ -88,44 +99,52 @@ register and is resolved on the detail page instead (docs/adr/0028).
             {% endfor %}
           </tbody>
         </table>
+      </div>
       {% else %}
-        <table class="table">
-          <caption class="visually-hidden">Selles süsteemis saadetud arvamused</caption>
-          <thead>
-            <tr>
-              <th scope="col">Saadetud</th>
-              <th scope="col">Arvamus</th>
-              <th scope="col">Teema</th>
-              <th scope="col">Adressaat</th>
-              <th scope="col">Tõend</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for submission in opinion_rows %}
-              <tr>
-                <td class="table__date">
-                  {% comment %}
-                    The register supplies a date and this system supplies a
-                    timestamp, and the difference is rendered rather than
-                    flattened — printing "00:00" beside a reconstructed date
-                    tells a lawyer the letter went out at midnight, which no
-                    source ever said (Stage-2H brief 20).
-                  {% endcomment %}
+        {% comment %}
+          Two lines per letter, in the `submission` component the Matter's own
+          Arvamused page uses. Not a table: the meta line is four facts of very
+          different lengths, and a table gave the shortest of them a fifth of
+          the width (02-EKRAANID §C).
+
+          No «Saadetud» badge and no kind chip. Everything in this tab is sent
+          by construction — the tab strip above says so — and a badge repeating
+          the tab on every row is a word a reader steps over N times.
+
+          The file sits at the end of the meta line, and only for a reader who
+          may open it: the download route already refuses the bytes, but naming
+          the file is itself a disclosure (AUTH-003 §21).
+        {% endcomment %}
+        {% for submission in opinion_rows %}
+          <article class="submission">
+            <div class="submission__head">
+              <h3 class="submission__title">
+                <a href="{% url 'matters:matter_position' pk=submission.matter_id %}">{{ submission.title }}</a>
+              </h3>
+            </div>
+            <dl class="submission__meta">
+              <div>
+                <dt>Saadetud</dt>
+                <dd>
                   {% if submission.sent_at %}
+                    {% comment %}
+                      The register supplies a date and this system supplies a
+                      timestamp, and the difference is rendered rather than
+                      flattened — printing "00:00" beside a reconstructed date
+                      tells a lawyer the letter went out at midnight, which no
+                      source ever said (Stage-2H brief 20).
+                    {% endcomment %}
                     {% if submission.sent_at_precision == "DATE" %}
                       {{ submission.sent_at|date:"j.n.Y" }}
                     {% else %}
                       {{ submission.sent_at|date:"j.n.Y H:i" }}
                     {% endif %}
-                  {% else %}
-                    <span class="table__missing">—</span>
-                  {% endif %}
-                </td>
-                <td class="table__title">
-                  <a href="{% url 'matters:matter_position' pk=submission.matter_id %}">{{ submission.title }}</a>
-                  <span class="muted">· {{ submission.get_kind_display }}</span>
-                </td>
-                <td>
+                  {% else %}—{% endif %}
+                </dd>
+              </div>
+              <div>
+                <dt>Teema</dt>
+                <dd>
                   {% comment %}
                     The way back to the work. An arvamus is an outcome of a
                     teema, and a reader who found the letter must not have to
@@ -133,27 +152,29 @@ register and is resolved on the detail page instead (docs/adr/0028).
                     whole reason this section sits under the register.
                   {% endcomment %}
                   <a href="{% url 'matters:matter_detail' pk=submission.matter_id %}">{{ submission.matter.title }}</a>
-                </td>
-                <td>
-                  {% for row in submission.recipient_rows.all %}
-                    {% if row.role == "ADDRESSEE" %}{{ row.organisation.name }}{% if not forloop.last %}, {% endif %}{% endif %}
-                  {% empty %}
-                    <span class="table__missing">—</span>
-                  {% endfor %}
-                </td>
-                <td>
-                  {% if submission.final_version_id %}
-                    <a href="{% url 'documents:open' pk=submission.final_version.document_id %}">Ava</a>
+                </dd>
+              </div>
+              <div>
+                <dt>Adressaat</dt>
+                <dd>
+                  {% for organisation in submission.addressee_list %}{{ organisation.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
+                </dd>
+              </div>
+              <div class="submission__meta__file">
+                <dt class="visually-hidden">Fail</dt>
+                <dd>
+                  {% if submission.final_version and submission.final_version_readable %}
+                    <a href="{% url 'documents:download' pk=submission.final_version.pk %}">{{ submission.final_version.original_filename }}</a>
+                    <span class="muted">v{{ submission.final_version.version_number }} · {{ submission.final_version.size_bytes|filesizeformat }}</span>
                   {% else %}
-                    <span class="table__missing">—</span>
+                    <span class="muted">Fail puudub</span>
                   {% endif %}
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      {% endif %}
-    </div>
+                </dd>
+              </div>
+            </dl>
+          </article>
+        {% endfor %}
+    {% endif %}
   {% elif opinion_refusal %}
   {% elif opinion_query %}
     <p class="empty">Selle otsinguga arvamusi ei leitud.</p>

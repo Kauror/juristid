@@ -53,7 +53,7 @@ def test_statistika_is_a_destination_of_its_own(page, base_url, screenshots):
     # unscoped lookup matches both — which is Playwright telling us the two
     # surfaces really are distinct, exactly as intended.
     tabs = page.get_by_label("Statistika vaated")
-    for tab in ("Üldpilt", "Teemad", "Koja tegevus", "Ajalooline materjal", "Andmekvaliteet"):
+    for tab in ("Ülevaade", "Teemad", "Tegevus", "Ajalugu", "Andmekvaliteet", "Definitsioonid"):
         expect(tabs.get_by_role("link", name=tab, exact=True)).to_be_visible()
 
     screenshots(page, "statistika-ulevaade")
@@ -211,9 +211,15 @@ def test_a_csv_export_respects_the_filter_that_was_on_screen(page, base_url):
 
 
 def test_a_definition_is_available_beside_every_number(page, base_url, screenshots):
-    """ "Kuidas arvutatakse?" opens the reviewed definition in place."""
+    """ "Kuidas arvutatakse?" opens the reviewed definition in place.
+
+    On `Teemad` rather than on the overview: the v2 design replaced the
+    overview's metric cards with tables and moved the definitions to their own
+    tab, so the card this is about lives on the sub-tabs the redesign did not
+    touch (02-EKRAANID §E).
+    """
     sign_in(page, base_url, MARTIN)
-    open_statistics(page, base_url)
+    open_statistics(page, base_url, "teemad/")
 
     disclosure = page.locator("details.definition").first
     disclosure.get_by_text("Kuidas arvutatakse?").click()
@@ -268,8 +274,14 @@ def test_a_chart_can_be_read_as_a_table(page, base_url):
 
 
 def test_the_charts_carry_a_name_and_a_description_for_a_screen_reader(page, base_url):
+    """On a tab that still has charts.
+
+    The overview has none since the v2 rebuild — it is tables and counts — and
+    the sub-tabs it deliberately did not redesign still draw them
+    (02-EKRAANID §E).
+    """
     sign_in(page, base_url, MARTIN)
-    open_statistics(page, base_url)
+    open_statistics(page, base_url, "teemad/")
 
     trend = page.locator("svg.trend").first
     expect(trend).to_have_attribute("role", "img")
@@ -316,28 +328,34 @@ def test_a_submission_number_reaches_the_submission_list(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_the_landing_page_answers_its_five_questions_in_order(page, base_url, screenshots):
-    """Põhinäitajad, muutus, pikk ajajoon, praegune portfell, andmekatvus.
+def test_the_landing_page_answers_its_questions_in_order(page, base_url, screenshots):
+    """A strip, three tables, and a column of counts beside them.
 
-    Order matters: somebody opening this page is asking "how much is there",
-    then "is that more or less than before", then "what is on the desk now".
+    The v2 design took the charts off this page: every number that was a bar is
+    a row now, and every row still opens the records it counted. Order still
+    matters — how many are there, then by month, then by subject, then by kind
+    (02-EKRAANID §E).
     """
     sign_in(page, base_url, MARTIN)
     open_statistics(page, base_url)
 
-    # Compared case-insensitively: `.sectionlabel` is uppercased in CSS, and
-    # `inner_text()` returns rendered text. Asserting the rendered casing would
-    # make this test fail the day somebody changes a `text-transform`, which is
-    # not what it is here to catch.
-    headings = page.locator("h2.sectionlabel")
+    expect(page.locator(".seis .seis__figure").first).to_be_visible()
+    assert page.locator("svg.trend").count() == 0
+    assert page.locator(".barchart").count() == 0
+
+    headings = page.locator(".ovbody__main h2.ovsection__title")
     rendered = [headings.nth(i).inner_text().strip().lower() for i in range(headings.count())]
     assert rendered == [
-        "põhinäitajad",
-        "muutus eelmise aastaga",
-        "pikk ajajoon",
-        "praegune portfell",
-        "andmekatvus",
+        "uued teemad kuude kaupa",
+        "teemad valdkondade järgi",
+        "teemad menetlusliigi järgi",
     ]
+
+    # Every figure on the strip is a link, and so is every row of the rail.
+    assert (
+        page.locator(".seis .seis__figure[href]").count()
+        == page.locator(".seis .seis__figure").count()
+    )
     screenshots(page, "statistika-ulevaade-2")
 
 
@@ -348,7 +366,9 @@ def test_the_two_long_trends_start_in_different_years(page, base_url):
     bars, rather than a run of zeros implying Koda sent nothing before 2020.
     """
     sign_in(page, base_url, MARTIN)
-    open_statistics(page, base_url)
+    # On `Tegevus`: the overview has no charts since the v2 rebuild, and this is
+    # where the archive trend is drawn (02-EKRAANID §E).
+    open_statistics(page, base_url, "tegevus/")
 
     archive = page.locator("section.chart").filter(has_text="Arvamuste arhiiv aastate kaupa")
     expect(archive).to_be_visible()
@@ -359,34 +379,18 @@ def test_the_two_long_trends_start_in_different_years(page, base_url):
     assert "2011" not in years
 
 
-def test_the_comparison_card_is_readable_without_seeing_a_colour(page, base_url, screenshots):
-    """No arrow, no red, no green. The change is a sentence (brief 34, 81)."""
-    sign_in(page, base_url, MARTIN)
-    open_statistics(page, base_url)
-
-    card = page.locator(".comparison").first
-    expect(card).to_be_visible()
-    text = card.inner_text()
-    assert "rohkem" in text or "vähem" in text or "muutumatu" in text
-    # Both windows are printed, so nobody has to assume the two sides are
-    # comparable. That assumption is what makes a part year look like a collapse.
-    expect(card.get_by_text("Praegune periood")).to_be_visible()
-    expect(card.get_by_text("Võrreldav varasem periood")).to_be_visible()
-    screenshots(page, "statistika-vordlus")
-
-
-def test_a_previous_period_of_zero_shows_no_percentage(page, base_url):
-    """The seeded archive's previous comparable window is empty.
-
-    So the card must say the percentage is unavailable rather than print an
-    infinity or a fabricated 100 % (brief 73).
-    """
-    sign_in(page, base_url, MARTIN)
-    open_statistics(page, base_url)
-
-    card = page.locator(".comparison").filter(has_text="Arhiivi arvamuste muutus").first
-    expect(card).to_be_visible()
-    assert "∞" not in card.inner_text()
+# The two comparison-card browser tests that stood here are gone with the cards.
+#
+# `Muutus eelmise aastaga` was a section of the Statistika overview, and the v2
+# design replaced that page with a strip, three tables and a column of counts —
+# no charts, no comparison cards (02-EKRAANID §E). The two metric definitions
+# behind them are untouched in the catalogue and are still computed and asserted
+# where the rules actually live: both sides cut at the same date, and a previous
+# period of zero yielding no percentage rather than an infinity
+# (tests/test_reporting_archive_trends.py).
+#
+# The surface itself is an open item, not a silent deletion
+# (app/core/development_status.py, DS-21).
 
 
 def test_the_responsibility_matrix_is_a_real_table_that_scrolls(page, base_url, screenshots):

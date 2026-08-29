@@ -75,8 +75,8 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     screenshots(page, "00-ulevaade")
 
     # -- Minu töö is the personal queue ----------------------------------
-    page.locator(".topnav__link", has_text="Minu töö").click()
-    expect(page.get_by_role("heading", name="Minu töö")).to_be_visible()
+    page.locator(".topnav__link", has_text="Minu asjad").click()
+    expect(page.get_by_role("heading", name="Minu asjad")).to_be_visible()
     # One dated list, whatever the mode. `Järgmise tegevuseta` is beside it
     # and deliberately not in it: an absence has no position in time.
     #
@@ -144,7 +144,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # date now, so which band a step lands in depends on the date it was given
     # and on what else this persona is carrying. What must be true is that the
     # step is on the page, in a row, saying which mode it is (Teema QA §3).
-    page.locator(".topnav__link", has_text="Minu töö").click()
+    page.locator(".topnav__link", has_text="Minu asjad").click()
     row = page.locator(".workrow2").filter(has_text="Koosta ja saada koja arvamus")
     expect(row).to_have_count(1)
     expect(row.locator(".mode--do")).to_be_visible()
@@ -196,11 +196,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # The superseded DO must no longer be presented as the current action.
     expect(page.locator(".uxnext").get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
 
-    # The chronology is collapsed by default: a Matter opens on what to do
-    # next, not on its history.
+    # The chronology is open by default since the v2 rebuild — the first page of
+    # it is what a lawyer opens the file for — and it is still below the next
+    # step, which is what "a Matter opens on what to do next" actually means
+    # (02-EKRAANID §C).
     timeline = page.locator("#ajajoon")
-    expect(timeline).not_to_have_attribute("open", "")
-    timeline.locator(".accordion__head").click()
+    expect(timeline).to_have_attribute("open", "")
+    assert timeline.bounding_box()["y"] > page.locator(".uxnext").bounding_box()["y"]
     # One professional update, one line. The spine says what kind of line it is,
     # and what the save *decided* rides with it on its own strip rather than as
     # a clause — «lisas märkuse ja määras järgmise sammu» said in words what the
@@ -214,7 +216,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # The Matter is now OOTAN — and it is still in the one list, banded by its
     # date rather than moved to a column of its own. The row carries the mode
     # chip that says what the date means (Teema QA §3).
-    page.locator(".topnav__link", has_text="Minu töö").click()
+    page.locator(".topnav__link", has_text="Minu asjad").click()
     expect(page.get_by_role("heading", name="Ootan ja kontrollin")).to_have_count(0)
     row = page.locator(".workrow2").filter(has_text="Ootan ministeeriumi uut sõnastust")
     expect(row).to_have_count(1)
@@ -305,7 +307,6 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # -- Timeline order --------------------------------------------------
     page.goto(matter_url)
-    page.locator("#ajajoon .accordion__head").click()
     # innerText reports the rendered text, and these labels are uppercased by
     # CSS, so the comparison is case-insensitive.
     kinds = [

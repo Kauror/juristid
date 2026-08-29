@@ -49,7 +49,7 @@ def test_statistika_is_in_the_main_navigation(client, world):
     response = client.get("/statistika/")
     body = response.content.decode()
     assert 'href="/statistika/"' in body
-    assert "Ülevaade" in body and "Minu töö" in body and "Teemad" in body
+    assert "Ülevaade" in body and "Minu asjad" in body and "Teemad" in body
 
 
 def test_the_active_tab_is_marked_for_a_screen_reader(client, world):
@@ -82,8 +82,19 @@ def test_the_shared_gate_reaches_statistika_without_a_persona(client, world, set
 
     response = client.get("/statistika/", {"periood": "koik"})
     assert response.status_code == 200
-    # The department's numbers, and none of the restricted Matter's.
-    assert response.context["cards"][0].value == 11
+    # The department's numbers, and none of the restricted Matter's. Read off
+    # the strip, which is where the v2 overview puts its figures; the metric
+    # behind the first one is the catalogue's own `ACTIVE_FULL_MATTERS`.
+    #
+    # Five, not six: a reader entitled to the restricted Matter sees it in this
+    # figure and a shared-gate session does not. That difference *is* the test —
+    # a smaller number, never a locked placeholder (01-EHITUSJUHIS §3.4).
+    figure = response.context["seis"][0]
+    assert figure.caption == "avatud teemat"
+    assert figure.value == 5
+    client.force_login(world.martin)
+    entitled = client.get("/statistika/", {"periood": "koik"})
+    assert entitled.context["seis"][0].value == 6
     assert RESTRICTED_ONLY_WORD not in response.content.decode()
 
 

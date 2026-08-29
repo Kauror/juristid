@@ -24,9 +24,10 @@ from urllib.parse import urlencode
 from django.core.paginator import Paginator
 from django.http import Http404, HttpRequest, HttpResponse, StreamingHttpResponse
 from django.shortcuts import render
+from django.utils import timezone
 
-from app.core.decorators import gate_required
-from app.reporting import charts, exports, filters, services
+from app.core.decorators import gate_required, viewer_for
+from app.reporting import charts, exports, filters, overview_strip, services
 from app.reporting import context as reporting_context
 from app.reporting import metric_catalogue as metric_keys
 from app.reporting.context import ReportingContext
@@ -37,14 +38,43 @@ from app.reporting.selectors import submissions as submission_selectors
 
 PAGE_SIZE = 50
 
+#: The metrics the overview strip and rail read. Existing catalogued
+#: definitions, read for their value and their own drill-through — not a second
+#: arithmetic taken beside them (app/reporting/overview_strip.py).
+OVERVIEW_STRIP_METRICS = [
+    metric_keys.ACTIVE_FULL_MATTERS,
+    metric_keys.NEW_NATIVE_FULL_MATTERS,
+    metric_keys.SUBMISSIONS_SENT,
+]
+
+
+def compute_many_by_key(keys: list[str], context: ReportingContext) -> dict[str, MetricResult]:
+    """The same results ``compute_many`` returns, addressable by key.
+
+    The strip names the figures it wants rather than depending on list order,
+    which is what stops a metric added to the group above silently shifting
+    every caption down one.
+    """
+    return {key: services.compute(key, context) for key in keys}
+
+
 #: The tab strip, in reading order: what happened, about what, by whom, out of
 #: what material, and where the data falls short.
+#: Renamed by the v2 design, which names five tabs — Ülevaade, Teemad, Tegevus,
+#: Ajalugu, Definitsioonid (02-EKRAANID §E). Andmekvaliteet is not in that list
+#: and is kept: it is a working page, and a tab strip that dropped it would hide
+#: it rather than retire it (docs/design-v2-compatibility.md, DS-07).
+#:
+#: Definitsioonid moved from a quiet button in the head onto the strip, because
+#: the design names it as one of the five and because it is a destination like
+#: the others rather than an action.
 TABS: tuple[tuple[str, str, str], ...] = (
-    ("ulevaade", "Üldpilt", "reporting:overview"),
+    ("ulevaade", "Ülevaade", "reporting:overview"),
     ("teemad", "Teemad", "reporting:matters"),
-    ("tegevus", "Koja tegevus", "reporting:activity"),
-    ("ajalooline", "Ajalooline materjal", "reporting:historical"),
+    ("tegevus", "Tegevus", "reporting:activity"),
+    ("ajalooline", "Ajalugu", "reporting:historical"),
     ("andmekvaliteet", "Andmekvaliteet", "reporting:quality"),
+    ("definitsioonid", "Definitsioonid", "reporting:definitions"),
 )
 
 
@@ -125,27 +155,39 @@ def _matrices(results: list[MetricResult]) -> list[dict[str, Any]]:
 
 @gate_required
 def overview(request: HttpRequest) -> HttpResponse:
-    """Üldpilt — five groups, in the order somebody arriving needs them.
+    """Ülevaade — counts and tables, and nothing that has to be interpreted.
 
-    Põhinäitajad, then how much work there is over time, then how much archived
-    advocacy, then what the department is holding right now, then how far the
-    data reaches. The two long trends deliberately start in different years, and
-    the two comparison cards are cut at the same date on both sides
-    (brief 11, 33, 43).
+    The v2 design took the charts off this page. What replaced them is the same
+    catalogued metrics read as tables: `Uued teemad kuude lõikes`, `Teemad
+    valdkonniti` and `Menetlusliigid` are three existing metric results whose
+    segments each carry the list they counted, printed as rows instead of bars
+    (02-EKRAANID §E).
+
+    Beside them, two columns of plain counts and a foldout that says what the
+    words mean. No chart, no target, no comparison with a colleague.
     """
     context = reporting_context.from_request(request)
-    page = services.overview_page(context)
+    viewer = viewer_for(request)
+    today = timezone.localdate()
+
+    cards = compute_many_by_key(OVERVIEW_STRIP_METRICS, context)
+    tables = [
+        services.compute(metric_keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH, context),
+        services.compute(metric_keys.MATTERS_BY_POLICY_AREA, context),
+        services.compute(metric_keys.MATTERS_BY_TRACK, context),
+    ]
+    period_label = "kõik aastad" if context.period.is_all else context.period.label
 
     return render(
         request,
         "reporting/overview.html",
         {
             **_shell(request, context, "ulevaade"),
-            "cards": page.cards,
-            "comparisons": page.comparisons,
-            "trends": _trends(page.trends),
-            "portfolio": _bars(page.charts),
-            "coverage": page.groups.get("coverage", []),
+            "seis": overview_strip.strip(cards, viewer, today, period_label),
+            "tables": tables,
+            "rail": overview_strip.rail(viewer, today, cards),
+            "people": services.compute(metric_keys.MATTERS_BY_OWNER, context),
+            "export_url": exports.export_url(context, "teemad"),
         },
     )
 
@@ -390,7 +432,7 @@ def definitions(request: HttpRequest) -> HttpResponse:
         request,
         "reporting/definitions.html",
         {
-            **_shell(request, context, "ulevaade"),
+            **_shell(request, context, "definitsioonid"),
             "definitions": sorted(CATALOGUE.values(), key=lambda item: item.label_et),
             "deferred": sorted(DEFERRED_METRICS.items()),
         },

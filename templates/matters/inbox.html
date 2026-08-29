@@ -2,19 +2,21 @@
 {% block title %}Saabunud · {{ application_name }}{% endblock %}
 
 {% comment %}
-Saabunud is a triage entry point, not a queue engine. Stage 1 gives it a strong
-"Uus teema" action and the unassigned open Matters anyone can pick up. Machine
-intake and an IntakeItem model arrive only when there is a real feed to consume
-(master specification 7.3).
+Saabunud is a triage entry point, not a queue engine. A strong way to file what
+has arrived, the open Matters nobody has taken, and what was opened lately.
+Machine intake and an IntakeItem model arrive only when there is a real feed to
+consume (master specification 7.3).
+
+A Matter with no owner is on nobody's Minu asjad by definition — it has no
+responsible person for the work model to file it under. This page and Ülevaade
+are the two places it is visible at all, which is why the strip leads with it
+(app/matters/work_items.py).
 {% endcomment %}
 
 {% block content %}
 <div class="page">
   <div class="pagehead">
     <h1 class="pagehead__title">Saabunud</h1>
-    <span class="pagehead__context">
-      Registreeri saabunud materjal, alusta uut teemat või võta määramata teema enda peale.
-    </span>
     <span class="pagehead__actions">
       {% comment %}
         The primary action on this page. Filing what has arrived is the most
@@ -30,25 +32,46 @@ intake and an IntakeItem model arrive only when there is a real feed to consume
     </span>
   </div>
 
-  <p class="cardnote">
-    Saabunud materjal loob teema koos failidega. Uus teema alustab pealkirjast, kui
-    faili veel ei ole.
-  </p>
+  {% comment %}
+    The same strip, in the same place, as every other surface. Zeros are
+    dropped: «0 vastutajata teemat» is a warning about nothing
+    (01-EHITUSJUHIS §3.7).
+  {% endcomment %}
+  <div class="seis seis--compact">
+    {% for figure in seis %}
+      {% if figure.value %}
+        <a class="seis__figure" href="{{ figure.url }}">
+          <span class="seis__number{% if figure.tone %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
+          <span class="seis__caption">{{ figure.caption }}</span>
+        </a>
+      {% endif %}
+    {% endfor %}
+  </div>
 
   <section aria-labelledby="maaramata-heading">
     <h2 class="sectionlabel" id="maaramata-heading">
       Vastutajata teemad
-      <span class="sectionlabel__count">{{ unassigned|length }}</span>
+      <span class="sectionlabel__count">{{ unassigned_total }}</span>
     </h2>
     {% if unassigned %}
-      {% include "matters/partials/matter_table.html" with matters=unassigned %}
+      {% comment %}
+        Four rows and the rest behind «Näita veel N ▾». The extra rows are a
+        second `tbody` of the same table rather than a table of their own,
+        because `table-layout: fixed` reads its column widths from the first row
+        group and a separate table lines its columns up somewhere else
+        (01-EHITUSJUHIS §5).
+      {% endcomment %}
+      {% include "matters/partials/matter_table.html" with matters=unassigned extra=unassigned_rest extra_label="vastutajata teemad" %}
     {% else %}
       <p class="empty">Kõigil avatud teemadel on vastutaja.</p>
     {% endif %}
   </section>
 
   <section aria-labelledby="hiljutised-heading">
-    <h2 class="sectionlabel" id="hiljutised-heading">Hiljuti loodud</h2>
+    <h2 class="sectionlabel" id="hiljutised-heading">
+      Hiljuti loodud
+      <span class="sectionlabel__count">{{ recent|length }}</span>
+    </h2>
     {% if recent %}
       {% include "matters/partials/matter_table.html" with matters=recent %}
     {% else %}

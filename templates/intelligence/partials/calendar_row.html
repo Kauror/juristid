@@ -1,0 +1,39 @@
+{% comment %}
+One row of Olulised tähtajad: when, what, which file, and who carries it.
+
+The date is printed at the precision it was actually recorded to — a quarter
+reads as a quarter, and no heading invents a month for one. The word above it
+says which kind of date this is, because `Tähtaeg` and `Jõustumine` share this
+column and they are different obligations.
+
+Red is for a real deadline that has passed. A commencement date that has come
+and gone is a fact about the world, not a failure, so it is never dressed as one
+(01-EHITUSJUHIS §3.1).
+{% endcomment %}
+<tr>
+  <td class="table__date">
+    <span class="datemeaning">{% if row.is_effective_date %}Jõustumine{% else %}Tähtaeg{% endif %}</span>
+    <span class="dateline
+                 {% if not row.is_effective_date and row.record.period_end < today %}dateline--overdue{% endif %}
+                 {% if row.record.is_approximate %}dateline--approximate{% endif %}">{{ row.display_date }}</span>
+  </td>
+  <td class="table__title">
+    <span class="table__titlecell">
+      <a class="table__titlelink"
+         href="{% url 'matters:matter_detail' pk=row.matter.pk %}"
+         title="{{ row.title }}">{{ row.title|default:"—" }}</a>
+    </span>
+  </td>
+  <td class="table__matter">
+    <span class="table__clip" title="{{ row.matter.title }}">
+      <a href="{% url 'matters:matter_detail' pk=row.matter.pk %}">{{ row.matter.title }}</a>
+    </span>
+  </td>
+  <td class="table__owner">
+    {% if row.matter.owner %}
+      <span class="table__clip" title="{{ row.matter.owner.display_name }}">{{ row.matter.owner.get_short_name }}</span>
+    {% else %}
+      <span class="table__clip" title="Vastutajata">—</span>
+    {% endif %}
+  </td>
+</tr>

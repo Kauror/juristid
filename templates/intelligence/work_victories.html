@@ -2,7 +2,7 @@
 {% block title %}Töövõidud · {{ application_name }}{% endblock %}
 
 {% comment %}
-A filterable list of what the department claims and what it has confirmed.
+What the department claims and what it has confirmed, a year at a time.
 
 Deliberately not a scoreboard. There is no success rate, no ministry ranking and
 no per-lawyer count, because none of them has a defensible denominator or an
@@ -22,45 +22,23 @@ the selected year (Stage-2G brief 27).
 {% endblock %}
 
 {% block watchlist %}
-  <section aria-labelledby="toovoidud-heading">
-    <h2 class="sectionlabel" id="toovoidud-heading">
-      Töövõidud
-      <span class="sectionlabel__count">{{ total }}</span>
-    </h2>
+  {% comment %}
+    The one sentence this page keeps, because it states the rule that decides
+    what may be written down at all — and the prototype keeps it too.
+  {% endcomment %}
+  <p class="cardnote">
+    Töövõit on kirja pandud siis, kui ettepanek on tekstis näha — mitte lubadus
+    ega hinnang.
+  </p>
 
-    {% if page.object_list %}
-      <ul class="factlist">
-        {% for record in page.object_list %}
-          <li class="factrow">
-            <span class="factrow__date">
-              {% if record.has_period %}
-                {{ record.display_period }}
-              {% else %}
-                <span class="factrow__date--undated">Teadmata periood</span>
-              {% endif %}
-            </span>
-            <span class="factrow__body">
-              <span class="victorystate victorystate--{{ record.status|lower }}">
-                {{ record.get_status_display }}
-              </span>
-              <span class="factrow__title">{{ record.title }}</span>
-              <a class="factrow__matter" href="{% url 'matters:matter_detail' pk=record.matter.pk %}">
-                {{ record.matter.title }}
-              </a>
-              {% if record.confirmed_by %}
-                <span class="muted">Kinnitas {{ record.confirmed_by.display_name }}</span>
-              {% endif %}
-            </span>
-          </li>
-        {% endfor %}
-      </ul>
+  {% for section in sections %}
+    {% include "intelligence/partials/tracking_section.html" with section=section columns=columns caption=section.label row_template="intelligence/partials/victory_row.html" %}
+  {% empty %}
+    <p class="empty">
+      Valitud filtritega töövõite ega kandidaate ei ole. Kandidaadi saab lisada
+      teema lehel; töövõiduks kinnitab selle osakonnajuht.
+    </p>
+  {% endfor %}
 
-      {% include "components/pagination.html" with page=page query_string=query_string %}
-    {% else %}
-      <p class="empty">
-        Valitud filtritega töövõite ega kandidaate ei ole. Kandidaadi saab lisada
-        teema lehel; töövõiduks kinnitab selle osakonnajuht.
-      </p>
-    {% endif %}
-  </section>
+  {% include "components/pagination.html" with page=page query_string=query_string %}
 {% endblock %}

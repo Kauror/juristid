@@ -86,8 +86,12 @@ def test_a_normal_matter_answers_everything_above_the_fold(page, base_url):
         assert box is not None, f"{selector} did not render"
         assert box["y"] < fold, f"{selector} starts below the fold at {box['y']}px"
 
-    # The chronology is closed, and the documents are a tab away.
-    expect(page.locator("#ajajoon")).not_to_have_attribute("open", "")
+    # The chronology is open, and the documents are a tab away.
+    # Open by default since the v2 rebuild: the first page of the chronology is
+    # what a lawyer opens the file for, and closing it made every visit cost a
+    # click before the page said anything (02-EKRAANID §C). Still a <details>,
+    # so it closes.
+    expect(page.locator("#ajajoon")).to_have_attribute("open", "")
     expect(page.locator(".tabs__tab")).to_have_count(2)
 
 
@@ -164,15 +168,20 @@ def test_a_busy_matter_still_opens_on_what_to_do_next(page, base_url):
 
     page.goto(url)
     timeline = page.locator("#ajajoon")
-    expect(timeline).not_to_have_attribute("open", "")
-    # Collapsed, it is one line: a count and when it last moved.
+    # Open by default since the v2 rebuild: the first page of the chronology is
+    # what a lawyer opens the file for, and closing it made every visit cost a
+    # click before the page said anything (02-EKRAANID §C). Still a <details>,
+    # so it closes.
+    expect(timeline).to_have_attribute("open", "")
+    # Its summary line still says how much there is and when it last moved.
     expect(timeline.locator(".uxtl__count")).to_contain_text("kirjet")
-    # The entries are in the document — a closed <details> still renders its
-    # children — and none of them is painted across the top of the page.
-    expect(page.locator(".uxtl__body").first).to_be_hidden()
 
+    # What the fold test is actually about: a Matter with two hundred entries
+    # still opens on what to do next, not on its history. The chronology is
+    # below the next step, however many entries it holds.
     fold = page.viewport_size["height"]
     assert page.locator(".uxnext").bounding_box()["y"] < fold
+    assert timeline.bounding_box()["y"] > page.locator(".uxnext").bounding_box()["y"]
     assert page.locator("summary.uxcomp__collapsed").bounding_box()["y"] < fold
 
 
@@ -229,10 +238,9 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     expect(page.locator(".uxnext")).to_contain_text("teema on suletud")
     # No writable next step and no composer at all.
     expect(page.locator("#teema-koostaja")).to_have_count(0)
-    # The past stays readable.
-    page.locator("#ajajoon .accordion__head").click()
-    # Scoped to the entry body: the closed accordion quotes the newest entry in
-    # its own summary line, so the words are on the page twice (design handoff 1b).
+    # The past stays readable, and is open on arrival.
+    # Scoped to the entry body: the accordion quotes the newest entry in its own
+    # summary line, so the words are on the page twice (design handoff 1b).
     expect(page.locator(".richtext").get_by_text("Menetlus lõppes; töö on tehtud.")).to_be_visible()
 
 
@@ -356,12 +364,16 @@ def test_muuda_teemat_fits_every_width_the_department_uses(page, base_url, width
 
     assert not document_overflows(page), f"the edit page scrolled sideways at {width}px"
 
-    # Every field is on the page and inside it. The date pair and the
-    # owner/stage/track row are a grid that stacks when a column would fall
-    # below 16rem, so this is the check that the stacking actually happens
-    # rather than the row overflowing (static/css/app.css, `.fieldrow`).
+    # Every field is on the page and inside it. The paired rows are a grid that
+    # stacks below ~1024px, so this is the check that the stacking actually
+    # happens rather than the row overflowing (static/css/app.css,
+    # `.createform__pair`).
+    #
+    # `#id_owner` is a chip group since the v2 rebuild — one input per option,
+    # so the first of them is `#id_owner_0` — and the two pages now share one
+    # visual language (02-EKRAANID §C).
     page_width = page.evaluate("() => document.documentElement.clientWidth")
-    for field in ("#id_title", "#id_owner", "#id_received_date", "#id_response_deadline"):
+    for field in ("#id_title", "#id_owner_0", "#id_received_date", "#id_response_deadline"):
         box = page.locator(field).bounding_box()
         assert box is not None, f"{field} is not rendered at {width}px"
         assert box["x"] >= -1, f"{field} starts off the left edge at {width}px"
@@ -401,7 +413,7 @@ def test_muuda_teemat_saves_the_whole_record_at_once(page, base_url):
 def test_minu_too_is_one_dated_list(page, base_url):
     """All three modes in one chronological list, each saying what it is."""
     sign_in(page, base_url, MARTIN)
-    page.goto(f"{base_url}/minu-too/")
+    page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
 
     expect(page.get_by_role("heading", name="Ootan ja kontrollin")).to_have_count(0)
@@ -435,9 +447,8 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
     page.locator(".composer__body").press("ControlOrMeta+Enter")
     page.wait_for_load_state("networkidle")
 
-    page.locator("#ajajoon .accordion__head").click()
-    # Scoped to the entry body: the closed accordion quotes the newest entry in
-    # its own summary line, so the words appear twice on the page now
+    # Scoped to the entry body: the accordion quotes the newest entry in its own
+    # summary line, so the words appear twice on the page now
     # (design handoff 1b).
     expect(page.locator(".richtext").get_by_text("Salvestatud klaviatuurilt.")).to_be_visible()
 

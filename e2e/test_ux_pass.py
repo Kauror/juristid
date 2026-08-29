@@ -29,7 +29,7 @@ pytestmark = pytest.mark.e2e
 #: link on from a train.
 WIDTHS = (1440, 1366, 1280, 1024, 900, 720, 480, 375)
 
-PAGES = ("/ulevaade/", "/minu-too/", "/teemad/", "/osakonna-too/")
+PAGES = ("/ulevaade/", "/minu-asjad/", "/teemad/", "/osakonna-too/")
 
 
 def overflows(page) -> bool:
@@ -176,7 +176,8 @@ def test_the_timeline_draws_one_spine(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_matter(page, base_url, OPEN_TITLE)
 
-    page.locator(".accordion--timeline > summary").click()
+    # Open on arrival since the v2 rebuild (02-EKRAANID §C), so there is
+    # nothing to click before the spine is on screen.
     expect(page.locator("#ajalugu-loend.uxtl")).to_be_visible()
     expect(page.locator(".uxtl__dot").first).to_be_visible()
 
@@ -188,7 +189,7 @@ def test_the_timeline_draws_one_spine(page, base_url):
 
 def test_j_and_k_move_the_selection_and_enter_opens_the_matter(page, base_url):
     sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/minu-too/")
+    page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
 
     rows = page.locator("[data-workrow]")
@@ -212,7 +213,7 @@ def test_j_and_k_move_the_selection_and_enter_opens_the_matter(page, base_url):
 def test_the_quick_complete_button_is_on_the_row_and_x_presses_it(page, base_url):
     """The keyboard shortcut and its visible control are the same button."""
     sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/minu-too/")
+    page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
 
     rows = page.locator("[data-workrow]")
@@ -236,7 +237,7 @@ def test_the_quick_complete_button_is_on_the_row_and_x_presses_it(page, base_url
 
 def test_the_keyboard_hints_are_printed_where_the_keys_work(page, base_url):
     sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/minu-too/")
+    page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
 
     hints = page.locator(".uxkeys")

@@ -95,8 +95,18 @@ def test_a_passed_review_date_is_ripe_and_never_overdue(specialist, today, kind,
 
     bands = _bands(specialist, today)
 
-    assert "Ootan ministeeriumi vastust" in _texts(bands.get(wi.BAND_RIPE))
+    # The v2 banding merged the reviews into *Sel nädalal* — they are ordinary
+    # dated work, not a category of their own. What did not change, and is the
+    # whole point of this test, is that a passed review is never late: it is not
+    # in the red band, it is not counted as overdue, and its row prints a
+    # neutral «N p» rather than «N p üle» (design handoff 03 §1).
+    assert "Ootan ministeeriumi vastust" in _texts(bands.get(wi.BAND_WEEK))
     assert wi.BAND_OVERDUE not in bands
+    item = next(
+        row for row in bands[wi.BAND_WEEK].items if row.text == "Ootan ministeeriumi vastust"
+    )
+    assert item.is_review_ripe and not item.is_overdue
+    assert item.short_date == "30 p"
     work = build_my_work(specialist, today=today)
     assert work.overdue == 0
 
@@ -420,9 +430,11 @@ def test_the_page_renders_and_omits_empty_bands(client, specialist, today):
     body = client.get(reverse("matters:my_work")).content.decode()
 
     assert "Ainus tegevus" in body
-    assert "Täna" in body
+    # Today is the first day of this week, not a band of its own (03 §1).
+    assert "Sel nädalal" in body
     # An empty band is omitted entirely rather than rendered as an empty state.
     assert "Üle tähtaja" not in body
+    assert "Järgmised 30 päeva" not in body
 
 
 def test_an_empty_day_says_so_once(client, specialist):

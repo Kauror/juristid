@@ -102,7 +102,7 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     page.goto(f"{base_url}/saabunud/lisa/")
     page.set_input_files("input[name='uploads']", str(synthetic_pdf))
     page.fill("input[name='title']", MATTER_TITLE)
-    page.get_by_role("button", name="Salvesta ja ava teema").click()
+    page.get_by_role("button", name="Registreeri ja loo teema").click()
 
     expect(page.get_by_role("heading", name=MATTER_TITLE)).to_be_visible()
     screenshots(page, "20-saabunud-lisatud")
@@ -163,8 +163,12 @@ def test_a_restricted_document_is_invisible_to_a_reader(page, base_url, syntheti
     # An owner, because a RESTRICTED Matter with nobody on it is invisible to
     # everybody including whoever filed it — restricted access follows
     # participation, not authorship. Stage 2A.5 found this the same way.
-    page.select_option("select[name='owner']", label=SANDRA.short_name)
-    page.get_by_role("button", name="Salvesta ja ava teema").click()
+    #
+    # A chip since the v2 rebuild: the intake form uses the same controls as
+    # `Uus teema`, so the owner is a radio group rather than a select
+    # (02-EKRAANID §F).
+    page.get_by_role("radio", name=SANDRA.short_name, exact=True).check()
+    page.get_by_role("button", name="Registreeri ja loo teema").click()
     expect(page.get_by_role("heading", name="Piiratud katsedokument")).to_be_visible()
 
     run_worker()
@@ -200,7 +204,7 @@ def test_an_email_shows_its_sender_and_its_attachments(
     page.goto(f"{base_url}/saabunud/lisa/")
     page.set_input_files("input[name='uploads']", str(path))
     page.fill("input[name='title']", "Saabunud kiri ministeeriumist")
-    page.get_by_role("button", name="Salvesta ja ava teema").click()
+    page.get_by_role("button", name="Registreeri ja loo teema").click()
     expect(page.get_by_role("heading", name="Saabunud kiri ministeeriumist")).to_be_visible()
 
     run_worker()

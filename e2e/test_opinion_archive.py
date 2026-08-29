@@ -423,6 +423,17 @@ def opinion_search(page, text: str):
     page.wait_for_load_state("networkidle")
 
 
+def opinion_row_count(page) -> int:
+    """How many rows the Arvamused section is showing, whichever tab is open.
+
+    Two shapes since the v2 rebuild: `Saadetud` draws two-line `submission`
+    cards, `Arhiiv` keeps its table because its four columns are the same four
+    facts on every row (02-EKRAANID §C).
+    """
+    results = page.locator("#arvamused-tulemused")
+    return results.locator(".submission").count() + results.locator("tbody tr").count()
+
+
 def test_the_live_opinion_search_keeps_the_address_honest(page, base_url):
     """One invariant, in the one place it can actually be broken.
 
@@ -448,7 +459,7 @@ def test_the_live_opinion_search_keeps_the_address_honest(page, base_url):
 
     # 2. A live Arvamused search on top of it.
     opinion_search(page, "ministeeriumile")
-    opinion_rows = page.locator("#arvamused-tulemused tbody tr").count()
+    opinion_rows = opinion_row_count(page)
     assert opinion_rows, "the opinion search matched nothing, so this proves nothing"
 
     # 3. Both parameters are in the visible /teemad/ URL, and the fragment
@@ -465,7 +476,7 @@ def test_the_live_opinion_search_keeps_the_address_honest(page, base_url):
     page.goto(copied)
     page.wait_for_load_state("networkidle")
     assert page.locator("#teemad-tulemused tbody tr").count() == teemad_rows
-    assert page.locator("#arvamused-tulemused tbody tr").count() == opinion_rows
+    assert opinion_row_count(page) == opinion_rows
     expect(page.locator(".registercount")).to_contain_text("pakendiseaduse")
     expect(page.locator("#arvamused-otsing")).to_have_value("ministeeriumile")
     expect(page.locator("#teemad-otsing")).to_have_value("pakendiseaduse")
@@ -493,7 +504,7 @@ def test_back_returns_to_the_previous_opinion_search(page, base_url):
 
     opinion_search(page, "ministeeriumile")
     assert "arvamus_q=ministeeriumile" in page.url
-    found = page.locator("#arvamused-tulemused tbody tr").count()
+    found = opinion_row_count(page)
 
     page.go_back()
     page.wait_for_load_state("networkidle")
@@ -501,7 +512,7 @@ def test_back_returns_to_the_previous_opinion_search(page, base_url):
     assert "arvamus_q" not in page.url, page.url
     assert page.url.endswith("/teemad/") or "arvamus_q" not in page.url
     # The section came back unfiltered rather than showing a stale answer.
-    assert page.locator("#arvamused-tulemused tbody tr").count() >= found
+    assert opinion_row_count(page) >= found
 
 
 def test_the_register_search_is_not_disturbed_by_the_opinion_push(page, base_url):

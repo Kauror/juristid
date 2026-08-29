@@ -1,29 +1,34 @@
 {% extends "base.html" %}
+{% load stage_help %}
 {% block title %}Muuda teemat · {{ application_name }}{% endblock %}
 
 {% comment %}
-  `Muuda teemat` — the whole record on one page.
+  `Muuda teemat` — the whole record on one page, in the same shape as `Uus
+  teema`.
 
-  The inline controls in the Teema header and rail are still the right tool for
-  changing one field. This page is for the other case: a Matter filed wrongly,
-  where several facts are wrong at once and clicking five separate controls in
-  two regions of the page is one job pretending to be five.
+  That sameness is the point of this round. The two pages ask about the same
+  record and were drawn as two different forms: chips on one, select boxes on
+  the other, a different order, a different density. Two visual languages for
+  one job is a page a person has to learn twice (02-EKRAANID §C).
 
-  One form, one save, one transaction. Either every field applies or none does
-  (app/matters/views.py, `matter_edit`).
+  What is *not* shared is the business operation. Creating a Matter and
+  correcting one are different transactions with different rules, and they keep
+  their own form classes and their own services. Only the controls and the
+  layout are the same.
 
-  What it deliberately does not offer is stated on the page rather than merely
-  left out: the reference, the origin and the imported source are facts about
-  where this record came from, not decisions anybody makes today (Teema QA §2.2).
+  Two things this page has that `Uus teema` does not, because they only exist
+  once a record does: Sildid and Nähtavus, and the compact `Muutumatu` strip
+  that states the facts nobody edits.
+
+  There is no «Järgmine tegevus» panel here. The next step belongs to the Teema
+  page, where it is set beside the timeline it will appear on.
 {% endcomment %}
 
 {% block content %}
-<div class="page page--narrow">
+<div class="page page--create">
   <div class="pagehead">
     <h1 class="pagehead__title">Muuda teemat</h1>
-    <span class="pagehead__context">
-      {{ matter.title }}
-    </span>
+    <span class="pagehead__context">{{ matter.title }}</span>
   </div>
 
   <form class="form createform" method="post"
@@ -34,147 +39,317 @@
       <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
     {% endif %}
 
-    <label class="field">
-      <span class="field__label">{{ form.title.label }}</span>
-      {{ form.title }}
-      {% if form.title.errors %}<span class="field__error">{{ form.title.errors|first }}</span>{% endif %}
-    </label>
-
-    <label class="field">
-      <span class="field__label">{{ form.brief_summary.label }}</span>
-      {{ form.brief_summary }}
-      <span class="field__help">{{ form.brief_summary.help_text }}</span>
-      {% if form.brief_summary.errors %}<span class="field__error">{{ form.brief_summary.errors|first }}</span>{% endif %}
-    </label>
-
-    <div class="fieldrow">
+    {# 1 — Pealkiri. #}
+    <div class="createform__row createform__row--first">
       <label class="field">
-        <span class="field__label">{{ form.owner.label }}</span>
-        {{ form.owner }}
-        {% if form.owner.errors %}<span class="field__error">{{ form.owner.errors|first }}</span>{% endif %}
-      </label>
-
-      <label class="field">
-        <span class="field__label">{{ form.stage.label }}</span>
-        {{ form.stage }}
-        {% if form.stage.errors %}<span class="field__error">{{ form.stage.errors|first }}</span>{% endif %}
-      </label>
-
-      <label class="field">
-        <span class="field__label">{{ form.track.label }}</span>
-        {{ form.track }}
-        {% if form.track.errors %}<span class="field__error">{{ form.track.errors|first }}</span>{% endif %}
+        <span class="field__label">{{ form.title.label }}</span>
+        {{ form.title }}
+        {% if form.title.errors %}<span class="field__error">{{ form.title.errors|first }}</span>{% endif %}
       </label>
     </div>
 
-    <fieldset class="field">
-      <legend class="field__label">{{ form.policy_areas.label }}</legend>
-      {% comment %}
-        The governed vocabulary, plus whatever this Matter already carries. A
-        Matter filed years ago under a since-retired area keeps it and shows it
-        marked as retired, so correcting the title cannot silently drop the
-        filing — and unticking one stays a decision somebody makes deliberately
-        (Teema redesign §7.2).
-      {% endcomment %}
-      <div class="checkitems">
-        {% for choice in form.policy_areas %}
-          {% if choice.data.value in form.retired_area_ids %}
-            <label class="checkitem checkitem--retired">
-              {{ choice.tag }}
-              <span class="checkitem__name">{{ choice.choice_label }}<span class="checkitem__note">kasutusest väljas</span></span>
-            </label>
-          {% else %}
-            <label class="checkitem">
-              {{ choice.tag }}
-              <span class="checkitem__name">{{ choice.choice_label }}</span>
-            </label>
-          {% endif %}
-        {% endfor %}
-      </div>
-      {% if form.policy_areas.errors %}<span class="field__error">{{ form.policy_areas.errors|first }}</span>{% endif %}
-    </fieldset>
-
-    <label class="field">
-      <span class="field__label">{{ form.policy_area_other.label }}</span>
-      {{ form.policy_area_other }}
-      <span class="field__help">{{ form.policy_area_other.help_text }}</span>
-      {% if form.policy_area_other.errors %}<span class="field__error">{{ form.policy_area_other.errors|first }}</span>{% endif %}
-    </label>
-
-    <div class="fieldrow">
+    {# 2 — What it is about. #}
+    <div class="createform__row">
       <label class="field">
-        <span class="field__label">{{ form.source_organisations.label }}</span>
-        {{ form.source_organisations }}
-        <span class="field__help">{{ form.source_organisations.help_text }}</span>
-        {% if form.source_organisations.errors %}<span class="field__error">{{ form.source_organisations.errors|first }}</span>{% endif %}
-      </label>
-
-      <label class="field">
-        <span class="field__label">{{ form.addressee_organisation.label }}</span>
-        {{ form.addressee_organisation }}
-        <span class="field__help">{{ form.addressee_organisation.help_text }}</span>
-        {% if form.addressee_organisation.errors %}<span class="field__error">{{ form.addressee_organisation.errors|first }}</span>{% endif %}
+        <span class="field__label">{{ form.brief_summary.label }}</span>
+        {{ form.brief_summary }}
+        {% if form.brief_summary.errors %}
+          <span class="field__error">{{ form.brief_summary.errors|first }}</span>
+        {% endif %}
       </label>
     </div>
 
-    <div class="fieldrow">
+    {# 3 — The two dates. #}
+    <div class="createform__row createform__pair">
       <label class="field">
         <span class="field__label">{{ form.received_date.label }}</span>
         {{ form.received_date }}
-        {% if form.received_date.errors %}<span class="field__error">{{ form.received_date.errors|first }}</span>{% endif %}
+        {% if form.received_date.errors %}
+          <span class="field__error">{{ form.received_date.errors|first }}</span>
+        {% endif %}
       </label>
-
       <label class="field">
         <span class="field__label">{{ form.response_deadline.label }}</span>
         {{ form.response_deadline }}
-        {% if form.response_deadline.errors %}<span class="field__error">{{ form.response_deadline.errors|first }}</span>{% endif %}
+        {% if form.response_deadline.errors %}
+          <span class="field__error">{{ form.response_deadline.errors|first }}</span>
+        {% endif %}
       </label>
     </div>
 
-    <fieldset class="field">
-      <legend class="field__label">{{ form.tags.label }}</legend>
-      <div class="checkitems">
-        {% for choice in form.tags %}
-          <label class="checkitem">
-            {{ choice.tag }}
-            <span class="checkitem__name">{{ choice.choice_label }}</span>
-          </label>
-        {% empty %}
-          <p class="field__help">Sildivalikut ei ole veel loodud.</p>
-        {% endfor %}
-      </div>
-      {% if form.tags.errors %}<span class="field__error">{{ form.tags.errors|first }}</span>{% endif %}
-    </fieldset>
+    {# 4 — Who owns it, and who it came from. #}
+    <div class="createform__row createform__pair createform__pair--people">
+      <fieldset class="field">
+        <legend class="field__label">{{ form.owner.label }}</legend>
+        <div class="chiprow">
+          {% for choice in form.owner %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        {% if form.owner.errors %}<span class="field__error">{{ form.owner.errors|first }}</span>{% endif %}
+      </fieldset>
 
-    <label class="field">
-      <span class="field__label">{{ form.visibility.label }}</span>
-      {{ form.visibility }}
-      <span class="field__help">{{ form.visibility.help_text }}</span>
-      {% if form.visibility.errors %}<span class="field__error">{{ form.visibility.errors|first }}</span>{% endif %}
-    </label>
+      <fieldset class="field">
+        <legend class="field__label">
+          {{ form.source_organisations.label }}
+          <span class="field__count" data-chipcount-for="source_organisations"></span>
+        </legend>
+        {% comment %}
+          The frequent bodies as chips and the rest behind the disclosure —
+          plus, always, whatever this Matter already names: an edit page that
+          hid the current value inside a closed control would look like it had
+          cleared it.
+        {% endcomment %}
+        <div class="chiprow">
+          {% for choice in form.source_organisations %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+            </label>
+          {% endfor %}
+
+          <details class="chipdetails">
+            <summary class="chipdetails__summary">
+              Vali nimekirjast{% if form.sender_tail_count %} ({{ form.sender_tail_count }}){% endif %}
+            </summary>
+            <div class="chipdetails__body">
+              <label class="field chipdetails__search" data-choicefilter="muuda-saatja-nimekiri">
+                <span class="visually-hidden">Otsi asutust</span>
+                <input class="field__input field__input--compact" type="search"
+                       autocomplete="off" placeholder="Otsi asutust nime järgi">
+              </label>
+              <div class="chiprow" id="muuda-saatja-nimekiri">
+                {% for choice in form.source_organisations_other %}
+                  <label class="chip">
+                    {{ choice.tag }}
+                    <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+                  </label>
+                {% empty %}
+                  <p class="field__help">Kõik salvestatud asutused on juba ülal.</p>
+                {% endfor %}
+              </div>
+              <p class="field__help">
+                Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla —
+                teema vormilt uut asutust ei teki.
+              </p>
+            </div>
+          </details>
+        </div>
+        {% if form.source_organisations.errors %}
+          <span class="field__error">{{ form.source_organisations.errors|first }}</span>
+        {% elif form.source_organisations_other.errors %}
+          <span class="field__error">{{ form.source_organisations_other.errors|first }}</span>
+        {% endif %}
+      </fieldset>
+    </div>
+
+    {# 5 — Valdkonnad, and the free text one of them reveals. #}
+    <div class="createform__row">
+      <fieldset class="field">
+        <legend class="field__label">
+          {{ form.policy_areas.label }}
+          <span class="field__count" data-chipcount-for="policy_areas"></span>
+        </legend>
+        {% comment %}
+          The governed vocabulary, plus whatever this Matter already carries. A
+          Matter filed years ago under a since-retired area keeps it and shows it
+          marked as retired, so correcting the title cannot silently drop the
+          filing — and unticking one stays a decision somebody makes deliberately
+          (Teema redesign §7.2).
+        {% endcomment %}
+        <div class="chiprow">
+          {% for choice in form.policy_areas %}
+            <label class="chip{% if choice.data.value in form.retired_area_ids %} chip--retired{% endif %}">
+              {{ choice.tag }}
+              <span class="chip__name">
+                {{ choice.choice_label }}{% if choice.data.value in form.retired_area_ids %} · kasutusest väljas{% endif %}<span class="chip__clear" aria-hidden="true">×</span>
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+        {% if form.policy_areas.errors %}
+          <span class="field__error">{{ form.policy_areas.errors|first }}</span>
+        {% endif %}
+      </fieldset>
+    </div>
+
+    <div class="createform__row">
+      <label class="field">
+        <span class="field__label">{{ form.policy_area_other.label }}</span>
+        {{ form.policy_area_other }}
+        {% if form.policy_area_other.errors %}
+          <span class="field__error">{{ form.policy_area_other.errors|first }}</span>
+        {% endif %}
+      </label>
+    </div>
+
+    {# 6 — Where the procedure stands, what kind it is, who Koda answers. #}
+    <div class="createform__row">
+      <fieldset class="field">
+        <legend class="field__label">{{ form.stage.label }}</legend>
+        {% comment %}
+          The same explained chips as Uus teema: whether a file is
+          `Kooskõlastusringil` or `Valitsuses` depends on an event that has or
+          has not happened, and the department wrote a sentence per stage saying
+          which. The radio points at its own bubble with `aria-describedby`; the
+          accessible name is the three words on the chip
+          (app/workflow/selectors.py, Uus teema redesign §8).
+        {% endcomment %}
+        <div class="chiprow">
+          {% for choice in form.stage %}
+            {% with help=form.stage_help|stage_help:choice.data.value %}
+              {% if help %}
+                <span class="chip chip--explained">
+                  <label class="chip__hit">
+                    {{ choice.tag }}
+                    <span class="chip__name">{{ choice.choice_label }}</span>
+                  </label>
+                  <span class="stagehelp" role="tooltip"
+                        id="{{ choice.id_for_label }}-selgitus">{{ help }}</span>
+                </span>
+              {% else %}
+                <label class="chip">
+                  {{ choice.tag }}
+                  <span class="chip__name">{{ choice.choice_label }}</span>
+                </label>
+              {% endif %}
+            {% endwith %}
+          {% endfor %}
+        </div>
+        {% if form.stage.errors %}<span class="field__error">{{ form.stage.errors|first }}</span>{% endif %}
+      </fieldset>
+    </div>
+
+    <div class="createform__row createform__pair">
+      <fieldset class="field">
+        <legend class="field__label">{{ form.track.label }}</legend>
+        <div class="chiprow">
+          {% for choice in form.track %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        {% if form.track.errors %}<span class="field__error">{{ form.track.errors|first }}</span>{% endif %}
+      </fieldset>
+
+      <fieldset class="field">
+        <legend class="field__label">{{ form.addressee_organisation.label }}</legend>
+        {% comment %}
+          One radio group rendered in two places: the bodies this department
+          answers most often as chips, the rest inside the disclosure. One group
+          and one name, because `Matter` holds one addressee.
+        {% endcomment %}
+        <div class="chiprow">
+          {% for choice in form.addressee_organisation %}
+            {% if form.addressee_split is None or forloop.counter0 < form.addressee_split %}
+              <label class="chip">
+                {{ choice.tag }}
+                <span class="chip__name">{{ choice.choice_label }}</span>
+              </label>
+            {% endif %}
+          {% endfor %}
+
+          {% if form.addressee_tail_count %}
+            <details class="chipdetails">
+              <summary class="chipdetails__summary">
+                Vali nimekirjast ({{ form.addressee_tail_count }})
+              </summary>
+              <div class="chipdetails__body">
+                <label class="field chipdetails__search" data-choicefilter="muuda-adressaat-nimekiri">
+                  <span class="visually-hidden">Otsi asutust</span>
+                  <input class="field__input field__input--compact" type="search"
+                         autocomplete="off" placeholder="Otsi asutust nime järgi">
+                </label>
+                <div class="chiprow" id="muuda-adressaat-nimekiri">
+                  {% for choice in form.addressee_organisation %}
+                    {% if forloop.counter0 >= form.addressee_split %}
+                      <label class="chip">
+                        {{ choice.tag }}
+                        <span class="chip__name">{{ choice.choice_label }}</span>
+                      </label>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+                <p class="field__help">
+                  Kui adressaati siin ei ole, tuleb asutus enne lisada asutuste
+                  alla — teema vormilt uut asutust ei teki.
+                </p>
+              </div>
+            </details>
+          {% endif %}
+        </div>
+        {% if form.addressee_organisation.errors %}
+          <span class="field__error">{{ form.addressee_organisation.errors|first }}</span>
+        {% endif %}
+      </fieldset>
+    </div>
+
+    {# 7 — What only an existing record has. #}
+    <div class="createform__row createform__pair createform__pair--class">
+      <fieldset class="field">
+        <legend class="field__label">
+          {{ form.tags.label }}
+          <span class="field__count" data-chipcount-for="tags"></span>
+        </legend>
+        <div class="chiprow">
+          {% for choice in form.tags %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+            </label>
+          {% empty %}
+            <p class="field__help">Sildivalikut ei ole veel loodud.</p>
+          {% endfor %}
+        </div>
+        {% if form.tags.errors %}<span class="field__error">{{ form.tags.errors|first }}</span>{% endif %}
+      </fieldset>
+
+      <fieldset class="field">
+        <legend class="field__label">{{ form.visibility.label }}</legend>
+        <div class="chiprow">
+          {% for choice in form.visibility %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        {% comment %}
+          The one sentence this form keeps, because it states a consequence the
+          control cannot show: restricting a Matter takes it away from
+          colleagues who can see it today.
+        {% endcomment %}
+        <span class="field__help">{{ form.visibility.help_text }}</span>
+        {% if form.visibility.errors %}
+          <span class="field__error">{{ form.visibility.errors|first }}</span>
+        {% endif %}
+      </fieldset>
+    </div>
 
     {% comment %}
-      Stated, not hidden. These are facts about where the record came from, and
-      a page that simply omitted them would read as an oversight rather than as
-      the rule it is.
+      Stated, not hidden, and one line rather than a card. These are facts about
+      where the record came from — a page that simply omitted them would read as
+      an oversight rather than as the rule it is (02-EKRAANID §C).
     {% endcomment %}
     {% if immutable_facts %}
-      <section class="card card--quiet" aria-label="Muutumatud andmed">
-        <h2 class="sectionlabel">Muutumatu</h2>
-        {% for label, value in immutable_facts %}
-          <p class="railcard__row">
-            <span class="railcard__key">{{ label }}</span>
-            <span class="railcard__value">{{ value }}</span>
-          </p>
-        {% endfor %}
-        <p class="cardnote">
-          Päritolu ja algallikas ütlevad, kust see kirje tuli. Neid ei muudeta —
-          uus tõlgendus lisatakse, vana ei kirjutata üle.
-        </p>
-      </section>
+      <div class="createform__row">
+        <div class="uxfixed">
+          <span class="uxfixed__label">Muutumatu</span>
+          {% for label, value in immutable_facts %}
+            <span class="uxfixed__item">
+              <span class="uxfixed__key">{{ label }}</span> {{ value }}
+            </span>
+          {% endfor %}
+        </div>
+      </div>
     {% endif %}
 
-    <div class="form__actions">
+    <div class="createform__actions">
       <button class="button button--primary" type="submit">Salvesta</button>
       <a class="button button--quiet" href="{% url 'matters:matter_detail' pk=matter.pk %}">Loobu</a>
     </div>

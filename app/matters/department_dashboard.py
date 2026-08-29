@@ -501,7 +501,21 @@ def team_rows(user: Any, today: date | None = None) -> list[TeamRow]:
             ),
             is_self=person.pk == getattr(user, "pk", None),
             is_former=not person.is_active,
-            url=register_url(**_open_full(), vastutaja=person.pk),
+            # The person's desk, not the register filtered by owner. A register
+            # row answers "what is this Matter"; the question a head clicks a
+            # name to ask is "what is on this person's desk", and that is a
+            # different page (design handoff, Minu asjad §A). The register is
+            # still one click further on, from that page's own footer link.
+            #
+            # One's own row goes to `Minu asjad` rather than to one's own
+            # person page. They render identically — `person_work` resolves
+            # `is_self` — but the address a person keeps for their own desk is
+            # the short one.
+            url=(
+                reverse("matters:my_work")
+                if person.pk == getattr(user, "pk", None)
+                else reverse("matters:person_work", kwargs={"pk": person.pk})
+            ),
         )
         for person in people
     ]

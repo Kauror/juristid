@@ -139,26 +139,35 @@ def test_the_matter_page_offers_a_visible_edit_action(signed_in, specialist):
 def test_the_edit_page_offers_every_editable_fact(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
     # Sildid renders a control only when the governed vocabulary has something
-    # in it; an empty vocabulary is a sentence, not an empty fieldset.
+    # in it; an empty vocabulary is a sentence, not an empty fieldset. Since the
+    # v2 rebuild the two organisation controls are chips over the reference
+    # data and behave the same way, so this world needs one of those too.
     factories.TagFactory()
+    factories.OrganisationFactory()
     body = _body(signed_in.get(_edit_url(matter)))
 
+    # The single-value fields keep their own id; the chip groups render one
+    # input per option and are therefore asserted by name, which is what the
+    # POST carries either way (02-EKRAANID §C).
     for field in (
         "id_title",
         "id_brief_summary",
-        "id_owner",
-        "id_stage",
-        "id_track",
-        "id_policy_areas",
         "id_policy_area_other",
-        "id_source_organisations",
-        "id_addressee_organisation",
         "id_received_date",
         "id_response_deadline",
-        "id_tags",
-        "id_visibility",
     ):
         assert field in body, field
+    for field in (
+        "owner",
+        "stage",
+        "track",
+        "policy_areas",
+        "source_organisations",
+        "addressee_organisation",
+        "tags",
+        "visibility",
+    ):
+        assert f'name="{field}"' in body, field
 
 
 def test_one_save_changes_everything_and_audits_each_fact(
@@ -402,11 +411,16 @@ def test_a_passed_review_is_never_worded_as_late(signed_in, specialist):
 
     body = _body(signed_in.get(reverse("matters:my_work")))
 
-    # The band names it, and the row states what its date means. Neither
-    # ever calls a passed review a missed deadline.
-    assert "Ülevaatamiseks küps" in body
+    # The band it sits in changed — reviews are ordinary dated work now and are
+    # merged into *Sel nädalal* rather than having a block of their own — and
+    # the rule did not. The row states what its date means, prints a neutral
+    # «N p», and nothing calls it a missed deadline (03-BACKEND §1).
+    assert "Sel nädalal" in body
     assert "VAATAN ÜLE" in body
+    assert "4 p" in body
+    assert "4 p üle" not in body
     assert "Üle tähtaja" not in body
+    assert "workrow2--overdue" not in body
 
 
 def test_matters_without_a_next_step_stay_out_of_the_dated_list(signed_in, specialist):

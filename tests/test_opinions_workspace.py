@@ -389,8 +389,16 @@ def test_a_linked_letter_is_visible_from_the_matter_it_concerns(client, shared):
 
     assert "Seotud arhiivikirjad" in body
     assert "Varasem kiri" in body
-    # Worded as evidence, never as a dispatch record.
-    assert "mitte kanoonilised arvamuse kirjed" in body
+    # Evidence, never a dispatch record — and said by the structure rather than
+    # by a sentence under it: two sections with two headings, and the archive
+    # row links to the archive rather than to a Submission. The explanatory
+    # `cardnote` was one of the four the v2 design removed from the Teema
+    # sub-pages, and the sentence itself survives on the Arhiiv tab, where the
+    # archive is the whole subject (02-EKRAANID §C, and the test above).
+    assert "Koja varasemad kirjad" not in body
+    letters = body.split('id="arhiivikirjad-heading"', 1)[1]
+    assert "Koja arvamused" not in letters
+    assert "/haldus/arvamuste-arhiiv/" in letters
 
 
 def test_a_reader_who_may_not_open_the_archive_sees_no_letters_on_the_matter(signed_in, specialist):
