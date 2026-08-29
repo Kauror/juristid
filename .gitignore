@@ -19,6 +19,13 @@ build/
 media/
 staticfiles/
 evidence/
+# An `EVIDENCE_ROOT` a developer points inside the checkout while running the
+# browser suite locally. `evidence/` above does not cover a dotted name, and the
+# blob store writes real-looking filenames the moment the suite captures
+# anything — synthetic here, but the store is the one place this repository must
+# never accumulate files by accident (docs/adr/0047 round; the orphan-evidence
+# leak this pattern is named after).
+.e2e-evidence/
 .uv/
 
 # Real source material and import output never enter Git.
