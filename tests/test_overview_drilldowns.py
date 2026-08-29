@@ -143,7 +143,10 @@ def world(db, department_head, specialist, other_specialist, today):
         actor=specialist,
     )
 
-    # A deadline inside each of the two windows the Tähtajad table shows.
+    # A deadline in this calendar week, and one past the Sunday it ends on. The
+    # second lands in *Ülejäänud kuu* or, in the week that runs past the month
+    # end, in *Kaugemal* — which window is not the point, and the assertion
+    # below finds it rather than naming it (`ov.deadline_windows`).
     week_end = wi.end_of_iso_week(today)
     this_week = create_matter(
         title="Selle nädala tähtaeg", owner=specialist, reference_year=2026, actor=specialist
@@ -444,8 +447,21 @@ def test_the_deadline_group_link_holds_that_window_and_not_the_register(
     page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
     groups = {group.key: group for group in page.deadlines}
 
-    assert rows_at(client, groups["jargmisel"].url) == {"Järgmise nädala tähtaeg"}
     assert "Selle nädala tähtaeg" in rows_at(client, groups["sel_nadalal"].url)
+
+    # The later deadline, in whichever window its date falls in. Named by
+    # lookup rather than by key because the window boundaries move with the
+    # month, and a test that hard-codes one is a test that fails on the last
+    # week of September for a reason that has nothing to do with links.
+    later = next(
+        group
+        for group in page.deadlines
+        if any(item.matter.title == "Järgmise nädala tähtaeg" for item in group.items)
+    )
+    assert later.key != "sel_nadalal"
+    listed = rows_at(client, later.url)
+    assert "Järgmise nädala tähtaeg" in listed
+    assert "Selle nädala tähtaeg" not in listed, "the window link reopened this week"
 
 
 def test_the_intervention_link_holds_every_reason_at_once(client, department_head, world, today):

@@ -54,7 +54,7 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
-from app.core.dates import format_estonian_date
+from app.core.dates import end_of_month, format_estonian_date
 from app.core.dates import short_range as format_short_range
 from app.intelligence.models import (
     MatterEffectiveDate,
@@ -119,7 +119,11 @@ SORT_OPTIONS: tuple[tuple[str, str], ...] = (
 #: Caps. The number above each list is the honest total regardless.
 INTERVENTION_PREVIEW = 6
 INTERVENTION_LIMIT = 60
-DEADLINE_PREVIEW = 4
+#: How many rows *Ülejäänud kuu* shows before the rest go behind «Näita veel».
+#: Five, the same as Osakond's *Eesolev* (`UPCOMING_PREVIEW`): the two panels
+#: answer the same question at different scopes and a reader who learns one
+#: should not have to relearn the other.
+DEADLINE_PREVIEW = 5
 DEADLINE_LIMIT = 40
 FEED_LIMIT = 12
 RAIL_LIMIT = 6
@@ -511,11 +515,9 @@ class DeadlineGroup:
     label: str
     items: list[wi.WorkItem]
     shown: int
-    #: The `?too=` value that reproduces this window on the register.
-    population: str
     #: The interval the header states, both ends inclusive. The far group has no
     #: end and prints no range: it is everything after the last real window.
-    starts: date | None = None
+    starts: date
     ends: date | None = None
     #: Rendered as one pointer line instead of a list. Only the far group.
     is_far: bool = False
@@ -538,8 +540,8 @@ class DeadlineGroup:
 
         Behind a disclosure rather than dropped. A window that quietly ended at
         four rows is how a deadline stopped being anywhere at all, which is the
-        failure the fourth window exists to fix — and it would be an odd fix
-        that reintroduced it inside the first three (`DEADLINE_LIMIT`).
+        failure the far window exists to fix — and it would be an odd fix that
+        reintroduced it inside the two near ones (`DEADLINE_LIMIT`).
         """
         return self.items[self.shown : DEADLINE_LIMIT]
 
@@ -548,8 +550,22 @@ class DeadlineGroup:
         return len({item.matter_id for item in self.items})
 
     @property
+    def is_empty_window(self) -> bool:
+        """True where the interval has no days in it at all.
+
+        *Ülejäänud kuu* is one such window whenever this week runs to or past
+        the end of the month: the rest of the month would start on Monday and
+        have ended on Sunday. It holds nothing by construction — a window is
+        asked for both ends at once — and the panel omits it rather than
+        printing a heading over an interval read backwards.
+        """
+        return self.ends is not None and self.starts > self.ends
+
+    @property
     def range_label(self) -> str:
         """``27.08–31.08``. Empty where there is no closed interval to state."""
+        if self.is_empty_window:
+            return ""
         return format_short_range(self.starts, self.ends)
 
     @property
@@ -564,7 +580,24 @@ class DeadlineGroup:
 
     @property
     def url(self) -> str:
-        return _teemad(**_OPEN_FULL, too=self.population)
+        """The register, narrowed to exactly this window of real deadlines.
+
+        `?too=tahtaeg-vahemik` with the group's own two dates rather than a
+        named population, for the reason Osakond's *Eesolev* does the same: the
+        windows here move with the weekday and with the length of the month, so
+        a fixed name could only ever approximate them — and «kõik 14 →» over a
+        list of eleven is the failure this page exists to avoid. One selector
+        answers both the count and the list (`work_population_ids`,
+        app/matters/work_items.py).
+        """
+        params: dict[str, Any] = {
+            **_OPEN_FULL,
+            "too": wi.WORK_DEADLINE_WINDOW,
+            "too_alates": format_estonian_date(self.starts),
+        }
+        if self.ends is not None:
+            params["too_kuni"] = format_estonian_date(self.ends)
+        return _teemad(**params)
 
 
 #: Kept as a name here because three test modules and two callers read it from
@@ -573,45 +606,89 @@ class DeadlineGroup:
 real_deadlines = wi.real_deadlines
 
 
-#: The panel's four windows, in reading order: key, heading, and how many rows
-#: the group shows before it stops. The whole of this week, because this week is
-#: what somebody is working in; a preview of the rest, because they are planning
-#: rather than doing. The last window shows one line whatever it holds.
-_DEADLINE_GROUPS: tuple[tuple[str, str, str, int | None], ...] = (
-    ("sel_nadalal", "Sel nädalal", wi.WORK_DEADLINE_THIS_WEEK, None),
-    ("jargmisel", "Järgmisel nädalal", wi.WORK_DEADLINE_NEXT_WEEK, DEADLINE_PREVIEW),
-    ("kolmkymmend", "30 päeva", wi.WORK_DEADLINE_30_DAYS, DEADLINE_PREVIEW),
-    ("kaugemal", "Kaugemal", wi.WORK_DEADLINE_BEYOND, 1),
-)
+def deadline_windows(today: date) -> tuple[tuple[str, str, date, date | None], ...]:
+    """The panel's three consecutive windows: key, heading, first day, last day.
+
+    *Sel nädalal* is the calendar week — Monday to Sunday, not the seven days
+    from here — because "this week" is a thing a department says to each other
+    on Wednesday and still means the same by on Friday. A rolling window moves
+    under the reader every morning, and a date that was on the list yesterday
+    is on a different screen today for no reason they can see.
+
+    *Ülejäänud kuu* is what is left of the calendar month after that Sunday.
+    That is the planning horizon somebody actually has: "what else is coming
+    before the month turns over" is a question with an answer, where "the next
+    thirty days" ends in the middle of a week nobody chose.
+
+    *Kaugemal* is everything after, as one line. It exists because the panel
+    used to end at next week, so a deadline five weeks out was on no screen
+    anywhere until it became next week's problem (design handoff 1a).
+
+    The three are consecutive and the last is open-ended, so a dated commitment
+    lands in exactly one of them. Two boundary cases are the reason this is one
+    function rather than three expressions written where they are read:
+
+    * The week can start in the **previous** month — Monday 31.08 with today on
+      Wednesday 02.09. *Sel nädalal* holds 31.08 all the same, and *Ülejäänud
+      kuu* still starts on 07.09: the cut between them is the week's end, not
+      the month's start, so nothing is counted twice and nothing falls out.
+    * The week can run to or past the **end** of the month — Monday 28.09 with
+      Sunday on 04.10. The rest of the month would then begin after it ended,
+      so it is returned as the empty interval it is and the panel omits it;
+      *Kaugemal* starts the day after the *week* rather than the day after the
+      month, which is what keeps the three windows touching.
+    """
+    week_start = wi.start_of_iso_week(today)
+    week_end = wi.end_of_iso_week(today)
+    rest_start = week_end + timedelta(days=1)
+    # Never before the week's own end, so the far window cannot start inside a
+    # window the reader has already been shown.
+    rest_end = max(end_of_month(today), week_end)
+    return (
+        ("sel_nadalal", "Sel nädalal", week_start, week_end),
+        ("ulejaanud_kuu", "Ülejäänud kuu", rest_start, rest_end),
+        ("kaugemal", "Kaugemal", rest_end + timedelta(days=1), None),
+    )
+
+
+#: How many rows each window shows before it stops, by key. The whole of this
+#: week, because this week is what somebody is working in; a preview of the rest
+#: of the month, because they are planning rather than doing. The far window
+#: shows one line whatever it holds.
+_DEADLINE_SHOWN: dict[str, int | None] = {
+    "sel_nadalal": None,
+    "ulejaanud_kuu": DEADLINE_PREVIEW,
+    "kaugemal": 1,
+}
 
 
 def deadline_groups(items: list[wi.WorkItem], today: date) -> list[DeadlineGroup]:
-    """Every dated commitment ahead, in four consecutive windows.
+    """Every dated commitment ahead, in the windows :func:`deadline_windows` cuts.
 
-    Four rather than two. The panel used to end at next week, so a deadline five
-    weeks out was on no screen anywhere until it became next week's problem —
-    which is precisely the file somebody wanted a month's warning about. The
-    windows are consecutive and the last is open-ended, so nothing dated can
-    fall between them (design handoff 1a, KAUGEMAL).
+    Only what the department may honestly call a deadline: a DO deadline or an
+    *Oluline tähtaeg*. A WAIT's expected date and a MONITOR's review date are
+    commitments nobody made and stay in the intervention list, where they read
+    as "look at this again" (`wi.real_deadlines`, master specification 18.8).
 
     The far group is one line: the next date, and how many more sit behind it in
     the register. A list would be a plan nobody can act on today; a number with
     nothing to open would be a figure nobody can check.
     """
     groups = []
-    for key, label, population, shown in _DEADLINE_GROUPS:
-        window = wi.work_population_items(items, population, today)
-        starts, ends = wi.deadline_window(population, today)
+    for key, label, starts, ends in deadline_windows(today):
+        window = wi.work_population_items(
+            items, wi.WORK_DEADLINE_WINDOW, today, window=(starts, ends)
+        )
+        shown = _DEADLINE_SHOWN[key]
         groups.append(
             DeadlineGroup(
                 key,
                 label,
                 window,
                 len(window) if shown is None else shown,
-                population,
                 starts=starts,
                 ends=ends,
-                is_far=population == wi.WORK_DEADLINE_BEYOND,
+                is_far=key == "kaugemal",
             )
         )
     return groups

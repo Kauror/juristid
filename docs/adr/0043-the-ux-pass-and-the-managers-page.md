@@ -82,6 +82,12 @@ because both are read from more than one place: `tahtaeg-30` and
 `tahtaeg-kaugemal` complete Ülevaade's deadline panel, and `muutusteta-30` is
 the department's silence.
 
+> **Superseded in part by ADR 0046.** Ülevaade's deadline panel now cuts two
+> windows — the calendar week and the rest of the month — and links all of them
+> through `?too=tahtaeg-vahemik`, so `tahtaeg-30` and `tahtaeg-kaugemal` no
+> longer feed it. Both remain register populations, with their meanings
+> unchanged; `muutusteta-30` is untouched.
+
 `?too_alates=` is deliberately distinct from `?tahtaeg_alates=`. The latter
 filters a Matter's own `Arvamuse tähtaeg` column; the former filters the dated
 work model, which also holds `Oluline tähtaeg` and excludes a WAIT's expected
