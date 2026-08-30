@@ -1,0 +1,106 @@
+{
+  "measured_from": "https://github.com/Kauror/juristid/actions/runs/33323182379",
+  "note": "Balance input for ci_sharding.py, regenerated with scripts/ci/update_shard_timings.py. Nothing about which tests run depends on it; see docs/ci-architecture.md.",
+  "files": {
+    "e2e/test_date_ux.py": {
+      "seconds": 24.471,
+      "tests": 18
+    },
+    "e2e/test_department_page.py": {
+      "seconds": 41.16,
+      "tests": 24
+    },
+    "e2e/test_document_content.py": {
+      "seconds": 8.257,
+      "tests": 3
+    },
+    "e2e/test_engagement.py": {
+      "seconds": 18.608,
+      "tests": 9
+    },
+    "e2e/test_header_search.py": {
+      "seconds": 22.775,
+      "tests": 19
+    },
+    "e2e/test_historical_corpus.py": {
+      "seconds": 10.197,
+      "tests": 7
+    },
+    "e2e/test_historical_files.py": {
+      "seconds": 7.509,
+      "tests": 8
+    },
+    "e2e/test_kpi_navigation.py": {
+      "seconds": 108.754,
+      "tests": 17
+    },
+    "e2e/test_lawyer_workflow.py": {
+      "seconds": 17.479,
+      "tests": 7
+    },
+    "e2e/test_matter_form_ux.py": {
+      "seconds": 49.223,
+      "tests": 36
+    },
+    "e2e/test_matter_intelligence.py": {
+      "seconds": 42.892,
+      "tests": 24
+    },
+    "e2e/test_opinion_archive.py": {
+      "seconds": 30.924,
+      "tests": 25
+    },
+    "e2e/test_persona_switcher.py": {
+      "seconds": 28.94,
+      "tests": 11
+    },
+    "e2e/test_real_data_ux.py": {
+      "seconds": 12.299,
+      "tests": 15
+    },
+    "e2e/test_register_search.py": {
+      "seconds": 19.57,
+      "tests": 18
+    },
+    "e2e/test_statistics.py": {
+      "seconds": 43.439,
+      "tests": 26
+    },
+    "e2e/test_table_rows_are_reachable.py": {
+      "seconds": 10.568,
+      "tests": 9
+    },
+    "e2e/test_teema_closing_flow.py": {
+      "seconds": 9.92,
+      "tests": 5
+    },
+    "e2e/test_teema_redesign.py": {
+      "seconds": 41.818,
+      "tests": 14
+    },
+    "e2e/test_ui_regression.py": {
+      "seconds": 69.17,
+      "tests": 36
+    },
+    "e2e/test_ui_shell.py": {
+      "seconds": 94.523,
+      "tests": 64
+    },
+    "e2e/test_ultrawide_workspace.py": {
+      "seconds": 46.797,
+      "tests": 18
+    },
+    "e2e/test_ux_pass.py": {
+      "seconds": 51.853,
+      "tests": 26
+    },
+    "e2e/test_work_assignment.py": {
+      "seconds": 11.932,
+      "tests": 7
+    },
+    "e2e/test_work_surfaces_review.py": {
+      "seconds": 17.403,
+      "tests": 13
+    }
+  }
+}

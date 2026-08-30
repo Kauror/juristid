@@ -79,18 +79,38 @@ jobs:
           shellcheck --severity=warning --external-sources --source-path=SCRIPTDIR
           scripts/*.sh scripts/deploy/*.sh
 
-  tests:
-    name: PostgreSQL 18 test suite
-    runs-on: ubuntu-latest
-    # 25, not 15. The suite has been finishing at 13:46 and 13:52 on main
-    # against a 15-minute ceiling, so which runner the job lands on decides
-    # whether it passes — a red build that means "this runner was slow today"
-    # teaches people to press re-run without reading, which is the state in
-    # which a real failure gets re-run too. The headroom is deliberate slack,
-    # not a target: if the suite ever approaches this number the answer is to
-    # find what got slow, and the number is here to be noticed when it does.
-    timeout-minutes: 25
+      # The proof that the sharded jobs below still run the whole suite. It
+      # collects every shard of every sharded suite and compares node ids
+      # against the unsharded collection, so a partition that started dropping
+      # tests is a red build here rather than a fast green one over there.
+      #
+      # Collection only — no database, no browser — which is why it belongs in
+      # the job that finishes in half a minute rather than in the jobs it is
+      # about. See docs/ci-architecture.md.
+      - name: Every test still runs in exactly one shard
+        env:
+          DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+          DJANGO_DEBUG: "0"
+          DJANGO_ALLOWED_HOSTS: localhost
+          E2E_BASE_URL: http://127.0.0.1:8000
+          E2E_GATE_BASE_URL: http://127.0.0.1:8001
+        run: uv run python scripts/ci/assert_shard_completeness.py
 
+  postgres-safety:
+    name: PostgreSQL migration and runtime safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Everything the PostgreSQL suite proved *before* running a test, kept
+    # exactly as it was and moved to a job of its own.
+    #
+    # It moved because it is not per-shard work. Migrating from zero, stepping a
+    # deployment's state backwards and forwards, and asserting that the OCR
+    # engine is really installed are claims about the repository, not about a
+    # subset of it — running them again in each of the 5 shards would
+    # multiply a minute of setup by 5 and prove nothing further. Nothing here
+    # was removed, weakened or reordered; the steps are the ones that stood in
+    # the `tests` job, with their reasoning intact.
     services:
       postgres:
         image: postgres:18
@@ -118,6 +138,15 @@ jobs:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
 
     steps:
       - uses: actions/checkout@v4
@@ -188,7 +217,8 @@ jobs:
       # real evidence store on 2026-08-24.
       #
       # Two node ids rather than the module, so this step stays free of both the
-      # database and the subprocess tests; the module itself runs in full below.
+      # database and the subprocess tests; the module itself runs in full in
+      # whichever shard the partition put it in.
       - name: An inherited production settings module does not decide the suite
         env:
           DJANGO_SETTINGS_MODULE: config.settings
@@ -213,8 +243,182 @@ jobs:
           grep -q "JURISTID TEST SAFETY" isolation.log || { echo "it failed, but not for the safety reason"; cat isolation.log; exit 1; }
           rm -f isolation.log
 
+  tests:
+    name: "PostgreSQL tests, shard ${{ matrix.shard }} of 5"
+    runs-on: ubuntu-latest
+    # Was 25 for the whole serial suite. A shard is roughly a 5th of it, and
+    # the same reasoning applies at the smaller size: generous slack so that a
+    # slow runner is never mistaken for a broken branch, and a number that gets
+    # noticed if the suite ever grows into it.
+    timeout-minutes: 15
+
+    strategy:
+      # Every shard runs. Stopping the others when one fails would hide which
+      # part of the suite is red and turn one investigation into several
+      # re-runs.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5]
+
+    # A whole PostgreSQL of its own per shard, which is the point of sharding
+    # here rather than reaching for `pytest -n`. Each runner gets its own
+    # database server, its own filesystem, its own process environment and its
+    # own port space, so the isolation the suite already relies on is not
+    # weakened by running it in 5 places at once — and the assignment is a
+    # pure function of the collected files rather than of which worker happened
+    # to be free (ci_sharding.py, docs/adr/0045).
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: juristid
+          POSTGRES_USER: juristid
+          POSTGRES_PASSWORD: juristid
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U juristid -d juristid"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+      DJANGO_DEBUG: "0"
+      DJANGO_SECURE_SSL_REDIRECT: "0"
+      DEV_LOGIN_ENABLED: "0"
+      REAL_DATA_ALLOWED: "0"
+      POSTGRES_DB: juristid
+      POSTGRES_USER: juristid
+      POSTGRES_PASSWORD: juristid
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: Install the OCR runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes tesseract-ocr tesseract-ocr-est tesseract-ocr-eng
+
+      # The suite, partitioned. `--shard-count` and the matrix above are held to
+      # each other by tests/test_ci_sharding.py, and the union is proved to be
+      # the whole suite by the quality job.
+      #
+      # Coverage is measured per shard and combined by the gate below, so the
+      # instrumentation cost is divided by 5 along with everything else and
+      # the report still describes the whole suite. `--cov-report=` here on
+      # purpose: a partial report printed 5 times reads as a coverage
+      # collapse.
       - name: Test suite
-        run: uv run pytest --cov --cov-report=term-missing
+        env:
+          COVERAGE_FILE: .coverage.shard-${{ matrix.shard }}
+        # The default tracer, deliberately. `COVERAGE_CORE=sysmon` was measured
+        # and rejected: it is nearly free where this is not, but it reported 39%
+        # against the same subset the default core reported 40% on, and a
+        # cheaper number that means something slightly different is not the same
+        # number (docs/ci-architecture.md).
+        run: >-
+          uv run pytest
+          --shard-count=5 --shard-index=${{ matrix.shard }}
+          --cov --cov-report=
+          --junitxml=artifacts/junit-tests-${{ matrix.shard }}.xml
+
+      # Two things the gate needs and one thing a person needs: the coverage
+      # fragment, the durations that keep ci/shard-timings.json refreshable, and
+      # a report to read when a shard is red.
+      - name: Upload this shard's report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-tests-${{ matrix.shard }}
+          path: |
+            artifacts/junit-tests-${{ matrix.shard }}.xml
+            .coverage.shard-${{ matrix.shard }}
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  tests-gate:
+    # The logical gate, under the name it has always had, so that a required
+    # status check and anything referring to this suite keeps meaning what it
+    # meant. The shards are what changed; the promise is not.
+    name: PostgreSQL 18 test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [postgres-safety, tests]
+    # `always()`, because a gate that only runs when its dependencies succeeded
+    # is a gate that is *skipped* when they do not — and a skipped required
+    # check does not block anything. It has to run and then refuse.
+    if: always()
+
+    steps:
+      - name: Every part of the suite succeeded
+        env:
+          SAFETY: ${{ needs.postgres-safety.result }}
+          SHARDS: ${{ needs.tests.result }}
+        run: |
+          set -euo pipefail
+          echo "migration and runtime safety: $SAFETY"
+          echo "test shards: $SHARDS"
+          # Anything other than success, including `cancelled` and `skipped`.
+          # A cancelled shard proved nothing, and a green gate over one would be
+          # worse than no gate at all.
+          for result in "$SAFETY" "$SHARDS"; do
+            if [ "$result" != "success" ]; then
+              echo "the PostgreSQL suite did not pass: a dependency reported '$result'"
+              exit 1
+            fi
+          done
+          echo "all 5 shards and the safety checks passed"
+
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+
+      - name: Collect the coverage fragments
+        uses: actions/download-artifact@v4
+        with:
+          pattern: test-report-tests-*
+          path: fragments
+
+      # One report for the whole suite, as before the split. Combining rather
+      # than reporting per shard is what keeps this comparable to the number CI
+      # printed when the suite ran in one process.
+      - name: Coverage across the whole suite
+        run: |
+          find fragments -name '.coverage.shard-*' -exec cp {} . \;
+          uv run coverage combine
+          uv run coverage report --show-missing
+
+      - name: Upload the combined coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-combined
+          path: .coverage
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
 
   dependency-scan:
     name: Dependency vulnerability baseline
@@ -236,9 +440,14 @@ jobs:
         run: uvx pip-audit --strict --no-deps --requirement requirements.txt
 
   browser:
-    name: Browser workflow (Playwright on PostgreSQL 18)
+    name: "Browser, shard ${{ matrix.shard }} of 6"
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
 
     services:
       postgres:
@@ -328,7 +537,7 @@ jobs:
       - name: Start the application
         run: |
           mkdir -p artifacts
-          nohup uv run python manage.py runserver 127.0.0.1:8000 --noreload             > artifacts/server.log 2>&1 &
+          nohup uv run python manage.py runserver 127.0.0.1:8000 --noreload > artifacts/server.log 2>&1 &
           for attempt in $(seq 1 40); do
             if curl --fail --silent http://127.0.0.1:8000/healthz > /dev/null; then
               echo "server is up"; exit 0
@@ -348,7 +557,7 @@ jobs:
           # synthetic sign-in all live in the settings module, not here.
           DJANGO_SETTINGS_MODULE: config.e2e_gate_settings
         run: |
-          nohup uv run python manage.py runserver 127.0.0.1:8001 --noreload             > artifacts/server-gate.log 2>&1 &
+          nohup uv run python manage.py runserver 127.0.0.1:8001 --noreload > artifacts/server-gate.log 2>&1 &
           for attempt in $(seq 1 40); do
             if curl --fail --silent http://127.0.0.1:8001/healthz > /dev/null; then
               echo "shared-gate server is up"; exit 0
@@ -357,36 +566,217 @@ jobs:
           done
           echo "shared-gate server did not start"; exit 1
 
+      # This runner's slice of the browser suite. Whole files, chosen by
+      # measured cost, against this runner's own database, its own two servers
+      # and its own Chromium — which is what makes 6 of these safe when
+      # 6 pytest workers sharing one server would not be. The visual
+      # scenarios are not here; they have a job of their own below.
       - name: Browser workflow
         run: >-
           uv run pytest e2e --ignore=e2e/test_ui_regression.py
+          --shard-count=6 --shard-index=${{ matrix.shard }}
           --browser chromium
           --tracing retain-on-failure
           --output artifacts/playwright
-
-      # Kept as its own step so a visual difference reads as a visual
-      # difference in the job summary rather than as "the browser suite failed",
-      # and so the renderings are uploaded either way.
-      - name: Visual regression
-        if: always()
-        run: >-
-          uv run pytest e2e/test_ui_regression.py
-          --browser chromium
-          --tracing retain-on-failure
-          --output artifacts/playwright
+          --junitxml=artifacts/junit-browser-${{ matrix.shard }}.xml
 
       - name: Upload screenshots and traces
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: browser-artifacts
+          name: test-report-browser-${{ matrix.shard }}
           path: |
             artifacts/screenshots
             artifacts/playwright
+            artifacts/junit-browser-${{ matrix.shard }}.xml
             artifacts/server.log
             artifacts/server-gate.log
           if-no-files-found: warn
           retention-days: 14
+
+  visual:
+    name: Visual regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Its own world, which is a determinism fix before it is a speed one.
+    #
+    # These scenarios used to run in the same job as the behavioural suite and
+    # therefore against a database fourteen minutes of browser tests had been
+    # writing to: every Matter they created, every stage they moved, every
+    # deadline they set was still there when the screenshots were taken. A
+    # rendering that depends on what unrelated tests happened to leave behind is
+    # a rendering whose baseline drifts for reasons nobody can name.
+    #
+    # Fresh PostgreSQL, fresh migrations, the same `seed_e2e_data`, fresh
+    # servers, the same runner image, the same fonts and the same Chromium. The
+    # only thing that changed is what ran before the first screenshot: nothing.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: juristid
+          POSTGRES_USER: juristid
+          POSTGRES_PASSWORD: juristid
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U juristid -d juristid"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      # The browser suite runs against a real server on real PostgreSQL. It is
+      # the authoritative check that the workflow works for a person, because
+      # the development machine cannot open a browser.
+      DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+      DJANGO_DEBUG: "1"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,[::1]"
+      DJANGO_SECURE_SSL_REDIRECT: "0"
+      DJANGO_STATIC_MANIFEST: "0"
+      DEV_LOGIN_ENABLED: "1"
+      REAL_DATA_ALLOWED: "0"
+      APPLICATION_ENVIRONMENT: ci
+      POSTGRES_DB: juristid
+      POSTGRES_USER: juristid
+      POSTGRES_PASSWORD: juristid
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      EVIDENCE_ROOT: /tmp/juristid-evidence
+      E2E_BASE_URL: http://127.0.0.1:8000
+      E2E_SCREENSHOT_DIR: artifacts/screenshots
+      # A second server, same database, running the shared gate. The persona
+      # switcher exists only in that mode — the routes 404 in the other two —
+      # and converting the whole browser suite to type a password before every
+      # unrelated test would have been the alternative. One extra `runserver`
+      # is cheaper and leaves the rest of the suite exactly as it was
+      # (docs/adr/0034).
+      E2E_GATE_BASE_URL: http://127.0.0.1:8001
+      # A rehearsal password for a throwaway server on localhost, under a
+      # test-only name. The deployment variable it stands in for is deliberately
+      # absent from every tracked YAML file in this repository — a committed
+      # shared password does not look wrong in a diff, it looks like a default
+      # (tests/test_repository_data_safety.py, config/e2e_gate_settings.py).
+      E2E_GATE_PASSWORD: ci-jagatud-parool-mitte-kusagil-mujal
+      # Set to "1" on a manual run to (re)generate the visual baselines. The
+      # renderings land in the browser-artifacts upload; commit what you agree
+      # with. Baselines have to come from this image, because font
+      # rasterisation differs on every other machine.
+      E2E_UPDATE_BASELINES: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      # `--with-deps` shells out to apt, which is the part that hangs on this
+      # runner — twice now, once for a full hour before the job had a timeout.
+      # The runner image already carries the libraries Chromium needs, so the
+      # browser binary is all that has to be fetched, and it is cached between
+      # runs.
+      - name: Cache the browser binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('uv.lock') }}
+          restore-keys: playwright-chromium-
+
+      - name: Install the browser
+        timeout-minutes: 6
+        run: uv run playwright install chromium
+
+      - name: Migrate and seed the deterministic world
+        run: |
+          uv run python manage.py migrate --noinput
+          uv run python manage.py seed_e2e_data
+
+      - name: Start the application
+        run: |
+          mkdir -p artifacts
+          nohup uv run python manage.py runserver 127.0.0.1:8000 --noreload > artifacts/server.log 2>&1 &
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:8000/healthz > /dev/null; then
+              echo "server is up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "server did not start"; exit 1
+
+      # The same code and the same data, behind the department password. It is
+      # a separate process rather than a setting flipped mid-run because
+      # `AUTH_MODE` is read per request from settings: one process cannot be
+      # both, and a suite that restarted the server between files would be
+      # slower and harder to read than a second port.
+      - name: Start the shared-gate application
+        env:
+          # The mode, the password and the refusal to combine a gate with the
+          # synthetic sign-in all live in the settings module, not here.
+          DJANGO_SETTINGS_MODULE: config.e2e_gate_settings
+        run: |
+          nohup uv run python manage.py runserver 127.0.0.1:8001 --noreload > artifacts/server-gate.log 2>&1 &
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:8001/healthz > /dev/null; then
+              echo "shared-gate server is up"; exit 0
+            fi
+            sleep 1
+          done
+          echo "shared-gate server did not start"; exit 1
+
+      # Kept as its own job so a visual difference reads as a visual difference
+      # rather than as "the browser suite failed", and so the renderings are
+      # uploaded either way.
+      - name: Visual regression
+        run: >-
+          uv run pytest e2e/test_ui_regression.py
+          --browser chromium
+          --tracing retain-on-failure
+          --output artifacts/playwright
+          --junitxml=artifacts/junit-visual.xml
+
+      - name: Upload renderings and traces
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report-visual
+          path: |
+            artifacts/screenshots
+            artifacts/playwright
+            artifacts/junit-visual.xml
+            artifacts/server.log
+            artifacts/server-gate.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  browser-gate:
+    # The logical gate, under the name it has always had.
+    name: Browser workflow (Playwright on PostgreSQL 18)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [browser, visual]
+    if: always()
+
+    steps:
+      - name: Every part of the browser workflow succeeded
+        env:
+          SHARDS: ${{ needs.browser.result }}
+          VISUAL: ${{ needs.visual.result }}
+        run: |
+          set -euo pipefail
+          echo "browser shards: $SHARDS"
+          echo "visual regression: $VISUAL"
+          for result in "$SHARDS" "$VISUAL"; do
+            if [ "$result" != "success" ]; then
+              echo "the browser workflow did not pass: a dependency reported '$result'"
+              exit 1
+            fi
+          done
+          echo "all 6 browser shards and the visual suite passed"
 
   recovery:
     name: Backup and restore rehearsal
