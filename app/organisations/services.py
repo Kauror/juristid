@@ -15,7 +15,9 @@ institutions with different remits.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from django.db import transaction
 
@@ -30,28 +32,37 @@ from app.organisations.models import (
 from app.organisations.reference_data import MINISTRIES, ReferenceOrganisation
 
 
+def find_matches(name: str) -> list[Organisation]:
+    """Every institution this exact name resolves to. Usually none or one.
+
+    Canonical names first, then recorded aliases — an alias match is not fuzzy
+    matching: somebody decided that ``MKM`` means that ministry, and this is
+    reading their decision.
+
+    Two rows come back only when the catalogue genuinely holds two institutions
+    under one spelling, and that is the case callers must not resolve on their
+    own. :func:`find_exact` answers ``None`` there and a *creating* caller must
+    not read that as "so it is new" — a third row spelled the same way makes the
+    ambiguity permanent (Teema closing redesign §7D).
+    """
+    normalized = normalize_for_matching(name)
+    if not normalized:
+        return []
+
+    exact = list(Organisation.objects.filter(normalized_name=normalized)[:2])
+    if exact:
+        return exact
+    return list(Organisation.objects.filter(aliases__normalized_alias=normalized).distinct()[:2])
+
+
 def find_exact(name: str) -> Organisation | None:
     """The one institution this name unambiguously refers to, or nothing.
-
-    Checks canonical names first, then recorded aliases. An alias match is not
-    fuzzy matching: somebody decided that ``MKM`` means that ministry, and this
-    is reading their decision.
 
     Returns ``None`` when two rows match, because "which of these did you mean"
     is a question for a person.
     """
-    normalized = normalize_for_matching(name)
-    if not normalized:
-        return None
-
-    exact = list(Organisation.objects.filter(normalized_name=normalized)[:2])
-    if len(exact) == 1:
-        return exact[0]
-    if len(exact) > 1:
-        return None
-
-    aliased = list(Organisation.objects.filter(aliases__normalized_alias=normalized).distinct()[:2])
-    return aliased[0] if len(aliased) == 1 else None
+    matches = find_matches(name)
+    return matches[0] if len(matches) == 1 else None
 
 
 @dataclass(frozen=True)
@@ -97,6 +108,63 @@ def get_or_create_organisation(
         name=cleaned, organisation_type=organisation_type, registry_code=code
     )
     return OrganisationResult(organisation=organisation, created=True)
+
+
+@transaction.atomic
+def resolve_recipients(
+    *, chosen: Sequence[Organisation], typed_names: Sequence[str]
+) -> list[Organisation]:
+    """The recipient set of one letter, from a shortlist and from typed names.
+
+    The closing composer lets somebody tick the bodies Koda usually writes to
+    and type the ones it does not — seven political parties on one opinion is a
+    real case, and creating them somewhere else first is not a workflow anybody
+    would use (Teema closing redesign §7).
+
+    Two rules do the work here, and both are about identity rather than
+    convenience:
+
+    * **Exact normalised identity reuses, everything else creates.** A typed
+      name that already names an institution — canonically or through a
+      recorded alias — *is* that institution. Anything merely similar becomes
+      its own row, because a wrong merge takes a decade of filing with it and a
+      duplicate does not (module docstring).
+    * **Ambiguity is refused, never guessed.** ``find_matches`` returning two
+      rows means the catalogue holds one spelling for two bodies. Creating a
+      third would make that permanent, and picking one would file the letter
+      against a body nobody named.
+
+    Ordering is the order somebody entered, ticked first. Duplicates collapse:
+    the same body reached twice — twice typed, or ticked and then typed — is one
+    recipient, which is also what ``SubmissionRecipient`` enforces.
+
+    Everything here runs inside the caller's transaction. A closure that is
+    refused after this point leaves no institutions behind (§7E).
+    """
+    resolved: list[Organisation] = []
+    seen: set[Any] = set()
+
+    for organisation in chosen:
+        if organisation.pk not in seen:
+            seen.add(organisation.pk)
+            resolved.append(organisation)
+
+    for raw in typed_names:
+        cleaned = " ".join((raw or "").split())
+        if not cleaned:
+            continue
+        matches = find_matches(cleaned)
+        if len(matches) > 1:
+            raise DomainError(f"«{cleaned}» sobib mitme organisatsiooniga — vali nimekirjast.")
+        organisation = get_or_create_organisation(
+            name=cleaned, organisation_type=OrganisationType.OTHER
+        ).organisation
+        if organisation.pk in seen:
+            continue
+        seen.add(organisation.pk)
+        resolved.append(organisation)
+
+    return resolved
 
 
 @dataclass

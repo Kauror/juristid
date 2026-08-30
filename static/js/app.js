@@ -270,6 +270,11 @@
       if (!once(trigger, "Reveal")) {
         return;
       }
+      /* A panel the server rendered open — a refused closure comes back that
+         way — must find its chip already active, or the first click on it
+         would close the section holding the error. */
+      var revealed = document.getElementById(trigger.getAttribute("data-reveals"));
+      trigger.classList.toggle("is-active", !!revealed && !revealed.hidden);
       trigger.addEventListener("click", function () {
         var target = document.getElementById(trigger.getAttribute("data-reveals"));
         if (!target) {
@@ -392,6 +397,112 @@
         submit.classList.toggle("button--danger", toggle.checked);
       };
       toggle.addEventListener("change", sync);
+      sync();
+    });
+
+    /* SAAJA — `Muu`, as many times as the letter needs.
+       A closing opinion can go to seven bodies none of which are in the
+       catalogue yet, and creating them one page-load at a time is not a
+       workflow anybody would use. Each added name becomes a chip carrying its
+       own hidden input under the same field name, so the server sees a list
+       however many there are.
+
+       The visible box carries that name too, which is what keeps the control
+       honest with no script running: type one recipient, save, done. When this
+       binds, adding moves the value into a chip and empties the box, so the
+       box never contributes the name twice
+       (app/matters/forms.py MultiTextInput, Teema closing redesign §7B). */
+    scope.querySelectorAll("[data-recipients]").forEach(function (holder) {
+      if (!once(holder, "Recipients")) {
+        return;
+      }
+      var box = holder.querySelector("[data-recipient-input]");
+      var list = holder.querySelector("[data-recipient-list]");
+      var add = holder.querySelector("[data-recipient-add]");
+      if (!box || !list || !add) {
+        return;
+      }
+
+      var chosen = function () {
+        return Array.prototype.map.call(
+          list.querySelectorAll("input[type=hidden]"),
+          function (input) {
+            return input.value.toLowerCase();
+          }
+        );
+      };
+
+      var remove = function (event) {
+        var button = event.target.closest("[data-recipient-remove]");
+        if (button) {
+          button.closest(".recipientadd__item").remove();
+        }
+      };
+
+      var append = function () {
+        var name = box.value.trim().replace(/\s+/g, " ");
+        box.value = "";
+        box.focus();
+        if (!name || chosen().indexOf(name.toLowerCase()) !== -1) {
+          /* The same body twice is one recipient, which is what the form, the
+             service and the unique recipient-per-submission constraint all
+             say. Saying it here too is what keeps the count on screen equal to
+             the count that is stored (§7F). */
+          return;
+        }
+        var item = document.createElement("li");
+        item.className = "recipientadd__item";
+        var label = document.createElement("span");
+        label.className = "recipientadd__name";
+        label.textContent = name;
+        var hidden = document.createElement("input");
+        hidden.type = "hidden";
+        hidden.name = box.name;
+        hidden.value = name;
+        var drop = document.createElement("button");
+        drop.type = "button";
+        drop.className = "recipientadd__remove";
+        drop.setAttribute("data-recipient-remove", "");
+        drop.setAttribute("aria-label", "Eemalda saaja " + name);
+        drop.textContent = "×";
+        item.appendChild(label);
+        item.appendChild(hidden);
+        item.appendChild(drop);
+        list.appendChild(item);
+      };
+
+      add.addEventListener("click", append);
+      list.addEventListener("click", remove);
+      box.addEventListener("keydown", function (event) {
+        /* Enter adds the recipient rather than submitting the composer, which
+           is what somebody halfway through a list of seven means by it. */
+        if (event.key === "Enter") {
+          event.preventDefault();
+          append();
+        }
+      });
+    });
+
+    /* TÖÖVÕIT — the commencement date belongs to "Jah" and to nothing else.
+       Hidden by markup on the server, so a refused save that said Jah comes
+       back with the box open and its error visible; this only follows the
+       radios while somebody is filling the form in. */
+    scope.querySelectorAll(".composer [data-victory-date]").forEach(function (panel) {
+      if (!once(panel, "VictoryDate")) {
+        return;
+      }
+      var form = panel.closest("form");
+      if (!form) {
+        return;
+      }
+      var radios = form.querySelectorAll("input[name=work_victory]");
+      var sync = function () {
+        var chosen = form.querySelector("input[name=work_victory]:checked");
+        panel.hidden = !chosen || chosen.value !== "JAH";
+      };
+      radios.forEach(function (radio) {
+        radio.addEventListener("change", sync);
+      });
       sync();
     });
 
