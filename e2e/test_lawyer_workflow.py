@@ -79,7 +79,12 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     """Scenario A, B, C and D in one pass, in the order the work happens."""
     sign_in(page, base_url, SANDRA)
 
-    # -- Ülevaade is the landing surface ---------------------------------
+    # -- Minu asjad is where signing in lands ----------------------------
+    # The default home, since the root chooses it (app/core/views.py::home).
+    expect(page.get_by_role("heading", name="Minu asjad")).to_be_visible()
+
+    # -- Ülevaade is one click away on the bar ---------------------------
+    page.locator(".topnav__link", has_text="Ülevaade").first.click()
     expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
     # Not `exact`: the heading carries its count, so its accessible name is
     # "Tähtajad" followed by a number that changes with the seeded data.
@@ -87,7 +92,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.get_by_role("heading", name="Vajab sekkumist")).to_be_visible()
     screenshots(page, "00-ulevaade")
 
-    # -- Minu töö is the personal queue ----------------------------------
+    # -- back to the personal queue --------------------------------------
     page.locator(".topnav__link", has_text="Minu asjad").click()
     expect(page.get_by_role("heading", name="Minu asjad")).to_be_visible()
     # One dated list, whatever the mode. `Järgmise tegevuseta` is beside it

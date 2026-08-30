@@ -112,10 +112,15 @@ becomes `CLOUDFLARE_ACCESS` and the claim becomes true.
 
 ### A department scope, so the landing page needs no borrowed identity
 
-The gate lands somebody on Ülevaade before they have chosen a persona, and that
+The gate landed somebody on Ülevaade before they had chosen a persona, and that
 page has to be worth looking at. It must not become worth looking at by
 rendering "as Marko": that would show Marko's restricted files to whoever knew
 the shared password.
+
+(Since 2026-08-30 the gate sends somebody to the persona selector instead — see
+the superseding note at the end of this section. The requirement stated here is
+unchanged: Ülevaade is still reachable with no persona selected, and still must
+not render "as somebody".)
 
 `DepartmentViewer` is a sentinel — not a `User`, no primary key, cannot be
 written to a foreign key, never an audit actor — that `scope_for_user` maps to
@@ -141,6 +146,17 @@ Everything except Ülevaade stays `@login_required`. Without a persona,
 `LOGIN_URL` is the selector, so the flow is: password → department overview →
 pick a persona → your work. Authoring anything requires a persona, because
 authoring needs somebody to attribute it to.
+
+> **Superseded, 2026-08-30 — the entry step only.** Minu asjad is now a
+> person's default home, so `/` no longer chooses Ülevaade. An authenticated
+> request is redirected to `matters:my_work`; a request that is behind the gate
+> with no persona selected is redirected to the selector, making the flow
+> **password → pick a persona → your work**. Everything else in this section
+> stands: `/ulevaade/` is unchanged, it is still the one `@gate_required` page,
+> and `DepartmentViewer` is still what makes it renderable for a reader who has
+> chosen no persona — both for the explicit *Ilma kasutajata* switch (ADR 0034)
+> and for anybody who navigates there. Only the default destination moved
+> (`app/core/views.py::home`).
 
 ### No public origin bypass
 

@@ -191,7 +191,14 @@ def test_the_client_key_is_not_the_address(client, gate_url):
 # -- D, E. what the correct password opens ---------------------------------
 
 
-def test_the_correct_password_opens_the_department_overview(behind_the_gate):
+def test_ulevaade_is_readable_once_the_password_is_correct(behind_the_gate):
+    """Explicitly requested, which is now the only way anybody arrives here.
+
+    The password no longer *lands* somebody on Ülevaade — `/` chooses the
+    persona selector, and a chosen persona chooses Minu asjad
+    (tests/test_default_home.py). What this asserts is unchanged: the page is
+    reachable behind the gate, with or without a persona.
+    """
     response = behind_the_gate.get("/ulevaade/", follow=True)
     assert response.status_code == 200
     assert response.resolver_match.view_name == "matters:overview"
