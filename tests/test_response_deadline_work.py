@@ -634,11 +634,18 @@ def test_the_register_work_owner_filter_reads_the_matter_owner(specialist, other
 
 
 def test_two_deadline_facts_are_two_rows_and_still_one_matter(specialist):
-    """A response deadline, a milestone and a DO deadline are different facts.
+    """A milestone and a DO deadline are different facts, and both are work.
 
     The chronological list says so — that is what a work list is for. A figure
     that promises a count of *Matters* must not double, and that is what
     ``work_population_ids`` guarantees by reducing to Matter primary keys.
+
+    **An `Oluline tähtaeg` is not suppressed by the instruction.** The precedence
+    added in docs/adr/0050 is between the Matter's own `Arvamuse tähtaeg` and its
+    one open `Järgmiseks`; a milestone is a third, independent business fact and
+    a Matter may legitimately carry a current instruction and several of them at
+    once. So this Matter produces two rows rather than three: the response
+    deadline steps aside for the instruction, and the milestone does not.
     """
     anchor = _wednesday()
     due = anchor + timedelta(days=2)
@@ -662,17 +669,49 @@ def test_two_deadline_facts_are_two_rows_and_still_one_matter(specialist):
     items = wi.work_items(specialist, today=anchor)
     rows = [item for item in items if item.matter_id == matter.pk]
 
-    assert len(rows) == 3
+    assert len(rows) == 2
     assert {item.source_type for item in rows} == {
-        wi.SOURCE_RESPONSE_DEADLINE,
         wi.SOURCE_IMPORTANT_DEADLINE,
         wi.SOURCE_NEXT_ACTION,
     }
-    assert len({item.object_id for item in rows}) == 3
+    assert len({item.object_id for item in rows}) == 2
 
     ids = wi.work_population_ids(specialist, wi.WORK_DEADLINE_THIS_WEEK, today=anchor, items=items)
     assert ids == {matter.pk}
     assert _register(specialist, anchor, too=wi.WORK_DEADLINE_THIS_WEEK) == {matter.pk}
+
+
+def test_a_milestone_survives_the_instruction_that_suppresses_the_response_deadline(
+    specialist, today
+):
+    """The boundary of the new rule, stated on its own.
+
+    `Oluline tähtaeg` is independent of both the response deadline and the
+    instruction, and stays live work while an open `Järgmiseks` exists.
+    """
+    matter = _matter(specialist, deadline=today - timedelta(days=200))
+    add_important_date(
+        matter=matter,
+        title="Avaliku konsultatsiooni lõpp",
+        date_value=today + timedelta(days=6),
+        period_end=today + timedelta(days=6),
+        actor=specialist,
+    )
+    set_next_action(
+        matter=matter,
+        text="Vaatan uuesti üle",
+        kind=ActionKind.MONITOR,
+        date_semantics=DateSemantics.REVIEW_ON,
+        target_date=today + timedelta(days=90),
+        actor=specialist,
+    )
+
+    rows = [item for item in wi.work_items(specialist, today=today) if item.matter_id == matter.pk]
+
+    assert {item.source_type for item in rows} == {
+        wi.SOURCE_IMPORTANT_DEADLINE,
+        wi.SOURCE_NEXT_ACTION,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1001,3 +1040,348 @@ def test_a_deadline_somebody_typed_is_kept_and_counted_at_once(signed_in, specia
     assert item.when == due
     assert matter.pk in wi.work_population_ids(specialist, wi.WORK_DEADLINE_THIS_WEEK, today=anchor)
     assert matter.pk in _register(specialist, anchor, too=wi.WORK_DEADLINE_THIS_WEEK)
+
+
+# ---------------------------------------------------------------------------
+# An open Järgmiseks outranks the response deadline (docs/adr/0050)
+#
+# `Arvamuse tähtaeg` is the obligation a file arrives with. It is live work
+# until somebody says what happens next; an open `NextAction` is that saying,
+# and from then on the lawyer's current instruction is what the work surfaces
+# show. The stored column never moves — it is a fact in the header either way.
+#
+# No dates are compared anywhere in this section. That is the point of it: the
+# defect this fixes was a January deadline dominating a file whose lawyer had
+# already written «JÄLGIN, vaata uuesti üle 09.10».
+# ---------------------------------------------------------------------------
+
+
+def _instruct(matter, actor, *, kind, semantics=DateSemantics.REVIEW_ON, on=None, text="Samm"):
+    """Record a Järgmiseks through the service the composer uses."""
+    return set_next_action(
+        matter=matter,
+        text=text,
+        kind=kind,
+        date_semantics=semantics,
+        target_date=on,
+        actor=actor,
+    )
+
+
+def test_a_response_deadline_is_work_while_nobody_has_said_what_happens_next(specialist, today):
+    """Case 1. The fallback, unchanged: no instruction, so the date is the work."""
+    matter = _matter(specialist, deadline=today + timedelta(days=16))
+
+    (item,) = _response_items(_mine(specialist, today))
+
+    assert item.matter_id == matter.pk
+    assert item.meaning == wi.MEANING_RESPONSE
+    assert item in wi.real_deadlines(_mine(specialist, today))
+
+
+@pytest.mark.parametrize(
+    ("kind", "semantics", "offset"),
+    [
+        pytest.param(ActionKind.DO, DateSemantics.DEADLINE, 30, id="do-later"),
+        pytest.param(ActionKind.WAIT, DateSemantics.REVIEW_ON, 30, id="wait-later"),
+        pytest.param(ActionKind.MONITOR, DateSemantics.REVIEW_ON, 30, id="monitor-later"),
+        pytest.param(ActionKind.WAIT, DateSemantics.REVIEW_ON, None, id="wait-undated"),
+        pytest.param(ActionKind.MONITOR, DateSemantics.REVIEW_ON, None, id="monitor-undated"),
+    ],
+)
+def test_any_open_next_action_suppresses_the_response_deadline(
+    specialist, today, kind, semantics, offset
+):
+    """Cases 2-5. Every kind, dated or not, and always a *later* date than the
+    deadline it outranks — so nothing here can pass by comparing the two."""
+    matter = _matter(specialist, deadline=today - timedelta(days=200))
+    _instruct(
+        matter,
+        specialist,
+        kind=kind,
+        semantics=semantics,
+        on=None if offset is None else today + timedelta(days=offset),
+    )
+
+    assert _response_items(_mine(specialist, today)) == []
+    assert matter.pk not in wi.outstanding_response_deadlines(specialist).values_list(
+        "pk", flat=True
+    )
+
+
+def test_the_earlier_response_deadline_does_not_beat_the_later_instruction(specialist, today):
+    """Case 3, stated as the rule rather than as a kind.
+
+    The screenshot case: an overdue January deadline and a MONITOR review in
+    October. The file is being watched, not missed — and a rule that picked the
+    earlier date would say the opposite.
+    """
+    matter = _matter(specialist, deadline=date(2026, 1, 27))
+    _instruct(
+        matter,
+        specialist,
+        kind=ActionKind.MONITOR,
+        on=today + timedelta(days=40),
+        text="Vaatan uuesti üle",
+    )
+
+    items = _mine(specialist, today)
+
+    assert _response_items(items) == []
+    (action,) = [item for item in items if item.matter_id == matter.pk]
+    assert action.source_type == wi.SOURCE_NEXT_ACTION
+    assert action.when == today + timedelta(days=40)
+    # A MONITOR review is never late, so nothing about this Matter is overdue.
+    assert not action.is_overdue
+    assert matter.pk not in wi.work_population_ids(specialist, wi.WORK_OVERDUE, today=today)
+
+
+def test_an_overdue_deadline_under_a_monitor_leaves_every_overdue_population(
+    department_head, specialist, today
+):
+    """Case 3, through the surfaces rather than through the model.
+
+    The Seis figure, the register population behind it and the department's own
+    id set must all agree that this Matter is not overdue — a count that moved
+    without its drill-through moving is the failure this rule has to avoid.
+    """
+    matter = _matter(specialist, deadline=today - timedelta(days=200))
+    before = seis_figures(department_head, today)
+    assert matter.pk in wi.work_population_ids(department_head, wi.WORK_OVERDUE, today=today)
+    assert matter.pk in _register(department_head, today, too=wi.WORK_OVERDUE)
+
+    _instruct(matter, specialist, kind=ActionKind.MONITOR, on=today + timedelta(days=40))
+
+    after = seis_figures(department_head, today)
+    overdue_before = next(f.value for f in before if f.key == "overdue")
+    overdue_after = next(f.value for f in after if f.key == "overdue")
+
+    assert overdue_after == overdue_before - 1
+    assert matter.pk not in wi.work_population_ids(department_head, wi.WORK_OVERDUE, today=today)
+    assert matter.pk not in _register(department_head, today, too=wi.WORK_OVERDUE)
+
+
+def test_the_count_and_its_drill_through_still_hold_the_same_matters(
+    department_head, specialist, today
+):
+    """Case: counts and lists move together, by Matter id rather than by total."""
+    kept = _matter(specialist, deadline=today - timedelta(days=3), title="Ilma juhiseta")
+    suppressed = _matter(specialist, deadline=today - timedelta(days=3), title="Juhisega")
+    _instruct(suppressed, specialist, kind=ActionKind.WAIT, on=today + timedelta(days=10))
+
+    counted = wi.work_population_ids(department_head, wi.WORK_OVERDUE, today=today)
+
+    assert counted == _register(department_head, today, too=wi.WORK_OVERDUE)
+    assert kept.pk in counted
+    assert suppressed.pk not in counted
+
+
+def test_the_deadline_this_week_population_obeys_the_precedence(specialist, today):
+    """The other dated population the department strip counts."""
+    anchor = _wednesday()
+    matter = _matter(specialist, deadline=anchor + timedelta(days=1))
+    assert matter.pk in wi.work_population_ids(specialist, wi.WORK_DEADLINE_THIS_WEEK, today=anchor)
+
+    _instruct(matter, specialist, kind=ActionKind.WAIT, on=anchor + timedelta(days=90))
+
+    assert matter.pk not in wi.work_population_ids(
+        specialist, wi.WORK_DEADLINE_THIS_WEEK, today=anchor
+    )
+    assert matter.pk not in _register(specialist, anchor, too=wi.WORK_DEADLINE_THIS_WEEK)
+
+
+def test_the_department_eesolev_drops_the_suppressed_deadline(department_head, specialist, today):
+    """Osakond reads the shared model, so it needed no change of its own."""
+    matter = _matter(specialist, deadline=today + timedelta(days=3))
+    placed = {
+        item.matter_id for group in upcoming_groups(department_head, today) for item in group.items
+    }
+    assert matter.pk in placed
+
+    _instruct(matter, specialist, kind=ActionKind.MONITOR, on=today + timedelta(days=200))
+
+    still = {
+        item.matter_id
+        for group in upcoming_groups(department_head, today)
+        for item in group.items
+        if item.source_type == wi.SOURCE_RESPONSE_DEADLINE
+    }
+    assert matter.pk not in still
+
+
+def test_minu_asjad_shows_the_instruction_rather_than_the_old_deadline(specialist, today):
+    """The band a lawyer actually reads follows the review, not the deadline."""
+    matter = _matter(specialist, deadline=today - timedelta(days=200))
+    _instruct(matter, specialist, kind=ActionKind.MONITOR, on=today + timedelta(days=40))
+
+    bands = _bands(specialist, today)
+    overdue = _titles(bands.get("overdue"))
+
+    assert TITLE not in overdue
+    somewhere = {item.matter_id for band in bands.values() for item in band.items}
+    assert matter.pk in somewhere
+
+
+def test_ending_the_only_open_action_restores_the_fallback(specialist, today):
+    """Case 6. A read model, so the fallback returns on the next read."""
+    matter = _matter(specialist, deadline=today + timedelta(days=5))
+    action = _instruct(matter, specialist, kind=ActionKind.WAIT, on=today + timedelta(days=60))
+    assert _response_items(_mine(specialist, today)) == []
+
+    NextAction.objects.filter(pk=action.pk).update(status=ActionStatus.CANCELLED)
+
+    (item,) = _response_items(_mine(specialist, today))
+    assert item.matter_id == matter.pk
+    matter.refresh_from_db()
+    assert matter.response_deadline == today + timedelta(days=5)
+
+
+def test_replacing_the_action_keeps_the_fallback_suppressed(specialist, today):
+    """Case 7. One open action at a time, and it is still an open action."""
+    matter = _matter(specialist, deadline=today - timedelta(days=30))
+    _instruct(
+        matter,
+        specialist,
+        kind=ActionKind.DO,
+        semantics=DateSemantics.DEADLINE,
+        on=today + timedelta(days=10),
+        text="Esimene samm",
+    )
+    _instruct(
+        matter,
+        specialist,
+        kind=ActionKind.MONITOR,
+        on=today + timedelta(days=90),
+        text="Teine samm",
+    )
+
+    assert NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).count() == 1
+    assert _response_items(_mine(specialist, today)) == []
+
+
+def test_a_sent_opinion_still_ends_the_obligation_on_its_own(specialist, today):
+    """Case 8. The #94 fulfilment rule is untouched by the new one."""
+    matter = _matter(specialist, deadline=today + timedelta(days=5))
+    _send_opinion(matter, specialist)
+
+    assert NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).count() == 0
+    assert _response_items(_mine(specialist, today)) == []
+
+
+def test_a_closed_matter_stays_absent_whatever_its_instruction(specialist, today):
+    """Case 9, and the interaction: closing is still decided first."""
+    matter = _matter(specialist, deadline=today + timedelta(days=5))
+    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
+
+    assert _response_items(_mine(specialist, today)) == []
+
+
+def test_the_stored_deadline_is_never_touched_by_the_precedence(specialist, today):
+    """The column is canonical. Suppression is a reading, not a write."""
+    due = today - timedelta(days=200)
+    matter = _matter(specialist, deadline=due)
+    before = Matter.objects.values_list("updated_at", flat=True).get(pk=matter.pk)
+
+    _instruct(matter, specialist, kind=ActionKind.MONITOR, on=today + timedelta(days=40))
+    _mine(specialist, today)
+
+    matter.refresh_from_db()
+    assert matter.response_deadline == due
+    assert matter.is_open
+    # The instruction touched the Matter; nothing about *reading* the work model
+    # may. Asserted on the header's own resolver, which is what a lawyer sees.
+    assert Matter.objects.values_list("updated_at", flat=True).get(pk=matter.pk) >= before
+
+
+def test_the_header_still_states_the_response_deadline(client, specialist, today):
+    """The distinction the whole change rests on: header fact, work-model silence."""
+    from app.matters import selectors
+
+    matter = _matter(specialist, deadline=date(2026, 1, 27))
+    _instruct(
+        matter,
+        specialist,
+        kind=ActionKind.MONITOR,
+        on=today + timedelta(days=40),
+        text="Vaatan uuesti üle",
+    )
+
+    resolved = selectors.active_deadline(matter, specialist, today=today)
+    assert resolved is not None
+    assert resolved.value == date(2026, 1, 27)
+    assert resolved.label == "Arvamuse tähtaeg"
+    assert resolved.display == format_estonian_date(date(2026, 1, 27))
+
+    client.force_login(specialist)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    assert format_estonian_date(date(2026, 1, 27)) in body
+    assert "Vaatan uuesti üle" in body
+
+
+def test_a_restricted_matters_instruction_cannot_change_another_readers_counts(
+    specialist, reader, today
+):
+    """Authorization before arithmetic, on both sides of the new rule.
+
+    The suppressed Matter is invisible to the reader either way, so the reader's
+    numbers must be identical before and after the instruction exists — and the
+    subquery must not become a way to learn that a hidden action was written.
+    """
+    matter = _matter(
+        specialist, deadline=today - timedelta(days=10), visibility=Visibility.RESTRICTED
+    )
+
+    before = wi.work_population_ids(reader, wi.WORK_OVERDUE, today=today)
+    assert matter.pk not in before
+
+    _instruct(matter, specialist, kind=ActionKind.MONITOR, on=today + timedelta(days=40))
+
+    assert wi.work_population_ids(reader, wi.WORK_OVERDUE, today=today) == before
+    assert _response_items(wi.work_items(reader, today=today)) == []
+    # The owner still sees the precedence applied to their own file.
+    assert _response_items(_mine(specialist, today)) == []
+
+
+def test_a_restricted_action_still_suppresses_for_a_reader_who_may_see_the_matter(
+    specialist, other_specialist, today
+):
+    """The subquery is reader-blind, and that is the safe direction.
+
+    It can only ever remove a row, so it discloses nothing; what it buys is one
+    answer about the Matter rather than a deadline that is live for one
+    colleague and suppressed for another.
+    """
+    matter = _matter(specialist, deadline=today - timedelta(days=10))
+    action = _instruct(matter, specialist, kind=ActionKind.WAIT, on=today + timedelta(days=40))
+    NextAction.objects.filter(pk=action.pk).update(visibility_override=Visibility.RESTRICTED)
+
+    for viewer in (specialist, other_specialist):
+        assert _response_items(wi.work_items(viewer, today=today)) == [], viewer
+
+
+def test_the_precedence_costs_no_extra_query_per_matter(specialist, today):
+    """The new test is an ``Exists``, so twenty Matters cost what one does.
+
+    Half of them carry an instruction, so the subquery is genuinely exercised
+    rather than short-circuiting on an empty table.
+    """
+    _matter(specialist, deadline=today + timedelta(days=1), title="Üksik juhiseta")
+
+    with CaptureQueriesContext(connection) as one:
+        assert len(_read_the_source(specialist, today)) == 1
+
+    for index in range(20):
+        matter = _matter(
+            specialist,
+            deadline=today + timedelta(days=index + 2),
+            title=f"Segatud teema {index}",
+        )
+        if index % 2 == 0:
+            _instruct(
+                matter, specialist, kind=ActionKind.MONITOR, on=today + timedelta(days=90 + index)
+            )
+
+    with CaptureQueriesContext(connection) as many:
+        assert len(_read_the_source(specialist, today)) == 11
+
+    assert len(many) == len(one)

@@ -24,6 +24,7 @@ from app.core.management.commands.seed_e2e_data import (
     FORMER_OWNER_TITLE,
     OVERDUE_TITLE,
     RESTRICTED_TITLE,
+    SUPERSEDED_DEADLINE_TITLE,
 )
 from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, go_to, sign_in, sign_out
 
@@ -162,6 +163,54 @@ def test_a_review_date_reached_is_never_counted_as_a_missed_deadline(page, base_
     open_work(page, base_url)
 
     assert figure_value(page, "üle tähtaja") == 1
+
+
+def test_a_superseded_response_deadline_is_not_overdue_anywhere(page, base_url):
+    """The regression this branch exists for, read in a browser.
+
+    The seeded world holds a Matter whose `Arvamuse tähtaeg` passed two hundred
+    days ago and whose lawyer has since written «JÄLGIN, jälgin menetluse
+    jätkumist» with a review forty days ahead. Under the precedence that file is
+    not late: its owner said what happens next, and the old deadline went back to
+    being a fact in the header (docs/adr/0050).
+
+    Asserted here rather than only against the database because the failure it
+    replaces was something a person saw on a page — an eight-month-overdue row
+    on a file nobody had neglected.
+    """
+    sign_in(page, base_url, HEAD)
+    open_work(page, base_url)
+
+    # Not in the intervention list, which is where an overdue row would appear.
+    rows = page.locator(".interrow").filter(has_text=SUPERSEDED_DEADLINE_TITLE)
+    expect(rows).to_have_count(0)
+
+    # And not behind the overdue figure either.
+    figure(page, "üle tähtaja").click()
+    page.wait_for_load_state("networkidle")
+    assert SUPERSEDED_DEADLINE_TITLE not in page.content()
+
+
+def test_the_superseded_deadline_is_still_a_fact_on_the_teema_header(page, base_url):
+    """Header fact, work-model silence — the distinction the rule rests on.
+
+    The old deadline is still printed where a lawyer looks it up, and the current
+    instruction is printed below it. Neither contradicts the other: one is what
+    the register recorded, the other is what needs attention now.
+    """
+    sign_in(page, base_url, HEAD)
+    page.goto(f"{base_url}/teemad/?olek=koik&q=Vana+t%C3%A4htajaga")
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("link", name=SUPERSEDED_DEADLINE_TITLE).first.click()
+    page.wait_for_load_state("networkidle")
+
+    body = page.content()
+    # The recorded response deadline is still stated on the page.
+    assert "Arvamuse tähtaeg" in body or "Tähtaeg" in body
+    # The current instruction is the monitoring one, and it is not styled late.
+    expect(page.locator(".uxnext")).to_be_visible()
+    expect(page.locator(".uxnext--overdue")).to_have_count(0)
+    assert "Jälgin menetluse jätkumist" in body
 
 
 def test_the_overdue_figure_reaches_the_matter_that_is_actually_late(page, base_url):
