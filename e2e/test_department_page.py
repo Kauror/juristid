@@ -16,6 +16,8 @@ in a merge — fails in exactly the place no unit test looks (Stage-2F brief 45)
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 import pytest
 from playwright.sync_api import expect
 
@@ -24,6 +26,7 @@ from app.core.management.commands.seed_e2e_data import (
     FORMER_OWNER_TITLE,
     OVERDUE_TITLE,
     RESTRICTED_TITLE,
+    SUPERSEDED_DEADLINE_TITLE,
 )
 from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, go_to, sign_in, sign_out
 
@@ -162,6 +165,54 @@ def test_a_review_date_reached_is_never_counted_as_a_missed_deadline(page, base_
     open_work(page, base_url)
 
     assert figure_value(page, "üle tähtaja") == 1
+
+
+def test_a_superseded_response_deadline_is_not_overdue_anywhere(page, base_url):
+    """The regression this branch exists for, read in a browser.
+
+    The seeded world holds a Matter whose `Arvamuse tähtaeg` passed two hundred
+    days ago and whose lawyer has since written «JÄLGIN, jälgin menetluse
+    jätkumist» with a review forty days ahead. Under the precedence that file is
+    not late: its owner said what happens next, and the old deadline went back to
+    being a fact in the header (docs/adr/0050).
+
+    Asserted here rather than only against the database because the failure it
+    replaces was something a person saw on a page — an eight-month-overdue row
+    on a file nobody had neglected.
+    """
+    sign_in(page, base_url, HEAD)
+    open_work(page, base_url)
+
+    # Not in the intervention list, which is where an overdue row would appear.
+    rows = page.locator(".interrow").filter(has_text=SUPERSEDED_DEADLINE_TITLE)
+    expect(rows).to_have_count(0)
+
+    # And not behind the overdue figure either.
+    figure(page, "üle tähtaja").click()
+    page.wait_for_load_state("networkidle")
+    assert SUPERSEDED_DEADLINE_TITLE not in page.content()
+
+
+def test_the_superseded_deadline_is_still_a_fact_on_the_teema_header(page, base_url):
+    """Header fact, work-model silence — the distinction the rule rests on.
+
+    The old deadline is still printed where a lawyer looks it up, and the current
+    instruction is printed below it. Neither contradicts the other: one is what
+    the register recorded, the other is what needs attention now.
+    """
+    sign_in(page, base_url, HEAD)
+    page.goto(f"{base_url}/teemad/?olek=koik&q=Vana+t%C3%A4htajaga")
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("link", name=SUPERSEDED_DEADLINE_TITLE).first.click()
+    page.wait_for_load_state("networkidle")
+
+    body = page.content()
+    # The recorded response deadline is still stated on the page.
+    assert "Arvamuse tähtaeg" in body or "Tähtaeg" in body
+    # The current instruction is the monitoring one, and it is not styled late.
+    expect(page.locator(".uxnext")).to_be_visible()
+    expect(page.locator(".uxnext--overdue")).to_have_count(0)
+    assert "Jälgin menetluse jätkumist" in body
 
 
 def test_the_overdue_figure_reaches_the_matter_that_is_actually_late(page, base_url):
@@ -362,17 +413,35 @@ def test_the_head_counts_restricted_work_and_a_reader_does_not(page, base_url):
     The head sees it because DEPARTMENT_HEAD is entitled to; a reader does not,
     because a reader is outside the legal team (docs/adr/0042). Asserted in a browser
     because a leak here would be a leak in rendering, not in a query.
+
+    Both halves *search* for the title rather than reading the first page of the
+    register. The register pages at twelve rows, so the presence half depended on
+    the seeded world staying small enough to keep this row on page one — and, far
+    worse, the absence half would have passed for a reader who simply could not
+    see page two. A query that would return the row if it were visible is the
+    only shape in which "it is not there" means anything.
+
+    Both halves then ask whether a **row of the results table** rendered, which
+    is the only form of the question that has one answer. Searching for a title
+    necessarily puts that title on the page three times over without any row
+    existing: in the search box's own `value`, in the empty state's «0 teemat
+    otsingule …», and in the «Otsing: … · Eemalda filter» chip — which is itself
+    a link, so even asking for a link by that name is not enough.
     """
+    query = f"{base_url}/teemad/?olek=koik&q={quote(RESTRICTED_TITLE)}"
+    # Lazy, so one locator answers for whoever is signed in when it is asserted.
+    row = page.locator(".table--register").get_by_role("link", name=RESTRICTED_TITLE)
+
     sign_in(page, base_url, HEAD)
-    page.goto(f"{base_url}/teemad/?olek=koik")
+    page.goto(query)
     page.wait_for_load_state("networkidle")
-    expect(page.get_by_text(RESTRICTED_TITLE).first).to_be_visible()
+    expect(row.first).to_be_visible()
     sign_out(page, base_url)
 
     sign_in(page, base_url, READER)
-    page.goto(f"{base_url}/teemad/?olek=koik")
+    page.goto(query)
     page.wait_for_load_state("networkidle")
-    assert RESTRICTED_TITLE not in page.content()
+    expect(row).to_have_count(0)
 
     # The department page is theirs to read now, and the restricted file is
     # still not on it — neither as a title nor inside a count.

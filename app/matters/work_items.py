@@ -29,8 +29,15 @@ here because it was missing: a Matter carrying nothing but an *Arvamuse
 tähtaeg* had no NextAction and no milestone, so it contributed nothing to this
 model and fell out of every surface built on it — while the question those
 surfaces answer is precisely "what deadlines are coming". Nothing is written to
-make it appear. No ``Järgmiseks`` is invented from it, and a Matter may
-honestly hold a deadline and no next action at once.
+make it appear. No ``Järgmiseks`` is invented from it.
+
+It is also the one source with a **precedence** above it. A response deadline is
+the fallback obligation a file carries *until somebody says what happens next*;
+an open ``NextAction`` is that statement, and while one exists the response
+deadline is not live work. No dates are compared — any open action wins, later
+date or none at all — and nothing is written or cleared to express it: the
+column stays exactly where it was, in the Matter header, as the fact it is
+(`outstanding_response_deadlines`, docs/adr/0050).
 
 They are unified only in the read layer, and only far enough to be sorted into
 one chronological list. Everything that distinguishes them survives the trip:
@@ -538,7 +545,7 @@ def important_deadlines(user: Any, *, owner: Any = None) -> QuerySet[MatterImpor
 
 
 def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[Matter]:
-    """Open Matters whose ``Arvamuse tähtaeg`` nobody has answered yet.
+    """Open Matters whose ``Arvamuse tähtaeg`` is still the current instruction.
 
     Authorization first, like every other source here: the population starts
     from :func:`open_matters`, so a restricted Matter contributes nothing to a
@@ -549,17 +556,40 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
     one definition of that — a ``SENT`` :class:`~app.submissions.models.Submission`
     on the Matter, which is what the old dashboard's *Tähtaeg möödas, arvamust
     ei ole saadetud* row and `selectors.attention_items` both test. That same
-    definition is reused here rather than restated, and it is resolved as an
-    ``Exists`` subquery so the whole source stays one query however many Matters
-    it holds. ``Matter.response_deadline`` itself is never cleared: it is
-    canonical historical data, and the read model simply stops calling a met
-    obligation outstanding work.
+    definition is reused here rather than restated.
 
-    The fulfilment subquery is deliberately reader-blind, exactly as the two
-    existing callers of this rule are. It can only ever *remove* a row, so it
-    cannot widen what anybody sees; scoping it would instead make one reader's
-    deadline outstanding and another's met, which is two answers to a question
-    about the Matter rather than about the reader.
+    **A `Järgmiseks` outranks it.** ``Arvamuse tähtaeg`` is the date the register
+    arrived with: the fallback obligation a file carries until somebody says what
+    happens next. The moment a lawyer records an open ``NextAction`` they have
+    said it, and their statement is the current work — so the response deadline
+    stops being live work and goes back to being what it always was, a recorded
+    fact in the Matter's header (docs/adr/0050).
+
+    Three things this rule deliberately is not:
+
+    * **It is not a comparison of dates.** *Any* open action wins, including one
+      dated later than the response deadline. A file whose deadline was in
+      January and whose lawyer has said «JÄLGIN, vaata uuesti üle 09.10» is not
+      overdue in October; it is being monitored, which is what the person
+      carrying it decided.
+    * **It is not a judgement about the action.** DO, WAIT and MONITOR all count,
+      and so does an action with no date at all: «I do not yet know when» is
+      still a decision, and a stronger statement about today's work than a date
+      nobody has revisited.
+    * **It is not a judgement about who wrote the action.** A ``NextAction``
+      materialised by the current-register enrichment carries the register's own
+      structured ``JÄRGMISEKS`` value, so it is the department's instruction too.
+      There is no second idea of a sufficiently human action here.
+
+    Both subqueries are ``Exists``, so the whole source stays one query however
+    many Matters it holds, and both are deliberately **reader-blind** — as the
+    fulfilment rule already was. Each can only ever *remove* a row, so neither
+    can widen what anybody sees, and a hidden child cannot be read through the
+    difference: what changes is whether one date is called work, never whether a
+    restricted record is disclosed. Scoping them would be worse than useless
+    here — it would make one reader's deadline live and another's suppressed,
+    which is two answers to a question about the Matter rather than about the
+    reader.
 
     ``owner`` narrows by ``Matter.owner``, for the reason
     :func:`important_deadlines` does: this deadline belongs to whoever carries
@@ -568,11 +598,12 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
     honest place for work nobody has been given.
     """
     sent = Submission.objects.filter(matter=OuterRef("pk"), status=SubmissionStatus.SENT)
+    instructed = NextAction.objects.filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
     queryset = (
         open_matters(user)
         .filter(response_deadline__isnull=False)
-        .annotate(has_sent_submission=Exists(sent))
-        .filter(has_sent_submission=False)
+        .annotate(has_sent_submission=Exists(sent), has_open_action=Exists(instructed))
+        .filter(has_sent_submission=False, has_open_action=False)
         .select_related("stage", "owner")
     )
     if owner is not None:

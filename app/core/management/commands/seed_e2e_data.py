@@ -117,6 +117,17 @@ MACHINE_CANDIDATE = "Registrist leitud ettepaneku arvestamine"
 UNASSIGNED_TITLE = "Vastutajata sünteetiline teema"
 REVIEW_DUE_TITLE = "Ootamise ülevaatuse aeg on käes"
 NO_ACTION_TITLE = "Järgmiseta sünteetiline teema"
+#: A file whose `Arvamuse tähtaeg` has long passed and whose lawyer has since
+#: said what happens instead. It exists so the browser suite can assert the
+#: precedence in the place a reader actually meets it: the header still states
+#: the old deadline, the Järgmiseks states the current review, and no surface
+#: calls the Matter overdue (docs/adr/0050).
+SUPERSEDED_DEADLINE_TITLE = "Vana tähtajaga, uue juhisega sünteetiline teema"
+#: How far in the past that deadline sits, and how far ahead the review does.
+#: Both are wide enough that no weekday the suite runs on can move either across
+#: a band boundary.
+SUPERSEDED_DEADLINE_DAYS = 200
+SUPERSEDED_REVIEW_DAYS = 40
 FORMER_OWNER_TITLE = "Endise kolleegi avatud teema"
 
 #: A colleague who has left. Inactive on purpose: they must not appear in the
@@ -649,6 +660,29 @@ class Command(BaseCommand):
             track=Track.DOMESTIC,
             source_organisations=[ministry],
             received_date=today - timedelta(days=6),
+        )
+
+        # The precedence case, kept deliberately extreme: a response deadline
+        # two hundred days past and a review forty days ahead. Under the rule
+        # this file is not late — its lawyer said so — and under a rule that
+        # compared the two dates it would be the most overdue row on the page.
+        superseded = create_matter(
+            title=SUPERSEDED_DEADLINE_TITLE,
+            actor=sandra,
+            owner=sandra,
+            stage=stage,
+            track=Track.DOMESTIC,
+            source_organisations=[ministry],
+            received_date=today - timedelta(days=SUPERSEDED_DEADLINE_DAYS + 30),
+            response_deadline=today - timedelta(days=SUPERSEDED_DEADLINE_DAYS),
+        )
+        set_next_action(
+            matter=superseded,
+            text="Jälgin menetluse jätkumist",
+            kind=ActionKind.MONITOR,
+            date_semantics=DateSemantics.REVIEW_ON,
+            target_date=today + timedelta(days=SUPERSEDED_REVIEW_DAYS),
+            actor=sandra,
         )
 
         former = User.objects.filter(upn=FORMER_UPN).first()
