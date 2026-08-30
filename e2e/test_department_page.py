@@ -16,6 +16,8 @@ in a merge — fails in exactly the place no unit test looks (Stage-2F brief 45)
 
 from __future__ import annotations
 
+from urllib.parse import quote
+
 import pytest
 from playwright.sync_api import expect
 
@@ -411,15 +413,24 @@ def test_the_head_counts_restricted_work_and_a_reader_does_not(page, base_url):
     The head sees it because DEPARTMENT_HEAD is entitled to; a reader does not,
     because a reader is outside the legal team (docs/adr/0042). Asserted in a browser
     because a leak here would be a leak in rendering, not in a query.
+
+    Both halves *search* for the title rather than reading the first page of the
+    register. The register pages at twelve rows, so the presence half depended on
+    the seeded world staying small enough to keep this row on page one — and, far
+    worse, the absence half would have passed for a reader who simply could not
+    see page two. A query that would return the row if it were visible is the
+    only shape in which "it is not there" means anything.
     """
+    query = f"{base_url}/teemad/?olek=koik&q={quote(RESTRICTED_TITLE)}"
+
     sign_in(page, base_url, HEAD)
-    page.goto(f"{base_url}/teemad/?olek=koik")
+    page.goto(query)
     page.wait_for_load_state("networkidle")
     expect(page.get_by_text(RESTRICTED_TITLE).first).to_be_visible()
     sign_out(page, base_url)
 
     sign_in(page, base_url, READER)
-    page.goto(f"{base_url}/teemad/?olek=koik")
+    page.goto(query)
     page.wait_for_load_state("networkidle")
     assert RESTRICTED_TITLE not in page.content()
 
