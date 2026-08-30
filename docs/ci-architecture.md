@@ -234,28 +234,37 @@ minute. The proof that the slow jobs are complete should not itself be slow.
 Baseline, run [33321958813](https://github.com/Kauror/juristid/actions/runs/33321958813);
 the architecture benchmark, run
 [33323182379](https://github.com/Kauror/juristid/actions/runs/33323182379);
-the first sharded run, [33325077089](https://github.com/Kauror/juristid/actions/runs/33325077089).
+the green sharded runs
+[33325578608](https://github.com/Kauror/juristid/actions/runs/33325578608) and
+[33326635051](https://github.com/Kauror/juristid/actions/runs/33326635051).
 
 | | Before | After |
 | --- | --- | --- |
-| Quality | 0:28 | 0:45 |
-| PostgreSQL critical | 12:47 | 5:06 (slowest of 5 shards) |
-| Browser critical | 14:48 within a 16:47 job | 3:29 (slowest of 6 shards) |
-| Visual | 1:19, at the end of the browser job | 1:58, its own job, in parallel |
-| Container | 0:59 | 0:54 |
-| Backup | 1:03 | 0:44 |
-| Dependency | 0:21 | 0:20 |
-| **Total wall clock** | **16:50** | **5:25** |
-| Runner minutes | ~33 | ~46 |
+| Quality | 0:28 | 0:48 |
+| PostgreSQL critical | 12:47 | 4:16 (slowest of 5 shards) |
+| Browser critical | 14:48, inside a 16:47 job | 3:19 (slowest of 6 shards) |
+| Visual | 1:19, at the end of that job | 1:58, its own job, in parallel |
+| Container | 0:59 | 1:00 |
+| Backup | 1:03 | 0:47 |
+| Dependency | 0:21 | 0:17 |
+| Gates | — | 0:20 + 0:02 |
+| **Total wall clock** | **16:50** | **4:38** |
+| Runner minutes | ~33 | ~45 |
+
+Nothing runs less. On the same run: 5348 pytest tests (5328 plus this branch's
+own twenty), 423 browser tests with the two world-dependent skips the baseline
+also had, and 36 visual scenarios with none skipped — where the baseline skipped
+one. Coverage is 91% either way.
+
+Balance, measured rather than predicted: browser shards 3:03–3:19 (1.09), pytest
+shards 2:56–4:16 (1.45). The pytest spread is wider than the partition predicts
+because a shard's cost is not only its tests — each one also creates its own
+test database — and because runners differ. It is well inside the range where
+adding metadata precision would buy nothing.
 
 The runner-minute increase is the price of the wall-clock reduction and is
-deliberate: seventeen jobs that finish in five minutes cost more machine time
+deliberate: nineteen jobs that finish in five minutes cost more machine time
 than six that finish in seventeen.
-
-Shard balance in that first run was poor on the PostgreSQL side — 2:42 to 5:06 —
-because the timing table only held browser measurements at the time and the
-partition fell back to test counts. It was regenerated from that run's own
-reports, which predicts an even split.
 
 The PostgreSQL suite is 5328 tests with a mean of 0.116s and a slowest single
 test of 6.56s — many comparable tests, no pathological ones, so the only lever
