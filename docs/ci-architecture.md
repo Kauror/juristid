@@ -235,32 +235,39 @@ Baseline, run [33321958813](https://github.com/Kauror/juristid/actions/runs/3332
 the architecture benchmark, run
 [33323182379](https://github.com/Kauror/juristid/actions/runs/33323182379);
 the green sharded runs
-[33325578608](https://github.com/Kauror/juristid/actions/runs/33325578608) and
-[33326635051](https://github.com/Kauror/juristid/actions/runs/33326635051).
+[33325578608](https://github.com/Kauror/juristid/actions/runs/33325578608),
+[33326635051](https://github.com/Kauror/juristid/actions/runs/33326635051) and
+[33327716364](https://github.com/Kauror/juristid/actions/runs/33327716364), the
+last of them with `main` merged in.
 
 | | Before | After |
 | --- | --- | --- |
 | Quality | 0:28 | 0:48 |
-| PostgreSQL critical | 12:47 | 4:16 (slowest of 5 shards) |
+| PostgreSQL critical | 12:47 | 4:22 (slowest of 5 shards) |
 | Browser critical | 14:48, inside a 16:47 job | 3:19 (slowest of 6 shards) |
 | Visual | 1:19, at the end of that job | 1:58, its own job, in parallel |
 | Container | 0:59 | 1:00 |
 | Backup | 1:03 | 0:47 |
 | Dependency | 0:21 | 0:17 |
 | Gates | — | 0:20 + 0:02 |
-| **Total wall clock** | **16:50** | **4:38** |
+| **Total wall clock** | **16:50** | **4:40** |
 | Runner minutes | ~33 | ~45 |
 
-Nothing runs less. On the same run: 5348 pytest tests (5328 plus this branch's
-own twenty), 423 browser tests with the two world-dependent skips the baseline
-also had, and 36 visual scenarios with none skipped — where the baseline skipped
-one. Coverage is 91% either way.
+Nothing runs less. On the integrated run: 5355 pytest tests all passing, 425
+browser tests with the two world-dependent skips the baseline also had, and 36
+visual scenarios with none skipped — where the baseline skipped one. Coverage
+is 91% either way.
 
-Balance, measured rather than predicted: browser shards 3:03–3:19 (1.09), pytest
-shards 2:56–4:16 (1.45). The pytest spread is wider than the partition predicts
-because a shard's cost is not only its tests — each one also creates its own
-test database — and because runners differ. It is well inside the range where
-adding metadata precision would buy nothing.
+Those totals include the seven pytest tests and two browser tests `main` gained
+while this branch was open. Nothing had to be told about them: the partition
+reads the collection, `tests/test_my_work_timeline.py` landed in shard 3, and
+the completeness proof passed on the merged head unchanged.
+
+Balance, measured rather than predicted: browser shards 3:03–3:16 (1.07), pytest
+shards 3:41–4:22 (1.19). A shard's cost is not only its tests — each one also
+creates its own test database, and runners differ — so the spread is a little
+wider than the partition predicts, and well inside the range where more metadata
+precision would buy nothing.
 
 The runner-minute increase is the price of the wall-clock reduction and is
 deliberate: nineteen jobs that finish in five minutes cost more machine time
