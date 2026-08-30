@@ -421,23 +421,27 @@ def test_the_head_counts_restricted_work_and_a_reader_does_not(page, base_url):
     see page two. A query that would return the row if it were visible is the
     only shape in which "it is not there" means anything.
 
-    The absence is then read off the **results region's rendered text**, not off
-    the document's markup: searching for a title puts that title in the search
-    box's own `value`, so `page.content()` finds it on a page showing no rows at
-    all. `inner_text()` of `#tulemused` is what a reader can actually see.
+    Both halves then ask whether a **row of the results table** rendered, which
+    is the only form of the question that has one answer. Searching for a title
+    necessarily puts that title on the page three times over without any row
+    existing: in the search box's own `value`, in the empty state's «0 teemat
+    otsingule …», and in the «Otsing: … · Eemalda filter» chip — which is itself
+    a link, so even asking for a link by that name is not enough.
     """
     query = f"{base_url}/teemad/?olek=koik&q={quote(RESTRICTED_TITLE)}"
+    # Lazy, so one locator answers for whoever is signed in when it is asserted.
+    row = page.locator(".table--register").get_by_role("link", name=RESTRICTED_TITLE)
 
     sign_in(page, base_url, HEAD)
     page.goto(query)
     page.wait_for_load_state("networkidle")
-    expect(page.locator("#tulemused")).to_contain_text(RESTRICTED_TITLE)
+    expect(row.first).to_be_visible()
     sign_out(page, base_url)
 
     sign_in(page, base_url, READER)
     page.goto(query)
     page.wait_for_load_state("networkidle")
-    assert RESTRICTED_TITLE not in page.locator("#tulemused").inner_text()
+    expect(row).to_have_count(0)
 
     # The department page is theirs to read now, and the restricted file is
     # still not on it — neither as a title nor inside a count.
