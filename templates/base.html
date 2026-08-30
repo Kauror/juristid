@@ -84,9 +84,6 @@
             hears each destination once.
           {% endcomment %}
           <nav class="topnav" aria-label="Peamine">
-            <a class="topnav__link {% if nav_active == 'osakond' %}is-active{% endif %}"
-               {% if nav_active == 'osakond' %}aria-current="page"{% endif %}
-               href="{% url 'matters:department' %}">Osakond</a>
             {% comment %}
               Minu asjad is offered only when there is a "minu". Past the shared
               door with no persona selected there is no personal queue to show,
@@ -102,6 +99,9 @@
                  {% if nav_active == 'minu_asjad' %}aria-current="page"{% endif %}
                  href="{% url 'matters:my_work' %}">Minu asjad</a>
             {% endif %}
+            <a class="topnav__link {% if nav_active == 'osakond' %}is-active{% endif %}"
+               {% if nav_active == 'osakond' %}aria-current="page"{% endif %}
+               href="{% url 'matters:department' %}">Osakond</a>
             <a class="topnav__link {% if nav_active == 'teemad' %}is-active{% endif %}"
                {% if nav_active == 'teemad' %}aria-current="page"{% endif %}
                href="{% url 'matters:matter_list' %}">Teemad</a>
@@ -113,13 +113,13 @@
               would make neither readable (Stage-2E brief 6).
 
               Olulised tähtajad, Jõustuvad aktid and Töövõidud sit behind
-              Jälgimine rather than as three items. They are generated reading
+              Tähtajad rather than as three items. They are generated reading
               surfaces over the same structured facts (Stage-2G brief 38).
 
               Osakond is not in here. It was, as a second department-head-only
               destination beside the universal Ülevaade, and the bar therefore
               offered one reader two answers to one question. The two pages are
-              one page now and it is the first item on the bar, open to
+              one page now and it is a primary item on the bar, open to
               everybody Ülevaade was open to; the two sections that were
               genuinely the head's are still the head's, decided on the page
               rather than in the navigation (docs/adr/0049).

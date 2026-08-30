@@ -178,12 +178,12 @@ def open_composer(page) -> None:
 def go_to(page, name: str) -> None:
     """Follow a top-bar destination by name, wherever the bar is keeping it.
 
-    Navigation is priority-based: the four destinations a lawyer moves between
-    all day are always on the bar, and the reading surfaces — Jälgimine,
-    Statistika, Osakonna töö — are inline only above 1560px and behind the
-    "Veel" disclosure below it. A test that clicks the link directly is
-    asserting a layout decision it does not care about, so it asks for the
-    destination and lets this open whatever is in the way.
+    Navigation is priority-based: the destinations a lawyer moves between all
+    day are always on the bar, and the reading surfaces — Tähtajad and
+    Statistika — are inline only above 1560px and behind the "Veel" disclosure
+    below it. A test that clicks the link directly is asserting a layout
+    decision it does not care about, so it asks for the destination and lets
+    this open whatever is in the way.
     """
     navigation = page.get_by_role("navigation", name="Peamine")
     link = navigation.get_by_role("link", name=name, exact=True)
