@@ -216,7 +216,11 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     expect(page.locator("[data-composer-submit]")).to_have_text("Lõpeta teema")
 
     page.locator("#id_disposition").select_option("COMPLETED")
-    page.locator("#id_closure_reason").fill("Seadus jõustus muutmata kujul.")
+    # No second narrative box: the closure reason *is* the composer body, and
+    # `Töövõit` is a decision the closure now insists on
+    # (Teema closing redesign §2, §10).
+    expect(page.locator("#id_closure_reason")).to_have_count(0)
+    page.locator("#id_work_victory_1").check()
     page.locator(".composer__body").fill("Menetlus lõppes; töö on tehtud.")
     # The server's own answer, not what the page looks like afterwards. A save
     # that is refused and a save that quietly did nothing leave an identical
@@ -234,7 +238,8 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     # -- E. the closed Matter -------------------------------------------
     page.goto(url)
     expect(page.locator(".badge--closed")).to_be_visible()
-    expect(page.locator(".banner--closed")).to_contain_text("Seadus jõustus muutmata kujul.")
+    # The banner quotes the one narrative the save carried, not a second box.
+    expect(page.locator(".banner--closed")).to_contain_text("Menetlus lõppes; töö on tehtud.")
     expect(page.locator(".uxnext")).to_contain_text("teema on suletud")
     # No writable next step and no composer at all.
     expect(page.locator("#teema-koostaja")).to_have_count(0)
