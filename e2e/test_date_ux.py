@@ -268,11 +268,16 @@ def test_a_padded_estonian_date_is_accepted_too(page, base_url):
     create_form(page, base_url)
 
     page.fill("#id_title", "Nullidega kuupäevaga teema")
-    page.fill("#id_response_deadline", typed(30, padded=True))
+    # Eight days, which is where the literal `07.09.2026` sat and is what keeps
+    # this Matter inside Ülevaade's «arvamuse tähtaega 14 päeva jooksul»
+    # window. That figure reads `Matter.response_deadline` directly and has
+    # nothing to do with this change; moving the date out of its window altered
+    # a number on a page for no reason anybody could later explain.
+    page.fill("#id_response_deadline", typed(8, padded=True))
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    assert typed(30) in " ".join(
+    assert typed(8) in " ".join(
         page.locator(".railcard__value--date, .metaline__value--deadline").all_inner_texts()
     )
 
