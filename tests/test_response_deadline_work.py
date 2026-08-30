@@ -33,10 +33,12 @@ for a fortnight and then fails for reasons nobody can reproduce.
 from __future__ import annotations
 
 from datetime import date, timedelta
+from typing import Any
 
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 from django.utils import timezone
 
 from app.core.dates import format_estonian_date
@@ -45,6 +47,8 @@ from app.intelligence.services import add_important_date
 from app.matters import work_items as wi
 from app.matters.department_dashboard import seis_figures, upcoming_groups
 from app.matters.enums import MatterOrigin, RecordMode
+from app.matters.forms import MatterCreateForm
+from app.matters.models import Matter
 from app.matters.my_work import build_my_work
 from app.matters.overview import deadline_groups
 from app.matters.register_filters import register_population
@@ -885,3 +889,115 @@ def test_the_action_source_is_unchanged_by_the_new_one(specialist, today):
     assert item.meaning == wi.MEANING_DEADLINE
     assert item.text == "Esitan arvamuse"
     assert NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).count() == 1
+
+
+# ---------------------------------------------------------------------------
+# Uus teema must not invent the commitment
+# ---------------------------------------------------------------------------
+#
+# The one change this round makes outside the read model, and it is a
+# consequence of the read model rather than a redesign.
+#
+# `MatterCreateForm.response_deadline` carried `initial=timezone.localdate`.
+# That was very nearly harmless while the column reached no work surface: it put
+# a date in a box, the box was saved, and nothing downstream did anything with
+# it. It stopped being harmless the moment `Arvamuse tähtaeg` became work — a
+# Matter created and left alone would be due on the day it was entered and
+# overdue on every deadline surface the next morning, against a commitment
+# nobody had made.
+#
+# Saabus keeps its default and should. It is an *observation*, and nearly
+# everything does arrive on the day somebody types it in, so today is a useful
+# capture default and a wrong one costs nothing. A deadline is a promise, and
+# the product already says so in two other places: the edit form and
+# `IncomingIntakeForm` both refuse this default in as many words
+# (app/matters/forms.py, Teema QA §5.2).
+
+
+CREATE_URL = reverse("matters:matter_create")
+
+
+def test_the_unbound_create_form_offers_no_deadline(specialist):
+    """A. The box is empty when the form is opened."""
+    form = MatterCreateForm(viewer=specialist)
+
+    assert form["response_deadline"].value() in (None, "")
+
+
+def test_the_unbound_create_form_still_offers_todays_saabus(specialist, today):
+    """F. Saabus is unchanged, and that difference is the whole point."""
+    form = MatterCreateForm(viewer=specialist)
+
+    assert form["received_date"].value() == today
+
+
+def _untouched_form_payload(viewer, **typed):
+    """What the browser posts when somebody fills in a title and presses Loo.
+
+    Every value the page rendered comes back, because that is what a browser
+    submits — the pre-filled boxes included. Posting only the fields a test
+    cares about would leave the bound form with no `response_deadline` key at
+    all, and `initial` never applies to a bound form, so such a test would pass
+    whether or not the default was there. It did, which is why this helper
+    exists (`django.forms.Form.initial`).
+    """
+    payload: dict[str, Any] = {}
+    for name in MatterCreateForm(viewer=viewer).fields:
+        value = MatterCreateForm(viewer=viewer)[name].value()
+        if value not in (None, "", []):
+            payload[name] = format_estonian_date(value) if isinstance(value, date) else str(value)
+    return {**payload, **typed}
+
+
+def test_submitting_the_form_untouched_stores_no_deadline(signed_in, specialist, today):
+    """B and C. Nothing entered, nothing invented, nothing counted.
+
+    The page as it is served, with a title typed into it and nothing else —
+    which is exactly how the eleven phantom deadlines got into the browser
+    world.
+    """
+    payload = _untouched_form_payload(specialist, title="Tähtajata teema")
+    assert "response_deadline" not in payload
+    signed_in.post(CREATE_URL, payload)
+
+    matter = Matter.objects.get(title="Tähtajata teema")
+    assert matter.response_deadline is None
+    # Saabus still lands, from the same untouched form. F, through the view.
+    assert matter.received_date == today
+
+    items = wi.work_items(specialist, today=today)
+    assert not [item for item in _response_items(items) if item.matter_id == matter.pk]
+    assert matter.pk not in wi.work_population_ids(
+        specialist, wi.WORK_DEADLINE_THIS_WEEK, today=today
+    )
+    # And tomorrow it is still not late, which is the failure this prevents.
+    assert matter.pk not in wi.work_population_ids(
+        specialist, wi.WORK_OVERDUE, today=today + timedelta(days=1)
+    )
+
+
+def test_a_deadline_somebody_typed_is_kept_and_counted_at_once(signed_in, specialist):
+    """D and E. Entered deliberately, stored exactly, and immediately work."""
+    anchor = _wednesday()
+    due = anchor + timedelta(days=2)
+    signed_in.post(
+        CREATE_URL,
+        {
+            "title": "Sisestatud tähtajaga teema",
+            "owner": specialist.pk,
+            "response_deadline": f"{due.day}.{due.month}.{due.year}",
+        },
+    )
+
+    matter = Matter.objects.get(title="Sisestatud tähtajaga teema")
+    assert matter.response_deadline == due
+
+    (item,) = [
+        entry
+        for entry in _response_items(wi.work_items(specialist, today=anchor))
+        if entry.matter_id == matter.pk
+    ]
+    assert item.meaning == wi.MEANING_RESPONSE
+    assert item.when == due
+    assert matter.pk in wi.work_population_ids(specialist, wi.WORK_DEADLINE_THIS_WEEK, today=anchor)
+    assert matter.pk in _register(specialist, anchor, too=wi.WORK_DEADLINE_THIS_WEEK)
