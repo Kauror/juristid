@@ -1040,6 +1040,42 @@
     });
   }
 
+  /* ---- Choosing a chip clears the name typed beside it -------------------
+   * Adressaat can be answered twice on one form: by picking an institution
+   * that exists, or by typing one that does not. The server resolves that with
+   * a fixed rule — a typed name wins, because on `Muuda teemat` the chip group
+   * always carries the addressee the Matter already has and nothing could
+   * otherwise be replaced by typing.
+   *
+   * That rule is right and it is invisible. Somebody who types a name, changes
+   * their mind and clicks an existing chip has plainly chosen the chip, and the
+   * page should show them that the text no longer counts. So it empties the
+   * box.
+   *
+   * Enhancement only. With scripting off the server behaves identically — the
+   * typed name still wins — which is why this clears the input rather than
+   * deciding anything (app/matters/services.py `resolve_addressee`).
+   */
+  function bindExclusiveName(scope) {
+    (scope || document).querySelectorAll("[data-clears]").forEach(function (box) {
+      if (!once(box, "ExclusiveName")) {
+        return;
+      }
+      var group = box.getAttribute("data-clears");
+      var field = document.getElementById(box.getAttribute("data-clears-field"));
+      if (!field) {
+        return;
+      }
+      box.querySelectorAll('input[type="radio"][name="' + group + '"]').forEach(function (radio) {
+        radio.addEventListener("change", function () {
+          if (radio.checked) {
+            field.value = "";
+          }
+        });
+      });
+    });
+  }
+
   /* ---- What the Järgmine tegevus date means ------------------------------
    * The date meaning is a real stored field, and it is now three chips on the
    * row with the date rather than a label swapped to describe it. What is left
@@ -1692,6 +1728,7 @@
     bindPeriodFields(document);
     bindDatePickers(document);
     bindChoiceFilters(document);
+    bindExclusiveName(document);
     bindDerivedMeaning(document);
     bindChipCounts(document);
     bindStageHelp(document);
@@ -1718,6 +1755,7 @@
     bindPeriodFields(event.target.querySelector ? event.target : document);
     bindDatePickers(event.target.querySelector ? event.target : document);
     bindChoiceFilters(event.target.querySelector ? event.target : document);
+    bindExclusiveName(event.target.querySelector ? event.target : document);
     bindDerivedMeaning(event.target.querySelector ? event.target : document);
     bindChipCounts(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);

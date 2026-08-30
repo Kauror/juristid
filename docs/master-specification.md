@@ -1303,6 +1303,24 @@ Fields:
 
 Reorganizations are never auto-merged merely because names look similar.
 
+**Where an Organisation may be created.** Quick-create from a counterparty field
+is allowed where a workflow would otherwise be abandoned mid-record, and it is
+per-field rather than global:
+
+- **Teema `Adressaat`** and the closing flow's opinion **recipients** accept a
+  typed name. Resolution is normalised-exact and nothing more — canonical name
+  or recorded alias, casefolded, diacritics stripped, whitespace collapsed. One
+  match reuses that institution, no match creates one, and two matches refuse
+  the save rather than guess, because a third row spelled the same way would
+  make the ambiguity permanent. Creation happens inside the record's own
+  transaction, so a refused save leaves no institution behind.
+- **Teema `Saatja`** and `Saabunud` remain existing-organisations-only. Nothing
+  on those controls creates a sender, and 14.7's rule — adding an institution is
+  a deliberate act on the reference data — is what their help text states.
+
+The difference is a product decision, not an oversight. Do not generalise either
+half of it without one.
+
 ### PolicyArea
 
 Purpose: small stable broad classification, replacing exclusive OneNote folders and supporting reporting.

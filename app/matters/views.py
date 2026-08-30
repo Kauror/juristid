@@ -104,6 +104,7 @@ from app.matters.services import (
     create_matter,
     personal_note_for,
     reopen_matter,
+    resolve_addressee,
     save_personal_note,
     set_brief_summary,
     set_matter_data_class,
@@ -1188,57 +1189,81 @@ def matter_create(request: HttpRequest) -> HttpResponse:
             )
 
         data = form.cleaned_data
-        with transaction.atomic():
-            matter = create_matter(
-                title=data["title"],
-                actor=request.user,
-                owner=data.get("owner"),
-                # Written on the record, not into an Entry. `brief_summary`
-                # answers *what is this*, which no Entry, no position and no
-                # rationale can be made to mean without corrupting it
-                # (app/matters/models.py, Teema redesign §6).
-                brief_summary=data.get("brief_summary") or "",
-                stage=data.get("stage"),
-                track=data.get("track") or "",
-                source_organisations=list(data.get("source_organisations") or []),
-                addressee_organisation=data.get("addressee_organisation"),
-                received_date=data.get("received_date"),
-                response_deadline=data.get("response_deadline"),
-                policy_areas=list(data.get("policy_areas") or []),
-                policy_area_other=data.get("policy_area_other") or "",
-                # Decided here, never read from the form. The control is gone
-                # from the page and an omitted field must not become a blank
-                # value the model would refuse (brief 21).
-                visibility=Visibility.NORMAL,
-                # Unlike visibility, this one *is* on the page — as one
-                # checkbox, unticked. The form turns it into the stored
-                # vocabulary; the service validates it and refuses TEST on
-                # anything not created here (Agent-C brief 15, 16, 17).
-                data_class=form.data_class,
-            )
-            for upload in uploads:
-                _attach_incoming_file(matter, upload, actor=request.user)
-
-            # The private scratch pad, through its own service, and only when
-            # something was typed. An empty note would create a row recording
-            # that somebody wrote nothing — the same reason an untouched
-            # Järgmine tegevus creates no NextAction below
-            # (app/matters/services.py, `save_personal_note`).
-            note = (data.get("notes") or "").strip()
-            if note:
-                save_personal_note(matter=matter, author=request.user, body=note)
-
-            if wants_action:
-                # The owner is chosen on this same form, so the Matter does not
-                # exist yet when the action form is read and the service's own
-                # fallback to `matter.owner` has nothing to fall back to. Handed
-                # in explicitly, and only as a default: an explicit choice in
-                # the action form still wins (app/matters/forms.py).
-                set_next_action_for_new_work(
-                    matter=matter,
-                    actor=request.user,
-                    **action_form.as_service_kwargs(default_responsible=data.get("owner")),
+        try:
+            with transaction.atomic():
+                # Resolved *inside* the transaction, and before the Matter, so a
+                # brand-new institution and the Teema that names it are one
+                # write. A rejected attachment, a refused next action or any
+                # other late failure below takes the institution with it rather
+                # than leaving an orphan in the catalogue nobody asked for
+                # (§6, app/matters/services.py `resolve_addressee`).
+                addressee = resolve_addressee(
+                    chosen=data.get("addressee_organisation"),
+                    typed_name=data.get("addressee_name") or "",
                 )
+                matter = create_matter(
+                    title=data["title"],
+                    actor=request.user,
+                    owner=data.get("owner"),
+                    # Written on the record, not into an Entry. `brief_summary`
+                    # answers *what is this*, which no Entry, no position and no
+                    # rationale can be made to mean without corrupting it
+                    # (app/matters/models.py, Teema redesign §6).
+                    brief_summary=data.get("brief_summary") or "",
+                    stage=data.get("stage"),
+                    track=data.get("track") or "",
+                    source_organisations=list(data.get("source_organisations") or []),
+                    addressee_organisation=addressee,
+                    received_date=data.get("received_date"),
+                    response_deadline=data.get("response_deadline"),
+                    policy_areas=list(data.get("policy_areas") or []),
+                    policy_area_other=data.get("policy_area_other") or "",
+                    # Decided here, never read from the form. The control is gone
+                    # from the page and an omitted field must not become a blank
+                    # value the model would refuse (brief 21).
+                    visibility=Visibility.NORMAL,
+                    # Unlike visibility, this one *is* on the page — as one
+                    # checkbox, unticked. The form turns it into the stored
+                    # vocabulary; the service validates it and refuses TEST on
+                    # anything not created here (Agent-C brief 15, 16, 17).
+                    data_class=form.data_class,
+                )
+                for upload in uploads:
+                    _attach_incoming_file(matter, upload, actor=request.user)
+
+                # The private scratch pad, through its own service, and only when
+                # something was typed. An empty note would create a row recording
+                # that somebody wrote nothing — the same reason an untouched
+                # Järgmine tegevus creates no NextAction below
+                # (app/matters/services.py, `save_personal_note`).
+                note = (data.get("notes") or "").strip()
+                if note:
+                    save_personal_note(matter=matter, author=request.user, body=note)
+
+                if wants_action:
+                    # The owner is chosen on this same form, so the Matter does not
+                    # exist yet when the action form is read and the service's own
+                    # fallback to `matter.owner` has nothing to fall back to. Handed
+                    # in explicitly, and only as a default: an explicit choice in
+                    # the action form still wins (app/matters/forms.py).
+                    set_next_action_for_new_work(
+                        matter=matter,
+                        actor=request.user,
+                        **action_form.as_service_kwargs(default_responsible=data.get("owner")),
+                    )
+
+        except DomainError as error:
+            # An ambiguous typed addressee, or any other rule the services
+            # refuse. The transaction is already rolled back by the time
+            # this runs, so nothing — least of all a newly created
+            # institution — survives the refusal (§6).
+            form.add_error(None, str(error))
+            return render(
+                request,
+                "matters/matter_create.html",
+                _create_context(request, form, action_form),
+                status=400,
+            )
 
         if uploads:
             messages.success(
@@ -2145,10 +2170,18 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             # so an empty POST arrives as "none of them" — a decision somebody
             # made — and never as the sentinel that means "leave them alone"
             # (app/matters/services.py, `_UNSET`).
+            # Resolved inside this transaction, and before the Matter is
+            # touched. A typed name that names a body nobody has filed against
+            # yet becomes an Organisation here; if any service below refuses,
+            # the rollback takes that Organisation with it and the Matter keeps
+            # the addressee it already had (§6).
             set_organisations(
                 matter=matter,
                 source_organisations=list(data.get("source_organisations") or []),
-                addressee_organisation=data.get("addressee_organisation"),
+                addressee_organisation=resolve_addressee(
+                    chosen=data.get("addressee_organisation"),
+                    typed_name=data.get("addressee_name") or "",
+                ),
                 actor=request.user,
             )
             set_matter_dates(

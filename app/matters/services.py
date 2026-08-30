@@ -553,6 +553,40 @@ def _sender_payload(organisations: Sequence[Any]) -> dict[str, Any]:
     }
 
 
+def resolve_addressee(*, chosen: Any, typed_name: str) -> Any:
+    """The one addressee a Teema form asked for, from a choice and a typed name.
+
+    Both Teema forms — `Uus teema` and `Muuda teemat` — offer the same two ways
+    to answer one question, so the precedence between them is written once here
+    rather than twice in two views.
+
+    **A typed name wins over the chosen chip.** That is not a preference, it is
+    the only rule that makes `Muuda teemat` work: its radio group always carries
+    the addressee the Matter already has, so a rule that let the chip win would
+    make replacing that addressee by typing a new name impossible — the very
+    case this feature exists for. Typing into a field explicitly labelled for a
+    new institution is a deliberate act; leaving the previous answer selected is
+    not.
+
+    What cannot reach this function is the disclosure's **search box**, which
+    posts nothing at all and stays a client-side filter over the choices already
+    rendered. That is deliberate: a half-typed «Kliima» left behind after
+    somebody selected `Kliimaministeerium` from the filtered list must never
+    become an institution of its own.
+
+    Resolution itself is `app.organisations.services.resolve_organisation_name`
+    and is not restated here — reuse an exact or alias match, create a genuinely
+    new body, refuse an ambiguous spelling. It runs inside the caller's
+    transaction, so a Teema save refused afterwards leaves no institution behind.
+    """
+    from app.organisations.services import resolve_organisation_name
+
+    resolved = resolve_organisation_name(name=typed_name)
+    if resolved is not None:
+        return resolved
+    return chosen
+
+
 @transaction.atomic
 def set_organisations(
     *,

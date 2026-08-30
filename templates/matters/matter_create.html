@@ -24,9 +24,16 @@
     holds one value — Vastutaja, Hetkeseis, Menetlusliik, Adressaat — checkboxes
     where it holds several. Chips are how they look; what they are has not moved
     (Stage-2E.1 brief 16, ADR 0025);
-  - no institution is created from this form. The long tail is a filter over
-    existing organisations and says so in the one sentence the UI cannot show
-    (master specification 14.7);
+  - the two counterparty fields do *not* have the same contract, and the
+    difference is deliberate. `Saatja` stays existing-organisations-only: its
+    long tail is a filter over the catalogue and nothing on this page creates a
+    sender. `Adressaat` may be chosen from the catalogue **or** typed — a typed
+    name reuses an exact or alias match and otherwise creates the institution,
+    inside the same transaction that creates the Teema. Do not "restore" the
+    older rule that no institution is ever created here; it was replaced on
+    purpose, because leaving a half-filled Teema to go and add a body under
+    Asutused is not a workflow anybody uses (master specification 14.7,
+    app/organisations/services.py `resolve_organisation_name`);
   - only the title is required, and a page that shows a field is not a page that
     demands it (master specification 3.8).
 {% endcomment %}
@@ -195,10 +202,16 @@
                 {% endfor %}
               </div>
               {% comment %}
-                One of the two sentences that survived the copy pass, because it
-                states a rule the UI cannot: adding an institution is a
-                deliberate act on the reference data, not a side effect of
+                The sentence that survived the copy pass, because it states a
+                rule the UI cannot: on the *sender* side, adding an institution
+                is a deliberate act on the reference data, not a side effect of
                 filing a matter (master specification 14.7).
+
+                Its Adressaat twin is gone, and deliberately so: that field now
+                accepts a typed name and the control beside its chips says so.
+                Sender auto-creation is a separate decision nobody has taken, so
+                this one stands until somebody takes it — do not remove it for
+                looking like the one that went.
               {% endcomment %}
               <p class="field__help">
                 Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla —
@@ -356,7 +369,8 @@
           a decision rather than made as a side effect of a form redesign
           (Uus teema redesign §5, ADR 0032).
         {% endcomment %}
-        <div class="chiprow">
+        <div class="chiprow" data-clears="addressee_organisation"
+             data-clears-field="{{ form.addressee_name.id_for_label }}">
           {% for choice in form.addressee_organisation %}
             {% if form.addressee_split is None or forloop.counter0 < form.addressee_split %}
               <label class="chip">
@@ -367,7 +381,14 @@
           {% endfor %}
 
           {% if form.addressee_tail_count %}
-            <details class="chipdetails">
+            {% comment %}
+              `chipdetails--stretch`: when the paired row stacks, this
+              disclosure fills the Adressaat field rather than shrink-wrapping
+              into a narrow island beside a large empty area. Scoped to this
+              control rather than applied to every `chipdetails` in the
+              application (static/css/app.css, narrow breakpoint).
+            {% endcomment %}
+            <details class="chipdetails chipdetails--stretch">
               <summary class="chipdetails__summary">
                 Vali nimekirjast ({{ form.addressee_tail_count }})
               </summary>
@@ -391,14 +412,31 @@
                     {% endif %}
                   {% endfor %}
                 </div>
-                <p class="field__help">
-                  Kui adressaati siin ei ole, tuleb asutus enne lisada asutuste
-                  alla — teema vormilt uut asutust ei teki.
-                </p>
               </div>
             </details>
           {% endif %}
         </div>
+        {% comment %}
+          Free entry, outside the disclosure and always present.
+
+          Outside, because a catalogue small enough to have no long tail renders
+          no disclosure at all, and the capability must not disappear with it.
+          Always present, because it is the answer to "the body I need is not on
+          this page" and hiding that answer behind a click is the workflow this
+          round removed.
+
+          Its own control, never a `name` on the search box above: that box is a
+          client-side filter, and posting whatever is left in it would turn a
+          half-typed «Kliima» into an institution while the person was selecting
+          `Kliimaministeerium` from the list it filtered (§10, app/matters/forms.py).
+        {% endcomment %}
+        <label class="field createform__newname">
+          <span class="field__label">{{ form.addressee_name.label }}</span>
+          {{ form.addressee_name }}
+          {% if form.addressee_name.errors %}
+            <span class="field__error">{{ form.addressee_name.errors|first }}</span>
+          {% endif %}
+        </label>
         {% if form.addressee_organisation.errors %}
           <span class="field__error">{{ form.addressee_organisation.errors|first }}</span>
         {% endif %}
@@ -410,7 +448,14 @@
         choice on every creation is a control people learn to click past
         (Agent-C brief 15, 62).
       {% endcomment %}
-      <fieldset class="field">
+      {% comment %}
+        `createform__field--compact` is what the narrow breakpoint caps at 18rem.
+        It used to be `.createform__pair--class .field`, which caught this
+        field's Adressaat sibling as well and collapsed it to ~288px with the
+        rest of the stacked row empty beside it. The constraint belongs to this
+        one checkbox, so it is named on this one field (static/css/app.css).
+      {% endcomment %}
+      <fieldset class="field createform__field--compact">
         <legend class="field__label">Andmeklass</legend>
         {% comment %}
           A real checkbox with its label, not a chip. Every chip on this page
