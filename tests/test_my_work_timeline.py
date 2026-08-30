@@ -443,3 +443,150 @@ def test_an_empty_day_says_so_once(client, specialist):
     body = client.get(reverse("matters:my_work")).content.decode()
 
     assert "Täna ei ole ühtegi tähtajalist tegevust." in body
+
+
+# --- the overdue cap ------------------------------------------------------
+#
+# *Üle tähtaja* is capped at ten like every other band. It used to render
+# everything it held, and a fortnight of late work then pushed the rest of the
+# timeline off the screen. The approved rule is: oldest first, ten rows on
+# screen, the remainder inline behind «Näita veel N ▾» — nothing leaves the
+# page and the count above the list stays the honest total.
+#
+# The population is deliberately mixed. A cap proved against thirteen
+# NextActions would also pass if the slice happened to live in the action
+# query; these fixtures put the three sources a work row can come from into one
+# band, so what is being asserted is the shared WorkBand behaviour.
+
+
+def _overdue_population(owner, today, count):
+    """``count`` overdue work items on distinct days, across all three sources.
+
+    Day *n* back from today is item *n*, so the expected order is simply the
+    reverse of the construction order and every assertion about "the ten
+    oldest" can name exact dates rather than trusting the same sort it is
+    checking.
+    """
+    made = []
+    for index in range(count):
+        days = index + 2
+        when = today - timedelta(days=days)
+        source = index % 3
+        if source == 0:
+            matter = _matter(owner, title=f"Tähtaeg {days:03d}")
+            set_next_action(
+                matter=matter,
+                text=f"Hilinenud tegevus {days:03d}",
+                kind=ActionKind.DO,
+                date_semantics=DateSemantics.DEADLINE,
+                target_date=when,
+                actor=owner,
+            )
+        elif source == 1:
+            matter = _matter(owner, title=f"Verstapost {days:03d}")
+            add_important_date(
+                matter=matter,
+                title=f"Hilinenud verstapost {days:03d}",
+                date_value=when,
+                period_end=when,
+                actor=owner,
+            )
+        else:
+            # No Järgmiseks on this one: an open next action suppresses the
+            # Arvamuse tähtaeg as operational work (ADR 0050), so a Matter
+            # carrying both would contribute one row rather than the two this
+            # helper is counting.
+            matter = _matter(owner, title=f"Arvamus {days:03d}")
+            matter.response_deadline = when
+            matter.save(update_fields=["response_deadline"])
+        made.append(when)
+    return sorted(made)
+
+
+def _overdue(user, today):
+    return _bands(user, today).get(wi.BAND_OVERDUE)
+
+
+def test_the_overdue_band_caps_its_preview_at_ten(specialist, today):
+    """Thirteen late rows: ten on screen, three behind the disclosure."""
+    _overdue_population(specialist, today, 13)
+
+    band = _overdue(specialist, today)
+
+    assert band is not None
+    assert band.count == 13
+    assert len(band.preview) == 10
+    assert len(band.rest) == 3
+    assert band.remaining == 3
+
+
+def test_the_visible_ten_are_the_ten_oldest(specialist, today):
+    """Oldest deadline first: 01.01 before 15.01 before 01.02, never the reverse."""
+    expected = _overdue_population(specialist, today, 13)
+
+    band = _overdue(specialist, today)
+
+    assert [item.when for item in band.preview] == expected[:10]
+    assert band.rest[0].when == expected[10]
+    assert [item.when for item in band.rest] == expected[10:]
+
+
+def test_the_disclosure_holds_the_rest_of_the_same_list(specialist, today):
+    """Preview + rest is the whole ordered population, with nothing repeated.
+
+    This is the property that makes the cap safe: the rows behind «Näita veel»
+    are a slice of the list the heading counted, not a second query, so no work
+    can disappear because only ten rows are initially visible.
+    """
+    _overdue_population(specialist, today, 13)
+
+    band = _overdue(specialist, today)
+
+    assert band.preview + band.rest == band.items
+    keys = [(item.source_type, item.object_id) for item in band.items]
+    assert len(set(keys)) == len(keys)
+
+
+@pytest.mark.parametrize(
+    ("total", "preview", "remaining"),
+    [(9, 9, 0), (10, 10, 0), (11, 10, 1)],
+)
+def test_the_boundary_around_ten(specialist, today, total, preview, remaining):
+    """Nine and ten need no disclosure; eleven needs one, for exactly one row."""
+    _overdue_population(specialist, today, total)
+
+    band = _overdue(specialist, today)
+
+    assert band.count == total
+    assert len(band.preview) == preview
+    assert band.remaining == remaining
+    assert len(band.rest) == remaining
+
+
+def _overdue_section(body):
+    """The rendered `<section class="workband workband--ule_tahtaja">`."""
+    start = body.index('class="workband workband--ule_tahtaja"')
+    return body[start : body.index("</section>", start)]
+
+
+def test_the_page_renders_ten_rows_and_puts_three_behind_the_disclosure(client, specialist, today):
+    """The markup, not just the read model: ten rows, then «Näita veel 3».
+
+    Split at the disclosure rather than counted over the whole section, because
+    counting rows would find thirteen either way — the rest are in the HTML by
+    design, which is what makes them a slice of the list the heading counted
+    rather than a second query. What the cap decides is which side of
+    `<details class="pw-more">` each row is written on.
+    """
+    _overdue_population(specialist, today, 13)
+    client.force_login(specialist)
+
+    section = _overdue_section(client.get(reverse("matters:my_work")).content.decode())
+    before, _, behind = section.partition('<details class="pw-more">')
+
+    assert "Üle tähtaja" in before
+    # The count in the heading is the whole population, not the visible slice.
+    assert '<span class="workband__count">13</span>' in before
+    assert before.count("data-workrow") == 10
+    assert "Näita veel 3" in behind
+    assert behind.count("data-workrow") == 3
