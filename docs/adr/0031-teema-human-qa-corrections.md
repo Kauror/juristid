@@ -116,6 +116,18 @@ reads the date and nothing else.
 
 ### 5. A date box starts on today — when the box is the only thing it says
 
+> **Amended 2026-08-30.** `Arvamuse tähtaeg` on `Uus teema` has moved from the
+> defaulting list below to the exception list — by the rule this section states,
+> not against it. When this was written nothing read that field's emptiness: the
+> date was stored and shown on the Matter header, and a pre-filled today cost
+> nothing. It is now the third source of the shared work model
+> (`app/matters/work_items.py`), so an empty box means *no commitment* and a
+> filled one means *a deadline exists on this day*. Under the default, a Matter
+> created and left alone was due on the day it was entered and overdue on every
+> deadline surface the next morning, against a promise nobody had made. `Saabus`
+> keeps its default: an arrival date is an observation, and nothing reads its
+> emptiness. Nothing else in this section changes.
+
 `Saabus`, `Arvamuse tähtaeg`, `Toimus`, the Kaasamine date, the intake date and
 the header's `+ Tähtaeg` all pre-fill with the current date. `initial` fills an
 unbound form only, so a posted value always wins, a validation error keeps what
