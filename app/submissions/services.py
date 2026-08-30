@@ -25,7 +25,12 @@ from app.matters.locks import (
     lock_submission_for_evidence_integrity,
 )
 from app.search.indexing import reindex_submission
-from app.submissions.enums import RecipientRole, SubmissionKind, SubmissionStatus
+from app.submissions.enums import (
+    RecipientRole,
+    SentAtPrecision,
+    SubmissionKind,
+    SubmissionStatus,
+)
 from app.submissions.models import (
     Submission,
     SubmissionJointSubmitter,
@@ -252,10 +257,18 @@ def mark_submission_sent(
     submission: Submission,
     actor: Any = None,
     sent_at: datetime | None = None,
+    sent_at_precision: str = SentAtPrecision.TIMESTAMP,
     channel: str = "",
     reference: str = "",
 ) -> Submission:
     """Record that this exact text went out, with its evidence.
+
+    ``sent_at_precision`` says how much of ``sent_at`` the sender actually
+    supplied. It defaults to TIMESTAMP because pressing send *is* a moment; a
+    caller that only ever had a day — the closing composer asks for `Saatmise
+    kuupäev`, and the register import has a date column — passes DATE so the UI
+    stops rendering an anchor of midnight as the hour the letter went out
+    (app/submissions/enums.py).
 
     The check-and-write happens under a row lock so two people pressing send at
     once cannot produce two different sent timestamps for one submission.
@@ -296,15 +309,27 @@ def mark_submission_sent(
         matter_visibility=matter.visibility,
     )
 
+    if sent_at_precision not in SentAtPrecision.values:
+        raise DomainError(f"Tundmatu saatmisaja täpsus {sent_at_precision!r}.")
+
     locked.status = SubmissionStatus.SENT
     locked.sent_at = sent_at or timezone.now()
+    locked.sent_at_precision = sent_at_precision
     locked.sent_by = actor
     if channel.strip():
         locked.channel = channel.strip()
     if reference.strip():
         locked.reference = reference.strip()
     locked.save(
-        update_fields=["status", "sent_at", "sent_by", "channel", "reference", "updated_at"]
+        update_fields=[
+            "status",
+            "sent_at",
+            "sent_at_precision",
+            "sent_by",
+            "channel",
+            "reference",
+            "updated_at",
+        ]
     )
 
     record_change_event(
@@ -316,6 +341,7 @@ def mark_submission_sent(
         payload={
             "kind": locked.kind,
             "sent_at": locked.sent_at.isoformat(),
+            "sent_at_precision": locked.sent_at_precision,
             "final_version": str(locked.final_version_id),
             "addressees": [organisation.name for organisation in addressees_of(locked)],
         },

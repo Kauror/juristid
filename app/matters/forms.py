@@ -23,7 +23,6 @@ from app.core.errors import DomainError
 from app.core.richtext import plain_text
 from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
 from app.documents.enums import DocumentRole
-from app.documents.models import Document, DocumentVersion
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, MatterDataClass
 from app.matters.models import Matter
@@ -1072,15 +1071,72 @@ ENGAGEMENT_CHOICES: tuple[tuple[str, str], ...] = (
 #: somebody would actually say about a finished file. `DUPLICATE` is deliberately
 #: absent: merging two records is data management and belongs to whoever is
 #: cleaning up, not to the lawyer finishing the work (Teema redesign §15.1).
+#: What `Põhjus` offers when a Matter is closed from the composer.
+#:
+#: **`SUPERSEDED` is deliberately absent, and no domain capability was removed
+#: to achieve that.** `Jätkub teise teema all` is the one disposition whose
+#: truth depends on a second record — the `Järglane` it continues under — and
+#: the simplified closing flow does not ask for one. Offering it anyway would
+#: mean posting a null successor: a closure asserting a continuation that names
+#: nothing, which is worse than not offering the choice.
+#:
+#: `Matter.superseded_by`, `close_matter(successor=…)` and
+#: `Disposition.SUPERSEDED` are all untouched and still enforce their invariant,
+#: ready for the dedicated "work continues under another Matter" operation that
+#: would ask the question properly (Teema closing redesign §3).
 CLOSURE_CHOICES: tuple[tuple[str, str], ...] = (
     (Disposition.COMPLETED.value, "Jõustus või töö lõppes"),
     (Disposition.INITIATIVE_WITHDRAWN.value, "Eelnõu või algatus lõpetati"),
     (Disposition.RESPONSE_COMPLETE.value, "Vastus esitatud ja järeltegevus tehtud"),
     (Disposition.MONITORING_STOPPED.value, "Koda ei tegele edasi"),
     (Disposition.NO_POSITION_FORMED.value, "Seisukohta ei kujundatud"),
-    (Disposition.SUPERSEDED.value, "Jätkub teise teema all"),
     (Disposition.OTHER.value, "Muu"),
 )
+
+#: `Töövõit` is a decision, so it has no default. A Matter closed without
+#: anybody answering would silently count as "no win", which is a claim the
+#: person never made (Teema closing redesign §10).
+WORK_VICTORY_CHOICES: tuple[tuple[str, str], ...] = (("JAH", "Jah"), ("EI", "Ei"))
+
+
+class MultiTextInput(forms.TextInput):
+    """One text box that may be submitted many times under one name.
+
+    The `Muu` recipient control is a search box plus however many chips
+    somebody has added, and every one of them posts as `final_recipient_names`.
+    Django's default widget reads a single value, so seven typed parties would
+    arrive as one.
+
+    Reading `getlist` rather than replacing the control with a textarea keeps
+    the no-JavaScript path honest: the visible box carries the same name, so
+    typing one recipient and saving works with nothing bound to it.
+    """
+
+    def value_from_datadict(self, data: Any, files: Any, name: str) -> list[str]:
+        if hasattr(data, "getlist"):
+            return list(data.getlist(name))
+        value = data.get(name)
+        if value in (None, ""):
+            return []
+        return [value] if isinstance(value, str) else list(value)
+
+
+class RecipientNamesField(forms.Field):
+    """The typed half of the recipient set: names, cleaned of whitespace only.
+
+    Deliberately not a `ModelMultipleChoiceField` and deliberately not resolved
+    here. A form validates; the institutions these names mean are created by
+    `app.organisations.services.resolve_recipients` inside the closure's own
+    transaction, so a refused save leaves no rows behind (§7E, §17).
+    """
+
+    widget = MultiTextInput
+
+    def clean(self, value: Any) -> list[str]:
+        if value in (None, ""):
+            return []
+        raw = value if isinstance(value, list) else [value]
+        return [cleaned for cleaned in (" ".join(str(item).split()) for item in raw) if cleaned]
 
 
 def _period_anchor(form: forms.Form, prefix: str) -> tuple[date | None, date | None, str]:
@@ -1304,6 +1360,17 @@ class ComposerForm(forms.Form):
     )
 
     # -- + Lõpeta teema ----------------------------------------------------
+    #: The closing section asks six things and nothing else: why, the file that
+    #: went out, when it went out, who to, whether it was a win, and — only
+    #: then — when the result commenced.
+    #:
+    #: **Everything it used to ask twice is gone.** `Tulemus` asked for the
+    #: closing narrative a second time, immediately under the box that had just
+    #: taken it; `Lõpparvamuse pealkiri` asked for the Matter's own title;
+    #: `Mida Koda saavutas?` and `Töövõidu selgitus` asked for the narrative a
+    #: third and fourth time. One save, one narrative — the composer body — and
+    #: the canonical records derive their wording from it
+    #: (Teema closing redesign §2, §5, §10, §12).
     close_matter = forms.BooleanField(label="Lõpeta teema", required=False)
     disposition = forms.ChoiceField(
         label="Põhjus",
@@ -1311,72 +1378,66 @@ class ComposerForm(forms.Form):
         required=False,
         widget=SELECT_WIDGET,
     )
-    closure_reason = forms.CharField(
-        label="Tulemus",
+    #: The file that actually went out, uploaded here.
+    #:
+    #: It used to be a picker over versions already on the Matter, which is the
+    #: wrong workflow: closing a file is the moment the lawyer has the sent PDF
+    #: in front of them and has typically never uploaded it. Nothing about the
+    #: canonical rule changed — a SENT `Submission` still needs the exact final
+    #: evidence, still checked against the Matter's visibility. What changed is
+    #: that the evidence is captured in the same save instead of in a visit
+    #: beforehand (Teema closing redesign §4).
+    final_file = forms.FileField(
+        label="Lõpparvamus",
         required=False,
-        widget=forms.Textarea(
-            attrs={"class": "field__input", "rows": "2", "placeholder": "Mis lõpuks juhtus?"}
-        ),
+        widget=forms.ClearableFileInput(attrs={"class": "field__input"}),
     )
-    successor = forms.ModelChoiceField(
-        label="Järglane",
-        queryset=Matter.objects.none(),
-        required=False,
-        widget=SELECT_WIDGET,
-    )
-    #: The final opinion is a canonical Submission or it is nothing. This picks
-    #: the exact evidence that went out from the files already on the Matter;
-    #: a submission cannot be marked sent without one (Teema redesign §17).
-    final_version = forms.ModelChoiceField(
-        label="Lõpparvamuse fail",
-        queryset=DocumentVersion.objects.none(),
-        required=False,
-        widget=SELECT_WIDGET,
-    )
-    final_title = forms.CharField(
-        label="Lõpparvamuse pealkiri",
-        required=False,
-        max_length=400,
-        widget=forms.TextInput(attrs={"class": "field__input"}),
-    )
-    #: No `initial`, for the same reason the period control has none: `clean`
-    #: reads this field's emptiness. A title, a recipient or a date with no
-    #: chosen file is refused as an opinion claimed without its evidence — so a
-    #: default here refuses every ordinary closure that is not also recording a
-    #: sent opinion, which is most of them (Teema redesign §17, §20).
+    #: No `initial`, like every other date box read for its emptiness: a send
+    #: date with no file is an opinion claimed without its evidence, so a
+    #: default would refuse every ordinary closure that is not also recording
+    #: one (Teema QA §5).
     final_sent_on = EstonianDateField(
         label="Saatmise kuupäev", required=False, widget=EstonianDateInput()
     )
+    #: The shortlist half of `Saaja`. The queryset stays the whole catalogue
+    #: because the *rendered* shortlist is a convenience, not a permission —
+    #: an institution reached through `Muu` posts its own name, and an
+    #: institution somebody reached last week must still be tickable.
     final_recipients = forms.ModelMultipleChoiceField(
         label="Saaja",
         queryset=Organisation.objects.none(),
         required=False,
         widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
     )
-    final_channel = forms.CharField(
-        label="Kanal",
+    #: `Muu` — the typed half, repeatable. Seven new recipients on one opinion
+    #: is a real case and it must not cost seven page loads (§7B).
+    final_recipient_names = RecipientNamesField(
+        label="Muu",
         required=False,
-        max_length=200,
-        widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "Näiteks: EIS"}),
-    )
-    final_reference = forms.CharField(
-        label="Viide",
-        required=False,
-        max_length=200,
-        widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "Toimiku number"}),
-    )
-    victory_title = forms.CharField(
-        label="Töövõit",
-        required=False,
-        max_length=2000,
-        widget=forms.TextInput(
-            attrs={"class": "field__input", "placeholder": "Mida Koda saavutas?"}
+        widget=MultiTextInput(
+            attrs={
+                "class": "field__input",
+                "autocomplete": "off",
+                "placeholder": "Otsi või kirjuta saaja nimi…",
+            }
         ),
     )
-    victory_detail = forms.CharField(
-        label="Töövõidu selgitus",
+    #: An explicit decision, taken when the file is closed. Radios rather than a
+    #: checkbox, because a checkbox left alone cannot be told apart from a
+    #: person who answered "no" (§10).
+    work_victory = forms.ChoiceField(
+        label="Töövõit",
+        choices=WORK_VICTORY_CHOICES,
         required=False,
-        widget=forms.Textarea(attrs={"class": "field__input", "rows": "2"}),
+        widget=forms.RadioSelect(attrs={"class": "choiceset__radio"}),
+    )
+    #: `Jõustumise kuupäev` — when the result commenced, and **not** the work
+    #: victory's business period. They are two facts and the domain has two
+    #: models for them; storing a commencement in `MatterWorkVictory.period_date`
+    #: because both happen to be dates would put a win in the reporting year of
+    #: whenever the act took effect (§13).
+    victory_effective_on = EstonianDateField(
+        label="Jõustumise kuupäev", required=False, widget=EstonianDateInput()
     )
 
     def __init__(self, *args: Any, matter: Any = None, viewer: Any = None, **kwargs: Any) -> None:
@@ -1385,31 +1446,26 @@ class ComposerForm(forms.Form):
             self.fields.update(_precision_fields(prefix, date_label=label))
         set_choices(self, "organisation", Organisation.objects.order_by("name"))
         set_choices(self, "final_recipients", Organisation.objects.order_by("name"))
+        # Ticked in one click, because most letters go to bodies this
+        # department writes to constantly — and computed rather than
+        # hard-coded, because which ones those are changes with the government
+        # (`addressees_by_usage`).
+        self.recipient_shortlist = addressees_by_usage(viewer)
         self.matter = matter
-        if matter is None:
-            return
 
-        # Both querysets go through `visible_to`, and that is a security
-        # boundary rather than a convenience.
+        # **Nothing here binds an existing record the viewer might not be able
+        # to read.** The old form offered a `Järglane` picker over Matters and a
+        # final-evidence picker over `DocumentVersion`, and both had to go
+        # through `visible_to`: a crafted POST naming a restricted Matter would
+        # have told the sender that a file with that id exists, and binding a
+        # document they may not read as a submission's final evidence would
+        # print its filename, size and SHA-256 to everybody who can see the
+        # submission.
         #
-        # A crafted POST naming a Matter this person may not see would tell them
-        # a restricted file with that id exists — the same disclosure
-        # `get_visible_matter` returns 404 to avoid. And binding a document they
-        # may not read as a submission's final evidence would then print its
-        # filename, its size and its SHA-256 to everybody who can see the
-        # submission: exactly the defect fixed once already in
-        # `app.submissions.views.attach_evidence`, which is why the version
-        # queryset filters through `Document.objects.visible_to` rather than on
-        # `document__matter` alone. A child override only ever restricts
-        # further, so the Matter-only filter is not the same question.
-        set_choices(self, "successor", Matter.objects.visible_to(viewer).exclude(pk=matter.pk))
-        set_choices(
-            self,
-            "final_version",
-            DocumentVersion.objects.filter(
-                document__in=Document.objects.visible_to(viewer).filter(matter=matter)
-            ).select_related("document"),
-        )
+        # Neither picker exists now. The final opinion is a file this person is
+        # uploading, so it is created on *this* Matter and inherits its
+        # visibility — the whole class of disclosure the two querysets guarded
+        # against has no surface left in this form (Teema closing redesign §18).
 
     # -- validation --------------------------------------------------------
 
@@ -1475,6 +1531,14 @@ class ComposerForm(forms.Form):
         }
 
     def _clean_closure(self, cleaned: dict[str, Any], *, wanted: bool) -> None:
+        """The closing half: six answers, and none of them asked twice.
+
+        The narrative is the composer body and only the composer body. It
+        becomes the stored closure reason, and — when somebody says this was a
+        win — the work victory's wording too. So `Töövõit = Jah` with an empty
+        box is refused *on the box*, rather than inventing a description for a
+        record the department reports on (Teema closing redesign §2, §12).
+        """
         if not wanted:
             cleaned["closure_kwargs"] = None
             return
@@ -1482,63 +1546,164 @@ class ComposerForm(forms.Form):
         disposition = cleaned.get("disposition") or ""
         if not disposition:
             self.add_error("disposition", "Vali, miks teema lõpeb.")
-            return
 
-        successor = cleaned.get("successor")
-        if disposition == Disposition.SUPERSEDED and successor is None:
-            self.add_error("successor", "Vali teema, mille all töö jätkub.")
-            return
-        if disposition != Disposition.SUPERSEDED and successor is not None:
-            self.add_error(
-                "successor",
-                "Järglase saab määrata ainult siis, kui töö jätkub teise teema all.",
-            )
-            return
+        # The plain-text form of what was typed above. `disposition_reason` is
+        # a sentence in a banner, not markup, and the entry keeps the rich text.
+        narrative = plain_text(cleaned.get("body") or "").strip()
 
-        closure: dict[str, Any] = {
-            "disposition": disposition,
-            "reason": (cleaned.get("closure_reason") or "").strip(),
-            "successor": successor,
-        }
-
-        version = cleaned.get("final_version")
-        recipients = list(cleaned.get("final_recipients") or [])
-        title = (cleaned.get("final_title") or "").strip()
+        upload = cleaned.get("final_file")
+        chosen = list(cleaned.get("final_recipients") or [])
+        typed = self._clean_recipient_names(cleaned.get("final_recipient_names") or [], chosen)
         sent_on = cleaned.get("final_sent_on")
+
         # An opinion is claimed only when somebody chose the file that went out.
         # Everything else about it is then required, because a sent submission
         # with no recipient and no date is a claim the record cannot support —
-        # and a PDF on its own is not a sent opinion (Teema redesign §17, §20).
-        if version is not None:
-            if not title:
-                self.add_error("final_title", "Lõpparvamus vajab pealkirja.")
-            if not recipients:
-                self.add_error("final_recipients", "Märgi, kellele arvamus saadeti.")
+        # and a PDF on its own is not a sent opinion (§21).
+        if upload is not None:
             if sent_on is None:
                 self.add_error("final_sent_on", "Märgi, millal arvamus saadeti.")
-            if not self.errors:
-                closure["final_opinion"] = {
-                    "title": title,
-                    "final_version": version,
-                    "recipients": recipients,
-                    "sent_at": _as_datetime(sent_on),
-                    "channel": (cleaned.get("final_channel") or "").strip(),
-                    "reference": (cleaned.get("final_reference") or "").strip(),
-                }
-        elif title or recipients or sent_on:
+            if not chosen and not typed:
+                self.add_error("final_recipients", "Märgi, kellele arvamus saadeti.")
+        elif chosen or typed or sent_on is not None:
             self.add_error(
-                "final_version",
-                "Vali saadetud fail — ilma täpse tõendita ei saa arvamust saadetuks märkida.",
+                "final_file",
+                "Lae saadetud fail — ilma täpse tõendita ei saa arvamust saadetuks märkida.",
             )
 
-        victory_title = (cleaned.get("victory_title") or "").strip()
-        if victory_title:
-            closure["work_victory"] = {
-                "title": victory_title,
-                "detail": (cleaned.get("victory_detail") or "").strip(),
-            }
+        victory = cleaned.get("work_victory") or ""
+        if not victory:
+            self.add_error("work_victory", "Märgi, kas teemast sai töövõit.")
+        elif victory == "JAH":
+            if not narrative:
+                self.add_error(
+                    "body",
+                    "Kirjelda, mida Koda saavutas — sellest saab töövõidu sõnastus.",
+                )
+            if cleaned.get("victory_effective_on") is None:
+                self.add_error("victory_effective_on", "Märgi, millal tulemus jõustus.")
 
+        # Assembled only once nothing was refused. A half-built closure handed
+        # to the service would be a partial save waiting to happen, and the
+        # whole point of one transaction is that there is no such state (§24).
+        if self.errors:
+            return
+
+        closure: dict[str, Any] = {"disposition": disposition, "reason": narrative}
+        if upload is not None:
+            closure["final_opinion"] = {
+                "upload": upload,
+                "recipients": chosen,
+                "recipient_names": typed,
+                "sent_at": _as_datetime(sent_on),
+            }
+        if victory == "JAH":
+            closure["work_victory"] = {"title": narrative[:2000], "detail": ""}
+            effective_on = cleaned["victory_effective_on"]
+            # `Jõustumise kuupäev` is a commencement, so it goes where the
+            # domain keeps commencements. `MatterWorkVictory.period_date` is a
+            # reporting period and stays empty here rather than being borrowed
+            # because it happens to be the only other date on the record (§13).
+            closure["effective_date"] = {
+                "date_value": effective_on,
+                "period_end": effective_on,
+            }
         cleaned["closure_kwargs"] = closure
+
+    def _clean_recipient_names(self, typed: list[str], chosen: list[Any]) -> list[str]:
+        """The typed recipients that are still worth resolving.
+
+        Two names are dropped here rather than in the service: one that already
+        names a ticked institution, and one that repeats an earlier line. Both
+        would be collapsed again by `resolve_recipients` and by the unique
+        recipient-per-submission constraint — dropping them at the form is what
+        keeps the count somebody sees equal to the count that is stored (§7F).
+
+        Genuine ambiguity is refused instead. Two institutions spelled the same
+        way is a question only a person can answer, and both silently picking
+        one and silently creating a third are wrong answers (§7D).
+        """
+        from app.core.text import normalize_for_matching
+        from app.organisations.services import find_matches
+
+        seen = {normalize_for_matching(organisation.name) for organisation in chosen}
+        keep: list[str] = []
+        for name in typed:
+            matches = find_matches(name)
+            if len(matches) > 1:
+                self.add_error(
+                    "final_recipient_names",
+                    f"«{name}» sobib mitme organisatsiooniga — vali nimekirjast.",
+                )
+                continue
+            # An existing name — canonical or an alias somebody recorded —
+            # identifies that institution, so the duplicate check compares
+            # institutions rather than spellings.
+            key = normalize_for_matching(matches[0].name if matches else name)
+            if key in seen:
+                continue
+            seen.add(key)
+            keep.append(name)
+        return keep
+
+    @property
+    def shortlist_recipients(self) -> list[dict[str, Any]]:
+        """The tickable half of `Saaja`: who this department writes to most.
+
+        Rendered from an explicit list rather than by iterating the field,
+        because the field's queryset is deliberately wider than the shortlist.
+        The queryset is what a POST is validated against — an institution
+        somebody reached through `Muu` last week must still be tickable if a
+        later form is built with it — while this is only what is worth showing
+        without asking (§7A).
+        """
+        submitted = (
+            set(self.data.getlist("final_recipients"))
+            if self.is_bound and hasattr(self.data, "getlist")
+            else set()
+        )
+        return [
+            {
+                "value": str(organisation.pk),
+                "label": organisation.name,
+                "checked": str(organisation.pk) in submitted,
+            }
+            for organisation in getattr(self, "recipient_shortlist", [])
+        ]
+
+    @property
+    def typed_recipients(self) -> list[str]:
+        """What the `Muu` chips should show again after a refused save.
+
+        Read from the raw data rather than from `cleaned_data`, because the
+        save that most needs its chips back is the one that did not validate.
+        """
+        if not self.is_bound or not hasattr(self.data, "getlist"):
+            return []
+        seen: set[str] = set()
+        names: list[str] = []
+        for raw in self.data.getlist("final_recipient_names"):
+            name = " ".join((raw or "").split())
+            if name and name.casefold() not in seen:
+                seen.add(name.casefold())
+                names.append(name)
+        return names
+
+    @property
+    def recipient_catalogue(self) -> list[str]:
+        """Every spelling the `Muu` box can complete against.
+
+        Canonical names and recorded aliases both, so typing `MKM` finds the
+        ministry somebody decided it means. It is a catalogue rather than a
+        choice list: a name that is not in it is a new institution, created on
+        save (§7C).
+        """
+        from app.organisations.models import OrganisationAlias
+
+        names = list(Organisation.objects.order_by("name").values_list("name", flat=True))
+        aliases = list(OrganisationAlias.objects.order_by("alias").values_list("alias", flat=True))
+        known = {name.casefold() for name in names}
+        return names + [alias for alias in aliases if alias.casefold() not in known]
 
     # -- what the service is called with -----------------------------------
 
