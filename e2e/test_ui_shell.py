@@ -32,9 +32,10 @@ pytestmark = pytest.mark.e2e
 #: three below it are the machines the department actually has.
 VIEWPORTS = [(1440, 900), (1366, 768), (1280, 800), (1024, 768)]
 
-#: The four destinations a lawyer moves between all day. They are on the bar at
-#: every width.
-PRIMARY = ["Osakond", "Minu asjad", "Teemad"]
+#: The destinations a lawyer moves between all day, in the order the bar offers
+#: them. They are on the bar at every width, and «Minu asjad» is first: a
+#: lawyer's own queue is where the day starts.
+PRIMARY = ["Minu asjad", "Osakond", "Teemad"]
 
 #: Off the bar entirely, and its route deliberately untouched. Saabunud is a
 #: triage surface somebody opens when they are triaging, not a destination in
@@ -42,11 +43,18 @@ PRIMARY = ["Osakond", "Minu asjad", "Teemad"]
 #: its models and its data exactly where they were (Ülevaade QA §2).
 NOT_ON_THE_BAR = ["Saabunud"]
 
-#: The reading surfaces. Inline above 1560, behind "Veel" below it. `Osakond`
-#: is deliberately absent from this list: it is a primary destination now, and
-#: there is exactly one of it — a second copy in here is the duplication the
-#: merge removed (ADR 0049).
-SECONDARY = ["Jälgimine", "Statistika"]
+#: The reading surfaces, in order. Inline above 1560, behind "Veel" below it.
+#: `Osakond` is deliberately absent from this list: it is a primary destination
+#: now, and there is exactly one of it — a second copy in here is the
+#: duplication the merge removed (ADR 0049).
+#:
+#: «Tähtajad» is the item that used to read «Jälgimine». Only the word changed:
+#: the route, its namespace and the `jalgimine` key that lights it are all
+#: untouched (templates/components/topnav_secondary.html).
+SECONDARY = ["Tähtajad", "Statistika"]
+
+#: What the bar reads, left to right, for somebody who is signed in.
+NAVIGATION_ORDER = [*PRIMARY, *SECONDARY]
 
 
 def document_overflows(page) -> bool:
@@ -137,6 +145,43 @@ def test_every_destination_stays_reachable_at_every_width(page, base_url, width,
         expect(navigation.get_by_role("link", name=destination, exact=True)).to_have_count(1)
 
 
+@pytest.mark.parametrize("width,height", [*VIEWPORTS, (1600, 900)], ids=lambda v: str(v))
+def test_the_bar_reads_in_the_approved_order(page, base_url, width, height):
+    """Minu asjad, Osakond, Teemad, Tähtajad, Statistika — in that sequence.
+
+    Read off the laid-out page rather than the markup, so it holds whichever
+    branch this width renders: above 1560 all five are one inline row, below it
+    the last two are in the opened disclosure and sit under the trigger. Either
+    way a reader meets them in this order, which a presence check cannot say.
+
+    `boundingBox` is the reason this is a browser test at all: the wide row and
+    the menu are both in the DOM, and only geometry knows which one a person is
+    actually looking at.
+    """
+    sign_in(page, base_url, SANDRA)
+    page.set_viewport_size({"width": width, "height": height})
+    open_register(page, base_url)
+
+    if width < 1560:
+        page.locator(".topnav__trigger").click()
+
+    navigation = page.get_by_role("navigation", name="Peamine")
+    placed = []
+    for destination in NAVIGATION_ORDER:
+        link = navigation.get_by_role("link", name=destination, exact=True)
+        expect(link).to_be_visible()
+        box = link.bounding_box()
+        # Bucketed into rows before being ordered, so a sub-pixel difference in
+        # where two items on the same line sit cannot decide the comparison.
+        placed.append((round(box["y"] / 16), round(box["x"]), destination))
+
+    # Top to bottom, then left to right: the reading order of both layouts —
+    # one inline row above 1560, a row plus an opened menu below it.
+    assert placed == sorted(placed), f"the bar does not read in order: {placed}"
+
+    assert "Jälgimine" not in navigation.inner_text()
+
+
 @pytest.mark.parametrize("width,height", VIEWPORTS, ids=lambda v: str(v))
 def test_the_emblem_is_the_only_branding_and_it_actually_renders(page, base_url, width, height):
     """The mark alone, drawn, on the bar — not a broken image and not a wordmark.
@@ -209,9 +254,9 @@ def test_the_emblem_sits_on_the_bar_without_growing_it(page, base_url, width, he
     # lockup, not so much that it looks like a missing element. The artwork's
     # own transparent margin is inside the box, so the measured gap understates
     # what the eye sees by ~3px.
-    first = page.get_by_role("link", name="Osakond", exact=True).first.bounding_box()
+    first = page.get_by_role("link", name=PRIMARY[0], exact=True).first.bounding_box()
     gap = first["x"] - (logo["x"] + logo["width"])
-    assert 8 <= gap <= 40, f"clear space before Osakond is {gap:.1f}px"
+    assert 8 <= gap <= 40, f"clear space before {PRIMARY[0]} is {gap:.1f}px"
 
 
 def test_saabunud_is_off_the_bar_and_still_a_working_page(page, base_url):

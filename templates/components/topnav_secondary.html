@@ -13,7 +13,7 @@ cannot reach: the row simply never appeared. Measured, not assumed.
 Osakond is no longer among them, and no longer role-gated navigation at all. It
 was a department-head-only item here beside a universal `Ülevaade` on the bar —
 two destinations answering one question, one of them invisible to most readers.
-The two pages are now one page at `/osakond/`, it is the first item on the bar,
+The two pages are now one page at `/osakond/`, it is a primary item on the bar,
 and the two sections that were genuinely the head's are decided on the page
 (docs/adr/0049).
 {% endcomment %}
@@ -37,9 +37,20 @@ and the two sections that were genuinely the head's are decided on the page
   the Arhiiv tab in both places, and decides it before anything is counted
   (docs/adr/0028, docs/adr/0047).
 {% endcomment %}
+{% comment %}
+  The item reads «Tähtajad» and the destination is unchanged: it is still the
+  important-dates surface at `intelligence:important_dates`, still under
+  `/jalgimine/`, and the key that lights it is still `jalgimine`.
+
+  A rename of the word only. «Jälgimine» named the activity — watching — where
+  every reader arriving here is looking for the thing being watched, and the
+  first tab of the page they land on is already headed *Olulised tähtajad*. The
+  route, its models, its namespace and every existing bookmark are untouched,
+  because a navigation label is not a domain decision.
+{% endcomment %}
 <a class="topnav__link {% if nav_active == 'jalgimine' %}is-active{% endif %}"
    {% if nav_active == 'jalgimine' %}aria-current="page"{% endif %}
-   href="{% url 'intelligence:important_dates' %}">Jälgimine</a>
+   href="{% url 'intelligence:important_dates' %}">Tähtajad</a>
 <a class="topnav__link {% if nav_active == 'statistika' %}is-active{% endif %}"
    {% if nav_active == 'statistika' %}aria-current="page"{% endif %}
    href="{% url 'reporting:overview' %}">Statistika</a>
