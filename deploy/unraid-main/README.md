@@ -91,13 +91,13 @@ Vali kasutaja                ← the root asks who is reading before showing wor
 selected persona → Minu asjad
 ```
 
-Ülevaade is still there, still on the bar, and still the one page that renders
+Osakond is still there, still on the bar, and still the one page that renders
 with **no** persona selected — reached by its own address, or by explicitly
 switching to *Ilma kasutajata*. It renders for a *department scope*, not for an
 arbitrary person's identity: NORMAL visibility, no participation, so nothing
 RESTRICTED appears merely because the password was typed. Everything except
-Ülevaade needs a persona, because authoring anything needs somebody to
-attribute it to.
+Osakond needs a persona, because authoring anything needs somebody to attribute
+it to.
 
 Changing persona does not ask for the password again. Signing out closes both.
 

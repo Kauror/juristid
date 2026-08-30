@@ -14,13 +14,19 @@ disappears once what it promised is on screen (`.uxdl__more[open] > summary`).
     into the accessible name so they are not four controls called the same
     thing; the visible text stays the short one.
   {% endcomment %}
-  <summary>Näita veel {{ remaining }} ▾{% if scope %}<span class="visually-hidden"> — {{ scope }}</span>{% endif %}</summary>
+  {% comment %}
+    «Näita veel N» in a window with an end, «Näita kõiki N» in the one without.
+    The far window is holding back the rest of a population no month bounds, so
+    «veel» over a number that is the whole of it would be describing something
+    else (frame C).
+  {% endcomment %}
+  <summary>{% if all %}Näita kõiki{% else %}Näita veel{% endif %} {{ remaining }} ▾{% if scope %}<span class="visually-hidden"> — {{ scope }}</span>{% endif %}</summary>
   {% for item in rows|slice:":10" %}
     {% include "matters/partials/deadline_row.html" with item=item %}
   {% endfor %}
   {% with rest=rows|slice:"10:" %}
     {% if rest %}
-      {% include "matters/partials/deadline_more.html" with rows=rest remaining=rest|length scope=scope %}
+      {% include "matters/partials/deadline_more.html" with rows=rest remaining=rest|length scope=scope all=0 %}
     {% endif %}
   {% endwith %}
 </details>

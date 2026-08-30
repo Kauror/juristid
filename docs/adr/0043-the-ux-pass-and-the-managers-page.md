@@ -1,6 +1,10 @@
 # ADR 0043 — The 2026-08-27 UX pass: an additive layer, views that live in the address, and Osakond narrowed to three questions
 
-- Status: accepted
+- Status: accepted; the parts describing `Ülevaade` and `Osakonna töö` as two
+  destinations are **superseded by ADR 0049**, which merged them into one page
+  at `/osakond/`. What this record decided about the components — the Seis
+  strip, the team table, Eesolev, Tehtud, `?too=tahtaeg-vahemik` — still holds;
+  they are the same components on the merged page.
 - Date: 2026-08-28
 - Stage: pre-QA (shared-gate development phase)
 - Related: ADR 0030 (the Teema workspace redesign this refines), ADR 0033

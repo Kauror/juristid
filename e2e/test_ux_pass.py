@@ -29,7 +29,7 @@ pytestmark = pytest.mark.e2e
 #: link on from a train.
 WIDTHS = (1440, 1366, 1280, 1024, 900, 720, 480, 375)
 
-PAGES = ("/ulevaade/", "/minu-asjad/", "/teemad/", "/osakonna-too/")
+PAGES = ("/osakond/", "/minu-asjad/", "/teemad/")
 
 
 def overflows(page) -> bool:

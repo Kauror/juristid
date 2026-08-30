@@ -1,7 +1,7 @@
 """The person workspace, and the one private thing on it.
 
 `/inimesed/<id>/asjad/` is the same page as Minu asjad, read about somebody
-else. It exists because clicking a colleague on Osakonna töö used to open the
+else. It exists because clicking a colleague on the department page used to open the
 register filtered by owner, and a register row answers "what is this Matter",
 not "what is on this person's desk" (design handoff, Minu asjad §A).
 
@@ -11,7 +11,7 @@ Two rules this module exists to hold, and neither is a matter of taste.
 otherwise **404** rather than 403 — the convention `department_views` and
 `get_visible_matter` already follow, because a 403 confirms the page is there
 and that somebody else may read it. No new entitlement is created: a department
-head can already see this work on Osakonna töö and in the register.
+head can already see this work on Osakond and in the register.
 
 **The scratchpad is not part of the workspace at all.** It is fetched by the
 *self* view only, written only through an endpoint that reads `request.user`,
@@ -65,7 +65,7 @@ def switcher_people() -> QuerySet[User]:
     """Who the ‹ ▾ › control walks through.
 
     `department_workers()` — active caseworkers, ordered by display name, which
-    is the order the Osakonna töö team table is in. Walking the two lists must
+    is the order the Osakond team table is in. Walking the two lists must
     feel like walking one list, so they are one query rather than two orderings
     that agree today (docs/adr/0036; `01-EHITUSJUHIS` §9.1 leaves the choice
     open and this is the prototype's answer).

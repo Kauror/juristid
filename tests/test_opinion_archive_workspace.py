@@ -461,10 +461,10 @@ def test_the_archive_browse_is_no_longer_a_navigation_destination(
     assert may_read_archive(reader)
 
     act_as(behind_the_gate, reader)
-    assert browse_url() not in behind_the_gate.get(reverse("matters:overview")).content.decode()
+    assert browse_url() not in behind_the_gate.get(reverse("matters:department")).content.decode()
 
     act_as(behind_the_gate, specialist)
-    assert browse_url() not in behind_the_gate.get(reverse("matters:overview")).content.decode()
+    assert browse_url() not in behind_the_gate.get(reverse("matters:department")).content.decode()
 
 
 def test_the_workspace_offers_the_archive_tab_to_a_reader(behind_the_gate, reader, binary):

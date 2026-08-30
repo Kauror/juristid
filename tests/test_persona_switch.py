@@ -313,7 +313,7 @@ def test_a_session_already_acting_as_an_excluded_account_is_dropped(behind_the_g
     """
     behind_the_gate.force_login(department["admin"])
 
-    response = behind_the_gate.get("/ulevaade/")
+    response = behind_the_gate.get("/osakond/")
 
     assert response.status_code == 200
     assert not response.wsgi_request.user.is_authenticated
@@ -324,7 +324,7 @@ def test_a_session_already_acting_as_an_excluded_account_is_dropped(behind_the_g
 
 def test_dropping_an_ineligible_persona_is_recorded_with_its_reason(behind_the_gate, department):
     behind_the_gate.force_login(department["admin"])
-    behind_the_gate.get("/ulevaade/")
+    behind_the_gate.get("/osakond/")
 
     event = SecurityAuditEvent.objects.filter(event_type=SecurityEventType.PERSONA_SELECTED).latest(
         "occurred_at"
@@ -338,7 +338,7 @@ def test_a_session_acting_as_a_candidate_is_left_alone(behind_the_gate, departme
     """The guard above must not log everybody out on every request."""
     _act_as(behind_the_gate, str(department["specialist"].pk))
 
-    first = behind_the_gate.get("/ulevaade/")
+    first = behind_the_gate.get("/osakond/")
     second = behind_the_gate.get("/teemad/")
 
     assert first.wsgi_request.user == department["specialist"]
@@ -363,10 +363,14 @@ def test_a_stale_technical_persona_cannot_reach_the_department_surface(behind_th
     )
     behind_the_gate.force_login(privileged)
 
-    response = behind_the_gate.get(reverse("matters:department_work"))
+    response = behind_the_gate.get(reverse("matters:department"))
 
-    assert response.status_code in (302, 404)
+    # The page is readable by anybody past the door, so what is asserted is the
+    # thing that matters: the session is not authenticated as that account, so
+    # the manager-only sections are not built for it (ADR 0049).
+    assert response.status_code == 200
     assert not response.wsgi_request.user.is_authenticated
+    assert "uxstat" not in response.content.decode()
 
 
 # -- audit ------------------------------------------------------------------
@@ -446,7 +450,7 @@ def test_the_owning_specialist_persona_does_see_their_restricted_matter(
     assert "Konfidentsiaalne liikmete tagasiside" in page
 
 
-@pytest.mark.parametrize("path", ["/ulevaade/", "/teemad/?olek=koik"])
+@pytest.mark.parametrize("path", ["/osakond/", "/teemad/?olek=koik"])
 def test_a_specialist_persona_receives_the_restricted_title_too(
     behind_the_gate, restricted_world, path
 ):
@@ -501,14 +505,14 @@ def test_no_persona_does_not_inherit_the_previous_persona_restricted_access(
     _act_as(behind_the_gate, str(restricted_world["head"].pk))
     _act_as(behind_the_gate, "")
 
-    page = behind_the_gate.get("/ulevaade/").content.decode()
+    page = behind_the_gate.get("/osakond/").content.decode()
 
     assert "Avalik eelnõu kõigile" in page
     assert "Konfidentsiaalne liikmete tagasiside" not in page
 
 
 def test_the_shared_password_alone_grants_nothing_restricted(behind_the_gate, restricted_world):
-    page = behind_the_gate.get("/ulevaade/").content.decode()
+    page = behind_the_gate.get("/osakond/").content.decode()
 
     assert "Konfidentsiaalne liikmete tagasiside" not in page
 
@@ -517,36 +521,42 @@ def test_the_shared_password_alone_grants_nothing_restricted(behind_the_gate, re
 
 
 def _nav(client) -> str:
-    return client.get("/ulevaade/").content.decode()
+    return client.get("/osakond/").content.decode()
 
 
-def test_a_specialist_gets_minu_too_and_not_the_department_surface(behind_the_gate, department):
+def test_a_specialist_gets_minu_too_and_the_one_department_destination(behind_the_gate, department):
     _act_as(behind_the_gate, str(department["specialist"].pk))
     page = _nav(behind_the_gate)
 
     assert reverse("matters:my_work") in page
-    assert reverse("matters:department_work") not in page
+    assert page.count(f'href="{reverse("matters:department")}"') == 1
 
 
-def test_a_department_head_gets_both(behind_the_gate, department):
+def test_a_department_head_gets_the_same_single_destination(behind_the_gate, department):
+    """One item, not two.
+
+    The head used to be offered `Ülevaade` on the bar and `Osakond` inside
+    «Veel» — one question with two answers, one of them invisible to everybody
+    else (ADR 0049).
+    """
     _act_as(behind_the_gate, str(department["head"].pk))
     page = _nav(behind_the_gate)
 
     assert reverse("matters:my_work") in page
-    assert reverse("matters:department_work") in page
+    assert page.count(f'href="{reverse("matters:department")}"') == 1
 
 
-def test_no_persona_gets_neither_and_keeps_ulevaade(behind_the_gate, department):
+def test_no_persona_keeps_the_department_page_and_gets_no_minu_too(behind_the_gate, department):
     """Minu töö is not a surface without a "minu" (brief 23).
 
-    Ülevaade is, and stays: it is the department's own dashboard and the reason
+    Osakond is, and stays: it is the department's own dashboard and the reason
     somebody past the door has anything to read before choosing a name.
     """
     page = _nav(behind_the_gate)
 
     assert reverse("matters:my_work") not in page
-    assert reverse("matters:department_work") not in page
-    assert behind_the_gate.get("/ulevaade/").status_code == 200
+    assert page.count(f'href="{reverse("matters:department")}"') == 1
+    assert behind_the_gate.get("/osakond/").status_code == 200
 
 
 def test_minu_too_without_a_persona_invents_nobody(behind_the_gate, department):
@@ -562,28 +572,40 @@ def test_minu_too_without_a_persona_invents_nobody(behind_the_gate, department):
     assert reverse("accounts:choose_persona") in response["Location"]
 
 
-def test_the_department_surface_refuses_a_specialist_at_the_route(behind_the_gate, department):
-    """Hiding the link is presentation; the 404 is the boundary."""
+def test_the_manager_sections_refuse_a_specialist_at_the_route(behind_the_gate, department):
+    """Hiding a section is presentation; not building it is the boundary.
+
+    The page itself is a specialist's to read — it replaced the one every reader
+    had — and *Meeskond* and *Tehtud* are what stayed the head's (ADR 0049).
+    """
     _act_as(behind_the_gate, str(department["specialist"].pk))
+    response = behind_the_gate.get(reverse("matters:department"))
 
-    assert behind_the_gate.get(reverse("matters:department_work")).status_code == 404
+    assert response.status_code == 200
+    assert not response.context["page"].is_head
+    assert response.context["page"].team == []
+    assert response.context["page"].digest is None
 
 
-def test_the_department_surface_refuses_a_session_with_no_persona(behind_the_gate, department):
+def test_the_manager_sections_refuse_a_session_with_no_persona(behind_the_gate, department):
     """Knowing the shared password is not being the department head."""
-    assert behind_the_gate.get(reverse("matters:department_work")).status_code in (302, 404)
+    response = behind_the_gate.get(reverse("matters:department"))
+
+    assert response.status_code == 200
+    assert not response.context["page"].is_head
+    assert "uxstat" not in response.content.decode()
 
 
-def test_an_administrator_cannot_reach_the_department_surface_by_becoming_one(
+def test_an_administrator_cannot_reach_the_manager_sections_by_becoming_one(
     behind_the_gate, department
 ):
     """The whole chain, end to end: an administrator cannot be selected, so
     there is no persona through which the technical account reads the
-    department head's surface."""
+    department head's sections."""
     response = _act_as(behind_the_gate, str(department["admin"].pk))
 
     assert _current(response) is None
-    assert behind_the_gate.get(reverse("matters:department_work")).status_code in (302, 404)
+    assert not behind_the_gate.get(reverse("matters:department")).context["page"].is_head
 
 
 # -- the top-bar switcher ---------------------------------------------------
@@ -592,7 +614,7 @@ def test_an_administrator_cannot_reach_the_department_surface_by_becoming_one(
 def test_the_pill_is_on_every_ordinary_page(behind_the_gate, department):
     _act_as(behind_the_gate, str(department["specialist"].pk))
 
-    for path in ["/ulevaade/", "/teemad/", "/minu-asjad/"]:
+    for path in ["/osakond/", "/teemad/", "/minu-asjad/"]:
         page = behind_the_gate.get(path).content.decode()
         assert 'id="persona-pill"' in page, path
         assert 'id="persona-menu"' in page, path
@@ -600,7 +622,7 @@ def test_the_pill_is_on_every_ordinary_page(behind_the_gate, department):
 
 def test_the_popover_offers_the_same_population_as_the_page(behind_the_gate, department):
     _act_as(behind_the_gate, str(department["specialist"].pk))
-    page = behind_the_gate.get("/ulevaade/").content.decode()
+    page = behind_the_gate.get("/osakond/").content.decode()
 
     assert department["colleague"].get_short_name() in page
     assert department["head"].get_short_name() in page
@@ -617,28 +639,28 @@ def test_the_popover_carries_the_current_page_as_its_return_target(behind_the_ga
 
 def test_the_popover_names_the_selected_person_on_the_pill(behind_the_gate, department):
     _act_as(behind_the_gate, str(department["head"].pk))
-    page = behind_the_gate.get("/ulevaade/").content.decode()
+    page = behind_the_gate.get("/osakond/").content.decode()
 
     assert department["head"].get_short_name() in page
     assert "personapill--none" not in page
 
 
 def test_with_no_persona_the_pill_says_so(behind_the_gate, department):
-    page = behind_the_gate.get("/ulevaade/").content.decode()
+    page = behind_the_gate.get("/osakond/").content.decode()
 
     assert "personapill--none" in page
     assert "Ilma kasutajata" in page
 
 
 def test_the_popover_footer_is_the_one_place_the_caveat_survives(behind_the_gate, department):
-    page = behind_the_gate.get("/ulevaade/").content.decode()
+    page = behind_the_gate.get("/osakond/").content.decode()
 
     assert "Valik ei ole autentimine" in page
     assert page.count("Valik ei ole autentimine") == 1
 
 
 def test_the_pill_declares_the_popover_it_controls(behind_the_gate, department):
-    page = behind_the_gate.get("/ulevaade/").content.decode()
+    page = behind_the_gate.get("/osakond/").content.decode()
 
     assert 'aria-controls="persona-menu"' in page
     assert 'aria-expanded="false"' in page
@@ -655,7 +677,7 @@ def test_the_switcher_is_absent_where_there_is_no_persona_to_switch(client, sett
     person = factories.UserFactory(role=UserRole.SPECIALIST, is_synthetic=True)
     client.force_login(person)
 
-    page = client.get("/ulevaade/").content.decode()
+    page = client.get("/osakond/").content.decode()
 
     assert 'id="persona-pill"' not in page
     assert reverse("matters:my_work") in page

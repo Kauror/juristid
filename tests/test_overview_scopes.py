@@ -30,7 +30,7 @@ from tests import factories
 
 pytestmark = pytest.mark.django_db
 
-OVERVIEW = "matters:overview"
+OVERVIEW = "matters:department"
 
 
 def register_rows(user, url: str, *, today=None):
@@ -113,7 +113,7 @@ def test_each_scope_renders_its_own_body_under_the_same_shell(
     body = client.get(reverse(OVERVIEW) + query).content.decode()
 
     # The shell is the same in both.
-    assert "Ülevaade" in body
+    assert "Osakond" in body
     assert "Kogu osakond" in body and "Valdkonniti" in body
     assert marker in body
 

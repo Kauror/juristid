@@ -34,7 +34,7 @@ VIEWPORTS = [(1440, 900), (1366, 768), (1280, 800), (1024, 768)]
 
 #: The four destinations a lawyer moves between all day. They are on the bar at
 #: every width.
-PRIMARY = ["Ülevaade", "Minu asjad", "Teemad"]
+PRIMARY = ["Osakond", "Minu asjad", "Teemad"]
 
 #: Off the bar entirely, and its route deliberately untouched. Saabunud is a
 #: triage surface somebody opens when they are triaging, not a destination in
@@ -42,9 +42,10 @@ PRIMARY = ["Ülevaade", "Minu asjad", "Teemad"]
 #: its models and its data exactly where they were (Ülevaade QA §2).
 NOT_ON_THE_BAR = ["Saabunud"]
 
-#: The reading surfaces. Inline above 1560, behind "Veel" below it. Osakonna töö
-#: is deliberately absent from both lists: it is offered by role, and the route
-#: 404s for anybody else rather than relying on the link being hidden.
+#: The reading surfaces. Inline above 1560, behind "Veel" below it. `Osakond`
+#: is deliberately absent from this list: it is a primary destination now, and
+#: there is exactly one of it — a second copy in here is the duplication the
+#: merge removed (ADR 0049).
 SECONDARY = ["Jälgimine", "Statistika"]
 
 
@@ -208,9 +209,9 @@ def test_the_emblem_sits_on_the_bar_without_growing_it(page, base_url, width, he
     # lockup, not so much that it looks like a missing element. The artwork's
     # own transparent margin is inside the box, so the measured gap understates
     # what the eye sees by ~3px.
-    first = page.get_by_role("link", name="Ülevaade", exact=True).first.bounding_box()
+    first = page.get_by_role("link", name="Osakond", exact=True).first.bounding_box()
     gap = first["x"] - (logo["x"] + logo["width"])
-    assert 8 <= gap <= 40, f"clear space before Ülevaade is {gap:.1f}px"
+    assert 8 <= gap <= 40, f"clear space before Osakond is {gap:.1f}px"
 
 
 def test_saabunud_is_off_the_bar_and_still_a_working_page(page, base_url):
@@ -239,14 +240,14 @@ def test_saabunud_is_off_the_bar_and_still_a_working_page(page, base_url):
     expect(page.get_by_role("heading", name="Saabunud")).to_be_visible()
 
 
-def test_ulevaade_still_leads_to_saabunud(page, base_url):
+def test_osakond_still_leads_to_saabunud(page, base_url):
     """The path that replaces the bar item, asserted rather than assumed.
 
     "Uued teemad" on the facts rail is where the question "what has arrived"
     actually occurs to somebody, and it is now the way in.
     """
     sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/ulevaade/")
+    page.goto(f"{base_url}/osakond/")
     page.wait_for_load_state("networkidle")
 
     page.get_by_role("link", name="Ava Saabunud →").click()
@@ -373,22 +374,27 @@ def test_the_register_drops_columns_in_the_order_the_design_states(page, base_ur
 
 
 # ---------------------------------------------------------------------------
-# Ülevaade
+# Osakond
 # ---------------------------------------------------------------------------
 
 
 def open_overview(page, base_url: str, query: str = "") -> None:
-    page.goto(f"{base_url}/ulevaade/{query}")
+    page.goto(f"{base_url}/osakond/{query}")
     page.wait_for_load_state("networkidle")
 
 
-def test_the_overview_leads_with_intervention_then_deadlines_then_activity(page, base_url):
+def test_the_department_page_leads_with_intervention_then_deadlines(page, base_url):
     """Priority order, read off the rendered document rather than the template.
 
     A section can move without its source moving — a grid, an include, an
     override — so the order is taken from where the sections actually are on the
-    page. *Vajab sekkumist* is first because it is the reason a department head
-    opens this page at all.
+    page. *Vajab sekkumist* is first for a reader who is not the department
+    head, because it is the reason they open this page at all; for the head,
+    *Meeskond* stands in front of it (ADR 0049).
+
+    Signed in as a specialist, so this is also the assertion that the two
+    manager sections are not on the page: *Meeskond* and *Tehtud* would be in
+    this list if they were.
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": 1440, "height": 900})
@@ -399,7 +405,7 @@ def test_the_overview_leads_with_intervention_then_deadlines_then_activity(page,
         "  document.querySelectorAll('.ovbody__main section[aria-label]')"
         ").map(node => node.getAttribute('aria-label'))"
     )
-    assert order == ["Vajab sekkumist", "Tähtajad", "Viimased muudatused"], order
+    assert order == ["Vajab sekkumist", "Eesolev"], order
 
 
 def test_the_intervention_queue_says_what_it_wants(page, base_url):
@@ -450,21 +456,21 @@ def test_a_nonsense_scope_shows_the_default_rather_than_an_error(page, base_url)
     sign_in(page, base_url, SANDRA)
     open_overview(page, base_url, "?vaade=jama")
 
-    expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
+    expect(page.get_by_role("heading", name="Osakond", exact=True)).to_be_visible()
     expect(
         page.get_by_role("navigation", name="Ülevaate ulatus").locator("[aria-current='page']")
     ).to_have_text("Kogu osakond")
 
 
 def test_no_work_surface_still_spends_a_column_on_the_reference(page, base_url):
-    """Teemad, Minu töö, Saabunud and Ülevaade, in a real browser.
+    """Teemad, Minu töö, Saabunud and Osakond, in a real browser.
 
     Two of the four render no table at all since the work-surface rebuild, which
     is the strongest possible form of "no reference column"; the assertion holds
     either way and is kept on all four so a table coming back is noticed.
     """
     sign_in(page, base_url, SANDRA)
-    for path in ("/teemad/", "/minu-asjad/", "/saabunud/", "/ulevaade/"):
+    for path in ("/teemad/", "/minu-asjad/", "/saabunud/", "/osakond/"):
         page.goto(f"{base_url}{path}")
         page.wait_for_load_state("networkidle")
         expect(page.get_by_role("columnheader", name="Viide")).to_have_count(0)
@@ -482,7 +488,7 @@ def test_no_ordinary_reading_surface_prints_a_matter_reference(page, base_url):
     sign_in(page, base_url, SANDRA)
     pattern = re.compile(r"(19|20)\d{2}_\d+")
 
-    for path in ("/ulevaade/", "/minu-asjad/", "/teemad/", "/saabunud/", "/jalgimine/tahtajad/"):
+    for path in ("/osakond/", "/minu-asjad/", "/teemad/", "/saabunud/", "/jalgimine/tahtajad/"):
         page.goto(f"{base_url}{path}")
         page.wait_for_load_state("networkidle")
         text = page.locator("#sisu").inner_text()
@@ -511,60 +517,41 @@ def test_the_intervention_row_states_the_missing_deadline_and_nothing_else(page,
 
     rows = page.locator(".interrow")
     assert rows.count(), "the seeded world has no next-step-less Matter"
-    text = page.locator(".ovsection__rows").inner_text()
+    # `.first`: the section renders the preview rows and the rows behind «Näita
+    # veel N ▾» as two blocks, and since the preview narrowed to five the
+    # seeded world overflows into the second one (docs/adr/0049 §6).
+    text = page.locator(".ovsection__rows").first.inner_text()
     assert "tähtaeg puudub" in text.lower(), text
     assert "sammuta" not in text.lower(), text
     assert "vaikust" not in text.lower(), text
 
 
-def test_recent_changes_says_who_did_what_in_which_topic(page, base_url):
-    """One line, three parts, and the third is a topic a person can name.
+def test_the_department_page_carries_no_change_feed_and_no_feed_filter(page, base_url):
+    """*Viimased muudatused* is on no page, and neither is its filter strip.
 
-    The row used to end in `2026_303`. It now ends in the topic's title — which
-    on this seeded world is a deliberately long one, so this is also the
-    long-title case: the row must stay a row (human QA §16, §20, §37).
+    Two browser tests stood here — one on the humanised feed row, one on the
+    «Teema muudatused» filter label. Both described a section the merge retired:
+    what a period produced is *Tehtud*'s question, read from canonical records
+    rather than from the audit stream (docs/adr/0049 §7).
+
+    Neither is a skip. The absence is the assertion, and it is worth making in a
+    browser because a section returning by way of an include is exactly the kind
+    of thing a server-side test would not notice. What the feed's rows *say*
+    when something does render them is still asserted in full against the read
+    model (`tests/test_identifier_free_ui.py`), so nothing about the wording
+    stopped being checked — where the events belong is DS-25.
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": 1440, "height": 900})
     open_overview(page, base_url)
 
-    section = page.locator("section[aria-label='Viimased muudatused']")
-    expect(section.get_by_text("Viimased muudatused", exact=True)).to_be_visible()
-
-    row = section.locator(".feedrow").first
-    expect(row).to_be_visible()
-    link = row.get_by_role("link").first
-    expect(link).to_be_visible()
-    # The topic link goes to a Matter, and the row's text names a person before
-    # it: "<Actor> <did something> · <topic>".
-    assert re.match(r"^/teemad/[0-9a-f-]{36}/$", link.get_attribute("href") or ""), link
-    assert "·" in row.inner_text(), row.inner_text()
-
-    # A long title truncates inside its own row rather than widening the page.
+    expect(page.locator("section[aria-label='Viimased muudatused']")).to_have_count(0)
+    expect(page.locator(".feedrow")).to_have_count(0)
+    # `.feedfilter` is the Tehtud row-kind control's component now, and this
+    # reader is a specialist, so the section it belongs to is not built at all.
+    expect(page.locator(".feedfilter")).to_have_count(0)
+    expect(page.get_by_text("Staatuse muutused")).to_have_count(0)
     assert not document_overflows(page)
-    box = row.bounding_box()
-    assert box["width"] <= 1441, box
-    # And the full title is still reachable, on the link itself.
-    assert len(link.get_attribute("title") or "") > 0
-
-
-def test_the_change_filter_is_named_for_what_it_holds(page, base_url):
-    """`Staatuse muutused` stopped being true when the bucket widened.
-
-    It now carries Järgmiseks, olulised tähtajad, jõustumised, kaasamised,
-    töövõidud and a rename as well as the stage and owner changes it was named
-    for. The query value behind it is unchanged (review §12).
-    """
-    sign_in(page, base_url, SANDRA)
-    open_overview(page, base_url)
-
-    strip = page.locator(".feedfilter")
-    expect(strip.get_by_role("link", name="Teema muudatused")).to_be_visible()
-    expect(strip.get_by_role("link", name="Staatuse muutused")).to_have_count(0)
-
-    strip.get_by_role("link", name="Teema muudatused").click()
-    page.wait_for_load_state("networkidle")
-    assert "voog=staatus" in page.url, page.url
 
 
 def test_the_default_ordering_is_offered_by_what_it_does(page, base_url):

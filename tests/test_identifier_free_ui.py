@@ -60,7 +60,7 @@ YEAR, NUMBER = 2099, 987
 
 TITLE = "Ebaausate kaubandustavade toiduainete tarneahelas avalik konsultatsioon"
 
-OVERVIEW = "matters:overview"
+OVERVIEW = "matters:department"
 
 #: The ordering control itself. Anchored on the `<select>` rather than on
 #: `name="jarjestus"`, because the search form above it renders a *hidden* input
@@ -385,11 +385,18 @@ def test_the_matter_is_still_in_the_intervention_population(specialist, marked_m
 # ---------------------------------------------------------------------------
 
 
-def test_the_section_is_called_viimased_muudatused(signed_in, marked_matter):
+def test_the_department_page_carries_no_second_change_feed(signed_in, marked_matter):
+    """*Viimased muudatused* is not a section any more (docs/adr/0049 §7).
+
+    Its question — what has this department finished — is *Tehtud*'s, read from
+    the canonical records rather than from the audit stream. The feed's own read
+    model is still asserted below, in full: what it says about a Matter is a
+    rule worth keeping whether or not a page is currently printing it (DS-25).
+    """
     body = _get(signed_in, OVERVIEW, "?vaade=osakond")
 
-    assert 'aria-label="Viimased muudatused"' in body
-    assert "Viimane tegevus" not in body
+    assert 'aria-label="Viimased muudatused"' not in body
+    assert 'aria-label="Vajab sekkumist"' in body
 
 
 def test_the_register_column_keeps_its_own_name(signed_in, marked_matter):
@@ -484,13 +491,10 @@ def test_the_feed_row_links_to_the_topic_it_names(signed_in, specialist, marked_
     detail = reverse("matters:matter_detail", kwargs={"pk": marked_matter.pk})
 
     (item,) = _feed(specialist, ov.FEED_ENTRIES)
-    body = _get(signed_in, OVERVIEW, "?vaade=osakond&voog=sissekanded")
 
     assert item.url == detail
-    feed = body.split('aria-label="Viimased muudatused"', 1)[1]
-    assert f'href="{detail}"' in feed
-    assert TITLE in feed
-    assert REFERENCE not in feed
+    assert item.matter_title == TITLE
+    assert REFERENCE not in item.matter_title
 
 
 # ---------------------------------------------------------------------------
@@ -651,8 +655,13 @@ def test_import_and_cutover_events_never_reach_the_feed(specialist, marked_matte
     assert _feed(specialist) == []
 
 
-def test_the_filter_is_named_for_what_it_now_holds(signed_in, specialist, marked_matter):
-    """`Staatuse muutused` stopped being true the moment the bucket widened."""
+def test_the_filter_is_named_for_what_it_now_holds(specialist, marked_matter):
+    """`Staatuse muutused` stopped being true the moment the bucket widened.
+
+    Asserted on the vocabulary rather than on a rendered page: the feed has no
+    surface since the department pages merged, and the word would otherwise
+    stop being checked at all (DS-25).
+    """
     add_engagement(
         matter=marked_matter,
         kind=EngagementKind.WEB_CALL,
@@ -661,10 +670,10 @@ def test_the_filter_is_named_for_what_it_now_holds(signed_in, specialist, marked
         actor=specialist,
     )
 
-    body = _get(signed_in, OVERVIEW, "?vaade=osakond")
+    labels = dict(ov.FEED_FILTERS)
 
-    assert "Teema muudatused" in body
-    assert "Staatuse muutused" not in body
+    assert labels[ov.FEED_STATUS] == "Teema muudatused"
+    assert "Staatuse muutused" not in labels.values()
 
 
 def test_the_old_query_value_still_selects_that_bucket(signed_in, specialist, marked_matter):
@@ -685,10 +694,6 @@ def test_the_old_query_value_still_selects_that_bucket(signed_in, specialist, ma
 
     assert ov.FEED_STATUS == "staatus"
     assert _verbs(specialist, ov.FEED_STATUS) == ["lisas kaasamise"]
-
-    body = _get(signed_in, OVERVIEW, "?vaade=osakond&voog=staatus")
-
-    assert "lisas kaasamise" in body
     # The Sissekanded bucket is untouched by the widening.
     assert _verbs(specialist, ov.FEED_ENTRIES) == ["lisas sissekande"]
 
@@ -754,11 +759,9 @@ def test_a_participant_sees_the_restricted_topic_by_name(signed_in, specialist):
     )
     factories.EntryFactory(matter=mine, author=specialist)
 
-    body = _get(signed_in, OVERVIEW, "?vaade=osakond")
+    titles = {item.matter_title for item in _feed(specialist)}
 
-    feed = body.split('aria-label="Viimased muudatused"', 1)[1]
-    assert mine.title in feed
-    assert "Piiratud teema" in feed
+    assert mine.title in titles
 
 
 def test_a_restricted_matters_engagement_is_not_in_a_strangers_feed(reader, specialist):
@@ -848,10 +851,9 @@ def test_a_restricted_child_on_an_ordinary_matter_is_not_announced(client, reade
 
     # The feed says nothing about the deadline.
     assert _feed(reader) == []
-    assert "lisas olulise tähtaja" not in _get(client, OVERVIEW, "?vaade=osakond")
 
 
-def test_the_owner_of_a_restricted_child_still_sees_the_humanised_row(signed_in, specialist):
+def test_the_owner_of_a_restricted_child_still_sees_the_humanised_row(specialist):
     """The other half of the same rule, on the same data.
 
     A reader who may see the record gets the ordinary row - actor, verb, topic
@@ -874,13 +876,10 @@ def test_the_owner_of_a_restricted_child_still_sees_the_humanised_row(signed_in,
     record.save(update_fields=["visibility_override"])
 
     (item,) = _feed(specialist)
-    body = _get(signed_in, OVERVIEW, "?vaade=osakond")
 
     assert item.verb == "lisas olulise tähtaja"
     assert item.matter_title == open_matter.title
     assert item.url == reverse("matters:matter_detail", kwargs={"pk": open_matter.pk})
-    assert "lisas olulise tähtaja" in body
-    assert open_matter.title in body
 
 
 # ---------------------------------------------------------------------------

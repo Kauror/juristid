@@ -47,7 +47,7 @@ class StatusItem:
 ITEMS: tuple[StatusItem, ...] = (
     StatusItem(
         key="DS-01",
-        area="Minu asjad · Ülevaade · Osakonna töö",
+        area="Minu asjad · Osakond",
         issue=(
             "Ribade loendurid ja SEIS-silt. Prototüüp kirjutab «8 tegevust» ja "
             "otsustuslugu (konfliktid A5) ütleb, et silt «SEIS» ja sõna "
@@ -100,33 +100,45 @@ ITEMS: tuple[StatusItem, ...] = (
     ),
     StatusItem(
         key="DS-04",
-        area="Osakonna töö",
+        area="Osakond",
         issue=(
             "02-EKRAANID loetleb juhi otsuste all kolm plokki: Vajab sekkumist, "
-            "Koormus, Aruandlus. Prototüübis on kaks ja «Koormus» on Ülevaate "
+            "Koormus, Aruandlus. Prototüübis oli kaks ja «Koormus» oli Ülevaate "
             "rail-plokk."
         ),
         why="Kolmandat plokki ei ole kuskil kujundatud ega andmetega kaetud.",
-        state=OPEN,
+        state=DECIDED,
         next_step=(
-            "Ehitatud on kaks plokki, nagu prototüübis. Kui Koormus on siia "
-            "tõesti soovitud, tuleb öelda, mida ta loeb ja kuhu viib."
+            "Lahendatud lehtede liitmisega (ADR 0049). Koormus-plokki ei ole "
+            "kummalgi ulatusel: sama küsimusele vastab Meeskond-tabel, ja "
+            "rail-i «Vajab sekkumist» kordas nelja arvu, mis on põhitulbas "
+            "ridadena. Faktid-rail on kolm plokki: Valdkonnad, Uued teemad, "
+            "Aruandlus."
         ),
-        sources=("02-EKRAANID §B", "templates/matters/department_work.html"),
+        sources=(
+            "02-EKRAANID §B",
+            "docs/adr/0049-one-department-page.md",
+            "templates/matters/partials/department_rail.html",
+        ),
     ),
     StatusItem(
         key="DS-05",
-        area="Osakonna töö",
+        area="Osakond",
         issue=(
             "02-EKRAANID ütleb, et «Eesolev» on kolm astet (Sel nädalal, "
-            "Järgmine kuu, Hiljem). Prototüüp joonistab neli rühma ja "
-            "olemasolev leht ehitab needsamad neli."
+            "Järgmine kuu, Hiljem). Vanem prototüüp joonistas neli rühma."
         ),
-        why="Rühmitus on ADR 0046 ja seda ei muudeta kirjeldava lause pärast.",
+        why="Rühmitust ei muudeta kirjeldava lause pärast.",
         state=DECIDED,
-        next_step="Säilitatud neli rühma. Vajadusel eraldi otsus.",
+        next_step=(
+            "Kinnitatud kujundus (raam C) ütleb viis akent: Täna, homme, "
+            "Järgmine nädal, Ülejäänud kuu, Kaugemal. Need on ehitatud ja nad "
+            "jagavad tulevased päris tähtajad täpselt ära — ükski kuupäev ei "
+            "ole kahes aknas ega puudu (ADR 0049 §5)."
+        ),
         sources=(
             "02-EKRAANID §B",
+            "docs/adr/0049-one-department-page.md",
             "docs/adr/0046-two-deadline-groups-a-week-and-the-rest-of-the-month.md",
         ),
     ),
@@ -457,6 +469,68 @@ ITEMS: tuple[StatusItem, ...] = (
             "templates/matters/my_work.html",
             "templates/reporting/_segment_table.html",
             "templates/reporting/overview.html",
+        ),
+    ),
+    StatusItem(
+        key="DS-24",
+        area="Osakond · Seis",
+        issue=(
+            "Seis-riba kuues figuur «N arvamust välja · 7 p» loendab seitsme "
+            "päeva akent, aga Arvamuste tööruum oskab filtreerida ainult aasta "
+            "ja kuu järgi. Link avab seega laiema nimekirja kui arv, mille "
+            "kõrval ta seisab."
+        ),
+        why=(
+            "Iga arv on lubadus, et tema taga on täpselt see nimekiri, mida ta "
+            "loendas. Siin ei ole — ja kolm lahendust on kõik otsused, mitte "
+            "malli küsimused: kas Arvamuste tööruum saab kuupäevavahemiku "
+            "filtri, või muutub akna pikkus millekski, mida praegused filtrid "
+            "väljendavad, või jääb figuur lingita arvuks (nagu Meeskonna kolm "
+            "ajaloolist veergu)."
+        ),
+        state=DECIDED,
+        next_step=(
+            "Figuur on nüüd lingita arv — sama kohtlemine, mille saavad "
+            "Meeskonna kolm ajaloolist veergu: aus arv on parem kui link "
+            "teistsugusele nimekirjale. Uut filtrit ega uut päringusemantikat "
+            "ei ole lisatud, sõnastus ja arv on kujunduse omad. Kui link on "
+            "siiski soovitud, on see otsus anda Arvamuste tööruumile "
+            "kuupäevavahemiku filter."
+        ),
+        sources=(
+            "01-EHITUSPROMPT §3.2",
+            "app/matters/department_dashboard.py, `seis_figures`",
+            "app/submissions/workspace.py, `SentFilters`",
+        ),
+    ),
+    StatusItem(
+        key="DS-25",
+        area="Osakond · Tehtud",
+        issue=(
+            "Ülevaate «Viimased muudatused» voog ei ole enam ühelgi lehel. "
+            "Kinnitatud kujundus (raam C) ütleb, et perioodi küsimusele vastab "
+            "Tehtud, ja et eraldi voogu ei ole; Tehtud loeb kanoonilistest "
+            "kirjetest (arvamus, suletud teema, töövõit, sissekanne), voog aga "
+            "`ChangeEvent`-idest."
+        ),
+        why=(
+            "Voog kandis paar asja, mida Tehtud ei kanna — hetkeseisu muutus, "
+            "vastutaja määramine, kaasamise lisamine. Uut sektsiooni nende "
+            "jaoks ei tehtud (see oleks viies sisusüsteem ühel lehel) ega "
+            "kuuendat liigifiltrit (`DigestRow.kind` loeb kirjeid, mitte "
+            "sündmusi). Lugemismudel `activity_feed` on alles ja testitud."
+        ),
+        state=OPEN,
+        next_step=(
+            "Otsustada, kas need sündmused on Tehtud-plokis vajalikud. Kui jah, "
+            "on see uus liik, mis loeb `ChangeEvent`-e — see on definitsiooni-, "
+            "mitte malliotsus. Kui ei, võib `activity_feed` koos oma testidega "
+            "eraldi voorus ära kaduda."
+        ),
+        sources=(
+            "01-EHITUSPROMPT §3.3",
+            "docs/adr/0049-one-department-page.md",
+            "app/matters/overview.py, `activity_feed`",
         ),
     ),
 )

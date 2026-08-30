@@ -152,7 +152,7 @@ def test_the_first_entry_journey_never_passes_through_ulevaade(client, gate_mode
     assert chosen.wsgi_request.user.pk == marko.pk
     assert "Marko oma teema" in chosen.content.decode()
 
-    # No step of that journey was Ülevaade.
+    # No step of that journey was the department page.
     overview = reverse("matters:overview")
     for step in (first, passed, chosen):
         assert overview not in [url for url, _ in step.redirect_chain]
@@ -169,23 +169,27 @@ def test_an_already_selected_persona_goes_straight_to_minu_asjad(behind_the_gate
     followed = behind_the_gate.get("/", follow=True)
     assert followed.resolver_match.view_name == "matters:my_work"
     assert followed.wsgi_request.user.pk == marko.pk
-    # Not the password form, not the selector, not Ülevaade.
+    # Not the password form, not the selector, not the department page.
     assert [url for url, _ in followed.redirect_chain] == ["/minu-asjad/"]
 
 
-# -- Ülevaade is unchanged -------------------------------------------------
+# -- the department page is unchanged --------------------------------------
+#
+# Reversed through the name Ülevaade's route carried. Since ADR 0049 merged the
+# two department pages that name resolves to `/osakond/` itself rather than to
+# the compatibility redirect, so nothing here changed except where it lands.
 
 
-def test_ulevaade_is_still_reachable_for_a_persona(behind_the_gate):
+def test_the_department_page_is_still_reachable_for_a_persona(behind_the_gate):
     marko = factories.UserFactory()
     behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(marko.pk)})
 
     response = behind_the_gate.get(reverse("matters:overview"))
     assert response.status_code == 200
-    assert response.resolver_match.view_name == "matters:overview"
+    assert response.resolver_match.view_name == "matters:department"
 
 
-def test_ulevaade_is_still_reachable_with_no_persona(behind_the_gate):
+def test_the_department_page_is_still_reachable_with_no_persona(behind_the_gate):
     """Its no-persona capability is exactly what this change must not remove."""
     owner = factories.UserFactory()
     factories.MatterFactory(owner=owner, title="Avalik teema kõigile", is_open=True)
@@ -199,7 +203,7 @@ def test_ulevaade_is_still_reachable_with_no_persona(behind_the_gate):
 # -- the explicit department switch still lands where it did ---------------
 
 
-def test_clearing_the_persona_lands_on_ulevaade_and_does_not_loop(behind_the_gate):
+def test_clearing_the_persona_lands_on_the_department_page_and_does_not_loop(behind_the_gate):
     """An explicit choice of *nobody* is not the same as never having chosen.
 
     The default home asks who is reading; this asks for the department on
@@ -210,7 +214,7 @@ def test_clearing_the_persona_lands_on_ulevaade_and_does_not_loop(behind_the_gat
 
     response = behind_the_gate.post(reverse("accounts:act_as"), {"user_id": ""}, follow=True)
     assert response.status_code == 200
-    assert response.resolver_match.view_name == "matters:overview"
+    assert response.resolver_match.view_name == "matters:department"
     assert not response.wsgi_request.user.is_authenticated
     assert shared_gate.has_passed(response.wsgi_request)
     assert reverse("accounts:choose_persona") not in [url for url, _ in response.redirect_chain]

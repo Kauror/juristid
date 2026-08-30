@@ -141,7 +141,7 @@ def test_every_row_still_has_exactly_as_many_cells_as_its_header(
 
 def test_the_department_surface_dropped_it_too(populated, client, department_head):
     client.force_login(department_head)
-    body = client.get(reverse("matters:department_work")).content.decode()
+    body = client.get(reverse("matters:department")).content.decode()
 
     for table in _tables(body):
         assert "Viide" not in table["header"]

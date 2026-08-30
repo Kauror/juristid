@@ -115,19 +115,19 @@ def test_the_range_control_is_in_the_url(page, base_url):
     _shoot(page, "minu-too-koik-tahtajad")
 
 
-# --- Ülevaade -------------------------------------------------------------
+# --- Osakond --------------------------------------------------------------
 
 
 @pytest.mark.parametrize("width", WIDTHS)
 @pytest.mark.parametrize("scope", ["osakond", "valdkonniti"])
-def test_ulevaade(page, base_url, scope, width):
-    _open(page, base_url, HEAD, f"/ulevaade/?vaade={scope}", width)
-    _shoot(page, f"ulevaade-{scope}-{width}")
+def test_osakond(page, base_url, scope, width):
+    _open(page, base_url, HEAD, f"/osakond/?vaade={scope}", width)
+    _shoot(page, f"osakond-{scope}-{width}")
     _no_horizontal_overflow(page)
 
 
 def test_the_scopes_are_links_not_a_client_side_tab_strip(page, base_url):
-    _open(page, base_url, HEAD, "/ulevaade/", 1440)
+    _open(page, base_url, HEAD, "/osakond/", 1440)
 
     tabs = page.get_by_role("navigation", name="Ülevaate ulatus").get_by_role("link")
     assert tabs.count() == 2
@@ -138,20 +138,37 @@ def test_the_scopes_are_links_not_a_client_side_tab_strip(page, base_url):
     assert "vaade=valdkonniti" in page.url
 
 
-def test_every_seis_figure_is_a_link(page, base_url):
-    """No dead-end numbers. Every figure is a promise that a list exists."""
-    _open(page, base_url, HEAD, "/ulevaade/", 1440)
+def test_no_seis_figure_leads_nowhere(page, base_url):
+    """No dead-end numbers, and no misleading ones either.
+
+    Every figure that carries a link is a promise that a list exists behind it,
+    so a `#` or an empty `href` is a dead end. Exactly one figure carries no
+    link at all: «arvamust välja · 7 p» counts a seven-day window the Arvamused
+    workspace cannot narrow to, so it states the number and offers nothing
+    rather than opening a longer list — an honest number beats a link to a
+    different one (docs/adr/0049 §4, DS-24).
+    """
+    _open(page, base_url, HEAD, "/osakond/", 1440)
 
     figures = page.locator(".seis__figure")
-    assert figures.count() >= 4
+    assert figures.count() == 6, figures.count()
+
+    unlinked = []
     for index in range(figures.count()):
-        href = figures.nth(index).get_attribute("href")
-        assert href and href != "#", "a Seis figure leads nowhere"
+        figure = figures.nth(index)
+        caption = figure.locator(".seis__caption").inner_text().strip()
+        href = figure.get_attribute("href")
+        if href is None:
+            unlinked.append(caption)
+            continue
+        assert href and href != "#", f"{caption} leads nowhere"
+
+    assert unlinked == ["arvamust välja · 7 p"], unlinked
 
 
 def test_the_area_accordion_is_a_real_disclosure(page, base_url):
     """A caret somebody can reach with a keyboard, not a decorative glyph."""
-    _open(page, base_url, HEAD, "/ulevaade/?vaade=valdkonniti", 1440)
+    _open(page, base_url, HEAD, "/osakond/?vaade=valdkonniti", 1440)
 
     rows = page.locator(".arearow")
     if not rows.count():
@@ -159,7 +176,7 @@ def test_the_area_accordion_is_a_real_disclosure(page, base_url):
 
     first = rows.first
     assert first.get_attribute("open") is not None, "the first area does not open on arrival"
-    _shoot(page, "ulevaade-valdkonniti-avatud")
+    _shoot(page, "osakond-valdkonniti-avatud")
 
 
 def test_a_reader_sees_no_restricted_title_on_the_department_view(page, base_url):
@@ -171,6 +188,6 @@ def test_a_reader_sees_no_restricted_title_on_the_department_view(page, base_url
     from app.core.management.commands.seed_e2e_data import RESTRICTED_TITLE
     from e2e.conftest import READER
 
-    _open(page, base_url, READER, "/ulevaade/?vaade=osakond", 1440)
+    _open(page, base_url, READER, "/osakond/?vaade=osakond", 1440)
 
     assert RESTRICTED_TITLE not in page.content()

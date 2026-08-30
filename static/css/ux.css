@@ -128,11 +128,22 @@
   grid-template-columns: 60px minmax(0, 1fr);
 }
 
+/* The date cell is 60px, which is what an exact date needs — «R 28.08» — and
+   the column is fixed so every title in the panel starts at the same place.
+
+   It must therefore be allowed to wrap. A date recorded to a month, a quarter
+   or a year prints the period verbatim rather than a day nobody chose —
+   «oktoober 2027», «IV kvartal 2030» — and `nowrap` sent that straight through
+   the column and into the title beside it: «2027Tavaline avatud teema…».
+
+   Invisible until KAUGEMAL became a real list: it used to be one summary line
+   with no date column at all, so a far-future approximate date had nowhere to
+   overflow from (docs/adr/0049 §5). Found in a CI rendering, not by reading the
+   stylesheet. */
 .uxdl__date {
   font: 400 12px/1.3 var(--typography-font-sans);
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 .uxdl__date b {

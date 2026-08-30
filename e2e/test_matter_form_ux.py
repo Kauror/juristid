@@ -535,7 +535,7 @@ def test_a_refused_save_hides_nothing_it_was_given(page, base_url):
 def test_the_seis_strip_survives_a_narrow_window(page, base_url, width):
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(f"{base_url}/ulevaade/")
+    page.goto(f"{base_url}/osakond/")
     page.wait_for_load_state("networkidle")
 
     # The KPI cards became a one-line strip with the work-surface rebuild.

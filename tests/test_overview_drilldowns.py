@@ -32,6 +32,13 @@ Two destinations are legitimately not the register: ``/arvamused/`` lists
 canonical Submissions, and two figures count things the register does not hold
 at all (people, policy areas) and therefore open the list of those on this page.
 Both are asserted for what they are rather than exempted.
+
+Since ADR 0049 the department scope of `build_overview` is a read model rather
+than a rendered page: `/osakond/` composes `intervention_rows`, `area_rows` and
+the rest of it alongside `department_dashboard`'s own populations. The walk is
+kept over both scopes, because those selectors are still what the page renders
+with — and the figures the *merged* page prints are walked the same way in
+`tests/test_department_page.py`, against the object that page actually builds.
 """
 
 from __future__ import annotations

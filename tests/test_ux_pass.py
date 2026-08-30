@@ -25,7 +25,6 @@ from django.utils import timezone
 from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.matters import overview as ov
-from app.matters import work_items as wi
 from app.matters.services import (
     add_entry,
     assign_matter,
@@ -223,9 +222,12 @@ def test_a_deadline_past_the_month_is_on_the_page_rather_than_nowhere(
     assert far.first.matter.title == "Ehitusseadustiku muutmise seaduse eelnõu"
 
     client.force_login(department_head)
-    body = client.get(reverse("matters:overview") + "?vaade=osakond").content.decode()
+    body = client.get(reverse("matters:department") + "?vaade=osakond").content.decode()
     assert "KAUGEMAL" in body
-    assert "registris →" in body
+    assert "Ehitusseadustiku muutmise seaduse eelnõu" in body
+    # A list, not the one-line pointer it was, and no «registris» at the end of
+    # the link (docs/adr/0049 §5, brief §33).
+    assert "registris" not in body
 
 
 @pytest.mark.django_db
@@ -255,25 +257,19 @@ def test_each_group_link_opens_exactly_the_matters_it_counted(department_head) -
 def test_today_says_today_and_nobody_says_so_in_more_than_colour(client, department_head) -> None:
     """Two rows in one group, so «kõik 2 →» is a claim about a group.
 
-    The second is dated on this week's own Sunday rather than two days out.
-    Two days out is in the same group as today from Monday to Friday and in the
-    next one on a Saturday, so the count under the heading depended on the day
-    the suite ran — which is what this assertion is least about
-    (`ov.deadline_windows`).
+    Both are dated *today*, which is the one window whose membership does not
+    move with the weekday the suite runs on: every other boundary in
+    `dd.upcoming_windows` is cut by the ISO week or the month, and a row placed
+    N days out lands in a different group depending on the day — which is what
+    this assertion is least about.
     """
-    week_end = wi.end_of_iso_week(timezone.localdate())
     _due(department_head, days=0, title="Täna tähtaeg — eelnõu")
-    _due(
-        None,
-        days=(week_end - timezone.localdate()).days,
-        title="Vastutajata — eelnõu",
-        actor=department_head,
-    )
+    _due(None, days=0, title="Vastutajata — eelnõu", actor=department_head)
 
     client.force_login(department_head)
-    body = client.get(reverse("matters:overview") + "?vaade=osakond").content.decode()
+    body = client.get(reverse("matters:department") + "?vaade=osakond").content.decode()
 
-    panel = body.split('aria-label="Tähtajad"')[-1].split("</section>")[0]
+    panel = body.split('aria-label="Eesolev"')[-1].split("</section>")[0]
     flat = " ".join(panel.split())
 
     assert 'class="uxdl__date uxdl__date--today">täna<' in flat
@@ -906,19 +902,22 @@ def test_osakond_costs_the_same_whatever_the_department_holds(
     last-activity population did here, turning one query into sixty and looking
     fine on a development database with twelve Matters in it.
 
-    The ceiling moved from 75 to 82 when ``Arvamuse tähtaeg`` became a work
-    source: the shared read model went from two bounded queries to three, and
-    this page reads it seven times — the Seis strip's two `?too=` figures, the
-    team table, Eesolev, and the populations behind them. Seven constant
-    queries, and the number is identical at 3, 12, 30 and 60, which is the
-    property this test actually holds. An N+1 would have moved it four times
-    (app/matters/work_items.py).
+    The ceiling has moved twice. It went from 75 to 82 when ``Arvamuse tähtaeg``
+    became a work source: the shared read model went from two bounded queries to
+    three, and this page reads it several times over. It moved again when the
+    two department pages merged — the page now carries Ülevaade's intervention
+    list and area rail as well as its own strip, team table, Eesolev and Tehtud
+    (docs/adr/0049).
+
+    What this test actually holds is unchanged and is not the number: measured
+    at 91 and identical at 3, 12, 30 and 60, which an N+1 could not be. It would
+    have moved four times.
     """
     _department_world(department_head, people=people, matters=matters)
     client.force_login(department_head)
 
-    with django_assert_max_num_queries(82):
-        response = client.get(reverse("matters:department_work"))
+    with django_assert_max_num_queries(95):
+        response = client.get(reverse("matters:department"))
     assert response.status_code == 200
 
 
@@ -926,11 +925,12 @@ def test_osakond_costs_the_same_whatever_the_department_holds(
 def test_the_eesolev_groups_are_consecutive_and_open_their_own_window(
     department_head,
 ) -> None:
-    """Four windows: today, tomorrow, the rest of next week, the month after.
+    """Five windows: today, tomorrow, next week, the rest of the month, and after.
 
     Consecutive by construction, and each link narrows the register to exactly
     its own dates rather than to a window that merely contains them
-    (`?too=tahtaeg-vahemik`).
+    (`?too=tahtaeg-vahemik`). The fifth is open-ended, which is what stopped a
+    deadline in November being on no screen until November (docs/adr/0049 §5).
     """
     from urllib.parse import parse_qsl, urlparse
 
@@ -938,12 +938,13 @@ def test_the_eesolev_groups_are_consecutive_and_open_their_own_window(
     from app.matters.register_filters import register_population
 
     today = timezone.localdate()
-    for offset in (0, 1, 3, 20):
+    for offset in (0, 1, 3, 20, 200):
         _due(department_head, days=offset, title=f"Tähtaeg {offset} päeva pärast")
 
     groups = upcoming_groups(department_head, today)
-    assert [group.key for group in groups] == ["tana", "homme", "nadal", "kuu"]
+    assert [group.key for group in groups] == ["tana", "homme", "nadal", "kuu", "kaugemal"]
     assert groups[0].starts == today
+    assert groups[-1].ends is None, "the far window has to stay open-ended"
     for earlier, later in pairwise(groups):
         assert earlier.ends is not None
         assert later.starts == earlier.ends + timedelta(days=1)
@@ -1004,7 +1005,7 @@ def test_the_digest_reports_what_the_period_actually_holds(client, department_he
 @pytest.mark.django_db
 def test_the_osakond_page_states_its_wording_rules(client, department_head) -> None:
     client.force_login(department_head)
-    body = client.get(reverse("matters:department_work")).content.decode()
+    body = client.get(reverse("matters:department")).content.decode()
 
     assert "läbi vaatamata" in body
     assert "Muutusteta 30 p" in body

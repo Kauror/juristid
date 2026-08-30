@@ -152,7 +152,7 @@ def test_the_page_size_options_keep_every_other_filter(client, specialist):
 
 def test_the_department_page_uses_the_agreed_words(client, department_head):
     client.force_login(department_head)
-    body = client.get(reverse("matters:department_work")).content.decode()
+    body = client.get(reverse("matters:department")).content.decode()
 
     assert "Vajab sekkumist" in body
     assert "Vajab tähelepanu" not in body
@@ -168,9 +168,9 @@ def test_the_department_table_opens_a_persons_desk_not_the_register(
     a name to ask is "what is on this person's desk" (design handoff, §A)."""
     factories.MatterFactory(owner=specialist)
     client.force_login(department_head)
-    response = client.get(reverse("matters:department_work"))
+    response = client.get(reverse("matters:department"))
 
-    rows = {row.key: row for row in response.context["work"].team}
+    rows = {row.key: row for row in response.context["page"].team}
     assert rows[str(specialist.pk)].url == reverse(
         "matters:person_work", kwargs={"pk": specialist.pk}
     )
@@ -178,7 +178,7 @@ def test_the_department_table_opens_a_persons_desk_not_the_register(
     assert rows[str(department_head.pk)].url == reverse("matters:my_work")
 
 
-def test_the_overview_has_no_seis_label(client, specialist):
+def test_the_department_page_has_no_seis_label(client, specialist):
     client.force_login(specialist)
-    body = client.get(reverse("matters:overview")).content.decode()
+    body = client.get(reverse("matters:department")).content.decode()
     assert "seis__label" not in body

@@ -1,23 +1,29 @@
-"""Ülevaade — where the department stands, in two scopes behind one shell.
+"""The department page's other read model — the areas scope, and the intervention list.
 
-Minu töö answers *what do I do*. This answers *where is the department losing
-time* — for the head, for whoever covers a holiday, and for the person who has
-to write the annual report. Two scopes, one page:
+This was *Ülevaade*, a page of its own. Since ADR 0049 it and
+:mod:`app.matters.department_dashboard` are the two read models one page
+composes at ``/osakond/``, and the composition is :mod:`app.matters.department`.
+What survives here is what that page still asks of it:
 
-``?vaade=osakond``   where is time being lost right now
-``?vaade=valdkonniti`` where does Koda intervene, and what is nobody watching
+``?vaade=valdkonniti``  where does Koda intervene, and what is nobody watching —
+                        the whole scope, table, sort control and rail
+``intervention_rows``   *Vajab sekkumist*, the main column's hero list
+``area_rows``           the *Valdkonnad* rail
 
-There was a third, ``?vaade=tiim`` — *Minu tiim*, the same department grouped by
-person. It is retired (docs/adr/0039). It never had a population of its own:
-this product has no team-membership model, so it showed every colleague the
-reader was entitled to see — the same people the Koormus rail already lists —
-and its three period counts are now rows in Aruandlus, where a number that is
-looked up rather than read belongs. An old ``?vaade=tiim`` link resolves to the
+There was a third scope, ``?vaade=tiim`` — *Minu tiim*, the same department
+grouped by person. It is retired (docs/adr/0039). It never had a population of
+its own: this product has no team-membership model, so it showed every colleague
+the reader was entitled to see. An old ``?vaade=tiim`` link resolves to the
 department the way every unrecognised scope does.
 
 The scope lives in the URL so a view can be linked, bookmarked and quoted in a
 bug report. There is no client-side tab machinery: two links, one view, one
 template.
+
+`build_overview`'s department branch is no longer routed — the page it fed was
+replaced — and is kept rather than unpicked from the branch beside it that the
+area scope still uses. Nothing renders it, and nothing here is a second
+definition of anything the merged page shows.
 
 Three rules run through the module.
 
@@ -385,6 +391,17 @@ class InterventionRow:
     @property
     def is_ownerless(self) -> bool:
         return self.reason == REASON_OWNERLESS
+
+
+def intervention_url() -> str:
+    """The register, holding exactly the Matters the intervention list covers.
+
+    Named rather than written where it is read, because two surfaces print a
+    count of that population and link to it — and the link is the parameters
+    that *are* the definition, resolved by the read model's own selector
+    (`WORK_NEEDS_ATTENTION`, app/matters/work_items.py).
+    """
+    return _teemad(**_OPEN_FULL, too=wi.WORK_NEEDS_ATTENTION)
 
 
 def _short(value: date | None) -> str:
@@ -1772,7 +1789,7 @@ def build_overview(
                 ownerless=people.ownerless,
             )
         )
-        page.intervention_url = _teemad(**_OPEN_FULL, too=wi.WORK_NEEDS_ATTENTION)
+        page.intervention_url = intervention_url()
         page.deadlines = deadline_groups(items, today)
         page.feed = activity_feed(user, today, feed_filter)
         page.loads = person_loads(user, items, pop=people)

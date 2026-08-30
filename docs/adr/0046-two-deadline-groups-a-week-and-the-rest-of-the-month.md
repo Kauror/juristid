@@ -1,6 +1,10 @@
 # ADR 0046 — Tähtajad in two groups: the calendar week whole, the rest of the month behind «Näita veel», and one line past it
 
-- Status: accepted
+- Status: accepted; **superseded in part by ADR 0049**, which merged Ülevaade's
+  *Tähtajad* and Osakond's *Eesolev* into one panel of five windows. The two
+  boundary cases this record works out are unchanged and are why that panel
+  partitions; what no longer holds is *Kaugemal* as a one-line summary — it is
+  a real list there.
 - Date: 2026-08-29
 - Stage: pre-QA (shared-gate development phase)
 - Related: ADR 0033 (`?too=` makes the dated-work populations addressable),

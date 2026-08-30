@@ -133,11 +133,11 @@ def test_no_file_became_extractable_because_a_label_was_rewritten(normal_matter,
 
 def test_saabunud_is_not_in_the_primary_navigation(client, specialist):
     client.force_login(specialist)
-    body = client.get(reverse("matters:overview")).content.decode()
+    body = client.get(reverse("matters:department")).content.decode()
     bar = body.split('<nav class="topnav"', 1)[1].split("</nav>", 1)[0]
 
     assert ">Saabunud<" not in bar
-    for destination in (">Ülevaade<", ">Minu asjad<", ">Teemad<"):
+    for destination in (">Osakond<", ">Minu asjad<", ">Teemad<"):
         assert destination in bar
 
 
@@ -150,10 +150,10 @@ def test_saabunud_is_still_a_working_page(client, specialist):
     assert "Saabunud" in response.content.decode()
 
 
-def test_ulevaade_still_offers_the_way_in(client, specialist):
+def test_the_department_page_still_offers_the_way_in(client, specialist):
     """*Uued teemad* on the facts rail is where the question actually occurs."""
     client.force_login(specialist)
-    body = client.get(reverse("matters:overview")).content.decode()
+    body = client.get(reverse("matters:department")).content.decode()
 
     assert reverse("matters:inbox") in body
 

@@ -30,7 +30,7 @@ what has no honest place on a timeline.
 {% block content %}
 <div class="page page--work">
   {% if not is_self %}
-    <p class="pw-crumb"><a href="{% url 'matters:department_work' %}">← Osakonna töö</a></p>
+    <p class="pw-crumb"><a href="{% url 'matters:department' %}">← Osakond</a></p>
   {% endif %}
 
   <div class="workhead">
@@ -40,7 +40,7 @@ what has no honest place on a timeline.
 
     {% if not is_self %}
       {% comment %}
-        The person control. Prev/next walk the same list the Osakonna töö team
+        The person control. Prev/next walk the same list the Osakond team
         table is in, so moving with the arrows and moving by clicking a row are
         the same order (app/matters/person_work.py).
       {% endcomment %}
@@ -86,8 +86,8 @@ what has no honest place on a timeline.
   </div>
 
   {% comment %}
-    Seis. The same component, the same figures and the same order as Ülevaade
-    and Osakonna töö, so a number never means one thing here and another there.
+    Seis. The same component and the same order as Osakond, so a number never
+    means one thing here and another there.
 
     Never a zero. "0 üle tähtaja" is a warning about nothing, and a page that
     cries wolf every morning is a page people stop reading. Every figure that
@@ -392,7 +392,7 @@ what has no honest place on a timeline.
 
       {% comment %}
         Counts, never ratings. No rank, no percentage, no comparison with a
-        colleague — the same refusal Osakonna töö opens with. Open by default in
+        colleague — the same refusal Osakond opens with. Open by default in
         the manager's view, because that is what they came to read; collapsed in
         one's own, because one already knows (02-EKRAANID §A).
       {% endcomment %}

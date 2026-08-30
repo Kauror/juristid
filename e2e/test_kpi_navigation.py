@@ -135,7 +135,7 @@ def in_viewport(page, selector: str) -> bool:
 
 
 def open_overview(page, base_url: str, scope: str = "osakond"):
-    page.goto(f"{base_url}/ulevaade/?vaade={scope}")
+    page.goto(f"{base_url}/osakond/?vaade={scope}")
     page.wait_for_load_state("networkidle")
     return page
 
@@ -229,46 +229,71 @@ def test_no_number_leads_nowhere(page, base_url, scope):
 # ---------------------------------------------------------------------------
 
 
-def test_the_unowned_areas_figure_opens_the_list_of_areas(page, base_url):
-    """It counts policy areas, so it opens the areas — never the ownerless files."""
+def test_the_unowned_areas_rail_lists_the_areas_and_not_the_files(page, base_url):
+    """It counts policy areas, so it lists the areas — never the ownerless files.
+
+    The count was a Seis figure on the Valdkonniti scope, opening the rail block
+    below it. Since ADR 0049 the strip is one strip on both scopes — six figures
+    about the department's work, none of them about areas — so what is asserted
+    is the block itself: it lists areas, links each to that area's ownerless
+    Matters, and never sends the reader to the whole ownerless register.
+    """
     sign_in(page, base_url, HEAD)
     open_overview(page, base_url, "valdkonniti")
-    figure = page.locator(".seis__figure").filter(has_text="valdkonda vastutajata").first
-    claimed = int(figure.locator(".seis__number").inner_text().strip())
 
-    figure.click()
-    page.wait_for_load_state("networkidle")
-    assert "/teemad/" not in page.url
-    rows = page.locator("#vastutajata-valdkonnad .railrow")
-    if claimed:
-        assert rows.count() == claimed
-        assert in_viewport(page, "#vastutajata-valdkonnad")
+    block = page.locator("#vastutajata-valdkonnad")
+    expect(block).to_be_visible()
+    rows = block.locator(".railrow")
+    if not rows.count():
+        pytest.skip("every area with open work has an owner in the seeded world")
+
+    first = rows.first
+    href = first.get_attribute("href") or ""
+    assert "valdkond=" in href, href
+    assert "vastutaja=puudub" in href, href
 
 
-def test_the_drafting_figure_opens_the_canonical_opinions_being_written(page, base_url):
-    """Canonical Submissions in DRAFT — never the historical archive."""
+def test_the_seven_day_opinion_figure_states_a_number_it_cannot_open(page, base_url):
+    """The one figure on the strip that is deliberately not a link.
+
+    It counts opinions sent in the last seven days, and the Arvamused workspace
+    narrows by year and by month — so the only destination available holds more
+    letters than the number beside it. An honest number beats a link to a
+    different list, which is the same treatment the team table's three
+    historical columns get (docs/adr/0049 §4, DS-24).
+    """
     sign_in(page, base_url, HEAD)
     open_overview(page, base_url, "osakond")
-    figure = page.locator(".seis__figure").filter(has_text="arvamust koostamisel").first
+
+    figure = page.locator(".seis__figure").filter(has_text="arvamust välja").first
     expect(figure).to_be_visible()
-    claimed = int(figure.locator(".seis__number").inner_text().strip())
-    assert claimed >= 1, "the seeded world holds no opinion in preparation"
-
-    figure.click()
-    page.wait_for_load_state("networkidle")
-    assert "/arvamused/" in page.url and "olek=DRAFT" in page.url
-    assert shown_total(page) == claimed
-    expect(page.locator(".table tbody tr")).to_have_count(claimed)
+    assert figure.evaluate("node => node.tagName.toLowerCase()") == "span"
+    assert figure.locator("a").count() == 0
 
 
-def test_the_sent_figure_still_opens_the_canonical_sent_list(page, base_url):
+def test_the_strip_carries_the_six_approved_figures(page, base_url):
+    """Six, in the approved order, and the two that left it are elsewhere.
+
+    «Arvamust koostamisel» and «esitatud arvamust <kuu>» were Ülevaade's, and
+    the merged strip is the six states a head can act on this morning. Neither
+    population was retired — `drafting_count` and the Arvamused workspace's own
+    year/month filters still answer them — but neither is a figure on this page
+    (docs/adr/0049 §4).
+    """
     sign_in(page, base_url, HEAD)
     open_overview(page, base_url, "osakond")
-    page.locator(".seis__figure").filter(has_text="esitatud arvamust").first.click()
-    page.wait_for_load_state("networkidle")
 
-    assert "/arvamused/" in page.url
-    assert "kuu=" in page.url
+    captions = [
+        text.strip() for text in page.locator(".seis__figure .seis__caption").all_inner_texts()
+    ]
+    assert captions == [
+        "üle tähtaja",
+        "tähtaeg sel nädalal",
+        "vastutajata",
+        "uut läbi vaatamata",
+        "järgmise tegevuseta",
+        "arvamust välja · 7 p",
+    ], captions
 
 
 # ---------------------------------------------------------------------------

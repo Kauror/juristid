@@ -83,12 +83,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # The default home, since the root chooses it (app/core/views.py::home).
     expect(page.get_by_role("heading", name="Minu asjad")).to_be_visible()
 
-    # -- Ülevaade is one click away on the bar ---------------------------
-    page.locator(".topnav__link", has_text="Ülevaade").first.click()
-    expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
-    # Not `exact`: the heading carries its count, so its accessible name is
-    # "Tähtajad" followed by a number that changes with the seeded data.
-    expect(page.get_by_role("heading", name="Tähtajad")).to_be_visible()
+    # -- Osakond is one click away on the bar ----------------------------
+    page.locator(".topnav__link", has_text="Osakond").first.click()
+    expect(page.get_by_role("heading", name="Osakond", exact=True)).to_be_visible()
+    # `Eesolev` where this said `Tähtajad`: one deadline panel replaced the two
+    # the department had, and it is headed by the word the design settled on
+    # (docs/adr/0049 §5).
+    expect(page.get_by_role("heading", name="Eesolev")).to_be_visible()
     expect(page.get_by_role("heading", name="Vajab sekkumist")).to_be_visible()
     screenshots(page, "00-ulevaade")
 
@@ -402,8 +403,8 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # reference typed into this same box. What this file is for — that the box
     # in the bar takes a lawyer from a query to a file — is the scenario
     # directly above (review of PR #72, §4).
-    page.goto(f"{base_url}/ulevaade/")
-    page.wait_for_url(f"{base_url}/ulevaade/")
+    page.goto(f"{base_url}/osakond/")
+    page.wait_for_url(f"{base_url}/osakond/")
 
     # Ctrl+K focuses search rather than opening a command palette.
     #
@@ -462,11 +463,13 @@ class TestRestrictedMatterIsUnreachable:
         expect(page.get_by_role("heading", name="Minu asjad")).to_be_visible()
         expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
 
-        # Not on Ülevaade — not in its attention list, and not in its counts.
+        # Not on Osakond — not in its attention list, and not in its counts.
         # Visited explicitly rather than landed on, and still the stronger of
         # the two checks: a restricted Matter must not reach a total either.
+        # Through the old address, so the redirect is exercised on the way
+        # (docs/adr/0049 §2).
         page.goto(f"{base_url}/ulevaade/")
-        expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
+        expect(page.get_by_role("heading", name="Osakond", exact=True)).to_be_visible()
         expect(page.get_by_text("Konfidentsiaalne järgmine samm")).to_have_count(0)
         expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
 

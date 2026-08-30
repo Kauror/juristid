@@ -1,83 +1,15 @@
 {% comment %}
-The facts rail: label, rows, one link. Looked up rather than read, which is why
-it is a quieter surface than the canvas beside it.
+The Valdkonniti scope's facts, the two blocks that are its own: which areas
+carry open work nobody's name is on, and who Koda deals with most.
 
-Koormus is **inventory, never workload**. A count of open files says nothing
-about effort — one can be a two-line monitoring note and the next a year of
-consultation — and the two numbers on each line answer two different questions:
-open Matters is ownership, overdue work is responsibility. They are printed side
-by side, not summed, because summing them would produce a score
-(master specification 18.8).
+The rest of the rail is `department_rail.html`'s. Koormus, Valdkonnad and Uued
+teemad were this file's `is_department` branch and are gone with the page that
+rendered them — Meeskond answers the first, and the other two are on the merged
+page's own rail. Aruandlus moved out of here for a sharper reason: both scopes
+of one page print it, and two blocks reading «Suletud teemasid» from two
+slightly different populations is exactly the disagreement the merge exists to
+end (docs/adr/0049 §8).
 {% endcomment %}
-
-{% if page.is_department %}
-  <section class="railblock" aria-label="Koormus">
-    <h2 class="railblock__label">Koormus <span class="railblock__hint">avatud · üle</span></h2>
-    {% comment %}
-      Two numbers, two destinations. The row opens this person's open Matters;
-      the overdue figure opens the Matters they are *responsible* for late work
-      on, which is a different population — a NextAction belongs to whoever must
-      do it, not to whoever owns the file. One link for both would have sent a
-      reader clicking "3" to a list of eleven (Ülevaade QA §3).
-
-      Not nested: an <a> inside an <a> is invalid and the browser silently
-      unnests it, which is how the number would stop being clickable at all.
-    {% endcomment %}
-    {% for person in page.loads %}
-      <span class="loadrow">
-        <a class="loadrow__who" href="{{ person.url }}">
-          <span class="avatar avatar--sm">{{ person.initials }}</span>
-          <span class="loadrow__name">{{ person.name }}</span>
-        </a>
-        <a class="loadrow__open" href="{{ person.url }}">{{ person.open_count }}</a>
-        {% if person.overdue %}
-          <a class="loadrow__overdue loadrow__overdue--bad" href="{{ person.overdue_url }}">{{ person.overdue }}</a>
-        {% else %}
-          <span class="loadrow__overdue">—</span>
-        {% endif %}
-      </span>
-    {% empty %}
-      <p class="railblock__empty">Kedagi ei ole kirjas.</p>
-    {% endfor %}
-    {% if page.unassigned %}
-      <a class="loadrow loadrow--unassigned" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;vastutaja=puudub#tulemused">
-        <span class="loadrow__name">Vastutajata</span>
-        <span class="loadrow__open">{{ page.unassigned }}</span>
-        <span class="loadrow__overdue"></span>
-      </a>
-    {% endif %}
-  </section>
-{% endif %}
-
-{% if page.is_department %}
-  {% comment %}
-    The bar is decoration on top of a number, never the carrier of it: a
-    monochrome print of this page must still be readable.
-  {% endcomment %}
-  <section class="railblock" aria-label="Valdkonnad">
-    <h2 class="railblock__label">Valdkonnad</h2>
-    {% for row in page.area_rail %}
-      <a class="arearail" href="{{ row.url }}">
-        <span class="arearail__name">{{ row.label }}</span>
-        <span class="arearail__count">{{ row.count }}</span>
-      </a>
-    {% endfor %}
-    <a class="railblock__more" href="?vaade=valdkonniti">Kõik valdkonnad →</a>
-  </section>
-{% endif %}
-
-{% if page.is_department %}
-  <section class="railblock" aria-label="Uued teemad">
-    <h2 class="railblock__label">Uued teemad</h2>
-    {% for row in page.incoming %}
-      <a class="railrow" href="{{ row.url }}">
-        <span class="railrow__key">{{ row.label }}</span>
-        <span class="railrow__value{% if row.tone %} railrow__value--{{ row.tone }}{% endif %}">{{ row.count }}</span>
-      </a>
-    {% endfor %}
-    <a class="railblock__more" href="{% url 'matters:inbox' %}">Ava Saabunud →</a>
-  </section>
-{% endif %}
 
 {% if page.is_areas %}
   <section class="railblock" id="vastutajata-valdkonnad" tabindex="-1" aria-label="Vastutajata valdkonnad">
@@ -109,31 +41,6 @@ by side, not summed, because summing them would produce a score
       </a>
     {% empty %}
       <p class="railblock__empty">Ühtegi saatjat ei ole kirjas.</p>
-    {% endfor %}
-  </section>
-{% endif %}
-
-{% if page.is_department or page.is_areas %}
-  {% comment %}
-    One block, one list. The rows narrow from the year to the reader's own week
-    and each says its own period, so a week row and a year row can sit under one
-    heading without a sub-heading between them — which is what a *Tiimi tegevus*
-    fragment transplanted whole would have needed (docs/adr/0039).
-  {% endcomment %}
-  <section class="railblock" aria-label="Aruandlus">
-    <h2 class="railblock__label">Aruandlus</h2>
-    {% for row in page.reporting %}
-      {% if row.url %}
-        <a class="railrow" href="{{ row.url }}">
-          <span class="railrow__key">{{ row.label }}</span>
-          <span class="railrow__value">{{ row.count }}</span>
-        </a>
-      {% else %}
-        <span class="railrow">
-          <span class="railrow__key">{{ row.label }}</span>
-          <span class="railrow__value">{{ row.count }}</span>
-        </span>
-      {% endif %}
     {% endfor %}
   </section>
 {% endif %}

@@ -512,7 +512,7 @@ class StatRow:
 
     ``url`` is empty wherever no list in this product holds exactly this
     population. A number with no link is honest; a link to a list that does not
-    match the number above it is not — the same rule the Osakonna töö team
+    match the number above it is not — the same rule the Osakond team
     table already applies to its three history columns
     (app/matters/department_dashboard.py, `_column_url`).
     """
@@ -528,7 +528,7 @@ class PersonStats:
 
     No ranking, no percentage, no comparison with a colleague and no colour
     grading of a person. These are counts of observable work state, which is
-    the same refusal Osakonna töö opens with (01 §3.3).
+    the same refusal Osakond opens with (01 §3.3).
     """
 
     month_label: str

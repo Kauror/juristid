@@ -1,6 +1,9 @@
 # ADR 0039 — Retiring `Minu tiim`, and the three counts that outlived it
 
-- Status: accepted
+- Status: accepted; the surface names are **superseded by ADR 0049** (Ülevaade
+  and Osakonna töö are one page at `/osakond/`). The decision itself stands:
+  there is no team scope, `?vaade=tiim` still resolves to the department, and
+  the three counts that outlived it are still counted.
 - Date: 2026-08-27
 - Stage: pre-QA (shared-gate development phase)
 - Related: ADR 0033 (Ülevaade drill-down parity, which specified the

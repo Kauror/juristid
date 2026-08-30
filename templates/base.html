@@ -73,7 +73,7 @@
             Saabunud is not on the bar. It is a triage surface somebody opens
             when they are triaging, not a destination in the daily rotation, and
             three of the four fixed items were being pushed together to keep it
-            there. The route, its models and its data are untouched: Ülevaade's
+            there. The route, its models and its data are untouched: Osakond's
             *Uued teemad* rail links straight to it, which is where a person is
             when the question "what has arrived" actually occurs to them
             (Ülevaade QA §2).
@@ -84,9 +84,9 @@
             hears each destination once.
           {% endcomment %}
           <nav class="topnav" aria-label="Peamine">
-            <a class="topnav__link {% if nav_active == 'ulevaade' %}is-active{% endif %}"
-               {% if nav_active == 'ulevaade' %}aria-current="page"{% endif %}
-               href="{% url 'matters:overview' %}">Ülevaade</a>
+            <a class="topnav__link {% if nav_active == 'osakond' %}is-active{% endif %}"
+               {% if nav_active == 'osakond' %}aria-current="page"{% endif %}
+               href="{% url 'matters:department' %}">Osakond</a>
             {% comment %}
               Minu asjad is offered only when there is a "minu". Past the shared
               door with no persona selected there is no personal queue to show,
@@ -107,7 +107,7 @@
                href="{% url 'matters:matter_list' %}">Teemad</a>
 
             {% comment %}
-              Statistika is its own destination, not a tab on Ülevaade. Ülevaade
+              Statistika is its own destination, not a tab on Osakond. Osakond
               answers "what needs attention now"; this answers "what does the
               corpus say about Koja work". Overloading the dashboard with both
               would make neither readable (Stage-2E brief 6).
@@ -116,12 +116,13 @@
               Jälgimine rather than as three items. They are generated reading
               surfaces over the same structured facts (Stage-2G brief 38).
 
-              Osakonna töö is offered only to the department head, by role.
-              Everybody else — specialists, readers, the technical
-              administrator, and a session that passed the shared password
-              without choosing a persona — does not see it, and the route
-              itself 404s for them rather than relying on this being hidden
-              (Stage-2F brief 28, 30).
+              Osakond is not in here. It was, as a second department-head-only
+              destination beside the universal Ülevaade, and the bar therefore
+              offered one reader two answers to one question. The two pages are
+              one page now and it is the first item on the bar, open to
+              everybody Ülevaade was open to; the two sections that were
+              genuinely the head's are still the head's, decided on the page
+              rather than in the navigation (docs/adr/0049).
             {% endcomment %}
             <span class="topnav__wide">
               {% include "components/topnav_secondary.html" %}
@@ -134,7 +135,7 @@
                 worth saying is only "you are in here" — which the same inset
                 brand underline the bar uses everywhere else already says.
               {% endcomment %}
-              <summary class="topnav__trigger{% if nav_active == 'jalgimine' or nav_active == 'statistika' or nav_active == 'osakonna_too' %} is-active{% endif %}">Veel</summary>
+              <summary class="topnav__trigger{% if nav_active == 'jalgimine' or nav_active == 'statistika' %} is-active{% endif %}">Veel</summary>
               <div class="topnav__menu">
                 {% include "components/topnav_secondary.html" %}
               </div>

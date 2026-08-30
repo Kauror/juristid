@@ -101,8 +101,8 @@ DRAFT_SUBMISSION_TITLE = "Koostamisel sünteetiline arvamus"
 #: is empty. Found by the first CI round.
 SUBMISSION_FILENAME = "arvamus-2026.asice"
 
-#: The Osakonna töö world. Four records, each present because the
-#: department-head page would otherwise show an honest emptiness that proves
+#: The department world. Four records, each present because the
+#: department page would otherwise show an honest emptiness that proves
 #: nothing: a current file with nobody's name on it, one whose review date has
 #: arrived (which is *not* overdue), one carrying no instruction at all, and a
 #: former colleague who still owns live work (Stage-2F brief 42, 45).
@@ -237,13 +237,13 @@ class Command(BaseCommand):
         # *Hiljem* on a Thursday, because the ISO week ends on Sunday. Minu töö
         # omits an empty band, so the page was one section shorter on some
         # weekdays than on others and `minu-too.png` went red for a reason that
-        # was the calendar rather than the CSS. Ülevaade's *Tähtajad* groups
+        # was the calendar rather than the CSS. Osakond's *Eesolev* groups
         # moved the same row between *Sel nädalal* and *Järgmisel* for the same
         # reason.
         #
         # `today` is the one anchor whose band is the same on all seven days:
-        # it is always *Täna* on Minu töö and always inside *Sel nädalal* on
-        # Ülevaade. A deterministic *Sel nädalal*-band row is not constructible
+        # it is always *Täna* on Minu töö and always the first group on
+        # Osakond. A deterministic *Sel nädalal*-band row is not constructible
         # at all — on a Sunday that band is structurally empty — so the world
         # locks the four bands it can and `test_ui_shell` asserts the banding
         # rules in Python, where a weekday can be chosen (Ülevaade QA §5).
@@ -559,11 +559,11 @@ class Command(BaseCommand):
             date_semantics=DateSemantics.DEADLINE,
             # Three days before *this week*, not three days before today. Both
             # are equally overdue, and every test that reads this row only asks
-            # that it is — but Ülevaade's Tähtajad panel now cuts the calendar
-            # week, so `today - 3` is inside the week group from Thursday on and
+            # that it is — but a deadline panel that cuts the calendar week
+            # puts `today - 3` inside the week group from Thursday on and
             # outside it until then. A visual baseline whose height depends on
             # the weekday the job runs is a baseline that goes red for a reason
-            # nobody changed (ADR 0046).
+            # nobody changed (ADR 0046, ADR 0049).
             target_date=start_of_iso_week(date.today()) - timedelta(days=3),
             actor=martin,
         )
@@ -583,7 +583,7 @@ class Command(BaseCommand):
         )
         mark_submission_sent(submission=submission, actor=martin, channel="EIS")
 
-        # One opinion still being written, left in DRAFT on purpose. Ülevaade's
+        # One opinion still being written, left in DRAFT on purpose. The
         # *N arvamust koostamisel* counts exactly these, and a figure the seeded
         # world can only ever render as nought proves nothing about the link
         # under it (Ülevaade QA §1).
@@ -602,7 +602,7 @@ class Command(BaseCommand):
         )
 
     def _department_world(self, sandra: Any, martin: Any, ministry: Any, stage: Any) -> None:
-        """The states Osakonna töö exists to surface.
+        """The states Osakond exists to surface.
 
         Each one is a distinct operational fact and they must not read alike.
         A review date reached is not a missed deadline; a file with no

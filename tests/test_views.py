@@ -94,5 +94,5 @@ def test_favicon_no_longer_404s(client):
 
 def test_the_page_links_an_icon_so_browsers_need_not_probe(client, specialist):
     client.force_login(specialist)
-    body = client.get(reverse("matters:overview")).content.decode()
+    body = client.get(reverse("matters:department")).content.decode()
     assert 'rel="icon"' in body

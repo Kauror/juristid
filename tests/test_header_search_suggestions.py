@@ -420,7 +420,7 @@ def test_the_field_is_still_a_plain_get_form(client, specialist) -> None:
     browser with scripting off (master specification 17.7).
     """
     client.force_login(specialist)
-    form = _search_form(client.get(reverse("matters:overview")))
+    form = _search_form(client.get(reverse("matters:department")))
     assert 'method="get"' in form
     assert f'action="{reverse("search:search")}"' in form
     assert 'name="q"' in form
@@ -435,7 +435,7 @@ def test_the_static_markup_does_not_claim_a_listbox_it_cannot_open(client, speci
     reader would announce a collapsed listbox that can never open.
     """
     client.force_login(specialist)
-    form = _search_form(client.get(reverse("matters:overview")))
+    form = _search_form(client.get(reverse("matters:department")))
     assert 'role="combobox"' not in form
     assert "aria-expanded" not in form
     # The container and the endpoint are there for the script to find.
@@ -466,7 +466,7 @@ def test_the_bar_no_longer_offers_arvamused(client, specialist) -> None:
     file keeps the assertion the header-search work made, pointing the other way.
     """
     client.force_login(specialist)
-    navigation = navigation_of(client.get(reverse("matters:overview")))
+    navigation = navigation_of(client.get(reverse("matters:department")))
     assert ">Arvamused<" not in navigation
     assert reverse("submissions:sent") not in navigation
     # The destination it moved under is still on the bar.
@@ -482,7 +482,7 @@ def test_the_bar_no_longer_offers_a_separate_archive(client, administrator) -> N
     """
     assert may_read_archive(administrator)
     client.force_login(administrator)
-    navigation = navigation_of(client.get(reverse("matters:overview")))
+    navigation = navigation_of(client.get(reverse("matters:department")))
     assert "Arvamuste arhiiv" not in navigation
     assert reverse("legacy_import:opinion_archive_browse") not in navigation
 
