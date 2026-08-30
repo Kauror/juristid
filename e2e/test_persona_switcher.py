@@ -29,8 +29,7 @@ HEAD = "Testosakonnajuht"
 ADMINISTRATOR = "Testadministraator"
 
 MY_WORK = "/minu-asjad/"
-DEPARTMENT_WORK = "/osakonna-too/"
-OVERVIEW = "/ulevaade/"
+DEPARTMENT = "/osakond/"
 
 
 def _pill(page):
@@ -51,9 +50,9 @@ def _open_menu(page):
 
 @pytest.fixture
 def past_the_door(page, gate_base_url):
-    """Behind the shared password, on Ülevaade, with nobody selected."""
+    """Behind the shared password, on Osakond, with nobody selected."""
     pass_the_gate(page, gate_base_url)
-    page.goto(f"{gate_base_url}{OVERVIEW}")
+    page.goto(f"{gate_base_url}{DEPARTMENT}")
     page.wait_for_load_state("networkidle")
     return page
 
@@ -71,9 +70,11 @@ def test_switching_from_the_bar_keeps_the_page_and_follows_the_role(past_the_doo
     """
     page = past_the_door
 
-    # With nobody selected there is no personal queue to offer.
+    # With nobody selected there is no personal queue to offer. The department
+    # page is offered all the same — it is what the shared door opens onto, and
+    # it is one destination for every role now (ADR 0049).
     assert MY_WORK not in navigation_targets(page)
-    assert DEPARTMENT_WORK not in navigation_targets(page)
+    assert DEPARTMENT in navigation_targets(page)
 
     # 3–5. Open the popover and walk to the first choice with the keyboard.
     menu = _open_menu(page)
@@ -98,34 +99,38 @@ def test_switching_from_the_bar_keeps_the_page_and_follows_the_role(past_the_doo
 
     # 6–8. The popover is gone, the page is the one we were reading, and the
     # bar names who is now selected.
-    assert page.url.endswith(OVERVIEW)
+    assert page.url.endswith(DEPARTMENT)
     expect(_menu(page)).to_be_hidden()
     expect(_pill(page)).to_have_attribute("aria-expanded", "false")
     expect(_pill(page)).to_contain_text(SPECIALIST)
 
-    # A specialist has a personal queue and no department surface.
+    # A specialist has a personal queue, and the same one department surface.
     assert MY_WORK in navigation_targets(page)
-    assert DEPARTMENT_WORK not in navigation_targets(page)
+    assert DEPARTMENT in navigation_targets(page)
 
     # 9–12. The department head, chosen with the mouse this time.
     menu = _open_menu(page)
     menu.get_by_role("button", name=HEAD, exact=False).click()
     page.wait_for_load_state("networkidle")
 
-    assert page.url.endswith(OVERVIEW)
+    assert page.url.endswith(DEPARTMENT)
     expect(_pill(page)).to_contain_text(HEAD)
-    assert DEPARTMENT_WORK in navigation_targets(page), (
+    assert DEPARTMENT in navigation_targets(page), (
         "the department head is not being offered the department surface"
     )
+    # `navigation_targets` is a set, so the duplicate the merge removed has to
+    # be counted in the DOM: the head used to be offered `Ülevaade` on the bar
+    # and `Osakond` inside «Veel», which is one question with two answers.
+    expect(page.locator(f"nav[aria-label='Peamine'] a[href='{DEPARTMENT}']")).to_have_count(1)
 
     # 13–15. Stepping back to nobody.
     menu = _open_menu(page)
     menu.get_by_role("button", name="Ilma kasutajata").click()
     page.wait_for_load_state("networkidle")
 
-    assert page.url.endswith(OVERVIEW)
+    assert page.url.endswith(DEPARTMENT)
     assert MY_WORK not in navigation_targets(page)
-    assert DEPARTMENT_WORK not in navigation_targets(page)
+    assert DEPARTMENT in navigation_targets(page)
     expect(page.locator(".personapill--none")).to_be_visible()
 
     # 16–17. And it survives a reload: the choice is session state, not a

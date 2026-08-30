@@ -52,7 +52,7 @@ from app.core.dates import (
     short_day_month,
     weekday_letter,
 )
-from app.core.decorators import business_write_required, gate_required, viewer_for
+from app.core.decorators import business_write_required
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
@@ -67,7 +67,6 @@ from app.legacy_import.register_display import (
     source_instructions_for,
 )
 from app.matters import department_dashboard, register_filters, selectors, work_items
-from app.matters import overview as overview_module
 from app.matters import person_work as person_workspace
 from app.matters.department_dashboard import SeisFigure
 from app.matters.enums import MatterOrigin, RecordMode
@@ -216,59 +215,6 @@ def get_visible_matter(request: HttpRequest, pk: Any) -> Matter:
 # ---------------------------------------------------------------------------
 # Minu töö
 # ---------------------------------------------------------------------------
-
-
-@gate_required
-def overview(request: HttpRequest) -> HttpResponse:
-    """Ülevaade — where the department stands, in two scopes behind one shell.
-
-    Deliberately not Minu töö. That page answers "what do I have to do today";
-    this one answers "where is the department losing time", which is the
-    question a morning review starts from.
-
-    The scope is a URL parameter and the two tabs are ordinary links. A
-    client-side tab strip would make the department view unlinkable, which is
-    the one thing somebody covering a colleague's holiday needs to be able to
-    paste into a message.
-
-    The one page that renders without a persona. In shared-gate mode somebody
-    lands here straight from the password, and the page has to be worth looking
-    at before they have said who they are — so it is built for a *department*
-    scope rather than borrowed from an arbitrary person's identity. That scope
-    sees NORMAL visibility and no participation, so nothing RESTRICTED appears
-    merely because a shared password was typed (Stage-2D auth brief 6).
-    """
-    # Everything that changes what is on screen comes from the URL and nowhere
-    # else, so the back button, a refresh and a pasted link all show the same
-    # page. An unrecognised value falls back rather than 500ing or rendering a
-    # convincing empty list.
-    scope = overview_module.scope_from(request.GET.get(overview_module.SCOPE_PARAM))
-    sort = request.GET.get(overview_module.SORT_PARAM, overview_module.SORT_OPEN)
-    feed = request.GET.get(overview_module.FEED_PARAM, overview_module.FEED_ALL)
-    intervention = request.GET.get(overview_module.INTERVENTION_PARAM, "")
-    show_empty_areas = request.GET.get(overview_module.SHOW_EMPTY_AREAS_PARAM) == "1"
-    today = timezone.localdate()
-    return render(
-        request,
-        "matters/overview.html",
-        {
-            "page": overview_module.build_overview(
-                viewer_for(request),
-                scope=scope,
-                today=today,
-                sort=sort,
-                feed_filter=feed,
-                intervention_filter=intervention,
-                show_empty_areas=show_empty_areas,
-            ),
-            "scopes": overview_module.SCOPES,
-            "scope": scope,
-            "sort_options": overview_module.SORT_OPTIONS,
-            "feed_filters": overview_module.FEED_FILTERS,
-            "today": today,
-            "nav_active": "ulevaade",
-        },
-    )
 
 
 @login_required

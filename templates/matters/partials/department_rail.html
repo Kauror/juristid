@@ -1,0 +1,71 @@
+{% comment %}
+The facts rail: label, rows, one link. Looked up rather than read, which is why
+it is a quieter surface than the canvas beside it.
+
+Kogu osakond carries exactly three blocks: Valdkonnad, Uued teemad and
+Aruandlus. *Koormus* is gone — the Meeskond table says who carries what, with
+more of it and in one place — and so is the rail's own *Vajab sekkumist*, which
+restated four counts the main column already lists as rows (design handoff C
+§3.4).
+
+Valdkonniti keeps the current approved area-scope blocks, included whole from
+the object that builds them, and shares the Aruandlus block below.
+{% endcomment %}
+
+{% if page.is_areas %}
+  {% with page=page.area_page %}
+    {% include "matters/partials/overview_rail.html" %}
+  {% endwith %}
+{% else %}
+  {% comment %}
+    The bar is decoration on top of a number, never the carrier of it: a
+    monochrome print of this page must still be readable.
+  {% endcomment %}
+  <section class="railblock" aria-label="Valdkonnad">
+    <h2 class="railblock__label">Valdkonnad</h2>
+    {% for row in page.areas %}
+      <a class="arearail" href="{{ row.url }}">
+        <span class="arearail__name">{{ row.label }}</span>
+        <span class="arearail__count">{{ row.count }}</span>
+      </a>
+    {% empty %}
+      <p class="railblock__empty">Ühtegi valdkonda ei ole kirjas.</p>
+    {% endfor %}
+    <a class="railblock__more" href="?vaade=valdkonniti">Kõik valdkonnad →</a>
+  </section>
+
+  <section class="railblock" aria-label="Uued teemad">
+    <h2 class="railblock__label">Uued teemad</h2>
+    {% for row in page.incoming %}
+      <a class="railrow" href="{{ row.url }}">
+        <span class="railrow__key">{{ row.label }}</span>
+        <span class="railrow__value{% if row.tone and row.count %} railrow__value--{{ row.tone }}{% endif %}">{{ row.count }}</span>
+      </a>
+    {% endfor %}
+    <a class="railblock__more" href="{% url 'matters:inbox' %}">Ava Saabunud →</a>
+  </section>
+
+{% endif %}
+
+{% comment %}
+One Aruandlus block, on both scopes, from one set of selectors.
+
+It was two: this page's and the area scope's, which agreed about opinions and
+work victories and disagreed about closed Matters — one counted FULL records and
+the other counted archive rows too, so switching scope changed a number nobody
+had asked to change. Rendered here rather than inside either scope's own rail,
+so there is one block to read and one definition behind it (docs/adr/0049 §8).
+
+«Saadetud arvamusi» is the same population as the Meeskond table's ARVAMUSI
+VÄLJA Kokku cell, over the same window; each row carries its year into its link
+(app/matters/department_dashboard.py, `reporting_rail`).
+{% endcomment %}
+<section class="railblock" aria-label="Aruandlus">
+  <h2 class="railblock__label">Aruandlus {{ page.today|date:"Y" }}</h2>
+  {% for row in page.reporting %}
+    <a class="railrow" href="{{ row.url }}">
+      <span class="railrow__key">{{ row.label }}</span>
+      <span class="railrow__value">{{ row.count }}</span>
+    </a>
+  {% endfor %}
+</section>

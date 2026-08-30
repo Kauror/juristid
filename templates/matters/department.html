@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Osakond · {{ application_name }}{% endblock %}
+
+{% comment %}
+Osakond answers one question — **kus osakond seisab** — and it is the only page
+that answers it.
+
+There were two. `/ulevaade/` carried a Seis strip, an intervention list, a
+deadline panel, a Koormus rail and an activity feed; `/osakonna-too/` carried a
+Seis strip sharing three of the same figures, a team table, a deadline panel
+over the same `real_deadlines` population, a second intervention block in its
+rail and a second Aruandlus. Both old addresses redirect here permanently
+(docs/adr/0049).
+
+The shell is the one both of them used — `page--overview`, `ovhead`, `seis`,
+`ovbody` — so nothing about the page had to be invented to hold the merge.
+
+Two scopes share it. `?vaade=` is an ordinary link, not a client-side tab strip:
+a department view that cannot be pasted into a message is a view somebody has to
+describe in words instead.
+
+Meeskond and Tehtud are the department head's. They are absent for everybody
+else rather than emptied — the view never builds them, so this template has
+nothing to hide (app/matters/department.py).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--overview">
+  <div class="ovhead">
+    <h1 class="ovhead__title">Osakond</h1>
+    <span class="ovhead__date">
+      <time datetime="{{ today|date:'Y-m-d' }}">{{ today|date:"l, j. F Y" }}</time>
+    </span>
+    <span class="ovhead__spacer"></span>
+    {% comment %}
+      What the department is carrying, and nothing about how many people carry
+      it. A count of colleagues is not a fact about the work, and the team table
+      below lists them by name for the one reader that question is for.
+    {% endcomment %}
+    <span class="ovhead__date">{{ page.open_matters }} avatud teemat</span>
+    <nav class="ovtabs" aria-label="Ülevaate ulatus">
+      {% for key, label in scopes %}
+        <a class="ovtabs__tab{% if key == scope %} is-active{% endif %}"
+           {% if key == scope %}aria-current="page"{% endif %}
+           href="?vaade={{ key }}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+  </div>
+
+  {% comment %}
+    Seis — six risks, not six counters. Each figure opens exactly the rows it
+    counted, and each says in words what it is, so the tinted ones are
+    emphasised rather than encoded.
+
+    No «SEIS» label in front of it. The figures caption themselves, and a word
+    that names the component rather than the content is a word a reader has to
+    step over on every page it appears on (01-EHITUSJUHIS §4).
+  {% endcomment %}
+  <div class="seis">
+    {% for figure in page.seis %}
+      <a class="seis__figure" href="{{ figure.url }}">
+        <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
+        <span class="seis__caption">{{ figure.caption }}</span>
+      </a>
+    {% endfor %}
+    {% if page.is_areas %}
+      <span class="seis__spacer"></span>
+      <details class="rangepicker">
+        <summary class="rangepicker__trigger">Järjesta: {% for key, label in sort_options %}{% if key == page.area_page.sort %}{{ label }}{% endif %}{% endfor %} ▾</summary>
+        <div class="rangepicker__menu">
+          {% for key, label in sort_options %}
+            <a class="rangepicker__item{% if key == page.area_page.sort %} is-active{% endif %}"
+               href="?vaade=valdkonniti&amp;jarjesta={{ key }}">{{ label }}</a>
+          {% endfor %}
+        </div>
+      </details>
+    {% endif %}
+  </div>
+
+  <div class="ovbody">
+    <div class="ovbody__main">
+      {% if page.is_areas %}
+        {% comment %}
+          The current area view, unchanged and included whole. This page moved
+          the scope onto one route; it did not rebuild what the scope says
+          (app/matters/overview.py, `area_rows`).
+        {% endcomment %}
+        {% with page=page.area_page %}
+          {% include "matters/partials/overview_areas.html" %}
+        {% endwith %}
+      {% else %}
+        {% include "matters/partials/department_main.html" %}
+      {% endif %}
+    </div>
+    <aside class="ovbody__rail" aria-label="Faktid">
+      {% include "matters/partials/department_rail.html" %}
+    </aside>
+  </div>
+</div>
+{% endblock %}

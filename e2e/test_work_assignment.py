@@ -190,7 +190,7 @@ def test_a_register_filtered_on_a_departed_colleague_still_finds_their_work(page
     offers to open it.
     """
     sign_in(page, base_url, HEAD)
-    page.goto(f"{base_url}/osakonna-too/")
+    page.goto(f"{base_url}/osakond/")
     page.wait_for_load_state("networkidle")
 
     # The team table is a grid of links now, not a <table>: its rows are links,

@@ -135,7 +135,7 @@ def in_viewport(page, selector: str) -> bool:
 
 
 def open_overview(page, base_url: str, scope: str = "osakond"):
-    page.goto(f"{base_url}/ulevaade/?vaade={scope}")
+    page.goto(f"{base_url}/osakond/?vaade={scope}")
     page.wait_for_load_state("networkidle")
     return page
 

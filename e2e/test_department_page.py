@@ -1,16 +1,17 @@
-"""Osakonna töö, in a browser.
+"""Osakond, in a browser.
 
 What a number *means* is proved against the database in
-`tests/test_department_dashboard.py`. What only a browser shows is whether the
-gate really holds for a person who types the URL, whether the page reads as
+`tests/test_department_page.py`. What only a browser shows is whether the
+boundary really holds for a person who types the URL, whether the page reads as
 oversight rather than as a ranking, whether a count on the page opens the list
 it claims to, and whether nine columns of numbers can be read on a laptop
 without the page itself scrolling sideways.
 
-The role gate is the reason these exist. A gate that is right in a unit test
-and wrong in the template — a navigation item rendered for everybody, a view
-whose decorator was lost in a merge — fails in exactly the place no unit test
-looks (Stage-2F brief 45).
+The boundary is the reason these exist, and it moved with the merge: the *page*
+is every reader's, because it replaced Ülevaade, and *Meeskond* and *Tehtud*
+stay the department head's (ADR 0049). A boundary that is right in a unit test
+and wrong in the template — a section rendered for everybody, a role check lost
+in a merge — fails in exactly the place no unit test looks (Stage-2F brief 45).
 """
 
 from __future__ import annotations
@@ -28,7 +29,8 @@ from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, go_to, sign_in, si
 
 pytestmark = pytest.mark.e2e
 
-WORK_PATH = "/osakonna-too/"
+WORK_PATH = "/osakond/"
+LEGACY_PATHS = ("/ulevaade/", "/osakonna-too/")
 NAV_NAME = "Osakond"
 
 
@@ -62,40 +64,68 @@ def open_work(page, base_url) -> None:
 # =========================================================================
 
 
-def test_a_specialist_is_not_offered_the_page(page, base_url):
+def test_one_department_destination_is_offered_to_everybody(page, base_url):
+    """`Osakond`, once, whatever the role.
+
+    There were two items for one question — a universal `Ülevaade` on the bar
+    and a head-only `Osakond` inside «Veel» — so a reader had to know which page
+    a number lived on before they could look it up (ADR 0049).
+    """
+    for persona in (SANDRA, HEAD, ADMIN):
+        sign_in(page, base_url, persona)
+        # Opened first, because the secondary destinations live behind it below
+        # 1560px: asserting an absence against a closed disclosure would prove
+        # nothing.
+        reveal_secondary_navigation(page)
+        expect(page.get_by_role("link", name=NAV_NAME, exact=True)).to_have_count(1)
+        expect(page.get_by_role("link", name="Ülevaade", exact=True)).to_have_count(0)
+        expect(page.get_by_role("link", name="Osakonna töö", exact=True)).to_have_count(0)
+        sign_out(page, base_url)
+
+
+@pytest.mark.parametrize("legacy", LEGACY_PATHS)
+def test_an_old_address_still_opens_the_page(page, base_url, legacy):
+    """A pasted bookmark lands on the page it described, not on a 404."""
     sign_in(page, base_url, SANDRA)
-    # Opened first, because the secondary destinations live behind it below
-    # 1560px: asserting an absence against a closed disclosure would pass for
-    # the department head too, and prove nothing.
-    reveal_secondary_navigation(page)
-    expect(page.get_by_role("link", name=NAV_NAME, exact=True)).to_have_count(0)
+    response = page.goto(f"{base_url}{legacy}?vaade=valdkonniti")
+    assert response is not None
+    assert response.status == 200
+    assert page.url == f"{base_url}{WORK_PATH}?vaade=valdkonniti"
 
 
-def test_a_specialist_who_types_the_url_does_not_reach_it(page, base_url):
-    """404, not 403. Telling somebody a page exists but is not theirs is itself
-    a disclosure about what the department head is looking at."""
+def test_a_specialist_reads_the_page_without_the_manager_sections(page, base_url):
+    """The page is shared; two of its sections are not.
+
+    Refusing the page would have taken the department view away from everybody
+    who had Ülevaade, which is a loss of access dressed as a merge.
+    """
     sign_in(page, base_url, SANDRA)
     response = page.goto(f"{base_url}{WORK_PATH}")
     assert response is not None
-    assert response.status == 404
+    assert response.status == 200
+
+    expect(page.get_by_role("heading", name="Osakond", exact=True)).to_be_visible()
+    expect(page.locator(".uxstat")).to_have_count(0)
+    expect(page.locator("[aria-label='Tehtud']")).to_have_count(0)
+    expect(page.locator("[aria-label='Vajab sekkumist']")).to_have_count(1)
 
 
-def test_the_technical_administrator_does_not_inherit_the_page(page, base_url):
-    """Administering the system is not reading the department's work."""
+def test_the_technical_administrator_does_not_inherit_the_manager_sections(page, base_url):
+    """Administering the system is not reading the department's team."""
     sign_in(page, base_url, ADMIN)
-    reveal_secondary_navigation(page)
-    expect(page.get_by_role("link", name=NAV_NAME, exact=True)).to_have_count(0)
+    page.goto(f"{base_url}{WORK_PATH}")
+    page.wait_for_load_state("networkidle")
 
-    response = page.goto(f"{base_url}{WORK_PATH}")
-    assert response is not None
-    assert response.status == 404
+    expect(page.locator(".uxstat")).to_have_count(0)
+    expect(page.locator("[aria-label='Tehtud']")).to_have_count(0)
 
 
 def test_nobody_signed_in_does_not_reach_the_page(page, base_url):
-    """Being past the door is not being somebody in particular.
+    """Signed out of the individual mode, this is behind the sign-in surface.
 
-    In shared-gate mode this is a session that knows the department password
-    and has chosen no persona. It lands on the sign-in surface, not here.
+    The shared-gate reader is the separate case and is covered in
+    `tests/test_department_page.py`: past the department door with no persona
+    the page renders, without either manager section.
     """
     sign_in(page, base_url, SANDRA)
     sign_out(page, base_url)
@@ -110,8 +140,9 @@ def test_the_head_is_offered_the_page_and_opens_it(page, base_url, screenshots):
     go_to(page, NAV_NAME)
     page.wait_for_url(f"{base_url}{WORK_PATH}")
 
-    expect(page.get_by_role("heading", name="Osakonna töö", exact=True)).to_be_visible()
-    screenshots(page, "osakonna-too")
+    expect(page.get_by_role("heading", name="Osakond", exact=True)).to_be_visible()
+    expect(page.locator(".uxstat")).to_have_count(1)
+    screenshots(page, "osakond")
 
 
 # =========================================================================
@@ -183,7 +214,7 @@ def test_the_team_table_lists_lawyers_and_never_ranks_them(page, base_url, scree
     for forbidden in ("töökoormus", "tulemuslikkus", "produktiivsus", "edetabel"):
         assert forbidden not in body, f"{forbidden!r} would make this a staff evaluation"
 
-    screenshots(page, "osakonna-too-meeskond")
+    screenshots(page, "osakond-meeskond")
 
 
 def test_the_lawyers_are_listed_alphabetically(page, base_url):
@@ -343,9 +374,13 @@ def test_the_head_counts_restricted_work_and_a_reader_does_not(page, base_url):
     page.wait_for_load_state("networkidle")
     assert RESTRICTED_TITLE not in page.content()
 
+    # The department page is theirs to read now, and the restricted file is
+    # still not on it — neither as a title nor inside a count.
     response = page.goto(f"{base_url}{WORK_PATH}")
     assert response is not None
-    assert response.status == 404
+    assert response.status == 200
+    assert RESTRICTED_TITLE not in page.content()
+    expect(page.locator(".uxstat")).to_have_count(0)
 
 
 def test_the_former_owners_matter_reaches_its_own_page(page, base_url):

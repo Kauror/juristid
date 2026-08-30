@@ -1,16 +1,16 @@
-"""Ülevaade's *Tähtajad*: which window a date lands in, and what the panel shows.
-
-The block used to answer one near-term question and stop. It now answers two a
-department actually asks — *what is in my week* and *what else is coming before
-the month turns over* — and keeps the one-line pointer past them.
+"""Which window a future deadline lands in, and what the panel shows.
 
 Three things are being asserted, and they are different in kind:
 
-* **arithmetic** — `deadline_windows` cuts three touching intervals out of any
-  day of the year, month ends and week-crossings included. Pure, so it runs
-  without a database and over every day rather than a sample;
-* **the panel** — what is shown, what is held back behind «Näita veel», and
-  what the header count promises;
+* **arithmetic** — `overview.deadline_windows` cuts three touching intervals out
+  of any day of the year, month ends and week-crossings included. Pure, so it
+  runs without a database and over every day rather than a sample. It is a read
+  model rather than a rendered panel since ADR 0049 merged the two department
+  pages; the windows the merged page actually cuts are
+  `department_dashboard.upcoming_windows`, asserted the same way in
+  `tests/test_department_page.py`;
+* **the panel** — Osakond's *Eesolev*: what is shown, what is held back behind
+  «Näita veel», and what the header count promises;
 * **what must not change** — a WAIT is not a deadline, a month-precision date
   does not become a day, and a restricted Matter is not visible to a reader who
   may not see it.
@@ -30,13 +30,14 @@ from django.utils import timezone
 from app.core.dates import end_of_month
 from app.core.enums import Visibility
 from app.intelligence.services import add_important_date
+from app.matters import department_dashboard as dd
 from app.matters import overview as ov
 from app.matters import work_items as wi
 from app.matters.services import create_matter
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 from app.workflow.services import set_next_action
 
-PANEL = 'aria-label="Tähtajad"'
+PANEL = 'aria-label="Eesolev"'
 
 
 # ---------------------------------------------------------------------------
@@ -83,23 +84,33 @@ def _groups(user, today: date) -> dict[str, ov.DeadlineGroup]:
     return {group.key: group for group in page.deadlines}
 
 
-def _titles(group: ov.DeadlineGroup) -> set[str]:
+def _titles(group) -> set[str]:
     return {item.matter.title for item in group.items}
 
 
 def _panel(client, user) -> str:
-    """The rendered *Tähtajad* section and nothing else on the page.
+    """The rendered *Eesolev* section and nothing else on the page.
 
     The status is asserted rather than assumed: a redirect decodes to a body
     that contains none of the strings this module looks for, so a test that
     only checked absence would pass on a page nobody could open.
     """
     client.force_login(user)
-    response = client.get(reverse("matters:overview") + "?vaade=osakond")
-    assert response.status_code == 200, f"{user} cannot open Ülevaade"
+    response = client.get(reverse("matters:department") + "?vaade=osakond")
+    assert response.status_code == 200, f"{user} cannot open Osakond"
     body = response.content.decode()
-    assert PANEL in body, "the Tähtajad section is not on the page at all"
+    assert PANEL in body, "the Eesolev section is not on the page at all"
     return body.split(PANEL)[-1].split("</section>")[0]
+
+
+def _upcoming(user, today: date) -> dict[str, dd.UpcomingGroup]:
+    """The five windows the page renders, by key.
+
+    Deliberately not `_groups`, which reads the three-window model above: on the
+    Wednesday this module freezes, *sel nädalal* has already half gone by while
+    the panel's own first window is *today* (`dd.upcoming_windows`).
+    """
+    return {group.key: group for group in dd.upcoming_groups(user, today)}
 
 
 #: A Wednesday whose week starts in the previous month — the handoff's own
@@ -307,10 +318,14 @@ def test_the_rest_of_the_month_shows_five_and_holds_the_rest_behind_naita_veel(
     one: there is nowhere to navigate to.
     """
     today = wednesday
+    # From the Monday after next week ends: on this Wednesday *järgmine nädal*
+    # runs to 13.09 and *ülejäänud kuu* starts on the 14th.
     for n in range(14):
-        _deadline(department_head, on=date(2026, 9, 7) + timedelta(days=n), title=f"Eelnõu {n:02d}")
+        _deadline(
+            department_head, on=date(2026, 9, 14) + timedelta(days=n), title=f"Eelnõu {n:02d}"
+        )
 
-    group = _groups(department_head, today)["ulejaanud_kuu"]
+    group = _upcoming(department_head, today)["kuu"]
     assert group.count == 14
     assert len(group.preview) == 5
     assert group.remaining == 9
@@ -333,9 +348,9 @@ def test_there_is_no_naita_veel_when_the_month_holds_five_or_fewer(
     """Requirement 8. A control that promises nothing is noise."""
     today = wednesday
     for n in range(5):
-        _deadline(department_head, on=date(2026, 9, 7) + timedelta(days=n), title=f"Eelnõu {n}")
+        _deadline(department_head, on=date(2026, 9, 14) + timedelta(days=n), title=f"Eelnõu {n}")
 
-    group = _groups(department_head, today)["ulejaanud_kuu"]
+    group = _upcoming(department_head, today)["kuu"]
     assert group.count == 5
     assert group.remaining == 0
     assert group.rest == []
@@ -344,21 +359,26 @@ def test_there_is_no_naita_veel_when_the_month_holds_five_or_fewer(
 
 
 @pytest.mark.django_db
-def test_this_week_never_offers_naita_veel_however_many_it_holds(
+def test_next_week_never_offers_naita_veel_however_many_it_holds(
     client, department_head, wednesday
 ) -> None:
-    """The week is whole by construction, so the control cannot appear over it."""
+    """The week being planned is whole, so the control cannot appear over it.
+
+    Today, tomorrow and next week are shown entire: they are what somebody is
+    working in, and the point of the group is that a manager can see the week
+    without opening anything (design handoff C §3.3).
+    """
     today = wednesday
     for n in range(9):
-        # Nine deadlines across seven days: two of them double up, which is the
-        # case a per-day cap would have hidden.
-        on = date(2026, 8, 31) + timedelta(days=n % 7)
+        # Nine deadlines across the seven days inside next week's window: two of
+        # them double up, which is the case a per-day cap would have hidden.
+        on = date(2026, 9, 4) + timedelta(days=n % 7)
         _deadline(department_head, on=on, title=f"Nädala eelnõu {n}")
 
     panel = _panel(client, department_head)
-    week_block = panel.split("SEL NÄDALAL")[-1].split('class="uxdl__head"')[0]
+    week_block = panel.split("JÄRGMINE NÄDAL")[-1].split('class="uxdl__head"')[0]
 
-    assert _groups(department_head, today)["sel_nadalal"].count == 9
+    assert _upcoming(department_head, today)["nadal"].count == 9
     assert "Näita veel" not in week_block
     for n in range(9):
         assert f"Nädala eelnõu {n}" in week_block
@@ -382,7 +402,8 @@ def test_an_empty_group_is_omitted_rather_than_headed(client, department_head, w
     panel = _panel(client, department_head)
 
     assert "KAUGEMAL" in panel
-    assert "SEL NÄDALAL" not in panel
+    assert "TÄNA" not in panel
+    assert "JÄRGMINE NÄDAL" not in panel
     assert "ÜLEJÄÄNUD KUU" not in panel
     assert "Ühtegi tähtaega ei ole ees." not in panel
 
@@ -492,28 +513,34 @@ def test_a_month_precision_date_still_prints_as_a_month(client, department_head,
     must not start rendering it.
     """
     today = wednesday
+    # October rather than September: a month-precision September date anchors on
+    # the 1st, which this Wednesday has already passed, and *Eesolev* holds only
+    # what is ahead.
     _deadline(
         department_head,
-        on=date(2026, 9, 1),
+        on=date(2026, 10, 1),
         title="Kuu täpsusega eelnõu",
         precision=DatePrecision.MONTH,
     )
-    _deadline(department_head, on=date(2026, 9, 4), title="Täpse kuupäevaga eelnõu")
+    _deadline(department_head, on=date(2026, 10, 2), title="Täpse kuupäevaga eelnõu")
 
-    week = _groups(department_head, today)["sel_nadalal"]
-    by_title = {item.matter.title: item for item in week.items}
+    far = _upcoming(department_head, today)["kaugemal"]
+    by_title = {item.matter.title: item for item in far.items}
 
     approximate = by_title["Kuu täpsusega eelnõu"]
-    assert approximate.day_month == "september 2026"
+    assert approximate.day_month == "oktoober 2026"
     assert approximate.weekday_letter == "", "a weekday was named for a month-precision date"
 
     exact = by_title["Täpse kuupäevaga eelnõu"]
-    assert exact.day_month == "04.09"
+    assert exact.day_month == "02.10"
     assert exact.weekday_letter == "R"
 
     panel = _panel(client, department_head)
-    assert "september 2026" in panel
-    assert "01.09" not in panel, "a month became a day"
+    assert "oktoober 2026" in panel
+    # In a row, where a date is printed as a day. The window heading beside it
+    # legitimately says «alates 01.10» — that is the interval the group holds,
+    # not a claim about when this Matter is due.
+    assert "<b>01.10</b>" not in panel, "a month became a day"
 
 
 @pytest.mark.django_db
@@ -529,18 +556,17 @@ def test_the_groups_are_still_read_through_visible_to(
     today = wednesday
     _deadline(
         specialist,
-        on=date(2026, 9, 3),
+        on=date(2026, 9, 4),
         title="Piiratud teema",
         visibility=Visibility.RESTRICTED,
     )
-    _deadline(specialist, on=date(2026, 9, 4), title="Tavaline teema")
+    _deadline(specialist, on=date(2026, 9, 7), title="Tavaline teema")
 
-    head = _groups(department_head, today)["sel_nadalal"]
+    head = _upcoming(department_head, today)["nadal"]
     assert _titles(head) == {"Piiratud teema", "Tavaline teema"}
     assert head.matter_count == 2
 
-    page = ov.build_overview(reader, scope=ov.SCOPE_DEPARTMENT, today=today)
-    for_reader = {group.key: group for group in page.deadlines}["sel_nadalal"]
+    for_reader = _upcoming(reader, today)["nadal"]
     assert _titles(for_reader) == {"Tavaline teema"}
     assert for_reader.matter_count == 1
 

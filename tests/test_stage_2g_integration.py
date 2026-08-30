@@ -58,7 +58,7 @@ def test_the_head_reaches_both_surfaces_in_one_session(client, department_head):
     )
     client.force_login(department_head)
 
-    assert client.get(reverse("matters:department_work")).status_code == 200
+    assert client.get(reverse("matters:department")).status_code == 200
     confirmed = client.post(
         reverse(
             "intelligence:confirm_work_victory",
@@ -76,15 +76,19 @@ def test_a_technical_administrator_is_refused_both_stages_controls(
 ):
     """Administration is not business access, on either stage's surface.
 
-    Stage 2F's dashboard 404s; Stage 2G's confirmation route 403s. Jälgimine
-    itself is a reading surface and is deliberately not asserted closed — what
-    an administrator must not get is the ability to *act*.
+    Osakond is a reading surface and opens — it replaced the page every reader
+    could open — but its manager-only sections are not built for an
+    administrator, and Stage 2G's confirmation route 403s. What an administrator
+    must not get is the ability to *act* (docs/adr/0049 §3).
     """
     matter = factories.MatterFactory(owner=specialist)
     record = add_work_victory_candidate(matter=matter, title="Sünteetiline võit", actor=specialist)
     client.force_login(administrator)
 
-    assert client.get(reverse("matters:department_work")).status_code == 404
+    department = client.get(reverse("matters:department"))
+    assert department.status_code == 200
+    assert not department.context["page"].is_head
+    assert "uxstat" not in department.content.decode()
 
     refused = client.post(
         reverse(
@@ -165,22 +169,25 @@ def test_restoring_an_archive_owner_does_not_widen_fact_authorization(specialist
 # -- navigation -------------------------------------------------------------
 
 
-def test_both_navigation_entries_survive_for_the_head(client, department_head):
+def test_the_head_is_offered_one_department_destination(client, department_head):
     client.force_login(department_head)
-    body = client.get(reverse("matters:overview")).content.decode()
+    body = client.get(reverse("matters:department")).content.decode()
 
-    # The bar says the short word; the page it opens is still headed
-    # `Osakonna töö` (design handoff, «Osakond»).
+    # One item, not the two the bar carried before the merge: a universal
+    # `Ülevaade` and a head-only `Osakond` inside «Veel» (docs/adr/0049 §9).
     assert ">Osakond</a>" in body
+    assert body.count(f'href="{reverse("matters:department")}"') == 1
     assert "Jälgimine" in body
 
 
-def test_a_specialist_is_offered_jalgimine_but_not_osakonna_too(client, specialist):
+def test_a_specialist_is_offered_the_same_destinations(client, specialist):
+    """The department page stopped being offered by role when it stopped being
+    a role-gated page (docs/adr/0049 §3)."""
     client.force_login(specialist)
-    body = client.get(reverse("matters:overview")).content.decode()
+    body = client.get(reverse("matters:department")).content.decode()
 
     assert "Jälgimine" in body
-    assert reverse("matters:department_work") not in body
+    assert body.count(f'href="{reverse("matters:department")}"') == 1
 
 
 # -- search stays where Stage 2E.1 left it ----------------------------------

@@ -397,8 +397,8 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # reference typed into this same box. What this file is for — that the box
     # in the bar takes a lawyer from a query to a file — is the scenario
     # directly above (review of PR #72, §4).
-    page.goto(f"{base_url}/ulevaade/")
-    page.wait_for_url(f"{base_url}/ulevaade/")
+    page.goto(f"{base_url}/osakond/")
+    page.wait_for_url(f"{base_url}/osakond/")
 
     # Ctrl+K focuses search rather than opening a command palette.
     #

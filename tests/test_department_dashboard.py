@@ -1,14 +1,17 @@
-"""Osakonna töö, and what the restored portfolio does to the other surfaces.
+"""Osakond's read model, and what the restored portfolio does to the other surfaces.
 
 Three things are being proved here and they are worth naming separately.
 
-**The role gate holds.** Only the department head reaches the page, and a
-reader without the role is told it does not exist rather than that they may not
-see it.
+**The manager boundary holds.** The page itself is every reader's — it replaced
+Ülevaade — but Meeskond and Tehtud are the department head's, and for anybody
+else they are not built at all. The route-level contract is
+`tests/test_department_page.py`; what is asserted here is the read model behind
+those sections.
 
 **The numbers are the same numbers.** The head's counts come from the same
-selectors Ülevaade uses, so a Matter cannot be overdue on one page and not on
-the other. Where a count links to a list, the list holds exactly those rows.
+selectors the rest of the page uses, so a Matter cannot be overdue in the strip
+and not in the table. Where a count links to a list, the list holds exactly
+those rows.
 
 **Nothing became a ranking.** The lawyer table is alphabetical, carries no
 score, and is never summed into one figure per person.
@@ -19,16 +22,16 @@ from __future__ import annotations
 import datetime as dt
 
 import pytest
-from django.urls import reverse
 from django.utils import timezone
 
 from app.core.authorization import DEPARTMENT_VIEWER, is_department_head
 from app.legacy_import.current_register import apply_promotion_plan, build_promotion_plan
 from app.legacy_import.owner_backfill import apply_backfill_plan, build_backfill_plan
 from app.matters import dashboard as overview
+from app.matters.department import build_department
 from app.matters.department_dashboard import (
     TEAM_COLUMNS,
-    build_department_work,
+    incoming_rail,
     seis_figures,
     team_rows,
 )
@@ -48,7 +51,7 @@ from tests.synthetic_portfolio import (
 
 pytestmark = pytest.mark.django_db
 
-WORK_URL = "/osakonna-too/"
+WORK_URL = "/osakond/"
 
 
 @pytest.fixture
@@ -88,49 +91,59 @@ def test_the_head_reaches_the_page(client, portfolio: Portfolio) -> None:
     client.force_login(portfolio.people.head)
     response = client.get(WORK_URL)
     assert response.status_code == 200
-    assert "Osakonna töö" in response.content.decode()
+    assert "Osakond" in response.content.decode()
 
 
-def test_a_specialist_is_told_the_page_does_not_exist(client, portfolio: Portfolio) -> None:
-    """404 rather than 403: a 403 confirms the surface exists."""
+def test_a_specialist_reaches_the_page_without_the_manager_sections(
+    client, portfolio: Portfolio
+) -> None:
+    """The page is no longer manager-only; two of its sections still are.
+
+    It replaced Ülevaade, which every reader could open, so refusing it would
+    take the department view away from the people who had it. What stayed
+    behind the role is Meeskond and Tehtud (docs/adr/0049).
+    """
     client.force_login(portfolio.people.sandra)
-    assert client.get(WORK_URL).status_code == 404
+    response = client.get(WORK_URL)
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "uxstat" not in body
+    assert "Tehtud" not in body
+    assert "Vajab sekkumist" in body
 
 
-def test_a_technical_administrator_does_not_inherit_the_page(client, portfolio: Portfolio) -> None:
+def test_a_technical_administrator_reads_the_page_but_not_the_team(
+    client, portfolio: Portfolio
+) -> None:
+    """Technical administration is not business access, and never was."""
     client.force_login(factories.AdministratorFactory())
-    assert client.get(WORK_URL).status_code == 404
+    assert "uxstat" not in client.get(WORK_URL).content.decode()
 
 
-def test_a_superuser_does_not_inherit_the_page(client, portfolio: Portfolio) -> None:
+def test_a_superuser_does_not_inherit_the_team_table(client, portfolio: Portfolio) -> None:
     client.force_login(factories.AdministratorFactory(is_superuser=True))
-    assert client.get(WORK_URL).status_code == 404
+    assert "uxstat" not in client.get(WORK_URL).content.decode()
 
 
-def test_a_reader_does_not_reach_the_page(client, portfolio: Portfolio) -> None:
+def test_a_reader_does_not_reach_the_team_table(client, portfolio: Portfolio) -> None:
     from app.accounts.enums import UserRole
 
     client.force_login(factories.UserFactory(role=UserRole.READER))
-    assert client.get(WORK_URL).status_code == 404
+    assert "uxstat" not in client.get(WORK_URL).content.decode()
 
 
-def test_nobody_signed_in_is_redirected_rather_than_shown_the_page(client) -> None:
-    """Including a shared-gate session that has chosen no persona.
+def test_the_navigation_offers_one_department_destination(client, portfolio: Portfolio) -> None:
+    """One item, the same one, whatever the role.
 
-    The department password proves somebody is behind the door. It says
-    nothing about who, so it cannot reach a surface defined by who you are.
+    There were two: a universal `Ülevaade` and a head-only `Osakond` inside
+    «Veel», which is one reader being offered two answers to one question.
     """
-    response = client.get(WORK_URL)
-    assert response.status_code == 302
-    assert response.headers["Location"].startswith(reverse("accounts:dev_login"))
-
-
-def test_the_navigation_offers_the_page_only_to_the_head(client, portfolio: Portfolio) -> None:
-    client.force_login(portfolio.people.sandra)
-    assert WORK_URL not in client.get(reverse("matters:overview")).content.decode()
-
-    client.force_login(portfolio.people.head)
-    assert WORK_URL in client.get(reverse("matters:overview")).content.decode()
+    for person in (portfolio.people.sandra, portfolio.people.head):
+        client.force_login(person)
+        body = client.get(WORK_URL).content.decode()
+        assert body.count('href="/osakond/"') == 1
+        assert ">Ülevaade<" not in body
+        assert ">Osakonna töö<" not in body
 
 
 # =========================================================================
@@ -352,7 +365,7 @@ def test_the_total_row_reconciles_with_the_risk_strip(portfolio: Portfolio) -> N
     set of queries — and asserted so the construction cannot quietly change.
     """
     today = timezone.localdate()
-    work = build_department_work(portfolio.people.head, today=today)
+    work = build_department(portfolio.people.head, is_head=True, today=today)
     total = next(row for row in work.team if row.is_total)
     unassigned = next(row for row in work.team if row.is_unassigned)
     figures = {figure.key: figure.value for figure in work.seis}
@@ -364,17 +377,15 @@ def test_the_total_row_reconciles_with_the_risk_strip(portfolio: Portfolio) -> N
     assert total.cells[index["open"]].value == work.open_matters
 
 
-def test_the_attention_rail_and_the_strip_agree_about_unassigned_work(
+def test_the_incoming_rail_and_the_strip_agree_about_unreviewed_work(
     portfolio: Portfolio,
 ) -> None:
     """The same filter appears in two places and must not give two answers."""
-    work = build_department_work(portfolio.people.head)
-    figures = {figure.key: figure.value for figure in work.seis}
-    rail = {row.label: row for row in work.attention}
+    today = timezone.localdate()
+    figures = {figure.key: figure.value for figure in seis_figures(portfolio.people.head, today)}
+    rail = {row.label: row for row in incoming_rail(portfolio.people.head, today)}
 
-    assert rail["Vastutajata teemad"].count == figures["unassigned"]
-    assert rail["Üle tähtaja"].count == figures["overdue"]
-    assert rail["Uued saabunud, läbi vaatamata"].count == figures["unreviewed"]
+    assert rail["Uut läbi vaatamata"].count == figures["unreviewed"]
 
 
 def test_the_page_renders_every_section(client, portfolio: Portfolio) -> None:

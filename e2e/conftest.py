@@ -116,10 +116,10 @@ def sign_in(page, base_url: str, persona: Persona) -> None:
     page.goto(f"{base_url}/konto/arendus-sisselogimine/")
     page.get_by_label(persona.display_name, exact=False).check()
     page.get_by_role("button", name="Logi sisse").click()
-    # Signing in lands on Ülevaade: the first question on opening the
+    # Signing in lands on Osakond: the first question on opening the
     # application is what is happening across the department, and the personal
     # queue is one click away.
-    page.wait_for_url(f"{base_url}/ulevaade/")
+    page.wait_for_url(f"{base_url}/osakond/")
 
 
 def pass_the_gate(page, gate_base_url: str) -> None:

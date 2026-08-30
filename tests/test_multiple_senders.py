@@ -727,9 +727,19 @@ def test_the_department_overview_prefetches_its_senders(
     week's deadlines are counted in Python off the work items the page already
     read. *Sissekandeid sel nädalal* costs two: the aggregate itself, and the
     break-glass lookup behind the `Entry` population, which nothing else on the
-    page resolves. Measured flat at 5, 15 and 30 Matters before the number was
-    moved, so what this test guards is untouched; the two-query headroom the
-    ceiling carried is preserved.
+    page resolves.
+
+    And to 58 when the two department pages merged (docs/adr/0049): this reader
+    is a specialist, so no team table and no digest were built, but the page now
+    carries Osakonna töö's six-figure Seis strip and its two rails alongside
+    Ülevaade's intervention list and area rail. Measured at 54 — half of it
+    `visible_to` resolving the reader's scope, which is what every population on
+    every page in this product costs and is not something this change
+    introduced. The one duplication the merge *did* create was a second read of
+    the whole work model for *Eesolev*, and that is composed away
+    (`upcoming_groups(items=…)`). What this test guards is untouched: the cost
+    is flat in the number of rows, and fifteen Matters with two senders each
+    would add fifteen queries the moment the prefetch is lost.
     """
     for index in range(15):
         factories.MatterFactory(
@@ -741,8 +751,8 @@ def test_the_department_overview_prefetches_its_senders(
             ],
         )
 
-    with django_assert_max_num_queries(46):
-        response = signed_in.get(reverse("matters:overview"))
+    with django_assert_max_num_queries(58):
+        response = signed_in.get(reverse("matters:department"))
         response.content.decode()
 
 

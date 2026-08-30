@@ -40,7 +40,7 @@ from tests import factories
 
 pytestmark = pytest.mark.django_db
 
-OVERVIEW = "matters:overview"
+OVERVIEW = "matters:department"
 
 #: The three that survived, in the order Aruandlus prints them.
 RETAINED = ("Sissekandeid sel nädalal", "Saadetud arvamusi", "Tähtaegu sel nädalal")
@@ -141,14 +141,21 @@ def test_the_scope_chooser_offers_two_scopes_and_neither_is_minu_tiim():
     assert [label for _, label in ov.SCOPES] == ["Kogu osakond", "Valdkonniti"]
 
 
-def test_the_overview_still_renders_kogu_osakond(client, department_head):
+def test_the_department_page_still_renders_kogu_osakond(client, department_head):
+    """The scope survived the merge; the Koormus rail did not.
+
+    *Koormus* answered "who is carrying what" in two numbers per person. The
+    Meeskond table answers the same question with nine, in one place, so the
+    rail block went rather than being printed beside it (docs/adr/0049 §4).
+    """
     client.force_login(department_head)
 
     body = client.get(reverse(OVERVIEW)).content.decode()
 
     assert "Kogu osakond" in body
     assert "Vajab sekkumist" in body
-    assert "Koormus" in body
+    assert "Koormus" not in body
+    assert "uxstat__row" in body
 
 
 @pytest.mark.parametrize("marker", GONE)
@@ -167,7 +174,9 @@ def test_no_trace_of_the_retired_view_reaches_the_page(client, department_head, 
 
     body = client.get(reverse(OVERVIEW)).content.decode()
 
-    assert body.count("loadrow__who") >= 1, "the Koormus rail should be populated"
+    # Populated, so an empty page cannot pass this by default. The Meeskond
+    # grid rather than the Koormus rail: that is where the people are now.
+    assert body.count("uxstat__row") >= 1, "the Meeskond grid should be populated"
     assert marker not in body
 
 
@@ -212,11 +221,18 @@ def test_aruandlus_holds_the_three_retained_rows_and_the_year_rows(department_he
     assert f"Suletud teemasid {today.year}" in labels
 
 
-def test_the_three_rows_are_rendered_inside_the_aruandlus_block(client, department_head):
-    """Native rows of that block: the same `railrow` markup as the year rows.
+def test_the_aruandlus_block_holds_the_three_approved_year_rows(client, department_head):
+    """Three rows, and the year in the heading rather than in each label.
+
+    The three counts ADR 0039 moved into this block — *Sissekandeid sel
+    nädalal*, *Saadetud arvamusi <kuu>*, *Tähtaegu sel nädalal* — are no longer
+    printed anywhere: the merged page's rail is the three year figures and
+    nothing else (docs/adr/0049 §8). They are still calculated, and
+    `test_aruandlus_holds_the_three_retained_rows_and_the_year_rows` above still
+    asserts every one of them against the database.
 
     Sliced out of the rendered rail so a matching string anywhere else on the
-    page — the Seis strip prints the same month wording — cannot pass this.
+    page — the Seis strip prints similar wording — cannot pass this.
     """
     client.force_login(department_head)
     body = client.get(reverse(OVERVIEW)).content.decode()
@@ -224,10 +240,12 @@ def test_the_three_rows_are_rendered_inside_the_aruandlus_block(client, departme
     start = body.index('aria-label="Aruandlus"')
     block = body[start : body.index("</section>", start)]
 
-    for label in RETAINED:
+    for label in ("Saadetud arvamusi", "Töövõite kinnitatud", "Suletud teemasid"):
         assert label in block, label
+    for retired in RETAINED[:1] + RETAINED[2:]:
+        assert retired not in block, retired
     assert "railblock__label" in block
-    assert block.count("railrow__key") == 6
+    assert block.count("railrow__key") == 3
 
 
 def test_each_retained_row_counts_what_the_database_holds(department_head, specialist, midweek):

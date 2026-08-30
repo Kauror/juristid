@@ -372,7 +372,7 @@ def test_the_manager_view_says_whose_desk_it_is(client, specialist, department_h
     body = client.get(_person_url(specialist)).content.decode()
 
     assert f"{specialist.display_name} · asjad" in body
-    assert "← Osakonna töö" in body
+    assert "← Osakond" in body
     # The heading names the colleague; «Minu asjad» is only the nav item.
     heading = body.split('workhead__title">', 1)[1].split("</h1>", 1)[0]
     assert "Minu asjad" not in heading

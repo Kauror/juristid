@@ -4,7 +4,37 @@ from django.views.generic import RedirectView
 from app.matters import department_views, views
 
 urlpatterns = [
-    path("ulevaade/", views.overview, name="overview"),
+    # The department page. One route where there were two: `/ulevaade/` and
+    # `/osakonna-too/` answered the same question — «kus osakond seisab» — and
+    # printed several of the same numbers twice (docs/adr/0049).
+    path("osakond/", department_views.department, name="department"),
+    # The name Ülevaade's route carried, resolving to the page that replaced it.
+    #
+    # A second name on the canonical path rather than on the compatibility
+    # redirect below, and deliberately: `app/core/views.py::home` and the
+    # sign-in redirect in `app/accounts/views.py` both reverse `matters:overview`
+    # to decide where somebody lands, and those two lines belong to the parallel
+    # branch that is moving the root to Minu asjad. Pointing the name here means
+    # neither file had to be touched and neither now sends a reader through a
+    # 301 they do not need. Resolution is unaffected — `/osakond/` resolves to
+    # the entry above, which is the one that names the view.
+    path("osakond/", department_views.department, name="overview"),
+    # Both old addresses, permanently, with their query strings. Every bookmark,
+    # every pasted link and every `?vaade=`, `?periood=` or custom date range
+    # somebody saved still opens the page it described: `?vaade=valdkonniti` is
+    # a scope of the new route, and the Tehtud period parameters are read there
+    # unchanged. One hop each — they redirect to the canonical route rather than
+    # to each other.
+    path(
+        "ulevaade/",
+        RedirectView.as_view(pattern_name="matters:department", permanent=True, query_string=True),
+        name="overview_legacy",
+    ),
+    path(
+        "osakonna-too/",
+        RedirectView.as_view(pattern_name="matters:department", permanent=True, query_string=True),
+        name="department_work",
+    ),
     path("minu-asjad/", views.my_work, name="my_work"),
     # The address the page had until the v2 rebuild renamed the surface.
     # A permanent redirect rather than a second view: every bookmark, every
@@ -32,7 +62,6 @@ urlpatterns = [
         views.complete_work_item,
         name="complete_work_item",
     ),
-    path("osakonna-too/", department_views.department_work, name="department_work"),
     path("saabunud/", views.inbox, name="inbox"),
     path("saabunud/lisa/", views.intake, name="intake"),
     path("teemad/", views.matter_list, name="matter_list"),

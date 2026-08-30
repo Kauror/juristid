@@ -53,7 +53,7 @@ ORDINARY = [1280, 1366, 1440]
 #: primitive and would have drifted unnoticed. `None` for the Matter page: its
 #: URL is not fixed, so it is resolved from the register.
 SURFACES: list[tuple[str, str | None, str, str | None]] = [
-    ("Ülevaade", "/ulevaade/", ".page--overview", ".ovbody__rail"),
+    ("Osakond", "/osakond/", ".page--overview", ".ovbody__rail"),
     ("Minu töö", "/minu-asjad/", ".page--work", ".worklayout2__rail"),
     ("Teemad", "/teemad/", ".page", None),
     ("Statistika", "/statistika/", ".page", None),
@@ -228,7 +228,7 @@ def test_the_shell_still_spans_the_viewport(page, base_url):
     sign_in(page, base_url, SANDRA)
 
     for width in WIDE:
-        open_at(page, f"{base_url}/ulevaade/", width)
+        open_at(page, f"{base_url}/osakond/", width)
         for selector in (".topbar", ".app__footer"):
             box = page.locator(selector).bounding_box()
             assert round(box["width"]) == width, (

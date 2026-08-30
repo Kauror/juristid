@@ -1,0 +1,294 @@
+{% comment %}
+Kogu osakond — the department's main column, in the order a head reads it.
+
+Meeskond · Vajab sekkumist · Eesolev · Tehtud, and for anybody who is not the
+department head the first and the last are simply not there: the view does not
+build them, so there is no empty shell and no manager population was queried
+(app/matters/department.py).
+{% endcomment %}
+
+{% if page.has_team %}
+  {% comment %}
+    Meeskond, and deliberately without a heading. It is the first content block
+    on the page and the grid captions itself — a column of group headings and a
+    column of column headings say what every number is — so a word above it
+    would be a word naming the component rather than the content
+    (design handoff C §3.3).
+
+    Nine columns of numbers do not fit a narrow viewport, so the block scrolls
+    inside itself. The page never scrolls sideways: that is the one exception in
+    the whole application and it is deliberate (static/css/ux.css, `.uxstat`).
+
+    Not a <table>. The rows are links, and a row of cells wrapped in an anchor
+    is not valid table markup. The grid carries the same reading order, and
+    because no column header can be *associated* with a number in a grid, every
+    number names its own column instead — including which of the three groups
+    that column belongs to, so the two «ARVAMUSI VÄLJA» columns are told apart.
+    The two visible label rows are then hidden from the accessibility tree: read
+    out, they would be a stray row of words with nothing attached to them.
+
+    Alphabetical, and that ordering is load-bearing. Sorting by any of these
+    numbers would turn an oversight tool into a leaderboard, which is forbidden
+    (specification 18.8) and the fastest way to make the underlying data worth
+    gaming. There are no percentages and no colour grading of people: a count of
+    open matters is inventory, and one of them can be a two-line monitoring note
+    and the next a year of consultation.
+  {% endcomment %}
+  <section class="ovsection" aria-label="Meeskond">
+    <div class="uxstat">
+      <div class="uxstat__grp" aria-hidden="true">
+        <span class="uxstat__grpblank"></span>
+        <span class="uxstat__grp--now">PRAEGU</span>
+        <span class="uxstat__grp--week">EELMINE NÄDAL · {{ page.previous_week_label }}</span>
+        <span class="uxstat__grp--year">{{ page.today|date:"Y" }}</span>
+      </div>
+      <div class="uxstat__cols" aria-hidden="true">
+        <span>KES</span>
+        {% for key, label, group, sep in team_columns %}
+          <span{% if sep %} class="uxstat__sep"{% endif %}>{{ label }}</span>
+        {% endfor %}
+      </div>
+
+      {% for row in page.team %}
+        {% if row.is_total %}
+          <div class="uxstat__row uxstat__row--total">
+            <span class="uxteam__name">{{ row.name }}</span>
+            {% for cell in row.cells %}
+              <span class="uxstat__num{% if cell.is_zero %} uxstat__num--zero{% elif cell.tone %} uxstat__num--{{ cell.tone }}{% endif %}{% if cell.sep %} uxstat__sep{% endif %}"><span class="visually-hidden">{{ cell.label }}: </span>{% if cell.is_zero %}<span aria-hidden="true">—</span><span class="visually-hidden">0</span>{% else %}{{ cell.value }}{% endif %}</span>
+            {% endfor %}
+          </div>
+        {% else %}
+          <a class="uxstat__row" href="{{ row.url }}">
+            <span class="uxteam__who">
+              {% if row.is_unassigned %}
+                <span class="uxav uxav--none" title="Vastutajata" aria-hidden="true">!</span>
+              {% else %}
+                <span class="avatar avatar--sm" aria-hidden="true">{{ row.initials }}</span>
+              {% endif %}
+              <span class="uxteam__name{% if row.is_unassigned %} uxteam__name--none{% endif %}">
+                {{ row.name }}{% if row.is_self %} <span class="uxteam__self">· sina</span>{% endif %}
+              </span>
+              {% comment %}
+                A colleague who has left but still holds live work. Surfaced
+                rather than hidden: dropping the row would take the Matter off
+                this page entirely, and an active file owned by somebody who has
+                left is exactly what a department head needs to see.
+              {% endcomment %}
+              {% if row.is_former %}
+                <span class="badge badge--restricted"
+                      title="Kasutaja ei ole enam aktiivne, kuid tal on avatud teemasid">endine</span>
+              {% endif %}
+            </span>
+            {% for cell in row.cells %}
+              <span class="uxstat__num{% if cell.is_zero %} uxstat__num--zero{% elif cell.tone %} uxstat__num--{{ cell.tone }}{% endif %}{% if cell.sep %} uxstat__sep{% endif %}"><span class="visually-hidden">{{ cell.label }}: </span>{% if cell.is_zero %}<span aria-hidden="true">—</span><span class="visually-hidden">0</span>{% else %}{{ cell.value }}{% endif %}</span>
+            {% endfor %}
+          </a>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+{% comment %}
+Vajab sekkumist is the hero list and the reason the page exists: one list mixing
+every kind of trouble, sorted by how much of it there is, each row owned by a
+name or visibly owned by nobody. Four short lists — overdue here, stalled there
+— would be four places to look for one answer.
+
+An unowned Matter is never silently omitted. It is on nobody's personal list by
+definition, which is exactly why it has to be on this one.
+
+WAIT and MONITOR review dates belong here, where they read as "look at this
+again". They are not deadlines and they are not late (`wi.real_deadlines`).
+
+Two numbers, because they are two facts. The rows are attention items — one
+Matter that is both late and unowned is two of them — and the link opens
+Matters.
+{% endcomment %}
+<section class="ovsection" aria-label="Vajab sekkumist">
+  <div class="ovsection__head">
+    <h2 class="ovsection__title">Vajab sekkumist</h2>
+    <span class="ovsection__meta">{{ page.intervention_total }} rida</span>
+    <span class="ovsection__spacer"></span>
+    <a class="ovsection__link" href="{{ page.intervention_url }}">Ava kõik {{ page.intervention_matters }} teemat →</a>
+  </div>
+
+  <div class="ovsection__rows">
+    {% for row in page.intervention_preview %}
+      {% include "matters/partials/intervention_row.html" with row=row %}
+    {% empty %}
+      <p class="workempty">Praegu ei vaja ükski teema sekkumist.</p>
+    {% endfor %}
+  </div>
+
+  {% if page.intervention_remaining %}
+    {% comment %}
+      Opened where the reader is standing rather than reloading the page with a
+      wider filter. The rows are the remainder of the list the count above was
+      taken from, so the number and what appears cannot disagree.
+    {% endcomment %}
+    <details class="pw-more">
+      <summary>Näita veel {{ page.intervention_remaining }} ▾<span class="visually-hidden"> — vajab sekkumist</span></summary>
+      <div class="ovsection__rows">
+        {% for row in page.intervention_rest %}
+          {% include "matters/partials/intervention_row.html" with row=row %}
+        {% endfor %}
+      </div>
+    </details>
+  {% endif %}
+</section>
+
+{% comment %}
+Eesolev — one deadline panel where there were two.
+
+Only what the department may honestly call a deadline: DO deadlines and Olulised
+tähtajad. A WAIT's expected date and a MONITOR's review date are commitments
+nobody made and belong in Vajab sekkumist above (master specification 18.8).
+
+Five windows, consecutive and open-ended at the far end, so a dated commitment
+is in exactly one of them. Today, tomorrow and next week are shown whole because
+they are what somebody is working in; the rest of the month and everything after
+it show five rows and open the remainder in place.
+
+KAUGEMAL is a real list. It was one summary line, so a deadline in November was
+on no screen anywhere until November.
+
+Each group states its own interval and links to exactly the window it counted,
+so the list behind «kõik N →» holds exactly those Matters — Matters, because the
+register lists files and two deadlines on one file are one file to open
+(`?too=tahtaeg-vahemik`, app/matters/work_items.py).
+{% endcomment %}
+<section class="ovsection" aria-label="Eesolev">
+  <div class="ovsection__head">
+    <h2 class="ovsection__title">Eesolev</h2>
+    <span class="ovsection__spacer"></span>
+    <a class="ovsection__link" href="{% url 'matters:matter_list' %}?olek=avatud&amp;liik=FULL&amp;too=tahtaeg-vahemik">Kõik tähtajad →</a>
+  </div>
+
+  {% for group in page.upcoming %}
+    {% if group.count %}
+      <div class="uxdl">
+        <div class="uxdl__head">
+          {% comment %}
+            Tomorrow's group is headed by tomorrow's weekday, which is a
+            different word every morning. `data-clock` marks it for the visual
+            suite's mask list the way the portfolio rows are marked: it carries
+            no styling and changes nothing a reader sees, and without it the
+            baseline goes red the next day for no defect at all
+            (e2e/test_ui_regression.py, `CLOCK_DEPENDENT`).
+          {% endcomment %}
+          <span class="uxdl__title{% if group.key == 'tana' %} uxdl__title--today{% elif group.is_far %} uxdl__title--far{% endif %}"{% if group.key == 'homme' %} data-clock{% endif %}>{{ group.label|upper }}</span>
+          <span class="uxdl__range">{{ group.range_label }}</span>
+          <a class="uxdl__all" href="{{ group.url }}">kõik {{ group.matter_count }} →</a>
+        </div>
+        {% for item in group.preview %}
+          {% include "matters/partials/deadline_row.html" with item=item %}
+        {% endfor %}
+        {% if group.remaining %}
+          {% comment %}
+            Opened in place, ten at a time, until the group is exhausted. A
+            manager scanning next month should not have to leave the page to see
+            the eleventh date. The far window says «Näita kõiki N», because what
+            it is holding back is the rest of a population with no end date to
+            reason about rather than the tail of a named month (frame C).
+          {% endcomment %}
+          {% if group.is_far %}
+            {% include "matters/partials/deadline_more.html" with rows=group.rest remaining=group.count scope=group.label all=1 %}
+          {% else %}
+            {% include "matters/partials/deadline_more.html" with rows=group.rest remaining=group.remaining scope=group.label %}
+          {% endif %}
+        {% endif %}
+      </div>
+    {% endif %}
+  {% endfor %}
+  {% if not page.has_upcoming %}
+    <p class="uxdl__empty">Ühtegi tähtaega ei ole ees.</p>
+  {% endif %}
+</section>
+
+{% if page.digest %}
+  <section class="ovsection" aria-label="Tehtud">
+    <div class="ovsection__head">
+      <h2 class="ovsection__title">Tehtud</h2>
+      <span class="ovsection__spacer"></span>
+      {% comment %}
+        The period is in the URL, so a report somebody is reading can be sent to
+        somebody else and open on the same window.
+      {% endcomment %}
+      <span class="uxperiods">
+      {% for option in page.periods %}
+        <a class="uxchip{% if option.active %} is-selected{% endif %}"
+           {% if option.active %}aria-current="true"{% endif %}
+           href="?{{ option.query }}">{{ option.label }}</a>
+      {% endfor %}
+      <details class="uxdg__period" data-uxpopover
+               {% if page.digest.period.is_custom %}open{% endif %}>
+        <summary class="uxchip uxchip--dashed{% if page.digest.period.is_custom %} is-selected{% endif %}">
+          {% if page.digest.period.is_custom %}{{ page.digest.period.label }}{% else %}Vali periood…{% endif %}
+        </summary>
+        <div class="uxdg__periodbody">
+          <form method="get">
+            <input type="hidden" name="periood" value="vahemik">
+            <input type="hidden" name="liik" value="{{ page.digest.kind }}">
+            <label class="field">
+              <span class="field__label field__label--plain">Alates</span>
+              <input class="field__input field__input--compact dateinput" type="text"
+                     inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                     name="alates" value="{{ page.digest.period.start|date:'j.n.Y' }}">
+            </label>
+            <label class="field">
+              <span class="field__label field__label--plain">Kuni</span>
+              <input class="field__input field__input--compact dateinput" type="text"
+                     inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                     name="kuni" value="{{ page.digest.period.end|date:'j.n.Y' }}">
+            </label>
+            <button class="button button--quiet button--tiny" type="submit">Näita</button>
+          </form>
+        </div>
+      </details>
+      </span>
+    </div>
+
+    <div class="uxdg">
+      {% comment %}
+        The summary counts the four populations of the whole selected period. It
+        does not move with the row filter under it: this line answers what the
+        period produced, and the filter answers "show me one kind of it"
+        (app/matters/department_dashboard.py, `build_digest`).
+      {% endcomment %}
+      <p class="uxdg__sum">
+        <span><b>{{ page.digest.sent }}</b> arvamust välja</span>
+        <span><b>{{ page.digest.closed }}</b> teemat suletud</span>
+        <span><b>{{ page.digest.victories }}</b> töövõitu</span>
+        <span><b>{{ page.digest.entries }}</b> sissekannet</span>
+      </p>
+
+      {% comment %}
+        The kind filter, in the URL beside the period and carrying it, so
+        neither choice throws the other away.
+      {% endcomment %}
+      <nav class="feedfilter" aria-label="Tegevuse liik">
+        {% for option in page.digest.kinds %}
+          <a class="feedfilter__item{% if option.active %} is-active{% endif %}"
+             {% if option.active %}aria-current="true"{% endif %}
+             href="?{{ option.query }}">{{ option.label }}</a>
+        {% endfor %}
+      </nav>
+
+      {% for row in page.digest.preview %}
+        {% include "matters/partials/digest_row.html" with row=row %}
+      {% empty %}
+        <p class="uxdl__empty">Valitud perioodil ei ole midagi lõpetatud.</p>
+      {% endfor %}
+
+      {% if page.digest.rest %}
+        <details class="uxdl__more">
+          <summary>Näita kõiki {{ page.digest.total }} sissekannet ▾</summary>
+          {% for row in page.digest.rest %}
+            {% include "matters/partials/digest_row.html" with row=row %}
+          {% endfor %}
+        </details>
+      {% endif %}
+    </div>
+  </section>
+{% endif %}

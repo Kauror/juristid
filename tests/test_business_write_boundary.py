@@ -746,7 +746,7 @@ def test_a_reader_can_still_read_everything_they_could_before(client, world):
 
     for name, kwargs in (
         ("matters:matter_list", {}),
-        ("matters:overview", {}),
+        ("matters:department", {}),
         ("matters:matter_detail", {"pk": world["matter"].pk}),
         ("matters:matter_documents", {"pk": world["matter"].pk}),
         ("matters:matter_position", {"pk": world["matter"].pk}),

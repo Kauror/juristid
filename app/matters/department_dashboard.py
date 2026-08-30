@@ -1,16 +1,16 @@
-"""Osakonna töö — what is going on across the lawyers, in three questions.
+"""Osakond's read model — what is going on across the lawyers, and where it stands.
 
-A third surface, deliberately not a replacement for either of the two that
-exist. *Minu töö* answers "what do I have to do today". *Ülevaade* answers "what
-is the state of the department's files", and every reader gets it. This answers
-a question only one person has, and the 2026-08 redesign states it as three:
+The department page's populations live here. It served *Osakonna töö* when that
+was a surface of its own; since the merge it and :mod:`app.matters.overview`
+are the two read models one page composes, and the composition is
+:mod:`app.matters.department` (docs/adr/0049).
 
-* **Mida meeskond teeb** — the Meeskond table, one row per person.
-* **Mis on ees** — Eesolev, the whole department's dates in four windows.
-* **Mis on tehtud** — Tehtud, what came out of a period the reader chooses.
-
-Above them is *Seis*: six risks rather than six counters. Beside them is a rail
-of four states worth a decision, and the year's output.
+* **Seis** — six risks rather than six counters, each opening exactly its rows.
+* **Mida meeskond teeb** — the Meeskond table, one row per person. Head only.
+* **Mis on ees** — Eesolev, the department's real deadlines in five windows.
+* **Mis on tehtud** — Tehtud, what came out of a period the reader chooses,
+  narrowable by row kind. Head only.
+* the *Uued teemad* and *Aruandlus* rail blocks.
 
 Four rules run through every function here.
 
@@ -19,7 +19,8 @@ Four rules run through every function here.
 ``DEPARTMENT_HEAD`` is a role the central authorization already entitles — not
 because this module decided so, and nothing here re-implements ``visibility ==
 NORMAL or …``. Point the same functions at a specialist and they return the
-specialist's authorized world.
+specialist's authorized world. Whether the *manager* sections are built at all
+is a separate question, decided by the caller from the authenticated role.
 
 **Every number opens the list it counted.** Each figure is defined *as* register
 parameters; the count is those parameters run through the register's own filter
@@ -30,10 +31,13 @@ history the register cannot express as a current state, and those carry no link
 at all — an honest number beats a link to a different list.
 
 **Definitions are imported, never restated.** Overdue, this week, "no next
-action", "still drafting" all come from :mod:`app.matters.dashboard` and
-:mod:`app.matters.work_items`. Two similar definitions in two files is how two
-screens start disagreeing about the same Matter, and the head is precisely the
-person who would notice and stop trusting both.
+action", "still drafting", "a real deadline" all come from
+:mod:`app.matters.dashboard` and :mod:`app.matters.work_items`. Two similar
+definitions in two files is how two screens start disagreeing about the same
+Matter, and the head is precisely the person who would notice and stop trusting
+both. It is also why one business fact has one definition *within* this module:
+the team table's year column and Aruandlus's «Saadetud arvamusi» read one
+population over one window, and the equality is asserted.
 
 **This is not a staff evaluation.** Every column is a count of observable
 states. There is no ranking, no score, no rate, no percentage and no colour
@@ -45,19 +49,19 @@ inventory — one of them can be a two-line monitoring note and the next a year 
 consultation — so it measures neither effort nor performance and is never
 labelled as if it did.
 
-What this page no longer carries, and where it went
----------------------------------------------------
+What the page no longer carries, and where it went
+--------------------------------------------------
 
-The redesign narrowed the page to the three questions above. Nothing it dropped
-lost its path:
+Nothing that was dropped lost its path:
 
-* the cross-team *Vajab sekkumist* list is Ülevaade's, and the head reads it
-  there (``/ulevaade/?vaade=osakond``);
 * *Ülevaatus või ootamine vajab pilku* is ``?too=ulevaatamiseks`` on the
-  register, and is in Ülevaade's intervention list;
+  register, and its rows are in the intervention list on the same page;
 * per-lawyer *recently received* is ``?vastutaja=…&saabus_alates=…``;
 * *Aktiivne teema ilma hetkeseisuta* is ``?hetkeseis=puudub``, and the full
-  picture is Statistika → Andmekvaliteet.
+  picture is Statistika → Andmekvaliteet;
+* the *Vajab sekkumist* rail block restated four counts the main column already
+  lists as rows, and *Koormus* asked the question the Meeskond table answers
+  with more of the answer (docs/adr/0049).
 """
 
 from __future__ import annotations
@@ -80,10 +84,11 @@ from app.core.dates import (
     end_of_month,
     format_estonian_date,
     parse_flexible_date,
+    short_day_month,
     short_range,
     weekday_name,
 )
-from app.intelligence.enums import FactStatus
+from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.models import MatterWorkVictory
 from app.matters import work_items as wi
 from app.matters.dashboard import (
@@ -227,6 +232,19 @@ def _arrived_this_week_params(today: date) -> dict[str, Any]:
     }
 
 
+def _no_action_params() -> dict[str, Any]:
+    """«Järgmise tegevuseta», as register parameters.
+
+    The register's own `?tegevus=puudub`, which resolves through
+    `selectors.filter_by_next_action` to the same reader-scoped population
+    `app.matters.dashboard.without_next_action` describes — an open FULL Matter
+    carrying no open instruction. Expressed as parameters rather than as a
+    queryset so the figure counts and the link opens one query, like every
+    other figure on the strip.
+    """
+    return {**_open_full(), "tegevus": MISSING}
+
+
 def sent_submissions(user: Any, *, since: date, until: date | None = None) -> QuerySet[Submission]:
     """Opinions Koda actually sent inside a window, for this reader.
 
@@ -265,7 +283,7 @@ def seis_figures(user: Any, today: date | None = None) -> list[SeisFigure]:
     this_week = {**_open_full(), WORK_PARAM: wi.WORK_DEADLINE_THIS_WEEK}
     unassigned = {**_open_full(), "vastutaja": MISSING}
     unreviewed = _unreviewed_params(today)
-    arrived = _arrived_this_week_params(today)
+    no_action = _no_action_params()
 
     return [
         SeisFigure("overdue", count(overdue), "üle tähtaja", register_url(**overdue), "danger"),
@@ -280,7 +298,19 @@ def seis_figures(user: Any, today: date | None = None) -> list[SeisFigure]:
             register_url(**unreviewed),
             "warning",
         ),
-        SeisFigure("arrived", count(arrived), "uut sel nädalal", register_url(**arrived)),
+        # «Uut sel nädalal» stood here. It is arrival, not risk — a file that
+        # came in on Tuesday is on the strip whether or not anything is wrong
+        # with it — and it is a row of *Uued teemad* in the rail, where the rest
+        # of the arrival picture already is. What replaced it is the state a
+        # head can actually act on: an open file nobody has said what happens to
+        # (design handoff C §3.2).
+        SeisFigure(
+            "no_action",
+            count(no_action),
+            "järgmise tegevuseta",
+            register_url(**no_action),
+            "warning",
+        ),
         SeisFigure(
             "sent",
             sent_submissions(user, since=today - timedelta(days=SENT_WINDOW_DAYS)).count(),
@@ -380,6 +410,20 @@ def previous_week(today: date) -> tuple[date, date]:
     return start, start + timedelta(days=6)
 
 
+def reporting_year(today: date) -> tuple[date, date]:
+    """The calendar year, both ends, as the one window the year columns share.
+
+    The calendar year and not a reporting year of its own: this asks what was
+    finished, and a 2019 file whose opinion went out in March is March's work
+    (app/matters/dashboard.py makes the same distinction).
+
+    Both ends, so that the window is exactly `sent_at__year=<year>` — which is
+    what the destination list filters on when a reader follows «Saadetud
+    arvamusi». A window ending today would count one thing and open another.
+    """
+    return date(today.year, 1, 1), date(today.year, 12, 31)
+
+
 def _matters_changed_by_owner(user: Any, start: date, end: date) -> dict[Any, int]:
     """How many of each person's files something happened to, in one window.
 
@@ -414,18 +458,25 @@ def _matters_changed_by_owner(user: Any, start: date, end: date) -> dict[Any, in
 def _sent_by_owner(user: Any, *, since: date, until: date | None = None) -> dict[Any, int]:
     """Opinions sent in a window, grouped by whose file they went out on.
 
+    **Opinions**, not files carrying one. It counted Matters, which is a
+    different number the moment a file produces two opinions in a year — and
+    the same population is printed twice on the department page, as the team
+    table's `ARVAMUSI VÄLJA` total and as Aruandlus's `Saadetud arvamusi`. Two
+    counts of one business fact that disagree is exactly what the reconciliation
+    test now forbids (design handoff C §4, brief §19).
+
     The aggregate runs over a re-wrapped, unordered query for the reason
     :func:`_by_owner` gives: `Meta.ordering` and any annotation on the incoming
-    query leak into the GROUP BY and split one person's total across rows.
+    query leak into the GROUP BY and split one total across rows.
     """
     sent = sent_submissions(user, since=since, until=until)
     grouped = (
-        Matter.objects.filter(pk__in=sent.values("matter_id"))
+        Submission.objects.filter(pk__in=sent.values("pk"))
         .order_by()
-        .values("owner_id")
+        .values("matter__owner_id")
         .annotate(total=Count("id"))
     )
-    return {row["owner_id"]: row["total"] for row in grouped}
+    return {row["matter__owner_id"]: row["total"] for row in grouped}
 
 
 def team_rows(user: Any, today: date | None = None) -> list[TeamRow]:
@@ -443,7 +494,7 @@ def team_rows(user: Any, today: date | None = None) -> list[TeamRow]:
     """
     today = today or timezone.localdate()
     week_start, week_end = previous_week(today)
-    year_start = date(today.year, 1, 1)
+    year_start, year_end = reporting_year(today)
 
     active = active_matters(user)
     items = wi.work_items(user, today=today)
@@ -465,10 +516,21 @@ def team_rows(user: Any, today: date | None = None) -> list[TeamRow]:
         "drafting": _by_owner(drafting_matters(user)),
         "changed": _matters_changed_by_owner(user, week_start, week_end),
         "sent_week": _sent_by_owner(user, since=week_start, until=week_end),
-        "sent_year": _sent_by_owner(user, since=year_start),
+        # The whole calendar year, both ends, so this column and Aruandlus's
+        # «Saadetud arvamusi» are one window as well as one population. Bounded
+        # at today they would have disagreed about a letter somebody dated
+        # forward, which is the kind of one-row difference nobody can explain
+        # afterwards (`reporting_year`).
+        "sent_year": _sent_by_owner(user, since=year_start, until=year_end),
     }
 
-    owner_ids = {owner_id for owner_id in counts["open"] if owner_id is not None}
+    # Everybody who appears in *any* column, not only in the open-work one. A
+    # colleague who sent an opinion in March and carries nothing today still
+    # owns that opinion, and dropping their row would drop it from the Kokku
+    # line that Aruandlus is asserted against.
+    owner_ids = {
+        owner_id for column in counts.values() for owner_id in column if owner_id is not None
+    }
     people = User.objects.filter(
         Q(is_active=True, role__in=CASEWORK_ROLES) | Q(pk__in=owner_ids)
     ).order_by("display_name")
@@ -619,7 +681,34 @@ class UpcomingGroup:
 
     @property
     def range_label(self) -> str:
+        """``30.08–06.09``, or ``alates 01.10`` where the window has no end.
+
+        Only the last window is open-ended. `short_range` returns nothing at all
+        for a half-open interval — correctly, since it states a range — so the
+        one group that has a first day and no last day states that instead of
+        printing a blank where every group above it prints its dates
+        (design handoff C, frame C).
+        """
+        if self.ends is None:
+            return f"alates {short_day_month(self.starts)}"
         return short_range(self.starts, self.ends)
+
+    @property
+    def is_far(self) -> bool:
+        """The open-ended window. It discloses differently, and nothing else."""
+        return self.ends is None
+
+    @property
+    def is_empty_window(self) -> bool:
+        """True where the interval holds no days at all.
+
+        *Ülejäänud kuu* is one such window whenever next week already runs to or
+        past the end of the month: the rest of the month would begin on Monday
+        and have ended on Sunday. It holds nothing by construction, and the
+        panel omits it rather than printing a heading over an interval read
+        backwards.
+        """
+        return self.ends is not None and self.starts > self.ends
 
     @property
     def url(self) -> str:
@@ -639,37 +728,106 @@ class UpcomingGroup:
         return register_url(**params)
 
 
-#: How many rows a group shows before the rest go behind «Näita veel». Ten at a
-#: time, opened in place: a manager scanning next month should not have to leave
-#: the page to see the eleventh date (design handoff, Osakond §3).
+#: How many rows a group shows before the rest go behind a disclosure. Five, and
+#: only in the two windows a reader is planning in rather than working in: today
+#: and tomorrow are shown whole because they are already decided, and next week
+#: because that is the week being planned (design handoff C §3.3).
 UPCOMING_PREVIEW = 5
+#: How many more the disclosure opens at a time, before offering the next batch.
 UPCOMING_BATCH = 10
 
+#: The windows are cut here rather than where they are rendered, because two of
+#: the five boundaries are the kind that look obvious and are not: *järgmine
+#: nädal* ends at the end of the *next* ISO week and not seven days from
+#: tomorrow, and *ülejäänud kuu* ends at the end of whatever month that Sunday
+#: falls in — which can be the month after this one.
+UPCOMING_WINDOWS: tuple[str, ...] = ("tana", "homme", "nadal", "kuu", "kaugemal")
 
-def upcoming_groups(user: Any, today: date | None = None) -> list[UpcomingGroup]:
-    """Today, tomorrow, the rest of next week, and the month after it.
 
-    Four consecutive windows, like Ülevaade's — but cut where a manager plans
-    rather than where a lawyer works: the two days that are already decided, the
-    week being planned, and the month after it. Only what the department may
-    honestly call a deadline (`real_deadlines`): a WAIT's expected date is not a
-    commitment anybody made (master specification 18.8).
+def upcoming_windows(today: date) -> tuple[tuple[str, str, date, date | None], ...]:
+    """The five consecutive windows *Eesolev* holds: key, heading, first, last.
+
+    Consecutive and exhaustive by construction. Each begins the day after the
+    previous one ends and the last has no end, so a future real deadline lands
+    in exactly one of them — never in two, and never in none. That is asserted
+    across awkward calendars rather than assumed (`tests/test_department_page.py`).
+
+    Two boundaries carry the whole of the difficulty:
+
+    * *Järgmine nädal* runs from the day after tomorrow to the end of the **next
+      ISO week**, so on a Friday it is nine days and on a Sunday it is seven.
+      The heading says «järgmine nädal» and the interval has to mean it.
+    * *Ülejäänud kuu* is what is left of the month that Sunday falls in. When
+      next week already runs past the month's end that window is empty by
+      construction — it would start after it ended — and `is_empty_window` says
+      so rather than the panel printing a heading over a backwards interval.
+
+    *Kaugemal* then starts the day after the later of those two, which is what
+    keeps the five touching in both cases.
     """
-    today = today or timezone.localdate()
     tomorrow = today + timedelta(days=1)
+    next_week_start = tomorrow + timedelta(days=1)
     next_week_end = wi.end_of_iso_week(today) + timedelta(days=7)
     month_start = next_week_end + timedelta(days=1)
-    windows: tuple[tuple[str, str, date, date], ...] = (
+    # Never before the week's own end, so *Kaugemal* cannot begin inside a
+    # window the reader has already been shown.
+    month_end = max(end_of_month(month_start), next_week_end)
+    return (
         ("tana", "Täna", today, today),
         ("homme", weekday_name(tomorrow), tomorrow, tomorrow),
-        ("nadal", "Järgmine nädal", tomorrow + timedelta(days=1), next_week_end),
-        ("kuu", "Järgmine kuu", month_start, end_of_month(month_start)),
+        ("nadal", "Järgmine nädal", next_week_start, next_week_end),
+        ("kuu", "Ülejäänud kuu", month_start, month_end),
+        ("kaugemal", "Kaugemal", month_end + timedelta(days=1), None),
     )
 
-    items = wi.real_deadlines(wi.work_items(user, today=today))
+
+#: How many rows each window shows before the rest go behind a disclosure.
+#: `None` means "all of them".
+_UPCOMING_SHOWN: dict[str, int | None] = {
+    "tana": None,
+    "homme": None,
+    "nadal": None,
+    "kuu": UPCOMING_PREVIEW,
+    "kaugemal": UPCOMING_PREVIEW,
+}
+
+
+def upcoming_groups(
+    user: Any, today: date | None = None, *, items: list[wi.WorkItem] | None = None
+) -> list[UpcomingGroup]:
+    """Every real deadline ahead, in the five windows :func:`upcoming_windows` cuts.
+
+    One read of the work model, one partition. Not five queries: five windows
+    assembled independently is five chances for a date to appear twice or in
+    none, and the partition is the property this panel is asserted on.
+
+    Only what the department may honestly call a deadline (`real_deadlines`): a
+    WAIT's expected date and a MONITOR's review date are commitments nobody
+    made, and they stay in *Vajab sekkumist*, where they read as "look at this
+    again" (master specification 18.8).
+
+    *Kaugemal* is a real list now rather than the one-line summary it was. A
+    deadline in November was on no screen anywhere until November, and the count
+    beside the heading is still the honest full population whatever the
+    disclosure shows (design handoff C §3.3).
+    """
+    today = today or timezone.localdate()
+    # ``items`` lets a page that has already read the work model avoid reading
+    # it again; omitting it reads the same model with the same authorization.
+    # The department page holds one read and passes it to every panel that
+    # partitions it, which is what keeps the query count a property of the page
+    # rather than of how many panels happen to sit on it (`work_population_ids`
+    # takes the same argument for the same reason).
+    deadlines = wi.real_deadlines(items if items is not None else wi.work_items(user, today=today))
     groups = []
-    for key, label, starts, ends in windows:
-        window = [item for item in items if item.when is not None and starts <= item.when <= ends]
+    for key, label, starts, ends in upcoming_windows(today):
+        # Through the read model's own window selector rather than a comparison
+        # written here, so the rows, the count and the `?too=tahtaeg-vahemik`
+        # link behind «kõik N →» are one definition (app/matters/work_items.py).
+        window = wi.work_population_items(
+            deadlines, wi.WORK_DEADLINE_WINDOW, today, window=(starts, ends)
+        )
+        shown = _UPCOMING_SHOWN[key]
         groups.append(
             UpcomingGroup(
                 key=key,
@@ -677,7 +835,7 @@ def upcoming_groups(user: Any, today: date | None = None) -> list[UpcomingGroup]
                 items=window,
                 starts=starts,
                 ends=ends,
-                shown=len(window) if key in ("tana", "homme") else UPCOMING_PREVIEW,
+                shown=len(window) if shown is None else shown,
             )
         )
     return groups
@@ -690,13 +848,17 @@ def upcoming_groups(user: Any, today: date | None = None) -> list[UpcomingGroup]
 
 @dataclass(frozen=True)
 class PeriodOption:
+    """One choice in the period control, and the URL that selects it.
+
+    ``query`` carries the row-kind filter across, because the two controls sit
+    on one section and neither may throw the other away: a reader who narrowed
+    Tehtud to opinions and then asked for the quarter meant both.
+    """
+
     key: str
     label: str
     active: bool
-
-    @property
-    def query(self) -> str:
-        return urlencode({PERIOD_PARAM: self.key})
+    query: str
 
 
 @dataclass(frozen=True)
@@ -737,6 +899,72 @@ DIGEST_PREVIEW = 6
 #: The ceiling on what the disclosure opens. A period nobody bounded is still a
 #: page somebody has to render.
 DIGEST_LIMIT = 200
+
+#: The row-kind filter, and the query parameter it lives in. In the URL beside
+#: the period, so a reader who narrowed *Tehtud* to opinions can send that view
+#: to somebody else.
+#:
+#: It narrows the **rows**. The summary line above them stays the whole selected
+#: period, because that line answers "what did this period produce" and the
+#: filter answers "show me one kind of it" — two questions, and a summary that
+#: moved with the filter would leave the page unable to answer the first
+#: (design handoff C §9.2, brief §15B).
+KIND_PARAM = "liik"
+KIND_ALL = "koik"
+
+#: The visible choices, mapped onto the `DigestRow.kind` values the rows already
+#: carry. The mapping exists so the URL can read in Estonian without renaming
+#: anything stored: `kind` is the digest's own vocabulary and is not rewritten
+#: to make a query string look tidy (brief §15C).
+DIGEST_KINDS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (KIND_ALL, "Kõik", ("sent", "win", "closed", "entry")),
+    ("arvamused", "Arvamused", ("sent",)),
+    ("toovoidud", "Töövõidud", ("win",)),
+    ("suletud", "Suletud teemad", ("closed",)),
+    ("sissekanded", "Sissekanded", ("entry",)),
+)
+
+
+#: The scope parameter, carried by every link the section builds so that
+#: changing the period or the row kind cannot silently drop the reader into
+#: another scope. Its value is `app.matters.overview.SCOPE_DEPARTMENT`; naming
+#: it here rather than importing it keeps this module free of a circular import,
+#: and the two are asserted equal (`tests/test_department_page.py`).
+SCOPE_PARAM = "vaade"
+SCOPE_DEPARTMENT = "osakond"
+
+
+def _page_params(
+    *,
+    period_key: str,
+    kind: str,
+    start: date | None = None,
+    end: date | None = None,
+) -> dict[str, str]:
+    """The URL state of the Tehtud section, as one dictionary.
+
+    Written once because two controls build links out of it and each has to
+    preserve what the other chose. A custom range carries its two dates; a named
+    period does not, so a reader leaving *Vali periood…* is not left with two
+    stale parameters the page then has to decide whether to believe.
+    """
+    params = {SCOPE_PARAM: SCOPE_DEPARTMENT, PERIOD_PARAM: period_key}
+    if period_key == PERIOD_CUSTOM and start is not None and end is not None:
+        params[PERIOD_START_PARAM] = format_estonian_date(start)
+        params[PERIOD_END_PARAM] = format_estonian_date(end)
+    params[KIND_PARAM] = kind
+    return params
+
+
+def kind_from(params: Any) -> str:
+    """Which row kind the URL asks for, or all of them.
+
+    An unrecognised value means all, never nothing. A hand-edited or truncated
+    URL must not render a convincing empty page that reads as "the department
+    did nothing this month".
+    """
+    value = (params.get(KIND_PARAM) or "").strip()
+    return value if value in {key for key, _, _ in DIGEST_KINDS} else KIND_ALL
 
 
 @dataclass(frozen=True)
@@ -780,17 +1008,44 @@ def period_from(params: Any, today: date | None = None) -> Period:
     return Period(PERIOD_7, today - timedelta(days=7), today)
 
 
-def period_options(period: Period) -> list[PeriodOption]:
+def period_options(period: Period, kind: str = KIND_ALL) -> list[PeriodOption]:
     return [
-        PeriodOption(key=key, label=label, active=period.key == key) for key, label in PERIOD_LABELS
+        PeriodOption(
+            key=key,
+            label=label,
+            active=period.key == key,
+            query=urlencode(_page_params(period_key=key, kind=kind)),
+        )
+        for key, label in PERIOD_LABELS
     ]
+
+
+@dataclass(frozen=True)
+class KindOption:
+    """One choice in the row-kind filter, and the URL that selects it.
+
+    ``query`` carries the period across — including a custom range's two dates —
+    so narrowing to opinions does not silently reset the window the reader chose.
+    """
+
+    key: str
+    label: str
+    active: bool
+    query: str
 
 
 @dataclass
 class Digest:
-    """What the department finished in one period."""
+    """What the department finished in one period.
+
+    ``rows`` is what the kind filter left; the four counts describe the **whole**
+    period whatever that filter is. Both are on the object rather than derived
+    in the template, so the rule that the summary does not move is one line of
+    code and one assertion rather than a convention.
+    """
 
     period: Period
+    kind: str = KIND_ALL
     rows: list[DigestRow] = field(default_factory=list)
     sent: int = 0
     closed: int = 0
@@ -809,12 +1064,31 @@ class Digest:
     def rest(self) -> list[DigestRow]:
         return self.rows[DIGEST_PREVIEW:]
 
+    @property
+    def kinds(self) -> list[KindOption]:
+        return [
+            KindOption(
+                key=key,
+                label=label,
+                active=key == self.kind,
+                query=urlencode(
+                    _page_params(
+                        period_key=self.period.key,
+                        kind=key,
+                        start=self.period.start,
+                        end=self.period.end,
+                    )
+                ),
+            )
+            for key, label, _ in DIGEST_KINDS
+        ]
+
 
 def _digest_url(matter_id: Any) -> str:
     return reverse("matters:matter_detail", kwargs={"pk": matter_id})
 
 
-def build_digest(user: Any, period: Period) -> Digest:
+def build_digest(user: Any, period: Period, kind: str = KIND_ALL) -> Digest:
     """Four kinds of finished work, newest first, over one window.
 
     Read from the canonical records rather than from the audit stream: a sent
@@ -842,9 +1116,14 @@ def build_digest(user: Any, period: Period) -> Digest:
         .order_by("-closed_at")[:DIGEST_LIMIT]
     )
     victories = list(
+        # `WorkVictoryStatus.CONFIRMED`, which is what this field stores.
+        # `FactStatus.ACTIVE` stood here and belongs to a different fact's
+        # vocabulary, so the filter matched nothing and the row read «0
+        # töövõitu» however many the department had confirmed
+        # (app/intelligence/enums.py, brief §23).
         MatterWorkVictory.objects.visible_to(user)
         .filter(
-            status=FactStatus.ACTIVE,
+            status=WorkVictoryStatus.CONFIRMED,
             confirmed_at__date__gte=period.start,
             confirmed_at__date__lte=period.end,
         )
@@ -921,9 +1200,13 @@ def build_digest(user: Any, period: Period) -> Digest:
     order = {"sent": 0, "win": 0, "closed": 0, "entry": 1}
     rows.sort(key=lambda row: (order[row.kind], -row.when.toordinal()))
 
+    wanted = {key: kinds for key, _, kinds in DIGEST_KINDS}[kind]
     return Digest(
         period=period,
-        rows=rows,
+        kind=kind,
+        rows=[row for row in rows if row.kind in wanted],
+        # Counted before the filter, and deliberately: the four numbers are the
+        # period's output, not the visible list's length.
         sent=len(sent),
         closed=len(closed),
         victories=len(victories),
@@ -944,8 +1227,18 @@ class RailRow:
     tone: str = ""
 
 
-def attention_rail(user: Any, today: date | None = None) -> list[RailRow]:
-    """Four states worth a decision, each opening exactly its own list.
+def incoming_rail(user: Any, today: date | None = None) -> list[RailRow]:
+    """*Uued teemad* — what has arrived, and what has been left alone.
+
+    Three rows the department page used to spread across two surfaces: the Seis
+    strip's «uut sel nädalal», Ülevaade's *Uued teemad* rail and this module's
+    own *Vajab sekkumist* rail all counted from these same three definitions
+    (design handoff C §3.4).
+
+    Nothing is redefined here. Each row is the register parameters that *are*
+    its definition, counted through the register's own filter pipeline and
+    linked as the same parameters, so the number and the list behind it are one
+    query (`register_population`, master specification 18.9).
 
     The wording is the handoff's and is not negotiable: «Muutusteta 30 p», never
     «seisma jäänud» — a file nobody has touched for a month is a fact, and the
@@ -957,21 +1250,14 @@ def attention_rail(user: Any, today: date | None = None) -> list[RailRow]:
     def count(params: dict[str, Any]) -> int:
         return register_population(user, params, today=today, population=population).count()
 
-    unassigned = {**_open_full(), "vastutaja": MISSING}
+    arrived = _arrived_this_week_params(today)
     unreviewed = _unreviewed_params(today)
     quiet = {**_open_full(), WORK_PARAM: wi.WORK_QUIET_30}
-    overdue = {**_open_full(), WORK_PARAM: wi.WORK_OVERDUE}
 
     return [
-        RailRow("Vastutajata teemad", count(unassigned), register_url(**unassigned), "warning"),
-        RailRow(
-            "Uued saabunud, läbi vaatamata",
-            count(unreviewed),
-            register_url(**unreviewed),
-            "warning",
-        ),
+        RailRow("Uut sel nädalal", count(arrived), register_url(**arrived)),
+        RailRow("Uut läbi vaatamata", count(unreviewed), register_url(**unreviewed), "warning"),
         RailRow(f"Muutusteta {wi.QUIET_DAYS} p", count(quiet), register_url(**quiet)),
-        RailRow("Üle tähtaja", count(overdue), register_url(**overdue), "danger"),
     ]
 
 
@@ -981,26 +1267,39 @@ def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
     The calendar year, not the reporting year: this asks what was finished, and
     a 2019 file whose opinion went out in March is March's work
     (app/matters/dashboard.py makes the same distinction).
+
+    Every row carries its year into its link. The label said 2026 and two of the
+    three links opened every year there had ever been, which is a count that
+    cannot be checked — and one of them counted a status this field never
+    stores, so it read zero whatever the year held (brief §19, §23).
+
+    «Saadetud arvamusi» is the same population as the team table's `ARVAMUSI
+    VÄLJA · <aasta>` Kokku cell, from the same window, and that equality is
+    asserted rather than assumed (`tests/test_department_page.py`).
     """
     today = today or timezone.localdate()
-    start = date(today.year, 1, 1)
-    closed_params = {"olek": "suletud", "liik": RecordMode.FULL.value, "suletud": str(today.year)}
+    year = today.year
+    start, end = reporting_year(today)
+    closed_params = {"olek": "suletud", "liik": RecordMode.FULL.value, "suletud": str(year)}
     return [
         RailRow(
             "Saadetud arvamusi",
-            sent_submissions(user, since=start, until=today).count(),
-            reverse("submissions:sent"),
+            sent_submissions(user, since=start, until=end).count(),
+            f"{reverse('submissions:sent')}?aasta={year}",
         ),
         RailRow(
             "Töövõite kinnitatud",
+            # The business period, which is what the destination list filters
+            # `?aasta=` on — not `confirmed_at`, which is when somebody got
+            # round to recording it. A count and a list that read two different
+            # dates is the failure this page exists to avoid (ADR 0043).
             MatterWorkVictory.objects.visible_to(user)
-            .filter(
-                status=FactStatus.ACTIVE,
-                confirmed_at__date__gte=start,
-                confirmed_at__date__lte=today,
-            )
+            .filter(status=WorkVictoryStatus.CONFIRMED, period_date__year=year)
             .count(),
-            reverse("intelligence:work_victories"),
+            (
+                f"{reverse('intelligence:work_victories')}"
+                f"?staatus={WorkVictoryStatus.CONFIRMED}&aasta={year}"
+            ),
         ),
         RailRow(
             "Suletud teemasid",
@@ -1008,56 +1307,3 @@ def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
             register_url(**closed_params),
         ),
     ]
-
-
-# ---------------------------------------------------------------------------
-# The whole page
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class DepartmentWork:
-    today: date
-    people: int = 0
-    open_matters: int = 0
-    seis: list[SeisFigure] = field(default_factory=list)
-    team: list[TeamRow] = field(default_factory=list)
-    upcoming: list[UpcomingGroup] = field(default_factory=list)
-    digest: Digest | None = None
-    periods: list[PeriodOption] = field(default_factory=list)
-    attention: list[RailRow] = field(default_factory=list)
-    reporting: list[RailRow] = field(default_factory=list)
-    previous_week_label: str = ""
-
-    @property
-    def has_former_members(self) -> bool:
-        return any(row.is_former for row in self.team)
-
-    @property
-    def has_upcoming(self) -> bool:
-        return any(group.count for group in self.upcoming)
-
-
-def build_department_work(
-    user: Any, today: date | None = None, params: Any = None
-) -> DepartmentWork:
-    """The whole page, for one authorized reader."""
-    today = today or timezone.localdate()
-    team = team_rows(user, today)
-    week_start, week_end = previous_week(today)
-    total = next((row for row in team if row.is_total), None)
-    period = period_from(params or {}, today)
-    return DepartmentWork(
-        today=today,
-        # Rows minus the unassigned pile and the total: those are not people.
-        people=len([row for row in team if not row.is_unassigned and not row.is_total]),
-        open_matters=total.cells[0].value if total is not None else 0,
-        seis=seis_figures(user, today),
-        team=team,
-        upcoming=upcoming_groups(user, today),
-        digest=build_digest(user, period),
-        periods=period_options(period),
-        attention=attention_rail(user, today),
-        reporting=reporting_rail(user, today),
-        previous_week_label=short_range(week_start, week_end),
-    )

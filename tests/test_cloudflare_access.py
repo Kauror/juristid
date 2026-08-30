@@ -157,7 +157,7 @@ def test_a_verified_assertion_with_no_email_is_refused(signing_key):
 @pytest.mark.django_db
 def test_a_known_person_is_signed_in_from_the_assertion(client, signing_key):
     person = real_person(upn=PERSON, role=UserRole.SPECIALIST)
-    response = client.get("/ulevaade/", HTTP_CF_ACCESS_JWT_ASSERTION=assertion(signing_key))
+    response = client.get("/osakond/", HTTP_CF_ACCESS_JWT_ASSERTION=assertion(signing_key))
     assert response.status_code == 200
     assert response.wsgi_request.user.pk == person.pk
 
@@ -165,14 +165,14 @@ def test_a_known_person_is_signed_in_from_the_assertion(client, signing_key):
 @pytest.mark.django_db
 def test_a_request_with_no_assertion_is_denied_not_passed_through(client):
     """There is no public surface behind Access to fall through to."""
-    response = client.get("/ulevaade/")
+    response = client.get("/osakond/")
     assert response.status_code == 403
 
 
 @pytest.mark.django_db
 def test_a_forged_header_does_not_authenticate_anybody(client, other_key):
     real_person(upn=PERSON)
-    response = client.get("/ulevaade/", HTTP_CF_ACCESS_JWT_ASSERTION=assertion(other_key))
+    response = client.get("/osakond/", HTTP_CF_ACCESS_JWT_ASSERTION=assertion(other_key))
     assert response.status_code == 403
     assert not response.wsgi_request.user.is_authenticated
 
@@ -181,7 +181,7 @@ def test_a_forged_header_does_not_authenticate_anybody(client, other_key):
 def test_the_unsigned_email_header_authenticates_nobody(client):
     """`Cf-Access-Authenticated-User-Email` carries no signature at all."""
     real_person(upn=PERSON)
-    response = client.get("/ulevaade/", HTTP_CF_ACCESS_AUTHENTICATED_USER_EMAIL=PERSON)
+    response = client.get("/osakond/", HTTP_CF_ACCESS_AUTHENTICATED_USER_EMAIL=PERSON)
     assert response.status_code == 403
 
 
@@ -189,7 +189,7 @@ def test_the_unsigned_email_header_authenticates_nobody(client):
 def test_a_verified_stranger_is_not_provisioned_a_seat(client, signing_key):
     """Widening an Access policy must not create an account here."""
     response = client.get(
-        "/ulevaade/",
+        "/osakond/",
         HTTP_CF_ACCESS_JWT_ASSERTION=assertion(signing_key, email="keegi@mujal.invalid"),
     )
     assert response.status_code == 403
@@ -201,14 +201,14 @@ def test_a_synthetic_account_cannot_become_a_real_identity(client, signing_key):
     from app.accounts.services import create_synthetic_user
 
     create_synthetic_user(upn=PERSON, display_name="Näidisjurist")
-    response = client.get("/ulevaade/", HTTP_CF_ACCESS_JWT_ASSERTION=assertion(signing_key))
+    response = client.get("/osakond/", HTTP_CF_ACCESS_JWT_ASSERTION=assertion(signing_key))
     assert response.status_code == 403
 
 
 @pytest.mark.django_db
 def test_a_deactivated_person_is_denied(client, signing_key):
     real_person(upn=PERSON, is_active=False)
-    response = client.get("/ulevaade/", HTTP_CF_ACCESS_JWT_ASSERTION=assertion(signing_key))
+    response = client.get("/osakond/", HTTP_CF_ACCESS_JWT_ASSERTION=assertion(signing_key))
     assert response.status_code == 403
 
 
@@ -219,7 +219,7 @@ def test_a_session_belonging_to_somebody_else_is_replaced(client, signing_key):
     arriving = real_person(upn=PERSON)
     client.force_login(previous)
 
-    response = client.get("/ulevaade/", HTTP_CF_ACCESS_JWT_ASSERTION=assertion(signing_key))
+    response = client.get("/osakond/", HTTP_CF_ACCESS_JWT_ASSERTION=assertion(signing_key))
     assert response.status_code == 200
     assert response.wsgi_request.user.pk == arriving.pk
 
@@ -236,7 +236,7 @@ def test_access_off_leaves_every_request_alone(client, settings):
     settings.AUTH_MODE = AuthMode.NONE
     person = real_person()
     client.force_login(person)
-    assert client.get("/ulevaade/").status_code == 200
+    assert client.get("/osakond/").status_code == 200
 
 
 # -- the configuration itself ----------------------------------------------

@@ -35,23 +35,21 @@ structure, then `03-BACKEND.md` read against this architecture, then `lisad/`.
 | **Approach** | One template, one read model, two modes. New route, new `PersonalScratchpad` model (additive), new view reusing `build_my_work(user, subject=…)`. Authorization is the *existing* department-head rule, not a new entitlement. |
 | **Conflict** | None. Prev/next colleague order is an open question in `01` §9 — implemented in the team-table order the prototype shows, and logged (DS-08). |
 
-### Osakonna töö — `/osakonna-too/`
+### Osakond — `/osakond/`
+
+> Supersedes the two rows this replaced — *Osakonna töö* (`/osakonna-too/`) and
+> *Ülevaade* (`/ulevaade/`). They described two destinations, which they no
+> longer are: they merged into one page and both old addresses redirect to it
+> permanently (ADR 0049). What each said about its *components* still holds —
+> the team grid, Eesolev, Tehtud, the area view and the rails are the same
+> components, reused rather than rebuilt.
 
 | | |
 | --- | --- |
-| **Existing** | `app/matters/department_dashboard.py`, `department_views.py`, `templates/matters/department_work.html`. Already has the team grid (`uxstat`), Eesolev (`uxdl`), Tehtud (`uxdg`) and the Juhi otsused rail. Built from an earlier round of the same design. |
-| **Design** | Same three questions. Differences: no «SEIS» label; «Vajab sekkumist» not «Vajab tähelepanu»; team rows link to the person workspace, not the register. |
-| **Approach** | Template edits plus one URL change in `department_dashboard.py`. No new selectors. |
-| **Conflict** | `02` lists three rail blocks (Vajab sekkumist, Koormus, Aruandlus); neither the prototype nor the code has a Koormus block here — Koormus is an *Ülevaade* rail block. Not invented; logged (DS-04). `02` says Eesolev has three tiers, the prototype draws four groups; the existing four-group model is kept, which is ADR 0046 and is what the prototype shows (DS-05). |
-
-### Ülevaade — `/ulevaade/`
-
-| | |
-| --- | --- |
-| **Existing** | `app/matters/overview.py`, `templates/matters/overview.html` plus `partials/overview_department.html`, `overview_areas.html`, `overview_rail.html`. Two scopes only; «Minu tiim» already retired (ADR 0039). «Vajab sekkumist» already the wording. |
-| **Design** | Drop the «SEIS» label; denser rail blocks; «vaata kõiki» expands in place; «registris» out of the heading; area sub-rows date-first, overdue first. |
-| **Approach** | CSS density in the canonical declarations plus template edits. No selector changes. |
-| **Conflict** | None material. |
+| **Existing** | `app/matters/department_dashboard.py` and `app/matters/overview.py` (the read models, both unchanged in place), `app/matters/department.py` (a thin composition layer, new), `department_views.py`, `templates/matters/department.html` with `partials/department_main.html` and `partials/department_rail.html`. The team grid (`uxstat`), Eesolev (`uxdl`), Tehtud (`uxdg`), `interrow`, `overview_areas.html` and `overview_rail.html` are the components the two old pages carried. |
+| **Design** | One page for «kus osakond seisab»: header, one Seis strip of six figures, Meeskond (head only, no heading), Vajab sekkumist, Eesolev in five windows, Tehtud with a period and a row-kind filter (head only), and a three-block Faktid rail. Valdkonniti is a scope of the same route. No Koormus rail, no second Vajab sekkumist, no separate Viimased muudatused feed. |
+| **Approach** | Compose the existing selectors; add no definition, no model and no migration. Route `/osakond/`; `/ulevaade/` and `/osakonna-too/` are permanent redirects that keep their query strings, so `?vaade=valdkonniti` and `?periood=…` still name what they always named. `templates/matters/overview.html`, `templates/matters/department_work.html` and `partials/overview_department.html` are deleted — nothing renders them. |
+| **Conflict** | None outstanding. `02`'s Koormus rail block on the manager page (DS-04) is resolved by the merge rather than by adding one: Meeskond is the people view. `02`'s three Eesolev tiers versus the prototype's four (DS-05) is superseded by the five approved windows in ADR 0049 §5. |
 
 ### Teemad — `/teemad/`
 

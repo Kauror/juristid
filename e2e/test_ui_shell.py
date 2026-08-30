@@ -34,7 +34,7 @@ VIEWPORTS = [(1440, 900), (1366, 768), (1280, 800), (1024, 768)]
 
 #: The four destinations a lawyer moves between all day. They are on the bar at
 #: every width.
-PRIMARY = ["Ülevaade", "Minu asjad", "Teemad"]
+PRIMARY = ["Osakond", "Minu asjad", "Teemad"]
 
 #: Off the bar entirely, and its route deliberately untouched. Saabunud is a
 #: triage surface somebody opens when they are triaging, not a destination in
@@ -42,9 +42,10 @@ PRIMARY = ["Ülevaade", "Minu asjad", "Teemad"]
 #: its models and its data exactly where they were (Ülevaade QA §2).
 NOT_ON_THE_BAR = ["Saabunud"]
 
-#: The reading surfaces. Inline above 1560, behind "Veel" below it. Osakonna töö
-#: is deliberately absent from both lists: it is offered by role, and the route
-#: 404s for anybody else rather than relying on the link being hidden.
+#: The reading surfaces. Inline above 1560, behind "Veel" below it. `Osakond`
+#: is deliberately absent from this list: it is a primary destination now, and
+#: there is exactly one of it — a second copy in here is the duplication the
+#: merge removed (ADR 0049).
 SECONDARY = ["Jälgimine", "Statistika"]
 
 
@@ -208,9 +209,9 @@ def test_the_emblem_sits_on_the_bar_without_growing_it(page, base_url, width, he
     # lockup, not so much that it looks like a missing element. The artwork's
     # own transparent margin is inside the box, so the measured gap understates
     # what the eye sees by ~3px.
-    first = page.get_by_role("link", name="Ülevaade", exact=True).first.bounding_box()
+    first = page.get_by_role("link", name="Osakond", exact=True).first.bounding_box()
     gap = first["x"] - (logo["x"] + logo["width"])
-    assert 8 <= gap <= 40, f"clear space before Ülevaade is {gap:.1f}px"
+    assert 8 <= gap <= 40, f"clear space before Osakond is {gap:.1f}px"
 
 
 def test_saabunud_is_off_the_bar_and_still_a_working_page(page, base_url):
@@ -239,14 +240,14 @@ def test_saabunud_is_off_the_bar_and_still_a_working_page(page, base_url):
     expect(page.get_by_role("heading", name="Saabunud")).to_be_visible()
 
 
-def test_ulevaade_still_leads_to_saabunud(page, base_url):
+def test_osakond_still_leads_to_saabunud(page, base_url):
     """The path that replaces the bar item, asserted rather than assumed.
 
     "Uued teemad" on the facts rail is where the question "what has arrived"
     actually occurs to somebody, and it is now the way in.
     """
     sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/ulevaade/")
+    page.goto(f"{base_url}/osakond/")
     page.wait_for_load_state("networkidle")
 
     page.get_by_role("link", name="Ava Saabunud →").click()
@@ -373,22 +374,27 @@ def test_the_register_drops_columns_in_the_order_the_design_states(page, base_ur
 
 
 # ---------------------------------------------------------------------------
-# Ülevaade
+# Osakond
 # ---------------------------------------------------------------------------
 
 
 def open_overview(page, base_url: str, query: str = "") -> None:
-    page.goto(f"{base_url}/ulevaade/{query}")
+    page.goto(f"{base_url}/osakond/{query}")
     page.wait_for_load_state("networkidle")
 
 
-def test_the_overview_leads_with_intervention_then_deadlines_then_activity(page, base_url):
+def test_the_department_page_leads_with_intervention_then_deadlines(page, base_url):
     """Priority order, read off the rendered document rather than the template.
 
     A section can move without its source moving — a grid, an include, an
     override — so the order is taken from where the sections actually are on the
-    page. *Vajab sekkumist* is first because it is the reason a department head
-    opens this page at all.
+    page. *Vajab sekkumist* is first for a reader who is not the department
+    head, because it is the reason they open this page at all; for the head,
+    *Meeskond* stands in front of it (ADR 0049).
+
+    Signed in as a specialist, so this is also the assertion that the two
+    manager sections are not on the page: *Meeskond* and *Tehtud* would be in
+    this list if they were.
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": 1440, "height": 900})
@@ -399,7 +405,7 @@ def test_the_overview_leads_with_intervention_then_deadlines_then_activity(page,
         "  document.querySelectorAll('.ovbody__main section[aria-label]')"
         ").map(node => node.getAttribute('aria-label'))"
     )
-    assert order == ["Vajab sekkumist", "Tähtajad", "Viimased muudatused"], order
+    assert order == ["Vajab sekkumist", "Eesolev"], order
 
 
 def test_the_intervention_queue_says_what_it_wants(page, base_url):
@@ -450,21 +456,21 @@ def test_a_nonsense_scope_shows_the_default_rather_than_an_error(page, base_url)
     sign_in(page, base_url, SANDRA)
     open_overview(page, base_url, "?vaade=jama")
 
-    expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
+    expect(page.get_by_role("heading", name="Osakond", exact=True)).to_be_visible()
     expect(
         page.get_by_role("navigation", name="Ülevaate ulatus").locator("[aria-current='page']")
     ).to_have_text("Kogu osakond")
 
 
 def test_no_work_surface_still_spends_a_column_on_the_reference(page, base_url):
-    """Teemad, Minu töö, Saabunud and Ülevaade, in a real browser.
+    """Teemad, Minu töö, Saabunud and Osakond, in a real browser.
 
     Two of the four render no table at all since the work-surface rebuild, which
     is the strongest possible form of "no reference column"; the assertion holds
     either way and is kept on all four so a table coming back is noticed.
     """
     sign_in(page, base_url, SANDRA)
-    for path in ("/teemad/", "/minu-asjad/", "/saabunud/", "/ulevaade/"):
+    for path in ("/teemad/", "/minu-asjad/", "/saabunud/", "/osakond/"):
         page.goto(f"{base_url}{path}")
         page.wait_for_load_state("networkidle")
         expect(page.get_by_role("columnheader", name="Viide")).to_have_count(0)
@@ -482,7 +488,7 @@ def test_no_ordinary_reading_surface_prints_a_matter_reference(page, base_url):
     sign_in(page, base_url, SANDRA)
     pattern = re.compile(r"(19|20)\d{2}_\d+")
 
-    for path in ("/ulevaade/", "/minu-asjad/", "/teemad/", "/saabunud/", "/jalgimine/tahtajad/"):
+    for path in ("/osakond/", "/minu-asjad/", "/teemad/", "/saabunud/", "/jalgimine/tahtajad/"):
         page.goto(f"{base_url}{path}")
         page.wait_for_load_state("networkidle")
         text = page.locator("#sisu").inner_text()

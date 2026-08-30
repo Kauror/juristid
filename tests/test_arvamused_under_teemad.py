@@ -189,7 +189,7 @@ def test_the_bar_no_longer_offers_arvamused(signed_in) -> None:
     the whole `<nav>` therefore covers both, which is the point: a link merely
     moved into the disclosure would still be a first-level destination.
     """
-    navigation = navigation_of(signed_in.get(reverse("matters:overview")))
+    navigation = navigation_of(signed_in.get(reverse("matters:department")))
 
     assert ">Arvamused<" not in navigation
     assert SENT_URL not in navigation
@@ -198,7 +198,7 @@ def test_the_bar_no_longer_offers_arvamused(signed_in) -> None:
 
 def test_the_bar_still_offers_teemad(signed_in) -> None:
     """The destination the workspace moved under has to still be there."""
-    navigation = navigation_of(signed_in.get(reverse("matters:overview")))
+    navigation = navigation_of(signed_in.get(reverse("matters:department")))
 
     assert ">Teemad<" in navigation
     assert TEEMAD_URL in navigation
@@ -216,7 +216,7 @@ def test_the_bar_hides_arvamused_from_the_reader_who_could_read_the_archive(
     assert may_read_archive(administrator)
     client.force_login(administrator)
 
-    navigation = navigation_of(client.get(reverse("matters:overview")))
+    navigation = navigation_of(client.get(reverse("matters:department")))
 
     assert ">Arvamused<" not in navigation
 

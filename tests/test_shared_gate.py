@@ -75,7 +75,7 @@ def behind_the_gate(client, gate_url):
 
 @pytest.mark.parametrize(
     "path",
-    ["/", "/ulevaade/", "/minu-asjad/", "/teemad/", "/saabunud/", "/otsing/?q=eeln%C3%B5u"],
+    ["/", "/osakond/", "/minu-asjad/", "/teemad/", "/saabunud/", "/otsing/?q=eeln%C3%B5u"],
 )
 def test_nothing_is_reachable_before_the_password(client, path, gate_url):
     response = client.get(path)
@@ -191,17 +191,19 @@ def test_the_client_key_is_not_the_address(client, gate_url):
 # -- D, E. what the correct password opens ---------------------------------
 
 
-def test_the_correct_password_opens_the_department_overview(behind_the_gate):
+def test_the_correct_password_opens_the_department_page(behind_the_gate):
+    """Including from the address the page had before the merge (ADR 0049)."""
     response = behind_the_gate.get("/ulevaade/", follow=True)
     assert response.status_code == 200
-    assert response.resolver_match.view_name == "matters:overview"
+    assert response.request["PATH_INFO"] == "/osakond/"
+    assert response.resolver_match.view_name == "matters:department"
 
 
 def test_the_dashboard_works_with_no_persona_selected(behind_the_gate):
     owner = factories.UserFactory()
     factories.MatterFactory(owner=owner, title="Avalik teema kõigile", is_open=True)
 
-    response = behind_the_gate.get("/ulevaade/")
+    response = behind_the_gate.get("/osakond/")
     assert response.status_code == 200
     assert not response.wsgi_request.user.is_authenticated
     assert "Avalik teema kõigile" in response.content.decode()
@@ -220,7 +222,7 @@ def test_an_aged_out_gate_asks_for_the_password_again(behind_the_gate, gate_url)
     session[shared_gate.GATE_PASSED_AT] = (timezone.now() - timedelta(days=3)).isoformat()
     session.save()
 
-    response = behind_the_gate.get("/ulevaade/")
+    response = behind_the_gate.get("/osakond/")
     assert response.status_code == 302
     assert response["Location"] == gate_url
 
@@ -341,7 +343,7 @@ def test_the_department_scope_sees_normal_and_nothing_else(behind_the_gate):
         owner=owner, title="Konfidentsiaalne teema", visibility=Visibility.RESTRICTED
     )
 
-    body = behind_the_gate.get("/ulevaade/").content.decode()
+    body = behind_the_gate.get("/osakond/").content.decode()
     assert "Konfidentsiaalne teema" not in body
 
 
@@ -411,7 +413,7 @@ def test_signing_out_closes_the_gate_as_well_as_the_persona(behind_the_gate, gat
     behind_the_gate.post(reverse("accounts:act_as"), {"user_id": str(marko.pk)})
     behind_the_gate.post(reverse("accounts:sign_out"))
 
-    response = behind_the_gate.get("/ulevaade/")
+    response = behind_the_gate.get("/osakond/")
     assert response.status_code == 302
     assert response["Location"] == gate_url
 
@@ -421,7 +423,7 @@ def test_a_persona_session_without_a_gate_is_dropped(client, gate_url):
     marko = factories.UserFactory()
     client.force_login(marko)
 
-    response = client.get("/ulevaade/")
+    response = client.get("/osakond/")
     assert response.status_code == 302
     assert response["Location"] == gate_url
     assert not response.wsgi_request.user.is_authenticated
@@ -502,7 +504,7 @@ def test_a_page_behind_the_gate_is_never_stored(behind_the_gate):
     closes that, and it has to be `no-store` rather than `no-cache` — the latter
     permits storing and only asks for revalidation.
     """
-    response = behind_the_gate.get("/ulevaade/")
+    response = behind_the_gate.get("/osakond/")
     assert "no-store" in response["Cache-Control"]
 
 
@@ -536,7 +538,7 @@ def test_a_view_that_set_its_own_caching_keeps_it(behind_the_gate, settings):
         return response
 
     middleware = PrivateResponseMiddleware(view)
-    request = behind_the_gate.get("/ulevaade/").wsgi_request
+    request = behind_the_gate.get("/osakond/").wsgi_request
     assert middleware(request)["Cache-Control"] == "private, max-age=60"
 
 

@@ -228,24 +228,31 @@ def test_every_card_links_somewhere(world, specialist) -> None:
 # -- the page --------------------------------------------------------------
 
 
-def test_the_root_opens_ulevaade(world, client, specialist) -> None:
+def test_the_root_opens_the_department_page(world, client, specialist) -> None:
+    """And in one hop.
+
+    `home` reverses the route name Ülevaade carried, and that name now resolves
+    to the page that replaced it rather than to the compatibility redirect, so
+    nobody signing in is sent through a 301 they do not need (ADR 0049).
+    """
     client.force_login(specialist)
     response = client.get("/")
     assert response.status_code == 302
+    assert response["Location"] == "/osakond/"
     assert response["Location"] == reverse("matters:overview")
 
 
 def test_the_page_renders_and_hides_what_it_should(world, client, reader) -> None:
     client.force_login(reader)
-    response = client.get(reverse("matters:overview"))
+    response = client.get(reverse("matters:department"))
     assert response.status_code == 200
     body = response.content.decode()
-    assert "Ülevaade" in body
+    assert "Osakond" in body
     assert RESTRICTED_TITLE not in body
 
 
 def test_the_page_requires_signing_in(world, client) -> None:
-    assert client.get(reverse("matters:overview")).status_code == 302
+    assert client.get(reverse("matters:department")).status_code == 302
 
 
 def test_the_dashboard_is_a_bounded_number_of_queries(

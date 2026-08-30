@@ -145,10 +145,10 @@ CLOCK_DEPENDENT = [
     # Kaasamine's and Töödokumendid's summaries are content and must stay.
     ".accordion--timeline > summary .uxtl__previewnext",
     ".accordion--timeline > summary .uxtl__count",
-    # Ülevaade's rebuilt deadline panel. Every row prints "R 28.08" or "täna",
-    # and every group header prints the window it holds — all of it computed
-    # from today (design handoff 1a). The titles, the owner badges and the
-    # group names stay in the baseline.
+    # Osakond's deadline panel. Every row prints "R 28.08" or "täna", and every
+    # group header prints the window it holds — all of it computed from today
+    # (design handoff 1a). The owner badges and four of the five group names stay
+    # in the baseline; the fifth is tomorrow's weekday and carries `data-clock`.
     ".uxdl__date",
     ".uxdl__range",
     ".railcard__value--date",
@@ -179,8 +179,8 @@ CLOCK_DEPENDENT = [
     # touch. That is how the header-branding round found five stale baselines.
     #
     # Every one is scoped, because the bare class also renders content
-    # elsewhere: `.foldout__meta` says "kogu osakond · viimane kuu" on
-    # Ülevaade, `.muted` carries register text, and `.interrow__detail` is the
+    # elsewhere: `.foldout__meta` says "kogu osakond · viimane kuu" on Minu
+    # asjad, `.muted` carries register text, and `.interrow__detail` is the
     # next step in words on every row that has one.
     #
     # Minu töö's "viimane 26.8 kell 13:20". The rows *inside* the disclosure
@@ -192,7 +192,7 @@ CLOCK_DEPENDENT = [
     # date on every run. The same date in the facts rail is a `<time>` and was
     # masked by that; the banner renders a bare `.muted` span and was not.
     ".banner--closed .banner__text .muted",
-    # Ülevaade's ownerless rows: "arvamuse tähtaeg 31.8.2026", built as one
+    # Osakond's ownerless rows: "arvamuse tähtaeg 31.8.2026", built as one
     # string in `app/matters/overview.py` from `response_deadline`, which the
     # seeded world computes from today. The reason cell beside it was masked;
     # the detail line under the title was not. Scoped by the row offering
@@ -205,7 +205,8 @@ CLOCK_DEPENDENT = [
     # row is in the intervention preview, and on the world this suite actually
     # runs against — after the functional suite has filed its Matters — it is
     # pushed off the end of a capped list and never captured at all. Requiring
-    # it made `ulevaade` fail the moment CI ran it, for a reason that is not a
+    # it made the department baseline fail the moment CI ran it, for a reason
+    # that is not a
     # defect. Its presence is a function of how many higher-priority rows the
     # rest of the browser suite happens to create, so it can be masked but not
     # depended on: absent it paints nothing, and present it is covered rather
@@ -229,34 +230,31 @@ CLOCK_DEPENDENT = [
     # the block is shut it is `hidden`, so the input has no box and nothing is
     # painted anywhere else.
     "#koostaja-manus .dateinput",
-    # ---- Ülevaade's three week-boundary counts (docs/adr/0039).
+    # ---- The department page's ISO-week counts (docs/adr/0039, ADR 0049).
     #
-    # These are dates that never render as a date. Each is a plain integer, and
-    # each is computed against a window anchored on *today*: two from this ISO
-    # week's Monday, one from today itself. The seeded world places its rows a
-    # fixed number of days back, so the counts are stable across a day — and
-    # then the run crosses a Monday and a row that was "last week" is suddenly
-    # "this week", with the same database and a different number on the page.
-    # `Uusi sellel nädalal` did exactly that between two of this branch's own
-    # runs, from 17 to 18.
+    # These are dates that never render as a date. Each is a plain integer
+    # computed against a window anchored on *today*, so the seeded world's rows
+    # sit at a fixed offset and the count is stable — until the run crosses a
+    # Monday and a row that was "last week" is suddenly "this week", with the
+    # same database and a different number on the page. `Uusi sellel nädalal`
+    # did exactly that between two runs of one branch, from 17 to 18.
     #
-    # `Minu tiim` carried two of them until #79 retired it, and the third was
-    # already here; the move put all three on one captured page, which is what
-    # makes them worth naming together rather than one at a time.
+    # «tähtaeg sel nädalal» is the sharper case and is why the pair is named
+    # again after the merge: `WORK_DEADLINE_THIS_WEEK` runs from *today* to
+    # Sunday, so it does not wait for a Monday — it shrinks every morning.
     #
     # Scoped to the value, through the label rather than through position: the
     # rail renders every row as the same `.railrow__key` / `.railrow__value`
-    # pair, so the class alone would take all eight of the page's counts — the
-    # year rows beside them, which are *not* clock-derived and are exactly what
-    # this baseline should still be checking. Matching on the label text also
-    # survives a row being reordered inside its block, which a positional
-    # `:nth-child` would not.
+    # pair, so the class alone would take all six of the page's rail counts —
+    # the Aruandlus year rows beside them, which are *not* clock-derived and are
+    # exactly what this baseline should still be checking. Matching on the label
+    # text also survives a row being reordered inside its block, which a
+    # positional `:nth-child` would not.
     #
     # The label, the row, the block, the borders and the spacing all stay in the
-    # comparison. What is painted is one 26x17 box per row.
-    '.railrow:has(.railrow__key:text-is("Uusi sellel nädalal")) .railrow__value',
-    '.railrow:has(.railrow__key:text-is("Sissekandeid sel nädalal")) .railrow__value',
-    '.railrow:has(.railrow__key:text-is("Tähtaegu sel nädalal")) .railrow__value',
+    # comparison. What is painted is one small box per value.
+    '.railrow:has(.railrow__key:text-is("Uut sel nädalal")) .railrow__value',
+    '.seis__figure:has(.seis__caption:text-is("tähtaeg sel nädalal")) .seis__number',
     # ---- The v2 surfaces, found by walking the rendered DOM for text that
     # looks like a date or a day count and asking which selector already
     # covered it — the same method that found the three above, and the reason
@@ -293,11 +291,19 @@ CLOCK_DEPENDENT = [
     "[data-clock]",
 ]
 
-#: The three above, named once so the scenario entries cannot drift apart.
-ULEVAADE_WEEK_COUNTS = (
-    '.railrow:has(.railrow__key:text-is("Uusi sellel nädalal")) .railrow__value',
-    '.railrow:has(.railrow__key:text-is("Sissekandeid sel nädalal")) .railrow__value',
-    '.railrow:has(.railrow__key:text-is("Tähtaegu sel nädalal")) .railrow__value',
+#: Osakond's two ISO-week counts, named once so the scenario entries cannot
+#: drift apart.
+#:
+#: `Sissekandeid sel nädalal` and `Tähtaegu sel nädalal` were two more of these
+#: and are no longer on the page: the Aruandlus block they were rows of is the
+#: three-row year block now, and the week rows went with the merge (ADR 0049).
+#: What replaced them is the Seis strip's «tähtaeg sel nädalal», which is a
+#: sharper case than any of the three — `WORK_DEADLINE_THIS_WEEK` runs from
+#: *today* to Sunday, so it shrinks every morning rather than only when the run
+#: crosses a Monday.
+OSAKOND_WEEK_COUNTS = (
+    '.railrow:has(.railrow__key:text-is("Uut sel nädalal")) .railrow__value',
+    '.seis__figure:has(.seis__caption:text-is("tähtaeg sel nädalal")) .seis__number',
 )
 
 #: What each scenario's capture may not silently stop masking.
@@ -380,8 +386,8 @@ REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     # for as long as the scope is `Kogu osakond`, which is the scope both these
     # scenarios capture. If one stops matching, the markup moved and the
     # selector has to follow it.
-    "ulevaade": ULEVAADE_WEEK_COUNTS,
-    "ulevaade-3440": ULEVAADE_WEEK_COUNTS,
+    "osakond": OSAKOND_WEEK_COUNTS,
+    "osakond-3440": OSAKOND_WEEK_COUNTS,
 }
 
 assert not {selector for selectors in REQUIRED_MASKS.values() for selector in selectors} - set(
@@ -407,7 +413,7 @@ def visible(selector: str) -> str:
     renders nothing has no pixels to cover, so masking it can only do damage —
     and it did. The v2 «Näita veel N ▾» pattern has two shapes: the tables hide
     their overflow in a `tbody.uxextra { display: none }`, which has no box and
-    was always harmless, while Ülevaade and Minu asjad keep theirs *inside* the
+    was always harmless, while Osakond and Minu asjad keep theirs *inside* the
     closed `<details class="pw-more">`. Those rows still answer with a box, so
     Playwright painted one rectangle per hidden row — sixteen of them on the CI
     world — marching down the page over the «Tähtajad» heading, a group label,
@@ -739,15 +745,23 @@ def test_watchlist(page, base_url):
 
 
 def test_dashboard(page, base_url):
-    """Ülevaade: the department scope after the work-surface rebuild.
+    """Osakond: the department page a specialist reads.
+
+    Renamed from `ulevaade` rather than replaced, because it is the same
+    scenario at the same viewport for the same reader — `/ulevaade/` became
+    `/osakond/` (ADR 0049) — and the coverage is continuous across the rename.
 
     The composition this locks is a header band, a one-line Seis strip whose
-    every figure is a link, the intervention list, the deadline groups and the
-    activity feed — with a facts rail beside them. Dates are masked, because
-    the seeded world computes them from today; the composition may not move.
+    every figure is a link, the intervention list, the five deadline groups and
+    the three-block facts rail. Signed in as a specialist, so *Meeskond* and
+    *Tehtud* are absent: that is the access boundary, and this baseline is one
+    of the places it would be visible if it broke.
+
+    Dates are masked, because the seeded world computes them from today; the
+    composition may not move.
     """
-    signed_in(page, base_url, "/ulevaade/")
-    compare("ulevaade", capture(page, "ulevaade"))
+    signed_in(page, base_url, "/osakond/")
+    compare("osakond", capture(page, "osakond"))
 
 
 def test_a_closed_disclosure_contributes_no_masks(page, base_url):
@@ -759,14 +773,14 @@ def test_a_closed_disclosure_contributes_no_masks(page, base_url):
     So it is asserted where it can be read — every mask this suite paints
     resolves to something a reader can see.
 
-    Ülevaade is the scenario because it is the one that broke, and the first
+    Osakond is the scenario because it is the one that broke, and the first
     assertion keeps it honest: if the seeded world ever stops overflowing that
     list, this test is measuring nothing, and it says so rather than passing.
     """
-    signed_in(page, base_url, "/ulevaade/")
+    signed_in(page, base_url, "/osakond/")
     hidden = page.locator("details.pw-more:not([open]) .interrow__reason")
     assert hidden.count(), (
-        "Ülevaade no longer hides intervention rows behind «Näita veel N ▾», so "
+        "Osakond no longer hides intervention rows behind «Näita veel N ▾», so "
         "this test no longer exercises the case it exists for. Either the "
         "section stopped capping its preview, or the seeded world dropped below "
         "the cap — move the assertion to whichever surface still overflows."
@@ -797,7 +811,7 @@ def test_my_work(page, base_url):
 # exactly where the workspace bound does nothing: below 1600 every one of them
 # renders as it always did. So none of them can say whether the bound works,
 # and the failure it fixes was only ever visible on a monitor none of them
-# describe — a QA screenshot at 3440 where an Ülevaade row put its title at one
+# describe — a QA screenshot at 3440 where a department row put its title at one
 # bezel and its owner near the other.
 #
 # What these lock is the composition at 3440: a bounded workspace in the middle
@@ -821,7 +835,7 @@ ULTRAWIDE = {"width": 3440, "height": 900}
 @pytest.mark.parametrize(
     "name,path",
     [
-        ("ulevaade-3440", "/ulevaade/"),
+        ("osakond-3440", "/osakond/"),
         ("minu-too-3440", "/minu-asjad/"),
         ("teemad-3440", "/teemad/"),
         ("statistika-3440", "/statistika/"),
