@@ -269,8 +269,18 @@ def _observed_changes(
         changes.append(("owner", held.get_full_name() if held else "", owner.value.get_full_name()))
 
     status = resolve_status(observation.status_label, observation.reference.source_era)
-    if status.stage is not None and status.stage != matter.stage_id:
-        changes.append(("stage", str(matter.stage_id or ""), str(status.stage)))
+    if status.stage is not None:
+        # The identity the write path uses, on both sides. `resolve_status`
+        # returns the `StageVocabulary` row and `matter.stage_id` is its
+        # foreign key, so comparing them directly compares a model instance
+        # against a UUID — never equal, and every readable HETKESEIS was
+        # reported as a stage change on a Matter already sitting in that stage.
+        # `refresh_matter_from_register` settles the same question with
+        # `getattr(value, "pk", value)`, which is what is mirrored here so that
+        # a reported change and a performed one cannot disagree.
+        held_stage_id = matter.stage_id
+        if status.stage.pk != held_stage_id:
+            changes.append(("stage", str(held_stage_id or ""), str(status.stage.pk)))
 
     for name, raw in (
         ("received_date", observation.received_raw),
