@@ -243,10 +243,13 @@ def test_a_typed_estonian_date_is_saved(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    received = typed(-7)
+    # Saabus stays the literal it always was. Only `Arvamuse tähtaeg` had to
+    # move: it is the field that is now deadline work, and a received date is
+    # not. Making this relative as well shifted a month row on Statistika,
+    # which is a page this change has no business touching.
     deadline = typed(21)
     page.fill("#id_title", "Eestikeelse kuupäevaga teema")
-    page.fill("#id_received_date", received)
+    page.fill("#id_received_date", "7.9.2026")
     page.fill("#id_response_deadline", deadline)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
@@ -256,7 +259,7 @@ def test_a_typed_estonian_date_is_saved(page, base_url):
     # meta line. Both are dates the page renders in Estonian, which is what
     # this is about (Teema redesign §5.4, §22.1).
     body = page.locator(".railcard__value--date, .metaline__value--deadline").all_inner_texts()
-    assert any(received in text for text in body), body
+    assert any("7.9.2026" in text for text in body), body
     assert any(deadline in text for text in body), body
 
 
