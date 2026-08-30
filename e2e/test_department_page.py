@@ -420,19 +420,24 @@ def test_the_head_counts_restricted_work_and_a_reader_does_not(page, base_url):
     worse, the absence half would have passed for a reader who simply could not
     see page two. A query that would return the row if it were visible is the
     only shape in which "it is not there" means anything.
+
+    The absence is then read off the **results region's rendered text**, not off
+    the document's markup: searching for a title puts that title in the search
+    box's own `value`, so `page.content()` finds it on a page showing no rows at
+    all. `inner_text()` of `#tulemused` is what a reader can actually see.
     """
     query = f"{base_url}/teemad/?olek=koik&q={quote(RESTRICTED_TITLE)}"
 
     sign_in(page, base_url, HEAD)
     page.goto(query)
     page.wait_for_load_state("networkidle")
-    expect(page.get_by_text(RESTRICTED_TITLE).first).to_be_visible()
+    expect(page.locator("#tulemused")).to_contain_text(RESTRICTED_TITLE)
     sign_out(page, base_url)
 
     sign_in(page, base_url, READER)
     page.goto(query)
     page.wait_for_load_state("networkidle")
-    assert RESTRICTED_TITLE not in page.content()
+    assert RESTRICTED_TITLE not in page.locator("#tulemused").inner_text()
 
     # The department page is theirs to read now, and the restricted file is
     # still not on it — neither as a title nor inside a count.
