@@ -45,7 +45,7 @@ from app.matters.models import (
     TagAssignment,
 )
 from app.submissions.models import Submission
-from app.workflow.enums import ActionStatus, Disposition, Track
+from app.workflow.enums import ActionStatus, DatePrecision, Disposition, Track
 from app.workflow.models import NextAction
 from app.workflow.services import (
     end_open_action_for_closure,
@@ -1694,6 +1694,7 @@ class ComposerResult:
     engagement: MatterEngagement | None = None
     submission: Any = None
     work_victory: Any = None
+    effective_date: Any = None
     closed: bool = False
 
 
@@ -1815,6 +1816,106 @@ def compose_update(
         return result
 
 
+def _closure_final_opinion(*, matter: Matter, author: Any, final_opinion: dict[str, Any]) -> Any:
+    """The sent opinion, from the file in front of the person closing the file.
+
+    Four canonical acts and not one shortcut between them: the upload becomes a
+    ``Document`` on *this* Matter under `KODA_SUBMISSION_FINAL`, that document
+    gets an immutable ``DocumentVersion`` through the evidence service, the
+    submission is created with its recipients, and only then is it marked sent
+    with that exact version bound as its final evidence.
+
+    Nothing about the invariant moved. ``mark_submission_sent`` still refuses a
+    submission with no final version and still re-checks that the evidence is
+    not less restricted than the Matter — the evidence simply arrives in the
+    same transaction now instead of in a visit beforehand
+    (Teema closing redesign §4, §21).
+
+    **The title is `matter.title`.** ``Submission.title`` is mandatory in the
+    canonical model and asking for it here made somebody retype the name of the
+    file they had open. Deriving it is not a hidden field: no title is
+    editable, submitted or defaulted anywhere in this workflow, and the
+    standalone Arvamused workflow still asks for its own (§5).
+
+    **`Saatmise kuupäev` is a day, so it is stored as one.** The anchor is
+    midnight in the department's timezone and ``SentAtPrecision.DATE`` is what
+    stops the UI reading that anchor back as the hour the letter went out (§6).
+    """
+    from app.organisations.services import resolve_recipients
+    from app.submissions.enums import SentAtPrecision
+    from app.submissions.services import (
+        create_submission,
+        mark_submission_sent,
+        select_final_evidence,
+    )
+
+    upload = read_upload(final_opinion["upload"])
+    document = create_document(
+        matter=matter,
+        title=upload.filename,
+        role=DocumentRole.KODA_SUBMISSION_FINAL,
+        created_by=author,
+    )
+    version = add_evidence_version(
+        document=document,
+        content=upload.content,
+        original_filename=upload.filename,
+        mime_type=upload.mime_type,
+        uploaded_by=author,
+    )
+    recipients = resolve_recipients(
+        chosen=final_opinion.get("recipients") or [],
+        typed_names=final_opinion.get("recipient_names") or [],
+    )
+    submission = create_submission(
+        matter=matter,
+        title=matter.title,
+        actor=author,
+        recipients=recipients,
+    )
+    select_final_evidence(submission=submission, version=version, actor=author)
+    return mark_submission_sent(
+        submission=submission,
+        actor=author,
+        sent_at=final_opinion.get("sent_at"),
+        sent_at_precision=SentAtPrecision.DATE,
+    )
+
+
+def _closure_commencement(*, matter: Matter, author: Any, effective: dict[str, Any]) -> Any:
+    """When the result took effect, recorded once.
+
+    A closure that reports a win states a commencement date, and the department
+    may already hold that fact — somebody entered it on `Teema andmed` when the
+    act was published. Adding a second identical row because the file is now
+    being closed would double every commencement in the register, so an
+    equivalent active exact date is returned rather than repeated (§13).
+    """
+    from app.intelligence.enums import EffectiveDateKind, FactStatus
+    from app.intelligence.models import MatterEffectiveDate
+    from app.intelligence.services import add_effective_date
+
+    date_value = effective["date_value"]
+    existing = MatterEffectiveDate.objects.filter(
+        matter=matter,
+        status=FactStatus.ACTIVE,
+        kind=EffectiveDateKind.KNOWN_DATE,
+        date_precision=DatePrecision.EXACT,
+        date_value=date_value,
+    ).first()
+    if existing is not None:
+        return existing
+
+    return add_effective_date(
+        matter=matter,
+        actor=author,
+        kind=EffectiveDateKind.KNOWN_DATE,
+        date_value=date_value,
+        period_end=effective["period_end"],
+        date_precision=DatePrecision.EXACT,
+    )
+
+
 def _apply_closure(
     *,
     matter: Matter,
@@ -1827,52 +1928,40 @@ def _apply_closure(
     Split out because the closure half of a composer save is four decisions,
     not one, and each has a rule of its own:
 
-    * the **final opinion** is a canonical ``Submission`` or it is nothing. It
-      is created, given the exact evidence that went out, and marked sent
-      through the existing workflow — which refuses to mark anything sent
-      without a final version, refuses evidence belonging to another Matter and
-      refuses evidence less restricted than the submission itself. A PDF is not
-      an opinion and a filename is not a sent date (Teema redesign §17, §20).
+    * the **final opinion** is a canonical ``Submission`` or it is nothing —
+      created, given the exact evidence that went out, and marked sent through
+      the existing workflow, which refuses to mark anything sent without a
+      final version and refuses evidence less restricted than the submission
+      itself. A PDF is not an opinion and a filename is not a sent date
+      (Teema redesign §17, §20).
     * the **work victory** goes through the same door the Matter page's own
       control already uses, so this feature broadens nobody's authorization and
       the department head's review of *imported* candidates is untouched
-      (Teema redesign §18).
+      (Teema redesign §18). Its wording is the composer body: one narrative per
+      save, never a second box asking the same question (closing redesign §12).
+    * the **commencement date** is a `MatterEffectiveDate`, because that is
+      what the domain calls when something took effect. The victory's
+      `period_date` is a reporting period and is left alone (§13).
     * **closure itself** runs last, and ends the open next action through the
       existing lifecycle service rather than deleting it.
     """
     from app.intelligence.services import add_confirmed_work_victory
-    from app.submissions.services import (
-        create_submission,
-        mark_submission_sent,
-        select_final_evidence,
-    )
 
     final_opinion = closure.get("final_opinion")
     if final_opinion:
-        submission = create_submission(
-            matter=matter,
-            title=final_opinion["title"],
-            actor=author,
-            recipients=list(final_opinion.get("recipients") or []),
-            channel=final_opinion.get("channel", ""),
-            reference=final_opinion.get("reference", ""),
-        )
-        select_final_evidence(
-            submission=submission,
-            version=final_opinion["final_version"],
-            actor=author,
-        )
-        result.submission = mark_submission_sent(
-            submission=submission,
-            actor=author,
-            sent_at=final_opinion.get("sent_at"),
-            channel=final_opinion.get("channel", ""),
-            reference=final_opinion.get("reference", ""),
+        result.submission = _closure_final_opinion(
+            matter=matter, author=author, final_opinion=final_opinion
         )
 
     victory = closure.get("work_victory")
     if victory:
         result.work_victory = add_confirmed_work_victory(matter=matter, actor=author, **victory)
+
+    effective = closure.get("effective_date")
+    if effective:
+        result.effective_date = _closure_commencement(
+            matter=matter, author=author, effective=effective
+        )
 
     close_matter(
         matter=matter,

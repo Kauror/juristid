@@ -27,13 +27,18 @@ Järgmiseks row pushed the file's actual content below the fold on every visit.
 Closed it is one line; `L` or a click opens it, and it opens by itself whenever
 a save was refused, so nobody loses what they typed.
 
-**Nothing was dropped to make it smaller.** Every field the open form carried is
-still here and still saves: the mode chips, the exact date, the precision, the
-stored date meaning, the attachment and its role, the entry kind, the
-organisation, the date it happened, the important deadline, and the whole
-closure block. What changed is that the two questions asked on every save —
-*mis edasi* and *millal* — are one row of chips each, and the rest sits behind
-one «Täpsemalt…».
+**The 2026-08 pass dropped nothing to make it smaller.** What changed there is
+that the two questions asked on every save — *mis edasi* and *millal* — are one
+row of chips each, and the rest sits behind one «Täpsemalt…».
+
+**The closing section is different: it was deliberately cut.** `Tulemus`,
+`Järglane`, `Lõpparvamuse pealkiri`, `Kanal`, `Viide`, `Mida Koda saavutas?`
+and `Töövõidu selgitus` are gone, because four of them asked for the narrative
+this form had already taken and the rest asked for facts it can derive or does
+not need. What is left is six questions: why, the file that went out, when, to
+whom, whether it was a win, and — only then — when the result commenced. The
+domain underneath is unchanged; the form simply stopped asking twice
+(Teema closing redesign §2, §3, §5, §8, §9, §10).
 
 `.composer` stays on the element beside `.uxcomp`: the focus treatment for the
 textarea is `.composer:focus-within`, and dropping the class would leave the
@@ -272,7 +277,14 @@ field with no visible focus at all (static/css/app.css).
       </details>
     </div>
 
-    <div class="composer__optional composer__optional--closing" id="koostaja-lopetamine" hidden>
+    {% comment %}
+      Open whenever the save being re-rendered was a closure, and closed
+      otherwise. A refused closure returns the whole surface with its errors in
+      place, and the one refusal this form makes most often — `Töövõit` with no
+      answer — would otherwise come back inside a panel nobody can see.
+    {% endcomment %}
+    <div class="composer__optional composer__optional--closing" id="koostaja-lopetamine"
+         {% if not composer_form.close_matter.value %}hidden{% endif %}>
       {% comment %}
         Finishing the Matter, inside the composer rather than in a sidebar
         panel. Closing is something a lawyer does at the end of a professional
@@ -292,24 +304,48 @@ field with no visible focus at all (static/css/app.css).
         Kehtiv järgmine samm lõpetatakse koos teemaga.
       </p>
       {% include "intelligence/partials/field.html" with field=composer_form.disposition %}
-      {% include "intelligence/partials/field.html" with field=composer_form.closure_reason %}
-      {% include "intelligence/partials/field.html" with field=composer_form.successor %}
 
       <fieldset class="composer__group">
-        <legend class="composer__sublabel">Lõpparvamus</legend>
-        <p class="field__help">
-          Valikuline. Täida ainult siis, kui Koda tegelikult saatis arvamuse välja —
-          see loob kanoonilise arvamuse koos täpse saadetud failiga.
-        </p>
-        {% include "intelligence/partials/field.html" with field=composer_form.final_version %}
-        {% include "intelligence/partials/field.html" with field=composer_form.final_title %}
+        <legend class="composer__sublabel">{{ composer_form.final_file.label }}</legend>
+        {% comment %}
+          The file that went out, uploaded here.
+
+          It used to be a picker over versions already on the Matter, which
+          assumed somebody had visited the documents tab before closing the
+          file. They have not: the sent PDF is in front of them *now*, which is
+          why they are closing it. Same evidence architecture, same immutable
+          version, same refusal to mark a submission sent without one — the
+          upload simply happens in this save (§4).
+
+          No `Lõpparvamuse pealkiri`. The submission is titled after the Matter,
+          because asking somebody to retype the name of the file they have open
+          is the duplicate entry this product exists to remove (§5).
+        {% endcomment %}
+        <div class="field">
+          <label class="field__label" for="{{ composer_form.final_file.id_for_label }}">
+            Fail
+          </label>
+          {{ composer_form.final_file }}
+          {% for error in composer_form.final_file.errors %}
+            <span class="field__error">{{ error }}</span>
+          {% endfor %}
+        </div>
         {% include "intelligence/partials/field.html" with field=composer_form.final_sent_on %}
+
+        {% comment %}
+          SAAJA. A letter goes to one ministry, or to seven parties that are not
+          in the catalogue yet, or to a mixture. The shortlist covers the first
+          case in one click; `Muu` covers the rest without leaving the form
+          (§7).
+        {% endcomment %}
         <div class="field">
           <span class="field__label">{{ composer_form.final_recipients.label }}</span>
           <div class="checkitems">
-            {% for choice in composer_form.final_recipients %}
-              <label class="checkitem">{{ choice.tag }}
-                <span class="checkitem__name">{{ choice.choice_label }}</span>
+            {% for choice in composer_form.shortlist_recipients %}
+              <label class="checkitem">
+                <input type="checkbox" class="checkitem__input" name="final_recipients"
+                       value="{{ choice.value }}" {% if choice.checked %}checked{% endif %}>
+                <span class="checkitem__name">{{ choice.label }}</span>
               </label>
             {% endfor %}
           </div>
@@ -317,18 +353,91 @@ field with no visible focus at all (static/css/app.css).
             <span class="field__error">{{ error }}</span>
           {% endfor %}
         </div>
-        {% include "intelligence/partials/field.html" with field=composer_form.final_channel %}
-        {% include "intelligence/partials/field.html" with field=composer_form.final_reference %}
+
+        {% comment %}
+          `Muu` is one box that may be submitted many times under one name. With
+          JavaScript it becomes chips: type, add, type again, remove one that
+          was wrong. Without it the visible box is still a recipient field and
+          still saves one — the name is the same either way, so nothing here
+          depends on a script having run (app/matters/forms.py MultiTextInput).
+
+          The datalist is the existing Organisation catalogue, canonical names
+          and recorded aliases both, so typing a body that is already known
+          reuses it rather than creating a second spelling of it (§7C).
+        {% endcomment %}
+        <div class="recipientadd" data-recipients>
+          <label class="field__label" for="{{ composer_form.final_recipient_names.id_for_label }}">
+            {{ composer_form.final_recipient_names.label }}
+          </label>
+          <ul class="recipientadd__chosen" data-recipient-list>
+            {% for name in composer_form.typed_recipients %}
+              <li class="recipientadd__item">
+                <span class="recipientadd__name">{{ name }}</span>
+                <input type="hidden" name="final_recipient_names" value="{{ name }}">
+                <button type="button" class="recipientadd__remove" data-recipient-remove
+                        aria-label="Eemalda saaja {{ name }}">×</button>
+              </li>
+            {% endfor %}
+          </ul>
+          <div class="recipientadd__row">
+            <input type="text" class="field__input"
+                   id="{{ composer_form.final_recipient_names.id_for_label }}"
+                   name="final_recipient_names"
+                   list="koostaja-saajakataloog"
+                   autocomplete="off"
+                   data-recipient-input
+                   placeholder="Otsi või kirjuta saaja nimi…">
+            <button type="button" class="button button--quiet" data-recipient-add>
+              Lisa saaja
+            </button>
+          </div>
+          <datalist id="koostaja-saajakataloog">
+            {% for name in composer_form.recipient_catalogue %}
+              <option value="{{ name }}"></option>
+            {% endfor %}
+          </datalist>
+          {% for error in composer_form.final_recipient_names.errors %}
+            <span class="field__error">{{ error }}</span>
+          {% endfor %}
+        </div>
       </fieldset>
 
       <fieldset class="composer__group">
-        <legend class="composer__sublabel">Töövõit</legend>
-        <p class="field__help">
-          Valikuline. Kirjuta, mida Koda selle teemaga saavutas — see läheb osakonna
-          töövõitude hulka.
-        </p>
-        {% include "intelligence/partials/field.html" with field=composer_form.victory_title %}
-        {% include "intelligence/partials/field.html" with field=composer_form.victory_detail %}
+        <legend class="composer__sublabel">{{ composer_form.work_victory.label }}</legend>
+        {% comment %}
+          An explicit decision, taken once, when the file is closed. It used to
+          be a free-text box asking `Mida Koda saavutas?` plus a second box
+          asking for an explanation — the same narrative the composer had
+          already taken, twice more. Now it is a question with two answers, and
+          the wording of a confirmed victory is the composer body (§10, §12).
+        {% endcomment %}
+        <div class="choiceset" role="radiogroup"
+             aria-labelledby="koostaja-toovoit">
+          <span class="visually-hidden" id="koostaja-toovoit">Töövõit</span>
+          {% for choice in composer_form.work_victory %}
+            <label class="choiceset__option">{{ choice.tag }}
+              <span>{{ choice.choice_label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        {% for error in composer_form.work_victory.errors %}
+          <span class="field__error">{{ error }}</span>
+        {% endfor %}
+
+        {% comment %}
+          Only when the answer is Jah, and stored as a `MatterEffectiveDate`
+          rather than as the victory's reporting period — they are two facts and
+          borrowing one column for the other would put a win in the year the act
+          happened to commence (§13).
+
+          Hidden by markup rather than by script, so a refused save that *did*
+          say Jah comes back with the box open and the error visible.
+        {% endcomment %}
+        <div class="composer__victorydate" data-victory-date
+             {% if composer_form.work_victory.value != "JAH" %}hidden{% endif %}>
+          {% include "intelligence/partials/field.html" with field=composer_form.victory_effective_on %}
+        </div>
+      </fieldset>
       </fieldset>
     </div>
   </form>
