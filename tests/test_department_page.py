@@ -481,9 +481,15 @@ def test_a_seis_figure_opens_the_matters_it_counted(client, department_head, wor
     assert figure.value == len(counted)
 
 
-def test_the_sent_figure_opens_the_opinion_list(client, department_head, world, today):
-    """Submissions, so it opens the canonical opinion workspace, not the register."""
-    client.force_login(department_head)
+def test_the_sent_figure_states_a_number_it_cannot_open(department_head, world, today):
+    """The one figure on the strip that carries no link, and why.
+
+    It counts a seven-day window; the Arvamused workspace narrows by year and by
+    month. The only destination available therefore holds more letters than the
+    number beside it, so the figure states the number and offers nothing — an
+    honest number beats a link to a different list, which is the treatment the
+    team table's three historical columns already get (docs/adr/0049 §4, DS-24).
+    """
     built = page_for(department_head, today=today)
     figure = next(item for item in built.seis if item.key == "sent")
 
@@ -493,7 +499,24 @@ def test_the_sent_figure_opens_the_opinion_list(client, department_head, world, 
             department_head, since=today - timedelta(days=dd.SENT_WINDOW_DAYS)
         ).count()
     )
-    assert client.get(figure.url).status_code == 200
+    assert figure.url == ""
+    assert [item.key for item in built.seis if not item.url] == ["sent"]
+
+
+def test_every_other_figure_lands_on_the_register_rows(department_head, world, today):
+    """A filtered register opens on its search box and its narrowing panel.
+
+    Without the fragment the rows are below all of it, and a reader who clicked
+    «12 üle tähtaja» has to scroll to find out whether twelve came back. It was
+    Ülevaade's alone, so the two pages behaved differently from the same kind of
+    number; on one strip they land the same way.
+    """
+    built = page_for(department_head, today=today)
+    register = [item for item in built.seis if item.url.startswith(REGISTER)]
+
+    assert len(register) == 5
+    for figure in register:
+        assert figure.url.endswith(dd.RESULTS_ANCHOR), figure.key
 
 
 def test_the_strip_no_longer_carries_what_moved_to_the_rail(department_head, world, today):

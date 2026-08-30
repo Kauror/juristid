@@ -488,12 +488,14 @@ ITEMS: tuple[StatusItem, ...] = (
             "väljendavad, või jääb figuur lingita arvuks (nagu Meeskonna kolm "
             "ajaloolist veergu)."
         ),
-        state=OPEN,
+        state=DECIDED,
         next_step=(
-            "Praegune käitumine on säilitatud muutmata kujul: figuur on link "
-            "Arvamuste nimekirjale, nagu ta oli Osakonna töö lehel ja nagu "
-            "kinnitatud kujundus (raam C) ta joonistab. Uut filtrit ega uut "
-            "päringusemantikat ei ole lisatud."
+            "Figuur on nüüd lingita arv — sama kohtlemine, mille saavad "
+            "Meeskonna kolm ajaloolist veergu: aus arv on parem kui link "
+            "teistsugusele nimekirjale. Uut filtrit ega uut päringusemantikat "
+            "ei ole lisatud, sõnastus ja arv on kujunduse omad. Kui link on "
+            "siiski soovitud, on see otsus anda Arvamuste tööruumile "
+            "kuupäevavahemiku filter."
         ),
         sources=(
             "01-EHITUSPROMPT §3.2",

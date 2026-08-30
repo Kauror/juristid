@@ -131,8 +131,20 @@ CASEWORK_ROLES: tuple[str, ...] = (
 )
 
 
+#: The register's results region. Every link from this page carries it, so
+#: arriving from a number lands on the rows rather than on the filter panel the
+#: reader then has to scroll past to find out whether anything came back.
+#:
+#: It was Ülevaade's alone (`overview.RESULTS_ANCHOR`) and the two pages
+#: therefore behaved differently from the same kind of number. On the merged
+#: page they are one strip, so they land the same way — caught by
+#: `e2e/test_kpi_navigation.py`, which is the only place a fragment is
+#: observable at all.
+RESULTS_ANCHOR = "#tulemused"
+
+
 def register_url(**params: Any) -> str:
-    """A link into Teemad with filters already applied.
+    """A link into Teemad with filters already applied, landing on the rows.
 
     Only parameters the register actually supports today. Every number that
     links to a list is a promise that the list behind it holds exactly those
@@ -142,7 +154,7 @@ def register_url(**params: Any) -> str:
     """
     query = "&".join(f"{key}={value}" for key, value in params.items() if value)
     base = reverse("matters:matter_list")
-    return f"{base}?{query}" if query else base
+    return f"{base}?{query}{RESULTS_ANCHOR}" if query else f"{base}{RESULTS_ANCHOR}"
 
 
 def _open_full() -> dict[str, Any]:
@@ -186,7 +198,13 @@ def _by_owner(queryset: QuerySet[Matter]) -> dict[Any, int]:
 
 @dataclass(frozen=True)
 class SeisFigure:
-    """One number on the risk strip, with the list it opens."""
+    """One number on the risk strip, with the list it opens.
+
+    ``url`` is empty for a figure the application cannot open exactly. That is
+    rare and deliberate: an honest number beats a link to a different list, and
+    it is the same treatment the team table's three historical columns get
+    (`_column_url`, master specification 18.9).
+    """
 
     key: str
     value: int
@@ -311,11 +329,18 @@ def seis_figures(user: Any, today: date | None = None) -> list[SeisFigure]:
             register_url(**no_action),
             "warning",
         ),
+        # No link. The count is a seven-day window and the Arvamused workspace
+        # filters by year and month, so the only destination available lists
+        # more opinions than the number beside it — which is precisely the
+        # count-and-list disagreement this strip exists to make impossible.
+        # It linked there before the merge and the parity sweep caught it the
+        # first time both pages' figures were on one strip
+        # (`e2e/test_kpi_navigation.py`, DS-24).
         SeisFigure(
             "sent",
             sent_submissions(user, since=today - timedelta(days=SENT_WINDOW_DAYS)).count(),
             f"arvamust välja · {SENT_WINDOW_DAYS} p",
-            reverse("submissions:sent"),
+            "",
         ),
     ]
 

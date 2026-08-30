@@ -517,60 +517,41 @@ def test_the_intervention_row_states_the_missing_deadline_and_nothing_else(page,
 
     rows = page.locator(".interrow")
     assert rows.count(), "the seeded world has no next-step-less Matter"
-    text = page.locator(".ovsection__rows").inner_text()
+    # `.first`: the section renders the preview rows and the rows behind «Näita
+    # veel N ▾» as two blocks, and since the preview narrowed to five the
+    # seeded world overflows into the second one (docs/adr/0049 §6).
+    text = page.locator(".ovsection__rows").first.inner_text()
     assert "tähtaeg puudub" in text.lower(), text
     assert "sammuta" not in text.lower(), text
     assert "vaikust" not in text.lower(), text
 
 
-def test_recent_changes_says_who_did_what_in_which_topic(page, base_url):
-    """One line, three parts, and the third is a topic a person can name.
+def test_the_department_page_carries_no_change_feed_and_no_feed_filter(page, base_url):
+    """*Viimased muudatused* is on no page, and neither is its filter strip.
 
-    The row used to end in `2026_303`. It now ends in the topic's title — which
-    on this seeded world is a deliberately long one, so this is also the
-    long-title case: the row must stay a row (human QA §16, §20, §37).
+    Two browser tests stood here — one on the humanised feed row, one on the
+    «Teema muudatused» filter label. Both described a section the merge retired:
+    what a period produced is *Tehtud*'s question, read from canonical records
+    rather than from the audit stream (docs/adr/0049 §7).
+
+    Neither is a skip. The absence is the assertion, and it is worth making in a
+    browser because a section returning by way of an include is exactly the kind
+    of thing a server-side test would not notice. What the feed's rows *say*
+    when something does render them is still asserted in full against the read
+    model (`tests/test_identifier_free_ui.py`), so nothing about the wording
+    stopped being checked — where the events belong is DS-25.
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": 1440, "height": 900})
     open_overview(page, base_url)
 
-    section = page.locator("section[aria-label='Viimased muudatused']")
-    expect(section.get_by_text("Viimased muudatused", exact=True)).to_be_visible()
-
-    row = section.locator(".feedrow").first
-    expect(row).to_be_visible()
-    link = row.get_by_role("link").first
-    expect(link).to_be_visible()
-    # The topic link goes to a Matter, and the row's text names a person before
-    # it: "<Actor> <did something> · <topic>".
-    assert re.match(r"^/teemad/[0-9a-f-]{36}/$", link.get_attribute("href") or ""), link
-    assert "·" in row.inner_text(), row.inner_text()
-
-    # A long title truncates inside its own row rather than widening the page.
+    expect(page.locator("section[aria-label='Viimased muudatused']")).to_have_count(0)
+    expect(page.locator(".feedrow")).to_have_count(0)
+    # `.feedfilter` is the Tehtud row-kind control's component now, and this
+    # reader is a specialist, so the section it belongs to is not built at all.
+    expect(page.locator(".feedfilter")).to_have_count(0)
+    expect(page.get_by_text("Staatuse muutused")).to_have_count(0)
     assert not document_overflows(page)
-    box = row.bounding_box()
-    assert box["width"] <= 1441, box
-    # And the full title is still reachable, on the link itself.
-    assert len(link.get_attribute("title") or "") > 0
-
-
-def test_the_change_filter_is_named_for_what_it_holds(page, base_url):
-    """`Staatuse muutused` stopped being true when the bucket widened.
-
-    It now carries Järgmiseks, olulised tähtajad, jõustumised, kaasamised,
-    töövõidud and a rename as well as the stage and owner changes it was named
-    for. The query value behind it is unchanged (review §12).
-    """
-    sign_in(page, base_url, SANDRA)
-    open_overview(page, base_url)
-
-    strip = page.locator(".feedfilter")
-    expect(strip.get_by_role("link", name="Teema muudatused")).to_be_visible()
-    expect(strip.get_by_role("link", name="Staatuse muutused")).to_have_count(0)
-
-    strip.get_by_role("link", name="Teema muudatused").click()
-    page.wait_for_load_state("networkidle")
-    assert "voog=staatus" in page.url, page.url
 
 
 def test_the_default_ordering_is_offered_by_what_it_does(page, base_url):

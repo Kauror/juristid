@@ -104,9 +104,19 @@ the read access the page it replaced already had.
 järgmise tegevuseta · arvamust välja · 7 p`
 
 Each is register parameters counted through the register's own filter pipeline
-and linked as the same parameters, so the number and the list are one query.
-«Uut sel nädalal» left the strip for the *Uued teemad* rail — arrival is not
-risk — and «järgmise tegevuseta» took its place. «Avatud teemat» is the header's.
+and linked as the same parameters, so the number and the list are one query, and
+each link carries `#tulemused` so a reader who clicked a count lands on the rows
+rather than on the filter panel above them. «Uut sel nädalal» left the strip for
+the *Uued teemad* rail — arrival is not risk — and «järgmise tegevuseta» took its
+place. «Avatud teemat» is the header's.
+
+The sixth carries **no link**. It counts a seven-day window and the Arvamused
+workspace narrows by year and by month, so the only destination available holds
+more letters than the number beside it. An honest number beats a link to a
+different list — the treatment the team table's three historical columns already
+get — and giving the workspace a date-range filter is a separate decision
+(DS-24). Both halves of this were found by the browser suite's parity sweep the
+first time the two pages' figures stood on one strip.
 
 ### 5. One deadline panel, five windows
 

@@ -58,10 +58,24 @@ nothing to hide (app/matters/department.py).
   {% endcomment %}
   <div class="seis">
     {% for figure in page.seis %}
-      <a class="seis__figure" href="{{ figure.url }}">
-        <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
-        <span class="seis__caption">{{ figure.caption }}</span>
-      </a>
+      {% comment %}
+        A figure with no destination is a span. One of the six counts a window
+        the Arvamused workspace cannot express, and a link to a longer list
+        would be the disagreement the strip exists to prevent — so it states
+        the number and offers nothing (app/matters/department_dashboard.py,
+        `seis_figures`).
+      {% endcomment %}
+      {% if figure.url %}
+        <a class="seis__figure" href="{{ figure.url }}">
+          <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
+          <span class="seis__caption">{{ figure.caption }}</span>
+        </a>
+      {% else %}
+        <span class="seis__figure">
+          <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
+          <span class="seis__caption">{{ figure.caption }}</span>
+        </span>
+      {% endif %}
     {% endfor %}
     {% if page.is_areas %}
       <span class="seis__spacer"></span>
