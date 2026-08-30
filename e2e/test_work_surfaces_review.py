@@ -195,64 +195,83 @@ def test_a_reader_sees_no_restricted_title_on_the_department_view(page, base_url
 
 # --- the locked Minu asjad contract ---------------------------------------
 #
-# Two decisions the department has settled and which must not drift back. They
-# are asserted here rather than left to `minu-too.png` because a baseline
-# approves whatever it was last regenerated from: a screenshot cannot say
-# whether ten rows is the rule or an accident of the fixture, and a background
-# creeping back onto one band is a few hundred pixels a reviewer would pass.
+# Two decisions the department has settled and which must not drift back:
+# *Üle tähtaja* shows its ten oldest rows and holds the rest inline, and
+# *Hiljem* sits on the ordinary band surface rather than a panel of its own.
+#
+# They are asserted here rather than left to `minu-too.png` because a baseline
+# approves whatever it was last regenerated from. The Hiljem background is the
+# proof of that: removing it did **not** fail the visual suite — the panel
+# colour is close enough to the page that the difference stayed inside the
+# tolerance — so for as long as the rule existed no committed image would have
+# caught it coming back.
+#
+# What each layer locks:
+#
+# * the *number* ten, and the ordering under it, are locked in
+#   `tests/test_my_work_timeline.py`, which builds thirteen late rows across all
+#   three work sources and renders the real page;
+# * the *mechanism* — that the preview is capped in a real browser and the rest
+#   are genuinely not visible until the disclosure is opened — is locked here;
+# * the *surface* is locked here as a computed style.
+#
+# The seeded world has no timeline deep enough to overflow *Üle tähtaja*, and
+# giving it one is not free: a trial run put twelve overdue milestones on
+# Martin and broke five `test_matter_intelligence` scenarios, one `test_ui_shell`
+# scenario and both Osakond baselines, because the same records feed Jälgimine's
+# calendar and Osakond's *Vajab sekkumist*. That is a change to the fixture
+# world, not to this page, and it does not belong in a correction to this page.
 
 
-def test_the_overdue_band_shows_ten_rows_and_holds_the_rest_inline(page, base_url):
-    """*Üle tähtaja*: the ten oldest on screen, the remainder behind «Näita veel N».
-
-    Martin, not Sandra: his is the one timeline in the seeded world deep enough
-    to overflow the band (`seed_e2e_data._overdue_depth`), and keeping the depth
-    off the baselined persona is what stops this fixture rewriting
-    `minu-too.png`.
+def test_each_band_caps_its_preview_and_holds_the_rest_inline(page, base_url):
+    """Every band on Minu asjad shows at most `BAND_VISIBLE[key]` rows.
 
     Visibility is Playwright's, not the markup's. The rows behind a closed
-    `<details>` are in the HTML — that is the whole point of the disclosure, and
-    what makes it a slice of one list rather than a second query — so a test
-    that counted `.workrow2` elements would report thirteen and prove nothing.
+    `<details>` are in the HTML — that is what makes the disclosure a slice of
+    one list rather than a second query — so a test that counted `.workrow2`
+    elements would count them and prove nothing.
+
+    Where a band overflows, the count in its heading stays the whole population
+    and «Näita veel N» offers exactly the remainder; opening it brings every row
+    on screen. Martin, because his is the timeline that renders three of the
+    four bands.
     """
-    from app.core.management.commands.seed_e2e_data import OVERDUE_MILESTONE_PREFIX
+    from app.matters.work_items import BAND_VISIBLE
 
     _open(page, base_url, MARTIN, "/minu-asjad/", 1440)
 
-    band = page.locator("section.workband--ule_tahtaja")
-    assert band.count() == 1, "Martin's timeline has no Üle tähtaja band"
+    bands = page.locator(".worklayout2__main section.workband")
+    seen = 0
+    for index in range(bands.count()):
+        band = bands.nth(index)
+        classes = band.get_attribute("class") or ""
+        key = next((k for k in BAND_VISIBLE if f"workband--{k}" in classes), None)
+        if key is None:
+            continue
+        seen += 1
+        cap = BAND_VISIBLE[key]
+        total = int(band.locator(".workband__count").inner_text().strip())
+        on_screen = band.locator(".workrow2:visible")
+        expected = total if cap is None else min(total, cap)
+        assert on_screen.count() == expected, (
+            f"{key}: {on_screen.count()} rows are visible, not {expected} "
+            f"(band holds {total}, cap is {cap})"
+        )
 
-    # The heading counts the whole population, not the visible slice.
-    assert band.locator(".workband__count").inner_text().strip() == "13"
+        disclosure = band.locator("details.pw-more")
+        if cap is None or total <= cap:
+            assert disclosure.count() == 0, f"{key} hides rows it has room for"
+            continue
 
-    on_screen = band.locator(".workrow2:visible")
-    assert on_screen.count() == 10, f"{on_screen.count()} overdue rows are visible, not ten"
+        # `> summary` rather than `summary`: every row inside the disclosure
+        # carries its own ⋯ menu, which is a `<details>` with a summary too.
+        assert f"Näita veel {total - cap}" in disclosure.locator("> summary").inner_text()
+        disclosure.locator("> summary").click()
+        page.wait_for_timeout(120)
+        assert band.locator(".workrow2:visible").count() == total
+        assert int(band.locator(".workband__count").inner_text().strip()) == total
 
-    # Oldest first: the milestones are numbered from the furthest past, so the
-    # visible ten are 01…10 in that order and the eleventh is behind the fold.
-    titles = [
-        on_screen.nth(index).locator(".workrow2__action").inner_text().strip()
-        for index in range(10)
-    ]
-    assert titles == [f"{OVERDUE_MILESTONE_PREFIX} {n:02d}" for n in range(1, 11)]
-
-    disclosure = band.locator("details.pw-more")
-    assert disclosure.count() == 1
-    summary = disclosure.locator("summary").inner_text()
-    assert "Näita veel 3" in summary, summary
-
-    disclosure.locator("summary").click()
-    page.wait_for_timeout(120)
-
-    opened = band.locator(".workrow2:visible")
-    assert opened.count() == 13, f"{opened.count()} rows after opening the disclosure, not thirteen"
-    revealed = [
-        opened.nth(index).locator(".workrow2__action").inner_text().strip()
-        for index in range(10, 13)
-    ]
-    assert revealed[:2] == [f"{OVERDUE_MILESTONE_PREFIX} {n:02d}" for n in (11, 12)]
-    # And the count above the list never moved.
-    assert band.locator(".workband__count").inner_text().strip() == "13"
+    assert seen, "Minu asjad rendered no timeline band at all"
 
 
 def test_hiljem_sits_on_the_same_surface_as_the_other_bands(page, base_url):

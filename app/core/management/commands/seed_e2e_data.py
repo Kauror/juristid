@@ -94,17 +94,6 @@ SUBMISSION_TITLE = "Sünteetiline arvamus ministeeriumile"
 #: The one canonical opinion in preparation, so the *Arvamusi koostamisel*
 #: figure and the list it opens both have something in them.
 DRAFT_SUBMISSION_TITLE = "Koostamisel sünteetiline arvamus"
-#: The depth of Martin's *Üle tähtaja* band. Twelve milestones on top of the DO
-#: deadline below make thirteen late rows, which is the only place in this world
-#: that overflows the band's ten-row preview — and therefore the only place the
-#: browser suite can prove «Näita veel 3» against a real page.
-OVERDUE_DEPTH = 12
-#: How far back the oldest of them sits. A week apart from there forwards, so
-#: the newest is thirty days old and every one of them is still older than the
-#: deadline that shares the Matter.
-OVERDUE_OLDEST_DAYS = 107
-OVERDUE_MILESTONE_PREFIX = "Möödunud verstapost"
-
 #: A signed container, not a PDF, and for two reasons. It is what a Chamber
 #: opinion actually goes out as; and a synthetic stub with a `.pdf` extension is
 #: a *broken* PDF, which the extraction worker correctly reports as a failure —
@@ -622,56 +611,6 @@ class Command(BaseCommand):
             actor=martin,
             recipients=[ministry],
         )
-
-        self._overdue_depth(overdue, martin)
-
-    def _overdue_depth(self, overdue: Matter, martin: Any) -> None:
-        """Enough late work on one person's timeline to overflow *Üle tähtaja*.
-
-        The band shows its ten oldest rows and holds the rest behind
-        «Näita veel N ▾». Nothing in the rest of this world comes close to ten
-        late rows, so without these the browser suite could only assert that
-        contract against a band which never reaches it — which is the same as
-        not asserting it at all.
-
-        Twelve, on top of the DO deadline `_statistics_world` already put on
-        this Matter: thirteen late rows, ten visible, «Näita veel 3».
-
-        **Martin, not Sandra, and that is the whole point of the placement.**
-        The visual baselines are captured as Sandra, so hanging a thirteen-row
-        band on her timeline would rewrite `minu-too.png` for a fixture reason
-        and bury any real change to the page underneath it. Martin's Minu asjad
-        is not baselined; his page is where the depth belongs.
-
-        All on the one Matter that is already the late one, so the register
-        gains no row and `teemad-*.png`, `otsing.png`, `statistika-*.png` and
-        Sandra's `minu-too.png` stay byte-identical. Two surfaces do move,
-        because both count department-wide late work: Osakond's *Vajab
-        sekkumist* list gains these rows behind its own «Näita veel N ▾», and
-        Jälgimine's Seis strip gains an *Üle tähtaja* figure it could not show
-        while the world had no overdue milestone at all.
-
-        Numbered oldest first — `01` is the one furthest past, `12` the nearest —
-        so a test that says «the visible ten are the ten oldest» can name them.
-        A week apart, and all of them further back than the DO deadline this
-        Matter already carries, so the band's order is `01…12` and then that
-        deadline, on every weekday the job can run on.
-        """
-        from app.intelligence.services import add_important_date
-
-        if overdue.important_dates.exists():
-            return
-
-        today = date.today()
-        for index in range(OVERDUE_DEPTH):
-            when = today - timedelta(days=OVERDUE_OLDEST_DAYS - index * 7)
-            add_important_date(
-                matter=overdue,
-                title=f"{OVERDUE_MILESTONE_PREFIX} {index + 1:02d}",
-                date_value=when,
-                period_end=when,
-                actor=martin,
-            )
 
     def _department_world(self, sandra: Any, martin: Any, ministry: Any, stage: Any) -> None:
         """The states Osakond exists to surface.

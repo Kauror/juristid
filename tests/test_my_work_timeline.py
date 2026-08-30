@@ -563,13 +563,30 @@ def test_the_boundary_around_ten(specialist, today, total, preview, remaining):
     assert len(band.rest) == remaining
 
 
-def test_the_page_states_the_full_count_above_ten_rows(client, specialist, today):
-    """The heading still says thirteen; the disclosure offers the other three."""
+def _overdue_section(body):
+    """The rendered `<section class="workband workband--ule_tahtaja">`."""
+    start = body.index('class="workband workband--ule_tahtaja"')
+    return body[start : body.index("</section>", start)]
+
+
+def test_the_page_renders_ten_rows_and_puts_three_behind_the_disclosure(client, specialist, today):
+    """The markup, not just the read model: ten rows, then «Näita veel 3».
+
+    Split at the disclosure rather than counted over the whole section, because
+    counting rows would find thirteen either way — the rest are in the HTML by
+    design, which is what makes them a slice of the list the heading counted
+    rather than a second query. What the cap decides is which side of
+    `<details class="pw-more">` each row is written on.
+    """
     _overdue_population(specialist, today, 13)
     client.force_login(specialist)
 
-    body = client.get(reverse("matters:my_work")).content.decode()
+    section = _overdue_section(client.get(reverse("matters:my_work")).content.decode())
+    before, _, behind = section.partition('<details class="pw-more">')
 
-    assert "Üle tähtaja" in body
-    assert "Näita veel 3" in body
-    assert ">13</span>" in body
+    assert "Üle tähtaja" in before
+    # The count in the heading is the whole population, not the visible slice.
+    assert '<span class="workband__count">13</span>' in before
+    assert before.count("data-workrow") == 10
+    assert "Näita veel 3" in behind
+    assert behind.count("data-workrow") == 3

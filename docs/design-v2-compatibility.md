@@ -45,9 +45,18 @@ and both are asserted rather than left to a screenshot:
    four bands sit on the same surface; *Hiljem* is marked out by its title
    colour and by the range control in its head, not by a panel behind it.
 
-Locked by `tests/test_my_work_timeline.py` (the cap, its ordering and the
-9/10/11 boundary) and by `e2e/test_work_surfaces_review.py` (ten rows visible in
-a real browser, and the two band surfaces compared as computed styles).
+Locked in two layers. `tests/test_my_work_timeline.py` holds the numbers: the
+ten-row cap, the oldest-first ordering, the 9/10/11 boundary, and the rendered
+page putting ten rows before `<details class="pw-more">` and three behind it,
+against a population mixing all three work sources.
+`e2e/test_work_surfaces_review.py` holds what only a browser can see: each
+band's preview capped under Playwright's own visibility, and the two band
+surfaces compared as computed styles.
+
+Not left to `minu-too.png`. Removing the *Hiljem* background did not fail the
+visual suite — the panel colour is close enough to the page that the difference
+stayed inside the tolerance — so no committed image would have caught the rule
+coming back either.
 
 ### Inimese töölaud — `/inimesed/<uuid>/asjad/`
 
