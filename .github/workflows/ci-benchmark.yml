@@ -1,0 +1,189 @@
+name: CI benchmark (temporary)
+
+# Measurement scaffolding for the CI-performance branch. Deleted before review.
+on:
+  push:
+    branches: ['bench/**']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  UV_FROZEN: "1"
+
+jobs:
+  pytest:
+    name: "pytest ${{ matrix.label }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: baseline-cov
+            args: "--cov --cov-report=term-missing --durations=50"
+          - label: nocov
+            args: "--durations=50"
+          - label: n2-loadfile
+            args: "-n 2 --dist loadfile --durations=25"
+          - label: n4-loadfile
+            args: "-n 4 --dist loadfile --durations=25"
+          - label: n4-load
+            args: "-n 4 --durations=25"
+          - label: n4-loadfile-cov
+            args: "-n 4 --dist loadfile --cov --cov-report=term-missing"
+          - label: n8-loadfile
+            args: "-n 8 --dist loadfile --durations=25"
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: juristid
+          POSTGRES_USER: juristid
+          POSTGRES_PASSWORD: juristid
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U juristid -d juristid"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+      DJANGO_DEBUG: "0"
+      DJANGO_SECURE_SSL_REDIRECT: "0"
+      DEV_LOGIN_ENABLED: "0"
+      REAL_DATA_ALLOWED: "0"
+      POSTGRES_DB: juristid
+      POSTGRES_USER: juristid
+      POSTGRES_PASSWORD: juristid
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Install the OCR runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes tesseract-ocr tesseract-ocr-est tesseract-ocr-eng
+      - name: How many processors
+        run: nproc && free -m
+      - name: Run
+        run: |
+          start=$(date +%s)
+          uv run pytest ${{ matrix.args }} 2>&1 | tail -80
+          status=${PIPESTATUS[0]}
+          echo "ELAPSED ${{ matrix.label }} = $(( $(date +%s) - start ))s (exit $status)"
+          exit "$status"
+
+  browser-durations:
+    name: Browser durations
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: juristid
+          POSTGRES_USER: juristid
+          POSTGRES_PASSWORD: juristid
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U juristid -d juristid"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+      DJANGO_DEBUG: "1"
+      DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1,[::1]"
+      DJANGO_SECURE_SSL_REDIRECT: "0"
+      DJANGO_STATIC_MANIFEST: "0"
+      DEV_LOGIN_ENABLED: "1"
+      REAL_DATA_ALLOWED: "0"
+      APPLICATION_ENVIRONMENT: ci
+      POSTGRES_DB: juristid
+      POSTGRES_USER: juristid
+      POSTGRES_PASSWORD: juristid
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      EVIDENCE_ROOT: /tmp/juristid-evidence
+      E2E_BASE_URL: http://127.0.0.1:8000
+      E2E_SCREENSHOT_DIR: artifacts/screenshots
+      E2E_GATE_BASE_URL: http://127.0.0.1:8001
+      E2E_GATE_PASSWORD: ci-jagatud-parool-mitte-kusagil-mujal
+      E2E_UPDATE_BASELINES: "0"
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Cache the browser binary
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ hashFiles('uv.lock') }}
+          restore-keys: playwright-chromium-
+      - name: Install the browser
+        timeout-minutes: 6
+        run: uv run playwright install chromium
+      - name: Migrate and seed the deterministic world
+        run: |
+          uv run python manage.py migrate --noinput
+          uv run python manage.py seed_e2e_data
+      - name: Start the application
+        run: |
+          mkdir -p artifacts
+          nohup uv run python manage.py runserver 127.0.0.1:8000 --noreload > artifacts/server.log 2>&1 &
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:8000/healthz > /dev/null; then echo up; exit 0; fi
+            sleep 1
+          done
+          echo "server did not start"; exit 1
+      - name: Start the shared-gate application
+        env:
+          DJANGO_SETTINGS_MODULE: config.e2e_gate_settings
+        run: |
+          nohup uv run python manage.py runserver 127.0.0.1:8001 --noreload > artifacts/server-gate.log 2>&1 &
+          for attempt in $(seq 1 40); do
+            if curl --fail --silent http://127.0.0.1:8001/healthz > /dev/null; then echo up; exit 0; fi
+            sleep 1
+          done
+          echo "shared-gate server did not start"; exit 1
+      - name: Browser workflow with every duration
+        run: >-
+          uv run pytest e2e --ignore=e2e/test_ui_regression.py
+          --browser chromium --durations=0 -v
+          --output artifacts/playwright
+          --junitxml=artifacts/e2e-junit.xml
+      - name: Visual regression with every duration
+        if: always()
+        run: >-
+          uv run pytest e2e/test_ui_regression.py
+          --browser chromium --durations=0
+          --output artifacts/playwright
+          --junitxml=artifacts/visual-junit.xml
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-durations
+          path: artifacts/*.xml
+          if-no-files-found: warn

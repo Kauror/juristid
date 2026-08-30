@@ -66,6 +66,7 @@ dev = [
     # A dev dependency rather than an optional import: a validation that skips
     # itself when a library is missing is a validation that never runs.
     "pyyaml>=6.0",
+    "pytest-xdist>=3.6",
 ]
 
 [tool.ruff]
