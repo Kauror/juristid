@@ -79,7 +79,12 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     """Scenario A, B, C and D in one pass, in the order the work happens."""
     sign_in(page, base_url, SANDRA)
 
-    # -- Ülevaade is the landing surface ---------------------------------
+    # -- Minu asjad is where signing in lands ----------------------------
+    # The default home, since the root chooses it (app/core/views.py::home).
+    expect(page.get_by_role("heading", name="Minu asjad")).to_be_visible()
+
+    # -- Ülevaade is one click away on the bar ---------------------------
+    page.locator(".topnav__link", has_text="Ülevaade").first.click()
     expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
     # Not `exact`: the heading carries its count, so its accessible name is
     # "Tähtajad" followed by a number that changes with the seeded data.
@@ -87,7 +92,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.get_by_role("heading", name="Vajab sekkumist")).to_be_visible()
     screenshots(page, "00-ulevaade")
 
-    # -- Minu töö is the personal queue ----------------------------------
+    # -- back to the personal queue --------------------------------------
     page.locator(".topnav__link", has_text="Minu asjad").click()
     expect(page.get_by_role("heading", name="Minu asjad")).to_be_visible()
     # One dated list, whatever the mode. `Järgmise tegevuseta` is beside it
@@ -453,9 +458,14 @@ class TestRestrictedMatterIsUnreachable:
     def test_a_reader_does_not(self, page, base_url):
         sign_in(page, base_url, READER)
 
+        # Not on Minu asjad, which is where signing in lands.
+        expect(page.get_by_role("heading", name="Minu asjad")).to_be_visible()
+        expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
+
         # Not on Ülevaade — not in its attention list, and not in its counts.
-        # Signing in lands here now, which makes this the stronger check: a
-        # restricted Matter must not reach a total either.
+        # Visited explicitly rather than landed on, and still the stronger of
+        # the two checks: a restricted Matter must not reach a total either.
+        page.goto(f"{base_url}/ulevaade/")
         expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
         expect(page.get_by_text("Konfidentsiaalne järgmine samm")).to_have_count(0)
         expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
