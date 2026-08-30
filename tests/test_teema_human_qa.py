@@ -601,7 +601,7 @@ def test_a_closure_without_a_sent_opinion_is_accepted(normal_matter, specialist)
             "body": "Menetlus lõppes.",
             "close_matter": "on",
             "disposition": Disposition.COMPLETED,
-            "closure_reason": "Seadus jõustus muutmata kujul.",
+            "work_victory": "EI",
         }
     )
     assert form.is_valid(), form.errors

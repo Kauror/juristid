@@ -846,15 +846,9 @@ def test_the_composer_view_closes_a_matter(signed_in, normal_matter, specialist)
             "engagement_note": "",
             "close_matter": "on",
             "disposition": Disposition.COMPLETED,
-            "closure_reason": "Seadus jõustus muutmata kujul.",
-            "successor": "",
-            "final_version": "",
-            "final_title": "",
             "final_sent_on": "",
-            "final_channel": "",
-            "final_reference": "",
-            "victory_title": "",
-            "victory_detail": "",
+            "work_victory": "EI",
+            "victory_effective_on": "",
         },
         headers={"HX-Request": "true"},
     )
@@ -993,7 +987,13 @@ def _evidence(matter, actor, filename="Koja_arvamus.pdf"):
 def test_a_final_opinion_at_closure_becomes_a_canonical_submission(
     normal_matter, specialist, organisation
 ):
-    version = _evidence(normal_matter, specialist)
+    """The file goes in here, and comes out as the canonical sent opinion.
+
+    The closing redesign moved the evidence into this save: there is no
+    pre-uploaded version to pick, because the lawyer closing the file has the
+    sent PDF in front of them and has never visited the documents tab
+    (Teema closing redesign §4, §21).
+    """
     sent_on = timezone.now() - timedelta(days=1)
 
     result = compose_update(
@@ -1002,12 +1002,10 @@ def test_a_final_opinion_at_closure_becomes_a_canonical_submission(
         closure={
             "disposition": Disposition.RESPONSE_COMPLETE,
             "final_opinion": {
-                "title": "Koja arvamus platvormimajanduse aruandluse kohta",
-                "final_version": version,
+                "upload": _upload("Koja_arvamus.pdf"),
                 "recipients": [organisation],
+                "recipient_names": [],
                 "sent_at": sent_on,
-                "channel": "EIS",
-                "reference": "26-0842",
             },
         },
     )
@@ -1015,9 +1013,17 @@ def test_a_final_opinion_at_closure_becomes_a_canonical_submission(
     submission = result.submission
     assert submission is not None
     assert submission.status == SubmissionStatus.SENT
-    assert submission.final_version == version
     assert submission.sent_at == sent_on
-    assert submission.channel == "EIS"
+    # Titled after the Matter, never retyped (§5).
+    assert submission.title == normal_matter.title
+    # The evidence was created by this save, on this Matter, in the right role.
+    version = submission.final_version
+    assert version is not None
+    assert version.document.matter == normal_matter
+    assert version.document.role == DocumentRole.KODA_SUBMISSION_FINAL
+    # Nothing this workflow does not ask for was invented (§8, §9).
+    assert submission.channel == ""
+    assert submission.reference == ""
 
 
 def test_a_pdf_alone_never_creates_a_submission(normal_matter, specialist):
@@ -1043,16 +1049,15 @@ def test_the_rail_shows_only_a_canonical_sent_opinion(signed_in, specialist, org
     matter = factories.MatterFactory(owner=specialist)
     assert "railposition__opinion" not in _detail(signed_in, matter)
 
-    version = _evidence(matter, specialist)
     compose_update(
         matter=matter,
         author=specialist,
         closure={
             "disposition": Disposition.RESPONSE_COMPLETE,
             "final_opinion": {
-                "title": "Koja arvamus",
-                "final_version": version,
+                "upload": _upload("Koja_arvamus.pdf"),
                 "recipients": [organisation],
+                "recipient_names": [],
                 "sent_at": timezone.now(),
             },
         },

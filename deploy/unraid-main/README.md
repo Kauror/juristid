@@ -86,15 +86,18 @@ all. Anything that later needs "who did this" as evidence needs
 ```
 juristid.orgusaar.ee
     ↓  shared password
-department Osakond           ← useful with no persona; NORMAL visibility only
-    ↓  Vali kasutaja
-selected persona → Minu töö
+Vali kasutaja                ← the root asks who is reading before showing work
+    ↓  select a persona
+selected persona → Minu asjad
 ```
 
-The landing dashboard renders for a *department scope*, not for an arbitrary
-person's identity: NORMAL visibility, no participation, so nothing RESTRICTED
-appears merely because the password was typed. Everything except Osakond needs
-a persona, because authoring anything needs somebody to attribute it to.
+Osakond is still there, still on the bar, and still the one page that renders
+with **no** persona selected — reached by its own address, or by explicitly
+switching to *Ilma kasutajata*. It renders for a *department scope*, not for an
+arbitrary person's identity: NORMAL visibility, no participation, so nothing
+RESTRICTED appears merely because the password was typed. Everything except
+Osakond needs a persona, because authoring anything needs somebody to attribute
+it to.
 
 Changing persona does not ask for the password again. Signing out closes both.
 

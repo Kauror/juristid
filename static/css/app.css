@@ -6499,6 +6499,83 @@ p.factsection__none {
   gap: var(--spacing-2);
 }
 
+/* `Muu` — the recipients somebody types while closing a file.
+
+   A chip list above a search box, because a closing opinion may go to seven
+   bodies that are not in the catalogue yet and the person needs to see what
+   they have added so far. The row keeps the box and its button on one line
+   until there is genuinely no space, so adding a seventh name is the same
+   gesture as adding the first (Teema closing redesign §7B). */
+.recipientadd {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-15);
+}
+
+.recipientadd__chosen {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-15);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.recipientadd__chosen:empty {
+  display: none;
+}
+
+.recipientadd__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: var(--spacing-05) var(--spacing-15);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-chip);
+  background: var(--surface-raised);
+  font-size: var(--typography-size-sm);
+  color: var(--text-primary);
+}
+
+.recipientadd__name {
+  white-space: nowrap;
+}
+
+.recipientadd__remove {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--typography-size-base);
+  line-height: 1;
+}
+
+.recipientadd__remove:hover,
+.recipientadd__remove:focus-visible {
+  color: var(--text-primary);
+}
+
+/* The commencement date belongs to `Töövõit = Jah`. It is hidden by the
+   `hidden` attribute rather than by a class, so it stays hidden with no script
+   running; this rule only gives it its own spacing when it is shown. */
+.composer__victorydate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-15);
+}
+
+.recipientadd__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-15);
+}
+
+.recipientadd__row .field__input {
+  flex: 1 1 16rem;
+}
+
 /* -- Koja seisukoht --------------------------------------------------- */
 
 /* The empty state is one line. An absence that occupies a screen is what made

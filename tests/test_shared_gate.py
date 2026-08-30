@@ -191,8 +191,15 @@ def test_the_client_key_is_not_the_address(client, gate_url):
 # -- D, E. what the correct password opens ---------------------------------
 
 
-def test_the_correct_password_opens_the_department_page(behind_the_gate):
-    """Including from the address the page had before the merge (ADR 0049)."""
+def test_the_department_page_is_readable_once_the_password_is_correct(behind_the_gate):
+    """Explicitly requested, which is now the only way anybody arrives here.
+
+    The password no longer *lands* somebody on the department view — `/` chooses
+    the persona selector, and a chosen persona chooses Minu asjad
+    (tests/test_default_home.py). What this asserts is unchanged: the page is
+    reachable behind the gate, with or without a persona — and it is reachable
+    from the address it had before the merge (docs/adr/0049 §2).
+    """
     response = behind_the_gate.get("/ulevaade/", follow=True)
     assert response.status_code == 200
     assert response.request["PATH_INFO"] == "/osakond/"

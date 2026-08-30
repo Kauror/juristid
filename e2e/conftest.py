@@ -116,10 +116,11 @@ def sign_in(page, base_url: str, persona: Persona) -> None:
     page.goto(f"{base_url}/konto/arendus-sisselogimine/")
     page.get_by_label(persona.display_name, exact=False).check()
     page.get_by_role("button", name="Logi sisse").click()
-    # Signing in lands on Osakond: the first question on opening the
-    # application is what is happening across the department, and the personal
-    # queue is one click away.
-    page.wait_for_url(f"{base_url}/osakond/")
+    # Signing in lands on Minu asjad. The development login redirects through
+    # `/`, and `/` is the one place the default destination is decided
+    # (app/core/views.py::home) — so this waits for where that decision leads
+    # rather than repeating it.
+    page.wait_for_url(f"{base_url}/minu-asjad/")
 
 
 def pass_the_gate(page, gate_base_url: str) -> None:
