@@ -16,6 +16,7 @@ box after a click.
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 
 import pytest
 from playwright.sync_api import expect
@@ -32,6 +33,21 @@ US_PLACEHOLDER = "mm/dd/yyyy"
 ESTONIAN_WEEK = ["E", "T", "K", "N", "R", "L", "P"]
 #: `7.9.2026`, not `07.09.2026` and not `2026-09-07`.
 ESTONIAN_DATE = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{4}$")
+
+
+def typed(days: int, *, padded: bool = False) -> str:
+    """A date `days` from today, written the way a lawyer types one.
+
+    Relative rather than a literal, and that is not tidiness. These two tests
+    persist a Matter, so whatever they type into `Arvamuse tähtaeg` becomes part
+    of the world every other test in this suite reads — and since that field
+    became real deadline work, a literal that has quietly slipped into the past
+    makes a Matter genuinely overdue and moves the department's *üle tähtaja*
+    figure (app/matters/work_items.py). `23.8.2026` was in the future when it
+    was written here and was not by the time it mattered.
+    """
+    on = date.today() + timedelta(days=days)
+    return f"{on.day:02d}.{on.month:02d}.{on.year}" if padded else f"{on.day}.{on.month}.{on.year}"
 
 
 def create_form(page, base_url) -> None:
@@ -227,9 +243,14 @@ def test_a_typed_estonian_date_is_saved(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
+    # Saabus stays the literal it always was. Only `Arvamuse tähtaeg` had to
+    # move: it is the field that is now deadline work, and a received date is
+    # not. Making this relative as well shifted a month row on Statistika,
+    # which is a page this change has no business touching.
+    deadline = typed(21)
     page.fill("#id_title", "Eestikeelse kuupäevaga teema")
     page.fill("#id_received_date", "7.9.2026")
-    page.fill("#id_response_deadline", "23.8.2026")
+    page.fill("#id_response_deadline", deadline)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
@@ -239,7 +260,7 @@ def test_a_typed_estonian_date_is_saved(page, base_url):
     # this is about (Teema redesign §5.4, §22.1).
     body = page.locator(".railcard__value--date, .metaline__value--deadline").all_inner_texts()
     assert any("7.9.2026" in text for text in body), body
-    assert any("23.8.2026" in text for text in body), body
+    assert any(deadline in text for text in body), body
 
 
 def test_a_padded_estonian_date_is_accepted_too(page, base_url):
@@ -247,11 +268,16 @@ def test_a_padded_estonian_date_is_accepted_too(page, base_url):
     create_form(page, base_url)
 
     page.fill("#id_title", "Nullidega kuupäevaga teema")
-    page.fill("#id_response_deadline", "07.09.2026")
+    # Eight days, which is where the literal `07.09.2026` sat and is what keeps
+    # this Matter inside Ülevaade's «arvamuse tähtaega 14 päeva jooksul»
+    # window. That figure reads `Matter.response_deadline` directly and has
+    # nothing to do with this change; moving the date out of its window altered
+    # a number on a page for no reason anybody could later explain.
+    page.fill("#id_response_deadline", typed(8, padded=True))
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
-    assert "7.9.2026" in " ".join(
+    assert typed(8) in " ".join(
         page.locator(".railcard__value--date, .metaline__value--deadline").all_inner_texts()
     )
 

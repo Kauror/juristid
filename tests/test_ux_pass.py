@@ -905,11 +905,19 @@ def test_osakond_costs_the_same_whatever_the_department_holds(
     quietly reads a column per row — which is exactly what a `.only()` on the
     last-activity population did here, turning one query into sixty and looking
     fine on a development database with twelve Matters in it.
+
+    The ceiling moved from 75 to 82 when ``Arvamuse tähtaeg`` became a work
+    source: the shared read model went from two bounded queries to three, and
+    this page reads it seven times — the Seis strip's two `?too=` figures, the
+    team table, Eesolev, and the populations behind them. Seven constant
+    queries, and the number is identical at 3, 12, 30 and 60, which is the
+    property this test actually holds. An N+1 would have moved it four times
+    (app/matters/work_items.py).
     """
     _department_world(department_head, people=people, matters=matters)
     client.force_login(department_head)
 
-    with django_assert_max_num_queries(75):
+    with django_assert_max_num_queries(82):
         response = client.get(reverse("matters:department_work"))
     assert response.status_code == 200
 

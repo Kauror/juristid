@@ -533,7 +533,6 @@ def test_a_do_action_dated_inside_the_horizon_is_never_swallowed(specialist):
     [
         (NextActionForm, "target_date"),
         (MatterCreateForm, "received_date"),
-        (MatterCreateForm, "response_deadline"),
         (ComposerForm, "occurred_on"),
         (IncomingIntakeForm, "received_date"),
         (EngagementForm, "occurred_on"),
@@ -573,13 +572,14 @@ def test_today_is_recorded_as_now_and_not_as_midnight(normal_matter, specialist)
         (ComposerForm, "deadline_date"),
         (ComposerForm, "final_sent_on"),
         (EffectiveDateForm, "exact_date"),
+        (MatterCreateForm, "response_deadline"),
     ],
 )
 def test_a_date_box_whose_emptiness_is_a_signal_never_defaults(form_class, field):
     """The limit of §5, and the browser lane is what found it.
 
     A date box defaults to today when the box is the only thing it says. These
-    four are read for *emptiness*:
+    are read for *emptiness*:
 
     * `next_date` — a TEEN with no date is the one combination the domain
       refuses, and a default answers that refusal with a deadline nobody chose;
@@ -589,7 +589,20 @@ def test_a_date_box_whose_emptiness_is_a_signal_never_defaults(form_class, field
     * `PeriodForm.exact_date` — `Jõustub üldises korras` means the date is not
       known, and a form carrying one is refused.
 
-    A default in any of them does not save typing. It states a fact nobody gave.
+    `Arvamuse tähtaeg` joined them, and by this rule rather than against it.
+    ADR 0031 put it in the defaulting list because at the time nothing read its
+    emptiness — the date was stored, shown on the Matter header, and that was
+    all. It is now the third source of the shared work model, so an empty box
+    means *no commitment* and a filled one means *a deadline exists on this
+    day*. Under the old default a Matter created and left alone was due on the
+    day it was entered and overdue everywhere the next morning, against a
+    promise nobody had made (app/matters/work_items.py, ADR 0031 §5 amendment).
+
+    `Saabus` stays defaulted, one field above it in the same form, and the
+    contrast is the point: an arrival date is an observation, nearly everything
+    does arrive on the day it is typed in, and nothing reads its emptiness.
+
+    A default in any of these does not save typing. It states a fact nobody gave.
     """
     assert form_class()[field].initial is None
 
