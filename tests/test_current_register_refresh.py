@@ -24,6 +24,7 @@ import hashlib
 import pytest
 from django.utils import timezone
 
+from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
 from app.legacy_import.final_cutover import build_cutover_plan, rebuild_current_state
@@ -48,7 +49,7 @@ from app.matters.models import Matter, MatterEngagement
 from app.matters.services import create_imported_matter
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
-from app.workflow.models import NextAction
+from app.workflow.models import NextAction, StageVocabulary
 from app.workflow.services import cancel_next_action, complete_next_action, set_next_action
 from tests.synthetic_cutover import SNAPSHOT_DATE, approve_snapshot
 from tests.synthetic_portfolio import (
@@ -72,6 +73,10 @@ WAIT_AND_REVIEW = "ootan valitsusele saatmist, vaata üle 15.09"
 UNREADABLE = "Menetlus jätkub kuidagi"
 
 LIVE_STATUS = "kooskõlastusringil"
+
+#: The reviewed label one stage further on, so a fixture can move a HETKESEIS
+#: without inventing vocabulary.
+GOVERNMENT_STATUS = "valitsuses"
 
 #: The page's label for the register's own feedback observation, in full. The
 #: engagement composer carries a placeholder that begins with the same two
@@ -487,6 +492,216 @@ def test_a_multi_person_owner_cell_names_nobody(world):
 
     assert figures["unresolved_owners"]
     assert figures["field_changes"]["owner"] == 0
+
+
+# ---------------------------------------------------------------------------
+# HETKESEIS, and the difference between reporting a change and performing one
+# ---------------------------------------------------------------------------
+
+
+def stage_named(key: str) -> StageVocabulary:
+    return StageVocabulary.objects.get(key=key)
+
+
+def matter_in_stage(
+    register,
+    *,
+    title: str,
+    reference: int,
+    stage: StageVocabulary,
+    status_cell: str = LIVE_STATUS,
+    **cells,
+) -> Matter:
+    """One current Matter already sitting in a stage, with its register row.
+
+    ``add_matter`` cannot express this: its keyword arguments are workbook
+    cells, and the stage a Matter *holds* is canonical data rather than
+    something a fixture writes into a spreadsheet.
+    """
+    matter = create_imported_matter(
+        title=title,
+        reference_year=CURRENT_YEAR,
+        reference_number=reference,
+        record_mode=RecordMode.FULL,
+        stage=stage,
+    )
+    add_source_reference(
+        register,
+        matter,
+        year=CURRENT_YEAR,
+        snapshot=SNAPSHOT,
+        status_cell=status_cell,
+        **cells,
+    )
+    return matter
+
+
+def stage_changes(plan) -> list:
+    return [change for change in plan.field_changes if change.field == "stage"]
+
+
+def refreshed_stage_moves() -> dict:
+    """What the apply actually wrote to ``stage``, read back from the audit."""
+    moves = {}
+    for event in ChangeEvent.objects.filter(
+        event_type=ChangeEventType.MATTER_SOURCE_FIELDS_REFRESHED
+    ):
+        move = event.payload.get("fields", {}).get("stage")
+        if move is not None:
+            moves[event.matter_id] = (move["from"], move["to"])
+    return moves
+
+
+def test_a_hetkeseis_that_did_not_move_is_not_reported_as_a_stage_change(world):
+    """The report's own false positive, and the reason it mattered.
+
+    ``resolve_status`` answers with the ``StageVocabulary`` row; the Matter
+    holds its foreign key. Comparing the two directly compares an object with a
+    UUID, which is never equal — so every row whose ``HETKESEIS`` the
+    vocabulary could read was reported as a stage change, including the
+    overwhelming majority already sitting in exactly that stage. A dry run
+    promised hundreds of moved stages and the apply moved seven, which is the
+    one disagreement between a plan and its apply that an operator cannot act
+    on: the number they are asked to approve describes nothing that happens.
+    """
+    matter_in_stage(
+        world,
+        title="Sünteetiline riigilõivuseadus",
+        reference=30,
+        stage=stage_named("consultation"),
+        status_cell=LIVE_STATUS,
+    )
+
+    plan = refresh()
+
+    assert stage_changes(plan) == []
+    assert summary(plan)["field_changes"]["stage"] == 0
+
+
+def test_a_hetkeseis_that_moved_is_reported_once(world):
+    """And the same row still reports the change that is real."""
+    consultation = stage_named("consultation")
+    government = stage_named("government")
+    matter = matter_in_stage(
+        world,
+        title="Sünteetiline riigieelarve seadus",
+        reference=31,
+        stage=consultation,
+        status_cell=GOVERNMENT_STATUS,
+    )
+
+    plan = refresh()
+
+    changes = stage_changes(plan)
+    assert len(changes) == 1
+    assert changes[0].matter_id == matter.pk
+    # The identity the write path records, on both sides of the arrow. The
+    # printed report counts these rows; the plan digest carries their values.
+    assert changes[0].before == str(consultation.pk)
+    assert changes[0].after == str(government.pk)
+    assert summary(plan)["field_changes"]["stage"] == 1
+
+
+def test_a_matter_with_no_stage_yet_reports_the_one_the_register_gives_it(world):
+    """An empty canonical field is still a move, and still only counts once."""
+    matter = add_matter(
+        world, title="Sünteetiline arhiiviseadus", reference=32, status_cell=LIVE_STATUS
+    )
+    assert matter.stage_id is None
+
+    changes = stage_changes(refresh())
+
+    assert len(changes) == 1
+    assert changes[0].before == ""
+    assert changes[0].after == str(stage_named("consultation").pk)
+
+
+def test_an_unreadable_hetkeseis_reports_no_stage_change(world):
+    """A label the vocabulary cannot read leaves the field alone, and says so
+    by reporting nothing rather than by reporting a move to nowhere."""
+    matter_in_stage(
+        world,
+        title="Sünteetiline planeerimisseadus",
+        reference=33,
+        stage=stage_named("consultation"),
+        status_cell="miski, mida sõnastik ei tunne",
+    )
+
+    plan = refresh()
+
+    assert stage_changes(plan) == []
+    assert summary(plan)["field_changes"]["stage"] == 0
+
+
+def test_the_reported_stage_changes_are_exactly_the_ones_the_apply_writes(world):
+    """The contract, asserted against the audit trail rather than restated.
+
+    Two rows in one plan: one whose ``HETKESEIS`` says where it already is, one
+    whose ``HETKESEIS`` has moved. The report and
+    ``refresh_matter_from_register`` have to agree about which is which and
+    about what moved where. There is one definition of "the same stage" — the
+    primary key — and a second one written out here could only ever be wrong.
+    """
+    consultation = stage_named("consultation")
+    government = stage_named("government")
+    settled = matter_in_stage(
+        world,
+        title="Sünteetiline korrakaitseseadus",
+        reference=34,
+        stage=consultation,
+        status_cell=LIVE_STATUS,
+    )
+    moving = matter_in_stage(
+        world,
+        title="Sünteetiline maapõueseadus",
+        reference=35,
+        stage=consultation,
+        status_cell=GOVERNMENT_STATUS,
+    )
+
+    plan = refresh()
+    reported = {change.matter_id: (change.before, change.after) for change in stage_changes(plan)}
+
+    apply_refresh_plan(plan, expect_plan_sha256=plan.digest)
+
+    assert reported == {moving.pk: (str(consultation.pk), str(government.pk))}
+    assert refreshed_stage_moves() == reported
+
+    settled.refresh_from_db()
+    moving.refresh_from_db()
+    assert settled.stage_id == consultation.pk
+    assert moving.stage_id == government.pk
+
+
+def test_the_plan_after_the_apply_reports_no_stage_change(world):
+    """Dry run, apply, dry run again — and the third step has to be empty.
+
+    This is the shape the defect was found in, and the only one that catches it
+    end to end: the first report promised a stage change, the apply performed
+    it, and a second report over the database the apply had just written
+    promised the very same change again.
+    """
+    government = stage_named("government")
+    matter = matter_in_stage(
+        world,
+        title="Sünteetiline välisõhu kaitse seadus",
+        reference=36,
+        stage=stage_named("consultation"),
+        status_cell=GOVERNMENT_STATUS,
+    )
+
+    first = refresh()
+    assert summary(first)["field_changes"]["stage"] == 1
+
+    apply_refresh_plan(first, expect_plan_sha256=first.digest)
+    matter.refresh_from_db()
+    assert matter.stage_id == government.pk
+
+    second = refresh()
+
+    assert stage_changes(second) == []
+    assert summary(second)["field_changes"]["stage"] == 0
+    assert protected_rows(second)[0]["fields_changed"] == []
 
 
 # ---------------------------------------------------------------------------
