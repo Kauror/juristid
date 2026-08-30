@@ -126,14 +126,15 @@ reads the date and nothing else.
 > created and left alone was due on the day it was entered and overdue on every
 > deadline surface the next morning, against a promise nobody had made. `Saabus`
 > keeps its default: an arrival date is an observation, and nothing reads its
-> emptiness. Nothing else in this section changes.
+> emptiness. The two lists below are corrected to match; no other decision in
+> this section changes.
 
-`Saabus`, `Arvamuse tähtaeg`, `Toimus`, the Kaasamine date, the intake date and
-the header's `+ Tähtaeg` all pre-fill with the current date. `initial` fills an
-unbound form only, so a posted value always wins, a validation error keeps what
-was typed, and a deliberately cleared date stays cleared.
+`Saabus`, `Toimus`, the Kaasamine date, the intake date and the header's
+`+ Tähtaeg` all pre-fill with the current date. `initial` fills an unbound form
+only, so a posted value always wins, a validation error keeps what was typed,
+and a deliberately cleared date stays cleared.
 
-**Four date boxes deliberately keep no default**, and this is the more important
+**Five date boxes deliberately keep no default**, and this is the more important
 half of the decision. A form that reads a field's *emptiness* as a signal cannot
 have that field defaulted, because there a default does not save typing — it
 states a fact nobody gave:
@@ -149,10 +150,18 @@ states a fact nobody gave:
   ordinary closure that was not also recording a sent opinion;
 - `PeriodForm.exact_date` — `Jõustub üldises korras` means the date is *not
   known*, and a form carrying one is refused. Defaulted, that save refused
-  itself.
+  itself;
+- `Arvamuse tähtaeg` on `Uus teema` (`MatterCreateForm.response_deadline`) —
+  added by the amendment above. Its emptiness is now meaningful: blank means no
+  response commitment exists, and a stored date means Koda has promised an
+  opinion by that day. Defaulting today invents a deadline nobody stated, and
+  since the field became a source of the shared work model that invention is
+  not inert — the Matter falls due on the day it was entered and reads as
+  overdue on every deadline surface the next morning.
 
-All four were found by the browser lane after the first, broader implementation
-was pushed. They are named here rather than quietly narrowed because the
+The first four were found by the browser lane after the first, broader
+implementation was pushed; the fifth arrived later, when the field it names
+gained a reader. They are named here rather than quietly narrowed because the
 distinction is the rule, not the exception list: **default a date box only when
 nothing reads its emptiness.**
 
