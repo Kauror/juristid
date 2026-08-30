@@ -16,7 +16,7 @@ central authorization boundary, the design-token foundation, the architecture
 decisions and the CI pipeline that keeps them honest.
 
 **Stage 1 — complete, merged.** The core lawyer workflow, and there is a real
-production UI: Minu töö, Saabunud, Teemad, the Matter page,
+production UI: Minu asjad, Saabunud, Teemad, the Matter page,
 the unified Sissekanne composer, `Järgmiseks` next actions, Submissions with
 immutable final evidence, and global search — all in the Koda CVI dark-mode
 interface.

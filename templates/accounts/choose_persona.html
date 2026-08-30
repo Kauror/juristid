@@ -18,7 +18,7 @@
 
   The fast path is the top-bar pill. This page stays for the direct route, for
   explicit switching, and for the no-persona landing — which is where
-  `login_required` sends a reader who opens Minu töö without having said who
+  `login_required` sends a reader who opens Minu asjad without having said who
   they are.
 {% endcomment %}
 
@@ -52,7 +52,7 @@
             <p class="personarow personarow--current">
               <span class="personarow__avatar personarow__avatar--current"
                     aria-hidden="true">{{ person.initials }}</span>
-              <span class="personarow__name">{{ person.get_short_name }}</span>
+              <span class="personarow__name">{{ person.display_name }}</span>
               <span class="personarow__state">Praegu valitud</span>
             </p>
           {% else %}
@@ -68,7 +68,7 @@
               {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
               <button type="submit" class="personarow">
                 <span class="personarow__avatar" aria-hidden="true">{{ person.initials }}</span>
-                <span class="personarow__name">{{ person.get_short_name }}</span>
+                <span class="personarow__name">{{ person.display_name }}</span>
                 <span class="personarow__action">Vali</span>
               </button>
             </form>

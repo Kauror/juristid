@@ -122,7 +122,10 @@ def test_the_search_narrows_the_whole_population_not_the_rendered_page(signed_in
 
     response = signed_in.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik"})
     assert total_of(response) == 30
-    assert len(titles_on(response)) == 25
+    # Twelve rows a page since the v2 rebuild, and the count still says thirty:
+    # `?q=` narrows the whole population, never the rendered page
+    # (02-EKRAANID §C).
+    assert len(titles_on(response)) == 12
 
 
 def test_pagination_survives_a_search(signed_in):
@@ -131,7 +134,15 @@ def test_pagination_survives_a_search(signed_in):
 
     second = signed_in.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik", "leht": "2"})
     assert total_of(second) == 30
-    assert len(titles_on(second)) == 5
+    assert len(titles_on(second)) == 12
+
+    third = signed_in.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik", "leht": "3"})
+    assert len(titles_on(third)) == 6
+
+    # And the size control pages the same population rather than a new one.
+    whole = signed_in.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik", "kaupa": "koik"})
+    assert total_of(whole) == 30
+    assert len(titles_on(whole)) == 30
 
 
 def test_an_empty_query_is_the_whole_register(signed_in):

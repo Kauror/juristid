@@ -33,8 +33,9 @@ from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import AcceptedUpload, read_upload
+from app.matters.entry_enums import EntryKind
 from app.matters.models import Matter
-from app.matters.services import create_matter
+from app.matters.services import add_entry, create_matter
 
 #: Extensions whose contents are an email rather than a document. The file is
 #: captured exactly as it arrived either way; the role records what it *is*, so
@@ -100,6 +101,8 @@ def register_incoming(
     stage: Any = None,
     track: str = "",
     visibility: str = Visibility.NORMAL,
+    brief_summary: str = "",
+    handover_note: str = "",
 ) -> IntakeResult:
     """Create the Matter and capture every arriving file as evidence.
 
@@ -126,7 +129,18 @@ def register_incoming(
         received_date=received_date,
         response_deadline=response_deadline,
         visibility=visibility,
+        brief_summary=(brief_summary or "").strip(),
     )
+
+    # «Märkmed vastutajale» — what the person filing this wants whoever picks it
+    # up to know. Recorded as the Matter's first timeline entry rather than as a
+    # column of its own: it is a dated, attributed statement about the file, it
+    # is visible to exactly the people who may see the file, and that is what an
+    # `Entry` already is. No new field, and no new visibility question
+    # (docs/design-v2-compatibility.md, DS-09).
+    note = (handover_note or "").strip()
+    if note:
+        add_entry(matter=matter, body=note, author=actor, kind=EntryKind.NOTE)
 
     for upload in uploads:
         document = create_document(

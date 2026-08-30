@@ -16,7 +16,7 @@ The failures were not subtle once they were looked for.
 * *N inimest* on the since-retired Minu tiim opened the whole register.
 * The team strip summed per-person counts, which silently drops every unowned
   file, and linked to a register list that includes them.
-* *Esitatud arvamusi 2026* and *Suletud teemasid 2026* carried the year in the
+* *Saadetud arvamusi 2026* and *Suletud teemasid 2026* carried the year in the
   label and not in the link.
 * *Näita kõiki 41* under Vajab sekkumist carried ``sekkumine=hilinenud``.
 * *Näita ülejäänud 3* under Tähtajad opened the whole register sorted by date.
@@ -492,6 +492,29 @@ def test_show_all_under_the_intervention_list_shows_all_of_it(department_head, w
 
     assert whole.intervention_total == unfiltered.intervention_total
     assert len(whole.intervention_preview) == whole.intervention_total
+
+
+def test_naita_veel_holds_the_remainder_of_the_same_list(department_head, world, today):
+    """The rows behind «Näita veel N ▾» are the rest of the list above them.
+
+    The v2 design replaced the footer link — which reloaded the page with a
+    wider filter — with a disclosure holding the remainder of the same read
+    (02-EKRAANID §B). The browser test that followed the old link went with it,
+    and this is what it was really asserting: the number on the control, the
+    rows on screen and the rows behind it are three readings of one answer, not
+    a second query that can disagree with the first.
+    """
+    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
+
+    assert page.intervention_preview + page.intervention_rest == page.interventions
+    assert page.intervention_remaining == len(page.intervention_rest)
+    assert page.intervention_total == len(page.interventions)
+
+    # And no row is on screen *and* behind the disclosure. Two copies of a row
+    # is the defect a slice can produce without changing any count.
+    shown = [id(row) for row in page.intervention_preview]
+    hidden = [id(row) for row in page.intervention_rest]
+    assert not set(shown) & set(hidden)
 
 
 def test_the_area_footer_opens_every_area_including_the_empty_ones(department_head, world, today):

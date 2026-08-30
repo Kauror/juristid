@@ -203,7 +203,15 @@ def test_the_lawyers_are_listed_alphabetically(page, base_url):
 
 
 def test_a_lawyers_open_count_opens_exactly_that_list(page, base_url):
-    """Every number is a promise that a list exists behind it."""
+    """Every number is a promise that a list exists behind it.
+
+    The row opens the person's desk now, not the register: a register row
+    answers "what is this Matter", and the question a head clicks a name to ask
+    is "what is on this person's desk" (design handoff, Minu asjad §A). The
+    promise is unchanged and is asserted one step further along — the desk's
+    own «avatud teemat» figure is the same number, and *its* link is the
+    register list.
+    """
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
@@ -215,7 +223,14 @@ def test_a_lawyers_open_count_opens_exactly_that_list(page, base_url):
 
     row.click()
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".pagehead__context")).to_have_text(f"{expected} teemat")
+    expect(page.get_by_role("heading", name=f"{MARTIN.display_name} · asjad")).to_be_visible()
+
+    figure = page.locator(".seis__figure").filter(has_text="avatud teemat").first
+    expect(figure.locator(".seis__number")).to_have_text(str(expected))
+
+    figure.click()
+    page.wait_for_load_state("networkidle")
+    expect(page.locator(".registercount strong")).to_have_text(str(expected))
 
 
 def test_a_departed_colleague_holding_live_work_is_surfaced_not_hidden(page, base_url):

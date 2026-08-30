@@ -36,12 +36,17 @@ opinion is usually the same person about to write down what Koda argued.
       <section class="card card--form positionpanel" aria-labelledby="seisukoht-heading">
         <h2 class="sectionlabel" id="seisukoht-heading">Koja seisukoht</h2>
 
+        {% comment %}
+          The position, and only the position.
+
+          `Põhjendus` is still stored, still edited in the disclosure below and
+          still saved by the same POST — it is simply not printed here. The card
+          answers "what does Koda think about this", and the reasoning under it
+          was answering a second question at the same size as the first
+          (02-EKRAANID §C, docs/design-v2-compatibility.md DS-20).
+        {% endcomment %}
         {% if matter.position_summary %}
           <p class="positionpanel__summary">{{ matter.position_summary|linebreaksbr }}</p>
-          {% if matter.rationale_summary %}
-            <p class="sectionlabel positionpanel__label">Põhjendus</p>
-            <p class="positionpanel__rationale">{{ matter.rationale_summary|linebreaksbr }}</p>
-          {% endif %}
         {% else %}
           <p class="positionpanel__empty">
             Koja seisukohta ei ole veel sõnastatud. Kuni see on kirjutamata, ei saa
@@ -106,12 +111,6 @@ opinion is usually the same person about to write down what Koda argued.
           Koja arvamused
           <span class="sectionlabel__count">{{ submissions|length }}</span>
         </h2>
-        <p class="cardnote">
-          Ühe teema kohta võib olla mitu arvamust. Saadetud arvamus vajab täpset lõplikku tõendit.
-          Kõik saadetud arvamused on koos
-          <a href="{% url 'submissions:sent' %}">Arvamuste</a> töölaual.
-        </p>
-
         {% for submission in submissions %}
           {% include "submissions/partials/submission_card.html" with submission=submission %}
         {% empty %}
@@ -161,10 +160,6 @@ opinion is usually the same person about to write down what Koda argued.
             Seotud arhiivikirjad
             <span class="sectionlabel__count">{{ archive_letters|length }}</span>
           </h2>
-          <p class="cardnote">
-            Koja varasemad kirjad, mis selle teemaga seotud on. Need on tõendid
-            tehtud tööst, mitte kanoonilised arvamuse kirjed.
-          </p>
           <ul class="linklist">
             {% for letter in archive_letters %}
               <li class="linklist__item">

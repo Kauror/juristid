@@ -185,24 +185,22 @@ def test_the_register_still_answers_a_reference_typed_into_the_search_box(
 
 
 def test_the_matter_page_names_the_topic_rather_than_the_record(populated, client, specialist):
-    """This cleanup kept the reference on the Matter page. Hands-on use said no.
+    """The topic is *named* by its title. The reference is an identity, once.
 
-    The argument then was that the record's own page is where a reference is
-    genuinely wanted. What a lawyer actually met there was a crumb reading
-    *Teemad / 2026_10* above an <h1> that already said what the file was about:
-    the reference was not identifying anything they were unsure of, it was
-    sitting in the one line of the page that could have oriented them.
+    This cleanup took the reference off every ordinary reading surface, because
+    what a lawyer met was a crumb reading *Teemad / 2026_10* above an <h1> that
+    already said what the file was about: the reference was not identifying
+    anything they were unsure of, it was sitting in the one line of the page
+    that could have oriented them (human QA §1, §8).
 
-    So the reference left every ordinary reading surface and stayed everywhere it
-    answers a question somebody is asking: exact search, `__str__`, the CSV
-    export, the work-sort tie-break and the import tooling. The three tests above
-    this one are the capabilities that had to survive, and they still do
-    (human QA §1, §8; tests/test_identifier_free_ui.py).
+    The v2 design put it back in exactly one place, and only that place: the
+    «Teema andmed» facts rail, labelled `Teemaviide`, beside the other things
+    somebody *looks up* rather than reads (02-EKRAANID §C). That is not a
+    reversal of the rule — the rule is that a topic is named by its title, and
+    it still is, in every heading, every crumb and every list on every page.
 
-    `Muuda teemat` was briefly the exception, on the argument that a labelled
-    provenance fact is not an identity. Review rejected that too — the rule is
-    about who is looking, and that page is the ordinary application — so both
-    pages are asserted here (review of PR #72, §2).
+    So this asserts both halves: the title names the file, and the reference
+    appears once, in the rail, under a label.
     """
     client.force_login(specialist)
     matter = populated["owned"]
@@ -211,10 +209,15 @@ def test_the_matter_page_names_the_topic_rather_than_the_record(populated, clien
     edit = client.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
 
     assert matter.title in detail
-    assert matter.display_reference not in detail
+    assert detail.count(matter.display_reference) == 1
+    assert f'class="railcard__ref">{matter.display_reference}</span>' in detail
+    # Not in the heading, and not in the crumb.
+    heading = detail.split('matterhead__title">', 1)[1].split("</h1>", 1)[0]
+    assert matter.display_reference not in heading
+    crumbs = detail.split('matterhead__crumbs">', 1)[1].split("</div>", 1)[0]
+    assert matter.display_reference not in crumbs
+    # `Muuda teemat` is a form, not a facts rail: nothing there identifies.
     assert matter.display_reference not in edit
-    # Gone from the page, not gone from the record.
-    assert matter.display_reference
 
 
 # -- short names ------------------------------------------------------------

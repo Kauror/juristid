@@ -105,7 +105,44 @@ def _sent_rows(viewer: Any, query: str) -> tuple[Any, int, str]:
         # Reported inside the section rather than raised. The register above it
         # answered correctly and must keep its answer.
         return [], 0, str(error)
-    return rows[:EMBEDDED_ROWS], rows.count(), ""
+    bounded = list(rows[:EMBEDDED_ROWS])
+    _decorate(bounded, viewer)
+    return bounded, rows.count(), ""
+
+
+def _decorate(submissions: list[Any], viewer: Any) -> None:
+    """Attach what a card prints, in two queries rather than two per card.
+
+    ``final_version_readable`` is the same check the Matter's own Arvamused page
+    makes and for the same reason: the download route already refuses the bytes,
+    but a card that prints the filename beside a link has disclosed the filename
+    — and a Submission a reader may see can point at a Document restricted below
+    it, because a Document carries its own override. A filename is frequently
+    the most telling thing about a file (AUTH-003 §21).
+    """
+    from app.documents.models import Document, DocumentVersion
+    from app.submissions.enums import RecipientRole
+
+    version_ids = [row.final_version_id for row in submissions if row.final_version_id]
+    readable: set[Any] = set()
+    if version_ids:
+        readable = set(
+            DocumentVersion.objects.filter(
+                pk__in=version_ids,
+                document__in=Document.objects.visible_to(viewer).values("pk"),
+            ).values_list("pk", flat=True)
+        )
+    for submission in submissions:
+        submission.final_version_readable = submission.final_version_id in readable
+        # Off the prefetch `sent_queryset` already pays for, not a second query:
+        # the addressees are the half of the recipients a reporting count asks
+        # about, and splitting them in Python costs nothing here
+        # (app/submissions/workspace.py).
+        submission.addressee_list = [
+            row.organisation
+            for row in submission.recipient_rows.all()
+            if row.role == RecipientRole.ADDRESSEE
+        ]
 
 
 def _archive_rows(viewer: Any, query: str) -> tuple[Any, int, str]:

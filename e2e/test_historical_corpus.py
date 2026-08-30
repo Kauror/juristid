@@ -31,7 +31,10 @@ pytestmark = pytest.mark.e2e
 
 
 def open_the_matter(page, base_url: str, title: str) -> None:
-    page.goto(f"{base_url}/teemad/")
+    # `?kaupa=koik`: the v2 design set the default page size to twelve, so a
+    # seeded row is on page one only until some other test files a thirteenth
+    # Matter (02-EKRAANID §C).
+    page.goto(f"{base_url}/teemad/?kaupa=koik")
     page.get_by_role("link", name=title).first.click()
     page.wait_for_load_state("networkidle")
 
@@ -102,12 +105,18 @@ def test_the_historical_material_is_listed_under_dokumendid(page, base_url):
 def test_a_restricted_matters_history_is_as_unreachable_as_the_matter(page, base_url):
     """Old material is not less confidential for being old (Stage-2D brief 60)."""
     sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/teemad/")
+    # `?kaupa=koik`: the v2 design set the default page size to twelve, so a
+    # seeded row is on page one only until some other test files a thirteenth
+    # Matter (02-EKRAANID §C).
+    page.goto(f"{base_url}/teemad/?kaupa=koik")
     expect(page.get_by_role("link", name=RESTRICTED_TITLE).first).to_be_visible()
     sign_out(page, base_url)
 
     sign_in(page, base_url, READER)
-    page.goto(f"{base_url}/teemad/")
+    # `?kaupa=koik`: the v2 design set the default page size to twelve, so a
+    # seeded row is on page one only until some other test files a thirteenth
+    # Matter (02-EKRAANID §C).
+    page.goto(f"{base_url}/teemad/?kaupa=koik")
     expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_have_count(0)
 
     # And nothing in the register hints that a hidden file has history.

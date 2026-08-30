@@ -2,82 +2,186 @@
 {% block title %}Lisa saabunud materjal · {{ application_name }}{% endblock %}
 
 {% comment %}
-The file-first way into a Matter.
+The file-first way into a Matter, on the same `createform` shape as Uus teema.
 
 Files are the only required input. Everything else can wait, because the moment
 a ministry's PDF lands the useful thing is to get it captured — not to answer
-questions about menetlusliik. There is deliberately no default Hetkeseis: a file
-arriving says something was received, not where the external process stands.
+questions about menetlusliik. The page says so in its own footer instead of in a
+paragraph at the top, which is why Hetkeseis and Menetlusliik are no longer on
+this form at all (02-EKRAANID §F).
+
+Nähtavus is the one field that did not go with them. Filing a restricted letter
+as NORMAL and correcting it on the Matter page means it was department-wide in
+between; that is not "the rest of the record"
+(docs/design-v2-compatibility.md, DS-15).
 {% endcomment %}
 
 {% block content %}
-<div class="page page--narrow">
-  <header class="pagehead">
+<div class="page page--create">
+  <nav class="crumbs" aria-label="Asukoht">
+    <a href="{% url 'matters:inbox' %}">← Saabunud</a>
+  </nav>
+
+  <div class="pagehead">
     <h1 class="pagehead__title">Lisa saabunud materjal</h1>
-    <span class="pagehead__context">
-      Failid salvestatakse muutumatute tõenditena ja neist luuakse uus teema.
-    </span>
-  </header>
+  </div>
 
   {% if form.errors %}
-    <div class="formerror" role="alert">
-      <p>Kontrolli vormi: midagi jäi puudu või ei sobinud.</p>
-    </div>
+    <p class="formerror" role="alert">Kontrolli vormi: midagi jäi puudu või ei sobinud.</p>
   {% endif %}
 
-  <form class="form card card--form" method="post" enctype="multipart/form-data"
+  <form class="form createform" method="post" enctype="multipart/form-data"
         action="{% url 'matters:intake' %}">
     {% csrf_token %}
 
-    <label class="field">
-      <span class="field__label">Failid</span>
-      <input class="field__input" type="file" name="uploads" multiple required>
-      <span class="field__help">
-        Vali kõik ühe saadetise failid korraga — kaaskiri, eelnõu, seletuskiri, lisad.
-        Iga fail salvestatakse eraldi tõendina koos algse nime ja kontrollsummaga.
-      </span>
-    </label>
+    {# 1 — the files, which are the whole reason this page exists. #}
+    <div class="createform__row createform__row--first">
+      <fieldset class="field" id="saabunud-failid">
+        <legend class="field__label">
+          Failid
+          <span class="field__count" data-chipcount-for="id_intake_files"></span>
+        </legend>
+        <div class="dropzone">
+          {% comment %}
+            The input is the control and the label is its face. `for=` opens the
+            file chooser natively, so hiding the box costs nothing a keyboard or
+            a screen reader had.
+          {% endcomment %}
+          <input class="visually-hidden" type="file" name="uploads" id="id_intake_files" multiple required>
+          <label class="dropzone__choose" for="id_intake_files">Vali failid</label>
+          <span class="dropzone__hint">või lohista need siia — e-kirja manused saab lisada koos kirjaga</span>
+          <ul class="dropzone__list" id="valitud-saabunud-failid" hidden></ul>
+        </div>
+      </fieldset>
+    </div>
 
-    <label class="field">
-      <span class="field__label">Pealkiri</span>
-      {{ form.title }}
-      <span class="field__help">{{ form.title.help_text|default:"Jäta tühjaks, et kasutada esimese faili nime." }}</span>
-    </label>
-
-    {% include "organisations/partials/picker.html" with target="source_organisations" label="Saatja" multiple=1 organisations=form.fields.source_organisations.queryset selected=None %}
-
-    <div class="formgrid">
+    {# 2 — what it is called, and what it is about. #}
+    <div class="createform__row createform__pair createform__pair--summary">
       <label class="field">
-        <span class="field__label">Saabus</span>
-        {{ form.received_date }}
-        <span class="field__help">Vaikimisi tänane päev.</span>
+        <span class="field__label">{{ form.title.label }}</span>
+        {{ form.title }}
+        {% if form.title.errors %}<span class="field__error">{{ form.title.errors|first }}</span>{% endif %}
       </label>
       <label class="field">
-        <span class="field__label">Arvamuse tähtaeg</span>
-        {{ form.response_deadline }}
-      </label>
-      <label class="field">
-        <span class="field__label">Vastutaja</span>
-        {{ form.owner }}
-      </label>
-      <label class="field">
-        <span class="field__label">Hetkeseis</span>
-        {{ form.stage }}
-        <span class="field__help">{{ form.stage.help_text }}</span>
-      </label>
-      <label class="field">
-        <span class="field__label">Menetlusliik</span>
-        {{ form.track }}
-      </label>
-      <label class="field">
-        <span class="field__label">Nähtavus</span>
-        {{ form.visibility }}
+        <span class="field__label">{{ form.brief_summary.label }}</span>
+        {{ form.brief_summary }}
+        {% if form.brief_summary.errors %}
+          <span class="field__error">{{ form.brief_summary.errors|first }}</span>
+        {% endif %}
       </label>
     </div>
 
-    <div class="form__actions">
-      <button class="button button--primary" type="submit">Salvesta ja ava teema</button>
+    {# 3 — the two dates that arrive with it. #}
+    <div class="createform__row createform__pair">
+      <label class="field">
+        <span class="field__label">{{ form.received_date.label }}</span>
+        {{ form.received_date }}
+        {% if form.received_date.errors %}
+          <span class="field__error">{{ form.received_date.errors|first }}</span>
+        {% endif %}
+      </label>
+      <label class="field">
+        <span class="field__label">{{ form.response_deadline.label }}</span>
+        {{ form.response_deadline }}
+        {% if form.response_deadline.errors %}
+          <span class="field__error">{{ form.response_deadline.errors|first }}</span>
+        {% endif %}
+      </label>
+    </div>
+
+    {# 4 — who takes it, and who it came from. #}
+    <div class="createform__row createform__pair createform__pair--people">
+      <fieldset class="field">
+        <legend class="field__label">{{ form.owner.label }}</legend>
+        <div class="chiprow">
+          {% for choice in form.owner %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}</span>
+            </label>
+          {% endfor %}
+        </div>
+        {% if form.owner.errors %}<span class="field__error">{{ form.owner.errors|first }}</span>{% endif %}
+      </fieldset>
+
+      <fieldset class="field">
+        <legend class="field__label">
+          {{ form.source_organisations.label }}
+          <span class="field__count" data-chipcount-for="source_organisations"></span>
+        </legend>
+        <div class="chiprow">
+          {% for choice in form.source_organisations %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+            </label>
+          {% endfor %}
+
+          {% comment %}
+            The long tail, and only the long tail — the chips above are not
+            repeated inside it. Open with scripting off, and the search box only
+            hides chips that do not match: a ticked one never hides, because
+            hiding a checkbox does not clear it.
+          {% endcomment %}
+          <details class="chipdetails">
+            <summary class="chipdetails__summary">
+              Vali nimekirjast{% if form.sender_tail_count %} ({{ form.sender_tail_count }}){% endif %}
+            </summary>
+            <div class="chipdetails__body">
+              <label class="field chipdetails__search" data-choicefilter="saabunud-saatja-nimekiri">
+                <span class="visually-hidden">Otsi asutust</span>
+                <input class="field__input field__input--compact" type="search"
+                       autocomplete="off" placeholder="Otsi asutust nime järgi">
+              </label>
+              <div class="chiprow" id="saabunud-saatja-nimekiri">
+                {% for choice in form.source_organisations_other %}
+                  <label class="chip">
+                    {{ choice.tag }}
+                    <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+                  </label>
+                {% empty %}
+                  <p class="field__help">Kõik salvestatud asutused on juba ülal.</p>
+                {% endfor %}
+              </div>
+              {% comment %}
+                The one rule the UI cannot show: adding an institution is a
+                deliberate act on the reference data, not a side effect of
+                filing a matter (master specification 14.7).
+              {% endcomment %}
+              <p class="field__help">
+                Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla.
+              </p>
+            </div>
+          </details>
+        </div>
+        {% if form.source_organisations.errors %}
+          <span class="field__error">{{ form.source_organisations.errors|first }}</span>
+        {% endif %}
+      </fieldset>
+    </div>
+
+    {# 5 — what whoever picks this up needs to know, and who may read it. #}
+    <div class="createform__row createform__pair">
+      <label class="field">
+        <span class="field__label">{{ form.handover_note.label }}</span>
+        {{ form.handover_note }}
+        {% if form.handover_note.errors %}
+          <span class="field__error">{{ form.handover_note.errors|first }}</span>
+        {% endif %}
+      </label>
+      <label class="field">
+        <span class="field__label">{{ form.visibility.label }}</span>
+        {{ form.visibility }}
+        {% if form.visibility.errors %}
+          <span class="field__error">{{ form.visibility.errors|first }}</span>
+        {% endif %}
+      </label>
+    </div>
+
+    <div class="createform__actions">
+      <button class="button button--primary" type="submit">Registreeri ja loo teema</button>
       <a class="button button--quiet" href="{% url 'matters:inbox' %}">Loobu</a>
+      <span class="createform__note">Ülejäänud andmed saab lisada teema lehel.</span>
     </div>
   </form>
 </div>

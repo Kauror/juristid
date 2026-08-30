@@ -41,9 +41,12 @@ that look like one product (design handoff, Osakond).
     Seis — the head's risks, not the department's counters. Each figure opens
     exactly the rows it counted, and each says in words what it is, so the two
     tinted ones are emphasised rather than encoded.
+
+    No «SEIS» label in front of it. The figures caption themselves, and a word
+    that names the component rather than the content is a word a reader has to
+    step over on every page it appears on (01-EHITUSJUHIS §4).
   {% endcomment %}
   <div class="seis">
-    <span class="seis__label">SEIS</span>
     {% for figure in work.seis %}
       <a class="seis__figure" href="{{ figure.url }}">
         <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
@@ -251,8 +254,8 @@ that look like one product (design handoff, Osakond).
     </div>
 
     <aside class="ovbody__rail" aria-label="Juhi otsused">
-      <section class="railblock" aria-label="Vajab tähelepanu">
-        <h2 class="railblock__label railblock__label--warning">Vajab tähelepanu</h2>
+      <section class="railblock" aria-label="Vajab sekkumist">
+        <h2 class="railblock__label railblock__label--warning">Vajab sekkumist</h2>
         {% for row in work.attention %}
           <a class="railrow" href="{{ row.url }}">
             <span class="railrow__key">{{ row.label }}</span>

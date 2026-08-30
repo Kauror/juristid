@@ -553,7 +553,9 @@ SETTLED_LEAVES = {
     "core": "0001_initial",
     "documents": "0006_legacy_material_role",
     "intelligence": "0001_initial",
-    "matters": "0011_matter_successor",
+    # `matters` is not here any more: 0012 adds `PersonalScratchpad` and the
+    # next release carries it into a database that already has 0011, so CI
+    # steps the app back and applies it forwards from exactly that state.
     "organisations": "0001_initial",
     "reporting": "0001_initial",
 }

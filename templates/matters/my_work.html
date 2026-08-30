@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% load register_source %}
-{% block title %}Minu töö · {{ application_name }}{% endblock %}
+{% block title %}{% if is_self %}Minu asjad{% else %}{{ subject.display_name }} · asjad{% endif %} · {{ application_name }}{% endblock %}
 
 {% comment %}
-Minu töö answers one question: **what do I have to do or check now?**
+Minu asjad answers one question: **what do I have to do or check now?**
 
 The unit is a work item, not a Matter: a file with a deadline this week and a
 milestone next month appears twice, in the two places it needs attention. The
@@ -11,33 +11,98 @@ date decides where a row sits in time; the mode chip beside it says what the
 date means. Only a DO with a deadline — and an Oluline tähtaeg, which is a real
 commitment — is ever red.
 
+One template, two modes. `is_self` is the only switch: the manager's view gets a
+crumb, a person switcher and Kiirvaade, and does not get the notes. There is no
+second template, because two templates for one page drift, and the one that
+drifts is the one nobody is reading today.
+
+**The notes are not conditionally hidden — they are conditionally absent.** The
+manager branch never receives `scratchpad`, the block is inside `{% if is_self %}`,
+and there is therefore nothing in that response for a view-source to find
+(01-EHITUSJUHIS §3.5).
+
 No dated work is exiled to the rail. An earlier design put future OOTAN and
 JÄLGIN in blocks on the right, which made a lawyer read two lists and merge them
 in their head; that merge is the whole job of this page. The rail holds only
-what has no honest place on a timeline: a Matter nobody has given a next step,
-and an action nobody has dated.
-
-Nothing on this page is anybody else's work.
+what has no honest place on a timeline.
 {% endcomment %}
 
 {% block content %}
 <div class="page page--work">
+  {% if not is_self %}
+    <p class="pw-crumb"><a href="{% url 'matters:department_work' %}">← Osakonna töö</a></p>
+  {% endif %}
+
   <div class="workhead">
-    <h1 class="workhead__title">Minu töö</h1>
+    <h1 class="workhead__title">
+      {% if is_self %}Minu asjad{% else %}{{ subject.display_name }} · asjad{% endif %}
+    </h1>
+
+    {% if not is_self %}
+      {% comment %}
+        The person control. Prev/next walk the same list the Osakonna töö team
+        table is in, so moving with the arrows and moving by clicking a row are
+        the same order (app/matters/person_work.py).
+      {% endcomment %}
+      <span class="pw-switch">
+        {% if switcher.previous %}
+          <a class="pw-switch__arrow"
+             href="{% url 'matters:person_work' pk=switcher.previous.pk %}"
+             title="Eelmine: {{ switcher.previous.display_name }}"
+             aria-label="Eelmine kolleeg">‹</a>
+        {% endif %}
+        <details>
+          <summary aria-label="Vaheta inimest">vaheta ▾</summary>
+          <div class="pw-switch__menu">
+            {% for person in switcher.people %}
+              <a class="{% if person.pk == subject.pk %}is-active{% endif %}"
+                 {% if person.pk == subject.pk %}aria-current="true"{% endif %}
+                 href="{% if person.pk == user.pk %}{% url 'matters:my_work' %}{% else %}{% url 'matters:person_work' pk=person.pk %}{% endif %}">
+                {{ person.display_name }}{% if person.pk == user.pk %} <span>mina</span>{% endif %}
+              </a>
+            {% endfor %}
+          </div>
+        </details>
+        {% if switcher.following %}
+          <a class="pw-switch__arrow"
+             href="{% url 'matters:person_work' pk=switcher.following.pk %}"
+             title="Järgmine: {{ switcher.following.display_name }}"
+             aria-label="Järgmine kolleeg">›</a>
+        {% endif %}
+      </span>
+      {% comment %}
+        A colleague who has left but still holds live work. Said in words rather
+        than by a tint, and kept rather than hidden: an open file owned by
+        somebody who has gone is exactly what this page is opened to find.
+      {% endcomment %}
+      {% if not subject.is_active %}
+        <span class="badge badge--restricted">pole enam aktiivne</span>
+      {% endif %}
+    {% endif %}
+
     <span class="workhead__date">
       <time datetime="{{ today|date:'Y-m-d' }}">{{ today|date:"l, j. F Y" }}</time>
     </span>
-    <span class="workhead__spacer"></span>
-    {% comment %}
-      Never a zero. "0 üle tähtaja" is a warning about nothing, and a page that
-      cries wolf every morning is a page people stop reading.
-    {% endcomment %}
-    <span class="workhead__summary">
-      {{ work.open_matters }} avatud teemat
-      {% if work.overdue %} · <span class="workhead__figure workhead__figure--danger">{{ work.overdue }} üle tähtaja</span>{% endif %}
-      {% if work.week %} · <span class="workhead__figure workhead__figure--warning">{{ work.week }} tähtaega sel nädalal</span>{% endif %}
-      {% if work.quiet_total %} · <span class="workhead__figure">{{ work.quiet_total }} järgmise tegevuseta</span>{% endif %}
-    </span>
+  </div>
+
+  {% comment %}
+    Seis. The same component, the same figures and the same order as Ülevaade
+    and Osakonna töö, so a number never means one thing here and another there.
+
+    Never a zero. "0 üle tähtaja" is a warning about nothing, and a page that
+    cries wolf every morning is a page people stop reading. Every figure that
+    survives is a link, and the list behind it is the population it counted
+    (01-EHITUSJUHIS §3.3, §3.7).
+  {% endcomment %}
+  <div class="seis seis--compact">
+    {% for figure in work.seis %}
+      {% if figure.value %}
+        <a class="seis__figure" href="{{ figure.url }}">
+          <span class="seis__number{% if figure.tone %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
+          <span class="seis__caption">{{ figure.caption }}</span>
+        </a>
+      {% endif %}
+    {% endfor %}
   </div>
 
   <div class="worklayout2">
@@ -46,12 +111,19 @@ Nothing on this page is anybody else's work.
         <section class="workband workband--{{ band.key }}" aria-label="{{ band.label }}">
           <div class="workband__head">
             <h2 class="workband__title workband__title--{{ band.key }}">{{ band.label }}</h2>
-            <span class="workband__count">{{ band.count }} tegevust</span>
+            {% comment %}
+              A bare number. «8 tegevust» is the counter saying out loud what
+              the heading above it already says (01-EHITUSJUHIS §4).
+            {% endcomment %}
+            <span class="workband__count">{{ band.count }}</span>
             {% if band.key == 'hiljem' %}
               <span class="workband__spacer"></span>
               {% comment %}
-                The range control. In the URL, so the window a lawyer chose
-                survives a refresh and can be pasted to a colleague.
+                The range control, and it belongs to this band alone: a window
+                that could hide something due next week would not be a horizon,
+                it would be a filter over the whole page. In the URL, so the
+                window a lawyer chose survives a refresh and can be pasted to a
+                colleague.
               {% endcomment %}
               <details class="rangepicker">
                 <summary class="rangepicker__trigger">{{ work.horizon.label }} ▾</summary>
@@ -65,19 +137,29 @@ Nothing on this page is anybody else's work.
             {% endif %}
           </div>
           <div class="workband__rows">
-            {% for item in band.items %}
+            {% for item in band.preview %}
               {% include "matters/partials/work_item_row.html" with item=item today=today %}
             {% endfor %}
           </div>
+          {% if band.remaining %}
+            {% comment %}
+              The rest of the same list, opened where the reader is standing.
+              Not a second request and not a second query: these rows came out
+              of the read the count above was taken from, so the number on the
+              summary and the rows behind it cannot disagree (03-BACKEND §1).
+            {% endcomment %}
+            <details class="pw-more">
+              <summary>Näita veel {{ band.remaining }} ▾<span class="visually-hidden"> — {{ band.label }}</span></summary>
+              <div class="workband__rows">
+                {% for item in band.rest %}
+                  {% include "matters/partials/work_item_row.html" with item=item today=today %}
+                {% endfor %}
+              </div>
+            </details>
+          {% endif %}
           {% if band.key == 'hiljem' and work.beyond_horizon %}
             <p class="workband__more">
               <a href="?kuni=koik">Näita kaugemaid tähtaegu ({{ work.beyond_horizon }})</a>
-            </p>
-          {% endif %}
-          {% if band.key == 'ulevaatamiseks_kups' %}
-            <p class="workband__note">
-              Ootamine ei ole hilinemine: OOTAN-i ja JÄLGIN-i kuupäev tähendab
-              «vaatan üle», mitte tähtaega.
             </p>
           {% endif %}
         </section>
@@ -85,35 +167,85 @@ Nothing on this page is anybody else's work.
 
       {% if not work.has_work %}
         {% comment %}
-          One calm line, not five empty groups. A quiet morning should look like
+          One calm line, not four empty groups. A quiet morning should look like
           a quiet morning rather than a data-quality problem.
         {% endcomment %}
         <section class="workband" aria-label="Tähtajaline töö">
           <p class="workempty">
             Täna ei ole ühtegi tähtajalist tegevust.
-            <a href="{% url 'matters:matter_list' %}?ulatus=minu&amp;olek=avatud">Vaata oma teemasid</a>.
+            <a href="{{ work.portfolio.register_url }}">Vaata oma teemasid</a>.
           </p>
         </section>
       {% endif %}
 
-      {% if work.has_work %}
-        {% comment %}
-          The keys, said out loud where they work. Every one of them has a
-          visible control on the row it acts on — the ✓ button, the row's own
-          link, the ⋯ menu — so this is a shortcut hint and never the only way
-          to do any of it (AGENTS.md, UX quality; design handoff 1e).
-        {% endcomment %}
-        <p class="uxkeys">
-          <kbd class="key">J</kbd><kbd class="key">K</kbd> liigu ·
-          <kbd class="key">X</kbd> tehtud ·
-          <kbd class="key">Enter</kbd> ava teema
-        </p>
-      {% endif %}
+      {% comment %}
+        Aktiivsed teemad — the other half of the question. The bands say *when*;
+        this says *what is on the desk at all*, including the files that carry
+        no date and would otherwise appear only in a rail block.
 
-      <section class="workband workband--entries" aria-label="Minu viimased sissekanded">
+        One row per Matter, and the chips are URL parameters rather than a
+        client-side toggle, so a narrowing somebody is looking at is a link they
+        can paste.
+      {% endcomment %}
+      <section class="workband workband--portfolio" aria-labelledby="aktiivsed-teemad">
+        <div class="workband__head">
+          <h2 class="workband__title" id="aktiivsed-teemad">Aktiivsed teemad</h2>
+          <span class="workband__count">{{ work.portfolio.total }}</span>
+          <span class="workband__spacer"></span>
+          {% comment %}
+            A client-side narrowing over the titles already on the page, bound
+            by static/js/ux.js. A plain input, not a form: there is nothing to
+            submit, because everything it filters is already here. The register's
+            own search is a different question and lives on the register.
+          {% endcomment %}
+          <div class="pw-search">
+            <label class="visually-hidden" for="pw-search">
+              {% if is_self %}Otsi minu asjadest{% else %}Otsi {{ subject.first_name|default:subject.display_name }} asjadest{% endif %}
+            </label>
+            <input id="pw-search" type="search" autocomplete="off"
+                   data-filter-rows=".pw-matters"
+                   placeholder="{% if is_self %}Otsi minu asjadest…{% else %}Otsi asjadest…{% endif %}">
+          </div>
+        </div>
+
+        <div class="pw-chips" role="group" aria-label="Vaade">
+          {% for chip in work.portfolio.chips %}
+            <a class="pw-chip{% if chip.active %} is-active{% endif %}{% if chip.tone %} pw-chip--{{ chip.tone }}{% endif %}"
+               {% if chip.active %}aria-current="true"{% endif %}
+               href="?{{ chip.query }}">{{ chip.label }} <b>{{ chip.count }}</b></a>
+          {% endfor %}
+        </div>
+
+        <div class="pw-matters">
+          {% for row in work.portfolio.preview %}
+            {% include "matters/partials/portfolio_row.html" with row=row %}
+          {% empty %}
+            <p class="workempty">Selles vaates ei ole ühtegi teemat.</p>
+          {% endfor %}
+        </div>
+
+        {% if work.portfolio.remaining %}
+          <details class="pw-more">
+            <summary>Näita veel {{ work.portfolio.remaining }} ▾<span class="visually-hidden"> — aktiivsed teemad</span></summary>
+            <div class="pw-matters">
+              {% for row in work.portfolio.rest %}
+                {% include "matters/partials/portfolio_row.html" with row=row %}
+              {% endfor %}
+            </div>
+          </details>
+        {% endif %}
+
+        <p class="pw-register">
+          <a href="{{ work.portfolio.register_url }}">
+            {% if is_self %}Ava minu teemad registris{% else %}Ava kõik teemad registris{% endif %} ({{ work.portfolio.total }}) →
+          </a>
+        </p>
+      </section>
+
+      <section class="workband workband--entries" aria-label="Viimased sissekanded">
         <details class="foldout">
           <summary class="foldout__trigger">
-            <span class="foldout__label">Minu viimased sissekanded</span>
+            <span class="foldout__label">{% if is_self %}Minu viimased sissekanded{% else %}Viimased sissekanded{% endif %}</span>
             {% if work.last_entry %}
               <span class="foldout__meta">viimane {{ work.last_entry.occurred_at|date:"j.n" }} kell {{ work.last_entry.occurred_at|date:"H:i" }}</span>
             {% else %}
@@ -129,14 +261,49 @@ Nothing on this page is anybody else's work.
                 </span>
               </a>
             {% empty %}
-              <p class="workempty">Sa ei ole veel sissekandeid teinud.</p>
+              <p class="workempty">
+                {% if is_self %}Sa ei ole veel sissekandeid teinud.{% else %}Sissekandeid ei ole.{% endif %}
+              </p>
             {% endfor %}
           </div>
         </details>
       </section>
     </div>
 
-    <aside class="worklayout2__rail" aria-label="Kuupäevata töö">
+    <aside class="worklayout2__rail" aria-label="{% if is_self %}Märkmed ja muutused{% else %}Kiirvaade ja muutused{% endif %}">
+      {% if is_self %}
+        {% comment %}
+          The desk pad. Present only in the self view — this whole block is
+          inside the branch, so a manager's response does not contain it.
+        {% endcomment %}
+        <section class="railblock" aria-label="Märkmed">
+          <h2 class="railblock__label">Märkmed</h2>
+          <div class="pw-note">
+            <form hx-post="{% url 'matters:save_scratchpad' %}"
+                  hx-target="#pw-note-meta"
+                  hx-swap="outerHTML"
+                  hx-trigger="input changed delay:800ms from:#pw-note-body">
+              {% csrf_token %}
+              <textarea id="pw-note-body" name="body"
+                        aria-label="Isiklikud märkmed"
+                        maxlength="20000"
+                        placeholder="Kirjuta siia meeldetuletusi endale…">{{ scratchpad.body|default:"" }}</textarea>
+            </form>
+            {% include "matters/partials/scratchpad_meta.html" with scratchpad=scratchpad %}
+          </div>
+        </section>
+      {% else %}
+        <section class="railblock" aria-label="Kiirvaade">
+          <h2 class="railblock__label">Kiirvaade</h2>
+          <div class="pw-kiir">
+            {% for row in work.quick %}
+              <a class="{{ row.css_class }}" href="{{ row.url }}">{{ row.label }} <b>{{ row.value }}</b></a>
+            {% endfor %}
+          </div>
+          <p class="pw-privnote">Isiklikke märkmeid näeb ainult inimene ise.</p>
+        </section>
+      {% endif %}
+
       {% comment %}
         A stalled Matter must not disappear merely because it carries no date.
         This is the one attention state that cannot be derived from a timeline,
@@ -166,9 +333,32 @@ Nothing on this page is anybody else's work.
           <p class="railblock__empty">Kõigil avatud teemadel on järgmine tegevus määratud.</p>
         {% endfor %}
         {% if work.quiet_total > work.quiet|length %}
-          <a class="railblock__more"
-             href="{% url 'matters:matter_list' %}?ulatus=minu&amp;olek=avatud&amp;tegevus=puudub">Näita kõiki {{ work.quiet_total }} →</a>
+          <a class="railblock__more" href="{{ work.portfolio.register_url }}&amp;tegevus=puudub">Näita kõiki {{ work.quiet_total }} →</a>
         {% endif %}
+      </section>
+
+      {% comment %}
+        Viimati muudetud, from the activity precedence the register's own
+        *Viimane tegevus* column reads. Not an audit log: the label names the
+        kind of fact that moved the file, which is what a person scanning for
+        "what happened while I was away" is actually asking
+        (app/matters/activity.py).
+      {% endcomment %}
+      <section class="railblock" aria-label="Viimati muudetud">
+        <h2 class="railblock__label">Viimati muudetud</h2>
+        <div class="pw-events">
+          {% for change in work.changes %}
+            <a class="pw-event" href="{% url 'matters:matter_detail' pk=change.matter.pk %}">
+              <span class="pw-event__when">{{ change.occurred_on|date:"j.n" }}</span>
+              <span>
+                <span class="pw-event__what">{{ change.label }}</span>
+                <span class="pw-event__matter">{{ change.matter.title }}</span>
+              </span>
+            </a>
+          {% empty %}
+            <p class="railblock__empty">Muudatusi ei ole.</p>
+          {% endfor %}
+        </div>
       </section>
 
       {% comment %}
@@ -191,12 +381,39 @@ Nothing on this page is anybody else's work.
             </span>
           </a>
         {% empty %}
-          <p class="railblock__empty">Igal sinu tegevusel on kuupäev.</p>
+          <p class="railblock__empty">
+            {% if is_self %}Igal sinu tegevusel on kuupäev.{% else %}Igal tegevusel on kuupäev.{% endif %}
+          </p>
         {% endfor %}
         {% if work.undated_total > work.undated|length %}
-          <a class="railblock__more"
-             href="{% url 'matters:matter_list' %}?ulatus=minu&amp;olek=avatud">Näita kõiki {{ work.undated_total }} →</a>
+          <a class="railblock__more" href="{{ work.portfolio.register_url }}">Näita kõiki {{ work.undated_total }} →</a>
         {% endif %}
+      </section>
+
+      {% comment %}
+        Counts, never ratings. No rank, no percentage, no comparison with a
+        colleague — the same refusal Osakonna töö opens with. Open by default in
+        the manager's view, because that is what they came to read; collapsed in
+        one's own, because one already knows (02-EKRAANID §A).
+      {% endcomment %}
+      <section class="railblock" aria-label="Statistika">
+        <details class="foldout"{% if not is_self %} open{% endif %}>
+          <summary class="foldout__trigger">
+            <span class="foldout__label">{% if is_self %}Minu statistika{% else %}Statistika{% endif %}</span>
+          </summary>
+          <div class="foldout__body">
+            <div class="pw-stats">
+              <p class="pw-stats__grp">{{ work.stats.month_label }}</p>
+              {% for row in work.stats.month %}
+                <span>{{ row.label }} <b>{{ row.value }}</b></span>
+              {% endfor %}
+              <p class="pw-stats__grp">{{ work.stats.year_label }}</p>
+              {% for row in work.stats.year %}
+                <span>{{ row.label }} <b>{{ row.value }}</b></span>
+              {% endfor %}
+            </div>
+          </div>
+        </details>
       </section>
     </aside>
   </div>

@@ -1,10 +1,28 @@
 from django.urls import path
+from django.views.generic import RedirectView
 
 from app.matters import department_views, views
 
 urlpatterns = [
     path("ulevaade/", views.overview, name="overview"),
-    path("minu-too/", views.my_work, name="my_work"),
+    path("minu-asjad/", views.my_work, name="my_work"),
+    # The address the page had until the v2 rebuild renamed the surface.
+    # A permanent redirect rather than a second view: every bookmark, every
+    # message somebody pasted and every historical link still lands on the
+    # page, and the route name did not change, so nothing in the codebase had
+    # to be rewritten to keep pointing at it (03-BACKEND §4).
+    path(
+        "minu-too/",
+        RedirectView.as_view(pattern_name="matters:my_work", permanent=True, query_string=True),
+        name="my_work_legacy",
+    ),
+    # One person's desk. Keyed on the id and never on a display name: a name
+    # changes and is not unique, and a URL that carried one would break the day
+    # somebody married (03-BACKEND §4).
+    path("inimesed/<uuid:pk>/asjad/", views.person_work, name="person_work"),
+    # The scratchpad's autosave. `request.user` only — there is deliberately no
+    # subject in this path (03-BACKEND §2).
+    path("minu-asjad/markmed/", views.save_scratchpad, name="save_scratchpad"),
     # One click to done, from the list rather than from the Matter. Its own
     # route because it ends where the reader was rather than on a Matter page,
     # and it calls the same service the Matter page's «✓ Tehtud» calls

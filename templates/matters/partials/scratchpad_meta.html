@@ -1,0 +1,13 @@
+{% comment %}
+The line under the desk pad: that it saves itself, when it last did, and who
+can read it.
+
+Its own fragment because it is what the autosave swaps back. Swapping the
+textarea would move the caret out from under the person typing into it.
+{% endcomment %}
+<span class="pw-note__meta" id="pw-note-meta">
+  <span>
+    Salvestub ise{% if scratchpad %} · muudetud {{ scratchpad.updated_at|date:"j.n H:i" }}{% endif %}
+  </span>
+  <span>nähtav ainult sulle</span>
+</span>

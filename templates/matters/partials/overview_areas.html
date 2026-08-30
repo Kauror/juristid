@@ -60,14 +60,19 @@ department governs.
         </summary>
         <div class="arearow__body">
           {% for matter in row.matters %}
+            {% comment %}
+              The date leads the row. It is what the reader is scanning for, the
+              rows are already ordered by it, and a column that sorts a list has
+              to be the column the eye lands on first (02-EKRAANID §B).
+            {% endcomment %}
             <a class="arealine" href="{% url 'matters:matter_detail' pk=matter.pk %}">
+              <span class="arealine__date{% if matter.response_deadline and matter.response_deadline < today %} arealine__date--overdue{% endif %}">
+                {% if matter.response_deadline %}{{ matter.response_deadline|date:"j.n" }}{% if matter.response_deadline < today %} üle{% endif %}{% else %}—{% endif %}
+              </span>
               <span class="arealine__title">
                 {% if matter.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ matter.title }}
               </span>
               <span class="arealine__stage">{% if matter.stage %}{{ matter.stage.label_et }}{% endif %}</span>
-              <span class="arealine__date{% if matter.response_deadline and matter.response_deadline < today %} arealine__date--overdue{% endif %}">
-                {% if matter.response_deadline %}{{ matter.response_deadline|date:"j.n" }}{% endif %}
-              </span>
             </a>
           {% empty %}
             <p class="railblock__empty">Selle valdkonna teemad avanevad registris.</p>

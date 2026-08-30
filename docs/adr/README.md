@@ -57,6 +57,7 @@ consequences and reversibility.
 | [0045](0045-the-repeatable-current-register-refresh.md) | The repeatable current-register refresh: authorship decides, and the sheet's own year settles a date | Accepted |
 | [0046](0046-two-deadline-groups-a-week-and-the-rest-of-the-month.md) | Tähtajad in two groups: the calendar week whole, the rest of the month behind «Näita veel», and one line past it | Accepted |
 | [0047](0047-arvamused-as-a-section-of-teemad.md) | Arvamused as a section of Teemad, with two searches that never meet | Proposed, on a feature branch |
+| [0048](0048-the-v2-design-implementation.md) | Implementing the v2 design over the application that exists | Proposed, on a feature branch |
 
 Naming: `NNNN-short-decision-title.md`.
 
@@ -101,3 +102,4 @@ Naming: `NNNN-short-decision-title.md`.
 
 - 0046 — Tähtajad in two groups: the calendar week cut by the calendar and never truncated, the rest of the month behind the existing «Näita veel», the one-line pointer past it kept so nothing dated falls off the page, every group linking through the parameterised `?too=tahtaeg-vahemik` rather than a fixed name, and `WORK_DEADLINE_THIS_WEEK` deliberately left counting from today for the SEIS strip beside it
 - 0047 — Arvamused as a section of the Teemad page rather than a destination on the bar: the workspace moves one level in with its Saadetud/Arhiiv strip intact, the two searches stay two searches on separate parameters (`q` and `arvamus_q`) so neither box can narrow the other's list, the section is bounded at twelve rows and states its real total, a fragment route of its own keeps the register from answering an opinion search with teemad, and `may_read_archive` is asked before anything is counted — an archive request it may not serve resolves to Saadetud rather than taking the register down
+- 0048 — The v2 design implemented over the application that exists rather than beside it: no second tracking subsystem and no second statistics application, one read model serving both modes of Minu asjad, the bands redefined once in `work_items.py` with the WAIT/MONITOR semantics unchanged, `PersonalScratchpad` as the only schema change with its privacy structural rather than checked, every previous address kept as a permanent redirect, and every figure the application cannot express as a list recorded in `app/core/development_status.py` instead of drawn

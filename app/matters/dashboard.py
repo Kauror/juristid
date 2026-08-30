@@ -244,7 +244,7 @@ def without_next_action(user: Any) -> QuerySet[Matter]:
 #: the migration had got rather than anything the department can act on, and a
 #: prominent KPI nobody can move is a KPI people learn to read past. The
 #: condition itself is not gone — ``?tegevus=puudub`` still opens exactly those
-#: files, and *Vajab tähelepanu* below still lists the ones with an owner.
+#: files, and *Vajab sekkumist* below still lists the ones with an owner.
 def _card_definitions(today: date) -> tuple[tuple[str, str, str, dict[str, str]], ...]:
     horizon = today + timedelta(days=DEADLINE_HORIZON_DAYS)
     current = {"olek": "avatud", "liik": RecordMode.FULL}

@@ -895,3 +895,45 @@ class MatterPersonalNote(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.author_id} @ {self.matter_id}"
+
+
+class PersonalScratchpad(BaseModel):
+    """`Märkmed` on Minu asjad — one person's own notepad, about nothing in particular.
+
+    The sibling of :class:`MatterPersonalNote` and deliberately not the same
+    thing. That one is *per Matter*: it belongs beside a file and is read while
+    that file is open. This one is *per person*: «helista esmaspäeval MKM-i»,
+    «küsi, kas teeme ühispöördumise», the things a lawyer writes on the corner
+    of the desk pad and that belong to no file at all.
+
+    **Privacy here is absolute, and it is enforced three times.** There is one
+    row per person and it is keyed on the person, so the schema itself cannot
+    express somebody else's notes. The endpoint reads and writes
+    ``request.user`` and takes no subject parameter, so no URL can ask for
+    another person's row. And the manager's view of a colleague's desk does not
+    render the block at all — not hidden with CSS, absent from the HTML — so
+    there is nothing in the response to find with a view-source
+    (01-EHITUSJUHIS §3.5, §8; 03-BACKEND §2).
+
+    Like the per-Matter note, this writes no `ChangeEvent`, appears on no
+    timeline, is not indexed for search, is not evidence and is not exported.
+    """
+
+    #: OneToOne, because "my notes" is one thing. CASCADE for the same reason
+    #: the per-Matter note cascades: this is not attribution and it has no
+    #: meaning once the person is gone.
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="scratchpad",
+        verbose_name="kasutaja",
+    )
+    body = models.TextField(blank=True, default="", verbose_name="märkmed")
+
+    class Meta:
+        verbose_name = "isiklik märkmik"
+        verbose_name_plural = "isiklikud märkmikud"
+        ordering = ["-updated_at"]
+
+    def __str__(self) -> str:
+        return f"scratchpad @ {self.user_id}"

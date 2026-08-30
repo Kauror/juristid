@@ -636,6 +636,12 @@ def test_break_glass_does_not_turn_a_technical_actor_into_an_author(client, worl
 #: the reason it is outside. Anything not here and not in `WRITE_ROUTES` fails
 #: the guard below, which is what stops a future mutation arriving unguarded.
 CLASSIFIED_ELSEWHERE: dict[str, str] = {
+    # C — a person's own private data, keyed on `request.user` and reachable by
+    # nobody else. Not business content and not subject to the business-write
+    # role: a READER may keep their own notes, and there is no signature
+    # anywhere in the call chain that could write somebody else's row
+    # (app/matters/person_work.py, tests/test_person_workspace.py).
+    "matters:save_scratchpad": "C: the signed-in person's own notepad",
     # D — authentication and session control. Not business content, and two of
     # them must work for somebody who has no role at all yet.
     "accounts:dev_login": "D: synthetic sign-in, development only",

@@ -1,10 +1,13 @@
 {% comment %}
-`Ajajoon` — closed by default.
+`Ajajoon` — open by default.
 
-The chronology is the file's memory and it is the least urgent thing on the
-page: somebody opening a Matter wants to know what it is and what to do next,
-and a Matter with two hundred entries used to answer neither because the history
-started at the fold. Collapsed, it is one line.
+It was collapsed, on the argument that somebody opening a Matter wants to know
+what it is and what to do next before they read two hundred entries. Hands-on
+use disagreed: the first page of the chronology *is* what a lawyer opens the
+file for, and closing it made every visit cost a click before the page said
+anything (02-EKRAANID §C).
+
+Still a `<details>`, so it closes — and it is still one line closed.
 
 What that one line says changed in the 2026-08 pass. A counter — "14 kirjet ·
 viimane 26.8.2026, Ireen" — tells a reader how much there is and nothing about
@@ -16,7 +19,7 @@ Nothing is fetched eagerly that the collapsed row does not need: the first page
 is rendered inside the `<details>` and everything older comes from
 `timeline_page` when somebody asks for it (Teema redesign §21, §39).
 {% endcomment %}
-<details class="accordion accordion--timeline" id="ajajoon">
+<details class="accordion accordion--timeline" id="ajajoon" open>
   <summary class="accordion__head">
     <span class="accordion__caret" aria-hidden="true"></span>
     <h2 class="accordion__title">Ajajoon</h2>

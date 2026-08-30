@@ -715,12 +715,16 @@ def test_an_important_deadline_is_never_offered_a_completion_it_does_not_have(
 
 
 @pytest.mark.django_db
-def test_the_keyboard_hints_appear_only_where_there_is_something_to_move_over(
-    client, specialist
-) -> None:
-    client.force_login(specialist)
-    assert "uxkeys" not in client.get(reverse("matters:my_work")).content.decode()
+def test_the_keyboard_hint_line_went_with_the_button_it_described(client, specialist) -> None:
+    """The hint is gone, and so is the key it advertised.
 
+    `X` pressed the green ✓ on a row. The v2 design removed that control —
+    finishing a step without setting the follow-up is half a transaction — and a
+    keyboard hint for a control that is not on the row is a hint that does
+    nothing (01-EHITUSJUHIS §3.6). J/K/Enter still move over the rows, and each
+    of them still has a visible equivalent: the row is a link.
+    """
+    client.force_login(specialist)
     matter = factories.MatterFactory(owner=specialist)
     set_next_action(
         matter=matter,
@@ -731,10 +735,13 @@ def test_the_keyboard_hints_appear_only_where_there_is_something_to_move_over(
         actor=specialist,
     )
     body = client.get(reverse("matters:my_work")).content.decode()
-    flat = " ".join(body.split())
-    assert "uxkeys" in body
-    for key in ("J", "K", "X", "Enter"):
-        assert f'<kbd class="key">{key}</kbd>' in flat
+
+    assert "uxkeys" not in body
+    assert "data-workrow" in body
+    assert "data-workdone" not in body
+    keys = (Path(settings.BASE_DIR) / "static" / "js" / "ux.js").read_text(encoding="utf-8")
+    assert 'key !== "j" && key !== "k"' in keys
+    assert 'key === "x"' not in keys
 
 
 # ---------------------------------------------------------------------------

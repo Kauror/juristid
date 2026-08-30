@@ -6,11 +6,15 @@ Generated entirely from `MatterEffectiveDate`. Nobody maintains a second list:
 a lawyer who records a commencement on the Matter has already published it here,
 and moving the date there moves the row here (Stage-2G brief 16).
 
+**A commencement is not our deadline.** It creates no NextAction and reaches
+nobody's «Järgmiseks» list. That is the whole reason it has a page of its own
+rather than rows in a work queue (02-EKRAANID §D).
+
 The default window looks twelve months ahead. It is not an archival limit — the
-database keeps everything and "Kõik" shows it.
+database keeps everything and «Kõik» shows it.
 
 Commencements whose date is not known are their own view rather than rows on a
-chronological axis. "Jõustub üldises korras" is a real legal statement and does
+chronological axis. «Jõustub üldises korras» is a real legal statement and does
 not belong under a month heading (Stage-2G brief 17).
 {% endcomment %}
 
@@ -24,54 +28,15 @@ not belong under a month heading (Stage-2G brief 17).
 {% endblock %}
 
 {% block watchlist %}
-  <section aria-labelledby="joustuvad-aktid-heading">
-    <h2 class="sectionlabel" id="joustuvad-aktid-heading">
-      Jõustuvad aktid
-      <span class="sectionlabel__count">{{ total }}</span>
-      {% if direction != undated_key and undated_count %}
-        <span class="sectionlabel__note">
-          lisaks {{ undated_count }} kirjet, mille kuupäev on täpsustamisel
-        </span>
-      {% endif %}
-    </h2>
+  {% for section in sections %}
+    {% include "intelligence/partials/tracking_section.html" with section=section columns=columns caption=section.label row_template="intelligence/partials/effective_row.html" %}
+  {% endfor %}
 
-    {% if groups %}
-      {% for group in groups %}
-        <h3 class="periodhead">{{ group.label }}</h3>
-        <ul class="factlist">
-          {% for entry in group.entries %}
-            <li class="factrow">
-              <span class="factrow__date {% if entry.effective_date.is_approximate %}dateline--approximate{% endif %}">
-                {{ entry.effective_date.display_date }}
-              </span>
-              <span class="factrow__body">
-                {% if entry.effective_date.description %}
-                  <span class="factrow__title">{{ entry.effective_date.description }}</span>
-                {% endif %}
-                <a class="factrow__matter"
-                   href="{% url 'matters:matter_detail' pk=entry.effective_date.matter.pk %}">
-                  {{ entry.effective_date.matter.title }}
-                </a>
-                {% if entry.effective_date.source_url %}
-                  {% comment %}
-                    Secondary, always. The Matter is what a lawyer needs; the
-                    official source is a check on it, not the destination
-                    (Stage-2G brief 18).
-                  {% endcomment %}
-                  <a class="factrow__source"
-                     href="{{ entry.effective_date.source_url }}"
-                     rel="noopener noreferrer external"
-                     target="_blank">Ametlik allikas</a>
-                {% endif %}
-              </span>
-            </li>
-          {% endfor %}
-        </ul>
-      {% endfor %}
-
-      {% include "components/pagination.html" with page=page query_string=query_string %}
-
-    {% elif undated %}
+  {% if undated %}
+    <section aria-labelledby="joustumised-tapsustamisel">
+      <h2 class="sectionlabel" id="joustumised-tapsustamisel">
+        {{ context_label }} <span class="sectionlabel__count">{{ total }}</span>
+      </h2>
       <ul class="factlist">
         {% for record in undated %}
           <li class="factrow">
@@ -87,14 +52,21 @@ not belong under a month heading (Stage-2G brief 17).
           </li>
         {% endfor %}
       </ul>
+    </section>
+  {% endif %}
 
-      {% include "components/pagination.html" with page=page query_string=query_string %}
+  {% if not sections and not undated %}
+    <p class="empty">
+      Valitud vaates ei ole ühtegi jõustumist. Lisa jõustumine teema lehel —
+      see loend koostatakse nendest kirjetest.
+    </p>
+  {% endif %}
 
-    {% else %}
-      <p class="empty">
-        Valitud vaates ei ole ühtegi jõustumist. Lisa jõustumine teema lehel —
-        see loend koostatakse nendest kirjetest.
-      </p>
-    {% endif %}
-  </section>
+  {% if direction != undated_key and undated_count %}
+    <p class="cardnote">
+      Lisaks {{ undated_count }} kirjet, mille kuupäev on täpsustamisel.
+    </p>
+  {% endif %}
+
+  {% include "components/pagination.html" with page=page query_string=query_string %}
 {% endblock %}

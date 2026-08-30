@@ -1,0 +1,47 @@
+{% comment %}
+One open Matter on this desk: where it stands, what is next, when it last moved.
+
+Three cells, one line. The middle one is the *earliest* open step, because a
+Matter can carry several and the one a person needs to see is the next one.
+
+The row never says «üle» about a review. `short_date` already prints a passed
+OOTAN or JÄLGIN as a neutral «N p», and only a real deadline gets the word — the
+same rule the timeline rows above this section follow (01-EHITUSJUHIS §3.1).
+
+A Matter with no open step at all says so and offers the way to fix it, rather
+than showing an empty cell somebody has to interpret.
+{% endcomment %}
+<a class="pw-matter" href="{% url 'matters:matter_detail' pk=row.matter.pk %}">
+  <span>
+    <span class="pw-matter__title">{{ row.matter.title }}</span>
+    {% if row.stage_label %}<span class="pw-matter__stage">{{ row.stage_label }}</span>{% endif %}
+  </span>
+
+  {% if row.next_action %}
+    <span class="pw-matter__next">
+      {% comment %}
+        `data-clock` marks the part of this line the calendar writes: the
+        action's date, and the day count that appears once it has passed. It
+        carries no styling and changes nothing a reader sees — it exists so the
+        visual suite can mask a value that moves every morning without masking
+        the step itself, which is the sentence a lawyer wrote
+        (e2e/test_ui_regression.py CLOCK_DEPENDENT).
+      {% endcomment %}
+      <span class="mode mode--{{ row.next_action.action_kind|lower }}">{{ row.next_action.action_kind_label }}</span>{{ row.next_action.text }}{% if row.action %} · {{ row.action.meaning|lower }} <span data-clock>{{ row.action.day_month }}{% if row.action.is_overdue or row.action.is_review_ripe %} · {{ row.action.short_date }}{% endif %}</span>{% endif %}
+    </span>
+  {% else %}
+    <span class="pw-matter__next pw-matter__next--none">
+      järgmine tegevus puudub · <span class="pw-matter__cta">Määra</span>
+    </span>
+  {% endif %}
+
+  <span class="pw-matter__when">
+    {% if not row.has_action and row.silent_days is not None %}
+      vaikus {{ row.silent_days }} p
+    {% elif row.last_activity %}
+      muutus {{ row.last_activity|date:"j.n" }}
+    {% else %}
+      —
+    {% endif %}
+  </span>
+</a>

@@ -227,10 +227,15 @@ def test_matter_list_paginates_and_filters(signed_in, specialist):
     response = signed_in.get(reverse("matters:matter_list"))
     assert response.status_code == 200
     assert response.context["page"].paginator.count == 30
-    assert len(response.context["page"].object_list) == 25
+    # Twelve by default since the v2 rebuild, and the reader may ask for more
+    # (02-EKRAANID §C).
+    assert len(response.context["page"].object_list) == 12
 
-    second = signed_in.get(reverse("matters:matter_list"), {"leht": 2})
-    assert len(second.context["page"].object_list) == 5
+    second = signed_in.get(reverse("matters:matter_list"), {"leht": 3})
+    assert len(second.context["page"].object_list) == 6
+
+    everything = signed_in.get(reverse("matters:matter_list"), {"kaupa": "koik"})
+    assert len(everything.context["page"].object_list) == 30
 
 
 def test_matter_list_counts_exclude_restricted_matters(client, specialist, reader):

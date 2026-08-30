@@ -66,8 +66,10 @@ from app.legacy_import.register_display import (
     source_instruction_for,
     source_instructions_for,
 )
+from app.matters import department_dashboard, register_filters, selectors, work_items
 from app.matters import overview as overview_module
-from app.matters import register_filters, selectors, work_items
+from app.matters import person_work as person_workspace
+from app.matters.department_dashboard import SeisFigure
 from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.forms import (
     BriefSummaryForm,
@@ -86,7 +88,13 @@ from app.matters.forms import (
 )
 from app.matters.intake import register_incoming, validate_uploads
 from app.matters.models import Matter, MatterEngagement
-from app.matters.my_work import HORIZON_PARAM, build_my_work, horizon_from
+from app.matters.my_work import (
+    HORIZON_PARAM,
+    VIEW_PARAM,
+    build_my_work,
+    horizon_from,
+    view_from,
+)
 from app.matters.services import (
     add_engagement,
     assign_matter,
@@ -134,8 +142,37 @@ from app.workflow.services import (
     set_next_action_for_new_work,
 )
 
-PAGE_SIZE = 25
+#: How many register rows a page holds, and the sizes a reader may choose
+#: instead. Twelve by default: the v2 design puts the Arvamused section under
+#: the register, and twenty-five rows made a reader scroll past the whole
+#: register to find out that the page had a second half (02-EKRAANID §C).
+#:
+#: `koik` is a real option and is bounded rather than unlimited — a register of
+#: two and a half thousand rows rendered in one response is a page nobody waits
+#: for, and the bound is high enough that «kõik» means it for every filtered
+#: view anybody actually opens.
+PAGE_SIZE = 12
+PAGE_SIZE_PARAM = "kaupa"
+PAGE_SIZE_CHOICES: tuple[int, ...] = (12, 30, 50)
+PAGE_SIZE_ALL = "koik"
+PAGE_SIZE_ALL_BOUND = 2000
 TIMELINE_PAGE_SIZE = 30
+
+
+def page_size_from(raw: str | None) -> tuple[int, str]:
+    """How many rows this request asks for, and which chip is marked.
+
+    Anything unrecognised falls back to the default rather than raising or
+    emptying the list: a hand-edited URL should show the register, not an
+    argument about it.
+    """
+    value = (raw or "").strip()
+    if value == PAGE_SIZE_ALL:
+        return PAGE_SIZE_ALL_BOUND, PAGE_SIZE_ALL
+    if value.isdigit() and int(value) in PAGE_SIZE_CHOICES:
+        return int(value), value
+    return PAGE_SIZE, str(PAGE_SIZE)
+
 
 #: The private note's form prefix. It shares a field name with the composer —
 #: both are called `body` — and two elements with the same id on one page make
@@ -236,39 +273,82 @@ def overview(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def my_work(request: HttpRequest) -> HttpResponse:
-    """Minu töö — one chronological answer to "what do I do now".
+    """Minu asjad — one chronological answer to "what do I do now".
 
     Every population on the page is read once, through the shared work model, so
-    the header's counts and the bands under them come from the same list and
+    the strip's counts and the bands under them come from the same list and
     cannot disagree (app/matters/work_items.py).
     """
+    return _render_person_work(request, subject=request.user, is_self=True)
+
+
+@login_required
+def person_work(request: HttpRequest, pk: Any) -> HttpResponse:
+    """One colleague's desk, for that colleague or for the department head.
+
+    The same page, the same read model and the same template as Minu asjad.
+    What differs is three things and they are all in `_render_person_work`: the
+    crumb and switcher above the heading, Kiirvaade where the notes are, and the
+    notes themselves — which are not fetched here at all
+    (app/matters/person_work.py).
+
+    404 rather than 403 for anybody else, and 404 for an id that names nobody:
+    the two answers are identical on purpose, so the route cannot be used to
+    find out who exists.
+    """
+    subject = person_workspace.resolve_subject(pk)
+    if subject is None or not person_workspace.may_open_person_work(request.user, subject):
+        raise Http404("See töölaud ei ole sinu oma.")
+    return _render_person_work(request, subject=subject, is_self=subject.pk == request.user.pk)
+
+
+def _render_person_work(request: HttpRequest, *, subject: Any, is_self: bool) -> HttpResponse:
     today = timezone.localdate()
     horizon = horizon_from(request.GET.get(HORIZON_PARAM), today)
-    work = build_my_work(request.user, today=today, horizon=horizon)
+    view = view_from(request.GET.get(VIEW_PARAM))
+    work = build_my_work(request.user, today=today, horizon=horizon, subject=subject, view=view)
 
-    return render(
-        request,
-        "matters/my_work.html",
-        {
-            "today": today,
-            "work": work,
-            # One query for the whole rail, not one per row. The register's own
-            # sentence is the context a lawyer needs in order to set a next
-            # step, and these Matters are by definition the ones where only the
-            # register has anything to say (ADR 0021).
-            "source_instructions": source_instructions_for([row.matter for row in work.quiet]),
-            # Which approved workbook that wording is a photograph of. Excel is
-            # still being edited, so an undated "Excelist" chip invites somebody
-            # to act on a sentence that has since moved (ADR 0021).
-            "source_snapshot": snapshot_label(),
-            # The ✓ on a row is a write, so the row offers it only to somebody
-            # who may write. The route checks again regardless: this decides
-            # what is drawn, never what is permitted
-            # (app/core/decorators.py, `business_write_required`).
-            "can_write": may_write_business_content(request.user),
-            "nav_active": "minu_too",
-        },
-    )
+    context: dict[str, Any] = {
+        "today": today,
+        "work": work,
+        "is_self": is_self,
+        "subject": subject,
+        # One query for the whole rail, not one per row. The register's own
+        # sentence is the context a lawyer needs in order to set a next
+        # step, and these Matters are by definition the ones where only the
+        # register has anything to say (ADR 0021).
+        "source_instructions": source_instructions_for([row.matter for row in work.quiet]),
+        # Which approved workbook that wording is a photograph of. Excel is
+        # still being edited, so an undated "Excelist" chip invites somebody
+        # to act on a sentence that has since moved (ADR 0021).
+        "source_snapshot": snapshot_label(),
+        "nav_active": "minu_asjad",
+    }
+    if is_self:
+        # Fetched only here, and only for `request.user`. The manager branch
+        # does not read it, so the block it feeds is absent from that response
+        # rather than hidden in it (01-EHITUSJUHIS §3.5).
+        context["scratchpad"] = person_workspace.scratchpad_for(request.user)
+    else:
+        context["switcher"] = person_workspace.build_switcher(subject)
+    return render(request, "matters/my_work.html", context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def save_scratchpad(request: HttpRequest) -> HttpResponse:
+    """Autosave the signed-in person's own notepad.
+
+    `request.user`, and nothing else. There is no subject parameter, this view
+    does not read one, and the service it calls has no signature that could
+    accept one — so there is no URL, form field or header that widens this to
+    another person's notes (03-BACKEND §2).
+
+    Answers the saved timestamp as a fragment, because the only thing the page
+    needs back is the meta line under the textarea.
+    """
+    row = person_workspace.save_scratchpad(request.user, request.POST.get("body", ""))
+    return render(request, "matters/partials/scratchpad_meta.html", {"scratchpad": row})
 
 
 @login_required
@@ -324,15 +404,23 @@ def _safe_next(request: HttpRequest) -> str:
 def inbox(request: HttpRequest) -> HttpResponse:
     """Saabunud — the triage entry point.
 
-    Stage 1 keeps this deliberately thin: a strong `Uus teema` action and the
-    unassigned open Matters anyone can pick up. Machine intake and an
-    `IntakeItem` queue are later work and are not faked here.
+    Deliberately thin: what has arrived and nobody has taken, and what was
+    opened lately. Machine intake and an `IntakeItem` queue are later work and
+    are not faked here.
+
+    The strip's three figures are counted through the register's own filter
+    pipeline over the parameters that *are* their definition, so each number and
+    the list its link opens are one query rather than two similar ones
+    (`register_population`, 01-EHITUSJUHIS §3.3).
     """
-    unassigned = (
+    today = timezone.localdate()
+    unassigned_queryset = (
         selectors.matter_list_queryset(request.user)
         .filter(owner__isnull=True, is_open=True)
-        .order_by("-created_at")[:PAGE_SIZE]
+        .order_by("-created_at")
     )
+    unassigned_total = unassigned_queryset.count()
+    unassigned = list(unassigned_queryset[:INBOX_LIMIT])
     recent = (
         selectors.matter_list_queryset(request.user)
         .filter(is_open=True)
@@ -342,14 +430,69 @@ def inbox(request: HttpRequest) -> HttpResponse:
         request,
         "matters/inbox.html",
         {
-            "unassigned": unassigned,
+            # Four rows on screen and the rest behind «Näita veel N ▾» — the
+            # same list, sliced here rather than fetched twice, so the number in
+            # the heading and what the accordion opens cannot disagree
+            # (02-EKRAANID §F).
+            "unassigned": unassigned[:INBOX_PREVIEW],
+            "unassigned_rest": unassigned[INBOX_PREVIEW:],
+            "unassigned_total": unassigned_total,
             "recent": recent,
-            "intake_form": IncomingIntakeForm(),
+            "seis": inbox_figures(request.user, today),
+            "intake_form": IncomingIntakeForm(viewer=request.user),
             "source_instructions": source_instructions_for([*unassigned, *recent]),
             "source_snapshot": snapshot_label(),
             "nav_active": "saabunud",
         },
     )
+
+
+#: How many unassigned rows the table shows before the rest go behind
+#: «Näita veel N ▾», and how many the accordion may hold at all
+#: (02-EKRAANID §F). The honest total is in the heading either way, and the
+#: strip's own figure links to the register for the rest.
+INBOX_PREVIEW = 4
+INBOX_LIMIT = 25
+
+
+def inbox_figures(user: Any, today: date) -> list[SeisFigure]:
+    """«vastutajata teemat», «loodud sel nädalal», «loodud sel kuul».
+
+    Counted and linked through the same register parameters, so a reader who
+    follows a number lands on exactly the rows it counted.
+    """
+    population = Matter.objects.visible_to(user)
+
+    def figure(key: str, caption: str, tone: str, **params: Any) -> SeisFigure:
+        query = {"olek": "avatud", "liik": RecordMode.FULL.value, **params}
+        return SeisFigure(
+            key=key,
+            value=register_filters.register_population(
+                user, query, today=today, population=population
+            ).count(),
+            caption=caption,
+            url=department_dashboard.register_url(**query),
+            tone=tone,
+        )
+
+    week_start = work_items.start_of_iso_week(today)
+    return [
+        figure("unassigned", "vastutajata teemat", "warning", vastutaja=selectors.MISSING),
+        figure(
+            "week",
+            "loodud sel nädalal",
+            "",
+            loodud_alates=format_estonian_date(week_start),
+            loodud_kuni=format_estonian_date(today),
+        ),
+        figure(
+            "month",
+            "loodud sel kuul",
+            "",
+            loodud_alates=format_estonian_date(today.replace(day=1)),
+            loodud_kuni=format_estonian_date(today),
+        ),
+    ]
 
 
 @login_required
@@ -365,7 +508,7 @@ def intake(request: HttpRequest) -> HttpResponse:
     Every upload is validated *before* anything is written, so a rejected file
     cannot leave a half-made Matter behind looking like real work.
     """
-    form = IncomingIntakeForm(request.POST or None)
+    form = IncomingIntakeForm(request.POST or None, viewer=request.user)
 
     if request.method == "POST":
         files = request.FILES.getlist("uploads")
@@ -381,9 +524,9 @@ def intake(request: HttpRequest) -> HttpResponse:
                     source_organisations=list(data.get("source_organisations") or []),
                     received_date=data.get("received_date") or timezone.localdate(),
                     response_deadline=data.get("response_deadline"),
-                    stage=data.get("stage"),
-                    track=data.get("track") or "",
                     visibility=data.get("visibility") or Visibility.NORMAL,
+                    brief_summary=data.get("brief_summary", ""),
+                    handover_note=data.get("handover_note", ""),
                 )
             except (DomainError, UploadRejected) as error:
                 messages.error(request, str(error))
@@ -454,6 +597,8 @@ FILTER_LABELS = {
     # is the question somebody has when they cannot remember which direction a
     # letter went (Stage-2E.1 brief 11F).
     "asutus": "Asutus",
+    "loodud_alates": "Loodud alates",
+    "loodud_kuni": "Loodud kuni",
     "saabus_alates": "Saabus alates",
     "saabus_kuni": "Saabus kuni",
     "tahtaeg_alates": "Tähtaeg alates",
@@ -502,6 +647,24 @@ CONTROL_PARAM_SUFFIX = "_otsing"
 
 def _is_control_param(name: str) -> bool:
     return name.endswith(CONTROL_PARAM_SUFFIX)
+
+
+def _page_size_options(params: Any, current: str) -> list[dict[str, Any]]:
+    """The «näita korraga» chips, each carrying the whole address it belongs to."""
+    options: list[dict[str, Any]] = []
+    for key in (*(str(size) for size in PAGE_SIZE_CHOICES), PAGE_SIZE_ALL):
+        query = params.copy()
+        query.pop("leht", None)
+        query[PAGE_SIZE_PARAM] = key
+        options.append(
+            {
+                "key": key,
+                "label": "kõik" if key == PAGE_SIZE_ALL else key,
+                "query": query.urlencode(),
+                "active": key == current,
+            }
+        )
+    return options
 
 
 #: How each `?tegevus=` value reads in a filter chip. Wording matters here: a
@@ -757,7 +920,8 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     sort = params.get("jarjestus", "reference")
     queryset = queryset.order_by(*SORT_FIELDS.get(sort, SORT_FIELDS["reference"]), "-created_at")
 
-    paginator = Paginator(queryset.distinct(), PAGE_SIZE)
+    per_page, page_size_key = page_size_from(params.get(PAGE_SIZE_PARAM))
+    paginator = Paginator(queryset.distinct(), per_page)
     page = paginator.get_page(params.get("leht"))
 
     query_without_page = params.copy()
@@ -790,6 +954,12 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             for name, value in params.items()
             if name not in {"q", "leht"} and value and not _is_control_param(name)
         ],
+        # The «näita korraga» control. Each option carries the whole current
+        # address minus the page number, so choosing a size keeps every filter
+        # and lands on the first page of the same population rather than on a
+        # page number the smaller size no longer has.
+        "page_size": page_size_key,
+        "page_size_options": _page_size_options(params, page_size_key),
         "status_options": _status_options(request, params),
         "active_filters": chips,
         # Offered in the narrowing panel as well as reachable from a link: a
@@ -2002,10 +2172,10 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
         raise Http404("Teemat saab muuta ainult sisu muutmise õigusega.")
 
     if request.method == "GET":
-        form = MatterEditForm(initial=edit_initial(matter), matter=matter)
+        form = MatterEditForm(initial=edit_initial(matter), matter=matter, viewer=request.user)
         return render(request, "matters/matter_edit.html", _edit_context(request, matter, form))
 
-    form = MatterEditForm(request.POST, matter=matter)
+    form = MatterEditForm(request.POST, matter=matter, viewer=request.user)
     if not form.is_valid():
         # The bound form is re-rendered, so everything typed is still there.
         return render(

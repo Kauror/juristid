@@ -137,7 +137,7 @@ def test_saabunud_is_not_in_the_primary_navigation(client, specialist):
     bar = body.split('<nav class="topnav"', 1)[1].split("</nav>", 1)[0]
 
     assert ">Saabunud<" not in bar
-    for destination in (">Ülevaade<", ">Minu töö<", ">Teemad<"):
+    for destination in (">Ülevaade<", ">Minu asjad<", ">Teemad<"):
         assert destination in bar
 
 

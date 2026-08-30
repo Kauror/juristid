@@ -257,6 +257,40 @@ CLOCK_DEPENDENT = [
     '.railrow:has(.railrow__key:text-is("Uusi sellel nädalal")) .railrow__value',
     '.railrow:has(.railrow__key:text-is("Sissekandeid sel nädalal")) .railrow__value',
     '.railrow:has(.railrow__key:text-is("Tähtaegu sel nädalal")) .railrow__value',
+    # ---- The v2 surfaces, found by walking the rendered DOM for text that
+    # looks like a date or a day count and asking which selector already
+    # covered it — the same method that found the three above, and the reason
+    # this block names four values rather than the two that were obvious.
+    #
+    # The register's Arvamused block. Its rows became the `submission`
+    # component with the v2 design (02-EKRAANID §C), and the sent timestamp
+    # went from a fixed-layout table cell to an inline `<dd>` on a meta line.
+    # Inside a cell a changed minute stayed inside its column; inline it is a
+    # pixel wider and shifts the rest of the line, so the four register
+    # baselines drifted 0.34% between two runs of the *same commit* — above the
+    # 0.2% limit, which means a baseline taken from one run was red on the
+    # next. Reached through the `<dt>` rather than by position, so the label
+    # «Saadetud» and the three other facts stay in the baseline and a reordered
+    # meta line does not silently unmask anything.
+    '.submission__meta div:has(dt:text-is("Saadetud")) dd',
+    # Minu asjad's portfolio rows. `.pw-matter__when` is the whole cell because
+    # the whole cell is the value — «vaikus 4 p» counts from `today` and
+    # «muutus 29.8» is a date the seeded world places relative to it. There is
+    # no label beside it to lose.
+    ".pw-matter__when",
+    # The rail's «Viimati muudetud» dates, same reasoning: the element holds
+    # the date and nothing else. What changed is named on the line beside it
+    # and stays in the baseline.
+    ".pw-event__when",
+    # The date at the end of a portfolio row's next step. NOT `.pw-matter__next`
+    # — that span opens with the mode chip and the step in the lawyer's own
+    # words, which is exactly the business content a baseline exists to check.
+    # Only the tail is computed: `day_month` prints the action's date, and
+    # `short_date` appends «1 p» or «8 p üle» counted from today, appearing at
+    # all only once the date has passed. The template wraps that tail in a bare
+    # `data-clock`, which carries no styling and changes nothing a reader sees
+    # (templates/matters/partials/portfolio_row.html).
+    "[data-clock]",
 ]
 
 #: The three above, named once so the scenario entries cannot drift apart.
@@ -281,9 +315,61 @@ ULEVAADE_WEEK_COUNTS = (
 #: element appears or not depending on how many Matters the functional suite
 #: filed is still worth painting, but requiring it would turn an unrelated
 #: browser test into a visual failure — see the `.interrow__detail` note above.
+#: The register's Arvamused block and Minu asjad's portfolio rows, named once
+#: for the same reason as the three counts above.
+#:
+#: Both are required rather than merely masked, because both are the selector
+#: whose silence caused this round: the sent timestamp was never masked at all,
+#: and the four register baselines it sits on were dying between one run and the
+#: next. A rename that quietly stops matching would put them straight back.
+#:
+#: Neither depends on how busy the world is. The seeded world sends opinions and
+#: gives Sandra open Matters before any functional test runs, and both blocks
+#: render one element per row — so the only way to stop matching is to move the
+#: markup, which is what this is here to catch.
+#:
+#: `[data-clock]` and `.pw-event__when` are deliberately *not* here. The first
+#: renders only for a row whose next step carries a date, the second only when
+#: something changed recently; absent, each paints nothing, and requiring
+#: either would turn a quiet week into a visual failure.
+OPINION_SENT = ('.submission__meta div:has(dt:text-is("Saadetud")) dd',)
+PORTFOLIO_WHEN = (".pw-matter__when",)
+
+#: Values that have to be held still, not merely covered.
+#:
+#: A mask hides glyphs. It does not stop the element being as wide as whatever
+#: is inside it, and where that element sits on a line with other facts, its
+#: width is *their* position. The register's Arvamused rows are the one place in
+#: this suite where that matters: the sent timestamp is an inline `<dd>` on a
+#: content-sized meta line, so a minute with narrower digits pulls «Teema»,
+#: «Adressaat» and the file link a pixel left and 0.3% of the page differs —
+#: measured between two runs of the same commit, and again with the mask in
+#: place, which is how this was found rather than assumed.
+#:
+#: Barlow's tabular figures would fix the minute and not the date: `j.n.Y` drops
+#: leading zeros, so `1.9.2026` is six pixels narrower than `29.8.2026` and the
+#: line moves again on the first of the month. The product deliberately does not
+#: zero-pad, and this suite does not get to ask it to.
+#:
+#: So the text is replaced with one of the same shape before the capture. The
+#: layout in the baseline is then a layout the product really produces, for a
+#: value that never changes. Nobody reads the placeholder: the same element is
+#: in REQUIRED_MASKS for these scenarios, so a mask that stopped matching would
+#: fail the capture rather than write a fictional date into a baseline.
+#:
+#: Nothing else is normalised. Everywhere else a masked value sits in a fixed
+#: cell or at the end of its line, where a moving box edge leaves a sliver of
+#: unpainted background and moves nothing — the drift this suite has always
+#: accepted, and measured at a pixel or six.
+NORMALISED_TEXT: tuple[tuple[str, str], ...] = ((OPINION_SENT[0], "29.8.2026 19:35"),)
+
 REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
-    "minu-too": (".workband--entries .foldout__meta",),
-    "minu-too-3440": (".workband--entries .foldout__meta",),
+    "minu-too": (".workband--entries .foldout__meta", *PORTFOLIO_WHEN),
+    "minu-too-3440": (".workband--entries .foldout__meta", *PORTFOLIO_WHEN),
+    "teemad-1280": OPINION_SENT,
+    "teemad-1440": OPINION_SENT,
+    "teemad-3440": OPINION_SENT,
+    "teemad-filter": OPINION_SENT,
     "teema-suletud": (".banner--closed .banner__text .muted",),
     # This scenario opens `+ Manus` itself, so the control is always there.
     "teema-koostaja": ("#koostaja-manus .dateinput",),
@@ -314,11 +400,38 @@ STYLE_FIXTURE = """
 """
 
 
+def visible(selector: str) -> str:
+    """The same selector, restricted to elements that actually paint.
+
+    A mask exists to cover pixels a clock put on the page. An element that
+    renders nothing has no pixels to cover, so masking it can only do damage —
+    and it did. The v2 «Näita veel N ▾» pattern has two shapes: the tables hide
+    their overflow in a `tbody.uxextra { display: none }`, which has no box and
+    was always harmless, while Ülevaade and Minu asjad keep theirs *inside* the
+    closed `<details class="pw-more">`. Those rows still answer with a box, so
+    Playwright painted one rectangle per hidden row — sixteen of them on the CI
+    world — marching down the page over the «Tähtajad» heading, a group label,
+    two deadline rows, the «Viimased muudatused» heading and its chips. Because
+    `mask_color` is the page's own surface colour, the damage does not look like
+    a black box. It looks like text that is not there.
+
+    This is the third time a mask has hurt a page rather than a value: the
+    register's filter inputs inside a shut disclosure did it once, the composer's
+    empty date controls once. Filtering here rather than writing `:visible` into
+    twenty-nine selectors means the next component to grow a disclosure is
+    covered without anybody remembering this note.
+
+    It can only ever *remove* masking, never widen it, so no value that was
+    covered before stops being covered — unless it was never rendered.
+    """
+    return f"{selector}:visible"
+
+
 def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = None) -> bytes:
     page.add_style_tag(content=STYLE_FIXTURE)
     page.wait_for_load_state("networkidle")
     for selector in REQUIRED_MASKS.get(name, ()):
-        assert page.locator(selector).count(), (
+        assert page.locator(visible(selector)).count(), (
             f"{name}: the clock mask {selector!r} matches nothing on this page. "
             f"Either the markup moved and the selector needs following, or this "
             f"scenario no longer renders that value and the entry should go. "
@@ -326,7 +439,27 @@ def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = No
             f"into the baseline, and the run would stay green until somebody "
             f"else's unrelated change went red for it."
         )
-    masks = [page.locator(selector) for selector in CLOCK_DEPENDENT]
+    for selector, canonical in NORMALISED_TEXT:
+        # Only a value that is actually there may be replaced. Masking already
+        # hides whatever this element says, and normalising on top of that would
+        # hide one thing more: an element that had stopped rendering its value
+        # at all. Empty, the box would shrink and the baseline would go red —
+        # which is the signal. Writing the canonical string into it would paint
+        # over that signal with a date that never was.
+        elements = page.locator(visible(selector))
+        for index in range(elements.count()):
+            assert elements.nth(index).inner_text().strip(), (
+                f"{name}: {selector!r} matched an element with no text, so there "
+                f"is no clock-derived value here to hold still. Normalising it "
+                f"would write {canonical!r} into a baseline as though the page "
+                f"had rendered it."
+            )
+        page.eval_on_selector_all(
+            selector,
+            "(elements, text) => { for (const element of elements) element.textContent = text }",
+            canonical,
+        )
+    masks = [page.locator(visible(selector)) for selector in CLOCK_DEPENDENT]
     target = page.locator(clip_to) if clip_to else page
     image = target.screenshot(
         # Prefixed, because the rest of the browser suite writes its own
@@ -601,7 +734,7 @@ def test_search_results(page, base_url):
 
 def test_watchlist(page, base_url):
     """Jälgimine: a newer surface, built from the same components."""
-    signed_in(page, base_url, "/olulised-tahtajad/")
+    signed_in(page, base_url, "/jalgimine/tahtajad/")
     compare("jalgimine", capture(page, "jalgimine"))
 
 
@@ -617,6 +750,36 @@ def test_dashboard(page, base_url):
     compare("ulevaade", capture(page, "ulevaade"))
 
 
+def test_a_closed_disclosure_contributes_no_masks(page, base_url):
+    """The rows behind «Näita veel N ▾» must not paint over the page.
+
+    Not a screenshot: the damage this guards against is invisible to
+    `compare()` in the only way that matters, because a mask painted in the
+    page's own colour looks exactly like a baseline that was taken correctly.
+    So it is asserted where it can be read — every mask this suite paints
+    resolves to something a reader can see.
+
+    Ülevaade is the scenario because it is the one that broke, and the first
+    assertion keeps it honest: if the seeded world ever stops overflowing that
+    list, this test is measuring nothing, and it says so rather than passing.
+    """
+    signed_in(page, base_url, "/ulevaade/")
+    hidden = page.locator("details.pw-more:not([open]) .interrow__reason")
+    assert hidden.count(), (
+        "Ülevaade no longer hides intervention rows behind «Näita veel N ▾», so "
+        "this test no longer exercises the case it exists for. Either the "
+        "section stopped capping its preview, or the seeded world dropped below "
+        "the cap — move the assertion to whichever surface still overflows."
+    )
+    for selector in CLOCK_DEPENDENT:
+        inside = page.locator(f"details.pw-more:not([open]) {visible(selector)}")
+        assert inside.count() == 0, (
+            f"{selector!r} matches {inside.count()} element(s) inside a closed "
+            f"disclosure and Playwright would paint a rectangle for each, in the "
+            f"page's own colour, over whatever happens to be underneath."
+        )
+
+
 def test_my_work(page, base_url):
     """Minu töö: one chronological timeline and the rail beside it.
 
@@ -624,7 +787,7 @@ def test_my_work(page, base_url):
     a row lands in depends on the weekday the job runs, which is why the dates
     themselves are masked and the bands are asserted in Python instead.
     """
-    signed_in(page, base_url, "/minu-too/")
+    signed_in(page, base_url, "/minu-asjad/")
     compare("minu-too", capture(page, "minu-too"))
 
 
@@ -659,7 +822,7 @@ ULTRAWIDE = {"width": 3440, "height": 900}
     "name,path",
     [
         ("ulevaade-3440", "/ulevaade/"),
-        ("minu-too-3440", "/minu-too/"),
+        ("minu-too-3440", "/minu-asjad/"),
         ("teemad-3440", "/teemad/"),
         ("statistika-3440", "/statistika/"),
     ],

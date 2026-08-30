@@ -45,6 +45,19 @@ def _future(days: int) -> str:
     return f"{on.day}.{on.month}.{on.year}"
 
 
+def open_register(page, base_url: str) -> None:
+    """The whole register, not its first page.
+
+    The v2 design set the default page size to twelve, so a row this suite
+    seeded is on page one only until the tests around it file a thirteenth
+    Matter — which several of them do. `?kaupa=koik` asks for the size control's
+    own «kõik», which is the register answering the same question with no pager
+    in the way (02-EKRAANID §C).
+    """
+    page.goto(f"{base_url}/teemad/?kaupa=koik")
+    page.wait_for_load_state("networkidle")
+
+
 def register_row(page, title: str):
     """The register's own link to a Matter, by title.
 
@@ -75,8 +88,8 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     screenshots(page, "00-ulevaade")
 
     # -- Minu töö is the personal queue ----------------------------------
-    page.locator(".topnav__link", has_text="Minu töö").click()
-    expect(page.get_by_role("heading", name="Minu töö")).to_be_visible()
+    page.locator(".topnav__link", has_text="Minu asjad").click()
+    expect(page.get_by_role("heading", name="Minu asjad")).to_be_visible()
     # One dated list, whatever the mode. `Järgmise tegevuseta` is beside it
     # and deliberately not in it: an absence has no position in time.
     #
@@ -144,7 +157,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # date now, so which band a step lands in depends on the date it was given
     # and on what else this persona is carrying. What must be true is that the
     # step is on the page, in a row, saying which mode it is (Teema QA §3).
-    page.locator(".topnav__link", has_text="Minu töö").click()
+    page.locator(".topnav__link", has_text="Minu asjad").click()
     row = page.locator(".workrow2").filter(has_text="Koosta ja saada koja arvamus")
     expect(row).to_have_count(1)
     expect(row.locator(".mode--do")).to_be_visible()
@@ -196,11 +209,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # The superseded DO must no longer be presented as the current action.
     expect(page.locator(".uxnext").get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
 
-    # The chronology is collapsed by default: a Matter opens on what to do
-    # next, not on its history.
+    # The chronology is open by default since the v2 rebuild — the first page of
+    # it is what a lawyer opens the file for — and it is still below the next
+    # step, which is what "a Matter opens on what to do next" actually means
+    # (02-EKRAANID §C).
     timeline = page.locator("#ajajoon")
-    expect(timeline).not_to_have_attribute("open", "")
-    timeline.locator(".accordion__head").click()
+    expect(timeline).to_have_attribute("open", "")
+    assert timeline.bounding_box()["y"] > page.locator(".uxnext").bounding_box()["y"]
     # One professional update, one line. The spine says what kind of line it is,
     # and what the save *decided* rides with it on its own strip rather than as
     # a clause — «lisas märkuse ja määras järgmise sammu» said in words what the
@@ -214,7 +229,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # The Matter is now OOTAN — and it is still in the one list, banded by its
     # date rather than moved to a column of its own. The row carries the mode
     # chip that says what the date means (Teema QA §3).
-    page.locator(".topnav__link", has_text="Minu töö").click()
+    page.locator(".topnav__link", has_text="Minu asjad").click()
     expect(page.get_by_role("heading", name="Ootan ja kontrollin")).to_have_count(0)
     row = page.locator(".workrow2").filter(has_text="Ootan ministeeriumi uut sõnastust")
     expect(row).to_have_count(1)
@@ -305,7 +320,6 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # -- Timeline order --------------------------------------------------
     page.goto(matter_url)
-    page.locator("#ajajoon .accordion__head").click()
     # innerText reports the rendered text, and these labels are uppercased by
     # CSS, so the comparison is case-insensitive.
     kinds = [
@@ -323,7 +337,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     )
 
     # -- Teemad ----------------------------------------------------------
-    page.locator(".topnav__link", has_text="Teemad").click()
+    open_register(page, base_url)
     expect(page.get_by_role("heading", name="Teemad")).to_be_visible()
     expect(register_row(page, MATTER_TITLE)).to_be_visible()
     screenshots(page, "08-teemad")
@@ -400,7 +414,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(page, base_url):
     """A refused save must not half-apply, and must not discard what was typed."""
     sign_in(page, base_url, MARTIN)
-    page.locator(".topnav__link", has_text="Teemad").click()
+    open_register(page, base_url)
     register_row(page, "Tavaline avatud teema kõigile nähtav").click()
 
     open_composer(page)
@@ -428,13 +442,13 @@ class TestRestrictedMatterIsUnreachable:
 
     def test_the_owner_sees_it(self, page, base_url):
         sign_in(page, base_url, SANDRA)
-        page.locator(".topnav__link", has_text="Teemad").click()
-        expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_be_visible()
+        open_register(page, base_url)
+        expect(register_row(page, RESTRICTED_TITLE)).to_be_visible()
 
     def test_the_department_head_sees_it(self, page, base_url):
         sign_in(page, base_url, HEAD)
-        page.locator(".topnav__link", has_text="Teemad").click()
-        expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_be_visible()
+        open_register(page, base_url)
+        expect(register_row(page, RESTRICTED_TITLE)).to_be_visible()
 
     def test_a_reader_does_not(self, page, base_url):
         sign_in(page, base_url, READER)
@@ -447,7 +461,7 @@ class TestRestrictedMatterIsUnreachable:
         expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
 
         # Not in the register.
-        page.locator(".topnav__link", has_text="Teemad").click()
+        open_register(page, base_url)
         expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_have_count(0)
 
         # Not in search, and no snippet leaks. `not_to_contain_text` retries
@@ -462,7 +476,7 @@ class TestRestrictedMatterIsUnreachable:
     def test_a_technical_administrator_does_not_either(self, page, base_url):
         """Administering the system is not permission to read the content."""
         sign_in(page, base_url, ADMIN)
-        page.locator(".topnav__link", has_text="Teemad").click()
+        open_register(page, base_url)
         expect(page.get_by_role("link", name=RESTRICTED_TITLE)).to_have_count(0)
 
         page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill("konfidentsiaalne")
@@ -473,8 +487,8 @@ class TestRestrictedMatterIsUnreachable:
     def test_the_direct_url_is_not_reachable(self, page, base_url):
         """Guessing the address must behave exactly like the record not existing."""
         sign_in(page, base_url, SANDRA)
-        page.locator(".topnav__link", has_text="Teemad").click()
-        page.get_by_role("link", name=RESTRICTED_TITLE).click()
+        open_register(page, base_url)
+        register_row(page, RESTRICTED_TITLE).click()
         restricted_url = page.url
         sign_out(page, base_url)
 

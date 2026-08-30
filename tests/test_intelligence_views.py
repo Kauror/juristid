@@ -149,10 +149,15 @@ def test_the_heading_count_matches_the_rows(signed_in, specialist):
     response = signed_in.get(reverse(IMPORTANT_DATES), {"suund": "koik"})
     body = _text(response)
     assert response.context["total"] == 3
-    # `<li class="factrow"` and not `class="factrow`: the row's own child
-    # elements use `factrow__…` classes and would each match the shorter
-    # pattern, which would make this assertion pass for the wrong reason.
-    assert len(re.findall(r'<li class="factrow"', body)) == 3
+    # The v2 page draws named sections over a register table rather than one
+    # month-grouped list, so the rows are `<tr>`. The rule the test exists for
+    # is unchanged: the number in the heading is the number of rows behind it,
+    # including the ones the «Näita veel» disclosure holds — those are a second
+    # `tbody` of the same table, not a second query
+    # (01-EHITUSJUHIS §3.3, 02-EKRAANID §D).
+    sections = response.context["sections"]
+    assert sum(section.count for section in sections) == 3
+    assert len(re.findall(r'class="table__titlelink"', body)) == 3
 
 
 def test_a_hand_edited_year_parameter_does_not_break_the_page(signed_in):
@@ -186,9 +191,17 @@ def test_the_commencement_page_groups_by_period(signed_in, specialist):
         actor=specialist,
     )
 
+    # Month headings are gone: the v2 page names two sections by what a reader
+    # is asking — what lands soon, and what lands later — and prints each row's
+    # own date at the precision it was recorded to (02-EKRAANID §D). What has
+    # to stay true is that both records reach the page and neither date is
+    # rewritten.
     response = signed_in.get(reverse(EFFECTIVE_DATES), {"suund": "koik"})
-    labels = [group.label for group in response.context["groups"]]
-    assert labels == ["september 2030", "oktoober 2030"]
+    body = _text(response)
+    rows = [row for section in response.context["sections"] for row in section.rows]
+    assert {row.effective_date.description for row in rows} == {"põhiosa", "osad sätted"}
+    assert "27.9.2030" in body
+    assert "1.10.2030" in body
 
 
 def test_the_undated_view_is_reachable_and_counted_separately(signed_in, specialist):

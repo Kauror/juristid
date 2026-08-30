@@ -1497,10 +1497,6 @@ p.formnote {
   color: var(--text-secondary);
 }
 
-.matterhead__state {
-  margin-left: auto;
-}
-
 .matterhead__title {
   margin: 0;
   font-size: var(--typography-size-matter-title);
@@ -1508,6 +1504,16 @@ p.formnote {
   line-height: var(--typography-line-tight);
   max-width: 1080px;
   overflow-wrap: break-word;
+}
+
+/* Hetkeseis sits on the title's baseline rather than on its own row: the badge
+   is about the file the heading names, and it used to be a row above it
+   (02-EKRAANID §C). It never takes a line of its own, so a long title wraps
+   and the badge follows the last word. */
+.matterhead__title .badge {
+  vertical-align: middle;
+  margin-left: var(--spacing-2);
+  font-size: var(--typography-size-chip);
 }
 
 .metastrip {
@@ -1722,6 +1728,12 @@ p.formnote {
   gap: var(--spacing-3);
 }
 
+/* The facts rail, at the density the design keeps asking for. Rows sit
+   directly under each other: a gap between them *and* a line-height on each is
+   the same space twice, and it turned a nine-row block into a scroll. Set here
+   rather than overridden per page, so «Teema andmed» is the same block on the
+   Teema page, on Dokumendid and on Arvamused (01-EHITUSJUHIS §5,
+   02-EKRAANID §C). */
 .railcard {
   background: var(--surface-panel);
   border: 1px solid var(--border-subtle);
@@ -1729,7 +1741,7 @@ p.formnote {
   padding: var(--spacing-3) var(--spacing-35);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-2);
+  gap: 2px;
 }
 
 .railcard__label {
@@ -1738,11 +1750,15 @@ p.formnote {
   letter-spacing: var(--typography-tracking-label);
   color: var(--text-secondary);
   text-transform: uppercase;
+  margin-bottom: 2px;
 }
 
 .railcard__row {
   display: flex;
   gap: var(--spacing-2);
+  margin: 0;
+  padding: 1px 0;
+  line-height: 1.35;
   font-size: var(--typography-size-meta);
   color: var(--text-body);
 }
@@ -2115,14 +2131,18 @@ p.formnote {
  * Submissions and documents
  * ==================================================================== */
 
+/* Two lines: what the letter is, and the four facts about it. The v2 design
+   made this the shared shape — the Matter's own Arvamused page and the section
+   under the register draw the same card — so the density is set here rather
+   than overridden per surface (01-EHITUSJUHIS §5, 02-EKRAANID §C). */
 .submission {
   background: var(--surface-raised);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  padding: var(--spacing-3) var(--spacing-4);
+  border-radius: var(--radius-md);
+  padding: var(--spacing-2) var(--spacing-3);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-2);
+  gap: 2px;
 }
 
 .submission--superseded .submission__title {
@@ -2148,12 +2168,23 @@ p.formnote {
   color: var(--text-muted);
 }
 
+/* One line, not a grid of cards. Four facts of very different lengths, each
+   label beside its value rather than above it, and the file pushed to the far
+   end where the eye already goes for it. */
 .submission__meta {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  gap: var(--spacing-2) var(--spacing-4);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--spacing-4);
   margin: 0;
   font-size: var(--typography-size-meta);
+}
+
+.submission__meta > div {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
 }
 
 .submission__meta dt {
@@ -2162,11 +2193,21 @@ p.formnote {
   letter-spacing: var(--typography-tracking-chip);
   color: var(--text-muted);
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .submission__meta dd {
   margin: 0;
   color: var(--text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.submission__meta__file {
+  margin-left: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 /* Immutable evidence reads as authoritative; a working file must not. */
@@ -4725,11 +4766,19 @@ p.factsection__none {
 /* The paired rows. Each is `minmax(0, …)` on its flexible track so a long
    organisation name wraps instead of widening the grid and taking the page
    sideways with it. */
+/* A pair is two columns. It used to be one unless a modifier said otherwise,
+   which made the bare class a promise the stylesheet did not keep — every row
+   that carried it and no ratio stacked. The modifiers below still decide the
+   *ratio*; this decides that there is one. */
 .createform__pair,
 .createform__trio {
   display: grid;
   gap: 18px;
   align-items: start;
+}
+
+.createform__pair {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .createform__pair--summary {
@@ -6683,6 +6732,14 @@ button.accordion__action:focus-visible {
   flex: none;
 }
 
+/* The inline editors sit on the row rather than around it: a control with its
+   own padding inside a one-line row is what made the rail twice as tall as the
+   facts in it. */
+.teema .railcard .inlineedit__trigger {
+  padding: 0;
+  border-bottom-color: var(--border-subtle);
+}
+
 .railcard__value--date {
   font-variant-numeric: tabular-nums;
 }
@@ -7397,13 +7454,6 @@ button.accordion__action:focus-visible {
   flex-wrap: wrap;
 }
 
-.seis__label {
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  color: var(--text-muted);
-}
-
 .seis__spacer {
   flex: 1;
 }
@@ -7860,8 +7910,8 @@ button.accordion__action:focus-visible {
 .entryline {
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr);
-  gap: var(--spacing-25);
-  padding: 5px var(--spacing-2);
+  gap: 0 var(--spacing-4);
+  padding: 2px var(--spacing-3);
   text-decoration: none;
   color: inherit;
   border-radius: var(--radius-sm);
@@ -7892,16 +7942,20 @@ button.accordion__action:focus-visible {
 }
 /* ---- the rail ------------------------------------------------------ */
 
+/* The rail's rows sit directly under each other: a gap between them and a
+   padding on each of them is the same space twice, and it turned a four-line
+   block into a scroll (design handoff 01 §5). Changed here rather than
+   overridden later, so there is one declaration to read. */
 .railblock {
-  padding: 15px var(--spacing-5) 17px;
+  padding: var(--spacing-3) var(--spacing-5);
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-2);
+  gap: 0;
 }
 
 .railblock__label {
-  margin: 0;
+  margin: 0 0 var(--spacing-1);
   font-size: var(--typography-size-label);
   font-weight: var(--typography-weight-bold);
   letter-spacing: var(--typography-tracking-label);
@@ -8022,7 +8076,7 @@ button.accordion__action:focus-visible {
   font-size: var(--typography-size-meta);
   color: var(--text-body);
   text-decoration: none;
-  padding: 3px 0;
+  padding: 1px 0;
 }
 
 .loadrow:hover,
@@ -8309,11 +8363,14 @@ a.loadrow__overdue--bad {
   padding-top: var(--spacing-1);
 }
 
+/* Date, title, hetkeseis — in that order, because the date is what the rows are
+   sorted by and therefore what the eye scans (02-EKRAANID §B). The title takes
+   only what it needs so the stage sits beside it rather than at the far edge. */
 .arealine {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr) 150px 52px;
-  gap: var(--spacing-25);
-  padding: 4px var(--spacing-2);
+  grid-template-columns: 96px minmax(0, max-content) minmax(0, 1fr);
+  gap: 0 var(--spacing-25);
+  padding: 2px var(--spacing-2);
   font-size: var(--typography-size-meta);
   text-decoration: none;
   color: inherit;
@@ -8337,7 +8394,7 @@ a.loadrow__overdue--bad {
 }
 
 .arealine__date {
-  text-align: right;
+  text-align: left;
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
 }
@@ -8569,6 +8626,18 @@ a.loadrow__overdue--bad {
   color: var(--text-muted);
 }
 
+/* The register's own «kuvatud N · näita korraga» line. Its own class rather
+   than the opinion section's, because the register's results fragment is
+   swapped on every keystroke and a test asserts that nothing belonging to the
+   Arvamused section is inside it (tests/test_arvamused_under_teemad.py). */
+.registercount__note {
+  color: var(--text-muted);
+}
+
+.registercount__note b {
+  color: var(--text-primary);
+}
+
 .opinionblock__foot {
   margin: var(--spacing-2) 0 0;
   text-align: right;
@@ -8583,4 +8652,585 @@ a.loadrow__overdue--bad {
 
 .opinionblock__more:hover {
   text-decoration: underline;
+}
+
+/* ====================================================================
+   Person workspace
+   ====================================================================
+
+   Minu asjad and the manager's view of a colleague's desk, which are one
+   template and therefore one set of components. Everything here is prefixed
+   `pw-` because it is genuinely new — every other part of that page reuses a
+   component the application already had (design handoff 01 §5, §8).
+
+   Nothing here is a second styling of an existing component. Where the design
+   asked for a denser version of something the application already draws — the
+   rail rows, the entry lines, the seis strip — the change was made in that
+   component's own declaration rather than added as an override here, so there
+   is one rule per component to read and one to change.
+   ==================================================================== */
+
+/* The compact seis. The same strip, the same figures and the same order as
+   Ülevaade — smaller, because on a work page it sits under a heading rather
+   than being the page's first statement. */
+.seis--compact {
+  gap: var(--spacing-1) var(--spacing-6);
+  padding: var(--spacing-2) var(--spacing-8);
+}
+
+.seis--compact .seis__number {
+  font-size: 20px;
+}
+
+.seis--compact .seis__caption {
+  font-size: var(--typography-size-meta);
+}
+
+/* Aktiivsed teemad sits below the bands rather than beside them, and needs the
+   separation to read as a different question from the timeline above it. */
+.workband--portfolio {
+  margin-top: var(--spacing-35);
+}
+
+/* «Muutumatu» — the facts nobody edits, as one quiet line at the foot of the
+   edit form rather than a card of their own. A card gave three read-only facts
+   the same weight as the fields above them (02-EKRAANID §C). */
+.uxfixed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-5);
+  padding: var(--spacing-2) 0;
+  border-top: 1px solid var(--border-subtle);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.uxfixed__label {
+  font-size: var(--typography-size-chip);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* The register reference in the rail: an identity, so it is set in the same
+   monospace the exact search matches on. */
+.railcard__ref {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  letter-spacing: 0.02em;
+}
+
+.uxfixed__item {
+  white-space: nowrap;
+}
+
+.uxfixed__key {
+  color: var(--text-muted);
+}
+
+/* A policy area the department has retired, still on a Matter that was filed
+   under it. Marked in words on the chip — never by colour alone — because
+   unticking it has to stay a deliberate act (Teema redesign §7.2). */
+.chip--retired .chip__name {
+  color: var(--text-muted);
+}
+
+/* The Statistika tables. Fixed layout so the number column is the same width in
+   every table on the page, which is what lets three tables under each other read
+   as one set of figures (02-EKRAANID §E). */
+.table--stats {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.table--stats th:first-child,
+.table--stats td:first-child {
+  width: auto;
+}
+
+.table--stats th:not(:first-child),
+.table--stats td:not(:first-child) {
+  width: 130px;
+  text-align: right;
+}
+
+/* The Matter column on the Jälgimine tables. Its own width because the three
+   pages put the file beside a fact about it, and a title that takes whatever is
+   left pushes the owner off the row (02-EKRAANID §D). */
+.table--register .table__matter {
+  width: 300px;
+}
+
+.table__matter .table__clip {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- the manager's crumb and person switcher ------------------------ */
+
+.pw-crumb {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-row);
+}
+
+.pw-crumb a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.pw-crumb a:hover {
+  color: var(--text-primary);
+}
+
+.pw-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 0 var(--spacing-1);
+}
+
+.pw-switch__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.pw-switch__arrow:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+.pw-switch details {
+  position: relative;
+}
+
+.pw-switch summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.pw-switch summary::-webkit-details-marker {
+  display: none;
+}
+
+.pw-switch summary:hover {
+  background: var(--surface-hover);
+}
+
+.pw-switch__menu {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  min-width: 230px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+  padding: var(--spacing-1);
+  z-index: 30;
+}
+
+.pw-switch__menu a {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-25);
+  padding: var(--spacing-1) var(--spacing-25);
+  border-radius: var(--radius-sm);
+  font-size: var(--typography-size-row);
+  color: var(--text-body);
+  text-decoration: none;
+}
+
+.pw-switch__menu a:hover {
+  background: var(--surface-overlay-hover);
+}
+
+.pw-switch__menu a.is-active {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.pw-switch__menu a span {
+  color: var(--text-muted);
+  font-weight: var(--typography-weight-regular);
+}
+
+/* ---- Aktiivsed teemad ----------------------------------------------- */
+
+.pw-search input {
+  width: 200px;
+  padding: 5px var(--spacing-25);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--text-body);
+  font-family: var(--typography-font-sans);
+  font-size: var(--typography-size-row);
+}
+
+.pw-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.pw-chips {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  flex-wrap: wrap;
+  margin: 0 0 var(--spacing-25);
+}
+
+.pw-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 3px var(--spacing-25);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.pw-chip:hover {
+  border-color: var(--border-strong);
+  text-decoration: none;
+}
+
+.pw-chip.is-active {
+  background: var(--surface-elevated);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.pw-chip b {
+  font-weight: var(--typography-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.pw-chip--warn {
+  color: var(--status-warning);
+  border-color: var(--status-warning-border);
+}
+
+.pw-matters {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* One line per Matter, always. A row that wraps turns a scannable list into a
+   paragraph, so every cell clips and the middle one takes what is left. */
+.pw-matter {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr) 108px;
+  gap: 0 var(--spacing-4);
+  align-items: baseline;
+  padding: 3px var(--spacing-25);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+}
+
+.pw-matter > span:first-child,
+.pw-matter__next {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pw-matter:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+.pw-matter__title {
+  font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.pw-matter__stage {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.pw-matter__stage::before {
+  content: " · ";
+}
+
+.pw-matter__next {
+  font-size: var(--typography-size-meta);
+  color: var(--text-body);
+}
+
+.pw-matter__next .mode {
+  margin-right: var(--spacing-1);
+}
+
+.pw-matter__next--none {
+  color: var(--status-warning);
+}
+
+.pw-matter__cta {
+  color: var(--accent-link);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.pw-matter__when {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pw-register {
+  margin: var(--spacing-2) 0 0;
+  padding: 0 var(--spacing-25);
+  font-size: var(--typography-size-row);
+}
+
+/* ---- «Näita veel N» -------------------------------------------------- */
+
+.pw-more {
+  margin: var(--spacing-1) 0 0;
+}
+
+.pw-more > summary {
+  list-style: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 var(--spacing-25);
+  font-size: var(--typography-size-row);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--accent-link);
+}
+
+.pw-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.pw-more[open] > summary {
+  display: none;
+}
+
+/* The accordion over a table. The extra rows have to be a second tbody of the
+   same table, never a table of their own: `table-layout: fixed` takes its
+   column widths from the first row group, so a separate table lines its columns
+   up somewhere else entirely (design handoff 01 §5). */
+tbody.uxextra {
+  display: none;
+}
+
+section:has(.pw-more[open]) tbody.uxextra {
+  display: table-row-group;
+}
+
+/* ---- Märkmed --------------------------------------------------------- */
+
+.pw-note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--surface-elevated);
+}
+
+.pw-note textarea {
+  width: 100%;
+  min-height: 150px;
+  resize: vertical;
+  border: 0;
+  background: transparent;
+  color: var(--text-body);
+  font-family: var(--typography-font-sans);
+  font-size: var(--typography-size-row);
+  line-height: 1.6;
+}
+
+/* A borderless field inside a card, exactly like the composer: the outline is
+   dropped from the field and the card takes it instead, so focus is still
+   visible and is visible on the surface a person is actually looking at. */
+.pw-note textarea:focus {
+  outline: none;
+}
+
+.pw-note:focus-within {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-halo);
+}
+
+.pw-note__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--spacing-2);
+  font-size: var(--typography-size-label);
+  color: var(--text-muted);
+}
+
+/* ---- Viimati muudetud ------------------------------------------------ */
+
+.pw-events {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pw-event {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 0 var(--spacing-25);
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-control);
+  text-decoration: none;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pw-event > span {
+  min-width: 0;
+}
+
+.pw-event:hover {
+  background: var(--surface-hover);
+  text-decoration: none;
+}
+
+.pw-event__when {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.pw-event__what,
+.pw-event__matter {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pw-event__what {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.pw-event__matter {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* ---- Kiirvaade (manager only) ---------------------------------------- */
+
+.pw-kiir {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pw-kiir a {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-25);
+  padding: 1px var(--spacing-2);
+  border-radius: var(--radius-control);
+  font-size: var(--typography-size-row);
+  color: var(--text-body);
+  text-decoration: none;
+}
+
+.pw-kiir a:hover {
+  background: var(--surface-hover);
+}
+
+.pw-kiir b {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.pw-kiir .is-bad b {
+  color: var(--status-danger);
+}
+
+.pw-kiir .is-warn b {
+  color: var(--status-warning);
+}
+
+.pw-privnote {
+  margin: var(--spacing-1) 0 0;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+/* ---- the statistics foldout ------------------------------------------ */
+
+.pw-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pw-stats__grp {
+  margin: var(--spacing-1) 0 2px;
+  padding: 0 var(--spacing-2);
+  font-size: var(--typography-size-chip);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  color: var(--text-muted);
+}
+
+.pw-stats a,
+.pw-stats > span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-25);
+  padding: 1px var(--spacing-2);
+  border-radius: var(--radius-control);
+  font-size: var(--typography-size-meta);
+  color: var(--text-body);
+  text-decoration: none;
+}
+
+.pw-stats a:hover {
+  background: var(--surface-hover);
+}
+
+.pw-stats b {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }

@@ -1,12 +1,17 @@
 {% extends "base.html" %}
 
 {% comment %}
-The Jälgimine shell: heading, tab strip, filter row.
+The Jälgimine shell: heading, tab strip, seis strip, filter row.
 
 Three generated views behind one navigation item, the shape Statistika already
 uses. Every one of them is built from the records lawyers keep on their own
 Matters — nobody maintains a list here, and there is nothing on these pages that
 can be edited (Stage-2G brief 38).
+
+The heading names the tab rather than the group. «Jälgimine» over a strip whose
+first tab is already marked is the page telling a reader what the navigation bar
+told them a moment ago; the useful heading is the one that says which of the
+three they are on (02-EKRAANID §D).
 
 Filter state lives entirely in the URL, so a view worth arguing about is a view
 somebody can paste into a message.
@@ -15,19 +20,40 @@ somebody can paste into a message.
 {% block content %}
 <div class="page">
   <div class="pagehead">
-    <h1 class="pagehead__title">Jälgimine</h1>
+    <h1 class="pagehead__title">{{ page_title }}</h1>
     <span class="pagehead__context">{% block page_context %}{% endblock %}</span>
   </div>
 
-  <div class="filters">
-    <nav class="tabs" aria-label="Jälgimise vaated">
-      {% for key, label, route in tabs %}
-        <a class="tabs__tab {% if active_tab == key %}is-active{% endif %}"
-           {% if active_tab == key %}aria-current="page"{% endif %}
-           href="{% url route %}">{{ label }}</a>
-      {% endfor %}
-    </nav>
+  <nav class="tabs" aria-label="Jälgimise vaated">
+    {% for key, label, route in tabs %}
+      <a class="tabs__tab {% if active_tab == key %}is-active{% endif %}"
+         {% if active_tab == key %}aria-current="page"{% endif %}
+         href="{% url route %}">{{ label }}</a>
+    {% endfor %}
+  </nav>
 
+  {% comment %}
+    Every figure is a link, and the list behind it is the population it counted.
+    A figure this page cannot express is not printed at all, which is why the
+    strips here are shorter than the prototype's
+    (01-EHITUSJUHIS §3.3, docs/design-v2-compatibility.md DS-16).
+
+    Zeros are dropped for the same reason they are dropped everywhere else.
+  {% endcomment %}
+  {% if seis %}
+    <div class="seis seis--compact">
+      {% for figure in seis %}
+        {% if figure.value %}
+          <a class="seis__figure" href="{{ figure.url }}">
+            <span class="seis__number{% if figure.tone %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
+            <span class="seis__caption">{{ figure.caption }}</span>
+          </a>
+        {% endif %}
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <div class="filters">
     {% block page_filters %}{% endblock %}
   </div>
 

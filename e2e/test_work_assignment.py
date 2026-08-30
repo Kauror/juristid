@@ -196,7 +196,13 @@ def test_a_register_filtered_on_a_departed_colleague_still_finds_their_work(page
     # The team table is a grid of links now, not a <table>: its rows are links,
     # and a row of cells wrapped in an anchor is not valid table markup
     # (docs/adr/0043).
+    #
+    # Since the v2 rebuild the row opens the person's *desk*, and the register
+    # is one step further on, from that page's own footer link — which is still
+    # exactly how such a URL occurs (design handoff, Minu asjad §A).
     page.locator(".uxstat__row").filter(has_text=FORMER_NAME).first.click()
+    page.wait_for_load_state("networkidle")
+    page.locator(".pw-register a").click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator("select[name='vastutaja']")).to_contain_text(FORMER_NAME.split()[0])

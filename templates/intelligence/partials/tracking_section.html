@@ -1,0 +1,51 @@
+{% comment %}
+One named section of a Jälgimine page: a heading with its count, a register
+table with five rows on screen, and the rest of the same list behind
+«Näita veel N ▾».
+
+The overflow rows are a **second `tbody` of the same table**, never a table of
+their own: `table-layout: fixed` takes its column widths from the first row
+group, so a separate table lines its columns up somewhere else entirely
+(01-EHITUSJUHIS §5, static/css/app.css `tbody.uxextra`).
+
+The disclosure has to be inside this `<section>` for the same reason — the rule
+that reveals the extra rows is `section:has(.pw-more[open]) tbody.uxextra`.
+
+`row_template` is the caller's row partial, because the three pages carry three
+different column sets over three different records. Everything else — the
+heading, the count, the split, the disclosure — is one implementation.
+{% endcomment %}
+<section id="jalgimine-{{ section.key }}" aria-labelledby="jalgimine-{{ section.key }}-heading">
+  <h2 class="sectionlabel" id="jalgimine-{{ section.key }}-heading">
+    {{ section.label }} <span class="sectionlabel__count">{{ section.count }}</span>
+  </h2>
+  <div class="tablewrap">
+    <table class="table table--register">
+      <caption class="visually-hidden">{{ caption }}</caption>
+      <thead>
+        <tr>
+          {% for column, css in columns %}
+            <th scope="col" class="{{ css }}">{{ column }}</th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in section.preview %}
+          {% include row_template with row=row %}
+        {% endfor %}
+      </tbody>
+      {% if section.rest %}
+        <tbody class="uxextra">
+          {% for row in section.rest %}
+            {% include row_template with row=row %}
+          {% endfor %}
+        </tbody>
+      {% endif %}
+    </table>
+  </div>
+  {% if section.remaining %}
+    <details class="pw-more">
+      <summary>Näita veel {{ section.remaining }} ▾<span class="visually-hidden"> — {{ section.label }}</span></summary>
+    </details>
+  {% endif %}
+</section>

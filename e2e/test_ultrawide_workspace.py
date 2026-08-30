@@ -54,12 +54,12 @@ ORDINARY = [1280, 1366, 1440]
 #: URL is not fixed, so it is resolved from the register.
 SURFACES: list[tuple[str, str | None, str, str | None]] = [
     ("Ülevaade", "/ulevaade/", ".page--overview", ".ovbody__rail"),
-    ("Minu töö", "/minu-too/", ".page--work", ".worklayout2__rail"),
+    ("Minu töö", "/minu-asjad/", ".page--work", ".worklayout2__rail"),
     ("Teemad", "/teemad/", ".page", None),
     ("Statistika", "/statistika/", ".page", None),
     ("Teema", None, ".teema", ".teema .rail"),
     ("Arvamused", "/arvamused/", ".page", None),
-    ("Jälgimine", "/olulised-tahtajad/", ".page", None),
+    ("Jälgimine", "/jalgimine/tahtajad/", ".page", None),
 ]
 
 #: Named for the test id, so a failure says which page rather than which index.

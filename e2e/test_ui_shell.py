@@ -34,7 +34,7 @@ VIEWPORTS = [(1440, 900), (1366, 768), (1280, 800), (1024, 768)]
 
 #: The four destinations a lawyer moves between all day. They are on the bar at
 #: every width.
-PRIMARY = ["Ülevaade", "Minu töö", "Teemad"]
+PRIMARY = ["Ülevaade", "Minu asjad", "Teemad"]
 
 #: Off the bar entirely, and its route deliberately untouched. Saabunud is a
 #: triage surface somebody opens when they are triaging, not a destination in
@@ -55,7 +55,14 @@ def document_overflows(page) -> bool:
 
 
 def open_register(page, base_url: str) -> None:
-    page.goto(f"{base_url}/teemad/")
+    """The whole register, not its first page.
+
+    The v2 design set the default page size to twelve, so a row this suite
+    seeded is on page one only until some other test files a thirteenth Matter.
+    `?kaupa=koik` asks for the size control's own «kõik», which is the register
+    answering the same question without a pager in the way (02-EKRAANID §C).
+    """
+    page.goto(f"{base_url}/teemad/?kaupa=koik")
     page.wait_for_load_state("networkidle")
 
 
@@ -457,7 +464,7 @@ def test_no_work_surface_still_spends_a_column_on_the_reference(page, base_url):
     either way and is kept on all four so a table coming back is noticed.
     """
     sign_in(page, base_url, SANDRA)
-    for path in ("/teemad/", "/minu-too/", "/saabunud/", "/ulevaade/"):
+    for path in ("/teemad/", "/minu-asjad/", "/saabunud/", "/ulevaade/"):
         page.goto(f"{base_url}{path}")
         page.wait_for_load_state("networkidle")
         expect(page.get_by_role("columnheader", name="Viide")).to_have_count(0)
@@ -475,7 +482,7 @@ def test_no_ordinary_reading_surface_prints_a_matter_reference(page, base_url):
     sign_in(page, base_url, SANDRA)
     pattern = re.compile(r"(19|20)\d{2}_\d+")
 
-    for path in ("/ulevaade/", "/minu-too/", "/teemad/", "/saabunud/", "/olulised-tahtajad/"):
+    for path in ("/ulevaade/", "/minu-asjad/", "/teemad/", "/saabunud/", "/jalgimine/tahtajad/"):
         page.goto(f"{base_url}{path}")
         page.wait_for_load_state("networkidle")
         text = page.locator("#sisu").inner_text()
@@ -676,7 +683,7 @@ def test_an_overdue_deadline_is_coloured_and_a_passed_review_is_not(page, base_u
     flattened them both to the neutral text colour.
     """
     sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/minu-too/")
+    page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
 
     colours = page.evaluate(

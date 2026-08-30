@@ -28,7 +28,13 @@ MINISTRY = "Näidisministeerium"
 
 
 def open_register(page, base_url):
-    page.goto(f"{base_url}/teemad/?olek=koik")
+    """The whole register, not its first page.
+
+    The v2 design set the default page size to twelve, so a row this suite
+    seeded is on page one only until some other test files a thirteenth Matter.
+    `?kaupa=koik` asks for the size control's own «kõik» (02-EKRAANID §C).
+    """
+    page.goto(f"{base_url}/teemad/?olek=koik&kaupa=koik")
     expect(page.get_by_role("heading", name="Teemad")).to_be_visible()
 
 
@@ -126,8 +132,15 @@ def test_back_returns_to_the_previous_search(page, base_url):
 
 def test_clearing_the_search_restores_the_register(page, base_url):
     sign_in(page, base_url, MARTIN)
-    open_register(page, base_url)
+    # Measured where `Tühjenda kõik` actually lands: it clears every register
+    # parameter, `olek` included, so the register it restores is the default
+    # one. Reading the count from `?olek=koik` first and comparing it to the
+    # default scope afterwards compares two different populations.
+    page.goto(f"{base_url}/teemad/?kaupa=koik")
+    page.wait_for_load_state("networkidle")
     unfiltered = result_count(page)
+
+    open_register(page, base_url)
 
     page.locator("#teemad-otsing").press_sequentially("Tavaline", delay=40)
     expect(rows(page)).to_have_count(1)

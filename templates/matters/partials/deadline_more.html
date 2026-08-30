@@ -14,7 +14,7 @@ disappears once what it promised is on screen (`.uxdl__more[open] > summary`).
     into the accessible name so they are not four controls called the same
     thing; the visible text stays the short one.
   {% endcomment %}
-  <summary>Näita veel {{ remaining }}{% if scope %}<span class="visually-hidden"> — {{ scope }}</span>{% endif %} ▾</summary>
+  <summary>Näita veel {{ remaining }} ▾{% if scope %}<span class="visually-hidden"> — {{ scope }}</span>{% endif %}</summary>
   {% for item in rows|slice:":10" %}
     {% include "matters/partials/deadline_row.html" with item=item %}
   {% endfor %}

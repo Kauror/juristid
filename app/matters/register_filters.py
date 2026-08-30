@@ -120,6 +120,14 @@ DATE_FILTERS = {
     "saabus_kuni": ("received_date", "end"),
     "tahtaeg_alates": ("response_deadline", "start"),
     "tahtaeg_kuni": ("response_deadline", "end"),
+    # When the record was opened here, as distinct from when the material
+    # arrived. Saabunud counts «loodud sel nädalal» and «loodud sel kuul», and a
+    # figure with no list behind it is a figure this product does not print — so
+    # the pair exists to give those two numbers the population they name
+    # (01-EHITUSJUHIS §3.3). `created_at` is a timestamp, so it is compared on
+    # the local date, exactly as `sent_at` is on the department digest.
+    "loodud_alates": ("created_at__date", "start"),
+    "loodud_kuni": ("created_at__date", "end"),
 }
 
 

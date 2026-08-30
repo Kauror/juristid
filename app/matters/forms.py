@@ -349,7 +349,6 @@ class MatterCreateForm(forms.Form):
         # once. This was radios while the model held one sender, and the control
         # was right for the model it had; both moved together (Agent-E brief 28).
         widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
-        help_text="Kellelt teema tuli. Saatjaid võib olla mitu.",
     )
     #: The long tail. Shown only when the reader asks for it, and validated
     #: against the same queryset, so this is a second way to pick existing
@@ -426,7 +425,6 @@ class MatterCreateForm(forms.Form):
         widget=forms.TextInput(
             attrs={"class": "field__input", "placeholder": "Millisesse valdkonda see kuulub?"}
         ),
-        help_text="Vabatekst. Siit ei teki uut valdkonda ega silti.",
     )
     #: One checkbox, unticked, rather than a REAL/TEST select.
     #:
@@ -629,56 +627,71 @@ class MatterEditForm(forms.Form):
         widget=forms.Textarea(attrs={"class": "field__input", "rows": "3"}),
         help_text="Mida see teema puudutatud ettevõtete jaoks tähendab.",
     )
+    #: Chips, not selects — the same controls `Uus teema` uses, because the two
+    #: pages are one job seen twice and were drifting apart as two designs
+    #: (02-EKRAANID §C). The cardinality is unchanged: radios where the model
+    #: holds one value, checkboxes where it holds several (ADR 0025, ADR 0032).
+    #:
+    #: `blank=True` on every `ModelChoiceField` rendered as radios, because
+    #: Django drops the empty choice for one unless it is set — and an edit page
+    #: whose «Määramata» chip is missing is a page that cannot take a value
+    #: *off* a record, which is the whole reason somebody opens it.
     owner = UserChoiceField(
         label="Vastutaja",
         queryset=User.objects.none(),
         required=False,
-        widget=SELECT_WIDGET,
-        # Named, and offered: unlike Uus teema, an edit page must be able to
-        # take an owner *off* a Matter. That is the whole reason somebody opens
-        # it — to correct what is on the record (Agent-UI brief 5.1).
         empty_label="Määramata",
+        blank=True,
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
     stage = forms.ModelChoiceField(
         label="Hetkeseis",
         queryset=StageVocabulary.objects.none(),
         required=False,
         empty_label="Määramata",
-        widget=SELECT_WIDGET,
+        blank=True,
+        widget=DescribedRadioSelect(attrs={"class": "chip__input"}),
     )
     track = forms.ChoiceField(
         label="Menetlusliik",
         choices=[("", "Määramata"), *Track.choices],
         required=False,
-        widget=SELECT_WIDGET,
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
     policy_areas = forms.ModelMultipleChoiceField(
         label="Valdkonnad",
         queryset=PolicyArea.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
     )
     policy_area_other = forms.CharField(
         label="Muu valdkond",
         max_length=400,
         required=False,
         widget=TEXT_WIDGET,
-        help_text="Vabatekst. Siit ei teki uut valdkonda ega silti.",
     )
     source_organisations = forms.ModelMultipleChoiceField(
         label="Kellelt",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "8"}),
-        help_text="Kellelt teema tuli. Saatjaid võib olla mitu.",
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+    )
+    #: The long tail, exactly as `Uus teema` splits it. Two fields rather than
+    #: one because a checkbox group cannot be split without splitting the field;
+    #: `clean` unions them back into one answer.
+    source_organisations_other = forms.ModelMultipleChoiceField(
+        label="Muu saatja",
+        queryset=Organisation.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
     )
     addressee_organisation = forms.ModelChoiceField(
         label="Kellele",
         queryset=Organisation.objects.none(),
         required=False,
         empty_label="Määramata",
-        widget=SELECT_WIDGET,
-        help_text="Kellele Koda vastab. Eraldi fakt saatjast.",
+        blank=True,
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
     #: No `initial=timezone.localdate` on either date, unlike every other date
     #: box in the product. This form is always opened on a Matter that already
@@ -694,19 +707,22 @@ class MatterEditForm(forms.Form):
         label="Sildid",
         queryset=Tag.objects.none(),
         required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={"class": "checkitem__input"}),
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
     )
     visibility = forms.ChoiceField(
         label="Nähtavus",
         choices=Visibility.choices,
         required=False,
-        widget=SELECT_WIDGET,
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
         help_text="Piiratud teemat näevad ainult vastutaja ja osalejad.",
     )
 
-    def __init__(self, *args: Any, matter: Matter | None = None, **kwargs: Any) -> None:
+    def __init__(
+        self, *args: Any, matter: Matter | None = None, viewer: Any = None, **kwargs: Any
+    ) -> None:
         super().__init__(*args, **kwargs)
         self.matter = matter
+        self.viewer = viewer
 
         # The current workers *plus* whoever this Matter already names.
         #
@@ -718,10 +734,67 @@ class MatterEditForm(forms.Form):
         # owner nobody asked to remove (app/accounts/selectors.py).
         set_choices(self, "owner", assignable_including(matter.owner if matter else None))
         set_choices(self, "stage", active_stages())
+
+        # The same per-stage explanations `Uus teema` shows, on the same
+        # control. One mapping, two forms: a sentence written twice is a
+        # sentence that stops matching (app/workflow/selectors.py).
+        self.stage_help = stage_help_texts()
+        cast(Any, self.fields["stage"].widget).descriptions = self.stage_help
+
+        # Every organisation is a *valid* answer; only the offered chips are
+        # narrowed. Validation therefore runs against the whole catalogue —
+        # narrowing it to the visible few would reject a correct answer given
+        # through the search control, and on an *edit* page it would reject the
+        # value the record already carries.
         organisations = Organisation.objects.order_by("name")
         set_choices(self, "source_organisations", organisations)
+        set_choices(self, "source_organisations_other", organisations)
         set_choices(self, "addressee_organisation", organisations)
         set_choices(self, "tags", Tag.objects.filter(is_active=True).order_by("name_et"))
+
+        # The frequent bodies as chips and the rest behind «Vali nimekirjast»,
+        # the same split `Uus teema` uses — plus, always, whatever this Matter
+        # already names, because an edit page that hides the current value in a
+        # disclosure is an edit page that looks like it cleared it.
+        current_senders = list(matter.source_organisations.all()) if matter else []
+        frequent = list(organisations_by_usage(viewer)) if viewer is not None else []
+        known = {organisation.pk for organisation in frequent}
+        for organisation in current_senders:
+            if organisation.pk not in known:
+                frequent.append(organisation)
+                known.add(organisation.pk)
+        self.frequent_senders = frequent
+        senders = cast(Any, self.fields["source_organisations"])
+        senders.choices = [(item.pk, item.name) for item in frequent]
+        rest = cast(Any, self.fields["source_organisations_other"])
+        tail = [item for item in organisations if item.pk not in known]
+        rest.choices = [(item.pk, item.name) for item in tail]
+        self.sender_tail_count = len(tail)
+
+        # Adressaat is one radio group rendered in two places. One group and one
+        # name, because it holds one value — the senders need two *fields* only
+        # because a checkbox group cannot be split without splitting the field.
+        shortlist = list(addressees_by_usage(viewer)) if viewer is not None else []
+        chosen = matter.addressee_organisation if matter else None
+        offered_ids = {item.pk for item in shortlist}
+        if chosen is not None and chosen.pk not in offered_ids:
+            shortlist.append(chosen)
+            offered_ids.add(chosen.pk)
+        addressee_tail = [item for item in organisations if item.pk not in offered_ids]
+        self.addressee_offered = [*shortlist, *addressee_tail]
+        # Counting the named blank option Django puts first, which the template
+        # slices on rather than comparing primary keys.
+        self.addressee_split: int | None = 1 + len(shortlist)
+        self.addressee_tail_count = len(addressee_tail)
+        addressees = cast(Any, self.fields["addressee_organisation"])
+        # Assigning `choices` replaces Django's iterator, and the iterator is
+        # what would otherwise have put `empty_label` in front — so «Määramata»
+        # has to be written here or an addressee chosen by mistake could not be
+        # unchosen.
+        addressees.choices = [
+            ("", addressees.empty_label),
+            *((item.pk, item.name) for item in self.addressee_offered),
+        ]
 
         # Validation accepts the whole vocabulary; only the *offered* list is
         # narrowed. A Matter filed years ago under a since-retired area keeps
@@ -740,6 +813,18 @@ class MatterEditForm(forms.Form):
         self.retired_area_ids = {
             area.pk for area in offered if not getattr(area, "is_active", True)
         }
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        # The two sender controls are two ways into one set, so the canonical
+        # answer is their union. Nothing is privileged for having been on the
+        # shortlist, and an organisation ticked in both places appears once.
+        senders: dict[Any, Organisation] = {}
+        for source in ("source_organisations", "source_organisations_other"):
+            for organisation in cleaned.get(source) or []:
+                senders.setdefault(organisation.pk, organisation)
+        cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
+        return cleaned
 
     def clean_title(self) -> str:
         value = (self.cleaned_data.get("title") or "").strip()
@@ -1720,8 +1805,15 @@ class IncomingIntakeForm(forms.Form):
     demanding a stage or an owner at the moment a ministry's PDF lands is how
     people go back to saving attachments on a desktop.
 
-    Deliberately absent: any default Hetkeseis. A file arriving means something
-    was received, not that the external process has reached a particular stage.
+    Deliberately absent: Hetkeseis and Menetlusliik. A file arriving means
+    something was received, not that the external process has reached a
+    particular stage — and the v2 form says so in its own footer: the rest of
+    the record is filled in on the Matter page (02-EKRAANID §F).
+
+    **Nähtavus stays.** It is not "the rest of the record": filing a restricted
+    letter as NORMAL and correcting it afterwards means it was department-wide
+    in between, and this round does not widen access anywhere
+    (docs/design-v2-compatibility.md, DS-15).
     """
 
     title = forms.CharField(
@@ -1735,12 +1827,44 @@ class IncomingIntakeForm(forms.Form):
             }
         ),
     )
+    brief_summary = forms.CharField(
+        label="Lühikokkuvõte",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input",
+                "rows": "3",
+                "placeholder": "Mida see teema ettevõtjatele tähendab? (2–3 lauset)",
+            }
+        ),
+    )
+    #: Chips, and the long tail behind «Vali nimekirjast», exactly as `Uus
+    #: teema` does it. Two fields rather than one because a checkbox group
+    #: cannot be split without splitting the field; `clean` unions them back
+    #: into one answer, so nothing is privileged for having been on the
+    #: shortlist (ADR 0025).
     source_organisations = forms.ModelMultipleChoiceField(
-        label="Saatja",
+        label="Saatja või algataja",
         queryset=Organisation.objects.none(),
         required=False,
-        widget=forms.SelectMultiple(attrs={"class": "field__input", "size": "6"}),
-        help_text="Saatjaid võib olla mitu.",
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+    )
+    source_organisations_other = forms.ModelMultipleChoiceField(
+        label="Muu saatja",
+        queryset=Organisation.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+    )
+    handover_note = forms.CharField(
+        label="Märkmed vastutajale",
+        required=False,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input",
+                "rows": "2",
+                "placeholder": "Mida vastutaja peaks teadma — kellega rääkida, mis on siin oluline",
+            }
+        ),
     )
     received_date = EstonianDateField(
         label="Saabus", required=False, widget=DATE_WIDGET, initial=timezone.localdate
@@ -1752,20 +1876,14 @@ class IncomingIntakeForm(forms.Form):
         label="Vastutaja",
         queryset=User.objects.none(),
         required=False,
-        widget=SELECT_WIDGET,
-    )
-    stage = forms.ModelChoiceField(
-        label="Hetkeseis",
-        queryset=StageVocabulary.objects.none(),
-        required=False,
-        widget=SELECT_WIDGET,
-        help_text="Vabatahtlik. Faili saabumine ei ütle, kus väline menetlus on.",
-    )
-    track = forms.ChoiceField(
-        label="Menetlusliik",
-        choices=[("", "—"), *Track.choices],
-        required=False,
-        widget=SELECT_WIDGET,
+        # The blank option is named rather than left as Django's row of dashes,
+        # and `blank=True` is what makes that name survive: Django drops the
+        # empty choice for a `ModelChoiceField` rendered as radios unless it is
+        # set, and without it there is no «Määramata» chip and an owner picked
+        # by mistake cannot be unpicked.
+        empty_label="Määramata",
+        blank=True,
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
     visibility = forms.ChoiceField(
         label="Nähtavus",
@@ -1774,16 +1892,46 @@ class IncomingIntakeForm(forms.Form):
         widget=SELECT_WIDGET,
     )
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, viewer: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         # A Matter that does not exist yet, so there is nothing to preserve:
         # the current department workers and nobody else. Intake is the second
         # way into a Matter and must not be the way around `Uus teema`'s rule
         # (app/accounts/selectors.py).
         set_choices(self, "owner", assignable_users())
-        set_choices(self, "source_organisations", Organisation.objects.order_by("name"))
-        set_choices(
-            self,
-            "stage",
-            StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
-        )
+
+        # Every organisation is a *valid* sender; only the frequent ones are
+        # offered as chips. Validation therefore runs against the full set —
+        # narrowing it to the visible few would reject a correct answer given
+        # through the search control.
+        everything = Organisation.objects.order_by("name")
+        set_choices(self, "source_organisations", everything)
+        set_choices(self, "source_organisations_other", everything)
+
+        self.frequent_senders: list[Organisation] = []
+        self.sender_tail_count = 0
+        if viewer is not None:
+            senders = cast(Any, self.fields["source_organisations"])
+            self.frequent_senders = list(organisations_by_usage(viewer))
+            senders.choices = [
+                (organisation.pk, organisation.name) for organisation in self.frequent_senders
+            ]
+            frequent = {organisation.pk for organisation in self.frequent_senders}
+            rest = cast(Any, self.fields["source_organisations_other"])
+            rest.choices = [
+                (organisation.pk, organisation.name)
+                for organisation in everything
+                if organisation.pk not in frequent
+            ]
+            self.sender_tail_count = len(rest.choices)
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or {}
+        # The two sender controls are two ways into one set, so the canonical
+        # answer is their union — the same rule `Uus teema` applies.
+        senders: dict[Any, Organisation] = {}
+        for source in ("source_organisations", "source_organisations_other"):
+            for organisation in cleaned.get(source) or []:
+                senders.setdefault(organisation.pk, organisation)
+        cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
+        return cleaned

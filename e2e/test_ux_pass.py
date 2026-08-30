@@ -29,7 +29,7 @@ pytestmark = pytest.mark.e2e
 #: link on from a train.
 WIDTHS = (1440, 1366, 1280, 1024, 900, 720, 480, 375)
 
-PAGES = ("/ulevaade/", "/minu-too/", "/teemad/", "/osakonna-too/")
+PAGES = ("/ulevaade/", "/minu-asjad/", "/teemad/", "/osakonna-too/")
 
 
 def overflows(page) -> bool:
@@ -176,7 +176,8 @@ def test_the_timeline_draws_one_spine(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_matter(page, base_url, OPEN_TITLE)
 
-    page.locator(".accordion--timeline > summary").click()
+    # Open on arrival since the v2 rebuild (02-EKRAANID §C), so there is
+    # nothing to click before the spine is on screen.
     expect(page.locator("#ajalugu-loend.uxtl")).to_be_visible()
     expect(page.locator(".uxtl__dot").first).to_be_visible()
 
@@ -188,7 +189,7 @@ def test_the_timeline_draws_one_spine(page, base_url):
 
 def test_j_and_k_move_the_selection_and_enter_opens_the_matter(page, base_url):
     sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/minu-too/")
+    page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
 
     rows = page.locator("[data-workrow]")
@@ -209,42 +210,16 @@ def test_j_and_k_move_the_selection_and_enter_opens_the_matter(page, base_url):
     page.wait_for_url("**/teemad/**")
 
 
-def test_the_quick_complete_button_is_on_the_row_and_x_presses_it(page, base_url):
-    """The keyboard shortcut and its visible control are the same button."""
-    sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/minu-too/")
-    page.wait_for_load_state("networkidle")
-
-    rows = page.locator("[data-workrow]")
-    completable = page.locator("[data-workrow]:has([data-workdone])")
-    if not completable.count():
-        pytest.skip("this persona carries no completable step today")
-
-    before = rows.count()
-    # The visible control: it appears on hover, and it is a real button.
-    completable.first.hover()
-    expect(completable.first.locator("[data-workdone]")).to_be_visible()
-
-    # And the key presses that same button, on whichever row has the focus.
-    completable.first.locator("a").first.focus()
-    page.keyboard.press("x")
-    page.wait_for_load_state("networkidle")
-
-    expect(page.locator(".message--success")).to_be_visible()
-    assert page.locator("[data-workrow]").count() < before
-
-
-def test_the_keyboard_hints_are_printed_where_the_keys_work(page, base_url):
-    sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/minu-too/")
-    page.wait_for_load_state("networkidle")
-
-    hints = page.locator(".uxkeys")
-    if not hints.count():
-        pytest.skip("no dated work today, so there is nothing to move over")
-    expect(hints).to_contain_text("liigu")
-    expect(hints).to_contain_text("tehtud")
-    expect(hints).to_contain_text("ava teema")
+# The two browser tests that stood here are gone with the controls they pressed.
+# The row's green ✓ and the `X` that pressed it left with the v2 design, and the
+# `.uxkeys` hint strip with them (01-EHITUSJUHIS §3.6). Both tests had begun
+# skipping themselves for a reason that read like an empty world, which is the
+# one failure mode this suite must not have. The removal itself is asserted
+# where it can be read rather than looked at: `tests/test_ux_pass.py::
+# test_the_keyboard_hint_line_went_with_the_button_it_described` proves the
+# strip, the row control and the `x` branch of `ux.js` went together, and
+# `tests/test_person_workspace.py::test_no_complete_button` proves it again on
+# the page. The route left with no caller is recorded as DS-02.
 
 
 # =========================================================================
@@ -278,13 +253,29 @@ def test_saving_the_current_view_hands_over_its_address(page, base_url):
 
 
 def test_an_owner_can_be_set_from_the_register_row(page, base_url):
+    """Assigning from the row, which is the only place this gesture exists.
+
+    `?kaupa=koik`: the v2 design set the register's default page size to twelve,
+    and the seeded unassigned Matter carries the oldest reference — so on a
+    world the functional suite has been filing into, the default ordering puts
+    it on page two and it is not in the DOM at all. That is what made this test
+    skip itself, with a message about an empty world that was not true
+    (02-EKRAANID §C).
+
+    Asserted rather than skipped for the same reason. The fixture is seeded
+    unconditionally and nothing else in this suite assigns it, so its absence is
+    a defect in the register or in the seed, and either is worth a red build.
+    """
     sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/teemad/?olek=avatud&vastutaja=puudub")
+    page.goto(f"{base_url}/teemad/?olek=avatud&vastutaja=puudub&kaupa=koik")
     page.wait_for_load_state("networkidle")
 
     row = page.locator("tr").filter(has_text=UNASSIGNED_TITLE).first
-    if not row.count():
-        pytest.skip("nothing is unassigned in this world any more")
+    assert row.count(), (
+        f"{UNASSIGNED_TITLE!r} is not in the unassigned register list, so the "
+        f"gesture this test exists for cannot be exercised. The seeded world "
+        f"files it with no owner and nothing else here assigns it."
+    )
 
     row.locator("summary.uxassign__trigger").click()
     menu = row.locator(".uxassign__menu")
@@ -296,7 +287,10 @@ def test_an_owner_can_be_set_from_the_register_row(page, base_url):
     page.wait_for_load_state("networkidle")
 
     expect(page.locator(".message--success")).to_be_visible()
-    page.goto(f"{base_url}/teemad/?olek=avatud&q={UNASSIGNED_TITLE.split()[0]}")
+    # `kaupa=koik` here too: the search narrows by a word several Matters in a
+    # busy world share, so twelve rows is not necessarily the twelve holding
+    # this one.
+    page.goto(f"{base_url}/teemad/?olek=avatud&kaupa=koik&q={UNASSIGNED_TITLE.split()[0]}")
     page.wait_for_load_state("networkidle")
     expect(page.locator("tr").filter(has_text=UNASSIGNED_TITLE).first).to_contain_text(
         SANDRA.short_name
