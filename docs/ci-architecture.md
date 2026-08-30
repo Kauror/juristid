@@ -110,10 +110,30 @@ runner image with the same fonts. The only thing that changed about what it sees
 is what ran before the first screenshot: nothing.
 
 This is a determinism improvement that happens to also take the visual suite off
-the end of the browser critical path. **Baselines were not regenerated for it.**
-The committed renderings still match, which is itself the evidence that the
-screenshots did not depend on the leftover state — had they, the split would
-have been visible as a diff.
+the end of the browser critical path.
+
+**Seventeen of the thirty-six baselines had to be retaken, and what they showed
+is the argument for the split.** Every one of them was *shorter* on a clean
+world, because the old rendering included rows the behavioural suite had created
+minutes earlier. `otsing` is the clearest: the committed baseline was a
+2693px page of **21** search results including a whole `Dokument` class of
+extracted PDF text and an `Arvamus`, none of which the seed creates — they came
+from the document and opinion tests. On a fresh world the same query returns
+**3** results, one from each of three result types, over 900px.
+
+Two of the seventeen failed on pixel tolerance rather than size, and those
+exposed a second problem: `jalgimine` and `teema-dokumendid` still carried the
+navigation labels from before the Osakond and Minu asjad renames. A stale
+baseline had been passing because the page *height* matched and the changed text
+was under the 0.2% pixel limit. Splitting the world surfaced it.
+
+The retaken baselines therefore depict less than the old ones did, and that is
+the honest state of the deterministic world: what `seed_e2e_data` creates, and
+nothing else. If a scenario deserves richer content — the search page is the
+obvious candidate — the fix is to seed it deliberately, not to photograph
+whatever an unrelated test left behind. The candidates were taken from the
+failing run's own `test-report-visual` artifact, scenario by scenario, never
+with `E2E_UPDATE_BASELINES`.
 
 ## Coverage
 
@@ -193,9 +213,31 @@ minute. The proof that the slow jobs are complete should not itself be slow.
 
 ## What was measured
 
-Baseline, run [33321958813](https://github.com/Kauror/juristid/actions/runs/33321958813),
-and the architecture benchmark, run
-[33323182379](https://github.com/Kauror/juristid/actions/runs/33323182379).
+Baseline, run [33321958813](https://github.com/Kauror/juristid/actions/runs/33321958813);
+the architecture benchmark, run
+[33323182379](https://github.com/Kauror/juristid/actions/runs/33323182379);
+the first sharded run, [33325077089](https://github.com/Kauror/juristid/actions/runs/33325077089).
+
+| | Before | After |
+| --- | --- | --- |
+| Quality | 0:28 | 0:45 |
+| PostgreSQL critical | 12:47 | 5:06 (slowest of 5 shards) |
+| Browser critical | 14:48 within a 16:47 job | 3:29 (slowest of 6 shards) |
+| Visual | 1:19, at the end of the browser job | 1:58, its own job, in parallel |
+| Container | 0:59 | 0:54 |
+| Backup | 1:03 | 0:44 |
+| Dependency | 0:21 | 0:20 |
+| **Total wall clock** | **16:50** | **5:25** |
+| Runner minutes | ~33 | ~46 |
+
+The runner-minute increase is the price of the wall-clock reduction and is
+deliberate: seventeen jobs that finish in five minutes cost more machine time
+than six that finish in seventeen.
+
+Shard balance in that first run was poor on the PostgreSQL side — 2:42 to 5:06 —
+because the timing table only held browser measurements at the time and the
+partition fell back to test counts. It was regenerated from that run's own
+reports, which predicts an even split.
 
 The PostgreSQL suite is 5328 tests with a mean of 0.116s and a slowest single
 test of 6.56s — many comparable tests, no pathological ones, so the only lever
