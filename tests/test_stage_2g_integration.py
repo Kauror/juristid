@@ -177,7 +177,7 @@ def test_the_head_is_offered_one_department_destination(client, department_head)
     # `Ülevaade` and a head-only `Osakond` inside «Veel» (docs/adr/0049 §9).
     assert ">Osakond</a>" in body
     assert body.count(f'href="{reverse("matters:department")}"') == 1
-    assert "Jälgimine" in body
+    assert ">Tähtajad</a>" in body
 
 
 def test_a_specialist_is_offered_the_same_destinations(client, specialist):
@@ -186,7 +186,7 @@ def test_a_specialist_is_offered_the_same_destinations(client, specialist):
     client.force_login(specialist)
     body = client.get(reverse("matters:department")).content.decode()
 
-    assert "Jälgimine" in body
+    assert ">Tähtajad</a>" in body
     assert body.count(f'href="{reverse("matters:department")}"') == 1
 
 

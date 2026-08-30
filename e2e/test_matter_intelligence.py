@@ -260,7 +260,8 @@ def test_the_department_head_confirms_a_proposed_candidate(page, base_url, scree
 
 def test_jalgimine_is_one_navigation_item_with_three_views(page, base_url, screenshots):
     sign_in(page, base_url, MARTIN)
-    go_to(page, "Jälgimine")
+    # The bar item reads «Tähtajad»; the address it opens is unchanged.
+    go_to(page, "Tähtajad")
     page.wait_for_url(f"{base_url}/jalgimine/tahtajad/")
 
     tabs = page.get_by_label("Jälgimise vaated")
