@@ -458,9 +458,14 @@ class TestRestrictedMatterIsUnreachable:
     def test_a_reader_does_not(self, page, base_url):
         sign_in(page, base_url, READER)
 
+        # Not on Minu asjad, which is where signing in lands.
+        expect(page.get_by_role("heading", name="Minu asjad")).to_be_visible()
+        expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
+
         # Not on Ülevaade — not in its attention list, and not in its counts.
-        # Signing in lands here now, which makes this the stronger check: a
-        # restricted Matter must not reach a total either.
+        # Visited explicitly rather than landed on, and still the stronger of
+        # the two checks: a restricted Matter must not reach a total either.
+        page.goto(f"{base_url}/ulevaade/")
         expect(page.get_by_role("heading", name="Ülevaade")).to_be_visible()
         expect(page.get_by_text("Konfidentsiaalne järgmine samm")).to_have_count(0)
         expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
