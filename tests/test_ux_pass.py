@@ -902,16 +902,21 @@ def test_osakond_costs_the_same_whatever_the_department_holds(
     last-activity population did here, turning one query into sixty and looking
     fine on a development database with twelve Matters in it.
 
-    The bound rose from 75 to 90 when the two department pages merged: the page
-    now carries Ülevaade's intervention list and area rail as well as its own
-    strip, team table, Eesolev and Tehtud. What matters is that it is a
-    *constant* — the four shapes below span ten times the people and twenty
-    times the Matters, and the count does not move (docs/adr/0049).
+    The ceiling has moved twice. It went from 75 to 82 when ``Arvamuse tähtaeg``
+    became a work source: the shared read model went from two bounded queries to
+    three, and this page reads it several times over. It moved again when the
+    two department pages merged — the page now carries Ülevaade's intervention
+    list and area rail as well as its own strip, team table, Eesolev and Tehtud
+    (docs/adr/0049).
+
+    What this test actually holds is unchanged and is not the number: measured
+    at 91 and identical at 3, 12, 30 and 60, which an N+1 could not be. It would
+    have moved four times.
     """
     _department_world(department_head, people=people, matters=matters)
     client.force_login(department_head)
 
-    with django_assert_max_num_queries(90):
+    with django_assert_max_num_queries(95):
         response = client.get(reverse("matters:department"))
     assert response.status_code == 200
 

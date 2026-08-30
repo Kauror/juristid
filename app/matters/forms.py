@@ -398,11 +398,25 @@ class MatterCreateForm(forms.Form):
         # nothing here can overwrite what somebody typed (brief 18).
         initial=timezone.localdate,
     )
+    #: Deliberately no `initial`, unlike Saabus directly above it.
+    #:
+    #: The two dates are not the same kind of fact. Saabus is an *observation* —
+    #: the day the file arrived — and nearly everything arrives on the day it is
+    #: entered, so today is a useful capture default and a wrong one is
+    #: harmless. `Arvamuse tähtaeg` is a *commitment*, usually somebody else's:
+    #: the day Koda's opinion is due. Defaulting it to today invents a
+    #: commitment nobody stated, and since the field became work
+    #: (app/matters/work_items.py) the invention is no longer inert — a Matter
+    #: created and left alone would be due on its creation day and overdue the
+    #: next morning, on every deadline surface in the product.
+    #:
+    #: The edit form and `IncomingIntakeForm` already read it this way
+    #: (Teema QA §5.2); this is that decision applied to the one form that had
+    #: been missed.
     response_deadline = EstonianDateField(
         label="Arvamuse tähtaeg",
         required=False,
         widget=DATE_WIDGET,
-        initial=timezone.localdate,
     )
     policy_areas = forms.ModelMultipleChoiceField(
         label="Valdkonnad",

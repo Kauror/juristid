@@ -20,7 +20,17 @@ creates a table, and the two sources keep their separate domain objects:
 
 * an open :class:`~app.workflow.models.NextAction` — what Koda does next;
 * an active :class:`~app.intelligence.models.MatterImportantDate` — a milestone
-  the department watches.
+  the department watches;
+* an outstanding ``Matter.response_deadline`` — the day Koda's own opinion is
+  due, which is the commonest deadline on the whole register.
+
+The third one is a projection of a column that was already canonical, and it is
+here because it was missing: a Matter carrying nothing but an *Arvamuse
+tähtaeg* had no NextAction and no milestone, so it contributed nothing to this
+model and fell out of every surface built on it — while the question those
+surfaces answer is precisely "what deadlines are coming". Nothing is written to
+make it appear. No ``Järgmiseks`` is invented from it, and a Matter may
+honestly hold a deadline and no next action at once.
 
 They are unified only in the read layer, and only far enough to be sorted into
 one chronological list. Everything that distinguishes them survives the trip:
@@ -31,8 +41,8 @@ Three rules run through the whole module.
 **Only a DO with a DEADLINE can be late.** A WAIT whose review date has passed
 is ripe for a look, never missed. Describing an ordinary dependency on a
 ministry as a failure is what makes a work queue stop being believed
-(master specification 18.8). An ``Oluline tähtaeg`` is independently a real
-deadline and may therefore be genuinely overdue.
+(master specification 18.8). An ``Oluline tähtaeg`` and an ``Arvamuse tähtaeg``
+are independently real deadlines and may therefore be genuinely overdue.
 
 **The date says where, the mode says what.** A ministry's answer expected on
 Thursday and an opinion due on Thursday are both Thursday's problem, so they
@@ -51,15 +61,18 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
-from django.db.models import Q, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
 from app.core import dates
+from app.core.dates import format_estonian_date
 from app.intelligence.enums import FactStatus
 from app.intelligence.models import MatterImportantDate
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
+from app.submissions.enums import SubmissionStatus
+from app.submissions.models import Submission
 from app.workflow.dates import format_at_precision, period_bounds
 from app.workflow.enums import (
     REVIEW_KINDS,
@@ -76,6 +89,10 @@ from app.workflow.models import NextAction
 
 SOURCE_NEXT_ACTION = "NEXT_ACTION"
 SOURCE_IMPORTANT_DEADLINE = "IMPORTANT_DEADLINE"
+#: ``Matter.response_deadline``, read as work. Not a stored row of its own, and
+#: deliberately not one: the column is canonical and a second copy of it in a
+#: deadline table is a second thing to keep in step.
+SOURCE_RESPONSE_DEADLINE = "RESPONSE_DEADLINE"
 
 #: What the date on a row means, in the words the department agreed.
 #:
@@ -86,6 +103,10 @@ MEANING_DEADLINE = "TÄHTAEG"
 MEANING_EXPECTED = "OODATAV AEG"
 MEANING_REVIEW = "VAATAN ÜLE"
 MEANING_IMPORTANT = "OLULINE TÄHTAEG"
+#: The business term, unchanged. The register's column, the Matter header, the
+#: old dashboard's *Eesolevad tähtajad* table and this row all say the same two
+#: words, because a synonym invented here would be a fourth name for one date.
+MEANING_RESPONSE = "ARVAMUSE TÄHTAEG"
 
 _SEMANTICS_MEANING: dict[str, str] = {
     DateSemantics.DEADLINE.value: MEANING_DEADLINE,
@@ -155,8 +176,9 @@ class WorkItem:
     object_id: Any
     matter: Matter
     responsible: Any | None
-    #: ``DO`` / ``WAIT`` / ``MONITOR``, or "" for an important deadline, which
-    #: is not a NextAction and must never be dressed as one.
+    #: ``DO`` / ``WAIT`` / ``MONITOR``, or "" for an important deadline and for
+    #: a response deadline, neither of which is a NextAction and neither of
+    #: which may ever be dressed as one.
     action_kind: str
     action_kind_label: str
     date_semantics: str
@@ -417,6 +439,49 @@ def _deadline_item(record: MatterImportantDate, today: date) -> WorkItem:
     )
 
 
+def _response_deadline_item(matter: Matter, today: date) -> WorkItem:
+    """A Matter's own ``Arvamuse tähtaeg``, read as one row of work.
+
+    ``object_id`` is the Matter's own primary key, because the Matter *is* the
+    record this obligation lives on — there is no deadline row to point at, and
+    inventing one would be the duplicate this fix exists to avoid.
+
+    Exact by construction: the column is a ``DateField`` with no companion
+    precision, so ``period_end`` is the same day and the row never claims a
+    month somebody did not name. And ``action_kind`` stays empty: this is not a
+    ``NextAction`` and must never be dressed as one, so the row shows no mode
+    chip and the ⋯ menu offers it no completion workflow it does not have.
+
+    The responsible person is the Matter's current owner. Koda's opinion is the
+    file's own obligation rather than a task somebody was handed, so a
+    reassignment moves the deadline without anybody editing anything — the same
+    reading an ``Oluline tähtaeg`` already gets (§4.2).
+    """
+    deadline = matter.response_deadline
+    return WorkItem(
+        source_type=SOURCE_RESPONSE_DEADLINE,
+        object_id=matter.pk,
+        matter=matter,
+        responsible=matter.owner,
+        action_kind="",
+        action_kind_label="",
+        date_semantics=DateSemantics.DEADLINE.value,
+        when=deadline,
+        period_end=deadline,
+        display_date=format_estonian_date(deadline),
+        meaning=MEANING_RESPONSE,
+        # No text. The row already names the Matter and states its meaning, and
+        # a manufactured sentence beside those two would be a third way of
+        # saying what the reader has just read (§7).
+        text="",
+        # A real commitment, so the day passing is genuine lateness. Only
+        # reached at all by a Matter the fulfilment filter left outstanding.
+        is_overdue=deadline is not None and deadline < today,
+        is_review_ripe=False,
+        today=today,
+    )
+
+
 def dated_actions(user: Any, *, responsible: Any = None) -> QuerySet[NextAction]:
     """Open actions with a date, scoped to the reader and optionally to a person."""
     queryset = (
@@ -472,6 +537,49 @@ def important_deadlines(user: Any, *, owner: Any = None) -> QuerySet[MatterImpor
     return queryset
 
 
+def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[Matter]:
+    """Open Matters whose ``Arvamuse tähtaeg`` nobody has answered yet.
+
+    Authorization first, like every other source here: the population starts
+    from :func:`open_matters`, so a restricted Matter contributes nothing to a
+    count, a band or a row for a reader who may not see it.
+
+    **Outstanding, not merely stored.** The obligation a response deadline
+    describes is discharged by sending the opinion, and the product already has
+    one definition of that — a ``SENT`` :class:`~app.submissions.models.Submission`
+    on the Matter, which is what the old dashboard's *Tähtaeg möödas, arvamust
+    ei ole saadetud* row and `selectors.attention_items` both test. That same
+    definition is reused here rather than restated, and it is resolved as an
+    ``Exists`` subquery so the whole source stays one query however many Matters
+    it holds. ``Matter.response_deadline`` itself is never cleared: it is
+    canonical historical data, and the read model simply stops calling a met
+    obligation outstanding work.
+
+    The fulfilment subquery is deliberately reader-blind, exactly as the two
+    existing callers of this rule are. It can only ever *remove* a row, so it
+    cannot widen what anybody sees; scoping it would instead make one reader's
+    deadline outstanding and another's met, which is two answers to a question
+    about the Matter rather than about the reader.
+
+    ``owner`` narrows by ``Matter.owner``, for the reason
+    :func:`important_deadlines` does: this deadline belongs to whoever carries
+    the file. An ownerless Matter's deadline therefore reaches nobody's Minu
+    töö and appears as *vastutajata* on the department surfaces, which is the
+    honest place for work nobody has been given.
+    """
+    sent = Submission.objects.filter(matter=OuterRef("pk"), status=SubmissionStatus.SENT)
+    queryset = (
+        open_matters(user)
+        .filter(response_deadline__isnull=False)
+        .annotate(has_sent_submission=Exists(sent))
+        .filter(has_sent_submission=False)
+        .select_related("stage", "owner")
+    )
+    if owner is not None:
+        queryset = queryset.filter(owner=owner)
+    return queryset
+
+
 def work_items(
     user: Any,
     *,
@@ -481,21 +589,30 @@ def work_items(
 ) -> list[WorkItem]:
     """Every dated work item this reader may see, chronologically.
 
-    Two queries, not one per row. ``latest`` bounds the future so a page that
-    only shows five weeks does not drag a decade of milestones through Python.
-    Nothing bounds the past: work that is late is exactly what these pages
-    exist to surface.
+    Three queries, not one per row — one per source, each already narrowed by
+    ``visible_to``. ``latest`` bounds the future so a page that only shows five
+    weeks does not drag a decade of milestones through Python. Nothing bounds
+    the past: work that is late is exactly what these pages exist to surface.
+
+    One Matter can legitimately produce more than one item: a response deadline,
+    a DO deadline and a milestone are three different commitments and a
+    chronological list of work says so. What must not double is a figure that
+    counts *Matters* — which is why :func:`work_population_ids` reduces to
+    Matter primary keys rather than counting rows.
     """
     today = today or timezone.localdate()
 
     actions = dated_actions(user, responsible=responsible)
     deadlines = important_deadlines(user, owner=responsible)
+    responses = outstanding_response_deadlines(user, owner=responsible)
     if latest is not None:
         actions = actions.filter(target_date__lte=latest)
         deadlines = deadlines.filter(date_value__lte=latest)
+        responses = responses.filter(response_deadline__lte=latest)
 
     items = [action_item(action, today) for action in actions]
     items += [_deadline_item(record, today) for record in deadlines]
+    items += [_response_deadline_item(matter, today) for matter in responses]
     return sort_items(items)
 
 
@@ -635,10 +752,14 @@ def week_items(items: list[WorkItem], today: date, week_end: date | None = None)
 def real_deadlines(items: list[WorkItem]) -> list[WorkItem]:
     """Only what a department may honestly call a deadline.
 
-    DO deadlines and ``Oluline tähtaeg``. A WAIT's expected date and a MONITOR's
-    review date are commitments nobody made — they belong in the intervention
-    list, where they read as "look at this again", not in a table headed
-    *Tähtajad* (master specification 18.8).
+    DO deadlines, ``Oluline tähtaeg`` and ``Arvamuse tähtaeg``. A WAIT's
+    expected date and a MONITOR's review date are commitments nobody made — they
+    belong in the intervention list, where they read as "look at this again",
+    not in a table headed *Tähtajad* (master specification 18.8).
+
+    The response deadline joins the other two rather than softening them: it is
+    the day Koda promised its opinion, which is a commitment in exactly the
+    sense a review date is not.
 
     Here rather than in :mod:`app.matters.overview` because the register now
     filters on it too: a *Tähtajad* group that opens a list assembled by a
@@ -648,7 +769,7 @@ def real_deadlines(items: list[WorkItem]) -> list[WorkItem]:
         item
         for item in items
         if not item.is_action or item.action_kind == ActionKind.DO.value
-        if item.meaning in (MEANING_DEADLINE, MEANING_IMPORTANT)
+        if item.meaning in (MEANING_DEADLINE, MEANING_IMPORTANT, MEANING_RESPONSE)
     ]
 
 
@@ -951,9 +1072,11 @@ __all__ = [
     "MEANING_DEADLINE",
     "MEANING_EXPECTED",
     "MEANING_IMPORTANT",
+    "MEANING_RESPONSE",
     "MEANING_REVIEW",
     "SOURCE_IMPORTANT_DEADLINE",
     "SOURCE_NEXT_ACTION",
+    "SOURCE_RESPONSE_DEADLINE",
     "WORK_DEADLINE_30_DAYS",
     "WORK_DEADLINE_BEYOND",
     "WORK_DEADLINE_NEXT_WEEK",
@@ -977,6 +1100,7 @@ __all__ = [
     "important_deadlines",
     "matters_without_action",
     "open_matters",
+    "outstanding_response_deadlines",
     "overdue_items",
     "ownerless_matters",
     "quiet_matters",

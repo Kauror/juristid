@@ -25,6 +25,7 @@ rather than the layout:
 
 from __future__ import annotations
 
+import inspect
 from datetime import date, timedelta
 from urllib.parse import parse_qs, urlparse
 
@@ -770,6 +771,36 @@ def test_no_future_deadline_falls_out_of_the_panel(department_head, specialist, 
 
     assert sorted(placed) == sorted(eligible)
     assert len(placed) == len(set(placed)), "a deadline landed in two windows"
+
+
+def test_a_new_deadline_source_reaches_eesolev_without_osakond_code(
+    department_head, specialist, today
+):
+    """The property this page was built to have, asserted on the source that proved it.
+
+    `Arvamuse tähtaeg` became a first-class work source on a parallel branch
+    (ADR 0031 §5). Nothing in `app/matters/department.py` or
+    `department_dashboard.py` mentions `response_deadline`, and it appears in
+    *Eesolev* all the same — because the panel consumes `real_deadlines()`
+    generically rather than naming the sources it will accept. A future source
+    added to the shared read model arrives here the same way (brief §26).
+    """
+    import app.matters.department
+    import app.matters.department_dashboard
+
+    for module in (app.matters.department, app.matters.department_dashboard):
+        assert "response_deadline" not in inspect.getsource(module), module.__name__
+
+    matter = create_matter(
+        title="Arvamuse tähtajaga teema",
+        owner=specialist,
+        reference_year=2026,
+        actor=specialist,
+        response_deadline=today + timedelta(days=3),
+    )
+
+    groups = {group.key: group for group in dd.upcoming_groups(department_head, today)}
+    assert matter.pk in {item.matter_id for item in groups["nadal"].items}
 
 
 def test_an_overdue_deadline_is_not_in_eesolev(department_head, world, today):
