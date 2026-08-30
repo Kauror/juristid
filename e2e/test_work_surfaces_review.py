@@ -138,15 +138,32 @@ def test_the_scopes_are_links_not_a_client_side_tab_strip(page, base_url):
     assert "vaade=valdkonniti" in page.url
 
 
-def test_every_seis_figure_is_a_link(page, base_url):
-    """No dead-end numbers. Every figure is a promise that a list exists."""
+def test_no_seis_figure_leads_nowhere(page, base_url):
+    """No dead-end numbers, and no misleading ones either.
+
+    Every figure that carries a link is a promise that a list exists behind it,
+    so a `#` or an empty `href` is a dead end. Exactly one figure carries no
+    link at all: «arvamust välja · 7 p» counts a seven-day window the Arvamused
+    workspace cannot narrow to, so it states the number and offers nothing
+    rather than opening a longer list — an honest number beats a link to a
+    different one (docs/adr/0049 §4, DS-24).
+    """
     _open(page, base_url, HEAD, "/osakond/", 1440)
 
     figures = page.locator(".seis__figure")
-    assert figures.count() >= 4
+    assert figures.count() == 6, figures.count()
+
+    unlinked = []
     for index in range(figures.count()):
-        href = figures.nth(index).get_attribute("href")
-        assert href and href != "#", "a Seis figure leads nowhere"
+        figure = figures.nth(index)
+        caption = figure.locator(".seis__caption").inner_text().strip()
+        href = figure.get_attribute("href")
+        if href is None:
+            unlinked.append(caption)
+            continue
+        assert href and href != "#", f"{caption} leads nowhere"
+
+    assert unlinked == ["arvamust välja · 7 p"], unlinked
 
 
 def test_the_area_accordion_is_a_real_disclosure(page, base_url):
