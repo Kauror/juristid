@@ -135,6 +135,20 @@ whatever an unrelated test left behind. The candidates were taken from the
 failing run's own `test-report-visual` artifact, scenario by scenario, never
 with `E2E_UPDATE_BASELINES`.
 
+### Two tests that were only running by accident
+
+The same split turned up two browser tests that used to pass and started
+skipping themselves: the closed banner's geometry in `e2e/test_ui_shell.py` and
+the `teema-suletud` rendering in `e2e/test_ui_regression.py`. Both open
+`/teemad/?olek=suletud` and skip when it is empty — and it was never the seed
+that filled it, it was some *other* test closing a Matter earlier in the same
+job. A test that runs only when an unrelated test happens to precede it is not
+a test that runs.
+
+`seed_e2e_data` now creates one closed Matter, so both run in every shard. The
+register defaults to `olek=avatud`, so it adds a row to the closed view and to
+nothing else.
+
 ## Coverage
 
 Every shard measures coverage; the `PostgreSQL 18 test suite` gate downloads the
@@ -145,6 +159,10 @@ along with everything else, so keeping it costs a fraction of what it did.
 
 Shards pass `--cov-report=` deliberately: a partial report printed five times
 reads as a coverage collapse.
+
+The combination is exact rather than approximately exact. The unsharded baseline
+reported `24408 statements, 2174 missing, 91%`; five shards combined report
+`24408 / 2174 / 91%` — the same three numbers, which is the whole claim.
 
 There is no `fail_under` and there never was; coverage here is informational.
 Nothing about that changed, and the instrumentation was not removed from pull
