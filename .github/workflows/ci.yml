@@ -148,15 +148,6 @@ jobs:
 
       - run: uv sync --frozen
 
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - run: uv sync --frozen
-
       - name: Install the OCR runtime
         run: |
           sudo apt-get update
@@ -266,7 +257,7 @@ jobs:
     # own port space, so the isolation the suite already relies on is not
     # weakened by running it in 5 places at once — and the assignment is a
     # pure function of the collected files rather than of which worker happened
-    # to be free (ci_sharding.py, docs/adr/0045).
+    # to be free (ci_sharding.py, docs/ci-architecture.md).
     services:
       postgres:
         image: postgres:18
@@ -294,15 +285,6 @@ jobs:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-
-      - run: uv sync --frozen
 
     steps:
       - uses: actions/checkout@v4
