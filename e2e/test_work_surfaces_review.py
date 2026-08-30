@@ -20,7 +20,7 @@ import pathlib
 
 import pytest
 
-from e2e.conftest import HEAD, SANDRA, sign_in
+from e2e.conftest import HEAD, MARTIN, SANDRA, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -191,3 +191,114 @@ def test_a_reader_sees_no_restricted_title_on_the_department_view(page, base_url
     _open(page, base_url, READER, "/osakond/?vaade=osakond", 1440)
 
     assert RESTRICTED_TITLE not in page.content()
+
+
+# --- the locked Minu asjad contract ---------------------------------------
+#
+# Two decisions the department has settled and which must not drift back:
+# *Üle tähtaja* shows its ten oldest rows and holds the rest inline, and
+# *Hiljem* sits on the ordinary band surface rather than a panel of its own.
+#
+# They are asserted here rather than left to `minu-too.png` because a baseline
+# approves whatever it was last regenerated from. The Hiljem background is the
+# proof of that: removing it did **not** fail the visual suite — the panel
+# colour is close enough to the page that the difference stayed inside the
+# tolerance — so for as long as the rule existed no committed image would have
+# caught it coming back.
+#
+# What each layer locks:
+#
+# * the *number* ten, and the ordering under it, are locked in
+#   `tests/test_my_work_timeline.py`, which builds thirteen late rows across all
+#   three work sources and renders the real page;
+# * the *mechanism* — that the preview is capped in a real browser and the rest
+#   are genuinely not visible until the disclosure is opened — is locked here;
+# * the *surface* is locked here as a computed style.
+#
+# The seeded world has no timeline deep enough to overflow *Üle tähtaja*, and
+# giving it one is not free: a trial run put twelve overdue milestones on
+# Martin and broke five `test_matter_intelligence` scenarios, one `test_ui_shell`
+# scenario and both Osakond baselines, because the same records feed Jälgimine's
+# calendar and Osakond's *Vajab sekkumist*. That is a change to the fixture
+# world, not to this page, and it does not belong in a correction to this page.
+
+
+def test_each_band_caps_its_preview_and_holds_the_rest_inline(page, base_url):
+    """Every band on Minu asjad shows at most `BAND_VISIBLE[key]` rows.
+
+    Visibility is Playwright's, not the markup's. The rows behind a closed
+    `<details>` are in the HTML — that is what makes the disclosure a slice of
+    one list rather than a second query — so a test that counted `.workrow2`
+    elements would count them and prove nothing.
+
+    Where a band overflows, the count in its heading stays the whole population
+    and «Näita veel N» offers exactly the remainder; opening it brings every row
+    on screen. Martin, because his is the timeline that renders three of the
+    four bands.
+    """
+    from app.matters.work_items import BAND_VISIBLE
+
+    _open(page, base_url, MARTIN, "/minu-asjad/", 1440)
+
+    bands = page.locator(".worklayout2__main section.workband")
+    seen = 0
+    for index in range(bands.count()):
+        band = bands.nth(index)
+        classes = band.get_attribute("class") or ""
+        key = next((k for k in BAND_VISIBLE if f"workband--{k}" in classes), None)
+        if key is None:
+            continue
+        seen += 1
+        cap = BAND_VISIBLE[key]
+        total = int(band.locator(".workband__count").inner_text().strip())
+        on_screen = band.locator(".workrow2:visible")
+        expected = total if cap is None else min(total, cap)
+        assert on_screen.count() == expected, (
+            f"{key}: {on_screen.count()} rows are visible, not {expected} "
+            f"(band holds {total}, cap is {cap})"
+        )
+
+        disclosure = band.locator("details.pw-more")
+        if cap is None or total <= cap:
+            assert disclosure.count() == 0, f"{key} hides rows it has room for"
+            continue
+
+        # `> summary` rather than `summary`: every row inside the disclosure
+        # carries its own ⋯ menu, which is a `<details>` with a summary too.
+        assert f"Näita veel {total - cap}" in disclosure.locator("> summary").inner_text()
+        disclosure.locator("> summary").click()
+        page.wait_for_timeout(120)
+        assert band.locator(".workrow2:visible").count() == total
+        assert int(band.locator(".workband__count").inner_text().strip()) == total
+
+    assert seen, "Minu asjad rendered no timeline band at all"
+
+
+def test_hiljem_sits_on_the_same_surface_as_the_other_bands(page, base_url):
+    """*Hiljem* is a band of the timeline, not a panel dropped into it.
+
+    It once carried `background: var(--surface-panel)` and read as a separate
+    card at the foot of the page. All four bands share one surface; what marks
+    *Hiljem* out is its title colour and the range control in its head.
+
+    Equality between two approved surfaces rather than a hard-coded colour, so
+    the assertion survives a palette change and fails only on the thing it is
+    here to catch: a background rule reappearing on this one band.
+    """
+    _open(page, base_url, MARTIN, "/minu-asjad/", 1440)
+
+    later = page.locator("section.workband--hiljem")
+    ordinary = page.locator("section.workband--jargmised_30_paeva")
+    assert later.count() == 1, "the seeded world no longer renders Hiljem for Martin"
+    assert ordinary.count() == 1, "the seeded world no longer renders Järgmised 30 päeva"
+
+    def surface(locator):
+        return locator.evaluate(
+            "el => { const s = getComputedStyle(el);"
+            " return [s.backgroundColor, s.backgroundImage]; }"
+        )
+
+    assert surface(later) == surface(ordinary), (
+        "Hiljem no longer shares the ordinary band surface — a background rule "
+        "has come back onto .workband--hiljem"
+    )

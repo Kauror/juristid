@@ -7690,9 +7690,13 @@ button.accordion__action:focus-visible {
   color: var(--text-muted);
 }
 
-.workband--hiljem {
-  background: var(--surface-panel);
-}
+/* No `.workband--hiljem` surface rule, and that is the decision rather than an
+   omission. *Hiljem* once carried `background: var(--surface-panel)`, which
+   made the last band read as a separate panel dropped into a timeline whose
+   other three bands are rules on the page background. All four sit on the same
+   surface; the only thing that distinguishes this one is its title colour and
+   the range control in its head. Do not reintroduce a background here
+   (docs/design-v2-compatibility.md, «Locked Minu asjad decisions»). */
 
 .workband__rows {
   display: flex;
