@@ -26,6 +26,29 @@ structure, then `03-BACKEND.md` read against this architecture, then `lisad/`.
 | **Approach** | Reuse `build_my_work` and the shared `work_items` read model; parameterise it with `subject`. Re-band in `work_items.py` (one change, three pages). Add a portfolio selector and a recent-activity selector on top of the existing `annotate_last_activity`/`activity_of`. Restyle the template. Drop the `workhead__summary` figures in favour of the shared `seis` component. |
 | **Conflict** | Band counters: the prototype still prints «8 tegevust», `01` §4 says bare number. `01` wins (DS-01). |
 
+#### Locked Minu asjad decisions
+
+Settled by the department after the design was implemented, and not open for a
+future round to reason its way back out of. Both are corrections to what shipped
+and both are asserted rather than left to a screenshot:
+
+1. **Üle tähtaja shows the ten oldest rows.** The band is capped like every
+   other one — `BAND_VISIBLE[BAND_OVERDUE] = 10` in `app/matters/work_items.py`.
+   The remainder stays inline behind the existing «Näita veel N ▾» disclosure,
+   which is a slice of the same ordered list, so the count in the heading is
+   still the whole population and no work leaves the page. It once rendered
+   everything, on the reasoning that nobody should have to click to see late
+   work; a fortnight of it then pushed the rest of the timeline off the screen.
+   Order is unchanged: oldest deadline first.
+2. **Hiljem uses the ordinary band surface.** There is no
+   `.workband--hiljem { background: … }` rule and none may be reintroduced. All
+   four bands sit on the same surface; *Hiljem* is marked out by its title
+   colour and by the range control in its head, not by a panel behind it.
+
+Locked by `tests/test_my_work_timeline.py` (the cap, its ordering and the
+9/10/11 boundary) and by `e2e/test_work_surfaces_review.py` (ten rows visible in
+a real browser, and the two band surfaces compared as computed styles).
+
 ### Inimese töölaud — `/inimesed/<uuid>/asjad/`
 
 | | |

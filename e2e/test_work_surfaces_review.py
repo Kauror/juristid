@@ -20,7 +20,7 @@ import pathlib
 
 import pytest
 
-from e2e.conftest import HEAD, SANDRA, sign_in
+from e2e.conftest import HEAD, MARTIN, SANDRA, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -191,3 +191,95 @@ def test_a_reader_sees_no_restricted_title_on_the_department_view(page, base_url
     _open(page, base_url, READER, "/osakond/?vaade=osakond", 1440)
 
     assert RESTRICTED_TITLE not in page.content()
+
+
+# --- the locked Minu asjad contract ---------------------------------------
+#
+# Two decisions the department has settled and which must not drift back. They
+# are asserted here rather than left to `minu-too.png` because a baseline
+# approves whatever it was last regenerated from: a screenshot cannot say
+# whether ten rows is the rule or an accident of the fixture, and a background
+# creeping back onto one band is a few hundred pixels a reviewer would pass.
+
+
+def test_the_overdue_band_shows_ten_rows_and_holds_the_rest_inline(page, base_url):
+    """*Üle tähtaja*: the ten oldest on screen, the remainder behind «Näita veel N».
+
+    Martin, not Sandra: his is the one timeline in the seeded world deep enough
+    to overflow the band (`seed_e2e_data._overdue_depth`), and keeping the depth
+    off the baselined persona is what stops this fixture rewriting
+    `minu-too.png`.
+
+    Visibility is Playwright's, not the markup's. The rows behind a closed
+    `<details>` are in the HTML — that is the whole point of the disclosure, and
+    what makes it a slice of one list rather than a second query — so a test
+    that counted `.workrow2` elements would report thirteen and prove nothing.
+    """
+    from app.core.management.commands.seed_e2e_data import OVERDUE_MILESTONE_PREFIX
+
+    _open(page, base_url, MARTIN, "/minu-asjad/", 1440)
+
+    band = page.locator("section.workband--ule_tahtaja")
+    assert band.count() == 1, "Martin's timeline has no Üle tähtaja band"
+
+    # The heading counts the whole population, not the visible slice.
+    assert band.locator(".workband__count").inner_text().strip() == "13"
+
+    on_screen = band.locator(".workrow2:visible")
+    assert on_screen.count() == 10, f"{on_screen.count()} overdue rows are visible, not ten"
+
+    # Oldest first: the milestones are numbered from the furthest past, so the
+    # visible ten are 01…10 in that order and the eleventh is behind the fold.
+    titles = [
+        on_screen.nth(index).locator(".workrow2__action").inner_text().strip()
+        for index in range(10)
+    ]
+    assert titles == [f"{OVERDUE_MILESTONE_PREFIX} {n:02d}" for n in range(1, 11)]
+
+    disclosure = band.locator("details.pw-more")
+    assert disclosure.count() == 1
+    summary = disclosure.locator("summary").inner_text()
+    assert "Näita veel 3" in summary, summary
+
+    disclosure.locator("summary").click()
+    page.wait_for_timeout(120)
+
+    opened = band.locator(".workrow2:visible")
+    assert opened.count() == 13, f"{opened.count()} rows after opening the disclosure, not thirteen"
+    revealed = [
+        opened.nth(index).locator(".workrow2__action").inner_text().strip()
+        for index in range(10, 13)
+    ]
+    assert revealed[:2] == [f"{OVERDUE_MILESTONE_PREFIX} {n:02d}" for n in (11, 12)]
+    # And the count above the list never moved.
+    assert band.locator(".workband__count").inner_text().strip() == "13"
+
+
+def test_hiljem_sits_on_the_same_surface_as_the_other_bands(page, base_url):
+    """*Hiljem* is a band of the timeline, not a panel dropped into it.
+
+    It once carried `background: var(--surface-panel)` and read as a separate
+    card at the foot of the page. All four bands share one surface; what marks
+    *Hiljem* out is its title colour and the range control in its head.
+
+    Equality between two approved surfaces rather than a hard-coded colour, so
+    the assertion survives a palette change and fails only on the thing it is
+    here to catch: a background rule reappearing on this one band.
+    """
+    _open(page, base_url, MARTIN, "/minu-asjad/", 1440)
+
+    later = page.locator("section.workband--hiljem")
+    ordinary = page.locator("section.workband--jargmised_30_paeva")
+    assert later.count() == 1, "the seeded world no longer renders Hiljem for Martin"
+    assert ordinary.count() == 1, "the seeded world no longer renders Järgmised 30 päeva"
+
+    def surface(locator):
+        return locator.evaluate(
+            "el => { const s = getComputedStyle(el);"
+            " return [s.backgroundColor, s.backgroundImage]; }"
+        )
+
+    assert surface(later) == surface(ordinary), (
+        "Hiljem no longer shares the ordinary band surface — a background rule "
+        "has come back onto .workband--hiljem"
+    )

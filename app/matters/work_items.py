@@ -146,10 +146,18 @@ BAND_ORDER: tuple[str, ...] = (BAND_OVERDUE, BAND_WEEK, BAND_NEXT_30, BAND_LATER
 #: How many rows of each band are on screen before the rest go behind
 #: «Näita veel N ▾». The rest are the *same* list, sliced — not a second query —
 #: so opening the disclosure cannot show a row the count above it did not
-#: include. ``None`` means the band shows everything it holds: work that is
-#: already late is exactly what nobody may have to click to see.
+#: include. ``None`` would mean the band shows everything it holds.
+#:
+#: *Üle tähtaja* is capped like the others, and deliberately. It once was not,
+#: on the reasoning that late work is exactly what nobody may have to click to
+#: see; a band of two dozen rows then pushed the rest of the timeline off the
+#: screen, which is the same failure in the other direction. The approved rule
+#: is the one this dictionary now states: overdue work is ordered oldest-first,
+#: the ten oldest rows are immediately visible, and the remainder stays
+#: available inline behind «Näita veel N ▾» — nothing leaves the page, and the
+#: count in the heading is still the honest total.
 BAND_VISIBLE: dict[str, int | None] = {
-    BAND_OVERDUE: None,
+    BAND_OVERDUE: 10,
     BAND_WEEK: 10,
     BAND_NEXT_30: 5,
     BAND_LATER: 2,
