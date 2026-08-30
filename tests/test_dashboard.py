@@ -228,11 +228,18 @@ def test_every_card_links_somewhere(world, specialist) -> None:
 # -- the page --------------------------------------------------------------
 
 
-def test_the_root_opens_ulevaade(world, client, specialist) -> None:
+def test_the_page_is_reached_by_its_own_address(world, client, specialist) -> None:
+    """Ülevaade is a destination, not what the root chooses.
+
+    It used to be both: `/` redirected here. Since Minu asjad became a person's
+    default home the root goes there instead, and this page is reached from the
+    navigation bar or from a pasted link — which is the whole contract this test
+    holds. What `/` picks is tested in `tests/test_default_home.py`.
+    """
     client.force_login(specialist)
-    response = client.get("/")
-    assert response.status_code == 302
-    assert response["Location"] == reverse("matters:overview")
+    response = client.get(reverse("matters:overview"))
+    assert response.status_code == 200
+    assert response.resolver_match.view_name == "matters:overview"
 
 
 def test_the_page_renders_and_hides_what_it_should(world, client, reader) -> None:
