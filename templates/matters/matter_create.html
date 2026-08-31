@@ -143,8 +143,12 @@
       </label>
     </div>
 
-    {# 4 — Who owns it, and who it came from. #}
-    <div class="createform__row createform__pair createform__pair--people">
+    {% comment %}
+      4 — Who owns it, who it came from, and whether it is real work. The third
+      field is Andmeklass, moved here from the Adressaat row: one checkbox does
+      not need a column of its own, and this row had the space to spare.
+    {% endcomment %}
+    <div class="createform__row createform__trio createform__trio--people">
       <fieldset class="field">
         <legend class="field__label">{{ form.owner.label }}</legend>
         <div class="chiprow">
@@ -225,6 +229,36 @@
         {% elif form.source_organisations_other.errors %}
           <span class="field__error">{{ form.source_organisations_other.errors|first }}</span>
         {% endif %}
+      </fieldset>
+
+      {% comment %}
+        One checkbox, unticked, and no REAL/TEST choice on the capture path.
+        Real work is the normal case and must stay a straight line; a required
+        choice on every creation is a control people learn to click past
+        (Agent-C brief 15, 62).
+      {% endcomment %}
+      {% comment %}
+        `createform__field--compact` is what the narrow breakpoint caps at 18rem.
+        It used to be `.createform__pair--class .field`, which caught the
+        Adressaat field this checkbox then shared a row with and collapsed it to
+        ~288px with the rest of the stacked row empty beside it. Adressaat has
+        its own row now, but the rule stays named on the field that wants it:
+        this one is compact because it holds one checkbox (static/css/app.css).
+      {% endcomment %}
+      <fieldset class="field createform__field--compact">
+        <legend class="field__label">Andmeklass</legend>
+        {% comment %}
+          A real checkbox with its label, not a chip. Every chip on this page
+          answers "which of these is it"; this one answers "is this even real
+          work", which is a different kind of question and should not look like
+          a twenty-third Valdkond (Uus teema redesign §3, mockup 8a).
+        {% endcomment %}
+        <div class="checkitems">
+          <label class="checkitem checkitem--plain" id="andmeklass-test">
+            {{ form.is_test_data }}
+            <span class="checkitem__name">{{ form.is_test_data.label }}</span>
+          </label>
+        </div>
       </fieldset>
     </div>
 
@@ -352,7 +386,12 @@
       </fieldset>
     </div>
 
-    <div class="createform__row createform__pair createform__pair--class">
+    {% comment %}
+      6 — Adressaat, on a row of its own. Andmeklass used to take a 130px column
+      out of this row for one checkbox; it now sits in the space the
+      Vastutaja/Saatja row was not using.
+    {% endcomment %}
+    <div class="createform__row">
       <fieldset class="field">
         <legend class="field__label">{{ form.addressee_organisation.label }}</legend>
         {% comment %}
@@ -442,34 +481,6 @@
         {% endif %}
       </fieldset>
 
-      {% comment %}
-        One checkbox, unticked, and no REAL/TEST choice on the capture path.
-        Real work is the normal case and must stay a straight line; a required
-        choice on every creation is a control people learn to click past
-        (Agent-C brief 15, 62).
-      {% endcomment %}
-      {% comment %}
-        `createform__field--compact` is what the narrow breakpoint caps at 18rem.
-        It used to be `.createform__pair--class .field`, which caught this
-        field's Adressaat sibling as well and collapsed it to ~288px with the
-        rest of the stacked row empty beside it. The constraint belongs to this
-        one checkbox, so it is named on this one field (static/css/app.css).
-      {% endcomment %}
-      <fieldset class="field createform__field--compact">
-        <legend class="field__label">Andmeklass</legend>
-        {% comment %}
-          A real checkbox with its label, not a chip. Every chip on this page
-          answers "which of these is it"; this one answers "is this even real
-          work", which is a different kind of question and should not look like
-          a twenty-third Valdkond (Uus teema redesign §3, mockup 8a).
-        {% endcomment %}
-        <div class="checkitems">
-          <label class="checkitem checkitem--plain" id="andmeklass-test">
-            {{ form.is_test_data }}
-            <span class="checkitem__name">{{ form.is_test_data.label }}</span>
-          </label>
-        </div>
-      </fieldset>
     </div>
 
     {# 7 — Järgmine tegevus: the one panel on the page. #}
