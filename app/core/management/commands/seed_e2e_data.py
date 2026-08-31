@@ -25,11 +25,11 @@ from app.core.enums import Visibility
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import DataQualityTier, EngagementKind, MatterOrigin, RecordMode
 from app.matters.models import Matter
-from app.matters.services import add_engagement, add_entry, create_matter
+from app.matters.services import add_engagement, add_entry, close_matter, create_matter
 from app.matters.work_items import start_of_iso_week
 from app.organisations.models import Organisation, OrganisationType
 from app.taxonomy.models import PolicyArea
-from app.workflow.enums import ActionKind, DateSemantics, Track
+from app.workflow.enums import ActionKind, DateSemantics, Disposition, Track
 from app.workflow.models import StageVocabulary
 from app.workflow.services import set_next_action
 
@@ -129,6 +129,18 @@ SUPERSEDED_DEADLINE_TITLE = "Vana tähtajaga, uue juhisega sünteetiline teema"
 SUPERSEDED_DEADLINE_DAYS = 200
 SUPERSEDED_REVIEW_DAYS = 40
 FORMER_OWNER_TITLE = "Endise kolleegi avatud teema"
+#: A finished file, so that `/teemad/?olek=suletud` is never empty.
+#:
+#: It is here because two browser tests — the closed banner's geometry in
+#: `e2e/test_ui_shell.py` and the `teema-suletud` rendering in
+#: `e2e/test_ui_regression.py` — used to find a closed Matter only because some
+#: *other* test had closed one earlier in the same job, and skipped themselves
+#: the moment the browser suite stopped running in one shared world. A test that
+#: runs only when an unrelated test happens to precede it is not a test that
+#: runs. Closed for the ordinary reason, with no successor, so nothing about it
+#: asserts a continuation nobody claimed.
+CLOSED_TITLE = "Lõpetatud sünteetiline teema"
+CLOSED_REASON = "Menetlus jõustus ja Koja järeltegevus on tehtud."
 
 #: A colleague who has left. Inactive on purpose: they must not appear in the
 #: persona list, and their open file must still be visible to the head.
@@ -318,6 +330,30 @@ class Command(BaseCommand):
             data_quality_tier=DataQualityTier.TIER_3_REGISTER_ARCHIVE,
             source_era="2014",
             reporting_year=2014,
+        )
+
+        # A closed file, reachable only under `?olek=suletud`: the register
+        # defaults to `olek=avatud`, so this adds a row to the closed view and
+        # to nothing else.
+        closed = create_matter(
+            title=CLOSED_TITLE,
+            actor=martin,
+            owner=martin,
+            stage=stage,
+            track=Track.DOMESTIC,
+            source_organisations=[ministry],
+        )
+        add_entry(
+            matter=closed,
+            body="<p>Koda esitas arvamuse ja menetlus on lõppenud.</p>",
+            author=martin,
+            kind=EntryKind.NOTE,
+        )
+        close_matter(
+            matter=closed,
+            disposition=Disposition.RESPONSE_COMPLETE,
+            actor=martin,
+            reason=CLOSED_REASON,
         )
 
         self._historical_world(visible)
