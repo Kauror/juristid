@@ -273,6 +273,36 @@ what has no honest place on a timeline.
     <aside class="worklayout2__rail" aria-label="{% if is_self %}Märkmed ja muutused{% else %}Kiirvaade ja muutused{% endif %}">
       {% if is_self %}
         {% comment %}
+          «Uus asi» — what a colleague has just put on this desk, and nothing
+          else. Above Märkmed because it is the only block on the rail that is
+          about something that changed while the reader was away; it is
+          noticeable by being here and by being absent the rest of the time,
+          not by being loud.
+
+          Rendered only when there is something in it. No heading, no empty
+          state, no zero and no reserved gap: the last acknowledged row takes
+          the whole section with it. Inside the `is_self` branch like the desk
+          pad, so a department head reading a colleague's page does not receive
+          it (app/matters/views.py, docs/adr/0051).
+
+          A form per row rather than a link, because opening the Teema from
+          here is what marks it seen, and a GET must never do that.
+        {% endcomment %}
+        {% if assignment_notices %}
+          <section class="railblock" aria-label="Uus asi">
+            <h2 class="railblock__label">Uus asi</h2>
+            {% for notice in assignment_notices %}
+              <form class="newasjarow"
+                    method="post"
+                    action="{% url 'matters:open_assignment_notice' notice_id=notice.pk %}">
+                {% csrf_token %}
+                <button type="submit" class="newasjarow__title">{{ notice.matter.title }}</button>
+              </form>
+            {% endfor %}
+          </section>
+        {% endif %}
+
+        {% comment %}
           The desk pad. Present only in the self view — this whole block is
           inside the branch, so a manager's response does not contain it.
         {% endcomment %}

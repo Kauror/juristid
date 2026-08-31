@@ -83,7 +83,7 @@ from app.matters.forms import (
     edit_initial,
 )
 from app.matters.intake import register_incoming, validate_uploads
-from app.matters.models import Matter, MatterEngagement
+from app.matters.models import Matter, MatterAssignmentNotice, MatterEngagement
 from app.matters.my_work import (
     HORIZON_PARAM,
     VIEW_PARAM,
@@ -92,6 +92,7 @@ from app.matters.my_work import (
     view_from,
 )
 from app.matters.services import (
+    acknowledge_assignment_notice,
     add_engagement,
     assign_matter,
     change_stage,
@@ -273,9 +274,62 @@ def _render_person_work(request: HttpRequest, *, subject: Any, is_self: bool) ->
         # does not read it, so the block it feeds is absent from that response
         # rather than hidden in it (01-EHITUSJUHIS §3.5).
         context["scratchpad"] = person_workspace.scratchpad_for(request.user)
+        # «Uus asi», under the same rule and for the same reason. A colleague's
+        # unread hand-overs are their own workflow state: the department head's
+        # branch below does not query them, so there is no section, no heading
+        # and no Matter title from this queue anywhere in that response
+        # (app/matters/person_work.py, docs/adr/0051).
+        context["assignment_notices"] = person_workspace.unread_assignment_notices(request.user)
     else:
         context["switcher"] = person_workspace.build_switcher(subject)
     return render(request, "matters/my_work.html", context)
+
+
+@login_required
+@require_http_methods(["POST"])
+def open_assignment_notice(request: HttpRequest, notice_id: Any) -> HttpResponse:
+    """Open a newly assigned Matter *from* «Uus asi», and mark it seen.
+
+    A POST rather than a link, and its own route rather than a side effect of
+    `matter_detail`, because the two are different facts. Opening the Matter
+    says the page was rendered; this says *the recipient acted on the notice*.
+    They come apart in the case the product explicitly requires: somebody who
+    creates a Teema and puts their own name on it is redirected straight into
+    it, and if rendering counted, their own «Uus asi» would clear itself before
+    they ever saw Minu asjad (docs/adr/0051).
+
+    Four refusals, all 404 and all in the order that leaks least:
+
+    * a notice that is not this person's does not resolve — `recipient` is in
+      the lookup, so user A cannot acknowledge user B's row and cannot learn
+      that it exists;
+    * a **superseded** notice does not resolve either. The block on the rail is
+      gone the moment the file is handed on, but the page somebody already has
+      open is not: a browser sitting on Minu asjad from before the reassignment
+      still carries the form. That stale POST must not turn a retired receipt
+      into a viewed one — `superseded_at` and `viewed_at` are two different
+      terminal reasons, and «the file left this desk» must never be recorded as
+      «this person looked at it» (docs/adr/0051);
+    * the Matter goes through `get_visible_matter` like every other route, so a
+      restricted file is 404 here as it is everywhere else. Ownership is not
+      authorization;
+    * an unknown id is the same 404 as the other three.
+
+    A notice that is merely *already viewed* still resolves, and deliberately.
+    That is not a stale form, it is the same live receipt submitted twice — a
+    double click, a resend, a back button — and the stamp is one conditional
+    UPDATE, so the second POST changes nothing and lands the reader on the
+    Matter exactly as the first did.
+    """
+    notice = get_object_or_404(
+        MatterAssignmentNotice.objects.select_related("matter"),
+        pk=notice_id,
+        recipient=request.user,
+        superseded_at__isnull=True,
+    )
+    matter = get_visible_matter(request, notice.matter_id)
+    acknowledge_assignment_notice(notice=notice, actor=request.user)
+    return redirect(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
 
 @login_required
