@@ -773,3 +773,33 @@ def test_a_reader_cannot_complete_a_step(client, reader, normal_matter, speciali
     assert response.status_code == 404
     action.refresh_from_db()
     assert action.status == ActionStatus.OPEN
+
+
+def test_a_refused_completion_says_so_inside_the_row(signed_in, normal_matter, specialist):
+    """The refusal has nowhere else to go.
+
+    `Tehtud` swaps this row and only this row, and the refusal
+    `complete_next_action` actually raises — somebody else finished the step a
+    moment ago — leaves no current action to hang a message on. So the message
+    is rendered outside the row's three branches rather than inside one of them.
+    """
+    from app.workflow.services import complete_next_action
+
+    action = set_next_action(
+        matter=normal_matter,
+        text="Saata kiri",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=timezone.localdate() + timedelta(days=1),
+        actor=specialist,
+    )
+    complete_next_action(action=action, actor=specialist)
+
+    response = signed_in.post(
+        reverse("matters:complete_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk}),
+        headers={"HX-Request": "true"},
+    )
+    assert response.status_code == 400
+    body = response.content.decode()
+    assert 'id="jargmiseks-rida"' in body
+    assert "Ainult kehtivat tegevust saab lõpetada." in body

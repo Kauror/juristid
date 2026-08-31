@@ -43,6 +43,16 @@ classification this surface no longer exposes.
 {% endcomment %}
 <div class="uxnext {% if matter.is_open and current_action.is_overdue %}uxnext--overdue{% endif %}"
      id="jargmiseks-rida">
+{% comment %}
+  A refused completion comes back inside the row, because the row is what the
+  response replaced. Outside the three branches rather than in one of them: the
+  refusal `complete_next_action` actually raises is "somebody else finished this
+  a moment ago", and by the time it is re-read there is no current action left
+  to hang the message on.
+{% endcomment %}
+{% if next_action_error %}
+  <span class="uxnext__error" role="alert">{{ next_action_error }}</span>
+{% endif %}
 {% if not matter.is_open %}
     <span class="uxnext__label">Järgmiseks</span>
     <span class="uxnext__empty">
@@ -51,14 +61,6 @@ classification this surface no longer exposes.
 {% elif current_action %}
     <span class="uxnext__label">Järgmiseks</span>
     <span class="uxnext__text">{{ current_action.text }}</span>
-
-    {% comment %}
-      A refused completion — a step somebody else finished a moment ago — comes
-      back inside the row, because the row is what the response replaced.
-    {% endcomment %}
-    {% if next_action_error %}
-      <span class="uxnext__error" role="alert">{{ next_action_error }}</span>
-    {% endif %}
 
     {% comment %}
       The date on its own. `days_late` rides with it rather than standing
