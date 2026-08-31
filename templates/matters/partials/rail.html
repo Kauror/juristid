@@ -1,9 +1,14 @@
 {% comment %}
 The facts rail: information that is *looked up*, never read.
 
-Five blocks, in the order somebody reaches for them: what kind of record this is
-and where it came from, what it is tagged with, what Koda argued, what it is
-related to, and the reader's own private notes.
+Four blocks, in the order somebody reaches for them: what kind of record this is
+and where it came from, what Koda argued, what it is related to, and the
+reader's own private notes.
+
+`Sildid` was the fifth and is retired from this page. Nothing is deleted for it:
+`Tag` and `TagAssignment` are untouched, imported assignments are untouched, and
+tags are still edited on the Teema edit form. What went is a card on the read
+surface that printed «Silte ei ole.» on nearly every Matter (ADR 0052 §14).
 
 What is deliberately not here: the owner, the state and the active deadline,
 which are already in the header and would be two answers to one question.
@@ -201,6 +206,62 @@ whose addressee nobody recorded should look short, not incomplete.
     </p>
 
     {% comment %}
+      `Muu valdkond` — free text, and shown as free text.
+
+      It used to sit in the `Sildid` card, which was an accident of layout
+      rather than a statement about the field: it is not a tag, nothing counts
+      it, and it was only there because that card happened to be where the
+      taxonomy-adjacent things had collected. `Sildid` is retired from this page
+      and this is a Teema fact, so it is in the Teema facts block with the rest
+      of them (ADR 0052 §14, §15).
+
+      Deliberately not styled as a `tag` chip: it is what somebody wrote when no
+      Valdkond fitted, no statistic counts it, and dressing it up as taxonomy is
+      exactly the confusion the field exists to avoid (Stage-2E.1 brief 20).
+    {% endcomment %}
+    {% comment %}
+      A `<div>`, not a `<p>`. `<details>` is flow content and closes an open
+      paragraph, so the disclosure below would escape the row it belongs to and
+      leave an empty `<p></p>` behind it — which is what a browser actually
+      parses out of the rows around this one. It was found by a Playwright
+      locator that could not reach the trigger it was looking straight at.
+    {% endcomment %}
+    <div class="railcard__row">
+      <span class="railcard__key" id="teema-muu-valdkond">Muu valdkond</span>
+      <span class="railcard__editable">
+        {% if can_write %}
+          <details class="inlineedit">
+            <summary class="inlineedit__trigger">
+              {% if matter.policy_area_other %}
+                <span class="railcard__value">{{ matter.policy_area_other }}</span>
+              {% else %}<span class="railcard__add">+ Lisa</span>{% endif %}
+            </summary>
+            <form class="inlineedit__form inlineform"
+                  hx-post="{% url 'matters:update_field' pk=matter.pk field='policy_area_other' %}"
+                  hx-target="#teema-andmed" hx-swap="outerHTML">
+              {% csrf_token %}
+              {% comment %}
+                Named by the row's own label rather than by a second hidden copy
+                of the same two words. An empty value must leave exactly one
+                «Muu valdkond» on the page — the control that would record one,
+                not a label standing over nothing (tests/test_policy_area_other).
+              {% endcomment %}
+              <input class="field__input field__input--compact" type="text"
+                     name="policy_area_other" maxlength="400"
+                     aria-labelledby="teema-muu-valdkond"
+                     value="{{ matter.policy_area_other }}"
+                     placeholder="Millisesse valdkonda see kuulub?">
+              <button class="button button--quiet button--tiny" type="submit"
+                      aria-label="Salvesta muu valdkonna muudatus">Salvesta</button>
+            </form>
+          </details>
+        {% elif matter.policy_area_other %}
+          <span class="railcard__value">{{ matter.policy_area_other }}</span>
+        {% else %}<span class="muted">—</span>{% endif %}
+      </span>
+    </div>
+
+    {% comment %}
       `Aruandlusaasta` is not here any more. It is a reporting dimension — it
       decides which year a Matter is counted in, and the place to see and use it
       is Statistika and the register's own `?aasta=` filter. On this rail it was
@@ -269,53 +330,6 @@ whose addressee nobody recorded should look short, not incomplete.
           <button class="button button--quiet button--tiny" type="submit">
             {% if matter.is_test_data %}Märgi pärisandmeteks{% else %}Märgi testandmeteks{% endif %}
           </button>
-        </form>
-      </details>
-    {% endif %}
-  </div>
-
-  {% comment %}
-    Sildid, and only Sildid. Valdkonnad are in the header meta line where they
-    are edited; showing them here too would suggest the two vocabularies are
-    one list, which is the confusion the taxonomy is built to avoid
-    (Teema redesign §22.2).
-  {% endcomment %}
-  <div class="railcard">
-    <span class="railcard__label">Sildid</span>
-    <p class="railcard__row railcard__row--tags">
-      {% for tag in matter.tags.all %}<span class="tag">{{ tag.name_et }}</span>{% empty %}
-        <span class="muted">Silte ei ole.</span>
-      {% endfor %}
-    </p>
-    {% if matter.policy_area_other %}
-      {% comment %}
-        Free text, and shown as free text. Deliberately not styled as a `tag`
-        chip beside the canonical ones: it is what somebody wrote when no
-        Valdkond fitted, no statistic counts it, and dressing it up as taxonomy
-        is exactly the confusion the field exists to avoid (Stage-2E.1 brief 20).
-      {% endcomment %}
-      <p class="railcard__row">
-        <span class="railcard__key">Muu valdkond</span>
-        <span>{{ matter.policy_area_other }}</span>
-      </p>
-    {% endif %}
-    {% if can_write %}
-      <details class="disclosure disclosure--inline">
-        <summary class="disclosure__summary">
-          {% if matter.policy_area_other %}Muuda muud valdkonda{% else %}Lisa muu valdkond{% endif %}
-        </summary>
-        <form class="inlineform disclosure__body"
-              hx-post="{% url 'matters:update_field' pk=matter.pk field='policy_area_other' %}"
-              hx-target="#teema-andmed" hx-swap="outerHTML">
-          {% csrf_token %}
-          <label class="field">
-            <span class="visually-hidden">Muu valdkond</span>
-            <input class="field__input field__input--compact" type="text"
-                   name="policy_area_other" maxlength="400"
-                   value="{{ matter.policy_area_other }}"
-                   placeholder="Millisesse valdkonda see kuulub?">
-          </label>
-          <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
         </form>
       </details>
     {% endif %}

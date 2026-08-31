@@ -98,15 +98,29 @@ def test_the_composer_still_saves_with_ctrl_enter(page, base_url):
 
 
 def test_every_advanced_composer_field_is_still_reachable(page, base_url):
-    """Folding the composer dropped nothing. The precision control, the stored
-    date meaning and the closure block are all one disclosure away."""
+    """Folding the composer dropped nothing that is still asked for.
+
+    The next step's «Täpsemalt…» panel is not a fold that got lost — it was
+    deliberately deleted, along with the classification it held (ADR 0052 §4).
+    The period control it wrapped is still a control and is still one
+    disclosure away, on `Oluline tähtaeg`, which is the surface where "in the
+    autumn" is a real answer.
+    """
     sign_in(page, base_url, SANDRA)
     open_matter(page, base_url, OPEN_TITLE)
 
     page.locator("summary.uxcomp__collapsed").click()
-    page.locator("details.uxcomp__more > summary").click()
-    expect(page.locator("#id_next_date_semantics")).to_be_visible()
-    expect(page.locator("input[name=next_precision]").first).to_be_visible()
+
+    # The next step asks two things and nothing else.
+    expect(page.locator("[name='next_text']")).to_be_visible()
+    expect(page.locator("#id_next_date")).to_have_count(1)
+    expect(page.locator("details.uxcomp__more")).to_have_count(0)
+    expect(page.locator("#id_next_date_semantics")).to_have_count(0)
+    expect(page.locator("input[name=next_precision]")).to_have_count(0)
+
+    page.get_by_role("button", name="+ Oluline tähtaeg").click()
+    page.locator("#koostaja-tahtaeg summary", has_text="Ligikaudne aeg").click()
+    expect(page.locator("input[name=deadline_precision]").first).to_be_visible()
 
     page.get_by_role("button", name="+ Lõpeta teema").click()
     expect(page.locator("#id_close_matter")).to_be_visible()
@@ -117,13 +131,19 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
 # =========================================================================
 
 
-def test_the_next_action_row_says_what_its_date_means(page, base_url):
+def test_the_next_action_row_says_the_step_and_its_date_and_nothing_else(page, base_url):
+    """The date is a date. What it *means* is no longer a word beside it, and
+    the three-category vocabulary is not on this surface at all (ADR 0052 §6)."""
     sign_in(page, base_url, SANDRA)
     open_matter(page, base_url, OPEN_TITLE)
 
     row = page.locator(".uxnext").first
     expect(row).to_be_visible()
     expect(row).to_contain_text("Järgmiseks")
+
+    text = row.inner_text()
+    for retired in ("TEEN", "OOTAN", "JÄLGIN", "TÄHTAEG", "VAATAN ÜLE", "OODATAV"):
+        assert retired not in text, f"the row still says «{retired}»"
 
 
 def test_deferring_moves_the_date_and_says_which_day_it_lands_on(page, base_url):

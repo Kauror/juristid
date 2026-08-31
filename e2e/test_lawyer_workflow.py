@@ -148,11 +148,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     assert not re.search(r"\d{4}_\d+", crumbs.inner_text()), crumbs.inner_text()
 
     expect(page.locator(".uxnext__text")).to_have_text("Koosta ja saada koja arvamus")
-    expect(page.locator(".uxnext .modechip--do")).to_be_visible()
-    # A TEEN date is a deadline and prints as a bare date — the row says which
-    # of the three meanings it carries by the chip beside it, not by a label
-    # repeated on every line (Teema redesign §8.2).
-    expect(page.locator(".uxnext__flag")).to_be_visible()
+    # The step and its date, and no word saying which of three categories it
+    # is. The classification the composer used to demand went with the composer
+    # question that demanded it (ADR 0052 §6).
+    expect(page.locator(".uxnext__date")).to_be_visible()
+    expect(page.locator(".uxnext .modechip--do")).to_have_count(0)
+    for retired in ("TEEN", "OOTAN", "JÄLGIN"):
+        assert retired not in page.locator(".uxnext").inner_text()
     screenshots(page, "03-teema-ulevaade")
 
     matter_url = page.url
@@ -184,13 +186,16 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator("#koostaja-kaasamine")).to_have_count(0)
     expect(page.locator(".disclosure-chip", has_text="+ Kaasamine")).to_have_count(0)
 
-    # There is no second box asking for the next step's wording. The
-    # description *is* the next step, which is the redesign's central claim.
-    expect(page.locator("[name='next_text']")).to_have_count(0)
+    # Two boxes asking two different questions, and no third control mediating
+    # them. What happened goes in one, what happens next in the other, and
+    # nothing classifies either (ADR 0052 §2, §3).
+    expect(page.locator("[name='next_text']")).to_have_count(1)
+    expect(page.locator("[name='next_kind']")).to_have_count(0)
+    expect(page.locator("[name='next_date_semantics']")).to_have_count(0)
 
     open_composer(page)
-    page.locator(".composer__body").fill("Ootan ministeeriumi uut sõnastust")
-    page.locator("#next_kind_WAIT").check(force=True)
+    page.locator(".composer__body").fill("Ministeerium lubas uue sõnastuse")
+    page.locator("[name='next_text']").fill("Kontrollida ministeeriumi uut sõnastust")
     # Revealing one optional block must not reveal the others.
     page.locator(".disclosure-chip", has_text="+ Manus").click()
     expect(page.locator("#koostaja-manus")).to_be_visible()
@@ -201,16 +206,14 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     page.locator("[data-composer-submit]").click()
 
-    # Both halves landed, and the surface agrees with itself.
-    expect(page.locator(".uxnext__text")).to_have_text("Ootan ministeeriumi uut sõnastust")
-    expect(page.locator(".uxnext .modechip--wait")).to_be_visible()
-    # A WAIT date is a review date and is labelled as one, never as a deadline.
-    # The flag names the *stored* meaning. A WAIT recorded without an explicit
-    # one derives `Oodatav`, and the old row printed "vaatan üle" over
-    # every non-deadline regardless — which said the wrong thing about
-    # an expectation somebody never promised to review
-    # (app/workflow/models.py, `date_label`; design handoff 1c).
-    expect(page.locator(".uxnext__flag")).to_contain_text("OODATAV")
+    # Both halves landed as two different records, and the surface agrees with
+    # itself. The entry says what happened; the step says what happens next,
+    # and neither was derived from the other (ADR 0052 §2).
+    expect(page.locator(".uxnext__text")).to_have_text("Kontrollida ministeeriumi uut sõnastust")
+    expect(page.locator(".uxtl__text").first).to_contain_text("Ministeerium lubas uue sõnastuse")
+    expect(page.locator(".uxnext__date")).to_be_visible()
+    for retired in ("TEEN", "OOTAN", "JÄLGIN", "OODATAV", "TÄHTAEG"):
+        assert retired not in page.locator(".uxnext").inner_text()
     expect(page.locator(".uxnext")).not_to_have_class("uxnext--overdue")
     # The superseded DO must no longer be presented as the current action.
     expect(page.locator(".uxnext").get_by_text("Koosta ja saada koja arvamus")).to_have_count(0)
@@ -226,20 +229,27 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # and what the save *decided* rides with it on its own strip rather than as
     # a clause — «lisas märkuse ja määras järgmise sammu» said in words what the
     # strip below now shows in full (design handoff 1b).
-    entry = page.locator(".uxtl__body").filter(has_text="Ootan ministeeriumi")
+    entry = page.locator(".uxtl__body").filter(has_text="Ministeerium lubas uue sõnastuse")
     expect(entry).to_have_count(1)
     expect(entry.locator(".uxtl__kind")).to_be_visible()
-    expect(entry.locator(".uxtl__next")).to_contain_text("Ootan ministeeriumi uut sõnastust")
+    expect(entry.locator(".uxtl__next")).to_contain_text("Kontrollida ministeeriumi uut sõnastust")
+    # The strip states the step, not its category. It re-states the same fact
+    # the Järgmiseks row above it carries, and that row stopped naming a kind
+    # (ADR 0052 §6).
+    assert "TEEN" not in entry.locator(".uxtl__next").inner_text()
     screenshots(page, "05-komposer-jarel")
 
-    # The Matter is now OOTAN — and it is still in the one list, banded by its
-    # date rather than moved to a column of its own. The row carries the mode
-    # chip that says what the date means (Teema QA §3).
+    # The new step reached Minu asjad, still in the one list, banded by its date
+    # rather than moved to a column of its own (Teema QA §3).
+    #
+    # It carries a `TEEN` chip there, and that is correct: `Minu töö` reads the
+    # stored kind and is deliberately unchanged. What the Teema composer stopped
+    # doing is *asking* for it — a step recorded natively is a `DO`, because the
+    # date on it means the day the work gets done (ADR 0052 §3, §6).
     page.locator(".topnav__link", has_text="Minu asjad").click()
-    expect(page.get_by_role("heading", name="Ootan ja kontrollin")).to_have_count(0)
-    row = page.locator(".workrow2").filter(has_text="Ootan ministeeriumi uut sõnastust")
+    row = page.locator(".workrow2").filter(has_text="Kontrollida ministeeriumi uut sõnastust")
     expect(row).to_have_count(1)
-    expect(row.locator(".mode--wait")).to_be_visible()
+    expect(row.locator(".mode--do")).to_be_visible()
 
     # -- Scenario C: a formal opinion with its exact evidence ------------
     #
@@ -425,17 +435,15 @@ def test_the_composer_rejects_an_incomplete_deadline_without_losing_the_entry(pa
 
     open_composer(page)
     page.locator(".composer__body").fill("See tekst peab alles jääma.")
-    # No date meaning chosen: TEEN derives to *Tähtaeg*, and a deadline with no
-    # date is still the one combination the server refuses. Left unstated on
-    # purpose — this is the path a lawyer who never opens the disclosure takes,
-    # and it is why the period control is the one date box in the product that
-    # does *not* pre-fill with today: a default would answer this refusal with a
-    # deadline nobody chose (app/matters/forms.py, `_precision_fields`).
-    page.locator("#next_kind_DO").check(force=True)
+    # A next step and no date. This is why `next_date` is the one date box in
+    # the product that does *not* pre-fill with today: a default would answer
+    # the refusal with a day nobody chose, and would decide on a lawyer's behalf
+    # when they are going to do their own work (ADR 0052 §4, §5).
+    page.locator("[name='next_text']").fill("Küsida ministeeriumilt selgitust")
     expect(page.locator("#id_next_date")).to_have_value("")
     page.locator("[data-composer-submit]").click()
 
-    expect(page.get_by_text("Tähtajaline tegevus vajab kuupäeva.")).to_be_visible()
+    expect(page.get_by_text("Vali järgmise tegevuse kuupäev.")).to_be_visible()
     # Neither half was applied.
     expect(page.locator(".uxtl__body").filter(has_text="See tekst peab alles jääma")).to_have_count(
         0

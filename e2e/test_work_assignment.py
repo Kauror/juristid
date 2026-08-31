@@ -152,8 +152,9 @@ def test_a_new_step_on_a_departed_colleagues_matter_is_refused_on_the_page(page,
     _open_matter(page, base_url, FORMER_OWNER_TITLE)
 
     open_composer(page)
-    page.locator(".composer__body").fill("Ootan ministeeriumi vastust.")
-    page.locator("#next_kind_WAIT").check(force=True)
+    page.locator(".composer__body").fill("Ministeerium lubas vastata.")
+    page.locator("[name='next_text']").fill("Kontrollida, kas ministeerium vastas")
+    page.locator(".uxcomp__row .uxchip", has_text="+1 nädal").first.click()
     page.locator("[data-composer-submit]").click()
     page.wait_for_load_state("networkidle")
 

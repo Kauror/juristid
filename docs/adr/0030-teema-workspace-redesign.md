@@ -74,6 +74,15 @@ once, before anything is parsed.
 
 ### 4. The description *is* the next step
 
+> **Superseded by ADR 0052 (2026-08-31).** The composer has two text boxes
+> again — *Mida tegid või mis juhtus?* and *Järgmiseks* — and neither is derived
+> from the other. This decision held only while the form also asked the lawyer
+> to classify the sentence, which is what ADR 0052 retires: with no mode to
+> choose, there was nothing left to say "and this sentence is also an
+> instruction". The refusal below is still right about the box it was looking
+> at, which asked the *same* question in different words; the two boxes now ask
+> different ones. What is recorded below is what was decided in August 2026.
+
 The composer has one text box. Choosing TEEN, OOTAN or JÄLGIN turns the
 description into the next action's text, verbatim — tags stripped, nothing else.
 There is no NLP, no sentence splitting and no summarisation: what somebody wrote

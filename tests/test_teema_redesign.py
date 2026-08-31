@@ -335,15 +335,27 @@ def test_a_retired_area_stays_on_the_matter_that_carries_it(normal_matter, speci
 
 
 def test_valdkonnad_and_sildid_stay_different_vocabularies(signed_in, normal_matter):
+    """The two vocabularies never merged, and now only one of them is here.
+
+    `Sildid` left this page in ADR 0052 §10 — a UI retirement, with the stored
+    assignments untouched and still edited on the Teema edit form. What §22.2
+    actually forbade was the two lists reading as one, and the strongest form
+    of that is the assertion below: the Valdkond is on the page and the Silt is
+    nowhere near it. The retirement itself is covered by
+    `tests/test_simplified_next_action.py`.
+    """
     tag = factories.TagFactory(name_et="Käibemaks")
     normal_matter.tags.add(tag)
+    area = factories.PolicyAreaFactory(name_et="Keskkond")
+    set_policy_areas(matter=normal_matter, policy_areas=[area], actor=None)
 
     body = _detail(signed_in, normal_matter)
 
-    # Sildid are in the rail; Valdkonnad are in the header meta line. Nothing
-    # merges the two lists.
-    assert "Sildid" in body
-    assert "Käibemaks" in body
+    assert "Keskkond" in body, "the Valdkond is where it always was"
+    assert "Sildid" not in body
+    assert "Käibemaks" not in body
+    # Untouched underneath, which is the half that matters.
+    assert list(normal_matter.tags.all()) == [tag]
 
 
 # ---------------------------------------------------------------------------
@@ -364,12 +376,17 @@ def test_teen_with_a_passed_deadline_is_overdue(signed_in, specialist):
 
     body = _detail(signed_in, matter)
 
-    # The flag names what the date is and how far past it we are, in one
-    # phrase: «6 p» beside a bare date says nothing about what it counts from
-    # (design handoff 1c).
-    assert "TÄHTAEG MÖÖDAS · 2 p" in " ".join(body.split())
+    # The date and how far past it we are, in one phrase: «2 p» beside nothing
+    # says nothing about what it counts from (design handoff 1c).
+    #
+    # The word «TÄHTAEG» in front of it went with the rest of the date
+    # vocabulary — the row no longer names which of three things a date is,
+    # because there is only one kind of step this page creates (ADR 0052 §6).
+    assert "· 2 p" in " ".join(body.split())
+    assert "TÄHTAEG MÖÖDAS" not in " ".join(body.split())
     # And lateness is the state of the row, not a word beside it.
     assert "uxnext--overdue" in body
+    assert "uxnext__date--overdue" in body
 
 
 @pytest.mark.parametrize("kind", [ActionKind.WAIT, ActionKind.MONITOR])
@@ -389,12 +406,19 @@ def test_a_passed_review_date_is_a_warning_and_never_lateness(signed_in, special
 
     body = _detail(signed_in, matter)
     flat = " ".join(body.split())
-    # A review date that has come round is a reason to look, at warning
-    # strength, and the row itself is never in the overdue state.
-    assert "ÜLEVAATUS MÖÖDAS" in flat
-    assert "uxnext__flag--review" in body
+    # The rule this protects is the domain one and it is unchanged: waiting is
+    # not lateness, so the row is never in the overdue state and the date is
+    # never painted as danger.
+    #
+    # What the row *says* about it changed. It used to shout «ÜLEVAATUS
+    # MÖÖDAS», which is the classification vocabulary this surface retired: a
+    # reader is told the sentence and the date, and a review date that has come
+    # round is not a failure to announce (ADR 0052 §6).
+    assert action.display_date in flat
+    assert "ÜLEVAATUS MÖÖDAS" not in flat
     assert "TÄHTAEG MÖÖDAS" not in flat
     assert "uxnext--overdue" not in body
+    assert "uxnext__date--overdue" not in body
 
 
 def test_an_approximate_review_date_renders_as_its_period(signed_in, specialist):
@@ -435,7 +459,9 @@ def test_an_open_matter_with_no_action_says_so(signed_in, specialist):
     body = _detail(signed_in, matter)
 
     assert "Järgmine samm on määramata" in body
-    assert "Määra allpool ↓" in body
+    # And nothing else. «Määra allpool ↓» pointed at a composer that now asks
+    # `Järgmiseks` by name one row below it (ADR 0052 §13).
+    assert "Määra allpool" not in body
 
 
 def test_an_imported_instruction_is_not_called_missing(signed_in, specialist, monkeypatch):
@@ -489,31 +515,48 @@ def test_completing_the_step_goes_through_the_existing_service(signed_in, specia
 # ---------------------------------------------------------------------------
 
 
-def test_the_composer_has_one_description_box_and_no_next_step_field(signed_in, normal_matter):
+def test_the_composer_has_two_boxes_asking_two_different_questions(signed_in, normal_matter):
+    """Reversed by ADR 0052 §2, and reversed deliberately.
+
+    §9.1 refused a second box as duplicate data entry, which was right about
+    the box it was looking at: the old one asked the *same* question in
+    different words. These two ask different ones — what happened, and what
+    happens next — and the refusal below is what still holds: neither is
+    derived from the other, and there is no third control mediating them.
+    """
     body = _detail(signed_in, normal_matter)
 
-    assert "Kirjelda, mis tegid ja mida teed edasi…" in body
-    # The one thing that must never come back.
-    assert 'name="next_text"' not in body
+    assert "Kirjelda, mida tegid või mis juhtus…" in body
+    assert 'name="next_text"' in body
+    # The things that must never come back.
+    assert "Kirjelda, mis tegid ja mida teed edasi…" not in body
     assert "Muudan Järgmiseks" not in body
     assert "+ Organisatsioon" not in body
 
 
-def test_the_description_becomes_the_next_step_verbatim(signed_in, normal_matter, specialist):
+def test_the_next_step_is_what_was_typed_into_it_verbatim(signed_in, normal_matter, specialist):
+    """§9.1's actual rule, on the box that now carries it.
+
+    No NLP, no sentence splitting, no summarisation — that has not changed and
+    is the reason this test exists. What changed is which box the wording comes
+    from: the description used to *be* the step, and now the step has its own
+    (ADR 0052 §2).
+    """
     signed_in.post(
         reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
         {
-            "body": "<p>Esitan Koja arvamuse Rahandusministeeriumile EIS-i kaudu.</p>",
-            "next_kind": ActionKind.DO,
+            "body": "<p>Käisin Rahandusministeeriumi kohtumisel.</p>",
+            "next_text": "Esitan Koja arvamuse Rahandusministeeriumile EIS-i kaudu",
             "next_date": format_estonian_date(timezone.localdate() + timedelta(days=7)),
-            "next_precision": DatePrecision.EXACT,
         },
         headers={"HX-Request": "true"},
     )
 
     action = current_next_action(normal_matter)
     assert action is not None
-    assert action.text == "Esitan Koja arvamuse Rahandusministeeriumile EIS-i kaudu."
+    assert action.text == "Esitan Koja arvamuse Rahandusministeeriumile EIS-i kaudu"
+    # And the description stayed the description.
+    assert "Käisin" not in action.text
 
 
 def test_an_entry_saves_alone(normal_matter, specialist):

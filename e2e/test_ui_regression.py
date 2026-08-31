@@ -130,10 +130,13 @@ CLOCK_DEPENDENT = [
     # matching does not fail — it silently unmasks a value that changes daily,
     # and every baseline goes red the next morning.
     ".metaline__item--deadline .inlineedit__trigger",
-    # The Järgmiseks flag, which is now where the date and its meaning live:
-    # "TÄHTAEG MÖÖDAS · 6 p" counts days from today and changes every morning
-    # (design handoff 1c). The row, the mode chip and the step's own words stay
-    # in the baseline.
+    # The Järgmiseks row's date. It used to be a flag naming what the date meant
+    # — "TÄHTAEG MÖÖDAS · 6 p" — and is now the date itself, with the day count
+    # riding along when the step is late (ADR 0052 §6). Either way it counts
+    # from today and changes every morning. The row and the step's own words
+    # stay in the baseline.
+    ".uxnext__date",
+    # `Excelist` and the register snapshot label beside an imported instruction.
     ".uxnext__flag",
     ".railposition__opinion time",
     # The closed timeline's own line. Its quote is content and stays in the

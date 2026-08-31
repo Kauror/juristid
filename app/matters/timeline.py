@@ -137,6 +137,10 @@ class TimelineNextStep:
     named (master specification 3.5).
     """
 
+    #: The stored kind, in words. Read off the domain and still carried here —
+    #: the register and the reporting surfaces ask for it — but the Teema
+    #: chronology stopped printing it with the rest of the classification
+    #: vocabulary (ADR 0052 §6).
     mode: str
     text: str
     date_label: str
@@ -144,10 +148,14 @@ class TimelineNextStep:
 
     @property
     def date_line(self) -> str:
-        """``TÄHTAEG 21.08``, or empty when the step carries no date."""
-        if not self.date_value:
-            return ""
-        return f"{self.date_label.upper()} {self.date_value}".strip()
+        """``21.08``, or empty when the step carries no date.
+
+        The date, with no word in front of it saying which of three things it
+        is. `date_label` is still read off the action for anything that wants
+        it; this strip sits directly under the sentence it dates and does not
+        (ADR 0052 §6).
+        """
+        return self.date_value
 
 
 @dataclass(frozen=True)
@@ -514,7 +522,7 @@ def matter_timeline(
 
 
 def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
-    """Attach «→ TEEN … · TÄHTAEG 21.08» to every save that decided one.
+    """Attach «→ … · 21.08» to every save that decided one.
 
     One query for the whole page, not one per line. The step is read from the
     `NextAction` rows the events point at rather than from the event payloads,

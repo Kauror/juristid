@@ -197,11 +197,11 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     # A next step first, so the closure has something to end.
     open_composer(page)
     page.locator(".composer__body").fill("Esitan Koja arvamuse ministeeriumile.")
-    page.locator("#next_kind_DO").check(force=True)
+    page.locator("[name='next_text']").fill("Esitada arvamus ministeeriumile")
     page.locator("#id_next_date").fill(_future(5))
     page.locator("[data-composer-submit]").click()
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".uxnext .modechip--do")).to_be_visible()
+    expect(page.locator(".uxnext__text")).to_have_text("Esitada arvamus ministeeriumile")
 
     # Closing is a composer action, not a panel in the rail.
     expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)

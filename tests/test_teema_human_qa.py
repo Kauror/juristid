@@ -620,11 +620,17 @@ def test_a_closure_without_a_sent_opinion_is_accepted(normal_matter, specialist)
     assert form.is_valid(), form.errors
 
 
-def test_a_teen_without_a_date_is_still_refused(normal_matter):
-    """And what the `next_date` default broke."""
-    form = ComposerForm({"body": "Koosta arvamus", "next_kind": ActionKind.DO})
+def test_a_next_step_without_a_date_is_still_refused(normal_matter):
+    """And what the `next_date` default broke.
+
+    The composer stopped asking for a kind (ADR 0052), so the shape of the
+    refusal moved: it is no longer «a TEEN needs a date» but «this next step
+    needs a date», raised on the empty control. The rule it protects is the
+    same one, and the reason `next_date` keeps no default is unchanged.
+    """
+    form = ComposerForm({"body": "Koosta arvamus", "next_text": "Koosta arvamus"})
     assert not form.is_valid()
-    assert "Tähtajaline tegevus vajab kuupäeva." in str(form.errors)
+    assert form.errors["next_date"] == ["Vali järgmise tegevuse kuupäev."]
 
 
 def test_the_edit_page_invents_no_date_for_a_matter_that_has_none(specialist):
@@ -677,6 +683,10 @@ def test_each_mode_keeps_its_shape_when_selected():
 
     TEEN filled, OOTAN solid-bordered, JÄLGIN dashed — before selection and
     after it (master specification 18.8).
+
+    Still asked on `Uus teema`, and no longer on the Teema composer, which
+    stopped asking anybody to classify their work (ADR 0052). The chips and
+    these rules are unchanged; where they are rendered is what moved.
     """
     css = _static_css()
     chips = css[css.index(".modeselect__option {") :].split("/* -- the composer")[0]
