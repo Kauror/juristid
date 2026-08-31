@@ -256,13 +256,19 @@ def test_the_addressee_field_takes_the_stacked_row_width(page, base_url, width):
 
     A field is compact because of what it holds, never because of what it sits
     beside. So: the Adressaat field fills its stacked row.
+
+    Adressaat no longer shares a row with anything — the checkbox moved up into
+    the Vastutaja/Saatja row — so the row is addressed through the field it
+    holds rather than by the pair modifier it used to carry. The measurement is
+    unchanged, and it is the one that has to keep passing: whatever the row is
+    called, a stacked Adressaat spends all of it.
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
     create_form(page, base_url)
 
     field = _box(page, ADDRESSEE_FIELD)
-    row = _box(page, ".createform__pair--class")
+    row = _box(page, f".createform__row:has({ADDRESSEE_FIELD})")
 
     assert field["width"] > 18 * 16 + 1, (
         f"Adressaat is still capped near 18rem at {width}px: {field['width']}px"
