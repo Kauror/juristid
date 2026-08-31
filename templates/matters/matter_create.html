@@ -487,70 +487,79 @@
     {% comment %}
       Optional, and open. It was behind a disclosure, which is what made a
       refused save re-open it with "See lahter on nõutav." under fields nobody
-      had touched; the view still binds this form only when somebody typed
-      something, so the block being visible does not make it mandatory
+      had touched; the view still binds this form only when somebody asked for
+      a step, so the block being visible does not make it mandatory
       (master specification 3.8, Agent-UI brief 9.6).
 
-      TEEN / OOTAN / JÄLGIN are still DO / WAIT / MONITOR, and the date still
-      carries a stored meaning — stated on the row now, as three chips, rather
-      than asked about in a nested disclosure called "Kuupäeva tähendus".
+      **Two questions, and the same two the Teema composer asks.** `Järgmiseks`
+      is what the lawyer will do; `Millal?` is the day they will do it. There
+      is no action kind and no date meaning here: TEEN / OOTAN / JÄLGIN and
+      Tähtaeg / Oodatav aeg / Vaatan üle were a vocabulary this application
+      introduced to describe the work rather than one the department used, and
+      they are retired from native creation. A step created here is stored as
+      `DO` / `DEADLINE` / `EXACT`, decided in the form and posted by nothing
+      (app/matters/forms.py, ADR 0052).
+
+      Every stored `WAIT` and `MONITOR` keeps its kind and still renders as one
+      on Minu töö, the register and the timeline. What went away is the
+      question, not the value.
     {% endcomment %}
     <div class="createform__row createform__row--panel">
       <div class="nextpanel" id="jargmine-tegevus">
-        <span class="field__label" id="jargmine-silt">Järgmine tegevus</span>
-        <span class="visually-hidden" id="jargmine-liik-silt">Mis laadi samm see on?</span>
-
-        <div class="nextpanel__line">
-          <div class="modeselect" role="radiogroup" aria-labelledby="jargmine-liik-silt"
-               id="jargmine-liik">
-            {% for choice in action_form.kind %}
-              <span class="modeselect__option">
-                {{ choice.tag }}
-                <label class="modechip modechip--{{ choice.data.value|lower }} modechip--choice"
-                       for="{{ choice.id_for_label }}">{{ choice.choice_label|upper }}</label>
-              </span>
-            {% endfor %}
-          </div>
-          <label class="field nextpanel__text">
-            <span class="visually-hidden">{{ action_form.text.label }}</span>
-            {{ action_form.text }}
-          </label>
-        </div>
-        {% if action_form.kind.errors %}
-          <span class="field__error">{{ action_form.kind.errors|first }}</span>
-        {% endif %}
+        <label class="field__label" id="jargmine-silt"
+               for="{{ action_form.text.id_for_label }}">{{ action_form.text.label }}</label>
+        {{ action_form.text }}
         {% if action_form.text.errors %}
           <span class="field__error">{{ action_form.text.errors|first }}</span>
         {% endif %}
 
-        <div class="nextpanel__line">
+        {% comment %}
+          MILLAL? Four spans and the exact box behind them, built exactly as the
+          composer builds them: the chips store nothing of their own, they write
+          the day they name into the one date field below, and that field is
+          what is submitted and validated. So the server sees one value however
+          it was chosen, the arithmetic happens once, on the server, in
+          Europe/Tallinn — and the form works with the chips ignored entirely
+          (app/matters/views.py `quick_date_choices`, static/js/ux.js).
+        {% endcomment %}
+        <div class="uxcomp__row" data-quickdate-group="{{ action_form.target_date.id_for_label }}">
+          <span class="uxcomp__q" id="jargmine-millal">{{ action_form.target_date.label }}</span>
+          {% for choice in quick_dates %}
+            <button type="button" class="uxchip" aria-pressed="false"
+                    data-quickdate="{{ choice.value }}"
+                    data-label-default="{{ choice.label }}"
+                    data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
+          {% endfor %}
+
           {% comment %}
-            What the date means, as chips. The selected one derives from the
-            kind and re-derives while nobody has touched it; once touched the
-            choice is theirs, and every combination the model permits stays
-            reachable — a DO whose date is a rough month is an expectation, not
-            a deadline (app/workflow/enums.py, Uus teema redesign §6).
+            A real disclosure rather than a scripted panel, so the exact date is
+            reachable and submittable with JavaScript switched off entirely.
+            Open whenever it holds a value or a refusal, so a rejected save
+            never hides the box the reader has to correct.
           {% endcomment %}
-          <div class="chiprow" id="jargmine-tahendus"
-               data-derives-from="jargmine-liik">
-            {% for choice in action_form.date_semantics %}
-              <label class="chip chip--meaning">
-                {{ choice.tag }}
-                <span class="chip__name">{{ choice.choice_label }}</span>
+          <details class="uxcomp__date"
+                   {% if action_form.target_date.value or action_form.target_date.errors %}open{% endif %}>
+            <summary class="uxchip">Kuupäev…</summary>
+            <div class="uxcomp__datebody">
+              <label class="visually-hidden"
+                     for="{{ action_form.target_date.id_for_label }}">
+                {{ action_form.target_date.label }}
               </label>
-            {% endfor %}
-          </div>
-          <label class="field nextpanel__date">
-            <span class="visually-hidden">{{ action_form.target_date.label }}</span>
-            {{ action_form.target_date }}
-          </label>
+              {{ action_form.target_date }}
+            </div>
+          </details>
+
+          {% comment %}
+            The refusal sits on the row rather than inside the disclosure.
+            «Vali järgmise tegevuse kuupäev» printed inside a closed «Kuupäev…»
+            is an error nobody can see, and the chips are how the date is nearly
+            always chosen (ADR 0052 §5).
+          {% endcomment %}
+          {% if action_form.target_date.errors %}
+            <span class="field__error">{{ action_form.target_date.errors|first }}</span>
+          {% endif %}
         </div>
-        {% if action_form.date_semantics.errors %}
-          <span class="field__error">{{ action_form.date_semantics.errors|first }}</span>
-        {% endif %}
-        {% if action_form.target_date.errors %}
-          <span class="field__error">{{ action_form.target_date.errors|first }}</span>
-        {% endif %}
+
         {% if action_form.responsible.errors %}
           <span class="field__error">{{ action_form.responsible.errors|first }}</span>
         {% endif %}

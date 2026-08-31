@@ -25,7 +25,7 @@ from django.utils import timezone
 
 from app.matters.forms import MatterCreateForm, NextActionForm
 from app.matters.models import Matter
-from app.workflow.enums import ActionKind, DateSemantics, Track
+from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Track
 from app.workflow.models import NextAction
 from tests import factories
 
@@ -38,6 +38,19 @@ def rendered_field(body: str, field_id: str) -> str:
     match = re.search(rf'<[^>]*id="{re.escape(field_id)}"[^>]*>', body)
     assert match, f"{field_id} is not rendered"
     return match.group(0)
+
+
+def _next_action_panel(body: str) -> str:
+    """Just the Järgmiseks panel, because the page says «tähtaeg» elsewhere.
+
+    `Arvamuse tähtaeg` is a different fact three rows up, and a whole-page
+    assertion that the word is absent would fail on it — or, worse, pass for
+    the wrong reason once somebody renamed it. The panel is bounded by its own
+    id and the actions row that follows it.
+    """
+    start = body.index('id="jargmine-tegevus"')
+    end = body.index("createform__actions", start)
+    return body[start:end]
 
 
 # ---------------------------------------------------------------------------
@@ -216,105 +229,252 @@ def test_a_second_stage_value_cannot_be_smuggled_in(signed_in, specialist):
 
 
 # ---------------------------------------------------------------------------
-# Järgmine tegevus
+# Järgmiseks
 # ---------------------------------------------------------------------------
+#
+# The panel used to ask three questions: what happens next, what *laadi samm*
+# it is, and what the date means. Two of those were a vocabulary this
+# application introduced rather than one the department used, and they are
+# retired from native creation (ADR 0052). What follows is the whole contract
+# that replaced them — two boxes, four outcomes, and a stored record whose kind
+# and date meaning nobody is asked about and nobody can post.
 
 
-def test_the_kind_is_three_visible_single_choice_cards(signed_in):
-    widget = NextActionForm(prefix="next").fields["kind"].widget
-    assert isinstance(widget, forms.RadioSelect)
-    assert widget.allow_multiple_selected is False
+def test_the_form_has_no_kind_and_no_date_meaning(signed_in):
+    """Removed from the contract, not hidden in the template.
 
-    body = signed_in.get(CREATE).content.decode()
-    for value in (ActionKind.DO, ActionKind.WAIT, ActionKind.MONITOR):
-        assert f'value="{value}"' in body
+    Hiding two inputs while still reading them would leave the endpoint
+    accepting a classification the page no longer teaches — which is the state
+    this replaces, and the reason the assertion is on `fields` rather than on
+    the rendered HTML.
+    """
+    fields = NextActionForm(prefix="next").fields
+
+    assert "kind" not in fields
+    assert "date_semantics" not in fields
+    assert set(fields) == {"text", "target_date", "responsible"}
 
 
-def test_the_kinds_are_the_same_three_chips_as_every_other_surface(signed_in):
-    """Teen, Ootan and Jälgin, in the shapes they carry everywhere else.
+def test_the_page_asks_two_questions_and_names_neither_vocabulary(signed_in):
+    """`Järgmiseks` and `Millal?`, and no TEEN / OOTAN / JÄLGIN anywhere near
+    them.
 
-    This replaces an assertion on three explanatory sentences — "Mul endal
-    tuleb midagi teha" and the other two. They made the distinction on a page
-    where the vocabulary was new; beside a date whose meaning is stated on the
-    same row, they were three lines explaining what the row already says. What
-    has to survive is the *distinction*, and that is carried by shape: TEEN
-    filled, OOTAN solid-outlined, JÄLGIN dashed, never by colour alone
-    (master specification 18.8, Uus teema redesign §6).
+    Scoped to the panel, because the page legitimately contains the word
+    *tähtaeg* — `Arvamuse tähtaeg` is a different fact, three rows up.
     """
     body = signed_in.get(CREATE).content.decode()
+    panel = _next_action_panel(body)
 
-    for value, shape in (("DO", "do"), ("WAIT", "wait"), ("MONITOR", "monitor")):
-        assert f'value="{value}"' in body
-        assert f"modechip--{shape}" in body
-
-    # And the three glosses are gone rather than merely moved.
-    assert "Mul endal tuleb midagi teha" not in body
-
-
-def test_the_date_meaning_is_no_longer_a_required_question(signed_in):
-    """ "Kuupäeva tähendus" asked about the data model, and it was mandatory."""
-    assert NextActionForm(prefix="next").fields["date_semantics"].required is False
+    assert "Järgmiseks" in panel
+    assert "Millal?" in panel
+    for retired in ("TEEN", "OOTAN", "JÄLGIN", "Tähtaeg", "Oodatav aeg", "Vaatan üle"):
+        assert retired not in panel, retired
+    # And the old label is gone rather than merely moved: "ootad" carried the
+    # retired classification back into the UI in one word.
+    assert "Mida järgmisena teed või ootad?" not in body
 
 
-@pytest.mark.parametrize(
-    ("kind", "semantics"),
-    [
-        (ActionKind.DO, DateSemantics.DEADLINE),
-        (ActionKind.WAIT, DateSemantics.EXPECTED_AROUND),
-        (ActionKind.MONITOR, DateSemantics.REVIEW_ON),
-    ],
-)
-def test_the_date_meaning_derives_from_the_kind_when_left_alone(signed_in, kind, semantics):
-    """Derived, and stored as the existing canonical enum value."""
+def test_the_quick_spans_are_the_composers_own(signed_in):
+    """Täna, Homme, +1 nädal, +2 nädalat — resolved on the server, written into
+    the one date field, and built from the same helper the Teema composer uses.
+
+    Each chip carries the day it resolves to. Doing that arithmetic in the
+    browser would answer in the reader's own timezone, and doing it twice would
+    let the two surfaces drift (app/matters/views.py `quick_date_choices`).
+    """
+    body = signed_in.get(CREATE).content.decode()
+    panel = _next_action_panel(body)
+    today = timezone.localdate()
+
+    assert 'data-quickdate-group="id_next-target_date"' in panel
+    for days, label in ((0, "Täna"), (1, "Homme"), (7, "+1 nädal"), (14, "+2 nädalat")):
+        when = today + timedelta(days=days)
+        assert f'data-quickdate="{when.day}.{when.month}.{when.year}"' in panel, label
+        assert label in panel
+    assert "Kuupäev…" in panel
+
+
+def test_the_date_box_does_not_start_on_today(signed_in):
+    """A blank new-Teema form must not silently contain a factual next-action
+    date nobody stated (ADR 0052 §5)."""
+    assert NextActionForm(prefix="next").fields["target_date"].initial is None
+
+    rendered = rendered_field(signed_in.get(CREATE).content.decode(), "id_next-target_date")
+    assert 'value=""' in rendered
+
+
+# -- the four outcomes ------------------------------------------------------
+
+
+def test_a_matter_can_still_be_created_with_no_next_action_at_all(signed_in):
+    """A. An opinion being drafted already has its Arvamuse tähtaeg. The block
+    is shown; it is not thereby mandatory."""
+    before = NextAction.objects.count()
+
+    signed_in.post(CREATE, {"title": "Ilma järgmise sammuta", "response_deadline": "7.9.2026"})
+
+    matter = Matter.objects.get(title="Ilma järgmise sammuta")
+    assert matter.response_deadline == date(2026, 9, 7)
+    assert not NextAction.objects.filter(matter=matter).exists()
+    assert NextAction.objects.count() == before
+
+
+def test_a_text_and_a_date_store_the_canonical_native_values(signed_in):
+    """B and C of the report: one Matter, one step, and DO / DEADLINE / EXACT.
+
+    Nobody chose those three. They are what the form writes, because on this
+    surface the date is the day the work gets done — which is what a DO with a
+    DEADLINE already means (ADR 0052 §3).
+    """
     target = timezone.localdate() + timedelta(days=10)
-    signed_in.post(
-        CREATE,
-        {
-            "title": f"Tuletatud tähendus {kind}",
-            "next-text": "Järgmine samm",
-            "next-kind": kind,
-            "next-date_semantics": "",
-            "next-target_date": f"{target.day}.{target.month}.{target.year}",
-        },
-    )
-    action = NextAction.objects.get(matter__title=f"Tuletatud tähendus {kind}")
-    assert (action.kind, action.date_semantics) == (kind, semantics)
-    assert action.target_date == target
 
-
-def test_an_explicit_date_meaning_still_wins(signed_in):
-    """The model permits pairs the derivation does not produce, and the
-    register's own parser uses them — a DO with a vague month is an expectation,
-    not a deadline. Deleting the choice would have deleted that."""
-    signed_in.post(
-        CREATE,
-        {
-            "title": "Ligikaudne tähtaeg",
-            "next-text": "Ootan eelnõu septembris",
-            "next-kind": ActionKind.DO,
-            "next-date_semantics": DateSemantics.EXPECTED_AROUND,
-            "next-target_date": "1.9.2026",
-        },
-    )
-    action = NextAction.objects.get(matter__title="Ligikaudne tähtaeg")
-    assert action.kind == ActionKind.DO
-    assert action.date_semantics == DateSemantics.EXPECTED_AROUND
-
-
-def test_a_deadline_without_a_date_is_still_refused(signed_in):
-    """The one combination worth refusing, and the derivation must not soften it."""
     response = signed_in.post(
         CREATE,
         {
-            "title": "Kuupäevata tähtaeg",
-            "next-text": "Koosta arvamus",
-            "next-kind": ActionKind.DO,
-            "next-date_semantics": "",
-            "next-target_date": "",
+            "title": "Kanooniline samm",
+            "next-text": "Vaadata uus eelnõu versioon üle",
+            "next-target_date": f"{target.day}.{target.month}.{target.year}",
         },
     )
+
+    assert response.status_code in (302, 303)
+    matter = Matter.objects.get(title="Kanooniline samm")
+    action = NextAction.objects.get(matter=matter)
+    assert action.text == "Vaadata uus eelnõu versioon üle"
+    assert action.kind == ActionKind.DO
+    assert action.date_semantics == DateSemantics.DEADLINE
+    assert action.date_precision == DatePrecision.EXACT
+    assert action.target_date == target
+
+
+def test_a_step_with_no_date_is_refused_rather_than_filed_for_today(signed_in):
+    """C. And the Matter is not written first and regretted afterwards."""
+    response = signed_in.post(
+        CREATE,
+        {"title": "Kuupäevata samm", "next-text": "Koosta arvamus"},
+    )
+
     assert response.status_code == 400
-    assert not Matter.objects.filter(title="Kuupäevata tähtaeg").exists()
+    assert not Matter.objects.filter(title="Kuupäevata samm").exists()
+    assert "Vali järgmise tegevuse kuupäev." in response.content.decode()
+    assert response.context["action_form"].errors["target_date"]
+
+
+def test_a_date_with_no_step_is_refused_rather_than_discarded(signed_in):
+    """D. The half nobody used to notice.
+
+    Under the old signal — "a next action was requested when `next-text` is
+    non-empty" — a lawyer who pressed `Homme` and then forgot the sentence got
+    a Teema created silently without the step they had just asked for. The date
+    is a choice somebody made, so it is answered rather than dropped.
+    """
+    tomorrow = timezone.localdate() + timedelta(days=1)
+
+    response = signed_in.post(
+        CREATE,
+        {
+            "title": "Sammuta kuupäev",
+            "next-target_date": f"{tomorrow.day}.{tomorrow.month}.{tomorrow.year}",
+        },
+    )
+
+    assert response.status_code == 400
+    assert not Matter.objects.filter(title="Sammuta kuupäev").exists()
+    assert "Kirjuta järgmine tegevus." in response.content.decode()
+    assert response.context["action_form"].errors["text"]
+
+
+def test_only_unrelated_optional_fields_create_no_step(signed_in, specialist):
+    """F. A Matter with half its facts filled in and a blank next-action block
+    is an ordinary Matter, not a refusal and not a step."""
+    before = NextAction.objects.count()
+
+    response = signed_in.post(
+        CREATE,
+        {
+            "title": "Ainult muud väljad",
+            "owner": specialist.pk,
+            "brief_summary": "Eelnõu kooskõlastusring",
+            "received_date": "7.9.2026",
+            "response_deadline": "23.9.2026",
+        },
+    )
+
+    assert response.status_code in (302, 303)
+    matter = Matter.objects.get(title="Ainult muud väljad")
+    assert not NextAction.objects.filter(matter=matter).exists()
+    assert NextAction.objects.count() == before
+
+
+# -- a crafted POST cannot classify ----------------------------------------
+
+
+@pytest.mark.parametrize("kind", [ActionKind.WAIT, ActionKind.MONITOR])
+def test_a_crafted_kind_cannot_create_anything_but_a_do(signed_in, kind):
+    """E. `kind` is not a field, so this is an unknown POST key.
+
+    Asserted on the stored row rather than on the response: the request
+    succeeds, which is the point — nothing was refused, and nothing the crafted
+    key named reached the record.
+    """
+    target = timezone.localdate() + timedelta(days=3)
+
+    signed_in.post(
+        CREATE,
+        {
+            "title": f"Meisterdatud liik {kind}",
+            "next-text": "Kontrollida, kas ministeerium vastas",
+            "next-kind": kind,
+            "next-target_date": f"{target.day}.{target.month}.{target.year}",
+        },
+    )
+
+    action = NextAction.objects.get(matter__title=f"Meisterdatud liik {kind}")
+    assert action.kind == ActionKind.DO
+
+
+@pytest.mark.parametrize("semantics", [DateSemantics.EXPECTED_AROUND, DateSemantics.REVIEW_ON])
+def test_a_crafted_date_meaning_cannot_control_the_stored_semantics(signed_in, semantics):
+    """E, the other half. The stored meaning is written by the form, not read."""
+    target = timezone.localdate() + timedelta(days=3)
+
+    signed_in.post(
+        CREATE,
+        {
+            "title": f"Meisterdatud tähendus {semantics}",
+            "next-text": "Vaadata uus eelnõu versioon üle",
+            "next-date_semantics": semantics,
+            "next-target_date": f"{target.day}.{target.month}.{target.year}",
+        },
+    )
+
+    action = NextAction.objects.get(matter__title=f"Meisterdatud tähendus {semantics}")
+    assert action.date_semantics == DateSemantics.DEADLINE
+    assert action.date_precision == DatePrecision.EXACT
+
+
+@pytest.mark.parametrize("precision", [DatePrecision.MONTH, DatePrecision.QUARTER])
+def test_a_crafted_precision_cannot_make_an_approximate_native_step(signed_in, precision):
+    """The precision group was deleted rather than hidden on both surfaces. A
+    lawyer's own working day is a day (ADR 0052 §4)."""
+    target = timezone.localdate() + timedelta(days=3)
+
+    signed_in.post(
+        CREATE,
+        {
+            "title": f"Meisterdatud täpsus {precision}",
+            "next-text": "Vaadata uus eelnõu versioon üle",
+            "next-date_precision": precision,
+            "next-target_date": f"{target.day}.{target.month}.{target.year}",
+        },
+    )
+
+    action = NextAction.objects.get(matter__title=f"Meisterdatud täpsus {precision}")
+    assert action.date_precision == DatePrecision.EXACT
+    assert not action.is_approximate
+
+
+# -- the responsible person is untouched ------------------------------------
 
 
 def test_the_responsible_person_defaults_to_the_chosen_owner(signed_in, specialist):
@@ -324,8 +484,7 @@ def test_the_responsible_person_defaults_to_the_chosen_owner(signed_in, speciali
         {
             "title": "Vaikimisi vastutaja",
             "owner": specialist.pk,
-            "next-text": "Jälgi menetlust",
-            "next-kind": ActionKind.MONITOR,
+            "next-text": "Jälgida menetlust",
             "next-target_date": "1.9.2026",
         },
     )
@@ -339,8 +498,7 @@ def test_naming_someone_else_still_wins(signed_in, specialist, other_specialist)
         {
             "title": "Määratud vastutaja",
             "owner": specialist.pk,
-            "next-text": "Jälgi menetlust",
-            "next-kind": ActionKind.MONITOR,
+            "next-text": "Jälgida menetlust",
             "next-target_date": "1.9.2026",
             "next-responsible": other_specialist.pk,
         },
@@ -349,21 +507,32 @@ def test_naming_someone_else_still_wins(signed_in, specialist, other_specialist)
     assert action.responsible == other_specialist
 
 
+def test_an_ineligible_responsible_is_still_refused(signed_in, specialist):
+    """The narrowed queryset is unchanged by the simplification: a control the
+    page does not render is not a control the endpoint accepts (ADR 0036)."""
+    outsider = factories.UserFactory(is_active=False)
+
+    response = signed_in.post(
+        CREATE,
+        {
+            "title": "Kõlbmatu vastutaja",
+            "owner": specialist.pk,
+            "next-text": "Jälgida menetlust",
+            "next-target_date": "1.9.2026",
+            "next-responsible": outsider.pk,
+        },
+    )
+
+    assert response.status_code == 400
+    assert not Matter.objects.filter(title="Kõlbmatu vastutaja").exists()
+
+
 def test_opening_the_form_creates_nothing(signed_in):
     """A synthetic NextAction created just by rendering the page would be a
     record of an intention nobody had."""
     before = NextAction.objects.count()
     signed_in.get(CREATE)
     assert NextAction.objects.count() == before
-
-
-def test_a_matter_can_still_be_created_with_no_next_action_at_all(signed_in):
-    """An opinion being drafted already has its Arvamuse tähtaeg. The block is
-    shown; it is not thereby mandatory."""
-    signed_in.post(CREATE, {"title": "Ilma järgmise sammuta", "response_deadline": "7.9.2026"})
-    matter = Matter.objects.get(title="Ilma järgmise sammuta")
-    assert matter.response_deadline == date(2026, 9, 7)
-    assert not NextAction.objects.filter(matter=matter).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -385,7 +554,10 @@ def test_the_page_says_which_deadline_is_which(signed_in):
     body = signed_in.get(CREATE).content.decode()
 
     assert "Arvamuse tähtaeg" in body
-    assert "Järgmine tegevus" in body
+    # The panel's own heading is `Järgmiseks` now — the composer's word for the
+    # same thing, over the box that takes it. The panel title it replaced said
+    # «Järgmine tegevus» above a mode row nobody chooses any more (ADR 0052).
+    assert "Järgmiseks" in _next_action_panel(body)
     assert 'name="response_deadline"' in body
     assert 'name="next-target_date"' in body
     # Neither is inside a `<details>` any more, so neither can be the one a
@@ -429,23 +601,27 @@ def test_a_refused_save_does_not_make_the_optional_block_look_mandatory(signed_i
     # free to change.
     body = response.content.decode()
     assert body.count("See lahter on nõutav.") == 1
-    assert "Tähtajaline tegevus vajab kuupäeva." not in body
+    assert "Vali järgmise tegevuse kuupäev." not in body
+    assert "Kirjuta järgmine tegevus." not in body
 
 
 def test_a_refused_next_action_still_reopens_with_what_was_typed(signed_in):
     """The other half. Somebody who *did* fill it in must get it back."""
     response = signed_in.post(
         CREATE,
-        {
-            "title": "",
-            "next-text": "Koosta arvamus",
-            "next-kind": ActionKind.DO,
-            "next-target_date": "",
-        },
+        {"title": "", "next-text": "Koosta arvamus", "next-target_date": "1.9.2026"},
     )
 
     assert response.status_code == 400
     action_form = response.context["action_form"]
     assert action_form.is_bound
     assert action_form["text"].value() == "Koosta arvamus"
-    assert "Koosta arvamus" in response.content.decode()
+
+    # Both halves survive, and the date's disclosure comes back open — a value
+    # redisplayed inside a closed «Kuupäev…» is a value nobody can see they
+    # still have.
+    panel = _next_action_panel(response.content.decode())
+    assert "Koosta arvamus" in panel
+    assert 'value="1.9.2026"' in panel
+    disclosure = panel[panel.index("uxcomp__date") : panel.index("Kuupäev…")]
+    assert "open" in disclosure

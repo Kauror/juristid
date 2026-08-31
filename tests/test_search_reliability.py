@@ -725,9 +725,7 @@ def test_a_rolled_back_business_write_takes_its_index_row_with_it(specialist) ->
     ever had, which is worse than staleness because there is nothing to compare
     it against.
     """
-    matter = factories.MatterFactory(
-        owner=specialist, title="Kinnitatud pealkiri", reference_year=2026, reference_number=808
-    )
+    matter = factories.MatterFactory(owner=specialist, title="Kinnitatud pealkiri")
     rebuild_all()
 
     with pytest.raises(RuntimeError), transaction.atomic():
@@ -766,8 +764,6 @@ def test_the_result_page_does_not_query_once_per_matter(signed_in, specialist) -
             matter = factories.MatterFactory(
                 owner=specialist,
                 title=f"Ehitusseadustiku muutmise eelnõu {offset + index}",
-                reference_year=2026,
-                reference_number=900 + offset + index,
             )
             set_next_action(
                 matter=matter,
@@ -794,6 +790,17 @@ def test_the_result_page_does_not_query_once_per_matter(signed_in, specialist) -
 # A rebuild must not make ordinary work fail
 # ---------------------------------------------------------------------------
 
+
+#: A note on references in this file.
+#:
+#: `MatterFactory.reference_number` is a `factory.Sequence`, and a sequence is
+#: counted per *process*, not per test. Three Matters below used to pin a
+#: literal — 501, 808, 900+ — against that counter, which holds only while no
+#: shard ever creates that many Matters before reaching this file. CI partitions
+#: by live test count, so adding a test anywhere re-shards, and on 2026-08-31 a
+#: shard reached 501 and `matters_unique_human_reference` failed a concurrency
+#: test that has nothing to do with references. None of the three ever asserted
+#: on the reference; they now take the sequence like every other Matter here.
 
 LOCK_WAIT_TIMEOUT = 20
 
@@ -834,9 +841,7 @@ def test_a_matter_save_during_a_full_rebuild_still_succeeds(specialist, monkeypa
     allowed to queue on a lock, and only then is the rebuild released. Without
     the gate this raises ``IntegrityError`` in the save thread every time.
     """
-    matter = factories.MatterFactory(
-        owner=specialist, title="Algne pealkiri", reference_year=2026, reference_number=501
-    )
+    matter = factories.MatterFactory(owner=specialist, title="Algne pealkiri")
     for index in range(20):
         factories.MatterFactory(owner=specialist, title=f"Taustateema {index}")
     rebuild_all()

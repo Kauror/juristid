@@ -1076,61 +1076,6 @@
     });
   }
 
-  /* ---- What the Järgmine tegevus date means ------------------------------
-   * The date meaning is a real stored field, and it is now three chips on the
-   * row with the date rather than a label swapped to describe it. What is left
-   * for a script is the derivation: TEEN means Tähtaeg, OOTAN means Oodatav
-   * aeg, JÄLGIN means Vaatan üle, and choosing a kind should move the meaning
-   * with it — until somebody chooses a meaning themselves, after which it is
-   * theirs and no kind change may overwrite it.
-   *
-   * Presentation only, twice over. The server derives the same values from the
-   * same kind when the field arrives blank, so a browser with scripting off
-   * stores exactly what a browser with scripting on stores
-   * (app/workflow/enums.py, `default_date_semantics`).
-   */
-  var MEANING_FOR_KIND = {
-    DO: "DEADLINE",
-    WAIT: "EXPECTED_AROUND",
-    MONITOR: "REVIEW_ON",
-  };
-
-  function bindDerivedMeaning(scope) {
-    (scope || document).querySelectorAll("[data-derives-from]").forEach(function (row) {
-      if (!once(row, "DerivedMeaning")) {
-        return;
-      }
-      var kinds = document.getElementById(row.getAttribute("data-derives-from"));
-      if (!kinds) {
-        return;
-      }
-      var touched = false;
-      row.querySelectorAll("input[type=radio]").forEach(function (radio) {
-        radio.addEventListener("change", function () {
-          touched = true;
-        });
-      });
-      var sync = function () {
-        if (touched) {
-          return;
-        }
-        var chosen = kinds.querySelector("input[type=radio]:checked");
-        var wanted = chosen ? MEANING_FOR_KIND[chosen.value] : null;
-        if (!wanted) {
-          return;
-        }
-        var target = row.querySelector('input[value="' + wanted + '"]');
-        if (target) {
-          target.checked = true;
-        }
-      };
-      kinds.querySelectorAll("input[type=radio]").forEach(function (radio) {
-        radio.addEventListener("change", sync);
-      });
-      sync();
-    });
-  }
-
   /* Arriving from a number: put the reader on the rows.
    *
    * Every figure on Ulevaade links to `...#tulemused`, and a filtered register
@@ -1729,7 +1674,6 @@
     bindDatePickers(document);
     bindChoiceFilters(document);
     bindExclusiveName(document);
-    bindDerivedMeaning(document);
     bindChipCounts(document);
     bindStageHelp(document);
     bindRequiredAction(document);
@@ -1756,7 +1700,6 @@
     bindDatePickers(event.target.querySelector ? event.target : document);
     bindChoiceFilters(event.target.querySelector ? event.target : document);
     bindExclusiveName(event.target.querySelector ? event.target : document);
-    bindDerivedMeaning(event.target.querySelector ? event.target : document);
     bindChipCounts(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);
     bindRequiredAction(event.target.querySelector ? event.target : document);

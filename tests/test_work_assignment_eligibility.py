@@ -100,6 +100,18 @@ def ineligible(request, administrator, reader, staff_specialist, superuser_head,
 INELIGIBLE_KINDS = ["administrator", "reader", "staff", "superuser", "inactive"]
 
 
+def _in_a_week() -> str:
+    """A date for `Järgmiseks`, because a native step now requires one.
+
+    `NextActionForm` refuses a step with no date rather than filing it for
+    today (ADR 0052 addendum). Every post below is here to exercise *who may be
+    handed work*, so each carries a date that is never the thing under test —
+    without it the refusal these tests read would be a missing date wearing an
+    eligibility failure's clothes.
+    """
+    return format_estonian_date(timezone.localdate() + timedelta(days=7))
+
+
 # =========================================================================
 # Uus teema — the create form
 # =========================================================================
@@ -230,8 +242,14 @@ def test_a_crafted_next_action_post_cannot_name_an_ineligible_responsible(
         reverse("matters:set_action", kwargs={"pk": normal_matter.pk}),
         {
             "text": "Meisterdatud samm",
+            # Unknown POST keys since ADR 0052's addendum: `NextActionForm` has
+            # no kind and no date meaning. They are kept here on purpose — a
+            # crafted POST that names both an ineligible colleague *and* a
+            # retired classification must be refused for the colleague, and
+            # must not have smuggled the classification in on the way past.
             "kind": ActionKind.WAIT,
             "date_semantics": DateSemantics.EXPECTED_AROUND,
+            "target_date": _in_a_week(),
             "responsible": str(target.pk),
         },
     )
@@ -253,7 +271,7 @@ def test_an_omitted_responsible_still_falls_back_to_the_matter_owner(
 
     response = client.post(
         reverse("matters:set_action", kwargs={"pk": normal_matter.pk}),
-        {"text": "Ootan vastust", "kind": ActionKind.WAIT},
+        {"text": "Küsida ministeeriumilt", "target_date": _in_a_week()},
     )
 
     assert response.status_code == 200
@@ -277,7 +295,7 @@ def test_a_new_step_on_a_departed_colleagues_matter_is_refused(client, specialis
 
     response = client.post(
         reverse("matters:set_action", kwargs={"pk": matter.pk}),
-        {"text": "Ootan vastust", "kind": ActionKind.WAIT},
+        {"text": "Küsida ministeeriumilt", "target_date": _in_a_week()},
     )
 
     assert response.status_code == 400
@@ -290,7 +308,7 @@ def test_an_eligible_responsible_is_accepted(client, specialist, normal_matter, 
 
     response = client.post(
         reverse("matters:set_action", kwargs={"pk": normal_matter.pk}),
-        {"text": "Koostan vastuse", "kind": ActionKind.WAIT, "responsible": str(head.pk)},
+        {"text": "Koostada vastus", "target_date": _in_a_week(), "responsible": str(head.pk)},
     )
 
     assert response.status_code == 200
@@ -315,7 +333,7 @@ def test_an_omitted_responsible_defaults_to_an_owner_who_is_a_specialist(
 
     response = client.post(
         reverse("matters:set_action", kwargs={"pk": normal_matter.pk}),
-        {"text": "Koostan vastuse", "kind": ActionKind.WAIT},
+        {"text": "Koostada vastus", "target_date": _in_a_week()},
     )
 
     assert response.status_code == 200
@@ -331,7 +349,7 @@ def test_an_omitted_responsible_defaults_to_an_owner_who_is_the_department_head(
 
     response = client.post(
         reverse("matters:set_action", kwargs={"pk": matter.pk}),
-        {"text": "Koostan vastuse", "kind": ActionKind.WAIT},
+        {"text": "Koostada vastus", "target_date": _in_a_week()},
     )
 
     assert response.status_code == 200
@@ -352,7 +370,7 @@ def test_an_omitted_responsible_is_refused_when_the_owner_is_an_administrator(
 
     response = client.post(
         reverse("matters:set_action", kwargs={"pk": matter.pk}),
-        {"text": "Koostan vastuse", "kind": ActionKind.WAIT},
+        {"text": "Koostada vastus", "target_date": _in_a_week()},
     )
 
     assert response.status_code == 400
@@ -415,7 +433,7 @@ def test_a_matter_with_no_owner_at_all_still_takes_a_step(client, specialist):
 
     response = client.post(
         reverse("matters:set_action", kwargs={"pk": matter.pk}),
-        {"text": "Ootan vastust", "kind": ActionKind.WAIT},
+        {"text": "Küsida ministeeriumilt", "target_date": _in_a_week()},
     )
 
     assert response.status_code == 200

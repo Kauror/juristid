@@ -60,8 +60,11 @@ def file_teema(page, base_url, *, title: str, addressee: str) -> None:
     create_form(page, base_url)
     page.fill("#id_title", title)
     page.fill("#id_addressee_name", addressee)
-    page.fill("#id_next-text", "Jälgin adressaadi vastust")
-    page.locator('input[name="next-kind"][value="MONITOR"]').check()
+    page.fill("#id_next-text", "Kontrollida, kas adressaat vastas")
+    # `Millal?` is required with the sentence now, and the quick span is how a
+    # date is nearly always chosen (ADR 0052 addendum). The chip carries the day
+    # the server resolved, so nothing here does date arithmetic.
+    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 

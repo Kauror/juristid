@@ -16,6 +16,8 @@ nothing here may need a click to become true.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 from playwright.sync_api import expect
 
@@ -175,92 +177,154 @@ def test_the_form_says_where_a_missing_institution_comes_from(page, base_url):
 
 
 # ---------------------------------------------------------------------------
-# Järgmine tegevus
+# Järgmiseks
 # ---------------------------------------------------------------------------
 
 
-def test_the_three_kinds_are_the_shapes_they_are_everywhere_else(page, base_url, screenshots):
-    """TEEN filled, OOTAN solid-outlined, JÄLGIN dashed.
+def _panel(page):
+    return page.locator("#jargmine-tegevus")
 
-    The same three chips as Minu töö, the register and the Teema composer, and
-    the same rule: shape carries the distinction, colour never alone. It
-    replaces three described cards whose glosses explained a vocabulary the
-    reader has now met on four other surfaces (Uus teema redesign §6).
+
+def test_the_panel_asks_two_questions_and_names_neither_vocabulary(page, base_url, screenshots):
+    """`Järgmiseks`, `Millal?`, and the four spans — and nothing to classify.
+
+    This replaces two assertions: three mode chips in the shapes TEEN / OOTAN /
+    JÄLGIN carry, and three meaning chips beside the date. Both were a
+    vocabulary this application introduced rather than one the department used,
+    and native creation no longer asks for either (ADR 0052).
+
+    Scoped to the panel throughout. The page legitimately contains the word
+    *tähtaeg* — `Arvamuse tähtaeg` is a different fact, further up the form —
+    so a whole-page assertion that it is absent would fail on the wrong thing.
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    block = page.locator("#jargmine-liik")
-    expect(block).to_be_visible()
-    for value in ("do", "wait", "monitor"):
-        expect(block.locator(f".modechip--{value}")).to_have_count(1)
+    panel = _panel(page)
+    expect(panel).to_be_visible()
+    for asked in ("Järgmiseks", "Millal?", "Täna", "Homme", "+1 nädal", "+2 nädalat"):
+        expect(panel).to_contain_text(asked)
+    expect(panel.locator("summary", has_text="Kuupäev…")).to_have_count(1)
 
-    borders = block.evaluate(
-        """node => ['do', 'wait', 'monitor'].map(kind =>
-              getComputedStyle(node.querySelector('.modechip--' + kind)).borderStyle)"""
-    )
-    assert borders[2] == "dashed", borders
-    assert borders[0] == "solid" and borders[1] == "solid", borders
+    for retired in ("TEEN", "OOTAN", "JÄLGIN", "Tähtaeg", "Oodatav aeg", "Vaatan üle"):
+        expect(panel).not_to_contain_text(retired)
+    expect(panel.locator('[name="next-kind"]')).to_have_count(0)
+    expect(panel.locator('[name="next-date_semantics"]')).to_have_count(0)
+    expect(panel.locator(".modechip")).to_have_count(0)
+
     screenshots(page, "jargmine-tegevus")
 
 
-def test_only_one_kind_can_be_active(page, base_url):
+def test_the_date_box_starts_empty(page, base_url):
+    """A blank form must not silently contain today as a next-action date."""
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    wait = page.locator('input[name="next-kind"][value="WAIT"]')
-    monitor = page.locator('input[name="next-kind"][value="MONITOR"]')
-    wait.check()
-    expect(wait).to_be_checked()
-    monitor.check()
-    expect(monitor).to_be_checked()
-    expect(wait).not_to_be_checked()
+    expect(page.locator("#id_next-target_date")).to_have_value("")
 
 
 @pytest.mark.parametrize(
-    ("value", "meaning"),
-    [
-        ("DO", "DEADLINE"),
-        ("WAIT", "EXPECTED_AROUND"),
-        ("MONITOR", "REVIEW_ON"),
-    ],
+    ("label", "days"),
+    [("Täna", 0), ("Homme", 1), ("+1 nädal", 7), ("+2 nädalat", 14)],
 )
-def test_the_date_meaning_follows_the_chosen_kind(page, base_url, value, meaning):
-    """The stored meaning, stated on the row rather than asked about.
+def test_a_quick_span_writes_its_day_into_the_one_date_field(page, base_url, label, days):
+    """The chips store nothing of their own.
 
-    It was a nested disclosure headed "Täpsusta, mida kuupäev tähendab" over a
-    select called "Kuupäeva tähendus" — a question in the vocabulary of the
-    database. Three chips beside the date say the same thing in the vocabulary
-    of the work, and the chosen one still derives from the kind.
+    Each writes the day the *server* resolved for it into the exact-date box,
+    which is the field that is submitted and validated — so the form works with
+    the chips ignored entirely, and the arithmetic never happens in the
+    reader's timezone (app/matters/views.py `quick_date_choices`).
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    page.locator(f'input[name="next-kind"][value="{value}"]').check()
-    expect(page.locator(f'input[name="next-date_semantics"][value="{meaning}"]')).to_be_checked()
+    chip = _panel(page).get_by_role("button", name=label, exact=False).first
+    expected = chip.get_attribute("data-quickdate")
+    # The server's arithmetic, checked against the browser's own clock rather
+    # than restated from it: the page is authoritative, and this is what says so.
+    wanted = date.today() + timedelta(days=days)
+    assert expected == f"{wanted.day}.{wanted.month}.{wanted.year}", expected
+    chip.click()
+
+    expect(page.locator("#id_next-target_date")).to_have_value(expected)
+    expect(chip).to_have_attribute("aria-pressed", "true")
+
+    # And it is the value that is actually stored, not merely the value that is
+    # shown: the chip writes into the submitted field and nothing else does.
+    page.fill("#id_title", f"Kiirvalik {label}")
+    page.fill("#id_next-text", f"Vaadata eelnõu üle ({label})")
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_load_state("networkidle")
+
+    expect(page.locator(".uxnext__text")).to_have_text(f"Vaadata eelnõu üle ({label})")
+    # `.uxnext__date` rather than the whole row: the row also carries the
+    # «Lükka edasi» menu, whose options print dates of their own.
+    expect(page.locator(".uxnext__date")).to_contain_text(expected)
 
 
-def test_a_chosen_meaning_survives_a_change_of_kind(page, base_url):
-    """Once somebody has said what the date means, it is theirs.
+def test_the_exact_box_behind_kuupaev_takes_a_typed_date(page, base_url):
+    """A real `<details>`, so the exact date is reachable and submittable with
+    scripting switched off entirely."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
 
-    The model permits pairs the derivation does not produce — a DO whose source
-    names a vague month is an expectation, not a deadline — and the register's
-    own parser records them. A derivation that overwrote an explicit choice
-    would make those unreachable from the page.
+    page.fill("#id_title", "Käsitsi kuupäev")
+    page.fill("#id_next-text", "Vaadata uus eelnõu versioon üle")
+    _panel(page).locator("summary", has_text="Kuupäev…").click()
+    page.fill("#id_next-target_date", "1.9.2026")
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_load_state("networkidle")
+
+    expect(page.locator(".uxnext__text")).to_have_text("Vaadata uus eelnõu versioon üle")
+    # The date this application writes: `1.9.2026`, no leading zeros, and read
+    # off the step's own element rather than the row — the «Lükka edasi» menu
+    # beside it prints zero-padded days of its own (app/core/dates.py).
+    expect(page.locator(".uxnext__date")).to_contain_text("1.9.2026")
+
+
+def test_a_step_with_no_date_is_refused_and_the_text_survives(page, base_url):
+    """The refusal a person actually meets, and what they get back."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    page.fill("#id_title", "Kuupäevata samm brauserist")
+    page.fill("#id_next-text", "Vaadata uus eelnõu versioon üle")
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_load_state("networkidle")
+
+    expect(_panel(page)).to_contain_text("Vali järgmise tegevuse kuupäev.")
+    expect(page.locator("#id_next-text")).to_have_value("Vaadata uus eelnõu versioon üle")
+    expect(page.locator("#id_title")).to_have_value("Kuupäevata samm brauserist")
+
+
+def test_a_date_with_no_step_is_refused_and_the_date_survives(page, base_url):
+    """The other half, and the one the old page dropped in silence.
+
+    Pressing `Homme` and then forgetting the sentence used to create the Teema
+    without the step — the view read `next-text` alone to decide whether one had
+    been asked for. A chosen date is a decision somebody made, so it is answered
+    rather than discarded (ADR 0052 addendum).
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
-    around = page.locator('input[name="next-date_semantics"][value="EXPECTED_AROUND"]')
-    around.check()
-    page.locator('input[name="next-kind"][value="MONITOR"]').check()
+    page.fill("#id_title", "Sammuta kuupäev brauserist")
+    chip = _panel(page).get_by_role("button", name="Homme", exact=False).first
+    chosen = chip.get_attribute("data-quickdate")
+    chip.click()
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_load_state("networkidle")
 
-    expect(around).to_be_checked()
+    expect(_panel(page)).to_contain_text("Kirjuta järgmine tegevus.")
+    expect(page.locator("#id_next-target_date")).to_have_value(chosen)
+    # And the box holding it is open, because a value redisplayed inside a
+    # closed «Kuupäev…» is a value nobody can see they still have.
+    expect(page.locator("#id_next-target_date")).to_be_visible()
 
 
 def test_the_two_deadlines_are_two_places_on_the_page(page, base_url):
-    """Arvamuse tähtaeg is when this opinion must go out; Järgmine tegevus is
-    what happens next with the file.
+    """Arvamuse tähtaeg is when this opinion must go out; Järgmiseks is what
+    happens next with the file.
 
     A paragraph used to say so, because both were behind disclosures and a
     reader could have only one of them on screen. Both are visible now — one a
@@ -271,7 +335,7 @@ def test_the_two_deadlines_are_two_places_on_the_page(page, base_url):
     create_form(page, base_url)
 
     expect(page.locator('input[name="response_deadline"]')).to_be_visible()
-    expect(page.locator("#jargmine-tegevus")).to_be_visible()
+    expect(_panel(page)).to_be_visible()
     expect(page.get_by_text("Arvamuse tähtaeg on eraldi")).to_have_count(0)
 
 
@@ -411,8 +475,8 @@ def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
 
     page.fill("#id_title", "Vastutaja pärandub järgmisele sammule")
     page.locator('input[name="owner"]').first.check()
-    page.fill("#id_next-text", "Jälgi menetluse käiku")
-    page.locator('input[name="next-kind"][value="MONITOR"]').check()
+    page.fill("#id_next-text", "Jälgida menetluse käiku")
+    _panel(page).locator("summary", has_text="Kuupäev…").click()
     page.fill("#id_next-target_date", "1.9.2026")
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
@@ -423,9 +487,9 @@ def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
     # sentence (Teema redesign §8). The service still assigns one, which is what
     # this test is actually about, so it is checked where it is visible: the
     # step appears in that person's own Minu töö queue.
-    expect(page.locator(".uxnext__text")).to_have_text("Jälgi menetluse käiku")
+    expect(page.locator(".uxnext__text")).to_have_text("Jälgida menetluse käiku")
     go_to(page, "Minu asjad")
-    expect(page.get_by_text("Jälgi menetluse käiku").first).to_be_visible()
+    expect(page.get_by_text("Jälgida menetluse käiku").first).to_be_visible()
 
 
 # ---------------------------------------------------------------------------
@@ -444,14 +508,19 @@ def _document_overflows(page) -> bool:
     )
 
 
-@pytest.mark.parametrize("width", [1440, 1280, 1024, 420])
+@pytest.mark.parametrize("width", [1440, 1280, 1024, 768, 420])
 def test_the_form_survives_a_narrow_window(page, base_url, width):
-    """Six rows of chips now, and nothing hidden behind a disclosure.
+    """Five rows of chips now, and nothing hidden behind a disclosure.
 
     Vastutaja, Saatja, twenty-two Valdkonnad, eleven Hetkeseis, eight
-    Menetlusliik and Adressaat — plus the three mode chips and the three date
-    meanings. A chip that refused to wrap would take the whole page sideways
-    with it, and at 1024 the paired rows have to stop being pairs.
+    Menetlusliik and Adressaat — plus the four quick spans and the «Kuupäev…»
+    disclosure on the `Millal?` row. A chip that refused to wrap would take the
+    whole page sideways with it, and at 1024 the paired rows have to stop being
+    pairs.
+
+    The mode row and the meaning row are gone from this list rather than from
+    the count of things that must wrap: the `Millal?` row is the one that has
+    to fold now, and 768 was added because that is where it starts to.
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
@@ -459,6 +528,11 @@ def test_the_form_survives_a_narrow_window(page, base_url, width):
     page.wait_for_load_state("networkidle")
 
     assert not _document_overflows(page), f"the create form scrolls sideways at {width}px"
+
+    # The two controls a narrow window most easily strands: the disclosure that
+    # holds the exact date, and the action that submits the form.
+    expect(_panel(page).locator("summary", has_text="Kuupäev…")).to_be_visible()
+    expect(page.get_by_role("button", name="Loo teema")).to_be_visible()
 
 
 @pytest.mark.parametrize("width", [1440, 1280, 1024])
@@ -468,6 +542,11 @@ def test_the_whole_form_is_reachable_without_opening_anything(page, base_url, wi
     Not "everything fits on one screen" — it does not, and the design says so.
     What must hold is that no field needs a click to *exist*, so a reader who
     scrolls has seen the whole form.
+
+    `next-target_date` sits inside the «Kuupäev…» disclosure, and is counted
+    here on the same rule: it is in the document at load, the four quick spans
+    write into it without anybody opening anything, and the disclosure is a real
+    `<details>` so it submits with scripting off (ADR 0052 §4).
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
