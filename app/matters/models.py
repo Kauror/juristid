@@ -937,3 +937,94 @@ class PersonalScratchpad(BaseModel):
 
     def __str__(self) -> str:
         return f"scratchpad @ {self.user_id}"
+
+
+class MatterAssignmentNotice(BaseModel):
+    """«Uus asi» — one receipt saying a colleague put this Matter on my desk.
+
+    Deliberately not a notification system. There is no channel, no preference,
+    no bell and no counter anywhere else in the product; there is one question,
+    asked on Minu asjad and nowhere else: *has somebody just put a new Matter on
+    my desk?* Everything this table holds exists to answer that and to stop
+    answering it once the person has looked (docs/adr/0051).
+
+    **It stores no copy of anything.** Not the title, not the owner's name, not
+    a URL. Those are canonical on the Matter and on the User, and a notice that
+    carried its own copy would go on saying «Sandra määras» about a Matter that
+    has since been renamed and reassigned.
+
+    **It is personal, in the same absolute sense the scratchpad is.** The
+    selector reads ``recipient=user`` and the manager's view of a colleague's
+    desk does not query it at all, so the block is absent from that response
+    rather than hidden in it (:class:`PersonalScratchpad`,
+    ``app/matters/person_work.py``).
+
+    **Two nullable stamps rather than a deletion.** ``viewed_at`` is the read
+    receipt, set only when the recipient opens the Matter *from this block*.
+    ``superseded_at`` is what happens when the assignment stops being true — the
+    file is handed on to somebody else, or taken off everybody's desk — because
+    a notice that stayed unread through a reassignment would keep offering a
+    Matter its recipient no longer owns. Neither stamp removes the row: what
+    landed on somebody's desk in March is a fact about March.
+    """
+
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.CASCADE,
+        related_name="assignment_notices",
+        verbose_name="teema",
+    )
+    #: Who the Matter was handed to. CASCADE for the same reason the scratchpad
+    #: cascades: this is one person's workflow state and it has no meaning once
+    #: the person is gone. It is not attribution.
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="assignment_notices",
+        verbose_name="saaja",
+    )
+    #: Who did the handing. May equal ``recipient``: assigning a Matter to
+    #: yourself is an ordinary act here and produces an ordinary notice.
+    #: SET_NULL rather than CASCADE — the receipt survives the departure of the
+    #: colleague who wrote it, exactly as the audit trail does.
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assignment_notices_given",
+        verbose_name="määraja",
+    )
+    viewed_at = models.DateTimeField(null=True, blank=True, verbose_name="vaadatud")
+    superseded_at = models.DateTimeField(null=True, blank=True, verbose_name="asendatud")
+
+    class Meta:
+        verbose_name = "uue asja teavitus"
+        verbose_name_plural = "uue asja teavitused"
+        ordering = ["-created_at"]
+        constraints = [
+            # One active notice per Matter per person, and *partial* so that a
+            # genuinely new assignment later — Marko, then Ireen, then Marko
+            # again — is still allowed. A permanent unique constraint would make
+            # legitimate reassignment impossible; this one only forbids the
+            # duplicate that a repeated request could otherwise create
+            # (docs/adr/0051).
+            models.UniqueConstraint(
+                fields=["matter", "recipient"],
+                condition=models.Q(viewed_at__isnull=True, superseded_at__isnull=True),
+                name="matters_one_active_assignment_notice",
+            )
+        ]
+        indexes = [
+            # The Minu asjad read, exactly: this person's active notices, newest
+            # first. Partial, because every row this index will ever be asked
+            # about is an active one and the table's whole history is not.
+            models.Index(
+                fields=["recipient", "-created_at"],
+                condition=models.Q(viewed_at__isnull=True, superseded_at__isnull=True),
+                name="matters_active_notice_read",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"assignment notice {self.matter_id} → {self.recipient_id}"

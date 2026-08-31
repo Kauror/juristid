@@ -53,6 +53,18 @@ urlpatterns = [
     # The scratchpad's autosave. `request.user` only — there is deliberately no
     # subject in this path (03-BACKEND §2).
     path("minu-asjad/markmed/", views.save_scratchpad, name="save_scratchpad"),
+    # Opening a newly assigned Teema *from* «Uus asi». Keyed on the notice and
+    # never on the Matter, because the notice is the thing being acknowledged
+    # and it is the recipient's own: the view looks it up by
+    # `(id, recipient=request.user)`, so there is no id in this path that would
+    # let one person clear another's queue. A POST, so an ordinary GET of the
+    # Matter — by any route, in any workflow — cannot mark it read
+    # (docs/adr/0051).
+    path(
+        "minu-asjad/uus/<uuid:notice_id>/ava/",
+        views.open_assignment_notice,
+        name="open_assignment_notice",
+    ),
     # One click to done, from the list rather than from the Matter. Its own
     # route because it ends where the reader was rather than on a Matter page,
     # and it calls the same service the Matter page's «✓ Tehtud» calls

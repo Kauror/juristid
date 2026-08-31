@@ -39,6 +39,7 @@ from app.matters.models import (
     Entry,
     EntryRevision,
     Matter,
+    MatterAssignmentNotice,
     MatterEngagement,
     MatterPersonalNote,
     MatterReferenceSequence,
@@ -156,6 +157,7 @@ def create_matter(
     visibility: str = Visibility.NORMAL,
     data_class: str = MatterDataClass.REAL,
     source_organisations: Any = None,
+    provenance: dict[str, Any] | None = None,
     **extra: Any,
 ) -> Matter:
     """Create a Matter. Only the title is required (specification 3.8).
@@ -170,6 +172,15 @@ def create_matter(
     signature is what stops a caller handing a list to a keyword argument that
     used to take one organisation and getting a confusing ``ValueError`` from
     deep inside the ORM (Agent-E brief 18).
+
+    ``provenance`` means the same thing here as it does in
+    :func:`assign_matter`: this record, and the ownership on it, was
+    materialised by an operation rather than chosen by a colleague. It is what a
+    seeding command passes so that a synthetic world does not open with a queue
+    of «Uus asi» rows nobody was told anything by. Creating a Matter *is* an
+    assignment when it names an owner, and this is the second half of the same
+    boundary — the owner column is written here, directly, and never reaches
+    :func:`assign_matter` (docs/adr/0051).
     """
     if not title.strip():
         raise DomainError("Teema vajab pealkirja.")
@@ -228,8 +239,18 @@ def create_matter(
             # separate MATTER_DATA_CLASS_CHANGED beside it would describe a
             # change that never happened (Agent-C brief 17).
             "data_class": matter.data_class,
+            **(provenance or {}),
         },
     )
+
+    # A native Matter somebody created with an owner on it is a hand-over like
+    # any other, and it never passes through `assign_matter` — the column is
+    # written above. An imported or OneNote-derived record with an owner is not:
+    # nobody was told anything, the ownership is a fact reconstructed from a
+    # spreadsheet cell, and the day of the import is not the day it landed on
+    # that person's desk (docs/adr/0051, §26 no historical backfill).
+    if provenance is None and origin == MatterOrigin.NATIVE:
+        _raise_assignment_notice(matter=matter, owner=owner, actor=actor)
     return matter
 
 
@@ -393,6 +414,95 @@ def set_matter_visibility(*, matter: Matter, visibility: str, actor: Any = None)
 # ---------------------------------------------------------------------------
 
 
+def _is_human_actor(actor: Any) -> bool:
+    """Whether a real, persisted person is performing this operation.
+
+    Not a caller-name heuristic and deliberately not one: ``AnonymousUser``
+    answers ``False`` to ``is_authenticated``, an unsaved instance has no ``pk``,
+    and a management command that passes no actor at all has nothing here.
+    Every other way of asking — inspecting the stack, checking the module the
+    call came from — would be a guess that a refactor silently changes.
+    """
+    return (
+        actor is not None
+        and getattr(actor, "pk", None) is not None
+        and bool(getattr(actor, "is_authenticated", False))
+    )
+
+
+def _deactivate_assignment_notices(*, matter: Matter, at: Any) -> int:
+    """Retire every still-active notice about this Matter.
+
+    Called before ownership moves, and it is what stops a stale one being
+    offered. Sandra was handed a file at 09:00 and has not looked at it; at
+    09:05 it goes to Ireen. Sandra's ``Uus asi`` must not still open a Matter
+    that is no longer hers — and the same is true when the owner is cleared and
+    the file is on nobody's desk (docs/adr/0051).
+
+    The row is stamped, never deleted: what landed on somebody's desk is a fact
+    about that day, and the receipt is the only place it is recorded.
+    """
+    return MatterAssignmentNotice.objects.filter(
+        matter=matter, viewed_at__isnull=True, superseded_at__isnull=True
+    ).update(superseded_at=at, updated_at=at)
+
+
+def _raise_assignment_notice(*, matter: Matter, owner: Any, actor: Any) -> None:
+    """Tell the new owner, when a colleague is what put the file there.
+
+    Three conditions, and each excludes a different thing that is not somebody
+    handing over work:
+
+    * an owner — an unassigned Matter has nobody to tell;
+    * a human actor — the owner backfill, an import and a seeding command all
+      materialise ownership without a colleague deciding anything;
+    * ``provenance`` absent at the call site, which is how a system operation
+      that *does* run under an operator's account says so (``assign_matter``).
+
+    ``actor is owner`` is not among them. Assigning a Matter to yourself
+    produces a notice like any other: the point of the block is that a person
+    returning to Minu asjad sees what has arrived, and something they filed
+    themselves an hour ago is exactly that.
+    """
+    if owner is None or not _is_human_actor(actor):
+        return
+    MatterAssignmentNotice.objects.create(matter=matter, recipient=owner, assigned_by=actor)
+
+
+@transaction.atomic
+def acknowledge_assignment_notice(*, notice: MatterAssignmentNotice, actor: Any) -> bool:
+    """Mark one notice read, because its recipient opened it from the block.
+
+    Deliberately not reachable from an ordinary Matter GET. "Viewed" here means
+    *this person acted on this notice*, and it has to, because self-assignment
+    is a supported case: creating a Matter and naming yourself the owner
+    redirects you straight into it, and if merely rendering that page counted as
+    acknowledgement the block would clear itself before it was ever seen
+    (docs/adr/0051).
+
+    One conditional UPDATE, so a double submit is idempotent rather than a
+    second stamp, and returns whether this call was the one that set it.
+
+    ``superseded_at`` is in that condition as well as in the route's own lookup,
+    and not as a duplicate of it. The route refuses a stale form; this refuses
+    to stamp a retired row at all, whoever asks. A notice that stopped being
+    active because the file changed hands has already reached its terminal
+    state, and recording that somebody *viewed* it afterwards would conflate the
+    two reasons a receipt closes — which is the one thing the two columns exist
+    to keep apart (docs/adr/0051).
+    """
+    if notice.recipient_id != getattr(actor, "pk", None):
+        raise DomainError("Teavitus kuulub teisele inimesele.")
+    now = timezone.now()
+    updated = MatterAssignmentNotice.objects.filter(
+        pk=notice.pk,
+        recipient=actor,
+        viewed_at__isnull=True,
+        superseded_at__isnull=True,
+    ).update(viewed_at=now, updated_at=now)
+    return bool(updated)
+
+
 @transaction.atomic
 def assign_matter(
     *, matter: Matter, owner: Any, actor: Any = None, provenance: dict[str, Any] | None = None
@@ -406,10 +516,21 @@ def assign_matter(
     the change-event payload rather than kept in a second table, because this
     *is* the assignment event and one record is easier to trust than two
     (Stage-2F brief 9).
+
+    It is also the one boundary «Uus asi» reads. An assignment carrying
+    ``provenance`` was made by an operation and not by a colleague, so it
+    retires the previous owner's notice without raising a new one; an assignment
+    a person performed does both. The early return below is what makes a no-op
+    POST — the same owner submitted again — produce no second notice, because
+    nothing was assigned (docs/adr/0051).
     """
     previous = matter.owner
     if previous == owner:
         return matter
+
+    # Before the column moves, and inside this transaction: whatever the
+    # previous owner was still holding unread is about a state that is ending.
+    _deactivate_assignment_notices(matter=matter, at=timezone.now())
 
     matter.owner = owner
     matter.save(update_fields=["owner", "updated_at"])
@@ -452,6 +573,13 @@ def assign_matter(
             **(provenance or {}),
         },
     )
+
+    # Only a colleague's decision reaches somebody's desk. `provenance` is
+    # present exactly when no colleague made this one — the owner backfill
+    # derives ownership from imported register cells — and a queue of «uus asi»
+    # rows for work materialised by a batch is noise rather than news.
+    if provenance is None:
+        _raise_assignment_notice(matter=matter, owner=owner, actor=actor)
     return matter
 
 

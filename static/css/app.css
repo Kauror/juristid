@@ -8129,6 +8129,38 @@ button.accordion__action:focus-visible {
   text-decoration: none;
 }
 
+/* «Uus asi». Deliberately the quiet rail row the block above it already uses —
+   no colour, no badge, no alert. It is noticeable because it is at the top of
+   the rail and because it is not there the rest of the time. The row is a
+   submit button because opening the Teema from here is what marks it seen, so
+   the button is reset to look like the link it stands in for. */
+.newasjarow {
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.newasjarow:last-of-type {
+  border-bottom: none;
+}
+
+.newasjarow__title {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-medium);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.newasjarow__title:hover {
+  color: var(--accent-link);
+}
+
 .quietrow {
   display: flex;
   flex-direction: column;
