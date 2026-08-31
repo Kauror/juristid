@@ -6325,11 +6325,6 @@ p.factsection__none {
   font-weight: var(--typography-weight-semibold);
 }
 
-.modechip--tiny {
-  font-size: var(--typography-size-chip-sm);
-  padding: 1px 6px;
-}
-
 /* As a control: the label is the chip and the radio is visually hidden but
    still focusable, so the keyboard ring lands on something visible. */
 /* As a control the chip is a control: 30px, so it meets the target size every

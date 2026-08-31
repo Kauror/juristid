@@ -1329,29 +1329,39 @@ class ComposerForm(forms.Form):
     Two controls for one act is how the same consultation gets recorded twice.
     `compose_update` still accepts `engagement=`; this form no longer sends it.
 
-    **There is no separate next-step text field, and that is the point.**
-    "Kirjelda, mis tegid ja mida teed edasi" already contains the wording; a
-    second box asking for it again is the duplicate data entry the whole
-    product exists to remove. Choosing TEEN, OOTAN or JÄLGIN turns the
-    description into the next step's text, verbatim — no NLP, no sentence
-    splitting, no summarisation. What somebody wrote is what the register says
-    (Teema redesign §9.1).
+    **The next step has its own box, and the two questions are separate.**
+    `body` is what happened; `next_text` is what happens next. Nothing is
+    derived from the other, in either direction — no NLP, no sentence
+    splitting, no summarisation, and no copying. A lawyer who writes
+    "Ministeerium lubas uue versiooni nädala lõpuks" in one box and
+    "Vaadata uus eelnõu versioon üle" in the other has stated two different
+    facts, and the register stores two records (ADR 0052).
 
-    **A mode is what decides whether a next step is written**, rather than a
-    checkbox beside one. With no mode chosen, the save is an entry and nothing
-    else.
+    This reverses the redesign's original claim that the description *is* the
+    next step (ADR 0030 §4). Deriving one from the other only worked while the
+    composer also asked the lawyer to classify the sentence, and that
+    classification is what the approved workflow retires.
+
+    **This form no longer asks for an action kind or a date meaning.** A next
+    step recorded here is `DO` / `DEADLINE` / `EXACT` — an exact work date,
+    meaning *when I will have done this*. `ActionKind` and `DateSemantics`
+    remain valid stored concepts and every historical `WAIT` and `MONITOR` row
+    is untouched; they are simply not a question this surface puts to a person.
+
+    **A next step is requested by a non-empty `next_text` plus a date**, and by
+    nothing else. Either one alone is refused on the control that is missing.
     """
 
     use_required_attribute = False
 
     body = forms.CharField(
-        label="Tegevuse kirjeldus",
+        label="Mida tegid või mis juhtus?",
         required=False,
         widget=forms.Textarea(
             attrs={
                 "class": "composer__body",
                 "rows": "3",
-                "placeholder": "Kirjelda, mis tegid ja mida teed edasi…",
+                "placeholder": "Kirjelda, mida tegid või mis juhtus…",
                 "data-richtext": "true",
             }
         ),
@@ -1403,25 +1413,40 @@ class ComposerForm(forms.Form):
         widget=SELECT_WIDGET,
     )
 
-    # -- MIS EDASI? --------------------------------------------------------
-    #: Blank is a real answer: it means the next step is unchanged.
-    next_kind = forms.ChoiceField(
-        label="Mis edasi?",
-        choices=(("", "Ei muuda"), *ActionKind.choices),
+    # -- JÄRGMISEKS --------------------------------------------------------
+    #: What happens next, in the lawyer's own words, and stored exactly as
+    #: typed. It is not derived from `body` and `body` is not derived from it:
+    #: "what I did" and "what I will do" are two sentences, and a system that
+    #: split one into the other would be inventing the register's content
+    #: (ADR 0052 §2).
+    #:
+    #: Empty is the ordinary case. Most saves record what happened and leave
+    #: the current step exactly where it was.
+    next_text = forms.CharField(
+        label="Järgmiseks",
         required=False,
-        widget=forms.RadioSelect(attrs={"class": "modechip__input"}),
+        max_length=2000,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input uxcomp__next",
+                "placeholder": "Näiteks: vaadata uus eelnõu versioon üle",
+            }
+        ),
     )
-    #: The stored meaning, behind a disclosure and never required. It derives
-    #: from the chosen mode when left alone, and the model genuinely permits
-    #: pairs the derivation does not produce — the register's own parser records
-    #: a DO whose source names a vague month as an expectation, not a deadline
-    #: (app/workflow/enums.py, Teema redesign §9.3).
-    next_date_semantics = forms.ChoiceField(
-        label="Mida kuupäev täpselt tähendab",
-        choices=(("", "Tuleneb valikust"), *DateSemantics.choices),
-        required=False,
-        widget=SELECT_WIDGET,
-    )
+    #: **When the work will be done**, and nothing more subtle than that.
+    #:
+    #: No `initial`. A step with no date is refused rather than silently filed
+    #: for today: pre-filling would turn the refusal into an assertion the
+    #: person never made, and the browser lane has caught exactly that
+    #: regression before (e2e/test_lawyer_workflow.py).
+    #:
+    #: There is no precision group behind it. The approximate-period machinery
+    #: still exists and is still offered for `Oluline tähtaeg`, where a
+    #: consultation genuinely ends "in the autumn" — but the day a lawyer will
+    #: act on their own file is a day, and asking them how precisely they know
+    #: their own plan is the classification this workflow retires
+    #: (ADR 0052 §4).
+    next_date = EstonianDateField(label="Millal?", required=False, widget=EstonianDateInput())
 
     # -- + Oluline tähtaeg -------------------------------------------------
     deadline_title = forms.CharField(
@@ -1516,8 +1541,13 @@ class ComposerForm(forms.Form):
 
     def __init__(self, *args: Any, matter: Any = None, viewer: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        for prefix, label in (("next", "Kuupäev"), ("deadline", "Kuupäev")):
-            self.fields.update(_precision_fields(prefix, date_label=label))
+        # One precision group, not two. `Oluline tähtaeg` is an external
+        # milestone somebody announced and is often known only to a month or a
+        # quarter; the next step is this lawyer's own working day. The `next`
+        # group is gone rather than hidden, so a crafted POST cannot store an
+        # approximate next step through a control the page no longer has
+        # (ADR 0052 §4).
+        self.fields.update(_precision_fields("deadline", date_label="Kuupäev"))
         set_choices(self, "organisation", Organisation.objects.order_by("name"))
         set_choices(self, "final_recipients", Organisation.objects.order_by("name"))
         # Ticked in one click, because most letters go to bodies this
@@ -1546,47 +1576,65 @@ class ComposerForm(forms.Form):
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
         body = (cleaned.get("body") or "").strip()
-        mode = cleaned.get("next_kind") or ""
+        next_text = (cleaned.get("next_text") or "").strip()
+        # A date on its own counts as *asking for* a next step. It is refused
+        # below, on the box that is empty — but it has to reach that refusal,
+        # rather than falling through to "you typed nothing at all", which is
+        # not what happened and does not say where to look.
+        wants_next = bool(next_text or cleaned.get("next_date") is not None)
         wants_deadline = bool((cleaned.get("deadline_title") or "").strip())
         wants_closure = bool(cleaned.get("close_matter"))
         has_file = bool(cleaned.get("attachment"))
 
-        if not (body or mode or wants_deadline or wants_closure or has_file):
+        if not (body or wants_next or wants_deadline or wants_closure or has_file):
             raise forms.ValidationError("Kirjelda tegevust või vali, mida veel salvestada.")
 
-        self._clean_next_action(cleaned, body=body, mode=mode)
+        self._clean_next_action(cleaned)
         self._clean_deadline(cleaned, wanted=wants_deadline)
         self._clean_closure(cleaned, wanted=wants_closure)
         return cleaned
 
-    def _clean_next_action(self, cleaned: dict[str, Any], *, body: str, mode: str) -> None:
-        if not mode:
+    def _clean_next_action(self, cleaned: dict[str, Any]) -> None:
+        """`Järgmiseks` + `Millal?`, together or not at all.
+
+        Two boxes, one record, and three outcomes. Both empty is the ordinary
+        save: an entry is written and whatever step is already open stays open,
+        untouched. Both filled writes the step. One filled is refused **on the
+        empty control**, because "vali kuupäev" pinned to the sentence box is an
+        error message pointing at the wrong field (ADR 0052 §5).
+
+        Nothing is defaulted here. Quietly filing an undated step for today
+        would be the application deciding when a lawyer is going to do their
+        own work.
+        """
+        text = (cleaned.get("next_text") or "").strip()
+        target_date = cleaned.get("next_date")
+
+        if not text and target_date is None:
             cleaned["next_action_kwargs"] = None
             return
 
-        # The wording comes from the description, exactly as it was typed. The
-        # entry stores sanitised HTML and a next action is a plain sentence, so
-        # the tags come off and nothing else does.
-        text = plain_text(body).strip()
         if not text:
-            self.add_error(
-                "body",
-                "Kirjelda, mida teed või ootad — sellest saab järgmise sammu sõnastus.",
-            )
+            self.add_error("next_text", "Kirjuta järgmine tegevus.")
+            return
+        if target_date is None:
+            self.add_error("next_date", "Vali järgmise tegevuse kuupäev.")
             return
 
-        anchor, _end, precision = _period_anchor(self, "next")
-        semantics = cleaned.get("next_date_semantics") or default_date_semantics(mode)
-        if mode == ActionKind.DO and semantics == DateSemantics.DEADLINE and anchor is None:
-            self.add_error("next_date", "Tähtajaline tegevus vajab kuupäeva.")
-            return
-
+        # The canonical compatibility values, and internal to this surface.
+        # They are not hidden inputs the page posts — a crafted POST cannot
+        # name a different kind or a different date meaning, because this form
+        # has no field that carries one. What the date means here is "the day
+        # this gets done", which is exactly `DO` + `DEADLINE` + `EXACT`; a
+        # lawyer who has to remember to chase somebody writes that as an
+        # action — «Kontrollida, kas ministeerium vastas» — rather than as a
+        # workflow classification (ADR 0052 §1, §3).
         cleaned["next_action_kwargs"] = {
             "text": text[:2000],
-            "kind": mode,
-            "date_semantics": semantics,
-            "target_date": anchor,
-            "date_precision": precision,
+            "kind": ActionKind.DO,
+            "date_semantics": DateSemantics.DEADLINE,
+            "target_date": target_date,
+            "date_precision": DatePrecision.EXACT,
         }
 
     def _clean_deadline(self, cleaned: dict[str, Any], *, wanted: bool) -> None:

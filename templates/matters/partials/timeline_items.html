@@ -17,7 +17,7 @@ makes six months read as one chronology rather than as a stack of cards
 Two things the spine changed, and neither is cosmetic:
 
 * **What one save decided rides with it.** A composer save that set a next step
-  prints it on its own strip under the note — «→ TEEN Saada arvamus EIS-i ·
+  prints it on its own strip under the note — «→ Saada arvamus EIS-i ·
   TÄHTAEG 21.08» — instead of as a separate line saying "Järgmiseks määratud".
   The date is the action's own, at the precision it was recorded to.
 * **Adjacent system events fold.** Three field changes in a row become one line
@@ -141,7 +141,7 @@ record, not professional chronology (master specification 16.5).
             {% endcomment %}
             {% if item.next_step %}
               <p class="uxtl__next">
-                <span class="uxtl__nextmode">→ {{ item.next_step.mode }}</span>
+                <span class="uxtl__nextmode">→</span>
                 <span class="uxtl__nexttext">{{ item.next_step.text }}</span>
                 {% if item.next_step.date_line %}
                   <span class="uxtl__nextdate">{{ item.next_step.date_line }}</span>

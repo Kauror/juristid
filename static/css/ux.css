@@ -514,9 +514,29 @@
   color: var(--text-muted);
 }
 
-/* What the date means, always in words. «TÄHTAEG MÖÖDAS · 6 p» and «VAATAN ÜLE
-   · 15.09» are two different obligations that share a column of digits, and a
-   reader must never have to remember which one they are looking at. */
+/* The step's date, as a date.
+
+   It used to be a flag that named what the date meant — «TÄHTAEG MÖÖDAS · 6 p»,
+   «VAATAN ÜLE · 15.09», «OODATAV · 30.09» — because the row carried three kinds
+   of step and the same 14 March meant three different things. The Teema surface
+   no longer asks anybody to classify a step, so the word is gone and the digits
+   are the whole answer (ADR 0052 §6).
+
+   Lateness stays visible: `.uxnext--overdue` already rings the row, and the
+   date it is about is the thing that should carry the colour. */
+.uxnext__date {
+  font: 600 13px/1.4 var(--typography-font-sans);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.uxnext__date--overdue {
+  color: var(--status-danger);
+}
+
+/* `Excelist` and the snapshot it came from: a provenance label on the register's
+   own instruction, which is the one thing left on this row that is neither the
+   sentence nor its date. */
 .uxnext__flag {
   font: 700 10px/1.4 var(--typography-font-sans);
   letter-spacing: 0.06em;
@@ -527,22 +547,16 @@
   color: var(--text-secondary);
 }
 
-.uxnext__flag--overdue {
-  background: var(--status-danger-soft);
-  color: var(--status-danger);
-  border-color: var(--status-danger-border);
-}
-
-/* Waiting is not lateness. A review date that has come round is a reason to
-   look, which is warning-level and never danger (specification 18.8). */
-.uxnext__flag--review {
-  background: var(--status-warning-soft);
-  color: var(--status-warning);
-  border-color: var(--status-warning-border);
-}
-
 .uxnext__flag--source {
   background: var(--surface-elevated);
+}
+
+/* A refusal on the row itself. `✓ Tehtud` swaps this row and only this row, so
+   there is nowhere else for one to go — and a step another person completed a
+   moment ago is the refusal it actually raises. */
+.uxnext__error {
+  font: 600 12px/1.4 var(--typography-font-sans);
+  color: var(--status-danger);
 }
 
 .uxnext__spacer {
@@ -708,6 +722,26 @@
   font: 600 12px/1.3 var(--typography-font-sans);
   color: var(--text-secondary);
   margin-right: 2px;
+}
+
+/* The three questions, as headings standing over their own field.
+
+   The form is a column with a single `gap`, which spaces every child equally —
+   so a heading sat as far from the box it names as two different questions sat
+   from each other, and the eye had nothing to group. Pulling the heading down
+   against the gap is the whole correction: 6px to its own field, 12px to the
+   next question. `.uxcomp__row` keeps the gap, because there the heading is
+   inline with the chips rather than above them (ADR 0052 §11). */
+.uxcomp__form > .uxcomp__q {
+  margin-right: 0;
+  margin-bottom: -6px;
+}
+
+/* `Järgmiseks` is a sentence, and it is read as often as it is typed, so it
+   is set at the row size the composer body uses rather than at the form
+   default. */
+.uxcomp__next {
+  font-size: var(--typography-size-row);
 }
 
 .uxcomp__morebody {

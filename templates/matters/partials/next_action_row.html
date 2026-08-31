@@ -4,69 +4,93 @@
 It is the answer to the only question a lawyer opening a file always has, so it
 is the first row under the header and it is never behind a disclosure.
 
-Three states carry three different meanings, and none of them relies on colour
-alone (Teema redesign §8):
+**Text, date, and the way to finish it. Nothing else.** The row used to lead
+with a TEEN / OOTAN / JÄLGIN chip and to qualify the date with the word it
+meant — «TÄHTAEG MÖÖDAS · 6 p», «VAATAN ÜLE · 15.09». Both are gone. A lawyer
+reading their own file needs to know what the next thing is and when; which of
+three workflow categories somebody filed it under is a question the product
+stopped asking the moment it stopped asking it on the composer (ADR 0052 §6).
 
-* **TEEN** is work Koda owes. Its date is a deadline and only this combination
-  can be overdue.
-* **OOTAN** is a development expected from somebody else. Its date is when to
-  check, and a passed one is not lateness.
-* **JÄLGIN** is a file to look at again later. A passed review date is a
-  warning, never a danger.
+**Historical rows keep their stored meaning and simply do not display it.** An
+imported `WAIT` or `MONITOR` still is one — the kind, the date semantics and
+the precision are untouched in the database, and `Minu töö`, the register and
+the timeline still read them — and it renders here as its sentence and its
+date, and can be completed from here like any other. A row with no date shows
+no date rather than being given one.
 
-The 2026-08 pass makes that distinction impossible to miss (design handoff 1c).
-The date no longer appears as digits qualified by a small word elsewhere on the
-row: it appears as one flag that names what it is — «TÄHTAEG MÖÖDAS · 6 p»,
-«VAATAN ÜLE · 15.09» — so nobody has to remember which of the three they are
-looking at. Lateness is the state of the row itself, and only a DO with a
-deadline can be in it.
+**Lateness is the state of the row, not a word beside it.** `is_overdue` is
+still `DO` + `DEADLINE` + a date in the past, which is every step this composer
+creates; it colours the row and the date, and the day count rides with the date
+it is counting from.
 
-The row also gained a second verb. «✓ Tehtud» finishes the step; «Lükka edasi»
-moves it, in one gesture, without opening the composer to retype a sentence
-nobody wanted to change. On a WAIT or a MONITOR the same control is called
-«Vaatasin üle», because that is what moving a review date is.
+«✓ Tehtud» finishes the step and is the only thing it does — it writes no
+entry, because the system already knows what was completed and inventing
+"Helistasin ministeeriumisse" as a note would put words in a lawyer's mouth
+(ADR 0052 §7). It swaps this row and only this row, so pressing it never
+destroys what somebody has already typed into the open composer below
+(ADR 0052 §8).
+
+«Lükka edasi» moves the date in one gesture, without opening the composer to
+retype a sentence nobody wanted to change. It is called that on every row now:
+it used to read «Vaatasin üle» on a WAIT or a MONITOR, which is the
+classification this surface no longer exposes.
 {% endcomment %}
+{% comment %}
+  One element, three states. The row is its own HTMX swap target now, so the id
+  belongs to the wrapper rather than to each branch — three elements declaring
+  `jargmiseks-rida` is a duplicate id on every render, whichever branch happens
+  to be taken (tests/test_templates.py).
+{% endcomment %}
+<div class="uxnext {% if matter.is_open and current_action.is_overdue %}uxnext--overdue{% endif %}"
+     id="jargmiseks-rida">
+{% comment %}
+  A refused completion comes back inside the row, because the row is what the
+  response replaced. Outside the three branches rather than in one of them: the
+  refusal `complete_next_action` actually raises is "somebody else finished this
+  a moment ago", and by the time it is re-read there is no current action left
+  to hang the message on.
+{% endcomment %}
+{% if next_action_error %}
+  <span class="uxnext__error" role="alert">{{ next_action_error }}</span>
+{% endif %}
 {% if not matter.is_open %}
-  <div class="uxnext">
     <span class="uxnext__label">Järgmiseks</span>
     <span class="uxnext__empty">
       Puudub — teema on suletud. Uut sammu ei saa määrata ilma taasavamiseta.
     </span>
-  </div>
 {% elif current_action %}
-  <div class="uxnext {% if current_action.is_overdue %}uxnext--overdue{% endif %}">
     <span class="uxnext__label">Järgmiseks</span>
-    <span class="modechip modechip--{{ current_action.kind|lower }}">
-      {{ current_action.get_kind_display|upper }}
-    </span>
     <span class="uxnext__text">{{ current_action.text }}</span>
 
+    {% comment %}
+      The date on its own. `days_late` rides with it rather than standing
+      alone, because a number of days is only readable once you know what it is
+      counting from — and it is only ever non-zero on a genuinely missed
+      deadline (app/workflow/models.py).
+
+      Rendered at its stored precision. Every step created here is EXACT; an
+      imported one recorded to a month still reads as that month rather than as
+      a day nobody chose.
+    {% endcomment %}
     {% if current_action.target_date %}
-      {% comment %}
-        One flag, and it always says what the date means. «6 p» rides with
-        «TÄHTAEG MÖÖDAS» rather than standing alone, because a number of days is
-        only readable once you know what it is counting from.
-      {% endcomment %}
-      {% if current_action.is_overdue %}
-        <span class="uxnext__flag uxnext__flag--overdue">
-          TÄHTAEG MÖÖDAS · {{ current_action.days_late }} p
-        </span>
-      {% elif current_action.is_due_for_review %}
-        <span class="uxnext__flag uxnext__flag--review">
-          ÜLEVAATUS MÖÖDAS · {{ current_action.display_date }}
-        </span>
-      {% else %}
-        <span class="uxnext__flag">
-          {{ current_action.date_label|upper }} · {{ current_action.display_date }}
-        </span>
-      {% endif %}
+      <span class="uxnext__date{% if current_action.is_overdue %} uxnext__date--overdue{% endif %}">
+        {{ current_action.display_date }}{% if current_action.is_overdue %} · {{ current_action.days_late }} p{% endif %}
+      </span>
     {% endif %}
 
     <span class="uxnext__spacer"></span>
 
     {% if can_write %}
+      {% comment %}
+        This row, and not the page. Completing a step is an explicit act on the
+        current action, and a lawyer may well be halfway through typing the
+        result of it into the composer below when they press it. Swapping
+        `#teema-vaade` re-rendered that composer from the server and threw away
+        every unsaved character in it. The completion is persisted immediately
+        either way; the chronology catches up on the next render (ADR 0052 §8).
+      {% endcomment %}
       <form hx-post="{% url 'matters:complete_action' pk=matter.pk action_id=current_action.pk %}"
-            hx-target="#teema-vaade" hx-swap="outerHTML">
+            hx-target="#jargmiseks-rida" hx-swap="outerHTML">
         {% csrf_token %}
         <button class="button button--primary" type="submit">✓ Tehtud</button>
       </form>
@@ -83,9 +107,7 @@ nobody wanted to change. On a WAIT or a MONITOR the same control is called
           deliberately vague and a day added to it would be a day nobody chose.
         {% endcomment %}
         <details class="uxnext__defer" data-uxpopover>
-          <summary class="uxnext__defersum">
-            {% if current_action.is_review_kind %}Vaatasin üle ▾{% else %}Lükka edasi ▾{% endif %}
-          </summary>
+          <summary class="uxnext__defersum">Lükka edasi ▾</summary>
           <div class="uxnext__menu">
             <form hx-post="{% url 'matters:defer_action' pk=matter.pk action_id=current_action.pk %}"
                   hx-target="#teema-vaade" hx-swap="outerHTML">
@@ -129,9 +151,7 @@ nobody wanted to change. On a WAIT or a MONITOR the same control is called
       <button class="button button--quiet" type="button"
               data-focus="teema-koostaja">Muuda</button>
     {% endif %}
-  </div>
 {% else %}
-  <div class="uxnext">
     <span class="uxnext__label uxnext__label--warning">Järgmiseks</span>
     {% comment %}
       A Matter imported from the register may carry the register's own
@@ -149,10 +169,11 @@ nobody wanted to change. On a WAIT or a MONITOR the same control is called
     {% else %}
       <span class="uxnext__empty">Järgmine samm on määramata</span>
     {% endif %}
-    <span class="uxnext__spacer"></span>
-    {% if can_write %}
-      <button class="button button--quiet" type="button"
-              data-focus="teema-koostaja">Määra allpool ↓</button>
-    {% endif %}
-  </div>
+    {% comment %}
+      No «Määra allpool ↓». The composer is the next thing on the page and it
+      now asks `Järgmiseks` by name; a button whose entire content is an arrow
+      pointing at the control underneath it says what the layout already says
+      (ADR 0052 §13).
+    {% endcomment %}
 {% endif %}
+</div>

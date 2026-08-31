@@ -864,7 +864,7 @@ def test_the_composer_starts_as_one_row(page, base_url):
     assert working >= 90, f"the opened composer gives {working}px to write in"
 
     # And it does not shrink back when focus moves to a control beside it.
-    page.locator("#next_kind_DO").click(force=True)
+    page.locator(".uxcomp__row .uxchip", has_text="Homme").first.click()
     expect(field).to_have_css("height", f"{working:g}px")
 
 

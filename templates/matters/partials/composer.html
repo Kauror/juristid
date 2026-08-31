@@ -11,11 +11,17 @@ is the Kaasamine section below, which shows what is already on the file while
 you add to it. Two entry points for one act is how two people record the same
 consultation twice.
 
-**There is no separate next-step field.** The wording of the next step is the
-description, verbatim. Two boxes asking the same question in different words is
-the duplicate data entry this product exists to remove, and a system that split
-one sentence into two by guessing would be inventing the register's content
-(Teema redesign §9.1).
+**Three questions, in the order a lawyer thinks them.** *Mida tegid või mis
+juhtus?*, *Järgmiseks*, *Millal?* — and nothing else is asked about the next
+step. There is no action kind and no date meaning: the classification the
+composer used to demand (TEEN / OOTAN / JÄLGIN / EI MUUDA) is retired, the
+stored values behind a step recorded here are always `DO` / `DEADLINE` /
+`EXACT`, and the date means the day the work gets done (ADR 0052).
+
+**The two text boxes are two facts.** What happened and what happens next are
+written separately and stored separately, and neither is derived from the other
+— no splitting, no summarising, no copying. This reverses ADR 0030 §4, which
+only held while the form also asked the lawyer to classify the sentence.
 
 **One save, one professional update.** The POST goes to one service inside one
 transaction; it may write six canonical records and the timeline shows one line
@@ -27,9 +33,11 @@ Järgmiseks row pushed the file's actual content below the fold on every visit.
 Closed it is one line; `L` or a click opens it, and it opens by itself whenever
 a save was refused, so nobody loses what they typed.
 
-**The 2026-08 pass dropped nothing to make it smaller.** What changed there is
-that the two questions asked on every save — *mis edasi* and *millal* — are one
-row of chips each, and the rest sits behind one «Täpsemalt…».
+**The 2026-08 pass dropped nothing to make it smaller.** What the 2026-08-31
+pass dropped is the mode row and the «Täpsemalt…» panel behind the date, which
+between them asked four questions about a sentence somebody had already written.
+`Millal?` keeps its chips and its exact box; the approximate-period control that
+used to sit under it belongs to `Oluline tähtaeg` and is still there.
 
 **The closing section is different: it was deliberately cut.** `Tulemus`,
 `Järglane`, `Lõpparvamuse pealkiri`, `Kanal`, `Viide`, `Mida Koda saavutas?`
@@ -74,8 +82,13 @@ field with no visible focus at all (static/css/app.css).
         hx-encoding="multipart/form-data">
     {% csrf_token %}
 
-    <label class="visually-hidden" for="{{ composer_form.body.id_for_label }}">
-      Tegevuse kirjeldus
+    {% comment %}
+      The three questions are visible headings rather than placeholders. A
+      placeholder disappears the moment somebody types, and this form now has
+      two text boxes that would be indistinguishable the instant it did.
+    {% endcomment %}
+    <label class="uxcomp__q" for="{{ composer_form.body.id_for_label }}">
+      Mida tegid või mis juhtus?
     </label>
     {{ composer_form.body }}
     {% if composer_form.body.errors %}
@@ -83,37 +96,22 @@ field with no visible focus at all (static/css/app.css).
     {% endif %}
 
     {% comment %}
-      MIS EDASI? Choosing one of the three is what writes a next step; choosing
-      none saves the description as an entry and nothing else. Radios rather
-      than a checkbox plus a select, because the question is genuinely
-      three-valued and the answer carries a different date meaning each time.
+      JÄRGMISEKS. Its own box, and its own sentence. What goes in here is what
+      the `NextAction` stores, verbatim — the form does not read the box above
+      to fill it in, and does not write this one back into the entry.
+
+      Leaving both this and the date empty is the ordinary save: the entry is
+      written and whatever step is already open stays open, unchanged. That is
+      what used to be spelled «Ei muuda», and it needs no control now that
+      there is no mode to un-choose.
     {% endcomment %}
-    <div class="uxcomp__row" role="radiogroup" aria-labelledby="mis-edasi" id="koostaja-liik">
-      <span class="uxcomp__q" id="mis-edasi">Mis edasi?</span>
-      {% for value, label in composer_form.next_kind.field.choices %}
-        {% if value %}
-          <span class="modeselect__option">
-            <input type="radio" class="modechip__input" name="next_kind"
-                   id="next_kind_{{ value }}" value="{{ value }}"
-                   {% if composer_form.next_kind.value == value %}checked{% endif %}>
-            <label class="modechip modechip--{{ value|lower }} modechip--choice"
-                   for="next_kind_{{ value }}">{{ label|upper }}</label>
-          </span>
-        {% endif %}
-      {% endfor %}
-      {% comment %}
-        The way back to "no change". Without it, choosing a mode by mistake
-        could not be undone without reloading the page — and a radio group
-        with no neutral option is a control that cannot say "leave it alone".
-      {% endcomment %}
-      <span class="modeselect__option">
-        <input type="radio" class="modechip__input" name="next_kind" id="next_kind_none"
-               value="" {% if not composer_form.next_kind.value %}checked{% endif %}>
-        <label class="modechip modechip--none modechip--choice" for="next_kind_none">
-          Ei muuda
-        </label>
-      </span>
-    </div>
+    <label class="uxcomp__q" for="{{ composer_form.next_text.id_for_label }}">
+      Järgmiseks
+    </label>
+    {{ composer_form.next_text }}
+    {% if composer_form.next_text.errors %}
+      <p class="field__error">{{ composer_form.next_text.errors|first }}</p>
+    {% endif %}
 
     {% comment %}
       MILLAL? Four spans and the exact box behind them. The chips do not store
@@ -121,9 +119,15 @@ field with no visible focus at all (static/css/app.css).
       field below, which is the field that is submitted and validated. So the
       server sees one value however it was chosen, and the form works with the
       chips ignored entirely.
+
+      One question, not two. The «Täpsemalt…» panel that used to sit here asked
+      how precisely the date was known and what it meant — reasonable questions
+      about a milestone somebody else announced, and the wrong questions about
+      the day this lawyer intends to do their own work. It is still asked, of
+      `Oluline tähtaeg`, which is where it belongs (ADR 0052 §4).
     {% endcomment %}
     <div class="uxcomp__row" data-quickdate-group="{{ composer_form.next_date.id_for_label }}">
-      <span class="uxcomp__q">Millal?</span>
+      <span class="uxcomp__q" id="koostaja-millal">Millal?</span>
       {% for choice in quick_dates %}
         <button type="button" class="uxchip" aria-pressed="false"
                 data-quickdate="{{ choice.value }}"
@@ -145,48 +149,18 @@ field with no visible focus at all (static/css/app.css).
             {{ composer_form.next_date.label }}
           </label>
           {{ composer_form.next_date }}
-          {% if composer_form.next_date.errors %}
-            <span class="field__error">{{ composer_form.next_date.errors|first }}</span>
-          {% endif %}
         </div>
       </details>
 
       {% comment %}
-        Approximate timing and the stored date meaning, one level deeper.
-        `JÄLGIN` genuinely means "september 2026" or "III kvartal 2026" more
-        often than it means a day, and storing 1 September as though somebody
-        had committed to it would manufacture certainty the source never had.
-        The control asks for the period; `app.workflow.dates` turns it into the
-        anchor the database stores, and nobody types an anchor
-        (Teema redesign §9.2, §9.3).
+        The refusal sits on the row rather than inside the disclosure. «Vali
+        järgmise tegevuse kuupäev» printed inside a closed «Kuupäev…» is an
+        error nobody can see, and the chips are how the date is nearly always
+        chosen (ADR 0052 §5).
       {% endcomment %}
-      <details class="uxcomp__more"
-               {% if composer_form.next_precision.errors or composer_form.next_date_semantics.value %}open{% endif %}>
-        <summary class="uxchip uxchip--dashed">Täpsemalt…</summary>
-        <div class="uxcomp__morebody">
-          <fieldset class="choiceset">
-            <legend class="visually-hidden">Kuupäeva täpsus</legend>
-            {% for choice in composer_form.next_precision %}
-              <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
-            {% endfor %}
-          </fieldset>
-          <div class="periodfields">
-            <div class="periodfields__group" data-precision="MONTH">
-              {% include "intelligence/partials/field.html" with field=composer_form.next_month %}
-            </div>
-            <div class="periodfields__group" data-precision="QUARTER">
-              {% include "intelligence/partials/field.html" with field=composer_form.next_quarter %}
-            </div>
-            <div class="periodfields__group" data-precision="HALF_YEAR">
-              {% include "intelligence/partials/field.html" with field=composer_form.next_half %}
-            </div>
-            <div class="periodfields__group" data-precision="MONTH QUARTER HALF_YEAR YEAR">
-              {% include "intelligence/partials/field.html" with field=composer_form.next_year %}
-            </div>
-          </div>
-          {% include "intelligence/partials/field.html" with field=composer_form.next_date_semantics %}
-        </div>
-      </details>
+      {% if composer_form.next_date.errors %}
+        <p class="field__error">{{ composer_form.next_date.errors|first }}</p>
+      {% endif %}
     </div>
 
     {% comment %}

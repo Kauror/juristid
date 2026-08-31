@@ -29,12 +29,15 @@ and asserts the endpoint refuses it.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
 
 from app.accounts.enums import UserRole
+from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.matters.models import Matter
 from app.workflow.enums import ActionKind, DateSemantics
@@ -370,7 +373,11 @@ def test_the_composer_refuses_a_new_step_on_a_departed_colleagues_matter(
 
     response = client.post(
         reverse("matters:compose", kwargs={"pk": matter.pk}),
-        {"body": "<p>Ootan ministeeriumi vastust.</p>", "next_kind": ActionKind.WAIT},
+        {
+            "body": "<p>Ministeerium lubas vastata.</p>",
+            "next_text": "Kontrollida, kas ministeerium vastas",
+            "next_date": format_estonian_date(timezone.localdate() + timedelta(days=7)),
+        },
     )
 
     assert response.status_code == 400
@@ -385,7 +392,11 @@ def test_the_composer_still_creates_a_step_when_the_owner_is_assignable(
 
     response = client.post(
         reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
-        {"body": "<p>Ootan ministeeriumi vastust.</p>", "next_kind": ActionKind.WAIT},
+        {
+            "body": "<p>Ministeerium lubas vastata.</p>",
+            "next_text": "Kontrollida, kas ministeerium vastas",
+            "next_date": format_estonian_date(timezone.localdate() + timedelta(days=7)),
+        },
     )
 
     assert response.status_code == 200

@@ -342,8 +342,11 @@ def test_the_closed_timeline_says_what_was_written_and_what_is_owed(client, spec
     summary = " ".join(body.split("accordion--timeline")[1].split("</summary>")[0].split())
 
     assert "üleminekuaeg on läbiräägitav" in summary, "the last thing somebody wrote"
-    assert "→ TEEN" in summary and "Saada koja arvamus EIS-i" in summary, "what is owed"
+    assert "→" in summary and "Saada koja arvamus EIS-i" in summary, "what is owed"
     assert "kirjet" in summary, "and how much there is"
+    # The step, not its category. This strip re-states the current action, and
+    # the Järgmiseks row above it stopped naming a kind (ADR 0052 §6).
+    assert "TEEN" not in summary
 
 
 @pytest.mark.django_db
@@ -523,9 +526,11 @@ def test_the_composer_is_closed_until_it_is_wanted_and_opens_on_a_refusal(
     assert not _composer_is_open(body), "the composer opens on request, not on arrival"
     assert "Mis juhtus?" in body, "and it says what it is for while closed"
 
+    # A next step with no date: refused, and the composer must come back open
+    # with the sentence still in it (ADR 0052 §5).
     refused = client.post(
         reverse("matters:compose", kwargs={"pk": matter.pk}),
-        {"next_kind": "DO", "body": ""},
+        {"body": "", "next_text": "Saada arvamus", "next_date": ""},
     )
     assert refused.status_code == 400
     assert _composer_is_open(refused.content.decode()), (
