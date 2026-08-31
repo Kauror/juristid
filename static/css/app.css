@@ -4797,6 +4797,21 @@ p.factsection__none {
   grid-template-columns: minmax(0, 1fr) 146px 146px;
 }
 
+/* Uus teema's people row carries three fields, not two.
+
+   Andmeklass is one checkbox. Paired with Adressaat it took a 130px column and
+   left Adressaat the rest, while this row — Vastutaja beside a Saatja that is
+   commonly one or two chips — ran most of its width empty. The checkbox moves
+   into the empty part and Adressaat gets a whole row, which is the entire
+   change: no field is added, removed or reinterpreted.
+
+   A `trio` modifier rather than a third track on `--people`, because
+   `intake.html` and `matter_edit.html` genuinely have two fields on this row.
+   Widening the pair would narrow their Saatja by a column nothing occupies. */
+.createform__trio--people {
+  grid-template-columns: 246px minmax(0, 1fr) 130px;
+}
+
 /* Under ~1024px the paired rows stop being pairs. A breakpoint rather than
    `auto-fit`, because these tracks are deliberately unequal — a 320px note
    beside a summary is a decision, and `auto-fit` would negotiate it away. */
