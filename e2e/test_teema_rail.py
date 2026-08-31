@@ -158,12 +158,17 @@ def test_a_sparse_matter_gives_a_compact_facts_block(page, base_url):
 
     rows = row_geometry(page)
     keys = [row["key"] for row in rows]
-    assert keys[:6] == [
+    # `Muu valdkond` sits among the facts because it *is* one. It used to hang
+    # off the bottom of the `Sildid` card, which was an accident of layout — it
+    # is not a tag and nothing counts it — and when that card was retired it
+    # moved here rather than leaving with it (ADR 0052 §15).
+    assert keys[:7] == [
         "Teemaviide",
         "Menetlusliik",
         "Kellelt",
         "Kellele",
         "Saabus",
+        "Muu valdkond",
         "Andmeklass",
     ], keys
 
