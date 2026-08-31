@@ -7136,6 +7136,34 @@ button.accordion__action:focus-visible {
     border-top: 1px solid var(--border-default);
     padding: var(--spacing-4) var(--spacing-8) var(--spacing-8);
   }
+
+  /* And its editors open rightwards from the whole row.
+
+     Above this width the rail is a 300px column against the right edge of the
+     window, so its popovers open leftwards to stay inside it. Folded under the
+     content the column is gone, the facts start at the left margin, and that
+     same rule put every editor about 100px off the *left* edge — with no
+     scrollbar to reveal it, because overflow to the left never makes one.
+
+     The anchor moves from the value to the row for the same reason. A value
+     cell here sits partway across a full-width row, and a 20rem popover
+     starting from it ran off the right of a 375px phone; from the row's own
+     left edge, capped at the row's width, there is nowhere left to fall off.
+     `top: 100%` then means "under this fact" rather than "under this value",
+     which is the same place on a one-line row. */
+  .teema .rail .railcard__row {
+    position: relative;
+  }
+
+  .teema .rail .railcard__editable {
+    position: static;
+  }
+
+  .teema .rail .inlineedit__form {
+    left: 0;
+    right: auto;
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 720px) {

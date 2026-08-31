@@ -299,6 +299,33 @@ def test_the_editor_opens_next_to_the_fact_it_edits(page, base_url, key):
     assert on_top, f"{key}: something is painted over the control"
 
 
+@pytest.mark.parametrize("width", [1440, 1280, 1024, 768, 375])
+def test_no_editor_falls_off_the_window_at_any_supported_width(page, base_url, width):
+    """The rail's popovers open leftwards, and only while the rail is a column.
+
+    Above 1100px the rail is 300px against the right edge of the window, so an
+    editor anchored at its value's left edge runs past it. Below, the rail folds
+    under the content and the facts start at the left margin — where the same
+    rule put every editor about 100px off the *left* edge instead, which no
+    scroll-width assertion can see because overflow to the left never makes a
+    scrollbar. Both sides, at both kinds of width.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, f"Redaktori serv {width}")
+    page.set_viewport_size({"width": width, "height": 900})
+
+    for key in EDITABLE_FACTS:
+        row = fact_row(page, key)
+        row.locator("summary.inlineedit__trigger").click()
+        box = row.locator("form.inlineedit__form").bounding_box()
+        assert box["x"] >= -0.5, f"{key} at {width}px opens {box['x']:.0f}px off the left edge"
+        assert box["x"] + box["width"] <= width + 1, (
+            f"{key} at {width}px runs {box['x'] + box['width'] - width:.0f}px past the right edge"
+        )
+        assert not document_overflows(page), f"{key} at {width}px scrolls the page sideways"
+        row.locator("summary.inlineedit__trigger").click()
+
+
 @pytest.mark.parametrize("key", EDITABLE_FACTS)
 def test_the_editor_is_reachable_from_the_keyboard(page, base_url, key):
     """A `<details>` rather than script, so the affordance focuses and opens."""
