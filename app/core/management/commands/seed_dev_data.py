@@ -110,6 +110,14 @@ SYNTHETIC_ORGANISATIONS = [
 ]
 
 
+#: This world was built by a command, not by colleagues telling each other
+#: things. Passed to every `create_matter` below so the seeded lawyers do not
+#: sign in to a rail full of «Uus asi» rows about work that was never handed to
+#: them — and so the visual baselines keep rendering the page they describe
+#: (app/matters/services.py, docs/adr/0051).
+_SEEDED = {"materialised_by": "seed"}
+
+
 class Command(BaseCommand):
     help = "Create synthetic development data. Never run this against real data."
 
@@ -293,6 +301,7 @@ class Command(BaseCommand):
                 received_date=date.today() - timedelta(days=30 - index),
                 response_deadline=date.today() + timedelta(days=14 + index),
                 visibility=Visibility.RESTRICTED if restricted else Visibility.NORMAL,
+                provenance=_SEEDED,
             )
             matter.policy_areas.add(policy_areas[index % len(policy_areas)])
             TagAssignment.objects.create(
@@ -426,6 +435,7 @@ class Command(BaseCommand):
                 source_era=str(year),
                 reporting_year=year,
                 source_organisations=[company] if index else [],
+                provenance=_SEEDED,
             )
             MatterSourceReference.objects.create(
                 matter=matter,

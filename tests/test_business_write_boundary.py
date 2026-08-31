@@ -642,6 +642,15 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # anywhere in the call chain that could write somebody else's row
     # (app/matters/person_work.py, tests/test_person_workspace.py).
     "matters:save_scratchpad": "C: the signed-in person's own notepad",
+    # C — the recipient's own read receipt on «Uus asi». Not business content:
+    # nothing about the Matter changes, and the only row it can touch is one
+    # whose `recipient` is `request.user` — the lookup carries that, so there is
+    # no id in the URL that reaches somebody else's queue. A READER who has been
+    # handed a file may acknowledge having seen it, exactly as they may keep
+    # their own notes; the Matter behind it still goes through
+    # `get_visible_matter` (app/matters/views.py, docs/adr/0051,
+    # tests/test_new_assignment_notices.py).
+    "matters:open_assignment_notice": "C: the recipient's own read receipt",
     # D — authentication and session control. Not business content, and two of
     # them must work for somebody who has no role at all yet.
     "accounts:dev_login": "D: synthetic sign-in, development only",

@@ -18,6 +18,12 @@ head can already see this work on Osakond and in the register.
 and there is no parameter anywhere in this module that can name whose notes to
 load. The manager's response does not hide the block — it does not contain it
 (01-EHITUSJUHIS §3.5, §8; 03-BACKEND §2).
+
+`Uus asi` is the second thing that rule now covers. A person's queue of
+newly-assigned Matters is personal workflow state in exactly the sense the desk
+pad is: it says what somebody has not got round to looking at yet. It is read
+here by the same self-only signature, and it is absent from a department head's
+view of a colleague's page rather than hidden in it (docs/adr/0051).
 """
 
 from __future__ import annotations
@@ -30,7 +36,7 @@ from django.db.models import QuerySet
 from app.accounts.models import User
 from app.accounts.selectors import department_workers
 from app.core.authorization import is_department_head
-from app.matters.models import PersonalScratchpad
+from app.matters.models import Matter, MatterAssignmentNotice, PersonalScratchpad
 
 #: How much a person may keep on the desk pad. Generous, and a bound: an
 #: unbounded text field behind an autosave is a way to fill a table by holding
@@ -129,3 +135,47 @@ def save_scratchpad(user: Any, body: str) -> PersonalScratchpad:
     text = (body or "")[:SCRATCHPAD_MAX_LENGTH]
     row, _ = PersonalScratchpad.objects.update_or_create(user=user, defaults={"body": text})
     return row
+
+
+# ---------------------------------------------------------------------------
+# Uus asi
+# ---------------------------------------------------------------------------
+
+
+def unread_assignment_notices(user: Any) -> list[MatterAssignmentNotice]:
+    """This person's still-unread hand-overs, newest first.
+
+    Takes a user, not an id, and is called with `request.user` in exactly one
+    place — the same shape `scratchpad_for` has, and for the same reason: there
+    is no signature here that a URL could use to ask for somebody else's queue.
+
+    Five conditions, and none of them is redundant:
+
+    * ``recipient=user`` — the receipt is personal;
+    * not viewed — acknowledged from the block itself, and nowhere else;
+    * not superseded — the file was handed on, or taken off every desk, while
+      this notice sat unread (``app/matters/services.py``);
+    * ``visible_to(user)`` — **ownership is not authorization**. A Matter
+      restricted after it was assigned must not have its title printed here,
+      and asking the Matter's own gate is the only way to know that;
+    * still owned by this person and still open — a notice is an answer to
+      "what landed on my desk", and neither a file somebody else now holds nor
+      a closed one is on it.
+
+    One query. `matter` is joined rather than followed per row, because the
+    template prints its title and a rail block is not a place to spend twenty
+    queries (docs/adr/0051).
+    """
+    if user is None or getattr(user, "pk", None) is None:
+        return []
+    visible = Matter.objects.visible_to(user).filter(owner=user, is_open=True)
+    return list(
+        MatterAssignmentNotice.objects.filter(
+            recipient=user,
+            viewed_at__isnull=True,
+            superseded_at__isnull=True,
+            matter__in=visible,
+        )
+        .select_related("matter")
+        .order_by("-created_at")
+    )

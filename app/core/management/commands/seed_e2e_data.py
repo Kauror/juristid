@@ -199,6 +199,14 @@ def archive_letter_sha(index: int) -> str:
     return hashlib.sha256(archive_letter_bytes(index)).hexdigest()
 
 
+#: This world was built by a command, not by colleagues telling each other
+#: things. Passed to every `create_matter` below so the seeded lawyers do not
+#: sign in to a rail full of «Uus asi» rows about work that was never handed to
+#: them — and so the visual baselines keep rendering the page they describe
+#: (app/matters/services.py, docs/adr/0051).
+_SEEDED = {"materialised_by": "seed"}
+
+
 class Command(BaseCommand):
     help = "Create the deterministic synthetic world the Playwright suite asserts against."
 
@@ -247,6 +255,7 @@ class Command(BaseCommand):
             track=Track.DOMESTIC,
             source_organisations=[ministry],
             visibility=Visibility.RESTRICTED,
+            provenance=_SEEDED,
         )
         add_entry(
             matter=restricted,
@@ -290,6 +299,7 @@ class Command(BaseCommand):
             # and an association at once, and the detail page's rendering of a
             # sender *set* has to be exercised by something.
             source_organisations=[ministry, partner],
+            provenance=_SEEDED,
         )
         visible.policy_areas.add(area)
         # One `Kaasamine`, so the visual baseline shows a populated section
@@ -330,6 +340,7 @@ class Command(BaseCommand):
             data_quality_tier=DataQualityTier.TIER_3_REGISTER_ARCHIVE,
             source_era="2014",
             reporting_year=2014,
+            provenance=_SEEDED,
         )
 
         # A closed file, reachable only under `?olek=suletud`: the register
@@ -342,6 +353,7 @@ class Command(BaseCommand):
             stage=stage,
             track=Track.DOMESTIC,
             source_organisations=[ministry],
+            provenance=_SEEDED,
         )
         add_entry(
             matter=closed,
@@ -598,6 +610,7 @@ class Command(BaseCommand):
             track=Track.DOMESTIC,
             source_organisations=[ministry],
             received_date=date.today() - timedelta(days=40),
+            provenance=_SEEDED,
         )
         set_next_action(
             matter=overdue,
@@ -668,6 +681,7 @@ class Command(BaseCommand):
             source_organisations=[ministry],
             received_date=today - timedelta(days=3),
             response_deadline=today + timedelta(days=4),
+            provenance=_SEEDED,
         )
 
         review_due = create_matter(
@@ -678,6 +692,7 @@ class Command(BaseCommand):
             track=Track.DOMESTIC,
             source_organisations=[ministry],
             received_date=today - timedelta(days=30),
+            provenance=_SEEDED,
         )
         set_next_action(
             matter=review_due,
@@ -696,6 +711,7 @@ class Command(BaseCommand):
             track=Track.DOMESTIC,
             source_organisations=[ministry],
             received_date=today - timedelta(days=6),
+            provenance=_SEEDED,
         )
 
         # The precedence case, kept deliberately extreme: a response deadline
@@ -711,6 +727,7 @@ class Command(BaseCommand):
             source_organisations=[ministry],
             received_date=today - timedelta(days=SUPERSEDED_DEADLINE_DAYS + 30),
             response_deadline=today - timedelta(days=SUPERSEDED_DEADLINE_DAYS),
+            provenance=_SEEDED,
         )
         set_next_action(
             matter=superseded,
@@ -736,6 +753,7 @@ class Command(BaseCommand):
             track=Track.DOMESTIC,
             source_organisations=[ministry],
             received_date=today - timedelta(days=9),
+            provenance=_SEEDED,
         )
 
         self._drafting_world(martin, stage, ministry, today)
@@ -766,6 +784,7 @@ class Command(BaseCommand):
                 track=Track.DOMESTIC,
                 source_organisations=[ministry],
                 received_date=today - timedelta(days=20),
+                provenance=_SEEDED,
             )
             reference = MatterSourceReference.objects.create(
                 matter=matter,
