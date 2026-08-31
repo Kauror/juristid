@@ -366,11 +366,19 @@ def test_the_rail_keeps_the_way_to_the_formal_arvamused_surface(signed_in, speci
 
 
 def test_the_other_rail_blocks_are_still_there(signed_in, specialist):
+    """What this round retired is `Koja seisukoht`, and nothing else here.
+
+    `Sildid` is no longer among them. It was retired separately, by the
+    simplified next-action round, as a UI retirement with `Tag` and
+    `TagAssignment` untouched — so the assertion that used to sit here is now
+    the opposite one, and it lives with the rest of that decision in
+    `tests/test_simplified_next_action.py` (ADR 0052 §14).
+    """
     matter = factories.MatterFactory(owner=specialist)
 
     body = _detail(signed_in, matter)
 
-    assert "Sildid" in body
     assert "Märkmed" in body
     assert "Teema andmed" in body
     assert "Teemaviide" in body
+    assert "Sildid" not in body
