@@ -349,9 +349,14 @@ def test_paragraphs_are_not_used_as_flex_or_grid_containers_by_accident() -> Non
     """The prose measure in base.css must not reach component paragraphs.
 
     `p { max-width: 76ch }` is right for body copy and wrong for the breadcrumb,
-    the register count, the timeline's system events and the facts rail — all
-    of which are built on <p> and all of which wrapped or lost their alignment
-    because of it.
+    the register count and the timeline's system events — all of which are
+    built on <p> and all of which wrapped or lost their alignment because of it.
+
+    The facts rail used to be in that list and is not any more, for a stronger
+    reason than the measure: a `<p>` cannot hold a `<details>` at all. The
+    parser closes it at the start tag, so a rail row built on one was three
+    boxes in the DOM (templates/matters/partials/rail.html,
+    tests/test_teema_rail.py).
     """
     base = (CSS_DIR / "base.css").read_text(encoding="utf-8")
     assert re.search(r"p\[class\]\s*\{[^}]*max-width:\s*none", base), (

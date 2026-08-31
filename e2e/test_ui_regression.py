@@ -138,7 +138,6 @@ CLOCK_DEPENDENT = [
     ".uxnext__date",
     # `Excelist` and the register snapshot label beside an imported instruction.
     ".uxnext__flag",
-    ".railposition__opinion time",
     # The closed timeline's own line. Its quote is content and stays in the
     # baseline — the date in front of it is a `<time>` and is painted by the
     # `time` selector below. What is masked here is the two values that move on
@@ -604,13 +603,13 @@ def test_matter_in_a_special_state(page, base_url):
 def test_matter_opinions(page, base_url):
     """`Arvamused` on one Matter — reached from the facts rail, not a tab.
 
-    The link moved with the position card. It is `Loe edasi` when there is a
-    position to read on and `Lisa seisukoht` when there is not, because one
-    destination serving two situations should say which one it is in
-    (templates/matters/partials/position_rail.html).
+    The link is in `Koja arvamus` now. The rail block it used to hang off is
+    retired: there is no separate free-text `Koja seisukoht` in this product,
+    and the surface behind this link is where the formal Submission workflow
+    lives (templates/matters/partials/opinion_rail.html).
     """
     open_matter(page, base_url, OPEN_TITLE)
-    page.locator("#koja-seisukoht .railposition__more").click()
+    page.locator("#koja-arvamus .railcard__more").click()
     page.wait_for_load_state("networkidle")
     compare("teema-seisukoht", capture(page, "teema-seisukoht"))
 

@@ -337,12 +337,12 @@ def test_at_1024_the_rail_folds_under_and_nothing_scrolls_sideways(page, base_ur
     ]
     assert order == sorted(order), "the reading order changed at 1024px"
 
-    # `Koja seisukoht` is a rail fact now, so at this width it arrives with the
+    # `Koja arvamus` is a rail block, so at this width it arrives with the
     # rail — under the whole main column rather than inside it. That is the
     # point of folding the rail rather than reflowing its cards into the
     # content (Teema QA §1).
-    position = page.locator("#koja-seisukoht").first.bounding_box()
-    assert position["y"] >= rail["y"] - 1, "the position card left the rail at 1024px"
+    opinion = page.locator("#koja-arvamus").first.bounding_box()
+    assert opinion["y"] >= rail["y"] - 1, "the opinion card left the rail at 1024px"
 
 
 # ---------------------------------------------------------------------------

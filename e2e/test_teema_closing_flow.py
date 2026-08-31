@@ -154,8 +154,10 @@ def test_closing_with_an_opinion_seven_new_recipients_and_a_victory(page, base_u
     expect(page.locator(".badge--closed")).to_be_visible()
     # The banner quotes the one narrative the save carried.
     expect(page.locator(".banner--closed")).to_contain_text("Arvamus esitati")
-    # The sent opinion reaches the rail with the file that went out.
-    opinion = page.locator(".railposition__opinion")
+    # The sent opinion reaches the rail with the file that went out. The block
+    # is `Koja arvamus` — the closing flow files its upload under
+    # `KODA_SUBMISSION_FINAL`, which is exactly the role that block lists.
+    opinion = page.locator("#koja-arvamus")
     expect(opinion).to_be_visible()
     expect(opinion).to_contain_text("Koja_arvamus.pdf")
 

@@ -5511,45 +5511,6 @@ p.factsection__none {
   padding: var(--spacing-2);
 }
 
-/* -- Seisukoht ------------------------------------------------------------- */
-
-.positionpanel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-}
-
-/* The position itself is the largest thing on the surface. It is what the whole
-   file exists to produce, and it should read as a statement rather than as the
-   contents of a field. */
-.positionpanel__summary {
-  font-size: var(--typography-size-lg);
-  line-height: var(--typography-line-body);
-  color: var(--text-primary);
-  max-width: 78ch;
-}
-
-.positionpanel__label {
-  padding-left: 0;
-  padding-bottom: 0;
-  margin-top: var(--spacing-2);
-}
-
-/* The reasoning is secondary to the position and distinct from it: a reader
-   scanning for what Koda thinks must not have to separate the two. */
-.positionpanel__rationale {
-  font-size: var(--typography-size-base);
-  line-height: var(--typography-line-body);
-  color: var(--accent-link);
-  max-width: 80ch;
-}
-
-.positionpanel__empty {
-  font-size: var(--typography-size-base);
-  color: var(--text-muted);
-  max-width: 72ch;
-}
-
 /* ====================================================================
  * Ülevaade — the current-register dashboard
  *
@@ -6866,7 +6827,30 @@ button.accordion__action:focus-visible {
    facts in it. */
 .teema .railcard .inlineedit__trigger {
   padding: 0;
-  border-bottom-color: var(--border-subtle);
+  /* No border of its own. `.railcard__value` and `.railcard__add` each draw
+     the dashed underline that *is* the affordance, and the trigger was drawing
+     a second one a pixel below it — invisible at `--border-subtle` against the
+     panel, but 3px of height on every editable row and a smear under the
+     strong line. */
+  border-bottom: 0;
+}
+
+/* A rail fact wraps; it is never cut.
+
+   The base trigger is `max-width: 22ch` with `nowrap` and `overflow: hidden`,
+   which is right in the header band — one line of a fixed-height strip. In a
+   300px column it is wrong twice over: `Regionaal- ja Põllumajandusministeerium`
+   was sliced mid-word with no ellipsis to say so, and three senders were cut
+   after the first and a half.
+
+   So the rail's facts wrap instead. The block is dense because a short value
+   is one line, not because a long one is hidden: height comes from content
+   that needs it, and a row that grows pushes the rows below it down rather
+   than reserving space in advance. */
+.rail .inlineedit__trigger {
+  max-width: 100%;
+  white-space: normal;
+  overflow: visible;
 }
 
 .railcard__value--date {
@@ -7123,6 +7107,34 @@ button.accordion__action:focus-visible {
     border-top: 1px solid var(--border-default);
     padding: var(--spacing-4) var(--spacing-8) var(--spacing-8);
   }
+
+  /* And its editors open rightwards from the whole row.
+
+     Above this width the rail is a 300px column against the right edge of the
+     window, so its popovers open leftwards to stay inside it. Folded under the
+     content the column is gone, the facts start at the left margin, and that
+     same rule put every editor about 100px off the *left* edge — with no
+     scrollbar to reveal it, because overflow to the left never makes one.
+
+     The anchor moves from the value to the row for the same reason. A value
+     cell here sits partway across a full-width row, and a 20rem popover
+     starting from it ran off the right of a 375px phone; from the row's own
+     left edge, capped at the row's width, there is nowhere left to fall off.
+     `top: 100%` then means "under this fact" rather than "under this value",
+     which is the same place on a one-line row. */
+  .teema .rail .railcard__row {
+    position: relative;
+  }
+
+  .teema .rail .railcard__editable {
+    position: static;
+  }
+
+  .teema .rail .inlineedit__form {
+    left: 0;
+    right: auto;
+    max-width: 100%;
+  }
 }
 
 @media (max-width: 720px) {
@@ -7217,12 +7229,49 @@ button.accordion__action:focus-visible {
    dashed underline that strengthens on hover — at the rail's smaller scale. */
 .railcard__editable {
   min-width: 0;
+  /* The anchor for this fact's editor, and the reason `+ Lisa` did nothing.
+     `.inlineedit__form` is `position: absolute` with `top: calc(100% + …)`;
+     the header band anchors it on `.metafield`, and the rail had no positioned
+     ancestor at all. So the containing block was the initial one — the
+     viewport — and every rail editor opened at the document's top-left corner,
+     one whole viewport height down the page. The disclosure was toggling
+     correctly the entire time; the control it revealed was simply somewhere
+     else. */
+  position: relative;
+}
+
+/* The rail editors open leftwards, always.
+
+   The rail is 300px wide and sits against the right edge of the window, and
+   the popover is up to 20rem. Anchored at `left: 0` a sender or addressee
+   editor ran ~40px past the viewport and took a horizontal scrollbar with it.
+   Unconditional rather than `:nth-last-child` as in the meta strip: every fact
+   in this column has the same edge to fall off. */
+.rail .inlineedit__form {
+  left: auto;
+  right: 0;
+}
+
+/* And a control inside one may shrink to it. `min-width: auto` on a flex item
+   is its content width, and the addressee <select> is as wide as the longest
+   institution in the catalogue: inside the rail's 20rem popover that pushed
+   `Salvesta` 26px past the right edge of the window, with a horizontal
+   scrollbar as the only way to reach it. */
+.rail .inlineedit__form .field__input {
+  min-width: 0;
 }
 
 .railcard__value {
   color: var(--text-body);
   border-bottom: 1px dashed var(--border-strong);
   padding-bottom: 1px;
+  /* Shrinkable, and breakable as a last resort. A flex item's automatic
+     minimum is its longest unbreakable word, and
+     `Kommunikatsiooniministeerium,` is wider than the 154px this column gives a
+     value — so three senders pushed the rail past the right edge of the window
+     by exactly that overhang. */
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .rail .inlineedit__trigger:hover .railcard__value {
@@ -7235,6 +7284,7 @@ button.accordion__action:focus-visible {
   color: var(--text-muted);
   border-bottom: 1px dashed var(--border-strong);
   padding-bottom: 1px;
+  min-width: 0;
 }
 
 .rail .inlineedit__trigger:hover .railcard__add {
@@ -7426,51 +7476,38 @@ button.accordion__action:focus-visible {
 }
 
 /* ====================================================================
- * Koja seisukoht, in the facts rail
+ * Koja arvamus, in the facts rail
  *
- * Read-first reference at 300px: what Koda argued and the file that says so.
- * The redesign gave this a full-width main-column band; hands-on QA moved it
- * back to the rail the mockup put it in, and the band went with it.
+ * What the Chamber sent, as files, at 300px. It replaces the retired
+ * `Koja seisukoht` block: there is no separate free-text position in this
+ * product, so the block is the document rather than a summary of it.
+ *
+ * No rules of its own for the rows — a file is a fact, so it is a
+ * `.railcard__row` like every other one, with a modifier for the parts a
+ * two-cell fact does not have.
  * ==================================================================== */
 
-.railposition__text {
-  margin: 0;
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--text-body);
-  text-wrap: pretty;
+/* A file row has a badge and a name, not a label and a value: the badge keeps
+   its width and the name takes the rest and wraps. */
+.railcard__row--file {
+  align-items: baseline;
+  gap: var(--spacing-15);
 }
 
-.railposition__none {
+.railcard__file {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.railcard__none {
   font-size: 12.5px;
   color: var(--text-muted);
 }
 
-.railposition__more {
+.railcard__more {
   font-size: var(--typography-size-meta);
   font-weight: var(--typography-weight-semibold);
   align-self: flex-start;
-}
-
-.railposition__opinion {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-  padding-top: var(--spacing-1);
-}
-
-.railposition__file {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-15);
-  font-size: var(--typography-size-meta);
-  min-width: 0;
-}
-
-.railposition__file a {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ====================================================================

@@ -2,21 +2,34 @@
 The facts rail: information that is *looked up*, never read.
 
 Four blocks, in the order somebody reaches for them: what kind of record this is
-and where it came from, what Koda argued, what it is related to, and the
-reader's own private notes.
+and where it came from, what Koda sent, what it is related to, and the reader's
+own private notes.
 
-`Sildid` was the fifth and is retired from this page. Nothing is deleted for it:
-`Tag` and `TagAssignment` are untouched, imported assignments are untouched, and
-tags are still edited on the Teema edit form. What went is a card on the read
-surface that printed «Silte ei ole.» on nearly every Matter (ADR 0052 §14).
+**Two cards were retired, by two separate decisions, and both stay retired.**
+
+`Sildid` printed «Silte ei ole.» on nearly every Matter. Nothing is deleted for
+it: `Tag` and `TagAssignment` are untouched, imported assignments are untouched,
+and tags are still edited on the Teema edit form (ADR 0052 §14).
+
+`Koja seisukoht` was a free-text position beside the file that actually went
+out. What the Chamber produced on a Matter is the opinion it sent, and that is a
+document — `Koja arvamus`, in `opinion_rail.html`. `Matter.position_summary` and
+`Matter.rationale_summary` keep every stored value; no template points at them.
 
 What is deliberately not here: the owner, the state and the active deadline,
 which are already in the header and would be two answers to one question.
 
-`Koja seisukoht` is here rather than in the main column. The redesign moved it
-out; hands-on QA moved it back, and QA is right — it is read-first reference,
-not a work surface, and a full-width band for two sentences pushed the composer
-and the chronology down the page.
+`Koja seisukoht` is not here either, and is not anywhere: there is no separate
+free-text position in this product. What the Chamber produced on a Matter is
+the opinion it sent, and that is a file — `Koja arvamus`, in
+`opinion_rail.html`.
+
+Every fact is one row of two cells, `label | value`, and the row is a `<div>`.
+It cannot be a `<p>`: the HTML parser closes an open `p` at a `<details>` start
+tag wherever it appears, so each editable fact was split into a label-only
+paragraph, a sibling disclosure and an empty paragraph — three flex children
+and three gaps for one short fact, with the value on a line below its own
+label.
 
 Empty optional rows are omitted rather than printed with an em dash. A Matter
 whose addressee nobody recorded should look short, not incomplete.
@@ -36,10 +49,10 @@ whose addressee nobody recorded should look short, not incomplete.
       matches (02-EKRAANID §C, identifier-free UI §4).
     {% endcomment %}
     {% if matter.display_reference %}
-      <p class="railcard__row">
+      <div class="railcard__row">
         <span class="railcard__key">Teemaviide</span>
         <span class="railcard__ref">{{ matter.display_reference }}</span>
-      </p>
+      </div>
     {% endif %}
 
     {% comment %}
@@ -54,7 +67,7 @@ whose addressee nobody recorded should look short, not incomplete.
       had just been created, which reads as a data-quality report rather than
       as a new file.
     {% endcomment %}
-    <p class="railcard__row">
+    <div class="railcard__row">
       <span class="railcard__key">Menetlusliik</span>
       <span class="railcard__editable">
         {% if can_write %}
@@ -84,9 +97,9 @@ whose addressee nobody recorded should look short, not incomplete.
           <span class="railcard__value">{{ matter.get_track_display }}</span>
         {% else %}<span class="muted">—</span>{% endif %}
       </span>
-    </p>
+    </div>
 
-    <p class="railcard__row">
+    <div class="railcard__row">
       {% comment %} KELLELT and KELLELE are different facts, never merged. {% endcomment %}
       <span class="railcard__key">Kellelt</span>
       <span class="railcard__editable">
@@ -133,9 +146,9 @@ whose addressee nobody recorded should look short, not incomplete.
           <span class="railcard__value">{% include "matters/partials/senders.html" with matter=matter %}</span>
         {% else %}<span class="muted">—</span>{% endif %}
       </span>
-    </p>
+    </div>
 
-    <p class="railcard__row">
+    <div class="railcard__row">
       <span class="railcard__key">Kellele</span>
       <span class="railcard__editable">
         {% if can_write %}
@@ -167,9 +180,9 @@ whose addressee nobody recorded should look short, not incomplete.
           <span class="railcard__value">{{ matter.addressee_organisation.name }}</span>
         {% else %}<span class="muted">—</span>{% endif %}
       </span>
-    </p>
+    </div>
 
-    <p class="railcard__row">
+    <div class="railcard__row">
       <span class="railcard__key">Saabus</span>
       <span class="railcard__editable">
         {% if can_write %}
@@ -203,7 +216,7 @@ whose addressee nobody recorded should look short, not incomplete.
           <span class="railcard__value railcard__value--date">{{ matter.received_date|date:"j.n.Y" }}</span>
         {% else %}<span class="muted">—</span>{% endif %}
       </span>
-    </p>
+    </div>
 
     {% comment %}
       `Muu valdkond` — free text, and shown as free text.
@@ -273,29 +286,29 @@ whose addressee nobody recorded should look short, not incomplete.
       Matter is FULL, and a row saying so on every page is a row nobody reads.
     {% endcomment %}
     {% if matter.record_mode != "FULL" %}
-      <p class="railcard__row">
+      <div class="railcard__row">
         <span class="railcard__key">Kirje liik</span>
         <span>{{ matter.get_record_mode_display }}</span>
-      </p>
+      </div>
     {% endif %}
     {% if matter.closed_at %}
-      <p class="railcard__row">
+      <div class="railcard__row">
         <span class="railcard__key">Suletud</span>
         <span class="railcard__value--date">
           <time datetime="{{ matter.closed_at|date:'c' }}">{{ matter.closed_at|date:"j.n.Y" }}</time>
         </span>
-      </p>
+      </div>
       {% if matter.disposition %}
-        <p class="railcard__row">
+        <div class="railcard__row">
           <span class="railcard__key">Põhjus</span>
           <span>{{ matter.get_disposition_display }}</span>
-        </p>
+        </div>
       {% endif %}
       {% if matter.closed_by %}
-        <p class="railcard__row">
+        <div class="railcard__row">
           <span class="railcard__key">Sulges</span>
           <span>{{ matter.closed_by.display_name }}</span>
-        </p>
+        </div>
       {% endif %}
     {% endif %}
     {% comment %}
@@ -307,10 +320,10 @@ whose addressee nobody recorded should look short, not incomplete.
       control the reader cannot use is worse than none (Agent-C brief 12, 18).
     {% endcomment %}
     {% if matter.is_test_data or matter.origin == "NATIVE" %}
-      <p class="railcard__row">
+      <div class="railcard__row">
         <span class="railcard__key">Andmeklass</span>
         <span>{{ matter.get_data_class_display }}</span>
-      </p>
+      </div>
     {% endif %}
     {% if matter.origin == "NATIVE" %}
       <details class="disclosure disclosure--inline">
@@ -335,7 +348,7 @@ whose addressee nobody recorded should look short, not incomplete.
     {% endif %}
   </div>
 
-  {% include "matters/partials/position_rail.html" %}
+  {% include "matters/partials/opinion_rail.html" %}
 
   {% comment %}
     Seotud — the canonical relations, in both directions. `supersedes` is the
@@ -346,26 +359,26 @@ whose addressee nobody recorded should look short, not incomplete.
     <div class="railcard">
       <span class="railcard__label">Seotud</span>
       {% for earlier in matter.supersedes.all %}
-        <p class="railcard__row">
+        <div class="railcard__row">
           <span class="railcard__key">Eelnev teema</span>
           <a href="{% url 'matters:matter_detail' pk=earlier.pk %}">
             {{ earlier.title|truncatechars:40 }} →
           </a>
-        </p>
+        </div>
       {% endfor %}
       {% if matter.superseded_by %}
-        <p class="railcard__row">
+        <div class="railcard__row">
           <span class="railcard__key">Jätkub teemana</span>
           <a href="{% url 'matters:matter_detail' pk=matter.superseded_by.pk %}">
             {{ matter.superseded_by.title|truncatechars:40 }} →
           </a>
-        </p>
+        </div>
       {% endif %}
       {% for person in matter.collaborators.all %}
-        <p class="railcard__row">
+        <div class="railcard__row">
           <span class="railcard__key">Kaastöötaja</span>
           <span>{{ person.display_name }}</span>
-        </p>
+        </div>
       {% endfor %}
     </div>
   {% endif %}
