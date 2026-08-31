@@ -5511,45 +5511,6 @@ p.factsection__none {
   padding: var(--spacing-2);
 }
 
-/* -- Seisukoht ------------------------------------------------------------- */
-
-.positionpanel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-}
-
-/* The position itself is the largest thing on the surface. It is what the whole
-   file exists to produce, and it should read as a statement rather than as the
-   contents of a field. */
-.positionpanel__summary {
-  font-size: var(--typography-size-lg);
-  line-height: var(--typography-line-body);
-  color: var(--text-primary);
-  max-width: 78ch;
-}
-
-.positionpanel__label {
-  padding-left: 0;
-  padding-bottom: 0;
-  margin-top: var(--spacing-2);
-}
-
-/* The reasoning is secondary to the position and distinct from it: a reader
-   scanning for what Koda thinks must not have to separate the two. */
-.positionpanel__rationale {
-  font-size: var(--typography-size-base);
-  line-height: var(--typography-line-body);
-  color: var(--accent-link);
-  max-width: 80ch;
-}
-
-.positionpanel__empty {
-  font-size: var(--typography-size-base);
-  color: var(--text-muted);
-  max-width: 72ch;
-}
-
 /* ====================================================================
  * Ülevaade — the current-register dashboard
  *

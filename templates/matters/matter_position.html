@@ -4,16 +4,24 @@
 {% comment %}
 `Arvamused` on one Matter — no longer a tab.
 
-The Matter has exactly two tabs, and the position and the engagement both moved
-into the main Teema view where they are read. What stays here is the formal
-Submission workflow: drafting an opinion, giving it the exact evidence that went
-out, marking it sent, withdrawing it — acts that carry recipients, a channel and
-a reference, and that are not the routine capture the composer exists for. It is
-reached from the position block and the sent-opinion strip, not from the tab row
+The Matter has exactly two tabs. What is here is the formal Submission
+workflow: drafting an opinion, giving it the exact evidence that went out,
+marking it sent, withdrawing it — acts that carry recipients, a channel and a
+reference, and that are not the routine capture the composer exists for. It is
+reached from `Koja arvamus` in the facts rail, not from the tab row
 (Teema redesign §3, §17, §20).
 
-The position form stays too, because somebody who came here to record a sent
-opinion is usually the same person about to write down what Koda argued.
+`Koja seisukoht` is not here any more, and is not anywhere. There is no
+separate free-text position in this product: what the Chamber produced on a
+Matter is the opinion it sent, and that is a file. This page used to open with
+a panel reading the position and a disclosure writing it, which was the last
+user-facing surface for a concept the product no longer has.
+
+`Matter.position_summary` and `Matter.rationale_summary` are untouched by that.
+They still hold everything the register and the archive put in them, they are
+still fed to the search index, and `matters:update_position` still exists and
+is still covered by the business-write boundary — it simply has no native UI
+pointing at it (tests/test_arvamused_workspace_retirement.py).
 {% endcomment %}
 
 {% block content %}
@@ -23,79 +31,6 @@ opinion is usually the same person about to write down what Koda argued.
   <div class="teemagrid">
     <div class="teemamain teemamain--padded">
       {% include "matters/partials/matter_banner.html" %}
-
-      {% comment %}
-        What the Chamber's position *is*, before how to change it.
-
-        This surface used to be a permanently open pair of textareas, so the
-        answer to "what does Koda think about this" was a form field somebody
-        had to read out of an input. The position is prose now, the reasoning
-        under it, and the same POST sits one disclosure below — unchanged in
-        route, field names and validation.
-      {% endcomment %}
-      <section class="card card--form positionpanel" aria-labelledby="seisukoht-heading">
-        <h2 class="sectionlabel" id="seisukoht-heading">Koja seisukoht</h2>
-
-        {% comment %}
-          The position, and only the position.
-
-          `Põhjendus` is still stored, still edited in the disclosure below and
-          still saved by the same POST — it is simply not printed here. The card
-          answers "what does Koda think about this", and the reasoning under it
-          was answering a second question at the same size as the first
-          (02-EKRAANID §C, docs/design-v2-compatibility.md DS-20).
-        {% endcomment %}
-        {% if matter.position_summary %}
-          <p class="positionpanel__summary">{{ matter.position_summary|linebreaksbr }}</p>
-        {% else %}
-          <p class="positionpanel__empty">
-            Koja seisukohta ei ole veel sõnastatud. Kuni see on kirjutamata, ei saa
-            arvamust sellele viidata.
-          </p>
-        {% endif %}
-
-        {% comment %}
-          Open while there is nothing to read. A collapsed disclosure over an
-          empty panel asks somebody to click before they can start writing the
-          one thing this surface exists for; once a position is written, reading
-          it is the common case and the form gets out of the way.
-        {% endcomment %}
-        {% comment %}
-          Shown to somebody who can use it. The routes behind both of these
-          refuse a reader regardless (app/core/decorators.py); this only stops
-          the page offering a control that answers 404.
-        {% endcomment %}
-        {% if can_write %}
-          <details class="disclosure disclosure--inline"
-                   {% if position_form.errors or not matter.position_summary %}open{% endif %}>
-            <summary class="disclosure__summary">
-              {% if matter.position_summary %}Muuda seisukohta{% else %}Sõnasta Koja seisukoht{% endif %}
-            </summary>
-            <form class="form disclosure__body" method="post"
-                  action="{% url 'matters:update_position' pk=matter.pk %}">
-              {% csrf_token %}
-              <label class="field">
-                <span class="field__label">Seisukoht</span>
-                {{ position_form.position_summary }}
-                {% if position_form.position_summary.errors %}
-                  <span class="field__error">{{ position_form.position_summary.errors|first }}</span>
-                {% endif %}
-              </label>
-              <label class="field">
-                <span class="field__label">Põhjendus</span>
-                {{ position_form.rationale_summary }}
-                <span class="field__help">Millistel tõenditel ja kaalutlustel seisukoht põhineb.</span>
-                {% if position_form.rationale_summary.errors %}
-                  <span class="field__error">{{ position_form.rationale_summary.errors|first }}</span>
-                {% endif %}
-              </label>
-              <div class="form__actions">
-                <button class="button button--primary" type="submit">Salvesta seisukoht</button>
-              </div>
-            </form>
-          </details>
-        {% endif %}
-      </section>
 
       <section aria-labelledby="arvamused-heading">
         {% comment %}

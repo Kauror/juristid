@@ -1614,12 +1614,12 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
             # neither is highlighted, because this page is not one of them.
             "tab": "arvamused",
             "nav_active": "teemad",
-            "position_form": PositionForm(
-                initial={
-                    "position_summary": matter.position_summary,
-                    "rationale_summary": matter.rationale_summary,
-                }
-            ),
+            # No `position_form`. The panel that rendered it is retired — there
+            # is no separate free-text `Koja seisukoht` in this product — and a
+            # bound form nothing renders is two model reads per request for
+            # markup that does not exist. `PositionForm` itself stays: it is
+            # what `update_position` validates with, and that route is still
+            # live and still covered by the business-write boundary.
             "submissions": submissions,
             "submission_form": SubmissionCreateForm(),
             # Two different kinds of record, listed apart on the page. A
@@ -2350,13 +2350,27 @@ def set_data_class(request: HttpRequest, pk: Any) -> HttpResponse:
 @login_required
 @require_http_methods(["POST"])
 def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`Koja seisukoht`, written on the Arvamused surface.
+    """`position_summary` and `rationale_summary`, with **no native UI.**
 
-    The redesign put an inline editor for it in the main Teema flow; hands-on QA
-    moved the whole block to the facts rail, where a 300px column has no room
-    for a pair of textareas and no business holding them. The rail states the
-    position and links here; this is where it is written, beside the opinion it
-    was argued in.
+    Nothing in this application links here any more. There is no separate
+    free-text `Koja seisukoht` concept: what the Chamber produced on a Matter is
+    the opinion it sent, and that is a file, in `Koja arvamus` on the facts
+    rail. The rail block went first, and the reader/editor panel on the
+    Arvamused surface went with this change.
+
+    The route is kept rather than deleted, deliberately and on a narrow basis.
+    The two columns behind it are not retired — the register cutover and the
+    opinion archive both wrote into them, they are still read by
+    `app/search/indexing.py`, and dropping the only writer for live, indexed
+    data is a data decision rather than a UI one. It also stays inside the
+    business-write boundary, where `tests/test_business_write_boundary.py`
+    keeps firing every forbidden actor at it: an unreachable route is not an
+    unguarded one, and the day something needs to write a position again it
+    will find a door that is still locked.
+
+    If that day does not come, retiring the columns, this route, `PositionForm`
+    and `set_position` together is one coherent change. Doing it inside a rail
+    correction would not have been.
     """
     matter = get_visible_matter(request, pk)
     if not may_write_business_content(request.user):
