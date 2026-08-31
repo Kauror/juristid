@@ -440,6 +440,35 @@ def test_the_koja_seisukoht_block_is_absent(page, base_url):
     expect(page.get_by_role("link", name="Lisa seisukoht")).to_have_count(0)
 
 
+def test_the_arvamused_surface_carries_no_seisukoht_either(page, base_url):
+    """The last user-facing one, followed from the rail the way a person would.
+
+    `Koja arvamus` is the only route to this page from a Matter, so this walks
+    it: if the link stops working the test fails here rather than on a URL
+    somebody typed. The page is the Submission workflow and nothing else.
+    """
+    sign_in(page, base_url, MARTIN)
+    open_matter_by_title(page, base_url, MULTI_SENDER_TITLE)
+    page.locator("#koja-arvamus .railcard__more").click()
+    page.wait_for_load_state("networkidle")
+
+    main = page.locator(".teemamain")
+    expect(main.get_by_role("heading", name="Koja arvamused")).to_be_visible()
+    expect(main.get_by_text("+ Uus arvamus")).to_be_visible()
+
+    for phrase in (
+        "Koja seisukoht",
+        "Koja seisukohta ei ole veel sõnastatud",
+        "Sõnasta Koja seisukoht",
+        "Muuda seisukohta",
+        "Salvesta seisukoht",
+    ):
+        expect(main.get_by_text(phrase, exact=False)).to_have_count(0)
+    expect(page.locator("#id_position_summary")).to_have_count(0)
+    expect(page.locator("#id_rationale_summary")).to_have_count(0)
+    assert not document_overflows(page)
+
+
 # ---------------------------------------------------------------------------
 # E and F. `Koja arvamus` is a file, and only a writer may add one
 # ---------------------------------------------------------------------------
