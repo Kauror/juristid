@@ -210,7 +210,9 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # itself. The entry says what happened; the step says what happens next,
     # and neither was derived from the other (ADR 0052 §2).
     expect(page.locator(".uxnext__text")).to_have_text("Kontrollida ministeeriumi uut sõnastust")
-    expect(page.locator(".uxtl__text").first).to_contain_text("Ministeerium lubas uue sõnastuse")
+    expect(page.locator(".uxtl__body .richtext").first).to_contain_text(
+        "Ministeerium lubas uue sõnastuse"
+    )
     expect(page.locator(".uxnext__date")).to_be_visible()
     for retired in ("TEEN", "OOTAN", "JÄLGIN", "OODATAV", "TÄHTAEG"):
         assert retired not in page.locator(".uxnext").inner_text()

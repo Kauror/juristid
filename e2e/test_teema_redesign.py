@@ -465,9 +465,27 @@ def test_ctrl_enter_saves_and_every_shortcut_has_a_button(page, base_url):
 
 
 def test_the_next_step_row_sends_you_to_the_composer(page, base_url):
-    """One place a next step is written, and the row points at it."""
+    """One place a next step is written, and the row points at it.
+
+    On a Matter with a step that is «Muuda»; on one without, the row says so
+    quietly and stops there. «Määra allpool ↓» is gone — a button whose entire
+    content was an arrow pointing at the control directly underneath it said
+    what the layout already says, and the composer now asks `Järgmiseks` by
+    name (ADR 0052 §13).
+    """
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Fookuse brauserikatse")
 
-    page.get_by_role("button", name="Määra allpool ↓").click()
+    expect(page.locator(".uxnext")).to_contain_text("Järgmine samm on määramata")
+    expect(page.get_by_role("button", name="Määra allpool ↓")).to_have_count(0)
+
+    open_composer(page)
+    page.locator("[name='next_text']").fill("Koostada arvamuse mustand")
+    page.locator("#id_next_date").fill(_future(4))
+    page.locator("[data-composer-submit]").click()
+    page.wait_for_load_state("networkidle")
+
+    # Now there is a step, and the row's own control focuses the one box that
+    # writes one rather than opening a second editor beside it.
+    page.get_by_role("button", name="Muuda").click()
     expect(page.locator(".composer__body")).to_be_focused()
