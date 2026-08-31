@@ -34,6 +34,7 @@ hidden in it, exactly as the scratchpad is.
 from __future__ import annotations
 
 import re
+from datetime import timedelta
 
 import pytest
 from django.conf import settings
@@ -45,7 +46,13 @@ from app.core.enums import Visibility
 from app.matters.enums import MatterOrigin
 from app.matters.models import Matter, MatterAssignmentNotice
 from app.matters.person_work import unread_assignment_notices
-from app.matters.services import assign_matter, close_matter, create_matter, set_matter_title
+from app.matters.services import (
+    acknowledge_assignment_notice,
+    assign_matter,
+    close_matter,
+    create_matter,
+    set_matter_title,
+)
 from app.workflow.enums import Disposition
 from tests import factories
 
@@ -397,7 +404,17 @@ def test_opening_from_the_block_marks_it_viewed(client, specialist, other_specia
 
 
 def test_acknowledgement_is_idempotent(client, specialist, other_specialist):
-    """A resent form must not move the stamp somebody already earned."""
+    """B. An already-viewed notice is still openable, and still changes nothing.
+
+    Deliberately *not* a 404. A second POST on a live receipt is a double click,
+    a resend or a back button — the person is asking for the Matter, and the
+    route's job is to give it to them. What must not happen is a second stamp,
+    which the conditional UPDATE in the service prevents.
+
+    This is the case the superseded gate below is careful not to swallow: the
+    two inactive states are inactive for different reasons and answer
+    differently (docs/adr/0051).
+    """
     matter = factories.MatterFactory(owner=None)
     assign_matter(matter=matter, owner=specialist, actor=other_specialist)
     notice = _active(specialist).get()
@@ -407,10 +424,116 @@ def test_acknowledgement_is_idempotent(client, specialist, other_specialist):
     notice.refresh_from_db()
     first = notice.viewed_at
 
-    client.post(_open_url(notice))
+    again = client.post(_open_url(notice))
     notice.refresh_from_db()
 
+    assert again.status_code == 302
+    assert again.headers["Location"] == reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     assert notice.viewed_at == first
+    assert notice.superseded_at is None
+    assert MatterAssignmentNotice.objects.count() == 1
+
+
+# ---------------------------------------------------------------------------
+# The stale form: a superseded notice is retired, not merely off the rail
+# ---------------------------------------------------------------------------
+
+
+def test_a_stale_form_cannot_acknowledge_a_reassigned_notice(client, specialist, other_specialist):
+    """The block disappears the moment the file is handed on. The page does not.
+
+    Sandra has Minu asjad open from before the reassignment, so her browser
+    still holds the form. Pressing it must not turn a receipt that was retired
+    *because ownership changed* into one that says she looked at it — those are
+    two different terminal reasons and the columns exist to keep them apart.
+
+    404, like every other refusal on this route, so a stale form and somebody
+    else's notice are indistinguishable from outside.
+    """
+    ireen = factories.UserFactory()
+    matter = factories.MatterFactory(owner=None)
+    assign_matter(matter=matter, owner=specialist, actor=other_specialist)
+    notice = _active(specialist).get()
+    stale_url = _open_url(notice)
+
+    assign_matter(matter=matter, owner=ireen, actor=other_specialist)
+    client.force_login(specialist)
+
+    response = client.post(stale_url)
+
+    assert response.status_code == 404
+    notice.refresh_from_db()
+    assert notice.viewed_at is None
+    assert notice.superseded_at is not None
+    matter.refresh_from_db()
+    assert matter.owner_id == ireen.pk
+    # Ireen's own notice, and nothing else: the refusal wrote nothing.
+    assert MatterAssignmentNotice.objects.count() == 2
+    assert _active(ireen).get().matter_id == matter.pk
+
+
+def test_a_stale_form_cannot_acknowledge_an_unassigned_notice(client, specialist, other_specialist):
+    """The same, with the file taken off every desk rather than handed on."""
+    matter = factories.MatterFactory(owner=None)
+    assign_matter(matter=matter, owner=specialist, actor=other_specialist)
+    notice = _active(specialist).get()
+    stale_url = _open_url(notice)
+
+    assign_matter(matter=matter, owner=None, actor=other_specialist)
+    client.force_login(specialist)
+
+    response = client.post(stale_url)
+
+    assert response.status_code == 404
+    notice.refresh_from_db()
+    assert notice.viewed_at is None
+    assert notice.superseded_at is not None
+    assert MatterAssignmentNotice.objects.count() == 1
+
+
+def test_a_row_carrying_both_stamps_is_not_touched_again(client, specialist):
+    """D. The historical row: both dates set, and neither may move.
+
+    Written directly rather than played out, because the ordinary flow does not
+    produce this shape and should not: superseding only retires rows that are
+    still *unread*, since a viewed notice has already reached its terminal state
+    and stamping it a second time would say the file left a desk somebody had
+    finished with. The combination is still representable — a fixture, a repair
+    script, a future rule — so the endpoint is pinned against it.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    viewed = timezone.now() - timedelta(hours=2)
+    superseded = timezone.now() - timedelta(hours=1)
+    notice = MatterAssignmentNotice.objects.create(
+        matter=matter, recipient=specialist, viewed_at=viewed, superseded_at=superseded
+    )
+    client.force_login(specialist)
+
+    response = client.post(_open_url(notice))
+
+    assert response.status_code == 404
+    notice.refresh_from_db()
+    assert (notice.viewed_at, notice.superseded_at) == (viewed, superseded)
+
+
+def test_the_service_itself_refuses_to_stamp_a_retired_notice(specialist, other_specialist):
+    """The rule is in the write, not only in the route that reaches it.
+
+    The route is what a stale browser hits, and it is where the 404 belongs. But
+    the invariant — a retired receipt never acquires a read date — belongs to
+    the operation that would write it, so a future caller cannot reintroduce the
+    bug by looking the notice up some other way.
+    """
+    matter = factories.MatterFactory(owner=None)
+    assign_matter(matter=matter, owner=specialist, actor=other_specialist)
+    notice = _active(specialist).get()
+    assign_matter(matter=matter, owner=other_specialist, actor=other_specialist)
+    notice.refresh_from_db()
+
+    assert acknowledge_assignment_notice(notice=notice, actor=specialist) is False
+
+    notice.refresh_from_db()
+    assert notice.viewed_at is None
 
 
 def test_another_person_cannot_acknowledge_it(client, specialist, other_specialist):

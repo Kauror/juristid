@@ -482,12 +482,23 @@ def acknowledge_assignment_notice(*, notice: MatterAssignmentNotice, actor: Any)
 
     One conditional UPDATE, so a double submit is idempotent rather than a
     second stamp, and returns whether this call was the one that set it.
+
+    ``superseded_at`` is in that condition as well as in the route's own lookup,
+    and not as a duplicate of it. The route refuses a stale form; this refuses
+    to stamp a retired row at all, whoever asks. A notice that stopped being
+    active because the file changed hands has already reached its terminal
+    state, and recording that somebody *viewed* it afterwards would conflate the
+    two reasons a receipt closes — which is the one thing the two columns exist
+    to keep apart (docs/adr/0051).
     """
     if notice.recipient_id != getattr(actor, "pk", None):
         raise DomainError("Teavitus kuulub teisele inimesele.")
     now = timezone.now()
     updated = MatterAssignmentNotice.objects.filter(
-        pk=notice.pk, recipient=actor, viewed_at__isnull=True
+        pk=notice.pk,
+        recipient=actor,
+        viewed_at__isnull=True,
+        superseded_at__isnull=True,
     ).update(viewed_at=now, updated_at=now)
     return bool(updated)
 

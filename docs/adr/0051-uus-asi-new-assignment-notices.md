@@ -84,6 +84,22 @@ file at 09:00 and has not looked at it; at 09:05 it goes to Ireen. Sandra's
 block must not still offer it. Clearing the owner does the same. Neither deletes
 the row — what landed on somebody's desk is a fact about that day.
 
+**A superseded notice is retired, and can no longer be acknowledged.** The block
+disappears from the rail the moment the file is handed on, but the page somebody
+already has open does not: a browser still sitting on Minu asjad from before the
+reassignment carries the form. That stale POST answers **404**, like every other
+refusal on this route, and writes nothing.
+
+This is a lifecycle rule and not a tidiness one. `viewed_at` and `superseded_at`
+are two different terminal reasons — *the recipient acted on the active notice*
+and *the notice ceased to be active because ownership changed* — and letting a
+stale click add the first to a row that already carries the second would
+conflate them. A notice that is merely **already viewed** is a different case
+and still resolves: that is a live receipt submitted twice, and the conditional
+UPDATE makes the second POST a redirect that changes nothing. The gate sits in
+the route's own lookup and again in the service's UPDATE, so no future caller
+can reach the write by a different path.
+
 **No unread rows means no block.** Not an empty section, not a zero, not a
 placeholder, not a heading with nothing under it. The last acknowledged row
 takes the whole section with it.

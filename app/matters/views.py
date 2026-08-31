@@ -301,23 +301,34 @@ def open_assignment_notice(request: HttpRequest, notice_id: Any) -> HttpResponse
     it, and if rendering counted, their own «Uus asi» would clear itself before
     they ever saw Minu asjad (docs/adr/0051).
 
-    Three refusals, all 404 and all in the order that leaks least:
+    Four refusals, all 404 and all in the order that leaks least:
 
     * a notice that is not this person's does not resolve — `recipient` is in
       the lookup, so user A cannot acknowledge user B's row and cannot learn
       that it exists;
+    * a **superseded** notice does not resolve either. The block on the rail is
+      gone the moment the file is handed on, but the page somebody already has
+      open is not: a browser sitting on Minu asjad from before the reassignment
+      still carries the form. That stale POST must not turn a retired receipt
+      into a viewed one — `superseded_at` and `viewed_at` are two different
+      terminal reasons, and «the file left this desk» must never be recorded as
+      «this person looked at it» (docs/adr/0051);
     * the Matter goes through `get_visible_matter` like every other route, so a
       restricted file is 404 here as it is everywhere else. Ownership is not
       authorization;
-    * an unknown id is the same 404 as the other two.
+    * an unknown id is the same 404 as the other three.
 
-    The stamp itself is one conditional UPDATE in the service, so a double
-    submit or a resent form is idempotent.
+    A notice that is merely *already viewed* still resolves, and deliberately.
+    That is not a stale form, it is the same live receipt submitted twice — a
+    double click, a resend, a back button — and the stamp is one conditional
+    UPDATE, so the second POST changes nothing and lands the reader on the
+    Matter exactly as the first did.
     """
     notice = get_object_or_404(
         MatterAssignmentNotice.objects.select_related("matter"),
         pk=notice_id,
         recipient=request.user,
+        superseded_at__isnull=True,
     )
     matter = get_visible_matter(request, notice.matter_id)
     acknowledge_assignment_notice(notice=notice, actor=request.user)
