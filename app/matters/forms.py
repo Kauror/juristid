@@ -38,7 +38,6 @@ from app.workflow.enums import (
     DateSemantics,
     Disposition,
     Track,
-    default_date_semantics,
 )
 from app.workflow.models import StageVocabulary
 from app.workflow.selectors import selectable_stages, stage_help_texts
@@ -935,103 +934,78 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
     }
 
 
-#: What the date on a next step means, in the words the form shows.
-#:
-#: The stored values are `DateSemantics` and are not touched. What differs is
-#: the wording and the order: Tähtaeg · Oodatav aeg · Vaatan üle reads as the
-#: three answers to "what is this date", in the order the three kinds produce
-#: them, where the enum's own labels are ordered by nothing and call
-#: EXPECTED_AROUND "Oodatav umbes" — right in a register cell, wrong as the
-#: label of a box somebody is about to type a date into.
-DATE_MEANING_CHOICES: tuple[tuple[str, str], ...] = (
-    (DateSemantics.DEADLINE.value, "Tähtaeg"),
-    (DateSemantics.EXPECTED_AROUND.value, "Oodatav aeg"),
-    (DateSemantics.REVIEW_ON.value, "Vaatan üle"),
-)
-
-
 class NextActionForm(forms.Form):
-    """`Järgmiseks`, including what its date actually means.
+    """`Järgmiseks` and `Millal?`, and nothing else asked about the next step.
+
+    Two questions, in the words a lawyer already uses: what they will do, and
+    the day they will do it. There is no action kind and no date meaning on
+    this form, because a next step recorded natively is always `DO` /
+    `DEADLINE` / `EXACT` — the date means *the day this gets done*, which is
+    exactly what that combination already says (ADR 0052 §3).
+
+    **The classification left the contract, rather than hiding in the
+    template.** `kind` and `date_semantics` are not fields, so a crafted POST
+    naming `WAIT` or `EXPECTED_AROUND` arrives as an unknown key and changes
+    nothing. Hiding two inputs while still reading them would have left the
+    page teaching a vocabulary the workflow retired *and* the endpoint
+    accepting it.
+
+    `ActionKind` and `DateSemantics` keep every value they had. Historical and
+    imported `WAIT` and `MONITOR` rows are untouched, the register's parser
+    still records the pairs its sources name, and `Minu töö`, the register and
+    the timeline still say which kind a step is. This form simply stopped
+    asking a person to pick one (ADR 0052 §1).
 
     `use_required_attribute` is off, and that is not cosmetic. Setting a next
-    action is optional — the view only validates it when somebody typed
-    something — and with the HTML `required` attribute present a browser refuses
-    to submit a form containing an invalid control, reports nothing, and the
-    "Loo teema" button silently does nothing. That is how it failed while this
-    block sat inside a closed `<details>`; the block is on the page now, but an
-    empty optional field would refuse the submit just the same
-    (Stage-2E.1 brief 26).
+    action is optional — the view binds this form only when somebody wrote
+    something — and with the HTML `required` attribute present a browser
+    refuses to submit a form containing an invalid control, reports nothing,
+    and the "Loo teema" button silently does nothing (Stage-2E.1 brief 26).
 
-    The server-side requirement is unchanged: `text` is still required, and a
-    partially filled next action is still refused.
+    The server-side requirement is unchanged in substance: a partly filled next
+    action is still refused, and it is refused on the half that is empty.
     """
 
     use_required_attribute = False
 
+    #: What happens next, in the lawyer's own words, stored exactly as typed.
+    #:
+    #: The label is the column's own name. It used to be "Mida järgmisena teed
+    #: või ootad?", a question that existed to explain `Järgmiseks` to a reader
+    #: who had never met it — and which carried the retired classification back
+    #: into the UI through the word *ootad*. `Järgmiseks` over a concrete
+    #: placeholder says the same thing without naming a mode nobody chooses any
+    #: more (ADR 0052 §2).
+    #:
+    #: Optional at the field, refused in `clean`. Whether a next action was
+    #: requested at all is a question about the whole block, and answering it
+    #: field by field is how "See lahter on nõutav." ends up under a control
+    #: nobody touched.
     text = forms.CharField(
-        # "Järgmiseks" is what the column is called; it is not a question a
-        # lawyer can answer without being told what belongs in it.
-        label="Mida järgmisena teed või ootad?",
+        label="Järgmiseks",
+        required=False,
         max_length=2000,
         widget=forms.TextInput(
             attrs={
-                "class": "field__input",
-                "placeholder": "Näiteks: uurin 7. septembril ministeeriumilt kohtumise kohta",
+                "class": "field__input uxcomp__next",
+                "placeholder": "Näiteks: Vaadata uus eelnõu versioon üle",
             }
         ),
     )
-    #: The same three mode chips as Minu töö, the register and the Teema
-    #: composer, and the same shape rule: TEEN filled, OOTAN solid-outlined,
-    #: JÄLGIN dashed. Shape carries the distinction, never colour alone, and a
-    #: reader who has met the vocabulary on the other four surfaces should not
-    #: have to relearn it here as a stack of described cards.
+    #: **The day the work will be done**, and nothing more subtle than that.
     #:
-    #: The described cards are what this replaces. Their glosses — "Mul endal
-    #: tuleb midagi teha" and the other two — made the distinction on a page
-    #: where the vocabulary was new. Beside a date whose meaning is stated on
-    #: the same row, they were three lines explaining what the row already says
-    #: (Uus teema redesign §6).
+    #: No `initial`. It used to default to today, on the reasoning that today
+    #: is the answer nearly every time — but a blank new-Teema form silently
+    #: holding today is a factual claim the person never made, and it turned
+    #: "you forgot the date" into a date nobody chose. Deciding when somebody
+    #: will do their own work is not the application's to decide (ADR 0052 §5).
     #:
-    #: The stored values are unchanged: DO, WAIT, MONITOR
-    #: (master specification 11.2).
-    kind = forms.ChoiceField(
-        label="Mis laadi samm see on?",
-        choices=ActionKind.choices,
-        initial=ActionKind.DO,
-        widget=forms.RadioSelect(attrs={"class": "modechip__input"}),
-    )
-    #: Optional, and normally derived. "Kuupäeva tähendus" is a question about
-    #: the data model, and a required dropdown asking it was in front of every
-    #: lawyer setting a next step.
-    #:
-    #: It is *not* deleted, because the model genuinely permits more than one
-    #: meaning per kind and the register's parser uses that — a DO whose source
-    #: names a vague month is DO + EXPECTED_AROUND, not a deadline.
-    #:
-    #: No longer a nested disclosure, and no longer phrased as a question about
-    #: the data model. The three meanings are chips on the row with the date, so
-    #: the box states what it means instead of a swapped label stating it on the
-    #: box's behalf. Left blank it still derives from the kind, which is what
-    #: keeps a POST from anywhere — a script, a test, a browser with the chips
-    #: untouched — storing the same canonical value
-    #: (app/workflow/enums.py, Uus teema redesign §6).
-    date_semantics = forms.ChoiceField(
-        label="Mida kuupäev tähendab",
-        # The design's wording for the same three stored values, in the order
-        # the three kinds produce them. The enum is untouched: the register,
-        # Minu töö and the Teema page keep the words they have.
-        choices=DATE_MEANING_CHOICES,
-        required=False,
-        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
-    )
-    #: Today, because that is the answer nearly every time and nobody should have
-    #: to type it. `initial` only ever fills an *unbound* form, so a POSTed value
-    #: always wins, a validation error keeps what was typed, and a date somebody
-    #: deliberately cleared stays cleared (Teema QA §5.2).
-    target_date = EstonianDateField(
-        label="Kuupäev", required=False, widget=DATE_WIDGET, initial=timezone.localdate
-    )
-    #: Kept, and no longer rendered on Uus teema.
+    #: There is no precision group behind it either. The approximate-period
+    #: control genuinely earns its place on `Oluline tähtaeg`, where a
+    #: consultation really does end "in the autumn"; a lawyer's own working day
+    #: is a day (ADR 0052 §4).
+    target_date = EstonianDateField(label="Millal?", required=False, widget=DATE_WIDGET)
+    #: Kept, and still not rendered on Uus teema.
     #:
     #: The step inherits the Vastutaja chosen a few rows up, which the view
     #: hands to the service as a default; naming the same colleague twice on one
@@ -1071,23 +1045,42 @@ class NextActionForm(forms.Form):
         set_choices(self, "responsible", assignable_users())
 
     def clean(self) -> dict[str, Any]:
-        cleaned = super().clean() or {}
-        kind = cleaned.get("kind")
-        # Derived here rather than in the template, so a POST from anywhere —
-        # a browser with the disclosure closed, a test, an integration — stores
-        # the same canonical value.
-        semantics = cleaned.get("date_semantics") or default_date_semantics(kind or "")
-        cleaned["date_semantics"] = semantics
-        target = cleaned.get("target_date")
+        """`Järgmiseks` + `Millal?`, together or not at all.
 
-        # A deadline with no date cannot be overdue, cannot be planned against
-        # and cannot be reported on. It is the one combination worth refusing.
-        if kind == ActionKind.DO and semantics == DateSemantics.DEADLINE and target is None:
-            self.add_error("target_date", "Tähtajaline tegevus vajab kuupäeva.")
+        The same three outcomes as the Teema composer, and deliberately the
+        same wording: one half filled is refused **on the empty control**,
+        because "vali kuupäev" pinned to the sentence box points at the wrong
+        field (ADR 0052 §5).
+
+        Nothing is defaulted. An undated step is never quietly filed for today,
+        and a dated step with no sentence is never quietly discarded — somebody
+        who pressed `Homme` and then wrote nothing did ask for a next action,
+        and gets told which half is missing rather than getting a Teema with no
+        step in it.
+
+        This form is bound only when one of the two halves carries something,
+        so both arriving empty means an empty POST to `set_action` rather than
+        a title-only Teema. That is a refusal too, and it belongs on the
+        sentence.
+        """
+        cleaned = super().clean() or {}
+        text = (cleaned.get("text") or "").strip()
+
+        if not text:
+            self.add_error("text", "Kirjuta järgmine tegevus.")
+        elif cleaned.get("target_date") is None:
+            self.add_error("target_date", "Vali järgmise tegevuse kuupäev.")
         return cleaned
 
     def as_service_kwargs(self, *, default_responsible: Any = None) -> dict[str, Any]:
         """What ``set_next_action`` needs.
+
+        The kind, the date meaning and the precision are the canonical
+        compatibility values, written here and never read from the POST. They
+        are honest rather than merely convenient: on this surface the date is
+        the day the work gets done, and a lawyer who has to remember to chase a
+        ministry writes that as an action — «Kontrollida, kas ministeerium
+        vastas» — rather than as a workflow classification (ADR 0052 §1, §3).
 
         ``default_responsible`` is for the one caller that has an owner the
         service cannot see yet: Uus teema chooses the Matter's owner on the same
@@ -1096,11 +1089,11 @@ class NextActionForm(forms.Form):
         already does this, and passing nothing keeps that behaviour exactly.
         """
         return {
-            "text": self.cleaned_data["text"],
-            "kind": self.cleaned_data["kind"],
-            "date_semantics": self.cleaned_data["date_semantics"],
+            "text": self.cleaned_data["text"].strip()[:2000],
+            "kind": ActionKind.DO,
+            "date_semantics": DateSemantics.DEADLINE,
             "target_date": self.cleaned_data.get("target_date"),
-            "date_precision": self.cleaned_data.get("date_precision") or DatePrecision.EXACT,
+            "date_precision": DatePrecision.EXACT,
             "responsible": self.cleaned_data.get("responsible") or default_responsible,
         }
 

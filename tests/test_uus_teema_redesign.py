@@ -28,7 +28,7 @@ from app.matters.forms import MatterCreateForm
 from app.matters.models import Matter, MatterPersonalNote
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
-from app.workflow.enums import ActionKind, DateSemantics, Track
+from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Track
 from app.workflow.models import NextAction
 from tests import factories
 from tests import synthetic_corpus as corpus
@@ -82,9 +82,15 @@ def test_the_whole_field_set_the_new_page_posts_is_accepted(signed_in, evidence_
     """Everything a browser sends from the rebuilt form, including the empties.
 
     The page posts more fields than it used to, because nothing is behind a
-    closed `<details>` any more: the two prefilled dates, the meaning chips,
-    the mode chip that starts on TEEN. A test that posts only a title exercises
-    a POST no browser makes.
+    closed `<details>` any more: `Saabus` and `Arvamuse tähtaeg` arrive
+    prefilled, and every optional select and text box arrives empty. A test
+    that posts only a title exercises a POST no browser makes.
+
+    The next-action half is now two blank boxes. The mode chip that started on
+    TEEN, the meaning chip that started on Tähtaeg and the date that started on
+    today are all gone: a lawyer who wrote nothing about a next step posts
+    nothing about one, and the block is silent rather than pre-answered
+    (ADR 0052 addendum).
     """
     from django.utils import timezone as tz
 
@@ -103,17 +109,16 @@ def test_the_whole_field_set_the_new_page_posts_is_accepted(signed_in, evidence_
             "track": "",
             "addressee_organisation": "",
             "next-text": "",
-            "next-kind": "DO",
-            "next-date_semantics": "DEADLINE",
-            "next-target_date": today,
+            "next-target_date": "",
             "files": upload("kaaskiri.txt", "Näidiskaaskiri.".encode(), "text/plain"),
         },
     )
 
     matter = Matter.objects.get(title="Nagu brauser saadab")
     assert DocumentVersion.objects.filter(document__matter=matter).count() == 1
-    # The next-action block was on screen with a kind, a meaning and a date
-    # already filled in, and nobody typed a step. Nothing was written.
+    # The next-action block was on screen and untouched. Nothing was written,
+    # and — the part the old prefilled date used to hide — nothing needed to be
+    # refused either.
     assert not NextAction.objects.filter(matter=matter).exists()
 
 
@@ -145,8 +150,6 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
             "addressee_organisation": committee.pk,
             "files": upload("eelnou.pdf", corpus.government_pdf()),
             "next-text": "Loen eelnõu läbi ja koostan liikmete küsitluse",
-            "next-kind": ActionKind.DO,
-            "next-date_semantics": "",
             "next-target_date": "5.9.2026",
         },
     )
@@ -173,8 +176,12 @@ def test_a_full_create_stores_exactly_what_was_entered(signed_in, specialist, ev
     assert version.original_filename == "eelnou.pdf"
 
     action = NextAction.objects.get(matter=matter)
+    # Nobody chose these three. A step created natively is DO / DEADLINE /
+    # EXACT, because on this surface the date is the day the work gets done
+    # (ADR 0052 §3).
     assert action.kind == ActionKind.DO
     assert action.date_semantics == DateSemantics.DEADLINE
+    assert action.date_precision == DatePrecision.EXACT
     assert action.target_date == date(2026, 9, 5)
     # No responsible control on the page; the step inherits the Matter's owner.
     assert action.responsible == specialist

@@ -82,8 +82,6 @@ def created(signed_in, specialist, stage):
             "stage": stage.pk,
             "files": upload("kaaskiri.pdf", b"%PDF-1.4 integratsioon", "application/pdf"),
             "next-text": "Loen eelnou labi",
-            "next-kind": ActionKind.DO,
-            "next-date_semantics": "",
             "next-target_date": tomorrow.strftime("%d.%m.%Y"),
         },
     )
@@ -104,7 +102,9 @@ def test_the_form_produces_the_whole_record_in_one_go(created, specialist, stage
     assert created.policy_areas.exists()
 
     assert DocumentVersion.objects.filter(document__matter=created).count() == 1
-    assert NextAction.objects.filter(matter=created).exists()
+    # Created natively, so DO — which is what the Ülevaade figures below count
+    # and what `is_overdue` is defined over (ADR 0052 §3).
+    assert NextAction.objects.get(matter=created).kind == ActionKind.DO
     assert MatterPersonalNote.objects.filter(matter=created, author=specialist).exists()
 
 

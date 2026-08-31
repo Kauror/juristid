@@ -530,7 +530,6 @@ def test_a_do_action_dated_inside_the_horizon_is_never_swallowed(specialist):
 @pytest.mark.parametrize(
     ("form_class", "field"),
     [
-        (NextActionForm, "target_date"),
         (MatterCreateForm, "received_date"),
         (ComposerForm, "occurred_on"),
         (IncomingIntakeForm, "received_date"),
@@ -568,6 +567,7 @@ def test_today_is_recorded_as_now_and_not_as_midnight(normal_matter, specialist)
     ("form_class", "field"),
     [
         (ComposerForm, "next_date"),
+        (NextActionForm, "target_date"),
         (ComposerForm, "deadline_date"),
         (ComposerForm, "final_sent_on"),
         (EffectiveDateForm, "exact_date"),
@@ -580,8 +580,15 @@ def test_a_date_box_whose_emptiness_is_a_signal_never_defaults(form_class, field
     A date box defaults to today when the box is the only thing it says. These
     are read for *emptiness*:
 
-    * `next_date` — a TEEN with no date is the one combination the domain
-      refuses, and a default answers that refusal with a deadline nobody chose;
+    * `next_date` — a step with no date is refused, and a default answers that
+      refusal with a deadline nobody chose;
+    * `NextActionForm.target_date` — the same box on Uus teema, and it moved
+      here from the defaulting list above. It defaulted to today while the page
+      also asked for a kind and a date meaning, on the reasoning that today is
+      the answer nearly every time. It is the same reasoning `next_date` was
+      refused for: a blank new-Teema form silently carrying today is a factual
+      next-action date nobody stated, and it turned "you forgot the date" into
+      a date the form chose (ADR 0052 addendum);
     * `deadline_date` — the same control, which also offers a quarter;
     * `final_sent_on` — a send date with no chosen file is an opinion claimed
       without its evidence, so a default refuses every ordinary closure;

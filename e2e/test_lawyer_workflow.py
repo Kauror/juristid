@@ -128,10 +128,12 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     page.locator("#id_response_deadline").fill(_future(21))
 
     page.locator("#id_next-text").fill("Koosta ja saada koja arvamus")
-    # The kind is a card, and the date meaning is derived from it rather than
-    # asked as a second question. DEADLINE is what DO derives to
-    # (app/workflow/enums.py, `default_date_semantics`).
-    page.locator('input[name="next-kind"][value="DO"]').check()
+    # Two questions and no third. There is no kind to pick and no date meaning
+    # to confirm: a step created here is DO / DEADLINE / EXACT, decided by the
+    # form and asked of nobody (ADR 0052 addendum). `Kuupäev…` is opened rather
+    # than a quick span pressed, because this walkthrough needs a date it can
+    # name later.
+    page.locator("#jargmine-tegevus").locator("summary", has_text="Kuupäev…").click()
     page.locator("#id_next-target_date").fill(_future(14))
     screenshots(page, "02-uus-teema")
 

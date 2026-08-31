@@ -5341,32 +5341,19 @@ p.factsection__none {
   border-radius: var(--radius-md);
 }
 
-.nextpanel__line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--spacing-3);
-}
+/* Two stacked questions, and nothing laid out beside them.
 
-.nextpanel__text {
-  flex: 1 1 20rem;
-  min-width: 0;
-}
+   The panel used to be two `__line` rows, each pairing a group of chips with a
+   box: the mode chips beside the sentence, the meaning chips beside the date.
+   Both chip groups are retired from native creation, and with them the reason
+   the panel needed a horizontal grammar of its own. What is left — a label, a
+   sentence and the `Millal?` row — is the composer's own shape, laid out by
+   the composer's own `.uxcomp__row` (ADR 0052, static/css/ux.css).
 
-.nextpanel__date {
-  flex: 0 0 auto;
-  width: 9.5rem;
-}
-
-.nextpanel .chiprow {
-  margin-top: 0;
-}
-
-/* The meaning chips are quieter than the mode chips beside them: they answer a
-   question about the date, not about the work. */
-.chip--meaning .chip__name {
-  font-size: var(--typography-size-meta-sm);
-}
+   `.modechip` and `.modeselect` are deliberately kept below. No page renders
+   them today, and the rules they carry are the shared shape language for a
+   stored action kind — TEEN filled, OOTAN solid, JÄLGIN dashed — which any
+   surface showing a historical `WAIT` or `MONITOR` is entitled to reach for. */
 
 /* -- the actions ------------------------------------------------------------ */
 

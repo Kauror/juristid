@@ -167,9 +167,86 @@ facts block, with the same inline edit it had before.
 ## Consequences
 
 - The Uus teema form (`NextActionForm`, `templates/matters/matter_create.html`)
-  still asks for a kind and a date meaning. That is a deliberate follow-up
-  surface, left alone here because it was being changed concurrently by another
-  branch; it is the obvious next application of this decision.
-- `default_date_semantics` is still used — by `NextActionForm` — and stays.
+  was left asking for a kind and a date meaning, as a deliberate follow-up
+  surface: it was being changed concurrently by another branch when this
+  decision was taken. **That follow-up is now done** — see the addendum below.
+- `default_date_semantics` no longer has a caller. It stays in
+  `app/workflow/enums.py` with its mapping: DO → DEADLINE, WAIT →
+  EXPECTED_AROUND, MONITOR → REVIEW_ON is the domain's own statement of what
+  each kind's date ordinarily means, and §1 of this decision is that the stored
+  domain does not move. It is simply not a question any form asks now.
 - Reporting and search read stored values, so nothing downstream moved.
 - No schema change. `makemigrations --check` stays clean.
+
+## Addendum — Uus teema, 2026-08-31
+
+The follow-up named in the first consequence above is implemented. Uus teema
+now uses the same native contract as the composer, and this section records
+what that changed. Nothing above is rewritten; the decision is unchanged and
+this is its second application.
+
+### What the page asks
+
+`Järgmiseks` over a free-text box, then `Millal?` — `Täna`, `Homme`,
+`+1 nädal`, `+2 nädalat` and the exact box behind `Kuupäev…`. The four spans
+are the composer's own, rendered from the same `quick_date_choices` and bound
+by the same `data-quickdate-group` contract, so the arithmetic happens once, on
+the server, in Europe/Tallinn.
+
+Gone from the page: the TEEN / OOTAN / JÄLGIN mode row, and the
+Tähtaeg / Oodatav aeg / Vaatan üle chips beside the date. Nothing replaced
+them — they are not a control this surface has any more.
+
+### What the form contract is
+
+`NextActionForm` no longer has a `kind` field or a `date_semantics` field.
+They were removed from the contract rather than hidden in the template, so a
+POST naming `kind=WAIT` or `date_semantics=EXPECTED_AROUND` arrives as an
+unknown key and cannot reach the stored record. A native step is
+`DO` / `DEADLINE` / `EXACT`, written in `as_service_kwargs` and read from
+nothing.
+
+`target_date` lost its `initial=timezone.localdate`. A blank new-Teema form no
+longer silently carries today as a factual next-action date.
+
+### What is refused
+
+The composer's table, on this surface, with `Pealkiri` in the place of `body`:
+
+| `next-text` | `next-target_date` | Result |
+| --- | --- | --- |
+| — | — | Matter created. No `NextAction`. |
+| set | set | Matter + `NextAction`, one transaction. |
+| set | — | Refused on the date: «Vali järgmise tegevuse kuupäev.» |
+| — | set | Refused on `Järgmiseks`: «Kirjuta järgmine tegevus.» |
+
+The last row is why the view's "did somebody ask for a next step" signal now
+reads **either** half. It read `next-text` alone, which was right while the
+date arrived pre-filled — a date meant nothing then. With the default gone, a
+date is a choice somebody made, and dropping it silently would have created the
+Teema without the step they asked for.
+
+A refusal writes nothing at all. The Matter, its files, its personal note, its
+addressee and its next step are one `transaction.atomic` block, and the next
+action is validated before it opens.
+
+### What did not change
+
+`ActionKind`, `DateSemantics`, the `NextAction` schema, the register parser,
+the historical import, reporting, `Minu töö`, the register filters and the
+timeline. Every stored `WAIT` and `MONITOR` row keeps its kind and still
+renders as one. `makemigrations --check` is clean; there is no migration.
+
+The responsible-person rule is untouched: the field is still unrendered, still
+populated from `assignable_users()`, still defaults to the Vastutaja chosen on
+the same form, and an explicitly named colleague still wins. Eligibility is
+still enforced by `set_next_action_for_new_work`.
+
+`.modechip` and `.modeselect` stay in `static/css/app.css` with no renderer.
+They are the shared shape language for a stored action kind — TEEN filled,
+OOTAN solid-outlined, JÄLGIN dashed — and any surface showing a historical kind
+is entitled to reach for them. What was deleted is only what was specific to
+the retired panel: `.nextpanel__line`, `.nextpanel__text`, `.nextpanel__date`,
+`.nextpanel .chiprow`, `.chip--meaning`, and the `bindDerivedMeaning`
+derivation in `static/js/app.js` that moved the meaning chips when a kind was
+chosen.

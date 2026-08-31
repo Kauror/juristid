@@ -417,8 +417,8 @@ def test_a_late_failure_on_uus_teema_leaves_no_institution_behind(signed_in, mon
         {
             "title": "Katkenud loomine",
             "addressee_name": "Riigikogu keskkonnakomisjon",
-            "next-text": "Jälgi menetlust",
-            "next-kind": "MONITOR",
+            "next-text": "Jälgida menetlust",
+            "next-target_date": "1.9.2026",
         },
     )
 

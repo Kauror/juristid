@@ -1208,17 +1208,26 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         raise Http404("Uut teemat saab luua ainult sisu muutmise õigusega.")
 
     form = MatterCreateForm(request.POST or None, viewer=request.user)
-    # Bound only when somebody actually wrote a next action. Bound
+    # Bound only when somebody actually asked for a next action. Bound
     # unconditionally, a refused save — a missing title, a rejected file —
     # re-rendered the optional Järgmine tegevus block with "See lahter on
     # nõutav." under fields nobody had touched, and opened the disclosure to
     # show them. That reads as "this is mandatory after all", which is the one
     # thing the block must not say (specification 3.8, Agent-UI brief 9.6).
     #
-    # `next-text` is the same signal the save path already used to decide
-    # whether to create an action at all, so there is one definition of "the
-    # user wants a next action" rather than two.
-    wants_action = bool((request.POST.get("next-text") or "").strip())
+    # **Either half counts.** Reading `next-text` alone was right while the date
+    # arrived pre-filled with today, because then a date was never evidence of
+    # anything. It is blank now (ADR 0052 §5), so somebody who pressed `Homme`
+    # and forgot to write the sentence has plainly asked for a next step — and
+    # under the old signal their date would have been silently dropped and the
+    # Teema created without it. The form refuses it instead, on the box that is
+    # empty.
+    #
+    # It stays one definition, used both to bind the form and to decide below
+    # whether to call the service.
+    wants_action = any(
+        (request.POST.get(key) or "").strip() for key in ("next-text", "next-target_date")
+    )
     action_form = NextActionForm(request.POST if wants_action else None, prefix="next")
     uploads: list[Any] = []
     upload_error = ""
@@ -1352,6 +1361,12 @@ def _create_context(request: HttpRequest, form: Any, action_form: Any) -> dict[s
         # deliberately rather than appearing in a panel nobody opened
         # (Uus teema redesign §3).
         "today": timezone.localdate(),
+        # `Millal?`, resolved on the server in Europe/Tallinn — the same list
+        # and the same helper the Teema composer's chips are built from. Doing
+        # the arithmetic in the browser instead would answer in the reader's
+        # own timezone, and doing it twice would let the two surfaces drift
+        # (`quick_date_choices`, ADR 0052 §4).
+        "quick_dates": quick_date_choices(timezone.localdate()),
         "nav_active": "teemad",
     }
 
