@@ -111,6 +111,54 @@ def get_or_create_organisation(
 
 
 @transaction.atomic
+def resolve_organisation_name(
+    *, name: str, organisation_type: str = OrganisationType.OTHER
+) -> Organisation | None:
+    """The one institution a typed name means, creating it only if it is new.
+
+    The single-name half of :func:`resolve_recipients`, extracted so that every
+    counterparty field which accepts a typed name answers it the same way. Three
+    outcomes and nothing else:
+
+    * **one match — reuse.** A name that already names an institution, either
+      canonically or through a recorded alias, *is* that institution. Nothing is
+      created.
+    * **no match — create.** A genuinely new body becomes a new row, through
+      :func:`get_or_create_organisation`, so the quick-create rules — the
+      trimmed name, the registry-code check — are the ones that already apply
+      everywhere else.
+    * **two or more matches — refuse.** ``find_matches`` returning two rows means
+      the catalogue holds one spelling for two bodies, and that is a question for
+      a person. Creating a third would make the ambiguity permanent and picking
+      one would file the record against a body nobody named (§7D).
+
+    That third case is why callers must not reach for
+    :func:`get_or_create_organisation` directly with a name a person typed.
+    ``find_exact`` answers ``None`` both for "nothing matches" and for "two
+    things match", and a creating caller that reads the second as the first
+    writes the duplicate this function exists to refuse.
+
+    A blank name is not an error — it is the absence of an answer — so it
+    returns ``None`` and the caller keeps whatever it already had.
+
+    Runs inside the caller's transaction. A save refused after this point leaves
+    no institution behind (§7E).
+    """
+    cleaned = " ".join((name or "").split())
+    if not cleaned:
+        return None
+
+    matches = find_matches(cleaned)
+    if len(matches) > 1:
+        raise DomainError(f"«{cleaned}» sobib mitme organisatsiooniga — vali nimekirjast.")
+    if matches:
+        return matches[0]
+    return get_or_create_organisation(
+        name=cleaned, organisation_type=organisation_type
+    ).organisation
+
+
+@transaction.atomic
 def resolve_recipients(
     *, chosen: Sequence[Organisation], typed_names: Sequence[str]
 ) -> list[Organisation]:
@@ -150,19 +198,16 @@ def resolve_recipients(
             resolved.append(organisation)
 
     for raw in typed_names:
-        cleaned = " ".join((raw or "").split())
-        if not cleaned:
+        # One definition of "what does this typed name mean", shared with every
+        # other counterparty field that accepts one. Reuse, create or refuse —
+        # written once, above, rather than restated per caller.
+        typed = resolve_organisation_name(name=raw)
+        if typed is None:
             continue
-        matches = find_matches(cleaned)
-        if len(matches) > 1:
-            raise DomainError(f"«{cleaned}» sobib mitme organisatsiooniga — vali nimekirjast.")
-        organisation = get_or_create_organisation(
-            name=cleaned, organisation_type=OrganisationType.OTHER
-        ).organisation
-        if organisation.pk in seen:
+        if typed.pk in seen:
             continue
-        seen.add(organisation.pk)
-        resolved.append(organisation)
+        seen.add(typed.pk)
+        resolved.append(typed)
 
     return resolved
 

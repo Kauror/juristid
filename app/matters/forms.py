@@ -160,6 +160,58 @@ def offered_policy_areas() -> list[PolicyArea]:
     return list(selectable_policy_areas())
 
 
+def addressee_name_field() -> forms.CharField:
+    """`Adressaat`'s typed half, on both Teema forms.
+
+    Written once and built twice, because `Uus teema` and `Muuda teemat` must
+    offer the same control: a person filing a Teema and a person correcting one
+    are answering the same question, and two spellings of one field is two
+    workflows to learn (§7).
+
+    Its own field, deliberately, rather than a `name` attribute bolted onto the
+    long tail's search box. That box is a *filter* over choices already on the
+    page: somebody who types «Kliima», watches the list narrow to
+    `Kliimaministeerium` and clicks it has answered the question, and a control
+    that also posted the four letters left in the box would file the Teema
+    against a new institution called «Kliima». One control per intention —
+    filter, or name a body that is not here — is what makes the difference
+    between them decidable on the server (§10).
+
+    Nothing is created here. `clean_addressee_name` trims and length-caps the
+    text; `app.matters.services.resolve_addressee` decides what it means, and
+    does so inside the save's own transaction (§5, §6).
+    """
+    return forms.CharField(
+        label="Uus adressaat",
+        # `Organisation.name` is 300, so a name this field accepted and the
+        # service could not store is not a state either of them can reach.
+        max_length=300,
+        required=False,
+        strip=True,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "autocomplete": "off",
+                "placeholder": "Kirjuta asutuse nimi",
+            }
+        ),
+    )
+
+
+def clean_addressee_name(value: str | None) -> str:
+    """Collapse the typed institution name. Resolve nothing.
+
+    Whitespace is collapsed the way `app.core.text.normalize_for_matching`
+    collapses it, so «Majandus-  ja   Kommunikatsiooniministeerium» and the
+    canonical spelling reach the resolver as one string and reuse one row.
+
+    Whether that string names an institution that already exists, a new one, or
+    two at once is a question about stored state, and a form does not touch
+    stored state (§5).
+    """
+    return " ".join((value or "").split())
+
+
 def organisations_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
     """The senders this department actually hears from, most frequent first.
 
@@ -389,6 +441,7 @@ class MatterCreateForm(forms.Form):
         blank=True,
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
+    addressee_name = addressee_name_field()
     received_date = EstonianDateField(
         label="Saabus",
         required=False,
@@ -487,6 +540,9 @@ class MatterCreateForm(forms.Form):
             self.add_error("policy_area_other", "Kirjuta, millise valdkonnaga on tegemist.")
 
         return cleaned
+
+    def clean_addressee_name(self) -> str:
+        return clean_addressee_name(self.cleaned_data.get("addressee_name"))
 
     @property
     def data_class(self) -> str:
@@ -706,6 +762,7 @@ class MatterEditForm(forms.Form):
         blank=True,
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
+    addressee_name = addressee_name_field()
     #: No `initial=timezone.localdate` on either date, unlike every other date
     #: box in the product. This form is always opened on a Matter that already
     #: exists and its `initial` dict carries that Matter's real values, so a
@@ -838,6 +895,9 @@ class MatterEditForm(forms.Form):
                 senders.setdefault(organisation.pk, organisation)
         cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
         return cleaned
+
+    def clean_addressee_name(self) -> str:
+        return clean_addressee_name(self.cleaned_data.get("addressee_name"))
 
     def clean_title(self) -> str:
         value = (self.cleaned_data.get("title") or "").strip()

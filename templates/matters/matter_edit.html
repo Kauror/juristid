@@ -131,6 +131,11 @@
                   <p class="field__help">Kõik salvestatud asutused on juba ülal.</p>
                 {% endfor %}
               </div>
+              {% comment %}
+                Saatja only. Its Adressaat twin is gone because that field now
+                accepts a typed name; sender auto-creation is a separate
+                decision nobody has taken, so this sentence stands (§11).
+              {% endcomment %}
               <p class="field__help">
                 Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla —
                 teema vormilt uut asutust ei teki.
@@ -244,7 +249,8 @@
           answers most often as chips, the rest inside the disclosure. One group
           and one name, because `Matter` holds one addressee.
         {% endcomment %}
-        <div class="chiprow">
+        <div class="chiprow" data-clears="addressee_organisation"
+             data-clears-field="{{ form.addressee_name.id_for_label }}">
           {% for choice in form.addressee_organisation %}
             {% if form.addressee_split is None or forloop.counter0 < form.addressee_split %}
               <label class="chip">
@@ -255,7 +261,7 @@
           {% endfor %}
 
           {% if form.addressee_tail_count %}
-            <details class="chipdetails">
+            <details class="chipdetails chipdetails--stretch">
               <summary class="chipdetails__summary">
                 Vali nimekirjast ({{ form.addressee_tail_count }})
               </summary>
@@ -275,14 +281,30 @@
                     {% endif %}
                   {% endfor %}
                 </div>
-                <p class="field__help">
-                  Kui adressaati siin ei ole, tuleb asutus enne lisada asutuste
-                  alla — teema vormilt uut asutust ei teki.
-                </p>
               </div>
             </details>
           {% endif %}
         </div>
+        {% comment %}
+          Free entry, the same control `Uus teema` carries and with the same
+          contract: `Saatja` stays existing-organisations-only, `Adressaat` may
+          be chosen or typed. A typed name reuses an exact or alias match and
+          otherwise creates the institution, inside this page's own save
+          transaction — a person must not have to learn two Adressaat workflows
+          for one field (§7, app/organisations/services.py).
+
+          Typing wins over the selected chip, and here that is not a preference
+          but the point: this radio group always carries the addressee the
+          Matter already has, so nothing could ever be replaced by typing if the
+          chip won (app/matters/services.py `resolve_addressee`).
+        {% endcomment %}
+        <label class="field createform__newname">
+          <span class="field__label">{{ form.addressee_name.label }}</span>
+          {{ form.addressee_name }}
+          {% if form.addressee_name.errors %}
+            <span class="field__error">{{ form.addressee_name.errors|first }}</span>
+          {% endif %}
+        </label>
         {% if form.addressee_organisation.errors %}
           <span class="field__error">{{ form.addressee_organisation.errors|first }}</span>
         {% endif %}
@@ -290,8 +312,15 @@
     </div>
 
     {# 7 — What only an existing record has. #}
+    {% comment %}
+      `createform__field--compact` on both fields, naming the constraint the
+      narrow breakpoint used to reach through `.createform__pair--class .field`.
+      Same rendering as before at every width; what changed is that the cap is
+      now stated on the fields that want it instead of on whatever happens to
+      share their row (static/css/app.css).
+    {% endcomment %}
     <div class="createform__row createform__pair createform__pair--class">
-      <fieldset class="field">
+      <fieldset class="field createform__field--compact">
         <legend class="field__label">
           {{ form.tags.label }}
           <span class="field__count" data-chipcount-for="tags"></span>
@@ -309,7 +338,7 @@
         {% if form.tags.errors %}<span class="field__error">{{ form.tags.errors|first }}</span>{% endif %}
       </fieldset>
 
-      <fieldset class="field">
+      <fieldset class="field createform__field--compact">
         <legend class="field__label">{{ form.visibility.label }}</legend>
         <div class="chiprow">
           {% for choice in form.visibility %}

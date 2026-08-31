@@ -4810,9 +4810,33 @@ p.factsection__none {
   /* A date box has one shape whatever the column is doing. Stretched to the
      full width of a stacked row it reads as the most important field on the
      screen, which on this page it is not. */
+  /* The second selector used to be `.createform__pair--class .field`, and that
+     is the bug this replaces. A pair is two fields, and capping *the pair* at
+     18rem capped both of them — so when the row stacked, Adressaat collapsed to
+     roughly 288px with the rest of the stacked row empty to its right, for no
+     reason other than sharing a row with a checkbox that genuinely is small.
+     A field is compact because of what it holds, never because of what it sits
+     beside, so the cap is now named on the fields that want it. */
   .createform__trio .field:has(.dateinput),
-  .createform__pair--class .field {
+  .createform__field--compact {
     max-width: 18rem;
+  }
+
+  /* The long tail, when the pair has stopped being a pair.
+     `.chipdetails` is `inline-block` so that a closed disclosure is a chip
+     sitting in a row of chips, and that is right at every width. Open and
+     stacked it is wrong: shrink-to-fit measures the search box and the chip
+     names inside, and the panel ends up a narrow island in a field that has
+     the whole row to spend. `block` hands it that width.
+     A modifier rather than the bare class, because the same component opens
+     under Saatja here and on Saabunud, and neither is this round's subject. */
+  .chipdetails--stretch {
+    display: block;
+    /* The disclosure is a flex item in `.chiprow`, so `display: block` alone
+       still leaves it shrink-to-fit — the flex base size is its content. This
+       is the line that actually hands it the row. */
+    flex-basis: 100%;
+    width: 100%;
   }
 }
 
@@ -5089,6 +5113,24 @@ p.factsection__none {
 .chip--other .chip__input:checked + .chip__name {
   border-style: solid;
   color: var(--text-primary);
+}
+
+/* Adressaat's typed half: the way a body that is not in the catalogue gets
+   onto this form without leaving it. Under the chips rather than beside them,
+   because it answers what the chips could not, and bounded like
+   `.createform__other` — an institution name is a line of text, not a
+   paragraph, and a box the width of a stacked row would read as the most
+   important field on the page. */
+.createform__newname {
+  margin-top: var(--spacing-3);
+  max-width: 30rem;
+}
+
+.createform__newname .field__input {
+  /* `--compact` sets `width: auto`, which on a text input is the browser's
+     twenty-character default and too short for a ministry. The padding is what
+     is wanted from it; the width is not. */
+  width: 100%;
 }
 
 .createform__other {
