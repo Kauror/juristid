@@ -1038,16 +1038,18 @@ def test_a_pdf_alone_never_creates_a_submission(normal_matter, specialist):
     assert not Submission.objects.filter(matter=normal_matter).exists()
 
 
-def test_the_rail_shows_only_a_canonical_sent_opinion(signed_in, specialist, organisation):
-    """The sent opinion reaches the main view — once, in the rail.
+def test_the_closing_flows_opinion_reaches_the_rail(signed_in, specialist, organisation):
+    """The sent opinion reaches the main view — once, in `Koja arvamus`.
 
     The redesign put it in a full-width strip of its own under the position
     block, which said the same thing the position said, a second time and
-    further down. Hands-on QA collapsed both into one rail block: what Koda
-    argued, and the file that says so (Teema QA §1.2).
+    further down. Hands-on QA collapsed both into one rail block; the later
+    product decision then dropped the position half, leaving the file — which
+    is what the closing flow writes, under `KODA_SUBMISSION_FINAL`
+    (Teema QA §1.2, tests/test_teema_rail.py).
     """
     matter = factories.MatterFactory(owner=specialist)
-    assert "railposition__opinion" not in _detail(signed_in, matter)
+    assert "Arvamust ei ole lisatud." in _detail(signed_in, matter)
 
     compose_update(
         matter=matter,
@@ -1064,20 +1066,22 @@ def test_the_rail_shows_only_a_canonical_sent_opinion(signed_in, specialist, org
     )
 
     body = _detail(signed_in, matter)
-    assert "railposition__opinion" in body
     assert "Koja_arvamus.pdf" in body
+    assert "Arvamust ei ole lisatud." not in body
     # And nothing else on the page says it a second time.
     assert "sentstrip" not in body
-    assert body.count("Koja seisukoht") == 1
+    assert body.count('id="koja-arvamus"') == 1
 
 
-def test_a_draft_submission_never_reaches_the_rail(signed_in, specialist):
+def test_a_draft_submission_alone_never_reaches_the_rail(signed_in, specialist):
+    """A draft has no evidence, so there is no file for the rail to name."""
     matter = factories.MatterFactory(owner=specialist)
     factories.SubmissionFactory(matter=matter, title="Mustand", status=SubmissionStatus.DRAFT)
 
     body = _detail(signed_in, matter)
 
-    assert "railposition__opinion" not in body
+    assert "Mustand" not in body
+    assert "Arvamust ei ole lisatud." in body
 
 
 # ---------------------------------------------------------------------------

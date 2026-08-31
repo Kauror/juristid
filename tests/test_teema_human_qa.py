@@ -35,7 +35,7 @@ from app.matters.forms import (
     NextActionForm,
 )
 from app.matters.models import Matter
-from app.matters.services import assign_matter, set_policy_areas, set_position
+from app.matters.services import assign_matter, set_policy_areas
 from app.taxonomy.models import PolicyArea
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics, Disposition
 from app.workflow.models import NextAction
@@ -62,11 +62,20 @@ def _edit_url(matter) -> str:
 
 
 # ---------------------------------------------------------------------------
-# §1 — Koja seisukoht belongs in the rail
+# §1 — what the Chamber produced belongs in the rail
+#
+# This round moved `Koja seisukoht` out of the main column and into the 300px
+# one, and QA was right about the *placement*. A later product decision retired
+# the concept itself: there is no separate free-text position, and what the
+# Chamber produced on a Matter is the opinion it sent, which is a file. The
+# placement survived the concept, so what is asserted here is the placement —
+# `Koja arvamus` occupies it, and the main-column band and the duplicate
+# sent-opinion strip are still gone. The block's own behaviour is in
+# tests/test_teema_rail.py.
 # ---------------------------------------------------------------------------
 
 
-def test_the_position_is_in_the_rail_and_only_there(signed_in, specialist):
+def test_what_koda_produced_is_in_the_rail_and_only_there(signed_in, specialist):
     """One block, in the 300px column, matching the approved mockup.
 
     The redesign put a full-width position block in the main column between the
@@ -75,45 +84,35 @@ def test_the_position_is_in_the_rail_and_only_there(signed_in, specialist):
     two things that fit in a rail card (Teema QA §1).
     """
     matter = factories.MatterFactory(owner=specialist)
-    set_position(
-        matter=matter,
-        position_summary="Koda ei toeta pakendiaktsiisi tõusu.",
-        actor=specialist,
-    )
 
     body = _detail(signed_in, matter)
 
-    assert "railposition__text" in body
-    assert "Koda ei toeta" in body
+    assert body.count('id="koja-arvamus"') == 1
     # The main-column block and the duplicate strip are gone, not moved.
     assert "positionblock" not in body
     assert "sentstrip" not in body
-    # And the rail card appears exactly once, on one surface.
-    assert body.count('id="koja-seisukoht"') == 1
 
 
-def test_the_rail_links_to_where_the_position_is_written(signed_in, specialist):
-    """A 300px column states the position; it does not hold two textareas."""
+def test_the_rail_links_to_the_formal_opinion_surface(signed_in, specialist):
+    """A 300px column names what Koda sent; it does not hold two textareas."""
     matter = factories.MatterFactory(owner=specialist)
     body = _detail(signed_in, matter)
 
     assert reverse("matters:matter_position", kwargs={"pk": matter.pk}) in body
-    assert "Lisa seisukoht" in body
-    # No editor in the rail: the fields belong on the Arvamused surface.
+    # No editor in the rail: the position fields belong on the Arvamused surface.
     assert "id_position_summary" not in body
 
 
 def test_the_rail_travels_to_every_matter_surface(signed_in, specialist):
-    """The rail is on all three Matter surfaces, so the position is too."""
+    """The rail is on all three Matter surfaces, so the block is too."""
     matter = factories.MatterFactory(owner=specialist)
-    set_position(matter=matter, position_summary="Koda toetab.", actor=specialist)
 
     # The two surfaces that carry the rail. Dokumendid is deliberately
     # full-width with no rail at all — browsing forty files is the task that tab
     # exists for (templates/matters/matter_documents.html).
     for name in ("matters:matter_detail", "matters:matter_position"):
         body = _body(signed_in.get(reverse(name, kwargs={"pk": matter.pk})))
-        assert "railposition__text" in body, name
+        assert 'id="koja-arvamus"' in body, name
 
 
 # ---------------------------------------------------------------------------
@@ -735,7 +734,7 @@ def test_the_matter_page_renders_for_a_matter_with_nothing_on_it(signed_in, spec
     matter = factories.MatterFactory(owner=specialist)
     response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
     assert response.status_code == 200
-    assert "Seisukohta ei ole" in _body(response)
+    assert "Arvamust ei ole lisatud." in _body(response)
 
 
 def test_the_edit_page_reaches_every_matter_it_should(signed_in, specialist):

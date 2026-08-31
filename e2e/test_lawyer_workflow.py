@@ -243,26 +243,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # -- Scenario C: a formal opinion with its exact evidence ------------
     #
-    # The rail states the position and links to where it is written. A 300px
-    # read-first column has no room for two textareas and no business holding
-    # them (Teema QA §1).
-    page.goto(matter_url)
-    page.locator("#koja-seisukoht").get_by_role("link", name="Lisa seisukoht").click()
-    page.locator("#id_position_summary").fill("Koda ei toeta pakendiaktsiisi kavandatud tõusu.")
-    page.locator("#id_rationale_summary").fill("Liikmete hinnangul kasvab halduskoormus.")
-    page.locator(".positionpanel").get_by_role("button", name="Salvesta seisukoht").click()
-
-    # Saved, and read back from the rail on the main view.
-    page.goto(matter_url)
-    expect(page.locator(".railposition__text")).to_contain_text("Koda ei toeta")
-    # Exactly one Koja seisukoht on the page. The full-width block the redesign
-    # put in the main column is gone, not duplicated into the rail.
-    expect(page.locator("#koja-seisukoht")).to_have_count(1)
-    expect(page.locator(".positionblock")).to_have_count(0)
-
     # The formal Submission workflow is a quiet link in the rail, never a tab.
-    # `Loe edasi` now, because there is a position to read on.
-    page.locator("#koja-seisukoht .railposition__more").click()
+    # It is `Koja arvamus` that carries it now: there is no separate free-text
+    # `Koja seisukoht` in this product, and what the Chamber produced on a
+    # Matter is the letter it sent.
+    page.goto(matter_url)
+    expect(page.locator("#koja-seisukoht")).to_have_count(0)
+    page.locator("#koja-arvamus").get_by_role("link", name="Arvamused").click()
     page.locator("summary", has_text="Uus arvamus").click()
     page.locator("#id_title").fill("Koja arvamus pakendiseaduse eelnõule")
     page.locator("#id_kind").select_option("FORMAL_OPINION")
@@ -291,7 +278,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator(".badge--sent")).to_be_visible()
     expect(page.locator(".submission__meta").get_by_text("Saadetud")).to_be_visible()
     expect(page.get_by_text("koja-arvamus.pdf").first).to_be_visible()
-    screenshots(page, "06-seisukoht-ja-kaasamine")
+    screenshots(page, "06-arvamus-ja-kaasamine")
 
     # A second submission under the same Matter is ordinary, not a workaround.
     page.locator("summary", has_text="Uus arvamus").click()
@@ -306,12 +293,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # -- The sent opinion reaches the main view --------------------------
     #
-    # Once, in the rail beside the position it argued. The separate sent-opinion
-    # strip in the main column said the same thing a second time (Teema QA §1.2).
+    # Once, in `Koja arvamus`: the file is the Chamber's output, and the
+    # separate sent-opinion strip in the main column said the same thing a
+    # second time (Teema QA §1.2).
     page.goto(matter_url)
-    opinion = page.locator(".railposition__opinion")
+    opinion = page.locator("#koja-arvamus")
     expect(opinion).to_be_visible()
-    expect(opinion.get_by_text("koja-arvamus.pdf")).to_be_visible()
+    expect(opinion.get_by_role("link", name=re.compile("koja-arvamus.pdf"))).to_be_visible()
     expect(page.locator(".sentstrip")).to_have_count(0)
 
     # -- Documents ------------------------------------------------------

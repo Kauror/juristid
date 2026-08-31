@@ -39,12 +39,9 @@ from app.accounts.selectors import (
     named_owner_in,
     owner_filter_choices,
 )
-from app.core.authorization import apply as apply_scope
 from app.core.authorization import (
-    child_visibility_q,
     may_review_work_victory,
     may_write_business_content,
-    scope_for_user,
 )
 from app.core.dates import (
     format_estonian_date,
@@ -128,7 +125,7 @@ from app.matters.timeline import (
 from app.organisations.models import Organisation
 from app.search import services as search_services
 from app.submissions import embedded as opinions
-from app.submissions.enums import RecipientRole, SubmissionStatus
+from app.submissions.enums import RecipientRole
 from app.submissions.forms import SubmissionCreateForm
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
@@ -1350,51 +1347,30 @@ def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _position_opinion(request: HttpRequest, matter: Matter) -> Submission | None:
-    """The latest canonical sent opinion, for the rail's `Koja seisukoht`.
+def _opinion_documents(request: HttpRequest, matter: Matter) -> list[Document]:
+    """`Koja arvamus` — the Chamber's opinion on this Matter, as files.
 
-    One, not five. The rail states the current position and the file that says
-    so; the full list of everything Koda ever sent is the Arvamused surface, and
-    every send is an event on the chronology. A main-column strip repeating the
-    same latest opinion beside a rail block showing it was the same fact twice
-    on one screen, which is what hands-on QA objected to.
+    A Koja arvamus is a document, not a sentence somebody types. There is no
+    separate free-text `Koja seisukoht` concept in the product any more, and the
+    rail block that carried one is gone with it; what a lawyer reaches for in
+    this column is the letter itself.
 
-    Only SENT, only with its exact final evidence, and only through the
-    submission's own visibility. A draft is not something Koda sent, and a
-    historical archive letter is not a canonical submission — the archive keeps
-    its own surface precisely so the Matter page cannot claim an opinion went
-    out that nobody recorded going out.
+    `DocumentRole.KODA_SUBMISSION_FINAL` is that file, and it is already the
+    canonical role for it: the closing flow writes one (`_closure_final_opinion`),
+    `select_final_evidence` writes one, and the opinion archive import writes one.
+    So this lists the role rather than the Submissions, and a directly uploaded
+    opinion and one bound to a SENT Submission arrive in the same list without
+    either being stored twice.
 
-    And only where the *evidence* is readable too. The rail prints the file's
-    name beside the position, and a Submission a reader may see can point at a
-    Document restricted below it — a Document carries its own override. Two
-    visibilities, both of which have to hold, because the filename is the
+    `visible_to` and nothing else. A Document carries its own visibility
+    override and may be more restricted than its Matter, and the filename is the
     disclosure whether or not the bytes are refused (AUTH-003 §21).
     """
-    # One scope resolution for both predicates. `visible_to` asks the database
-    # about break-glass every time it is called, and the obvious spelling —
-    # `Submission.objects.visible_to(...)` filtered by
-    # `Document.objects.visible_to(...)` — pays for that lookup twice on a page
-    # that already renders a timeline (ADR 0033, ADR 0038).
-    scope = scope_for_user(request.user)
-    return (
-        apply_scope(
-            Submission.objects.filter(
-                matter=matter,
-                status=SubmissionStatus.SENT,
-                final_version__isnull=False,
-            ).filter(
-                child_visibility_q(
-                    scope,
-                    parent_prefix="final_version__document__matter__",
-                    override_field="final_version__document__visibility_override",
-                )
-            ),
-            child_visibility_q(scope),
-        )
-        .select_related("final_version")
-        .order_by("-sent_at")
-        .first()
+    return list(
+        Document.objects.filter(matter=matter, role=DocumentRole.KODA_SUBMISSION_FINAL)
+        .visible_to(request.user)
+        .select_related("current_version")
+        .order_by("-created_at")
     )
 
 
@@ -1568,7 +1544,7 @@ def _header_context(
         "can_write": may_write_business_content(request.user),
         # The rail renders on every Matter surface, so what the rail reads is
         # read here rather than three times over.
-        "position_opinion": _position_opinion(request, matter),
+        "opinion_documents": _opinion_documents(request, matter),
         "today": timezone.localdate(),
     }
 

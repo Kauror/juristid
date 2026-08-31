@@ -104,13 +104,24 @@ class DocumentUploadForm(forms.Form):
 @business_write_required
 @require_http_methods(["POST"])
 def upload_evidence(request: HttpRequest, matter_id: Any) -> HttpResponse:
-    """Create a logical document and capture its first immutable version."""
+    """Create a logical document and capture its first immutable version.
+
+    Lands on Dokumendid, which is where the upload panel is — unless the caller
+    says it started somewhere else. `Koja arvamus` in the facts rail posts here
+    too, and bouncing somebody to the file list because they attached the
+    Chamber's opinion while reading the Teema page loses their place.
+
+    `tagasi` is a fixed word and never a URL. A `next` the browser supplies is
+    an open redirect until it has been validated; one literal value cannot be
+    one, and there is nothing here to get wrong later.
+    """
     matter = get_visible_matter(request, matter_id)
+    back = _after_upload(request, matter)
     form = DocumentUploadForm(request.POST, request.FILES)
 
     if not form.is_valid():
         messages.error(request, "Vali fail ja roll.")
-        return redirect("matters:matter_documents", pk=matter.pk)
+        return back
 
     try:
         upload = read_upload(form.cleaned_data["upload"])
@@ -131,6 +142,13 @@ def upload_evidence(request: HttpRequest, matter_id: Any) -> HttpResponse:
     except (DomainError, UploadRejected) as error:
         messages.error(request, str(error))
 
+    return back
+
+
+def _after_upload(request: HttpRequest, matter: Any) -> HttpResponse:
+    """Where an upload returns to, from a closed vocabulary of two."""
+    if request.POST.get("tagasi") == "teema":
+        return redirect("matters:matter_detail", pk=matter.pk)
     return redirect("matters:matter_documents", pk=matter.pk)
 
 
