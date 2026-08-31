@@ -139,12 +139,14 @@ half of the decision. A form that reads a field's *emptiness* as a signal cannot
 have that field defaulted, because there a default does not save typing — it
 states a fact nobody gave:
 
-- the composer's period control (`next_date`, `deadline_date`) — a TEEN with no
+- the composer's date controls (`next_date`, `deadline_date`) — a step with no
   date is the one combination the domain refuses, being a deadline that cannot
   be met, missed or planned against. A default answers that refusal with a
-  deadline nobody chose. The same control also offers a month, a quarter and a
+  deadline nobody chose. `deadline_date` also offers a month, a quarter and a
   year, and a day pre-filled while somebody means "III kvartal" is noise in the
-  one control whose whole job is to say how precisely a date is known;
+  one control whose whole job is to say how precisely a date is known. (Since
+  ADR 0052 `next_date` is an exact date with no period control behind it, and
+  keeps no default for the first reason;)
 - `final_sent_on` — a send date with no chosen file is an opinion claimed
   without its evidence, which the form refuses. Defaulted, it refused every
   ordinary closure that was not also recording a sent opinion;
@@ -194,6 +196,10 @@ containment from the event's composed path rather than from the live tree. The
 per-input listeners it replaces also leaked, one per date field ever rendered.
 
 ### 7. Mode chip selection is carried by colour, not by opacity
+
+> **The Teema composer no longer has mode chips (ADR 0052, 2026-08-31).** They
+> are still on Uus teema, still built from `.modechip`, and everything below
+> still describes how they look and why. What changed is where they are asked.
 
 The composer's chips showed their unselected state as `opacity: 0.55` against a
 selected `1`. On the dark surface that is two greys, one slightly greyer.

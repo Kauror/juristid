@@ -1969,10 +1969,47 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
     return _render_overview(request, matter)
 
 
+def _next_action_row_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
+    """Everything `next_action_row.html` reads, and nothing else.
+
+    A deliberately small slice of `_overview_context`. The Järgmiseks row is the
+    one surface that re-renders on its own, and building the whole overview to
+    answer it would run the timeline, the engagement list and the intelligence
+    selectors for a fragment that shows none of them.
+    """
+    current_action = current_next_action(matter)
+    source_instruction = "" if current_action else source_instruction_for(matter)
+    return {
+        "matter": matter,
+        "current_action": current_action,
+        "source_instruction": source_instruction,
+        "source_snapshot": snapshot_label() if source_instruction else "",
+        "can_write": may_write_business_content(request.user),
+        "can_defer": current_action is not None and not current_action.is_approximate,
+        "defer_choices": defer_choices(timezone.localdate()),
+    }
+
+
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
 def complete_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """`✓ Tehtud` — the step is done, and that is the whole save.
+
+    **It writes no entry.** The completion is already evidence: the canonical
+    `NEXT_ACTION_COMPLETED` event says who finished what and when, and the
+    action itself stays in the history. Manufacturing a note that reads
+    "Helistasin ministeeriumisse" would be the application writing a lawyer's
+    record for them. Something worth recording goes in the composer, in their
+    own words, and that is a separate save (ADR 0052 §7).
+
+    **It swaps the Järgmiseks row and nothing else.** This used to re-render
+    `#teema-vaade`, which is the row *and the open composer under it* — so
+    finishing a step threw away every unsaved character somebody had typed
+    about it, which is exactly the moment they are most likely to be typing.
+    The write is persisted before the response either way; the chronology
+    catches up on the next render of the page (ADR 0052 §8, §9).
+    """
     matter = get_visible_matter(request, pk)
     action = get_object_or_404(
         NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
@@ -1980,11 +2017,14 @@ def complete_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpRespon
     try:
         complete_next_action(action=action, actor=request.user)
     except DomainError as error:
-        context = _overview_context(request, matter)
-        context.update(_header_context(request, matter))
-        context["composer_error"] = str(error)
-        return render(request, "matters/partials/overview.html", context, status=400)
-    return _render_overview(request, matter)
+        # The refusal comes back inside the row, because the row is what the
+        # response replaces. Rendering the whole overview into a target that
+        # holds one row would nest the page inside itself.
+        context = _next_action_row_context(request, matter)
+        context["next_action_error"] = str(error)
+        return render(request, "matters/partials/next_action_row.html", context, status=400)
+    context = _next_action_row_context(request, matter)
+    return render(request, "matters/partials/next_action_row.html", context)
 
 
 @login_required

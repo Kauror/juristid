@@ -52,8 +52,14 @@ is rendered inside the `<details>` and everything older comes from
         page a reader may be checking the history in order to remember.
       {% endcomment %}
       {% if current_action %}
+        {% comment %}
+          The step itself, not its category. This is the same fact the
+          Järgmiseks row states three inches above, and printing «→ TEEN» here
+          while that row shows no classification would put the retired
+          vocabulary back on the page it left (ADR 0052 §6).
+        {% endcomment %}
         <span class="uxtl__previewnext">
-          <b>→ {{ current_action.get_kind_display|upper }}</b>
+          <b>→</b>
           {{ current_action.text|truncatechars:40 }}{% if current_action.target_date %} · {{ current_action.display_date }}{% endif %}
         </span>
       {% endif %}

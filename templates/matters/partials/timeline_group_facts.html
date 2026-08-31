@@ -3,8 +3,7 @@ The canonical facts one professional update produced, under the line describing
 it.
 
 Not a second timeline and not an audit dump: one short line per record, saying
-what the save actually wrote. A next step shows its mode and its date, because
-that is the thing somebody scrolling back is looking for; a deadline, a
+what the save actually wrote. A next step shows its sentence; a deadline, a
 consultation and a captured file each say what they are.
 
 The `ENTRY_ADDED` event that names the operation is never here — the note above
@@ -15,10 +14,14 @@ twice (app/matters/timeline.py).
   <ul class="groupfacts">
     {% for event in item.events %}
       {% if event.event_type == "NEXT_ACTION_SET" %}
+        {% comment %}
+          Named like every other fact in this list rather than by a coloured
+          mode chip. The stored `kind` is still in the event payload and every
+          reporting surface still reads it; what left is the word on the Teema
+          page (ADR 0052 §6).
+        {% endcomment %}
         <li class="groupfacts__row">
-          <span class="modechip modechip--{{ event.payload.kind|lower }} modechip--tiny">
-            {{ event.payload.kind }}
-          </span>
+          <span class="groupfacts__kind">Järgmiseks</span>
           <span>{{ event.summary }}</span>
         </li>
       {% elif event.event_type == "EVIDENCE_VERSION_ADDED" %}
