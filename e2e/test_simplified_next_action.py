@@ -33,6 +33,12 @@ def _future(days: int) -> str:
     return f"{value.day}.{value.month}.{value.year}"
 
 
+def _short(days: int) -> str:
+    """The `pp.kk` form the row and the defer chips print."""
+    value = date.today() + timedelta(days=days)
+    return f"{value.day:02d}.{value.month:02d}"
+
+
 def open_matter(page, base_url: str, title: str) -> str:
     page.goto(f"{base_url}/teemad/?olek=koik&q={title.split()[0]}")
     page.wait_for_load_state("networkidle")
@@ -235,6 +241,70 @@ def test_tehtud_does_not_discard_what_is_already_typed_into_the_composer(page, b
     page.wait_for_load_state("networkidle")
     expect(page.locator(".uxnext__text")).to_have_text("Vaadata uus versioon üle")
     expect(page.locator("#ajajoon")).to_contain_text("Ministeerium lubas saata uue versiooni")
+
+
+# ---------------------------------------------------------------------------
+# Pilot QA F-04, F-05 — «Lükka edasi» is the same kind of gesture as ✓ Tehtud
+# ---------------------------------------------------------------------------
+
+
+def _defer(page, label: str, *, lands_on: str) -> None:
+    """Press one defer chip and wait for the row it swaps to carry the new day.
+
+    `networkidle` is not enough on its own: the POST completes before HTMX has
+    put the fragment in the document, so an assertion taken straight afterwards
+    reads the row that is on its way out.
+    """
+    page.locator("summary.uxnext__defersum").click()
+    page.locator(".uxnext__menu button", has_text=label).first.click()
+    expect(page.locator(".uxnext__date")).to_contain_text(lands_on)
+
+
+def test_lukka_edasi_does_not_discard_what_is_already_typed_into_the_composer(page, base_url):
+    """The pilot's F-04, in the only place it exists.
+
+    Both defer forms swapped `#teema-vaade` — the Järgmiseks row *and the open
+    composer under it* — so moving a date threw away the write-up somebody was
+    in the middle of. `✓ Tehtud` had been fixed for exactly this and this
+    control had not.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, "Edasilükkamine brauserikatsest")
+    set_step(page, "Helistada ministeeriumisse", 30)
+
+    open_composer(page)
+    body = "Ministeerium lubas uue versiooni kuu lõpuks."
+    page.locator("textarea.composer__body").fill(body)
+    page.locator("[name='next_text']").fill("Vaadata uus versioon üle")
+    page.locator("[data-quickdate]").filter(has_text="+2 nädalat").first.click()
+    chosen_date = page.locator("#id_next_date").input_value()
+    assert chosen_date, "the quick chip did not fill the field that is submitted"
+
+    _defer(page, "+1 päev", lands_on=_future(31))
+
+    # The row moved, and every unsaved value is exactly where it was.
+    assert page.locator("details.uxcomp").evaluate("node => node.open") is True
+    assert page.locator("textarea.composer__body").input_value() == body
+    assert page.locator("[name='next_text']").input_value() == "Vaadata uus versioon üle"
+    assert page.locator("#id_next_date").input_value() == chosen_date
+
+
+def test_the_defer_chips_name_the_day_the_step_actually_moves_to(page, base_url):
+    """F-05 on the control itself.
+
+    The chips were computed from today, so over a step dated four weeks out they
+    named a day four weeks earlier than the one the press would produce.
+    """
+    sign_in(page, base_url, SANDRA)
+    create_matter(page, base_url, "Edasilükkamise kuupäev brauserikatsest")
+    set_step(page, "Saata kiri ministeeriumile", 30)
+
+    page.locator("summary.uxnext__defersum").click()
+    chip = page.locator(".uxnext__menu button", has_text="+1 päev").first
+    assert _short(31) in chip.inner_text()
+
+    chip.click()
+    expect(page.locator(".uxnext__date")).to_contain_text(_future(31))
 
 
 # ---------------------------------------------------------------------------

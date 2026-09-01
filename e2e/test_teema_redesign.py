@@ -211,11 +211,14 @@ def test_closing_happens_in_the_composer_and_leaves_a_readable_past(page, base_u
     page.locator(".disclosure-chip", has_text="+ Lõpeta teema").click()
     expect(page.locator("#koostaja-lopetamine")).to_be_visible()
 
-    page.locator("#id_close_matter").check()
-    # The primary button says what the save will actually do.
-    expect(page.locator("[data-composer-submit]")).to_have_text("Lõpeta teema")
+    # No confirmation box: answering the section is the request (pilot QA F-02).
+    expect(page.locator("#id_close_matter")).to_have_count(0)
+    expect(page.locator("[data-composer-submit]")).to_have_text("Salvesta")
 
     page.locator("#id_disposition").select_option("COMPLETED")
+    # The primary button says what the save will actually do, and it now tracks
+    # the answers rather than a checkbox.
+    expect(page.locator("[data-composer-submit]")).to_have_text("Lõpeta teema")
     # No second narrative box: the closure reason *is* the composer body, and
     # `Töövõit` is a decision the closure now insists on
     # (Teema closing redesign §2, §10).

@@ -278,7 +278,6 @@ def test_closing_the_matter_still_works_with_neither_box(signed_in, normal_matte
         body="<p>Menetlus lõppes.</p>",
         next_text="",
         next_date="",
-        close_matter="on",
         disposition=Disposition.COMPLETED,
         work_victory="EI",
     )
