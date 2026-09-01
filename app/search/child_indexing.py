@@ -86,7 +86,13 @@ def _engagement_values(engagement, now: object) -> dict[str, object]:
         "identifiers": "",
         "alias_text": " ".join(dict.fromkeys(engagement.link_search_terms)),
         "body_text": engagement.note or "",
-        "source_locator": f"kaasamine-{engagement.pk}",
+        # No locator. `source_locator` says *where a result opens from when
+        # the source is not the Teema itself* — a page number, an archive
+        # section. A Kaasamine has no such place, and what used to be written
+        # here was `kaasamine-<primary key>`: a database identifier printed at
+        # a lawyer, saying nothing the `Kaasamine` badge beside it does not
+        # already say, and changing on every reseed (docs/adr/0056).
+        "source_locator": "",
         "index_version": INDEX_VERSION,
         "indexed_at": now,
     }
@@ -146,7 +152,9 @@ def _entry_values(entry: Entry, now: object) -> dict[str, object]:
             if part
         ),
         "body_text": body,
-        "source_locator": f"sissekanne-{entry.pk}",
+        # As above: an entry opens at its own anchor on the Teema page, which
+        # `_target_url` builds from `entry_id`. The locator was a primary key.
+        "source_locator": "",
         "index_version": INDEX_VERSION,
         "indexed_at": now,
     }
@@ -177,7 +185,8 @@ def _submission_values(submission: Submission, now: object) -> dict[str, object]
         # a match can say which file and which page it came from instead of
         # attributing a whole document to a Submission row (Stage-2B brief 38).
         "body_text": submission.notes or "",
-        "source_locator": f"arvamus-{submission.pk}",
+        # As above. `_target_url` builds the anchor from `submission_id`.
+        "source_locator": "",
         "index_version": INDEX_VERSION,
         "indexed_at": now,
     }

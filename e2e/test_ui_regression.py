@@ -162,6 +162,8 @@ CLOCK_DEPENDENT = [
     # Kaasamine's and Töödokumendid's summaries are content and must stay.
     ".accordion--timeline > summary .uxtl__previewnext",
     ".accordion--timeline > summary .uxtl__count",
+    # The folded system-run summary's date span. See `TIMELINE_RUN_SPAN`.
+    ".uxtl__sysrow > span:nth-child(2)",
     # Osakond's deadline panel. Every row prints "R 28.08" or "täna", and every
     # group header prints the window it holds — all of it computed from today
     # (design handoff 1a). The owner badges and four of the five group names stay
@@ -391,6 +393,29 @@ CLOSED_ON = (".banner--closed .banner__text .muted",)
 #: in this application and only this one has content beside it on its line.
 TIMELINE_PREVIEW_ON = (".uxtl__preview time",)
 
+#: The folded system-run summary's date span — «3 süsteemimuudatust — … 31.08
+#: näita ▸». `TimelineRow.span` over the run's own days, so it moves every
+#: morning: it read `31.08` when these baselines were taken and `01.09` the next
+#: day, for 304 of the 308 pixels each Teema capture was drifting by.
+#:
+#: The selector is positional because the element has no class of its own, and
+#: adding one for a test would put a Playwright concern into product markup. It
+#: is stable rather than incidental: `.uxtl__sysrow` is one `<summary>` with
+#: exactly three unconditional `<span>` children in a fixed order — the count
+#: and kinds sentence, this span, and `.uxtl__sysshow`. Nothing here is inside
+#: an `{% if %}`, so `:nth-child(2)` can only ever be `row.span`
+#: (templates/matters/partials/timeline_items.html).
+#:
+#: Masked rather than normalised, and measured rather than assumed.
+#: `short_day_month` zero-pads, so `31.08` and `01.09` are both five characters,
+#: and the differing columns are x506–574 in both scenarios with `näita ▸`
+#: standing still — the glyphs move and the box does not. `short_range` *can*
+#: return an eleven-character `27.08–31.08` when a run covers more than one day;
+#: the mask covers whatever box is there, where a normalisation would have to
+#: rewrite a real range to a single date and say something untrue about how long
+#: the run lasted.
+TIMELINE_RUN_SPAN = (".uxtl__sysrow > span:nth-child(2)",)
+
 #: Values that have to be held still, not merely covered.
 #:
 #: A mask hides glyphs. It does not stop the element being as wide as whatever
@@ -502,6 +527,19 @@ REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     "teemad-3440": OPINION_SENT,
     "teemad-filter": OPINION_SENT,
     "teema-suletud": (".banner--closed .banner__text .muted",),
+    # Required, because what decides it is the seeded world rather than the day.
+    # `collapse_system_runs` folds two or more *adjacent* system events, and the
+    # seed's own sequence of service calls on this Matter produces such a run:
+    # both captures rendered it on the run this mask was measured from, which is
+    # how the drift was found at all. So an absence here means the markup moved
+    # or the seed's call order changed — either is something to look at, not
+    # something to silently stop masking.
+    #
+    # Only these two are *required*. The selector is in `CLOCK_DEPENDENT`, so
+    # any other scenario that renders a folded run has it painted too; requiring
+    # it there as well would assert a presence nothing measured.
+    "teema-ulevaade": TIMELINE_RUN_SPAN,
+    "teema-1024": TIMELINE_RUN_SPAN,
     # This scenario opens `+ Manus` itself, so the control is always there.
     "teema-koostaja": ("#koostaja-manus .dateinput",),
     # Unlike `.interrow__detail` above, these three are required. They are not
@@ -1268,3 +1306,101 @@ def test_every_scenario_that_renders_a_clock_value_declares_it(page):
         assert set(selectors) <= normalised, scenario
     for scenario, selectors in REQUIRED_MASKS.items():
         assert set(selectors) <= set(CLOCK_DEPENDENT), scenario
+
+
+#: `TimelineRow.span`, in the two shapes `short_range` can produce. Every one is
+#: zero-padded — `short_day_month` formats `{day:02d}.{month:02d}` — which is
+#: the whole reason this element may be masked rather than normalised.
+#:
+#: Split in two because a single day and a range are five characters and eleven,
+#: and no mask makes those the same width. They do not need to be: what a run
+#: covers is decided by the seed's own event ordering, not by which morning the
+#: capture runs, so a scenario stays in one shape and only the digits inside it
+#: advance. Each tuple is therefore one day's worth of drift, tested for the
+#: property that matters — the box does not move.
+TIMELINE_SPAN_VARIANTS = ("31.08", "01.09", "31.12", "01.01")
+TIMELINE_SPAN_RANGE_VARIANTS = ("27.08–31.08", "28.08–01.09", "29.12–31.12", "30.12–01.01")
+
+
+def _box_holds_still(page, build, variants, selector: str) -> None:
+    """Like `_holds_still`, for an element whose *text* is allowed to change.
+
+    The distinction is the one this whole module is built on. A normalised
+    element has to come out reading the same, because the baseline holds its
+    glyphs. A masked element does not: the baseline holds a rectangle of
+    `#101418` where it was, so the only thing that has to hold still is the
+    rectangle — its width, and where the next element starts.
+
+    Asserting the text as well would be asserting the opposite of what the mask
+    is for, and would make this test fail on precisely the input it exists to
+    accept.
+    """
+    seen = set()
+    for variant in variants:
+        _fixture(page, build(variant))
+        seen.add(_geometry(page, selector)[1:])
+    assert len(seen) == 1, (
+        f"{selector!r} did not keep its box for every variant: {sorted(seen)}. "
+        f"Each entry is (own width, where the next element starts) — two entries "
+        f"means the mask is a different size on a different day, and the pixels "
+        f"it stops covering go into somebody else's diff."
+    )
+
+
+def _system_run_summary(span: str) -> str:
+    """The folded system-run summary, as `timeline_items.html` writes it.
+
+    Three unconditional spans in a fixed order, which is what makes
+    `:nth-child(2)` a selector rather than a guess.
+    """
+    return (
+        '<details class="uxtl__sys" open><summary class="uxtl__sysrow">'
+        "<span>3 süsteemimuudatust — seisund, vastutaja</span>"
+        f"<span>{span}</span>"
+        '<span class="uxtl__sysshow">näita ▸</span>'
+        "</summary></details>"
+    )
+
+
+def test_the_system_run_span_keeps_its_box_on_any_day(page):
+    """The mask is sized to this element, and the day inside it advances.
+
+    `31.08` became `01.09` overnight and put 304 differing pixels into both
+    Teema captures. Zero-padded, so the digits move and the box does not —
+    which is what makes a mask the right instrument here and a normalisation
+    the wrong one: normalising would have to rewrite a real range to a single
+    date and say something untrue about how long the run lasted.
+    """
+    _box_holds_still(
+        page,
+        _system_run_summary,
+        TIMELINE_SPAN_VARIANTS,
+        TIMELINE_RUN_SPAN[0],
+    )
+
+
+def test_the_system_run_span_keeps_its_box_across_a_multi_day_run(page):
+    """The other shape `short_range` produces, held to the same standard."""
+    _box_holds_still(
+        page,
+        _system_run_summary,
+        TIMELINE_SPAN_RANGE_VARIANTS,
+        TIMELINE_RUN_SPAN[0],
+    )
+
+
+def test_the_system_run_span_selector_takes_the_date_and_nothing_else(page):
+    """`:nth-child(2)` is positional, so what it selects is worth asserting.
+
+    A mask paints over everything it matches. If this selector reached the
+    count sentence or «näita ▸», the baseline would stop showing that the
+    summary says how many changes there are — and that is content, not a clock
+    value (the failure `CLOCK_DEPENDENT` documents for `<td>`/`<th>`).
+    """
+    _fixture(page, _system_run_summary("31.08"))
+
+    assert page.locator(TIMELINE_RUN_SPAN[0]).count() == 1
+    assert page.locator(TIMELINE_RUN_SPAN[0]).inner_text().strip() == "31.08"
+    # The two it must not take.
+    assert "süsteemimuudatust" in page.locator(".uxtl__sysrow > span:nth-child(1)").inner_text()
+    assert page.locator(".uxtl__sysshow").inner_text().strip().startswith("näita")

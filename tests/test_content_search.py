@@ -375,3 +375,109 @@ def test_deleting_all_derived_state_and_rebuilding_restores_search(
 
     assert result_count(query=term, user=specialist) == before
     assert dict(DocumentVersion.objects.values_list("pk", "sha256")) == checksums
+
+
+# ---------------------------------------------------------------------------
+# `source_locator` says where a result opens from, and never a primary key
+# ---------------------------------------------------------------------------
+
+
+def test_an_entry_result_carries_no_internal_identifier(indexed_matter, specialist) -> None:
+    """A result row must not print a database identifier at a lawyer.
+
+    `sissekanne-<uuid>` used to be rendered under the title on `/otsing/`. It
+    said nothing the `Sissekanne` badge beside it did not, it is not what the
+    row links to, and it changed on every reseed — which is also how it was
+    found, as per-run drift in the `otsing` visual baseline.
+    """
+    results = search(query="nõunikule", user=specialist)
+
+    assert results
+    result = results[0]
+    assert result.source_kind == SearchSourceKind.ENTRY
+    assert result.source_locator == ""
+    # The provenance did not go anywhere — it is in a typed column, where code
+    # can use it and no template renders it.
+    assert result.entry_id is not None
+
+
+def test_a_submission_result_carries_no_internal_identifier(indexed_matter, specialist) -> None:
+    results = search(query="üleminekuaega", user=specialist)
+
+    assert results
+    assert results[0].source_kind == SearchSourceKind.SUBMISSION
+    assert results[0].source_locator == ""
+    assert results[0].submission_id is not None
+
+
+def test_no_result_locator_looks_like_a_uuid(indexed_matter, specialist) -> None:
+    """The whole-corpus statement, so a sixth producer cannot reintroduce one.
+
+    Deliberately a shape test *of the output*, not of the rule: the rule is by
+    source kind, and this asserts the property that rule exists for. A new kind
+    that starts writing a primary key fails here rather than on somebody's
+    screen.
+    """
+    import re
+
+    uuid_shaped = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+    for term in ("nõunikule", "üleminekuaega", corpus.ONLY_ON_PDF_PAGE_4, "pakendiseaduse"):
+        for result in search(query=term, user=specialist):
+            assert not uuid_shaped.search(result.source_locator), (
+                f"{result.source_kind} renders an internal identifier: {result.source_locator!r}"
+            )
+
+
+def test_a_document_fragment_keeps_the_locator_that_means_something(
+    indexed_matter, specialist
+) -> None:
+    """The other half, so the fix cannot quietly become "hide every locator".
+
+    A page number is exactly what this field is for, and removing it would take
+    away the one thing that tells a reader *where* in a file the words were.
+    """
+    results = search(query=corpus.ONLY_ON_PDF_PAGE_4, user=specialist)
+
+    assert results[0].source_kind == SearchSourceKind.DOCUMENT_FRAGMENT
+    assert results[0].source_locator == "lk 4"
+
+
+def test_the_indexer_no_longer_writes_a_primary_key_as_a_locator(
+    indexed_matter, specialist
+) -> None:
+    """Fixed at the producer too, not only on the way out.
+
+    The read model suppresses what is already stored, because `INDEX_VERSION` is
+    an authorization gate and not the instrument for a cosmetic field. This
+    asserts the other end: nothing newly indexed carries one, so the two agree
+    rather than one covering for the other.
+    """
+    stored = SearchDocument.objects.filter(
+        source_kind__in=(
+            SearchSourceKind.ENTRY,
+            SearchSourceKind.SUBMISSION,
+            SearchSourceKind.ENGAGEMENT,
+        )
+    ).values_list("source_kind", "source_locator")
+
+    assert stored, "nothing indexed, so this asserts nothing"
+    assert [locator for _, locator in stored] == [""] * len(stored)
+
+
+def test_readable_locator_decides_by_kind_rather_than_by_string_shape() -> None:
+    """A rule that hid anything UUID-shaped would be guessing at content.
+
+    It would also start hiding a legitimate locator the day one happened to
+    contain a hyphenated hex run — an archive section named for a hash, say. So
+    the decision is the source kind, and this says so directly.
+    """
+    from app.search.services import readable_locator
+
+    opaque = "kaasamine-01a053b2-2ac3-76d5-82a2-233933f82c73"
+    assert readable_locator(SearchSourceKind.ENGAGEMENT, opaque) == ""
+    assert readable_locator(SearchSourceKind.ENTRY, "sissekanne-x") == ""
+    assert readable_locator(SearchSourceKind.SUBMISSION, "arvamus-x") == ""
+    # Kept verbatim, whatever it looks like.
+    assert readable_locator(SearchSourceKind.DOCUMENT_FRAGMENT, "lk 4") == "lk 4"
+    assert readable_locator(SearchSourceKind.LEGACY_SOURCE_PAGE, opaque) == opaque
