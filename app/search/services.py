@@ -241,6 +241,50 @@ class SnippetRun:
     highlight: bool
 
 
+#: Source kinds whose stored `source_locator` is a primary key, not a place.
+#:
+#: `source_locator` is documented as *where the result opens from, when the
+#: source is not the Teema itself*, and two of its five producers honour that: a
+#: document fragment writes «lk 14» and a historical page writes its OneNote
+#: location. The other three wrote `kaasamine-<uuid>`, `sissekanne-<uuid>` and
+#: `arvamus-<uuid>` — a prefixed database identifier, rendered under the result
+#: title on `/otsing/`.
+#:
+#: It told a lawyer nothing. The prefix repeats the badge already beside it, the
+#: identifier is not a reference used anywhere in the register or in any
+#: document, it is not what the row links to (`_target_url` builds every anchor
+#: from the typed `entry_id` / `submission_id` / `document_id` columns), and the
+#: provenance it carries is already structural — `source_kind` plus
+#: `source_object_id` say the same thing, in columns, to code that can use them.
+#:
+#: Filtered *here*, in the read model, rather than only at the producers. The
+#: producers are fixed too, so nothing new is written; but a projection row
+#: keeps whatever it was written with until something reindexes it, and
+#: `INDEX_VERSION` is not the instrument for this. That version is a fail-closed
+#: authorization gate: bumping it makes every existing row ineligible until a
+#: rebuild has run, which is correct when a stored vector may hold text a reader
+#: may not see, and much too heavy for a value that is in no vector and decides
+#: no access. Suppressing on read fixes every row, old and new, on deploy
+#: (docs/adr/0057).
+OPAQUE_LOCATOR_KINDS: frozenset[str] = frozenset(
+    {
+        SearchSourceKind.ENGAGEMENT.value,
+        SearchSourceKind.ENTRY.value,
+        SearchSourceKind.SUBMISSION.value,
+    }
+)
+
+
+def readable_locator(source_kind: str, stored: str) -> str:
+    """The locator a reader may be shown, or "" when there is nothing to show.
+
+    By source kind rather than by inspecting the string. A rule that hid
+    anything UUID-shaped would be guessing at content, and would start hiding a
+    legitimate locator the day one happened to contain a hyphenated hex run.
+    """
+    return "" if source_kind in OPAQUE_LOCATOR_KINDS else stored
+
+
 @dataclass(frozen=True)
 class SearchResult:
     matter: Matter
@@ -512,7 +556,7 @@ def search(*, query: str, user: Any, limit: int = MAX_RESULTS) -> list[SearchRes
             ),
             rank=float(getattr(document, "relevance", 0.0) or 0.0),
             source_kind=document.source_kind,
-            source_locator=document.source_locator,
+            source_locator=readable_locator(document.source_kind, document.source_locator),
             document_title=document.document.title if document.document else "",
             document_id=document.document_id,
             document_version_id=document.document_version_id,

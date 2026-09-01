@@ -280,7 +280,7 @@ def test_archive_letters_still_render_where_they_are_allowed(client, specialist)
 def test_a_reader_who_may_not_open_the_archive_sees_no_letters(client, specialist):
     """The other half of the same rule.
 
-    The refused reader is a READER since ADR 0055 — the two lawyer roles read
+    The refused reader is a READER since ADR 0056 — the two lawyer roles read
     the corpus now, so a specialist is the wrong person to ask this about.
     """
     from app.accounts.enums import UserRole

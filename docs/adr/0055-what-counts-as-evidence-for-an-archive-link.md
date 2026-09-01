@@ -1,4 +1,4 @@
-# ADR 0054 — What counts as evidence that a letter belongs to a Matter
+# ADR 0055 — What counts as evidence that a letter belongs to a Matter
 
 - Status: proposed
 - Date: 2026-09-01
@@ -16,7 +16,7 @@ Production holds 767 archive letters and 244 archive→Matter links — 31.8% of
 the corpus. The other 523 have been sitting in the queue since the ingest
 completed, and the department's actual complaint is the one the numbers hide:
 *Teemad → Arvamused* shows `Saadetud 1`, because one canonical Submission
-exists and the archive is a separate tab most people cannot open (ADR 0055
+exists and the archive is a separate tab most people cannot open (ADR 0056
 takes that half).
 
 Re-measuring against the refreshed 1 September register (main `a8af5a3e`,

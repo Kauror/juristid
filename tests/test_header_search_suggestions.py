@@ -514,7 +514,7 @@ def test_the_administrative_archive_route_still_works(client, administrator) -> 
 def test_the_archive_still_refuses_a_reader_who_may_not_open_it(client, reader) -> None:
     """Nothing about access moved with the link.
 
-    `reader` rather than `specialist` since ADR 0055: the two lawyer roles read
+    `reader` rather than `specialist` since ADR 0056: the two lawyer roles read
     the corpus, and READER is the role deliberately left outside it — which is
     what makes this still a boundary rather than a formality.
     """

@@ -21,10 +21,10 @@ manager branch never receives `scratchpad`, the block is inside `{% if is_self %
 and there is therefore nothing in that response for a view-source to find
 (01-EHITUSJUHIS §3.5).
 
-No dated work is exiled to the rail. An earlier design put future OOTAN and
-JÄLGIN in blocks on the right, which made a lawyer read two lists and merge them
-in their head; that merge is the whole job of this page. The rail holds only
-what has no honest place on a timeline.
+No dated work is exiled to the rail. An earlier design put the future
+waiting-and-watching steps in blocks on the right, which made a lawyer read two
+lists and merge them in their head; that merge is the whole job of this page.
+The rail holds only what has no honest place on a timeline.
 {% endcomment %}
 
 {% block content %}
@@ -392,9 +392,9 @@ what has no honest place on a timeline.
       </section>
 
       {% comment %}
-        TEEN, OOTAN and JÄLGIN together. "No idea when" is one condition
-        whatever the mode, and three two-row lists would be three headings for
-        six facts.
+        Every open step with no date, in one list. "No idea when" is one
+        condition whatever the stored kind, and three two-row lists would be
+        three headings for six facts.
       {% endcomment %}
       <section class="railblock" aria-label="Kuupäevata">
         <h2 class="railblock__label">
@@ -402,10 +402,7 @@ what has no honest place on a timeline.
         </h2>
         {% for item in work.undated %}
           <a class="undatedrow" href="{{ item.matter_url }}">
-            <span class="undatedrow__action">
-              <span class="mode mode--{{ item.action_kind|lower }}">{{ item.action_kind_label }}</span>
-              {{ item.text }}
-            </span>
+            <span class="undatedrow__action">{{ item.text }}</span>
             <span class="undatedrow__matter">
               {{ item.matter.title }}
             </span>

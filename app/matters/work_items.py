@@ -194,8 +194,12 @@ class WorkItem:
     #: ``DO`` / ``WAIT`` / ``MONITOR``, or "" for an important deadline and for
     #: a response deadline, neither of which is a NextAction and neither of
     #: which may ever be dressed as one.
+    #:
+    #: Read by the code and never by a template. The label that went with it —
+    #: *Teen*, *Ootan*, *Jälgin* — was carried here for the chip and went with
+    #: it: a display read model holding a value nothing displays is how a
+    #: retired component comes back (ADR 0054).
     action_kind: str
-    action_kind_label: str
     date_semantics: str
     when: date | None
     period_end: date | None
@@ -410,7 +414,6 @@ def action_item(action: NextAction, today: date) -> WorkItem:
         matter=action.matter,
         responsible=action.responsible,
         action_kind=action.kind,
-        action_kind_label=action.get_kind_display(),
         date_semantics=action.date_semantics,
         when=action.target_date,
         period_end=end,
@@ -438,7 +441,6 @@ def _deadline_item(record: MatterImportantDate, today: date) -> WorkItem:
         matter=record.matter,
         responsible=record.matter.owner,
         action_kind="",
-        action_kind_label="",
         date_semantics=DateSemantics.DEADLINE.value,
         when=record.date_value,
         period_end=record.period_end,
@@ -479,7 +481,6 @@ def _response_deadline_item(matter: Matter, today: date) -> WorkItem:
         matter=matter,
         responsible=matter.owner,
         action_kind="",
-        action_kind_label="",
         date_semantics=DateSemantics.DEADLINE.value,
         when=deadline,
         period_end=deadline,

@@ -554,7 +554,7 @@ def test_a_page_of_results_does_not_cost_a_query_per_row(signed_in, django_asser
     # `tests/test_arvamused_under_teemad.py` asserts rather than assumes
     # (docs/adr/0047).
     #
-    # 38 rather than 37 since ADR 0055: a specialist may now read the archive,
+    # 38 rather than 37 since ADR 0056: a specialist may now read the archive,
     # so the section pays the sixth query ADR 0047 already wrote down for a
     # reader who may — the Arhiiv tab's figure. Constant like the other five.
     with django_assert_max_num_queries(38):

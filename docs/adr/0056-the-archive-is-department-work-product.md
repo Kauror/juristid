@@ -1,4 +1,4 @@
-# ADR 0055 — The opinion archive is department work product, not a migration tool
+# ADR 0056 — The opinion archive is department work product, not a migration tool
 
 - Status: proposed
 - Date: 2026-09-01

@@ -51,7 +51,7 @@ def test_the_arvamused_workspace_is_still_a_full_destination(client, specialist)
     """
     client.force_login(specialist)
     assert client.get("/arvamused/").status_code == 200
-    # Both tabs are full destinations for a specialist since ADR 0055: the two
+    # Both tabs are full destinations for a specialist since ADR 0056: the two
     # lawyer roles read the corpus, because these are the department's own
     # outgoing letters. Access is still its own boundary and still asked by the
     # route — a READER gets 403 here, asserted in

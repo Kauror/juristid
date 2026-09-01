@@ -260,7 +260,7 @@ def test_the_register_scope_segments_work(page, base_url):
 
     # Scoped to the register's own strip by its `aria-label`. `.segmented` is
     # no longer unique on this page: the Arvamused section carries one too, and
-    # since ADR 0055 a specialist may read the archive, so its `Arhiiv` tab is
+    # since ADR 0056 a specialist may read the archive, so its `Arhiiv` tab is
     # rendered as well. Two controls named `Arhiiv`, meaning archived Matters
     # and held letters — the ambiguity is real for a reader and not this test's
     # to settle, but a locator that matched whichever came first was only ever

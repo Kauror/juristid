@@ -52,7 +52,7 @@ def test_a_reader_following_the_url_is_refused(page, base_url):
     An empty list would tell a reader the corpus is empty, which is a different
     and untrue statement about what Koda holds.
 
-    READER rather than a specialist since docs/adr/0055 — the same substitution
+    READER rather than a specialist since docs/adr/0056 — the same substitution
     ADR 0042 already forced on the rest of these tests, arriving here now that
     the archive uses that set too. A specialist can no longer play this part
     because these are the department's own letters.
@@ -67,7 +67,7 @@ def test_a_specialist_reaches_the_archive(page, base_url):
     """The other side of the same boundary, which only a browser proves.
 
     A specialist following the URL gets the corpus, not a 403 and not a smaller
-    list — the half of docs/adr/0055 that the department actually asked for.
+    list — the half of docs/adr/0056 that the department actually asked for.
     """
     sign_in(page, base_url, MARTIN)
     response = page.goto(f"{base_url}{ARCHIVE_PATH}")
@@ -249,7 +249,7 @@ def test_reading_the_archive_does_not_depend_on_which_door_was_answered(page, ba
     the archive from the whole department the day Cloudflare Access replaced
     the shared password. `ARCHIVE_READERS` is now one set asked in every mode,
     and this is that claim made where the deployment authenticates individuals
-    (docs/adr/0055).
+    (docs/adr/0056).
     """
     sign_in(page, base_url, HEAD)
     response = page.goto(f"{base_url}{ARCHIVE_PATH}")

@@ -665,22 +665,20 @@ def _page_size_options(params: Any, current: str) -> list[dict[str, Any]]:
     return options
 
 
-#: How each `?tegevus=` value reads in a filter chip. Wording matters here: a
-#: WAIT whose review date has passed is "ülevaatus käes", never "hilinenud".
 #: How each `?arvamus=` value reads in a chip and in the control.
 OPINION_LABELS = {
     register_filters.OPINION_DRAFTING: "Koostamisel",
     register_filters.OPINION_SENT: "Saadetud",
 }
 
+#: How each `?tegevus=` value reads in the control and in a filter chip.
+#: Wording matters here: a review date that has arrived is "ülevaatus käes",
+#: never "hilinenud". Neither option names the stored kind — the classification
+#: is not something a reader is asked to hold (ADR 0054).
 NEXT_ACTION_LABELS = {
     "puudub": "Puudub",
-    "teen": "Teen",
-    "ootan": "Ootan",
-    "jalgin": "Jälgin",
     "hilinenud": "Tähtaeg möödas",
-    "ootan-ulevaatus": "Ootan — ülevaatus käes",
-    "jalgin-ulevaatus": "Jälgin — ülevaatus käes",
+    selectors.REVIEW_DUE: "Ülevaatus käes",
 }
 
 STATUS_SEGMENTS = (

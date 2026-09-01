@@ -166,11 +166,14 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # Somewhere in the one list, not in a nominated band: the list is banded by
     # date now, so which band a step lands in depends on the date it was given
     # and on what else this persona is carrying. What must be true is that the
-    # step is on the page, in a row, saying which mode it is (Teema QA §3).
+    # step is on the page as its own sentence — and with no classification chip
+    # in front of it, on this surface any more than on the Teema (ADR 0054).
     page.locator(".topnav__link", has_text="Minu asjad").click()
     row = page.locator(".workrow2").filter(has_text="Koosta ja saada koja arvamus")
     expect(row).to_have_count(1)
-    expect(row.locator(".mode--do")).to_be_visible()
+    expect(row.locator(".mode")).to_have_count(0)
+    for retired in ("TEEN", "OOTAN", "JÄLGIN"):
+        assert retired not in row.inner_text()
     expect(page.get_by_text(MATTER_TITLE).first).to_be_visible()
 
     # -- Scenario B: one composer save, two changes ----------------------
@@ -246,14 +249,14 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # The new step reached Minu asjad, still in the one list, banded by its date
     # rather than moved to a column of its own (Teema QA §3).
     #
-    # It carries a `TEEN` chip there, and that is correct: `Minu töö` reads the
-    # stored kind and is deliberately unchanged. What the Teema composer stopped
-    # doing is *asking* for it — a step recorded natively is a `DO`, because the
-    # date on it means the day the work gets done (ADR 0052 §3, §6).
+    # It carries no chip there either. `Minu töö` still *reads* the stored kind
+    # — it is a `DO`, because the date on a natively recorded step means the day
+    # the work gets done, and that is what makes it able to go overdue — and it
+    # simply does not print it (ADR 0052 §3, §6; ADR 0054).
     page.locator(".topnav__link", has_text="Minu asjad").click()
     row = page.locator(".workrow2").filter(has_text="Kontrollida ministeeriumi uut sõnastust")
     expect(row).to_have_count(1)
-    expect(row.locator(".mode--do")).to_be_visible()
+    expect(row.locator(".mode")).to_have_count(0)
 
     # -- Scenario C: a formal opinion with its exact evidence ------------
     #

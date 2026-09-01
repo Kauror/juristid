@@ -277,17 +277,42 @@ def test_the_organisation_metrics_state_the_era_boundary(world, reporting_contex
 
 
 def test_only_a_do_with_a_deadline_can_be_overdue(world, reporting_context):
-    """A WAIT whose review date has passed is due for a look, never late."""
+    """A WAIT whose review date has passed is due for a look, never late.
+
+    The two review kinds are one published number now, and it is their sum: a
+    WAIT and a MONITOR are both ripe in this world (ADR 0054).
+    """
     assert value(world.martin, keys.OVERDUE_DO_DEADLINE, reporting_context) == 2
-    assert value(world.martin, keys.WAIT_REVIEW_DUE, reporting_context) == 1
-    assert value(world.martin, keys.MONITOR_REVIEW_DUE, reporting_context) == 1
+    assert value(world.martin, keys.REVIEW_DUE, reporting_context) == 2
 
 
 def test_review_due_is_never_described_as_overdue(world, reporting_context):
-    for key in (keys.WAIT_REVIEW_DUE, keys.MONITOR_REVIEW_DUE):
-        result = compute(key, reporting_context(world.martin))
-        joined = " ".join(result.notes) + result.definition.description_et
-        assert "hilinen" not in joined.lower() or "ei ole" in joined.lower()
+    result = compute(keys.REVIEW_DUE, reporting_context(world.martin))
+    joined = " ".join(result.notes) + result.definition.description_et
+    assert "hilinen" not in joined.lower() or "ei ole" in joined.lower()
+
+
+def test_no_published_metric_names_the_stored_action_kind(world, reporting_context):
+    """Statistika stopped slicing by TEEN / OOTAN / JÄLGIN (ADR 0054).
+
+    The catalogue is where a number acquires a label, so this is the one place
+    that can prove the classification is not published anywhere — including on
+    the Definitsioonid page, which renders every entry whether or not a card
+    shows it.
+    """
+    from app.reporting.metric_catalogue import CATALOGUE
+
+    forbidden = ("teen", "ootan", "jälgin", "jälgimis", "ootamis")
+    offenders = [
+        (spec.key, field)
+        for spec in CATALOGUE.values()
+        for field, text in (
+            ("label_et", spec.label_et),
+            ("description_et", spec.description_et),
+        )
+        if any(word in text.lower() for word in forbidden)
+    ]
+    assert offenders == [], offenders
 
 
 def test_the_quiet_matter_is_the_one_with_no_next_action(world, reporting_context):
@@ -301,14 +326,6 @@ def test_archive_matters_are_never_counted_as_missing_a_next_action(world, repor
     result = compute(keys.ACTIVE_WITHOUT_NEXT_ACTION, reporting_context(world.martin))
     assert result.value == 1
     assert result.population_count == 6
-
-
-def test_next_actions_are_grouped_by_kind_without_being_added_up(world, reporting_context):
-    assert segments(world.martin, keys.NEXT_ACTION_BY_KIND, reporting_context) == {
-        "Teen": 3,
-        "Ootan": 1,
-        "Jälgin": 1,
-    }
 
 
 def test_entries_are_authored_notes_not_onenote_pages(world, reporting_context):

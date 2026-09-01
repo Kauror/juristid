@@ -7,9 +7,9 @@
  *   1. No raw colour values. Everything resolves through a semantic token, so
  *      a CVI correction or a future light theme is a token change, not a
  *      component rewrite (docs/adr/0009).
- *   2. Status is never colour alone. TEEN / OOTAN / JÄLGIN differ by shape as
- *      well as tint — filled, solid outline, dashed outline — and every date
- *      carries a written label saying what it means.
+ *   2. Status is never colour alone. Overdue and review-ripe differ by border
+ *      and weight as well as tint, and every date carries a written label
+ *      saying what it means.
  */
 
 /* ====================================================================
@@ -659,41 +659,6 @@ p.formnote {
 
 .tabular {
   font-variant-numeric: tabular-nums;
-}
-
-/* ====================================================================
- * Mode chips — shape carries the meaning, not only colour
- * ==================================================================== */
-
-.mode {
-  display: inline-flex;
-  align-items: center;
-  font-size: var(--typography-size-chip);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-chip);
-  border-radius: var(--radius-chip);
-  padding: 1px 7px;
-  white-space: nowrap;
-  text-transform: uppercase;
-}
-
-/* TEEN: filled. It is the only mode that can be late. */
-.mode--do {
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-  border: 1px solid var(--accent-primary);
-}
-
-/* OOTAN: solid outline. */
-.mode--wait {
-  color: var(--text-secondary);
-  border: 1px solid var(--border-strong);
-}
-
-/* JÄLGIN: dashed outline. */
-.mode--monitor {
-  color: var(--text-muted);
-  border: 1px dashed var(--border-strong);
 }
 
 .datemeaning {
@@ -5059,8 +5024,7 @@ p.factsection__none {
  * page became undrivable, which is how the browser suite found it. Covering the
  * chip means clicking the chip *is* clicking the input, which is what both a
  * person and a test are trying to do.
- *
- * The same fix, for the same reason, as `.modechip__input` further down. */
+ */
 .chip__input {
   position: absolute;
   inset: 0;
@@ -5350,10 +5314,11 @@ p.factsection__none {
    sentence and the `Millal?` row — is the composer's own shape, laid out by
    the composer's own `.uxcomp__row` (ADR 0052, static/css/ux.css).
 
-   `.modechip` and `.modeselect` are deliberately kept below. No page renders
-   them today, and the rules they carry are the shared shape language for a
-   stored action kind — TEEN filled, OOTAN solid, JÄLGIN dashed — which any
-   surface showing a historical `WAIT` or `MONITOR` is entitled to reach for. */
+   `.modechip` and `.modeselect` were kept below this for one round, on the
+   reasoning that a surface showing a historical `WAIT` or `MONITOR` might want
+   the shape language back. No surface may: the stored kind is not a user-facing
+   concept anywhere in the product, so the rules are gone with their last
+   renderer (ADR 0054). */
 
 /* -- the actions ------------------------------------------------------------ */
 
@@ -6005,10 +5970,9 @@ p.factsection__none {
 
 /* A choice card that carries a line of explanation.
  *
- * Used where the option name alone does not settle the choice: TEEN, OOTAN and
- * JÄLGIN are three ordinary Estonian verbs, and which one a lawyer means
- * depends on whether the next move is theirs. The hint is what makes that
- * decidable without training (templates/matters/matter_create.html).
+ * Used where the option name alone does not settle the choice and a line of
+ * hint text is what makes it decidable without training
+ * (templates/matters/matter_create.html).
  *
  * Still a radio underneath. The card is styling on a real control, never a
  * clickable div — the selected state, the focus ring and the keyboard
@@ -6267,140 +6231,6 @@ p.factsection__none {
   color: var(--text-muted);
   text-transform: uppercase;
   flex: none;
-}
-
-/* -- mode chips ------------------------------------------------------- */
-
-/* Shape carries the meaning, colour never alone: filled, solid outline,
-   dashed outline. A reader who cannot separate the hues still reads three
-   different shapes and three different words. */
-.modechip {
-  display: inline-flex;
-  align-items: center;
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: 0.05em;
-  border-radius: var(--radius-chip);
-  padding: 2px 8px;
-  white-space: nowrap;
-  text-transform: uppercase;
-  flex: none;
-}
-
-.modechip--do {
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-  border: 1px solid var(--accent-primary);
-}
-
-.modechip--wait {
-  color: var(--text-secondary);
-  border: 1px solid var(--border-strong);
-}
-
-.modechip--monitor {
-  color: var(--text-muted);
-  border: 1px dashed var(--border-strong);
-}
-
-.modechip--none,
-.modechip--plain {
-  color: var(--text-secondary);
-  border: 1px solid var(--border-control);
-  text-transform: none;
-  letter-spacing: normal;
-  font-weight: var(--typography-weight-semibold);
-}
-
-/* As a control: the label is the chip and the radio is visually hidden but
-   still focusable, so the keyboard ring lands on something visible. */
-/* As a control the chip is a control: 30px, so it meets the target size every
-   button on this page meets. The read-only chip beside it keeps the mockup's
-   compact height, because nobody clicks it (Teema redesign §8.1, §30). */
-.modechip--choice {
-  cursor: pointer;
-  padding: 4px 12px;
-  min-height: 30px;
-  justify-content: center;
-}
-
-/* The real control, invisible and covering its chip.
- *
- * Not a 1px `pointer-events: none` box: with that, a click on the input passes
- * through to whatever happens to be underneath, so whether the radio changed
- * depended on where the label had landed — the browser suite failed on it
- * intermittently. Covering the option means clicking the chip *is* clicking
- * the input, which is what both a person and a test are trying to do. */
-.modechip__input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: pointer;
-  z-index: 1;
-}
-
-.modeselect {
-  display: inline-flex;
-  gap: var(--spacing-15);
-  flex-wrap: wrap;
-}
-
-.modeselect__option {
-  position: relative;
-  display: inline-flex;
-}
-
-/* Selected has to be obvious at a glance, and opacity is not obvious.
- *
- * The first version dimmed the unselected chips to 0.55 and left the chosen one
- * at 1. On a dark surface that is a difference hands-on QA could not see: two
- * greys, one slightly greyer. Selection now changes the *background* and the
- * *border*, and the shape semantics survive the change — TEEN stays filled,
- * OOTAN stays solid-bordered, JÄLGIN stays dashed — because shape is what
- * carries the meaning for a reader who cannot separate the colours at all
- * (master specification 18.8, Teema redesign §30).
- */
-.modeselect__option .modechip--choice {
-  background: var(--surface-elevated);
-  border-color: var(--border-control);
-  color: var(--text-muted);
-}
-
-/* TEEN: the brand fill it has everywhere else. */
-.modeselect__option .modechip__input:checked + .modechip--do {
-  background: var(--accent-primary);
-  border: 1px solid var(--accent-primary);
-  color: var(--text-inverse);
-}
-
-/* OOTAN: brand-soft ground, bright border, bright text — and still solid. */
-.modeselect__option .modechip__input:checked + .modechip--wait {
-  background: var(--surface-selected);
-  border: 1px solid var(--accent-link);
-  color: var(--text-primary);
-}
-
-/* JÄLGIN: the same treatment, and still dashed. */
-.modeselect__option .modechip__input:checked + .modechip--monitor {
-  background: var(--surface-selected);
-  border: 1px dashed var(--accent-link);
-  color: var(--text-primary);
-}
-
-/* "Ei muuda" is neutral on purpose: unmistakably chosen, and unmistakably not
-   one of the three modes. No brand colour anywhere near it. */
-.modeselect__option .modechip__input:checked + .modechip--none {
-  background: var(--surface-hover);
-  border: 1px solid var(--border-strong);
-  color: var(--text-primary);
-}
-
-.modeselect__option .modechip__input:focus-visible + .modechip--choice {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset-width);
 }
 
 /* -- the composer ----------------------------------------------------- */
@@ -9177,10 +9007,6 @@ a.loadrow__overdue--bad {
 .pw-matter__next {
   font-size: var(--typography-size-meta);
   color: var(--text-body);
-}
-
-.pw-matter__next .mode {
-  margin-right: var(--spacing-1);
 }
 
 .pw-matter__next--none {

@@ -13,7 +13,7 @@ archive letter has no Matter to inherit visibility from, so there is nothing to
 inherit, and the question has to be asked about the corpus instead. It is
 `may_read_archive` and nothing else — the two lawyer roles plus the
 administrator, since these are the department's own outgoing letters rather
-than a migration artefact (docs/adr/0055). It is deliberately *not* the
+than a migration artefact (docs/adr/0056). It is deliberately *not* the
 reconciliation queue's boundary, which is narrower and stays the
 administrator's: reading a letter and deciding which Matter it belongs to are
 different acts.
@@ -296,7 +296,7 @@ def visible_archive(user: Any) -> QuerySet[OpinionArchiveSearchDocument]:
     be able to learn how large the corpus is.
 
     Asked here rather than stored on the row, which is what lets the reader set
-    widen without a projection rebuild (docs/adr/0055).
+    widen without a projection rebuild (docs/adr/0056).
     """
     from app.legacy_import.opinion_access import may_read_archive
 
