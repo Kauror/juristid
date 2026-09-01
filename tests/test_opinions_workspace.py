@@ -253,18 +253,59 @@ def test_kind_is_shown_so_a_supplementary_letter_is_not_read_as_the_opinion(
 # ---------------------------------------------------------------------------
 
 
-def test_a_specialist_is_refused_the_archive_tab_and_is_not_offered_it(client, shared, specialist):
-    """ADR 0028 is not widened to make the workspace look fuller."""
-    hold()
+def test_a_specialist_reads_the_archive_like_any_other_department_lawyer(
+    client, shared, specialist
+):
+    """The department's own outgoing letters are department work product.
+
+    ADR 0042 put SPECIALIST and DEPARTMENT_HEAD in one set that reads
+    department-wide, including every RESTRICTED Matter these letters are filed
+    onto. A specialist who may open the Matter and may not open the Chamber's
+    letter about it was the gap this closes.
+    """
+    hold(title="Kiri ministeeriumile")
     rebuild_archive_index()
     act_as(client, specialist)
 
     listing = client.get(SENT_URL).content.decode()
-    assert ARCHIVE_URL not in listing
-    # Told that an archive exists and is administrative, without a count.
-    assert "arhiiv" in listing.lower()
+    assert ARCHIVE_URL in listing
 
-    assert client.get(ARCHIVE_URL).status_code == 403
+    archive = client.get(ARCHIVE_URL)
+    assert archive.status_code == 200
+    assert "Kiri ministeeriumile" in archive.content.decode()
+
+
+def test_a_specialist_still_may_not_file_a_letter_onto_a_matter(specialist):
+    """Reading the correspondence and asserting what it concerns are two acts.
+
+    The widening is deliberately one-sided: `may_manage_archive_links` and the
+    reconciliation queue did not move, so a specialist who can now open every
+    historical letter still cannot make the department's claim about which
+    Matter it belongs to.
+    """
+    from app.legacy_import.opinion_access import (
+        may_manage_archive_links,
+        may_read_archive,
+        may_use_opinion_queue,
+    )
+
+    assert may_read_archive(specialist)
+    assert not may_manage_archive_links(specialist)
+    assert not may_use_opinion_queue(specialist)
+
+
+def test_the_archive_does_not_depend_on_which_door_was_answered(specialist, settings):
+    """One set, asked in every mode.
+
+    The old rule widened under the shared gate and narrowed to the
+    administrator outside it, which would have taken the archive away from the
+    whole department on the day Cloudflare Access replaced the shared password.
+    """
+    from app.legacy_import.opinion_access import may_read_archive
+
+    for mode in (AuthMode.SHARED_GATE, AuthMode.CLOUDFLARE_ACCESS, AuthMode.NONE):
+        settings.AUTH_MODE = mode
+        assert may_read_archive(specialist), mode
 
 
 def test_the_department_head_reads_the_archive_behind_the_shared_gate(client, shared):
@@ -401,18 +442,47 @@ def test_a_linked_letter_is_visible_from_the_matter_it_concerns(client, shared):
     assert "/haldus/arvamuste-arhiiv/" in letters
 
 
-def test_a_reader_who_may_not_open_the_archive_sees_no_letters_on_the_matter(signed_in, specialist):
+def test_a_reader_who_may_not_open_the_archive_sees_no_letters_on_the_matter(client, specialist):
+    """A READER reaches a Matter and still reaches none of its letters.
+
+    The role that did *not* move in this widening, asserted from both
+    directions: the helper returns nothing, and the Matter page does not grow a
+    section naming files the reader may not open.
+    """
     head = factories.DepartmentHeadFactory()
+    reader = factories.UserFactory(role=UserRole.READER)
     binary = hold()
     matter = factories.MatterFactory(owner=specialist)
     link_matter(binary=binary, matter=matter, basis=ArchiveLinkBasis.REVIEWED, actor=head)
 
-    assert archive_letters_for_matter(matter, reader=specialist) == []
+    assert archive_letters_for_matter(matter, reader=reader) == []
 
-    body = signed_in.get(
-        reverse("matters:matter_position", kwargs={"pk": matter.pk})
-    ).content.decode()
+    client.force_login(reader)
+    body = client.get(reverse("matters:matter_position", kwargs={"pk": matter.pk})).content.decode()
     assert "Seotud arhiivikirjad" not in body
+
+
+def test_a_linked_letter_never_reveals_a_matter_its_reader_may_not_open(client):
+    """Archive access is about the corpus; it says nothing about a Matter.
+
+    An ADMINISTRATOR may read every letter in the corpus and is outside
+    `ROLES_WITH_RESTRICTED_ACCESS`, so a RESTRICTED Matter a letter is filed
+    onto must not become reachable through the linkage.
+    """
+    head = factories.DepartmentHeadFactory()
+    administrator = factories.UserFactory(role=UserRole.ADMINISTRATOR)
+    binary = hold()
+    restricted = factories.MatterFactory(visibility=Visibility.RESTRICTED)
+    link_matter(binary=binary, matter=restricted, basis=ArchiveLinkBasis.REVIEWED, actor=head)
+
+    from app.legacy_import.opinion_access import may_read_archive
+
+    assert may_read_archive(administrator)
+
+    client.force_login(administrator)
+    detail = client.get(reverse("legacy_import:opinion_archive_detail", kwargs={"pk": binary.pk}))
+    assert detail.status_code == 200
+    assert restricted.title not in detail.content.decode()
 
 
 def test_one_letter_filed_twice_is_listed_once(shared, specialist):

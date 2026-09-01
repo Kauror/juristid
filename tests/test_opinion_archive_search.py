@@ -281,14 +281,18 @@ def test_a_year_that_is_not_a_year_is_refused(held, administrator):
 # ---------------------------------------------------------------------------
 
 
-def test_a_specialist_sees_no_archive_rows_and_no_totals(held, specialist):
+def test_a_reader_sees_no_archive_rows_and_no_totals(held, reader):
     """Not a smaller list: none, and no count either.
 
     A refused reader who can still read the coverage figures knows how large
     the corpus is, which is most of what the boundary was protecting.
+
+    READER is the refused role since ADR 0042's set reached this module: the
+    two lawyer roles read the corpus, and READER is deliberately not one of
+    them (app/legacy_import/opinion_access.py).
     """
-    assert search_archive(user=specialist, filters=ArchiveFilters()).count() == 0
-    assert archive_counts(specialist) == {
+    assert search_archive(user=reader, filters=ArchiveFilters()).count() == 0
+    assert archive_counts(reader) == {
         "total": 0,
         "with_body": 0,
         "linked": 0,
@@ -328,14 +332,12 @@ def test_the_shared_gate_opens_the_archive_to_high_authority_personas(
     assert search_archive(user=department_head, filters=ArchiveFilters()).count() == 2
 
 
-def test_the_shared_gate_does_not_open_the_archive_to_everybody_behind_it(
-    held, specialist, settings
-):
+def test_the_shared_gate_does_not_open_the_archive_to_everybody_behind_it(held, reader, settings):
     """Knowing the shared password is not on its own an archive credential."""
     from app.accounts.enums import AuthMode
 
     settings.AUTH_MODE = AuthMode.SHARED_GATE
-    assert search_archive(user=specialist, filters=ArchiveFilters()).count() == 0
+    assert search_archive(user=reader, filters=ArchiveFilters()).count() == 0
 
 
 def test_an_inactive_administrator_is_refused(held, administrator):
@@ -348,8 +350,8 @@ def test_an_inactive_administrator_is_refused(held, administrator):
 # ---------------------------------------------------------------------------
 
 
-def test_the_browse_screen_is_administrative(client, specialist, held):
-    client.force_login(specialist)
+def test_the_browse_screen_refuses_a_reader(client, reader, held):
+    client.force_login(reader)
     response = client.get(reverse("legacy_import:opinion_archive_browse"))
     assert response.status_code == 403
 
@@ -372,9 +374,9 @@ def test_a_refused_query_says_so_instead_of_showing_an_empty_list(client, admini
     assert "Ükski arhiivi kiri" not in body
 
 
-def test_the_detail_screen_is_administrative(client, specialist, held):
+def test_the_detail_screen_refuses_a_reader(client, reader, held):
     first, _ = held
-    client.force_login(specialist)
+    client.force_login(reader)
     response = client.get(reverse("legacy_import:opinion_archive_detail", kwargs={"pk": first.pk}))
     assert response.status_code == 403
 
@@ -405,8 +407,8 @@ def stored(held, evidence_root, settings):
     return first
 
 
-def test_a_specialist_may_not_download_an_archive_letter(client, specialist, stored):
-    client.force_login(specialist)
+def test_a_reader_may_not_download_an_archive_letter(client, reader, stored):
+    client.force_login(reader)
     response = client.get(reverse("legacy_import:opinion_archive_file", kwargs={"pk": stored.pk}))
     assert response.status_code == 403
 

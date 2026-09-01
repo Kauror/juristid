@@ -454,14 +454,34 @@ def test_the_archive_tab_is_offered_to_a_reader_who_may_read_it(client, administ
     assert "arvamus_vaade=arhiiv" in section
 
 
-def test_the_archive_tab_is_not_offered_to_a_reader_who_may_not(signed_in, specialist) -> None:
-    assert not may_read_archive(specialist)
+def test_the_archive_tab_is_not_offered_to_a_reader_who_may_not(client, reader) -> None:
+    """READER is the role outside `ARCHIVE_READERS` since ADR 0042 reached it.
+
+    The two lawyer roles read the corpus now — a specialist who may open every
+    RESTRICTED Matter these letters are filed onto was the gap that closed —
+    so the refused reader this asserts about has to be one who genuinely is.
+    """
+    assert not may_read_archive(reader)
     hold(sha="c" * 64, title="Varasem kiri pakendite kohta")
     rebuild_archive_index()
+    client.force_login(reader)
 
-    section = opinion_section_of(body_of(signed_in.get(TEEMAD_URL)))
+    section = opinion_section_of(body_of(client.get(TEEMAD_URL)))
 
     assert ">Arhiiv" not in section
+
+
+def test_the_archive_tab_is_offered_to_a_specialist(client, specialist) -> None:
+    """The other side of the same strip, so neither can drift alone."""
+    assert may_read_archive(specialist)
+    hold(sha="9" * 64, title="Varasem kiri pakendite kohta")
+    rebuild_archive_index()
+    client.force_login(specialist)
+
+    section = opinion_section_of(body_of(client.get(TEEMAD_URL, {"arvamus_vaade": "arhiiv"})))
+
+    assert ">Arhiiv" in section
+    assert "Varasem kiri pakendite kohta" in section
 
 
 def test_the_archive_opens_in_the_section_for_a_reader_who_may(client, administrator) -> None:
@@ -481,7 +501,7 @@ def test_the_archive_opens_in_the_section_for_a_reader_who_may(client, administr
 # ---------------------------------------------------------------------------
 
 
-def test_a_refused_reader_cannot_reach_the_archive_by_asking_for_it(signed_in, specialist) -> None:
+def test_a_refused_reader_cannot_reach_the_archive_by_asking_for_it(client, reader) -> None:
     """The section's parameter is not a way past ``may_read_archive``.
 
     Resolved down to Saadetud in Python, before a query is built — so no archive
@@ -489,11 +509,12 @@ def test_a_refused_reader_cannot_reach_the_archive_by_asking_for_it(signed_in, s
     rather than raising on purpose: a crafted opinion parameter must not take
     the whole register away from somebody who was reading teemad.
     """
-    assert not may_read_archive(specialist)
+    assert not may_read_archive(reader)
     hold(sha="e" * 64, title="Salajane varasem kiri")
     rebuild_archive_index()
+    client.force_login(reader)
 
-    response = signed_in.get(TEEMAD_URL, {"arvamus_vaade": "arhiiv"})
+    response = client.get(TEEMAD_URL, {"arvamus_vaade": "arhiiv"})
     body = body_of(response)
     section = opinion_section_of(body)
 
@@ -504,12 +525,13 @@ def test_a_refused_reader_cannot_reach_the_archive_by_asking_for_it(signed_in, s
     assert "ei ole veel ühtegi arvamust välja saadetud" in section
 
 
-def test_the_fragment_route_refuses_the_archive_the_same_way(signed_in, specialist) -> None:
+def test_the_fragment_route_refuses_the_archive_the_same_way(client, reader) -> None:
     """The block answers a box on somebody else's page, and holds the same line."""
     hold(sha="f" * 64, title="Salajane varasem kiri")
     rebuild_archive_index()
+    client.force_login(reader)
 
-    fragment = body_of(signed_in.get(BLOCK_URL, {"arvamus_vaade": "arhiiv"}))
+    fragment = body_of(client.get(BLOCK_URL, {"arvamus_vaade": "arhiiv"}))
 
     assert "Salajane varasem kiri" not in fragment
 
@@ -529,17 +551,18 @@ def test_an_opinion_on_an_invisible_matter_is_not_in_the_section(
     assert "<strong>0</strong> vastet" in section
 
 
-def test_a_refused_reader_is_told_nothing_about_the_corpus_size(signed_in, specialist) -> None:
+def test_a_refused_reader_is_told_nothing_about_the_corpus_size(client, reader) -> None:
     """A count is an access decision too.
 
-    Three held letters, and a specialist's page must not print three anywhere in
-    the section — not as a tab count, not as a total.
+    Three held letters, and a refused reader's page must not print three
+    anywhere in the section — not as a tab count, not as a total.
     """
     for index, letter in enumerate("abc"):
         hold(sha=letter * 64, title=f"Varasem kiri {index}")
     rebuild_archive_index()
+    client.force_login(reader)
 
-    section = opinion_section_of(body_of(signed_in.get(TEEMAD_URL)))
+    section = opinion_section_of(body_of(client.get(TEEMAD_URL)))
 
     assert "Varasem kiri" not in section
     assert ">Arhiiv" not in section
@@ -562,11 +585,12 @@ def test_the_standalone_urls_still_resolve(client, administrator, path) -> None:
     assert '<h1 class="pagehead__title">Arvamused</h1>' in response.content.decode()
 
 
-def test_the_standalone_archive_still_refuses_a_reader_who_may_not(signed_in, specialist) -> None:
+def test_the_standalone_archive_still_refuses_a_reader_who_may_not(client, reader) -> None:
     """The route's own refusal is unchanged; only the link to it left the bar."""
-    assert not may_read_archive(specialist)
+    assert not may_read_archive(reader)
+    client.force_login(reader)
 
-    assert signed_in.get(ARCHIVE_URL).status_code == 403
+    assert client.get(ARCHIVE_URL).status_code == 403
 
 
 def test_the_standalone_workspace_keeps_its_own_filters(
@@ -720,6 +744,12 @@ def test_the_section_costs_a_fixed_number_of_queries(
     may read it — the archive counts. `select_related`/`prefetch_related` on
     ``sent_queryset`` are what keep the recipient and evidence columns from
     becoming one query each.
+
+    Nine rather than eight since a specialist may read the archive: ADR 0047
+    already wrote down that "a sixth appears for a reader who may read it", and
+    a specialist is now one. The arithmetic moved by exactly that one query —
+    `visible_archive(viewer).count()` — and not by anything that scales with
+    rows, which is the property this test exists to hold.
     """
     from django.test import RequestFactory
 
@@ -728,7 +758,7 @@ def test_the_section_costs_a_fixed_number_of_queries(
     request = RequestFactory().get(TEEMAD_URL)
     request.user = specialist
 
-    with django_assert_max_num_queries(8):
+    with django_assert_max_num_queries(9):
         context = embedded_context(request)
         # Force the lazy queryset, or the rows are never fetched at all.
         assert len(list(context["opinion_rows"])) == 3
