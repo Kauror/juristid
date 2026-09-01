@@ -112,9 +112,7 @@ def test_a_comma_before_the_date_does_not_split_the_instruction():
 
 
 def test_the_exception_holds_for_a_fully_written_date_too():
-    assert read("Vaata, 10.11.2026 üle, kas akt on avaldatud").target_date == dt.date(
-        2026, 11, 10
-    )
+    assert read("Vaata, 10.11.2026 üle, kas akt on avaldatud").target_date == dt.date(2026, 11, 10)
 
 
 def test_a_word_between_the_verb_and_the_particle_is_still_a_clause_break():
@@ -142,15 +140,15 @@ def test_a_full_stop_still_separates_two_sentences():
 
 def test_a_review_date_beside_an_external_milestone_is_still_refused():
     """2.0's reviewed decision, restated here so 2.1 cannot quietly undo it."""
-    assert reasons(
-        "ootan komisjoni edasiliikumist, vaata üle 15.10, istung toimub 05.10.2026"
-    ) == (ReviewReason.AMBIGUOUS_DATE,)
+    assert reasons("ootan komisjoni edasiliikumist, vaata üle 15.10, istung toimub 05.10.2026") == (
+        ReviewReason.AMBIGUOUS_DATE,
+    )
 
 
 def test_two_competing_periods_are_still_refused():
-    assert reasons(
-        "Ootan eelnõud oktoobris. Eelnõu valmib 2026. aasta 2. poolaastal."
-    ) == (ReviewReason.AMBIGUOUS_DATE,)
+    assert reasons("Ootan eelnõud oktoobris. Eelnõu valmib 2026. aasta 2. poolaastal.") == (
+        ReviewReason.AMBIGUOUS_DATE,
+    )
 
 
 def test_an_entry_into_force_date_is_still_not_an_instruction():
