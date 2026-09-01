@@ -697,12 +697,16 @@ def test_rendering_many_senders_costs_no_query_per_row(
     # Saadetud tab's figure (one). None of them touches a Matter, so none scales
     # with the register — which is what this test is about, and why it is still
     # measured at two sizes (docs/adr/0047).
+    # 37 rather than 36 since ADR 0055: a specialist may now read the archive,
+    # so the section pays the sixth query ADR 0047 already wrote down for a
+    # reader who may — `visible_archive(viewer).count()`, the Arhiiv tab's
+    # figure. Constant like the other five, and it is the whole difference.
     add(20)
-    with django_assert_max_num_queries(36):
+    with django_assert_max_num_queries(37):
         signed_in.get(REGISTER, {"olek": "koik"}).content.decode()
 
     add(20)
-    with django_assert_max_num_queries(36):
+    with django_assert_max_num_queries(37):
         signed_in.get(REGISTER, {"olek": "koik"}).content.decode()
 
 

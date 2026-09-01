@@ -51,10 +51,12 @@ def test_the_arvamused_workspace_is_still_a_full_destination(client, specialist)
     """
     client.force_login(specialist)
     assert client.get("/arvamused/").status_code == 200
-    # The Arhiiv tab keeps its own boundary — `may_read_archive` refuses a
-    # specialist exactly as it did before, which is the point: nothing about
-    # access moved with the page (docs/adr/0028).
-    assert client.get("/arvamused/arhiiv/").status_code == 403
+    # Both tabs are full destinations for a specialist since ADR 0055: the two
+    # lawyer roles read the corpus, because these are the department's own
+    # outgoing letters. Access is still its own boundary and still asked by the
+    # route — a READER gets 403 here, asserted in
+    # `tests/test_opinion_archive_search.py` where that rule lives.
+    assert client.get("/arvamused/arhiiv/").status_code == 200
 
 
 def test_arvamused_is_not_back_on_the_navigation_bar(client, specialist):
