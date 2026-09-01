@@ -59,7 +59,7 @@ from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
 #: plan digest, the operator report and the audit provenance, so two runs that
 #: read the same sentence differently can never be mistaken for each other
 #: (brief 70).
-REGISTER_NEXT_ACTION_PARSER_VERSION = "2.0"
+REGISTER_NEXT_ACTION_PARSER_VERSION = "2.1"
 
 
 class Verdict:
@@ -153,7 +153,22 @@ MONITOR_FORMS: tuple[str, ...] = ("jälgin", "jälgime", "jälgida")
 #: Closed verb forms, exactly like every other class here — no `vaata\w*` stem,
 #: which would also match `vaatasin` in *viimati vaatasin 01.08.2026*, a note
 #: about the past that instructs nobody.
-REVIEW_FORMS: tuple[str, ...] = ("vaata", "vaatan", "vaatame", "vaadata")
+#:
+#: ``küsi`` joins them in 2.1 on the same evidence: *küsi 05.10 üle* is the
+#: register asking a ministry again on a named day, which is a review of a wait
+#: and not work Koda owes anybody. Admitted only with the particle, like every
+#: other form here — bare *küsi* is "ask", which the register writes about the
+#: substance of a file rather than about looking at it again.
+REVIEW_FORMS: tuple[str, ...] = (
+    "vaata",
+    "vaatan",
+    "vaatame",
+    "vaadata",
+    "küsi",
+    "küsin",
+    "küsime",
+    "küsida",
+)
 
 #: The particle that makes those verbs mean *review*. `vaata` alone is "look";
 #: `vaata üle` is "look over", and the register never means the first. Required
@@ -189,6 +204,12 @@ RELATIVE_PRONOUNS: tuple[str, ...] = (
 #: "Vaata 01.12.2026 üle" read as a bare "Vaata" with the particle in the next
 #: clause, and so as no instruction at all.
 _REVIEW_CLAUSE_BREAK = re.compile(r"[,;:!?]|(?<!\d)\.(?!\d)")
+
+#: Everything that may sit between a review verb and its particle for the comma
+#: above to be read as a typo: one date, and separators. Nothing lexical.
+_ONLY_DATE_BETWEEN = re.compile(
+    r"^[\s,;:]*(?:\d{1,2}\.\d{1,2}(?:\.\d{2,4})?|\d{4}-\d{1,2}-\d{1,2})[\s,;:]*$"
+)
 
 #: Work Koda itself performs. Three verbs, each in the infinitive and the two
 #: present-tense persons the register actually uses. Deliberately short: a wide
@@ -227,12 +248,24 @@ def _review_forms(source: str) -> tuple[str, ...]:
     requiring adjacency would miss exactly the sentences that carry a date.
     Clause boundaries are punctuation, which is how Estonian marks them far more
     reliably than word order.
+
+    The one admitted exception is a comma the register typed *inside* its own
+    instruction, between the verb and the particle, with nothing but the date
+    between them: *Vaata, 10.11 üle*. The span has to be a single date and
+    separators and nothing lexical at all, because a real second clause has
+    words in it — so this can never assemble an instruction out of two clauses,
+    and what it recovers is one instruction with a stray comma in it (2.1).
     """
     found: list[str] = []
     for match in _REVIEW_VERB.finditer(source):
+        particle = _REVIEW_PARTICLE.search(source, match.end())
+        if particle is None:
+            continue
         break_at = _REVIEW_CLAUSE_BREAK.search(source, match.end())
         clause_end = break_at.start() if break_at else len(source)
-        if _REVIEW_PARTICLE.search(source, match.end(), clause_end):
+        if particle.start() < clause_end or _ONLY_DATE_BETWEEN.match(
+            source[match.end() : particle.start()]
+        ):
             found.append(match.group(0).casefold())
     return tuple(dict.fromkeys(found))
 
