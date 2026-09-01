@@ -114,7 +114,10 @@ fi
 # It is matched strictly, so a `.partial`, a hand-made `sets/old-stuff` and a
 # stray file are all simply not sets. None of them is an error — an operator is
 # allowed to keep a directory beside the sets — they are just not counted as one.
-readonly STAMP_GLOB='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z'
+#
+# The pattern is written out where it is used rather than held in a variable: a
+# glob in a variable has to be left unquoted to keep working, which is
+# indistinguishable from the unquoted expansion that is a bug.
 
 epoch_of_stamp() {
   local stamp="$1" iso
@@ -148,7 +151,7 @@ for entry in "$SETS_DIR"/*; do
   name="$(basename "$entry")"
   case "$name" in
     *.partial) partial=$((partial + 1)); continue ;;
-    $STAMP_GLOB) : ;;
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z) : ;;
     *) continue ;;
   esac
 
