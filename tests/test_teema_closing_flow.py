@@ -92,6 +92,11 @@ def _post(client, matter, **fields):
 
 REMOVED_FIELDS = [
     "closure_reason",
+    # The `Lõpeta see teema` confirmation. Answering the closing section is the
+    # request to close; a seventh control gating the six above it is where the
+    # pilot lost a whole closure without being told (pilot QA F-02,
+    # tests/test_pilot_p1_workflows.py).
+    "close_matter",
     "successor",
     "final_version",
     "final_title",
@@ -120,9 +125,14 @@ def test_the_closing_section_asks_the_six_approved_questions(
 ):
     body = _composer_html(signed_in, normal_matter)
 
-    assert "Lõpeta see teema" in body
-    # Põhjus, kept and not renamed.
+    # The section, opened by its own chip. There is no confirmation box inside
+    # it any more (pilot QA F-02).
+    assert 'id="koostaja-lopetamine"' in body
+    assert "Lõpeta see teema" not in body
+    # Põhjus, kept and not renamed, and opening on nothing so that "unanswered"
+    # is representable.
     assert 'name="disposition"' in body
+    assert '<option value="">' in body
     assert ">Põhjus<" in body
     # Lõpparvamus, uploaded directly rather than picked from what is already here.
     assert 'name="final_file"' in body
@@ -155,7 +165,6 @@ def test_the_commencement_date_is_gated_on_the_answer_being_jah(signed_in, norma
     form = ComposerForm(
         {
             "body": "Võit.",
-            "close_matter": "on",
             "disposition": Disposition.COMPLETED,
             "work_victory": "JAH",
         },
@@ -215,7 +224,6 @@ def test_the_body_is_the_entry_and_the_closure_reason_both(signed_in, normal_mat
         signed_in,
         normal_matter,
         body="<p>Menetlus lõppes; arvamus on esitatud.</p>",
-        close_matter="on",
         disposition=Disposition.COMPLETED,
         work_victory="EI",
     )
@@ -249,7 +257,6 @@ def test_an_ordinary_save_is_untouched_by_the_closing_redesign(signed_in, normal
 def _close_with_opinion(client, matter, **overrides):
     fields = {
         "body": "<p>Arvamus saadeti välja.</p>",
-        "close_matter": "on",
         "disposition": Disposition.RESPONSE_COMPLETE,
         "final_file": _pdf(),
         "final_sent_on": "12.08.2026",
@@ -291,7 +298,6 @@ def test_the_final_opinion_is_optional(signed_in, normal_matter):
         signed_in,
         normal_matter,
         body="<p>Koda ei tegele edasi.</p>",
-        close_matter="on",
         disposition=Disposition.MONITORING_STOPPED,
         work_victory="EI",
     )
@@ -309,7 +315,6 @@ def test_an_uploaded_opinion_needs_its_date_and_its_recipients(
 ):
     data = {
         "body": "Arvamus saadeti.",
-        "close_matter": "on",
         "disposition": Disposition.RESPONSE_COMPLETE,
         "final_sent_on": "12.08.2026",
         "final_recipients": [str(organisation.pk)],
@@ -331,7 +336,6 @@ def test_recipients_and_a_date_cannot_manufacture_a_sent_opinion(
         signed_in,
         normal_matter,
         body="<p>Arvamus saadeti.</p>",
-        close_matter="on",
         disposition=Disposition.RESPONSE_COMPLETE,
         final_sent_on="12.08.2026",
         final_recipients=[str(organisation.pk)],
@@ -469,7 +473,6 @@ def test_an_ambiguous_name_is_refused_rather_than_guessed(normal_matter):
     form = ComposerForm(
         {
             "body": "Arvamus saadeti.",
-            "close_matter": "on",
             "disposition": Disposition.RESPONSE_COMPLETE,
             "final_sent_on": "12.08.2026",
             "final_recipient_names": ["Näidiskogu"],
@@ -505,7 +508,7 @@ def test_closing_requires_an_explicit_answer_about_the_work_victory(normal_matte
     """No silent default. A Matter closed without anybody answering would count
     as "no win", which is a claim the person never made (§10)."""
     form = ComposerForm(
-        {"body": "Menetlus lõppes.", "close_matter": "on", "disposition": Disposition.COMPLETED},
+        {"body": "Menetlus lõppes.", "disposition": Disposition.COMPLETED},
         matter=normal_matter,
     )
 
@@ -518,7 +521,6 @@ def test_toovoit_ei_records_no_victory_and_no_commencement(signed_in, normal_mat
         signed_in,
         normal_matter,
         body="<p>Eelnõu langes ära.</p>",
-        close_matter="on",
         disposition=Disposition.INITIATIVE_WITHDRAWN,
         work_victory="EI",
     )
@@ -536,7 +538,6 @@ def test_toovoit_jah_records_the_victory_and_the_commencement(signed_in, normal_
         signed_in,
         normal_matter,
         body="<p>Piirmäär tõsteti 2000 euroni.</p>",
-        close_matter="on",
         disposition=Disposition.COMPLETED,
         work_victory="JAH",
         victory_effective_on="01.01.2027",
@@ -570,7 +571,6 @@ def test_toovoit_jah_without_a_commencement_date_is_refused(normal_matter):
     form = ComposerForm(
         {
             "body": "Piirmäär tõsteti.",
-            "close_matter": "on",
             "disposition": Disposition.COMPLETED,
             "work_victory": "JAH",
         },
@@ -586,7 +586,6 @@ def test_toovoit_jah_without_a_body_is_refused_on_the_body(normal_matter):
     on. The error belongs where the missing narrative is (§12)."""
     form = ComposerForm(
         {
-            "close_matter": "on",
             "disposition": Disposition.COMPLETED,
             "work_victory": "JAH",
             "victory_effective_on": "01.01.2027",
@@ -615,7 +614,6 @@ def test_an_equivalent_commencement_date_is_not_duplicated(signed_in, normal_mat
         signed_in,
         normal_matter,
         body="<p>Piirmäär tõsteti.</p>",
-        close_matter="on",
         disposition=Disposition.COMPLETED,
         work_victory="JAH",
         victory_effective_on="01.01.2027",

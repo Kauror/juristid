@@ -14,6 +14,7 @@ from typing import Any, cast
 from django import forms
 from django.db.models import QuerySet
 from django.utils import timezone
+from django.utils.functional import cached_property
 
 from app.accounts.models import User
 from app.accounts.naming import disambiguated_names
@@ -1489,10 +1490,24 @@ class ComposerForm(forms.Form):
     #: third and fourth time. One save, one narrative — the composer body — and
     #: the canonical records derive their wording from it
     #: (Teema closing redesign §2, §5, §10, §12).
-    close_matter = forms.BooleanField(label="Lõpeta teema", required=False)
+    #:
+    #: **There is no `Lõpeta see teema` box.** A seventh control confirming the
+    #: six answers above it was a place for answers to go missing: the pilot
+    #: filled the whole section, left the box alone, got a 200 and a note in the
+    #: chronology, and lost the disposition, the sent opinion, its date, its
+    #: recipients and the work victory without being told (pilot QA F-02).
+    #: Answering the closing section *is* the request to close;
+    #: :meth:`closure_requested` is the whole rule.
+    #:
+    #: `Põhjus` opens on nothing. It is a `ChoiceField`, so Django adds no blank
+    #: option of its own, and the select therefore submitted `COMPLETED` from
+    #: every composer save whether or not anybody had looked at it — which made
+    #: its own refusal, «Vali, miks teema lõpeb», unreachable, and would now
+    #: make every ordinary note a closure. An unanswered question has to be
+    #: representable before it can be either asked or refused.
     disposition = forms.ChoiceField(
         label="Põhjus",
-        choices=CLOSURE_CHOICES,
+        choices=(("", "Vali põhjus…"), *CLOSURE_CHOICES),
         required=False,
         widget=SELECT_WIDGET,
     )
@@ -1592,6 +1607,52 @@ class ComposerForm(forms.Form):
 
     # -- validation --------------------------------------------------------
 
+    #: The controls that only a closure has an answer for. Filling in any one of
+    #: them is what asks for the Matter to be closed — see
+    #: :meth:`closure_requested` (pilot QA F-02).
+    CLOSURE_FIELDS: tuple[str, ...] = (
+        "disposition",
+        "final_file",
+        "final_sent_on",
+        "final_recipients",
+        "final_recipient_names",
+        "work_victory",
+        "victory_effective_on",
+    )
+
+    @cached_property
+    def closure_requested(self) -> bool:
+        """Did this save answer anything only a closure is asked?
+
+        **Read from what was submitted, not from `cleaned_data`.** A closing
+        answer that fails its own field validation — an unreadable send date, a
+        recipient id that is not in the catalogue — is exactly the save that
+        must not fall through into an ordinary note, and by the time cleaning is
+        done it is no longer in `cleaned_data`. The raw data is what the person
+        actually did.
+
+        Blanks do not count. Every text box on this form posts on every save
+        whether or not anybody typed in it, so «submitted» has to mean «carries
+        a value», and `Põhjus` is the reason it now has an empty option to
+        carry.
+
+        The template reads this too: a refused closure has to come back with the
+        section open, or its errors are printed inside a panel nobody can see.
+        """
+        if not self.is_bound:
+            return False
+        for name in self.CLOSURE_FIELDS:
+            if name in self.files:
+                return True
+            if hasattr(self.data, "getlist"):
+                values = self.data.getlist(name)
+            else:
+                raw = self.data.get(name)
+                values = raw if isinstance(raw, (list, tuple)) else [raw]
+            if any(str(value).strip() for value in values if value is not None):
+                return True
+        return False
+
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
         body = (cleaned.get("body") or "").strip()
@@ -1602,7 +1663,10 @@ class ComposerForm(forms.Form):
         # not what happened and does not say where to look.
         wants_next = bool(next_text or cleaned.get("next_date") is not None)
         wants_deadline = bool((cleaned.get("deadline_title") or "").strip())
-        wants_closure = bool(cleaned.get("close_matter"))
+        # Closure-specific input *is* closure intent. There is no second box to
+        # tick and therefore no way to fill this section in, be told the save
+        # succeeded, and find none of it stored (pilot QA F-02).
+        wants_closure = self.closure_requested
         has_file = bool(cleaned.get("attachment"))
 
         if not (body or wants_next or wants_deadline or wants_closure or has_file):

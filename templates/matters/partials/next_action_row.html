@@ -34,6 +34,10 @@ destroys what somebody has already typed into the open composer below
 retype a sentence nobody wanted to change. It is called that on every row now:
 it used to read «Vaatasin üle» on a WAIT or a MONITOR, which is the
 classification this surface no longer exposes.
+
+It swaps this row and only this row, for the same reason «✓ Tehtud» does, and
+its options are counted from the date on the step rather than from today — «+1
+päev» on a step due 30.09 lands on 01.10 (pilot QA F-04, F-05).
 {% endcomment %}
 {% comment %}
   One element, three states. The row is its own HTMX swap target now, so the id
@@ -109,8 +113,15 @@ classification this surface no longer exposes.
         <details class="uxnext__defer" data-uxpopover>
           <summary class="uxnext__defersum">Lükka edasi ▾</summary>
           <div class="uxnext__menu">
+            {% comment %}
+              This row, and not the page — the same scope «✓ Tehtud» uses above.
+              Both defer forms used to swap `#teema-vaade`, which is this row
+              *and the open composer under it*, so moving a date threw away
+              every unsaved character somebody had typed into it (pilot QA
+              F-04, ADR 0052 §8).
+            {% endcomment %}
             <form hx-post="{% url 'matters:defer_action' pk=matter.pk action_id=current_action.pk %}"
-                  hx-target="#teema-vaade" hx-swap="outerHTML">
+                  hx-target="#jargmiseks-rida" hx-swap="outerHTML">
               {% csrf_token %}
               {% for choice in defer_choices %}
                 {% comment %}
@@ -126,7 +137,7 @@ classification this surface no longer exposes.
             </form>
             <form class="uxnext__menuform"
                   hx-post="{% url 'matters:defer_action' pk=matter.pk action_id=current_action.pk %}"
-                  hx-target="#teema-vaade" hx-swap="outerHTML">
+                  hx-target="#jargmiseks-rida" hx-swap="outerHTML">
               {% csrf_token %}
               <label class="visually-hidden" for="jargmiseks-lukka-{{ current_action.pk }}">
                 Uus kuupäev

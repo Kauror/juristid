@@ -885,7 +885,6 @@ def test_the_composer_view_closes_a_matter(signed_in, normal_matter, specialist)
             "engagement_date": "",
             "engagement_url": "",
             "engagement_note": "",
-            "close_matter": "on",
             "disposition": Disposition.COMPLETED,
             "final_sent_on": "",
             "work_victory": "EI",

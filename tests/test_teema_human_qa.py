@@ -618,7 +618,6 @@ def test_a_closure_without_a_sent_opinion_is_accepted(normal_matter, specialist)
     form = ComposerForm(
         {
             "body": "Menetlus lõppes.",
-            "close_matter": "on",
             "disposition": Disposition.COMPLETED,
             "work_victory": "EI",
         }
