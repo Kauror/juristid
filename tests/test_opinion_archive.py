@@ -359,6 +359,306 @@ def test_two_register_rows_on_one_day_and_recipient_go_to_review(archive_path):
     assert proposal.competing_matter_count == 2
 
 
+# ---------------------------------------------------------------------------
+# An exact same-day tie, and the third signal that may settle it.
+#
+# `addressee_bodies` made a register row whose KELLELE names three ministries
+# reachable from a letter naming one of them. A row that becomes *comparable*
+# arrives holding two signals; refusing the moment it appeared threw away a row
+# holding three, which inverts the rule the whole module is ordered by. These
+# nine tests fix the shape of the answer: counted, never scored.
+# ---------------------------------------------------------------------------
+
+
+def test_one_of_several_same_day_rows_wins_on_a_distinctive_title_word(archive_path):
+    """Three exact signals beat two, even when the two arrived second."""
+    register_matter(
+        year=2024,
+        number=201,
+        title="Maksukohustuslaste registri muutmise eelnou",
+        sent="2024-05-06",
+        counterparty="Naidisministeerium",
+    )
+    register_matter(
+        year=2024,
+        number=202,
+        title="Kliimapaketi rakendamise eelnou",
+        sent="2024-05-06",
+        counterparty="Naidisministeerium",
+    )
+    item = syn.opinion(
+        date="2024-05-06",
+        recipient="Naidisministeerium",
+        title="Arvamus maksukohustuslaste registri muutmise eelnou kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.STRICT_MULTI_SIGNAL
+    assert OpinionSignal.EXACT_SENT_DATE in proposal.signals
+    assert OpinionSignal.EXACT_RECIPIENT in proposal.signals
+    assert OpinionSignal.EXACT_TITLE_TOKEN in proposal.signals
+    assert proposal.excel_reference == "2024_201"
+    # The tie is resolved, so it is not also still a conflict.
+    assert OpinionConflict.MULTIPLE_SOURCE_ROWS not in proposal.conflicts
+    # And the count keeps saying how many Matters competed.
+    assert proposal.competing_matter_count == 2
+
+
+def test_one_of_several_same_day_rows_wins_on_a_proceeding_number(archive_path):
+    """The same rule, reached by the other accepted third signal."""
+    register_matter(
+        year=2024,
+        number=203,
+        title="Naidisseaduse eelnou 742 SE",
+        sent="2024-06-11",
+        counterparty="Naidisministeerium",
+    )
+    register_matter(
+        year=2024,
+        number=204,
+        title="Hoopis teine algatus",
+        sent="2024-06-11",
+        counterparty="Naidisministeerium",
+    )
+    item = syn.opinion(
+        date="2024-06-11",
+        recipient="Naidisministeerium",
+        title="Arvamus eelnou 742 SE kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.STRICT_MULTI_SIGNAL
+    assert OpinionSignal.EXACT_LAW_REFERENCE in proposal.signals
+    assert proposal.excel_reference == "2024_203"
+
+
+def test_same_day_rows_with_no_third_signal_anywhere_still_go_to_review(archive_path):
+    """The case the branch was written for, and it keeps its answer."""
+    register_matter(
+        year=2024,
+        number=205,
+        title="Kliimapaketi rakendamise algatus",
+        sent="2024-07-02",
+        counterparty="Naidisministeerium",
+    )
+    register_matter(
+        year=2024,
+        number=206,
+        title="Uhistranspordi korralduse algatus",
+        sent="2024-07-02",
+        counterparty="Naidisministeerium",
+    )
+    item = syn.opinion(
+        date="2024-07-02",
+        recipient="Naidisministeerium",
+        title="Arvamus maksukohustuslaste registri kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.REVIEW_REQUIRED
+    assert OpinionConflict.MULTIPLE_SOURCE_ROWS in proposal.conflicts
+    assert proposal.matter_id is None
+    assert proposal.competing_matter_count == 2
+
+
+def test_two_same_day_rows_that_both_qualify_go_to_a_person(archive_path):
+    """Level on the only evidence this matcher accepts, so it does not choose."""
+    register_matter(
+        year=2024,
+        number=207,
+        title="Maksukohustuslaste registri muutmine",
+        sent="2024-08-13",
+        counterparty="Naidisministeerium",
+    )
+    register_matter(
+        year=2024,
+        number=208,
+        title="Maksukohustuslaste teavitamise kord",
+        sent="2024-08-13",
+        counterparty="Naidisministeerium",
+    )
+    item = syn.opinion(
+        date="2024-08-13",
+        recipient="Naidisministeerium",
+        title="Arvamus maksukohustuslaste kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.REVIEW_REQUIRED
+    assert OpinionConflict.MULTIPLE_SOURCE_ROWS in proposal.conflicts
+    assert proposal.matter_id is None
+
+
+def test_a_second_comparable_row_does_not_demote_a_match_already_earned(archive_path):
+    """The monotonicity invariant, asserted as the before/after it actually was.
+
+    Widening what the matcher can compare may only ever *add* matches. A row
+    that becomes visible holding two signals must not unseat one holding three.
+    """
+    register_matter(
+        year=2024,
+        number=209,
+        title="Maksukohustuslaste registri muutmise eelnou",
+        sent="2024-09-17",
+        counterparty="Naidisministeerium",
+    )
+    item = syn.opinion(
+        date="2024-09-17",
+        recipient="Naidisministeerium",
+        title="Arvamus maksukohustuslaste registri muutmise kohta",
+    )
+    before = proposal_for(plan_for(archive_path([item])), item)
+    assert before.match_class == OpinionMatchClass.STRICT_MULTI_SIGNAL
+    earned = before.matter_id
+
+    # The row recipient widening reveals: same day, same ministry, nothing else.
+    register_matter(
+        year=2024,
+        number=210,
+        title="Kliimapaketi rakendamise algatus",
+        sent="2024-09-17",
+        counterparty="Naidisministeerium",
+    )
+    after = proposal_for(plan_for(archive_path([item])), item)
+
+    assert after.match_class == OpinionMatchClass.STRICT_MULTI_SIGNAL
+    assert after.matter_id == earned
+
+
+def test_a_multi_body_register_row_does_not_unseat_the_letters_own_matter(archive_path):
+    """The exact structural shape the real corpus failed on.
+
+    The competitor is only comparable *because* its KELLELE names three
+    ministries and one of them is the letter's. That is the widening working;
+    it is not evidence about this letter.
+    """
+    register_matter(
+        year=2024,
+        number=211,
+        title="Maksukohustuslaste registri muutmise eelnou",
+        sent="2024-10-08",
+        counterparty="Naidisministeerium",
+    )
+    register_matter(
+        year=2024,
+        number=212,
+        title="Kliimapaketi rakendamise algatus",
+        sent="2024-10-08",
+        counterparty="Teine ministeerium, Kolmas ministeerium, Naidisministeerium",
+    )
+    item = syn.opinion(
+        date="2024-10-08",
+        recipient="Naidisministeerium",
+        title="Arvamus maksukohustuslaste registri muutmise kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.STRICT_MULTI_SIGNAL
+    assert proposal.excel_reference == "2024_211"
+    assert proposal.competing_matter_count == 2
+
+
+def test_several_one_day_rows_stay_review_even_when_one_has_a_title_word(archive_path):
+    """The one-day rule is untouched, and this is where that would first slip.
+
+    A one-day gap is not an identity to be disambiguated - it is a question
+    about whether this is the same letter at all, and a third signal does not
+    answer that one.
+    """
+    register_matter(
+        year=2024,
+        number=213,
+        title="Maksukohustuslaste registri muutmise eelnou",
+        sent="2024-11-05",
+        counterparty="Naidisministeerium",
+    )
+    register_matter(
+        year=2024,
+        number=214,
+        title="Kliimapaketi rakendamise algatus",
+        sent="2024-11-05",
+        counterparty="Naidisministeerium",
+    )
+    item = syn.opinion(
+        date="2024-11-04",
+        recipient="Naidisministeerium",
+        title="Arvamus maksukohustuslaste registri muutmise kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.REVIEW_REQUIRED
+    assert OpinionSignal.EXACT_SENT_DATE not in proposal.signals
+
+
+def test_sharing_two_title_words_does_not_outrank_sharing_one(archive_path):
+    """Binary, not a score. Both rows qualify, so a person decides."""
+    register_matter(
+        year=2024,
+        number=215,
+        title="Maksukohustuslaste registri muutmise eelnou",
+        sent="2024-12-03",
+        counterparty="Naidisministeerium",
+    )
+    register_matter(
+        year=2024,
+        number=216,
+        title="Maksukohustuslaste teavitamise kord",
+        sent="2024-12-03",
+        counterparty="Naidisministeerium",
+    )
+    item = syn.opinion(
+        date="2024-12-03",
+        recipient="Naidisministeerium",
+        title="Arvamus maksukohustuslaste registri kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.REVIEW_REQUIRED
+    assert OpinionConflict.MULTIPLE_SOURCE_ROWS in proposal.conflicts
+    assert proposal.matter_id is None
+
+
+def test_a_law_reference_does_not_outrank_another_rows_title_word(archive_path):
+    """`_third_signal` ranks the two kinds within a row, never rows against each other.
+
+    The third Matter carries the same proceeding number on another day. It
+    takes no part in the same-day tie; it is there so the citation route cannot
+    settle afterwards what the tie deliberately left open, which would hide the
+    thing being asserted.
+    """
+    register_matter(
+        year=2025,
+        number=219,
+        title="Sama menetlus mujal, eelnou 918 SE",
+        sent="2025-03-20",
+        counterparty="Kolmas ministeerium",
+    )
+    register_matter(
+        year=2025,
+        number=217,
+        title="Naidisseaduse eelnou 918 SE",
+        sent="2025-01-14",
+        counterparty="Naidisministeerium",
+    )
+    register_matter(
+        year=2025,
+        number=218,
+        title="Maksukohustuslaste registri muutmine",
+        sent="2025-01-14",
+        counterparty="Naidisministeerium",
+    )
+    item = syn.opinion(
+        date="2025-01-14",
+        recipient="Naidisministeerium",
+        title="Arvamus maksukohustuslaste registri eelnou 918 SE kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.REVIEW_REQUIRED
+    assert OpinionConflict.MULTIPLE_SOURCE_ROWS in proposal.conflicts
+    assert proposal.matter_id is None
+
+
 def test_a_matching_title_alone_never_files_anything(archive_path):
     register_matter(
         year=2024,

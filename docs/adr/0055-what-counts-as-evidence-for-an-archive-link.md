@@ -7,8 +7,9 @@
   ADR 0023 (the searchable archive, whose `CONTENT_MULTI_SIGNAL` class this
   does not promote), ADR 0028 (the archive workspace), ADR 0053 (the 1
   September snapshot this was measured against)
-- Number: 0054. `ux/teen-ootan-jalgin` is in flight on a parallel branch and may
-  also want it; if both land, the later one renumbers.
+- Number: 0055. `ux/teen-ootan-jalgin` landed first and took 0054, and #114
+  renumbered itself to 0057 to leave 0055 and 0056 to this branch. ADR 0056 is
+  the archive-access half of this round.
 
 ## Context
 
@@ -128,9 +129,47 @@ therefore plans a Submission for an `EXACT_LAW_REFERENCE_MATTER` proposal only
 where the matcher already recorded `EXACT_SENT_DATE` or
 `SENT_DATE_WITHIN_ONE_DAY`. The link is unaffected in every case.
 
-On the real corpus that is 17 of the 20 citation matches keeping a Submission
+On the real corpus that is 16 of the 19 citation matches keeping a Submission
 and **3 becoming link-only**. No other class is touched: they reached their
 Matter *through* the date, so the question is already answered for them.
+
+**An exact same-day tie is put to the third signal, not refused on sight.**
+Found by re-measuring this branch against production before merging it, and
+it is this round's own defect rather than an old one.
+
+Widening the addressee comparison made a register row whose KELLELE names
+three ministries reachable from a letter naming one of them — correct, and
+the reason 76 files stopped being `UNMATCHED`. But `_from_register` then
+refused the moment a second row appeared, and the row it had already earned
+was discarded along with the tie. A row that becomes *comparable* arrives
+holding two signals, the date and the addressee; the row it displaced held
+three. Improving what the matcher can see demoted a match, which inverts the
+one rule this document is ordered by.
+
+So the tie is put to the same question `_single_exact` asks, once per
+competing Matter, and the answers are **counted, never scored**:
+
+- **exactly one** row carries a third signal — three exact signals against
+  the others' two, and it is filed as `STRICT_MULTI_SIGNAL`;
+- **none** does — nothing separates the rows, which is what this branch was
+  written for, and it stays `REVIEW_REQUIRED` / `MULTIPLE_SOURCE_ROWS`;
+- **more than one** does — each holds three, they are level on the only
+  evidence accepted here, and a person decides.
+
+Deliberately binary. Two shared title tokens do not beat one, and a law
+reference does not beat a title token: `_third_signal` ranks those two kinds
+*within* a row, and borrowing that to rank rows *against each other* would be
+a hierarchy invented to break a tie rather than evidence that the tie is
+broken. Nothing counts tokens, distances, frequencies or confidences.
+
+**Only exact same-day rows.** A one-day gap stays review evidence. What is
+resolved here is which of several equally-dated rows the letter is — not
+whether a differently dated row is the same letter at all, and a third signal
+does not answer that second question.
+
+The invariant this states, and which the tests assert as a before/after:
+**widening what the matcher can compare may only ever add matches.** A row
+that becomes visible holding two signals must never unseat one holding three.
 
 ## What this does not change
 
@@ -153,26 +192,41 @@ Matter *through* the date, so the question is already answered for them.
 
 ## Consequences
 
-Measured with the new matcher against the real corpus and the real 1 September
-register, offline (no OneNote or KodaDash inputs, which is why one OneNote-only
-link does not reproduce here):
+Measured with the new matcher against the real production corpus, database and
+1 September register, read-only:
 
 | | before | after |
 |---|---|---|
-| archive files automatically linkable | 244 (31.8%) | 299 (39.0%) |
-| `UNMATCHED` | 192 | 118 |
-| review queue naming a candidate Matter | 244 | 268 |
+| archive files automatically linkable | 244 (31.8%) | 315 (41.1%) |
+| `STRICT_MULTI_SIGNAL` | 243 | 295 |
+| `EXACT_LAW_REFERENCE_MATTER` | 0 | 19 |
+| `REVIEW_REQUIRED` | 327 | 332 |
+| `UNMATCHED` | 192 | 116 |
+| review queue naming a candidate Matter | 244 | 276 |
 | existing 244 links proposed for a *different* Matter | — | 0 |
 
-62 net new links; 243 of the 244 existing links re-derive to the same Matter.
-Current 2025/2026 Matters carrying an archive letter go from 57 to 65.
+All 244 existing links re-derive to the Matter they already name — 239 through
+an automatic class and 5 naming it from the review queue. None is left without
+a proposal, and none moves. Current 2025/2026 Matters carrying an archive letter
+go from 57 to 68. `CONTENT_MULTI_SIGNAL` is 0 and stays outside
+`AUTOMATIC_MATCH_CLASSES`.
+
+The exact-tie rule accounts for 29 of those files, 27 resolved by a title token
+and 2 by a proceeding number, spread across all seven years and landing on 29
+distinct Matters — no single Matter, alias or token collects a cluster. One
+letter moves the other way: resolving a tie put a second file on one Matter on
+one day, so the existing same-day-bundle guard now holds **10** files for review
+rather than 8. That guard is unchanged and doing its job.
 
 - **A migration, for choices only.** `0015` alters `match_class` on two models.
   No column changes; Django writes one because the choices moved.
-- The exact production plan digest for the new matcher is produced by
-  `opinion_archive plan` on the host once this branch is built. The baseline it
-  replaces, measured this round on current main, is
-  `c4b2e9c09151b738ab114ac1f1e8a11f2b51b432b4ec25970a0fb57de9bdc121`.
+- The production plan digest for this matcher, measured read-only against the
+  live corpus and reproduced identically on a repeat run, is
+  `90b3bbfd40c4135ba13132186d545a0e67d56638e7e55a81a6205f285f27ce40`. The
+  baseline it replaces, measured on current main, is
+  `c4b2e9c09151b738ab114ac1f1e8a11f2b51b432b4ec25970a0fb57de9bdc121`. Nothing
+  has been applied: production still holds 767 candidates all `PENDING`, 244
+  links and one canonical Submission.
 
 ## Alternatives rejected
 

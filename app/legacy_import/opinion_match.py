@@ -454,14 +454,7 @@ def _from_register(
         return _single_exact(occurrence, proposal, exact_rows[0])
 
     if len(exact_rows) > 1:
-        proposal.match_class = OpinionMatchClass.REVIEW_REQUIRED
-        proposal.signals += [OpinionSignal.EXACT_SENT_DATE, OpinionSignal.EXACT_RECIPIENT]
-        proposal.conflicts.append(OpinionConflict.MULTIPLE_SOURCE_ROWS)
-        proposal.competing_matter_count = len(exact_rows)
-        proposal.explanation = (
-            f"{len(exact_rows)} registri rida saadeti samal päeval samale adressaadile."
-        )
-        return proposal
+        return _resolve_exact_tie(occurrence, proposal, exact_rows)
 
     if len(near_rows) == 1:
         row = near_rows[0]
@@ -499,6 +492,95 @@ def _from_register(
     return proposal
 
 
+def _adopt_row(proposal: MatchProposal, row: RegisterRow) -> None:
+    """Copy the register row a proposal has settled on into the proposal.
+
+    Extracted because two routes now settle on a row — one exact row, and an
+    exact tie a single third signal resolved — and a second copy of these four
+    assignments is how the two would drift apart.
+    """
+    proposal.matter_id = row.matter_id
+    proposal.excel_reference = row.reference
+    proposal.excel_sent_date = row.sent_date
+    proposal.excel_addressee_raw = row.addressee_raw
+
+
+def _resolve_exact_tie(
+    occurrence: ArchiveOccurrence, proposal: MatchProposal, rows: list[RegisterRow]
+) -> MatchProposal:
+    """Several register rows share the date and the addressee. Ask the third signal.
+
+    Refusing here the moment a second row appeared was wrong, and wrong in a
+    way that got worse as the matcher got better. `addressee_bodies` made a row
+    whose KELLELE names three ministries reachable from a letter naming one of
+    them — correct, and the reason 76 files stopped being `UNMATCHED`. But a row
+    that becomes *comparable* is not thereby a *competitor*: it arrives holding
+    two signals, the date and the addressee, and the refusal then discarded a
+    row holding three. Widening what the matcher can see demoted a match it had
+    already earned, which inverts this module's one ordering rule — more
+    independent exact signals outrank fewer.
+
+    So the tie is put to the same question `_single_exact` asks, once per
+    competing Matter, and the answer is counted rather than scored:
+
+    * **exactly one** row carries a third signal — it is the only row with three
+      exact signals against the others' two, and it wins as `STRICT_MULTI_SIGNAL`;
+    * **none** does — every row has the same two signals and nothing separates
+      them, which is the case this branch was written for;
+    * **more than one** does — each has three, they are level on the only
+      evidence this matcher accepts, and a person decides.
+
+    Deliberately binary. Two shared title tokens do not beat one, a law
+    reference does not beat a title token, and no count, distance, frequency or
+    confidence is compared anywhere in here: `_third_signal` already ranks the
+    two kinds *within* a row, and borrowing that to rank rows *against each
+    other* would be a new hierarchy invented to break a tie rather than
+    evidence that the tie is broken.
+
+    Only exact same-day rows reach this. A one-day gap stays review evidence
+    (`_within_one_day` below), because the thing being resolved here is which
+    of several equally-dated rows the letter is — not whether a differently
+    dated row is the same letter at all.
+    """
+    proposal.signals += [OpinionSignal.EXACT_SENT_DATE, OpinionSignal.EXACT_RECIPIENT]
+    # Retained on both paths: it says how many Matters competed, which stays
+    # true — and worth reading — after one of them won.
+    proposal.competing_matter_count = len(rows)
+
+    qualifying = [
+        (row, signal) for row in rows if (signal := _third_signal(occurrence, row)) is not None
+    ]
+
+    if len(qualifying) != 1:
+        proposal.match_class = OpinionMatchClass.REVIEW_REQUIRED
+        proposal.conflicts.append(OpinionConflict.MULTIPLE_SOURCE_ROWS)
+        proposal.explanation = (
+            f"{len(rows)} registri rida saadeti samal päeval samale adressaadile. "
+            + (
+                "Ükski neist ei jaga faili pealkirjaga eristavat sõna ega õigusakti viidet."
+                if not qualifying
+                else f"Neist {len(qualifying)} jagab eristavat sõna või õigusakti viidet, "
+                "seega valiku teeb inimene."
+            )
+        )
+        return proposal
+
+    row, third = qualifying[0]
+    _adopt_row(proposal, row)
+    proposal.signals.append(third)
+    proposal.match_class = OpinionMatchClass.STRICT_MULTI_SIGNAL
+    proposal.explanation = (
+        f"{len(rows)} registri rida saadeti samal päeval samale adressaadile, kuid ainult "
+        "ühel neist on kolmas sõltumatu täpne signaal: "
+        + (
+            "sama õigusakti viide."
+            if third == OpinionSignal.EXACT_LAW_REFERENCE
+            else "sama eristav pealkirjasõna."
+        )
+    )
+    return proposal
+
+
 def _single_exact(
     occurrence: ArchiveOccurrence, proposal: MatchProposal, row: RegisterRow
 ) -> MatchProposal:
@@ -509,10 +591,7 @@ def _single_exact(
     entirely different subject. The third signal is what separates the 253
     that may be filed from the 38 that must not (Stage-2H brief 15 D, 16).
     """
-    proposal.matter_id = row.matter_id
-    proposal.excel_reference = row.reference
-    proposal.excel_sent_date = row.sent_date
-    proposal.excel_addressee_raw = row.addressee_raw
+    _adopt_row(proposal, row)
     proposal.signals += [OpinionSignal.EXACT_SENT_DATE, OpinionSignal.EXACT_RECIPIENT]
     proposal.competing_matter_count = 1
 
