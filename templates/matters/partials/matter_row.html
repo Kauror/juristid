@@ -1,3 +1,4 @@
+{% load people %}
 {% load register_source matter_activity %}
 {% comment %}
 One register row, rendered by every surface that shows the register table.
@@ -85,7 +86,7 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
             {% for person in assignable_people %}
               <button type="submit" name="owner" value="{{ person.pk }}">
                 <span class="uxav" aria-hidden="true">{{ person.initials }}</span>
-                {{ person.get_short_name }}{% if person.pk == user.pk %} (mina){% endif %}
+                {{ person|name_among:assignable_people }}{% if person.pk == user.pk %} (mina){% endif %}
               </button>
             {% endfor %}
           </form>

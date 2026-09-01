@@ -16,11 +16,13 @@ from django.db.models import QuerySet
 from django.utils import timezone
 
 from app.accounts.models import User
+from app.accounts.naming import disambiguated_names
 from app.accounts.selectors import assignable_business_users, assignable_including
 from app.core.authorization import scoped_count
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.core.richtext import plain_text
+from app.core.visibility_help import RESTRICTED_VISIBILITY_HELP
 from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
 from app.documents.enums import DocumentRole
 from app.matters.entry_enums import EntryKind
@@ -83,14 +85,34 @@ class UserChoiceField(forms.ModelChoiceField):
     first name, and a row of chips reading *Ireen · Ann · Marko · Sandra* is
     read at a glance where full names are read one at a time.
 
-    ``get_short_name`` rather than a split written here, because the User model
-    already owns what a person is called informally and two copies of that rule
-    are two places for it to drift. Falls back to the UPN for an account with
-    no display name at all, exactly as before.
+    **Unless two of them are called the same thing.** Two `Sandra` rows in a
+    Vastutaja picker are two identical answers to a question with one right
+    answer, and picking the wrong one moves a file onto the wrong desk and sends
+    the notice there too. So the label is computed over *this field's own
+    queryset* — the people actually being offered — and only the names that
+    genuinely collide grow (``app.accounts.naming``, pilot QA F-03).
+
+    The value is the user's id throughout. Nothing here changes what is
+    submitted, validated or stored; a label is a label.
     """
 
+    #: The population the cached labels were computed from, held by identity.
+    #:
+    #: `ModelChoiceField.queryset` is a property whose setter stores
+    #: `queryset.all()` — a *new* object each time it is assigned. So comparing
+    #: identity invalidates the cache exactly when the field is pointed at a
+    #: different population, and never otherwise. Overriding the setter itself
+    #: would not work: Django binds the property to its own functions at class
+    #: definition, so a subclass's `_set_queryset` is simply not called.
+    _labels_for: Any = None
+    _labels: dict[Any, str] | None = None
+
     def label_from_instance(self, obj: Any) -> str:
-        return obj.get_short_name() or obj.upn
+        queryset = self.queryset
+        if self._labels is None or self._labels_for is not queryset:
+            self._labels = disambiguated_names(list(queryset) if queryset is not None else [])
+            self._labels_for = queryset
+        return self._labels.get(obj.pk) or obj.get_short_name() or obj.upn
 
 
 def set_choices(form: forms.Form, name: str, queryset: QuerySet) -> None:
@@ -783,7 +805,11 @@ class MatterEditForm(forms.Form):
         choices=Visibility.choices,
         required=False,
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
-        help_text="Piiratud teemat näevad ainult vastutaja ja osalejad.",
+        # The one explanation, shared with the Teema header and the banner.
+        # This line used to say "ainult vastutaja ja osalejad", which promised a
+        # narrower audience than the application has given since docs/adr/0042
+        # (pilot QA F-01, app/core/visibility_help.py).
+        help_text=RESTRICTED_VISIBILITY_HELP,
     )
 
     def __init__(
@@ -2170,6 +2196,11 @@ class IncomingIntakeForm(forms.Form):
         choices=Visibility.choices,
         initial=Visibility.NORMAL,
         widget=SELECT_WIDGET,
+        # Intake is where a restricted letter is *first* filed — the template
+        # says as much — and it was the one visibility control on the product
+        # that explained nothing at all. Same sentence as everywhere else
+        # (pilot QA F-01).
+        help_text=RESTRICTED_VISIBILITY_HELP,
     )
 
     def __init__(self, *args: Any, viewer: Any = None, **kwargs: Any) -> None:

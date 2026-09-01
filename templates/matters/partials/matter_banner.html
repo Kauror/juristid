@@ -1,3 +1,4 @@
+{% load people %}
 {% comment %}
 Special-state banners. A restricted, closed or archive Matter should say so
 before anything else on the page, in words rather than only a tinted badge.
@@ -11,8 +12,15 @@ paragraph. The banner's own action slot keeps it inside and at the right.
   <div class="banner banner--restricted">
     <p class="banner__text">
       <strong>Piiratud nähtavus.</strong>
-      Seda teemat näevad ainult vastutaja, kaastöötajad ja osakonnajuht. Sissekanded,
-      arvamused ja tõendid pärivad sama piirangu.
+      {% comment %}
+        One sentence, written once (app/core/visibility_help.py). This banner
+        used to say the teema was seen "only by the owner, the collaborators and
+        the department head", which has not been true since docs/adr/0042 —
+        every lawyer in the department reads department-wide. Three surfaces
+        said it and all three were wrong the same way, which is what a shared
+        string is for (pilot QA F-01).
+      {% endcomment %}
+      {% restricted_visibility_help %}
     </p>
   </div>
 {% endif %}

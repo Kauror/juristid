@@ -8,6 +8,7 @@ from django.conf import settings
 from django.http import HttpRequest
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django.utils.functional import SimpleLazyObject
 
 from app.accounts import shared_gate
 from app.accounts.selectors import persona_candidates
@@ -66,7 +67,16 @@ def application(request: HttpRequest) -> dict[str, Any]:
         # against. Two lists that agree today are two lists that can stop
         # agreeing, and the one that matters is the endpoint's
         # (app/accounts/selectors.py, docs/adr/0034).
-        "persona_candidates": persona_candidates() if shared_gate.is_shared_gate() else (),
+        # Lazy *and* materialised once. The switcher now names each person
+        # relative to the others in the list (`app/accounts/naming.py`), so the
+        # population is read once per row; a bare queryset would re-query each
+        # time, and a plain `list()` would run the query on every request in
+        # this mode whether or not the popover is ever rendered.
+        "persona_candidates": (
+            SimpleLazyObject(lambda: list(persona_candidates()))
+            if shared_gate.is_shared_gate()
+            else ()
+        ),
         # The identifier rather than the object, because the popover compares it
         # against every row and `request.user` is already in the context under
         # its own name.
