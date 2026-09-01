@@ -26,26 +26,41 @@ danger-coloured, a passed review is not) are asserted in `test_ui_shell.py`
 instead, where they can be checked rather than looked at. The build stamp in the
 footer is masked for the same reason.
 
+A mask covers glyphs and nothing else. Where a clock-derived value shares a line
+with content, or is followed by anything on the same row, its *width* is that
+content's position — and a mask is exactly as wide as whatever is inside it. So
+those values are rewritten to a canonical string before the capture as well:
+`NORMALISED_TEXT`, declared per scenario in `REQUIRED_NORMALISATIONS`, and
+proved against the calendar rather than against today in the last section of
+this file.
+
 Baselines
 ---------
 Committed under `e2e/baselines/`, produced by this same job on this same
 container image: a screenshot taken on a developer machine would differ in font
-rasterisation on every pixel of every glyph. To (re)generate, run the browser
-job with `E2E_UPDATE_BASELINES=1` and commit what lands in the artifact.
+rasterisation on every pixel of every glyph.
+
+To retake one, push with `E2E_UPDATE_BASELINES` left at `"0"`, let this step
+fail, and copy the scenarios you meant to change out of that same run's
+`test-report-visual` upload — `capture` writes `visual-<name>.png` from the same
+bytes a baseline write would use, so a candidate is byte-identical to a
+regeneration. `E2E_UPDATE_BASELINES=1` is for the first baseline of a brand-new
+scenario and nothing else: it rewrites *every* file and skips the comparison, so
+a run with it on refreshes scenarios nobody looked at and reports nothing.
 
 A missing baseline skips rather than fails, so a new scenario does not turn the
 build red before anybody has had a chance to look at what it captured. A missing
 baseline is reported by name.
 
-One trap worth knowing before adding a browser test
----------------------------------------------------
-This step runs *after* the functional browser suite, against the same database,
-so every Matter that suite creates is in these renderings. A new test that files
-a Matter therefore lengthens the register, the dashboard's attention table and
-Minu töö — and nine baselines go red for a reason that has nothing to do with
-CSS. That is worth the coupling (the alternative is a second seeded world nobody
-keeps in step), but it means "the visual suite failed" should be read against
-what changed in the functional suite before anybody goes looking at stylesheets.
+What these renderings do and do not depend on
+--------------------------------------------
+This step used to run after the functional browser suite against the database it
+had spent fourteen minutes writing to, so a new test that filed a Matter turned
+nine baselines red. It does not any more: `visual` is its own job with its own
+PostgreSQL, its own migrations and its own `seed_e2e_data`, and nothing runs
+before the first screenshot. A page here therefore depends on exactly two
+things — the code, and what day it is. The second is what the masks and
+`NORMALISED_TEXT` are for, and it is the one that goes wrong quietly.
 """
 
 from __future__ import annotations
@@ -343,6 +358,39 @@ OSAKOND_WEEK_COUNTS = (
 OPINION_SENT = ('.submission__meta div:has(dt:text-is("Saadetud")) dd',)
 PORTFOLIO_WHEN = (".pw-matter__when",)
 
+#: Minu asjad's horizon control — «Kuni oktoober ▾», «Kuni november ▾».
+#:
+#: Scoped to the band, because `.rangepicker__trigger` is also the department
+#: page's «Järjesta: …» control, whose label is a sort order and is not
+#: clock-derived at all. Normalising that one would freeze real content.
+#:
+#: The menu inside the `<details>` lists every month it offers, and is
+#: deliberately not named: it is `position: absolute` inside a shut disclosure,
+#: so it paints nothing and moves nothing.
+HORIZON_LABEL = (".workband--hiljem .rangepicker__trigger",)
+
+#: The register's «Tähtaeg sel kuul · N» saved view.
+#:
+#: The chip is one text node — label and count together — so the whole chip is
+#: normalised rather than a count element that does not exist. The label half is
+#: constant, so what is actually being held still is the digit.
+#:
+#: Reached through its text rather than by position: `saved_view_definitions`
+#: returns four chips and only this one is clock-derived, and matching on the
+#: label survives the four being reordered.
+MONTH_VIEW_CHIP = ('.uxviews .uxchip:has-text("Tähtaeg sel kuul")',)
+
+#: The closed banner's «(29.8.2026)», already masked and already required.
+CLOSED_ON = (".banner--closed .banner__text .muted",)
+
+#: The Ajajoon summary's «29.8», the `<time>` the timeline preview leads with.
+#:
+#: Masked by the bare `time` selector since that was added, and drifting anyway:
+#: the quote after it sits on the same line, so the mask's own width is that
+#: quote's position. Scoped to the preview because `time` is most of the dates
+#: in this application and only this one has content beside it on its line.
+TIMELINE_PREVIEW_ON = (".uxtl__preview time",)
+
 #: Values that have to be held still, not merely covered.
 #:
 #: A mask hides glyphs. It does not stop the element being as wide as whatever
@@ -365,11 +413,86 @@ PORTFOLIO_WHEN = (".pw-matter__when",)
 #: in REQUIRED_MASKS for these scenarios, so a mask that stopped matching would
 #: fail the capture rather than write a fictional date into a baseline.
 #:
-#: Nothing else is normalised. Everywhere else a masked value sits in a fixed
-#: cell or at the end of its line, where a moving box edge leaves a sliver of
-#: unpainted background and moves nothing — the drift this suite has always
-#: accepted, and measured at a pixel or six.
-NORMALISED_TEXT: tuple[tuple[str, str], ...] = ((OPINION_SENT[0], "29.8.2026 19:35"),)
+#: Everywhere else a masked value sits in a fixed cell or at the end of its
+#: line, where a moving box edge leaves a sliver of unpainted background and
+#: moves nothing — the drift this suite has always accepted, and measured at a
+#: pixel or six.
+#:
+#: Three more joined on 2026-09-01, each measured against a CI rendering of the
+#: same tree the committed baselines came from rather than reasoned about. All
+#: three are *calendar* drift rather than daily drift, which is why they went
+#: unnoticed: a value that only moves on the first of a month leaves a baseline
+#: correct for four weeks and then makes somebody else's unrelated pull request
+#: red.
+#:
+#: «Tähtaeg sel kuul · N» is the one that nearly did it. `saved_view_definitions`
+#: builds that chip from `_month_bounds(today)`, so a seeded deadline four days
+#: out is next month's until the month turns and this month's afterwards. In
+#: Barlow's proportional figures `1` is narrower than `0`, so the chip shrinks
+#: and «Vastutajata», «Kogu osakond» and «+ Salvesta …» all move with it:
+#: 2,471 pixels, 0.1516% of `teemad-1440` against a 0.2% limit, and 83% of
+#: everything that was drifting on that baseline.
+#:
+#: «Kuni oktoober ▾» is `default_horizon`, which is today plus a fixed number of
+#: months, so the month name changes on the first and the names differ in width.
+#: The control is right-aligned at the end of its band header, so only its own
+#: left edge moves — 260 pixels, and the whole of `minu-too`'s drift.
+#:
+#: «(29.8.2026)» and «29.8» are the case this very docstring predicted and did
+#: not act on: both are masked, `j.n.Y` and `j.n` drop leading zeros, and on the
+#: first of the month `1.9.2026` is narrower than `29.8.2026`. The *mask* then
+#: shrinks, which is not a value peeking out — it is a rectangle that stops
+#: covering pixels it used to cover, and where something shares the line it
+#: takes that with it. Together 0.0831% of `teema-suletud`, and all but 7 pixels
+#: of it is the Ajajoon quote sliding 4px left behind a narrower `<time>`.
+NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
+    (OPINION_SENT[0], "29.8.2026 19:35"),
+    # The month the committed baselines already hold, so stabilising this moves
+    # no image. It is a value `default_horizon` really produces — in August.
+    (HORIZON_LABEL[0], "Kuni oktoober ▾"),
+    # Today's real value, and the one `teemad-1280`'s freshly taken baseline
+    # already holds. Choosing `0` instead would have been equally stable and
+    # would have moved one baseline more.
+    (MONTH_VIEW_CHIP[0], "Tähtaeg sel kuul · 1"),
+    (CLOSED_ON[0], "(29.8.2026)"),
+    (TIMELINE_PREVIEW_ON[0], "29.8"),
+)
+
+#: What each scenario's capture may not silently stop *normalising*.
+#:
+#: The exact hazard `REQUIRED_MASKS` exists for, one mechanism along. A
+#: Playwright selector that matches nothing is not an error: `eval_on_selector_all`
+#: rewrites zero elements and the run stays green — with the real clock value
+#: back on the page and the baseline red on the first of next month, for a
+#: change that has nothing to do with whoever is looking at it.
+#:
+#: So a scenario that depends on a value being held still says so, and `capture`
+#: refuses to take the screenshot when the element is not there.
+#:
+#: `OPINION_SENT` and `CLOSED_ON` are also in `REQUIRED_MASKS`, which already
+#: asserts the same elements. Declared here anyway: the rule is «every
+#: normalisation a scenario depends on is declared», and a rule with two
+#: exceptions is a rule nobody applies to the fifth entry.
+REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
+    "minu-too": HORIZON_LABEL,
+    "minu-too-3440": HORIZON_LABEL,
+    "teemad-1280": (*OPINION_SENT, *MONTH_VIEW_CHIP),
+    "teemad-1440": (*OPINION_SENT, *MONTH_VIEW_CHIP),
+    "teemad-3440": (*OPINION_SENT, *MONTH_VIEW_CHIP),
+    "teemad-filter": (*OPINION_SENT, *MONTH_VIEW_CHIP),
+    # The seeded closed Matter is closed with an entry, so both are on this page
+    # every run. Neither is required anywhere else: the banner belongs to a
+    # closed Matter and the preview renders only `{% if timeline_preview %}`,
+    # and requiring an element that can legitimately be absent turns a quiet
+    # week into a visual failure.
+    "teema-suletud": (*CLOSED_ON, *TIMELINE_PREVIEW_ON),
+}
+
+assert not {
+    selector for selectors in REQUIRED_NORMALISATIONS.values() for selector in selectors
+} - {selector for selector, _ in NORMALISED_TEXT}, (
+    "a required normalisation is not in NORMALISED_TEXT, so nothing holds it still"
+)
 
 REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     "minu-too": (".workband--entries .foldout__meta", *PORTFOLIO_WHEN),
@@ -435,6 +558,48 @@ def visible(selector: str) -> str:
     return f"{selector}:visible"
 
 
+def normalise_clock_text(page, name: str) -> None:
+    """Replace every clock-derived value this scenario cannot let move.
+
+    Its own function rather than four lines inside `capture` because the
+    contract it implements is tested directly: `test_ui_regression`'s own
+    section at the bottom of this file drives it over the month names and the
+    counts that actually occur, and asserts they all come out the same width.
+    Testing it through a screenshot would only ever test the month CI happens
+    to run in, which is the defect this exists to fix.
+    """
+    required = REQUIRED_NORMALISATIONS.get(name, ())
+    for selector, canonical in NORMALISED_TEXT:
+        elements = page.locator(visible(selector))
+        count = elements.count()
+        assert count or selector not in required, (
+            f"{name}: the clock normalisation {selector!r} matches nothing on this "
+            f"page. Either the markup moved and the selector needs following, or "
+            f"this scenario no longer renders that value and the entry should go. "
+            f"Left unmatched it rewrites nothing and stays green, and the real "
+            f"value goes back into the baseline — where it holds until the month "
+            f"turns and somebody else's unrelated change goes red for it."
+        )
+        # Only a value that is actually there may be replaced. Masking already
+        # hides whatever this element says, and normalising on top of that would
+        # hide one thing more: an element that had stopped rendering its value
+        # at all. Empty, the box would shrink and the baseline would go red —
+        # which is the signal. Writing the canonical string into it would paint
+        # over that signal with a date that never was.
+        for index in range(count):
+            assert elements.nth(index).inner_text().strip(), (
+                f"{name}: {selector!r} matched an element with no text, so there "
+                f"is no clock-derived value here to hold still. Normalising it "
+                f"would write {canonical!r} into a baseline as though the page "
+                f"had rendered it."
+            )
+        page.eval_on_selector_all(
+            selector,
+            "(elements, text) => { for (const element of elements) element.textContent = text }",
+            canonical,
+        )
+
+
 def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = None) -> bytes:
     page.add_style_tag(content=STYLE_FIXTURE)
     page.wait_for_load_state("networkidle")
@@ -447,26 +612,7 @@ def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = No
             f"into the baseline, and the run would stay green until somebody "
             f"else's unrelated change went red for it."
         )
-    for selector, canonical in NORMALISED_TEXT:
-        # Only a value that is actually there may be replaced. Masking already
-        # hides whatever this element says, and normalising on top of that would
-        # hide one thing more: an element that had stopped rendering its value
-        # at all. Empty, the box would shrink and the baseline would go red —
-        # which is the signal. Writing the canonical string into it would paint
-        # over that signal with a date that never was.
-        elements = page.locator(visible(selector))
-        for index in range(elements.count()):
-            assert elements.nth(index).inner_text().strip(), (
-                f"{name}: {selector!r} matched an element with no text, so there "
-                f"is no clock-derived value here to hold still. Normalising it "
-                f"would write {canonical!r} into a baseline as though the page "
-                f"had rendered it."
-            )
-        page.eval_on_selector_all(
-            selector,
-            "(elements, text) => { for (const element of elements) element.textContent = text }",
-            canonical,
-        )
+    normalise_clock_text(page, name)
     masks = [page.locator(visible(selector)) for selector in CLOCK_DEPENDENT]
     target = page.locator(clip_to) if clip_to else page
     image = target.screenshot(
@@ -951,3 +1097,174 @@ def test_persona_popover_with_nobody_selected(page, gate_base_url):
         "persona-ilma-popover",
         capture(page, "persona-ilma-popover", full_page=False),
     )
+
+
+# ---------------------------------------------------------------------------
+# The normalisation contract, tested against the calendar rather than today
+# ---------------------------------------------------------------------------
+#
+# Everything above this line is a screenshot taken on the day CI happened to
+# run. That is exactly what could not prove the fix these tests guard: a
+# baseline captured in August is correct in August whether or not anything holds
+# the month name still, and only goes red on the first of September — by which
+# time it is somebody else's pull request that is red.
+#
+# So the contract is asserted directly. The fixtures below are the real markup
+# of the three components, driven over the values the product really produces
+# across a month boundary, with no server and no database. They compare each
+# variant against the others rather than against a committed image, so nothing
+# here depends on which fonts the machine has.
+
+
+#: The horizon label at four different month lengths, including the shortest
+#: («mai», not offered by `HORIZON_CHOICES` today but a real `ESTONIAN_MONTHS`
+#: entry) and the longest.
+HORIZON_VARIANTS = (
+    "Kuni oktoober ▾",
+    "Kuni november ▾",
+    "Kuni detsember ▾",
+    "Kuni jaanuar ▾",
+    "Kuni mai ▾",
+    "Kõik tähtajad ▾",
+)
+
+#: The counts «Tähtaeg sel kuul» actually takes as the month turns. `0` and `1`
+#: are the pair measured on the seeded world; the two-digit case is included
+#: because a busier month is not a different kind of problem.
+MONTH_CHIP_VARIANTS = (
+    "Tähtaeg sel kuul · 0",
+    "Tähtaeg sel kuul · 1",
+    "Tähtaeg sel kuul · 2",
+    "Tähtaeg sel kuul · 11",
+)
+
+#: `j.n.Y`, which is what makes this one bite: the product does not zero-pad, so
+#: the first of a month is materially narrower than the twenty-ninth.
+CLOSED_ON_VARIANTS = ("(29.8.2026)", "(1.9.2026)", "(31.12.2026)", "(1.1.2027)")
+
+#: `j.n`, the Ajajoon preview's own format. Same defect one field shorter.
+TIMELINE_ON_VARIANTS = ("29.8", "1.9", "31.12", "1.1")
+
+#: A flex row, so the probe's x position is a direct readout of how wide the
+#: element before it is. Without it the two would stack and a width change would
+#: be invisible — which is how a screenshot suite misses this class in the first
+#: place.
+_ROW = "display:flex;align-items:center;gap:8px;width:max-content;font:16px sans-serif"
+
+
+def _fixture(page, body: str) -> None:
+    page.set_content(f'<div id="row" style="{_ROW}">{body}<span id="probe">·</span></div>')
+
+
+def _geometry(page, selector: str) -> tuple[str, float, float]:
+    """What the capture has to hold still: the text, its width, and what follows.
+
+    The text is the part that actually decides it — two elements rendering the
+    same string render the same pixels under any font, which is why this can be
+    asserted on a machine whose fonts are not CI's. The two measurements are
+    here because they are what a reader needs in the failure message: «142 and
+    133.12, and the next element starts 8.88px further along» is the defect,
+    where «two different strings» is only its cause.
+
+    They also cover what a string comparison cannot: an element rewritten to the
+    right text by something that nonetheless moved. The reverse gap is real and
+    is why the text is compared too — this fixture falls back to a generic
+    sans-serif with tabular figures, where `· 0` and `· 1` measure the same, and
+    a geometry-only test would pass on the very pair that started this. Barlow's
+    figures are proportional and they do not.
+    """
+    element = page.locator(selector)
+    box = element.bounding_box()
+    probe = page.locator("#probe").bounding_box()
+    assert box and probe
+    return element.inner_text().strip(), round(box["width"], 2), round(probe["x"], 2)
+
+
+def _holds_still(page, build, variants, selector: str) -> None:
+    seen = set()
+    for variant in variants:
+        _fixture(page, build(variant))
+        normalise_clock_text(page, "")
+        seen.add(_geometry(page, selector))
+    assert len(seen) == 1, (
+        f"{selector!r} did not come out the same for every variant: {sorted(seen)}. "
+        f"Each entry is (text, own width, where the next element starts) — two "
+        f"entries means a baseline taken in one month is red in another."
+    )
+
+
+def test_the_horizon_label_is_the_same_width_in_every_month(page):
+    """«Kuni november» is wider than «Kuni oktoober», and must stop being."""
+    _holds_still(
+        page,
+        lambda label: (
+            '<section class="workband workband--hiljem" style="display:contents">'
+            f'<details class="rangepicker"><summary class="rangepicker__trigger">{label}'
+            "</summary></details></section>"
+        ),
+        HORIZON_VARIANTS,
+        HORIZON_LABEL[0],
+    )
+
+
+def test_the_month_view_chip_is_the_same_width_at_every_count(page):
+    """`0` and `1` are not the same width, and this chip has three chips after it."""
+    _holds_still(
+        page,
+        lambda text: f'<div class="uxviews"><a class="uxchip">{text}</a></div>',
+        MONTH_CHIP_VARIANTS,
+        MONTH_VIEW_CHIP[0],
+    )
+
+
+def test_the_closed_banner_date_is_the_same_width_on_any_day(page):
+    """The mask is sized to this element. A narrower date is a smaller mask."""
+    _holds_still(
+        page,
+        lambda date: (
+            '<div class="banner banner--closed"><p class="banner__text">'
+            f'<span class="muted">{date}</span></p></div>'
+        ),
+        CLOSED_ON_VARIANTS,
+        CLOSED_ON[0],
+    )
+
+
+def test_the_timeline_preview_date_is_the_same_width_on_any_day(page):
+    """It is masked, and the quote beside it is not. The mask's width is the
+    quote's position, so a narrower date drags a line of real content with it."""
+    _holds_still(
+        page,
+        lambda date: f'<span class="uxtl__preview"><time>{date}</time> · Martin: «tekst»</span>',
+        TIMELINE_ON_VARIANTS,
+        TIMELINE_PREVIEW_ON[0],
+    )
+
+
+def test_a_normalisation_that_stops_matching_fails_the_capture(page):
+    """The whole point of `REQUIRED_NORMALISATIONS`.
+
+    A Playwright selector that matches nothing rewrites nothing and raises
+    nothing, so a markup rename would put the real clock value back into the
+    baseline and leave the run green until the month turned. This is the
+    assertion that makes that a failure on the day the markup moves.
+    """
+    _fixture(page, "<span>nothing this scenario needs</span>")
+    with pytest.raises(AssertionError, match="matches nothing on this page"):
+        normalise_clock_text(page, "minu-too")
+
+
+def test_every_scenario_that_renders_a_clock_value_declares_it(page):
+    """The two dictionaries are the contract; this is that they stay one.
+
+    `REQUIRED_MASKS` and `REQUIRED_NORMALISATIONS` name scenarios independently,
+    and a scenario that gains a normalisation but not its declaration is exactly
+    the silent case above. Asserted rather than trusted: both selectors are
+    reachable from the same names, so a typo in either is a failing test rather
+    than a mask that never paints.
+    """
+    normalised = {selector for selector, _ in NORMALISED_TEXT}
+    for scenario, selectors in REQUIRED_NORMALISATIONS.items():
+        assert set(selectors) <= normalised, scenario
+    for scenario, selectors in REQUIRED_MASKS.items():
+        assert set(selectors) <= set(CLOCK_DEPENDENT), scenario
