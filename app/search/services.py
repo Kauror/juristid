@@ -265,7 +265,7 @@ class SnippetRun:
 #: rebuild has run, which is correct when a stored vector may hold text a reader
 #: may not see, and much too heavy for a value that is in no vector and decides
 #: no access. Suppressing on read fixes every row, old and new, on deploy
-#: (docs/adr/0056).
+#: (docs/adr/0057).
 OPAQUE_LOCATOR_KINDS: frozenset[str] = frozenset(
     {
         SearchSourceKind.ENGAGEMENT.value,

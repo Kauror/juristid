@@ -91,7 +91,7 @@ def _engagement_values(engagement, now: object) -> dict[str, object]:
         # section. A Kaasamine has no such place, and what used to be written
         # here was `kaasamine-<primary key>`: a database identifier printed at
         # a lawyer, saying nothing the `Kaasamine` badge beside it does not
-        # already say, and changing on every reseed (docs/adr/0056).
+        # already say, and changing on every reseed (docs/adr/0057).
         "source_locator": "",
         "index_version": INDEX_VERSION,
         "indexed_at": now,

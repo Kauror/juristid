@@ -1,13 +1,14 @@
-# ADR 0056 — A baseline holds the product, not the clock and not the seed
+# ADR 0057 — A baseline holds the product, not the clock and not the seed
 
 - Status: proposed
 - Date: 2026-09-01
 - Related: ADR 0049 (the department page, whose nav change made five baselines
   stale), the #113 clock-stabilisation work this layers on
-- Number: 0056 rather than 0055. `data/opinion-corpus-reconciliation` (#112) is
-  in flight and holds 0054 and 0055, both of which collide with the 0054 #111
-  merged; it renumbers to 0055 and 0056 or later when it rebases, and leaving a
-  gap here is cheaper than two branches claiming one number twice.
+- Number: 0057 rather than 0055 or 0056. `data/opinion-corpus-reconciliation`
+  (#112) is in flight and holds 0054 and 0055, both of which shift by one now
+  that #111 has merged the 0054 in main: it renumbers to 0055 and 0056 when it
+  refreshes. Both are reserved for it here, and leaving a gap is cheaper than
+  two branches claiming one number twice.
 
 ## Context
 
