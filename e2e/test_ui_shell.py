@@ -666,44 +666,29 @@ def test_the_narrowing_panel_gets_the_registers_full_width(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_next_action_modes_differ_in_shape_as_well_as_colour(page, base_url):
-    """TEEN filled, OOTAN solid outline, JÄLGIN dashed outline — plus the word.
+def test_the_register_never_classifies_a_step_as_teen_ootan_or_jalgin(page, base_url):
+    """The action column is the sentence, and nothing in front of it.
 
-    Asserted here rather than in a screenshot because a screenshot cannot say
-    *why* three chips look different, and the rule is that the difference must
-    survive a reader who cannot tell the colours apart.
+    This used to be the opposite assertion — that the three chips differed by
+    shape as well as colour, so a reader who cannot separate the hues still read
+    three shapes. The rule it protected is gone with the chips: the stored kind
+    is not a concept the product asks anybody to hold, and a chip that repeats
+    what the sentence already says is noise a colour-blind reader has to decode
+    for nothing (ADR 0054).
+
+    Checked in the browser rather than in a template test because the class
+    could come back through interpolation, and because a rule left in the
+    stylesheet would make it look deliberate.
     """
     sign_in(page, base_url, SANDRA)
     open_register(page, base_url)
 
-    styles = page.evaluate(
-        """() => {
-            const seen = {};
-            for (const chip of document.querySelectorAll('.mode, .modechip')) {
-              const kind = [...chip.classList].find(
-                c => c.startsWith('mode--') || c.startsWith('modechip--')
-              );
-              const s = getComputedStyle(chip);
-              seen[kind] = {
-                text: chip.textContent.trim(),
-                style: s.borderTopStyle,
-                filled: s.backgroundColor,
-              };
-            }
-            return seen;
-        }"""
-    )
-    assert styles, "no mode chips rendered"
-    # Both vocabularies, because the register still uses `.mode` and the Teema
-    # row uses `.modechip`. The rule is one rule and neither may lose it.
-    for dashed in ("mode--monitor", "modechip--monitor"):
-        if dashed in styles:
-            assert styles[dashed]["style"] == "dashed", "JÄLGIN lost its dashed outline"
-    for solid in ("mode--wait", "modechip--wait"):
-        if solid in styles:
-            assert styles[solid]["style"] == "solid", "OOTAN lost its outline"
-    for kind, chip in styles.items():
-        assert chip["text"], f"{kind} rendered without its label"
+    expect(page.locator(".mode, .modechip")).to_have_count(0)
+    table = page.locator("table.table--register")
+    expect(table).to_be_visible()
+    rendered = table.inner_text()
+    for retired in ("TEEN", "OOTAN", "JÄLGIN"):
+        assert retired not in rendered, retired
 
 
 def test_an_overdue_deadline_is_coloured_and_a_passed_review_is_not(page, base_url):

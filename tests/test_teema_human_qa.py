@@ -366,13 +366,14 @@ def test_all_three_modes_share_one_dated_list(signed_in, specialist):
     assert "Ootan ja kontrollin" not in body
     for title in ("Teen selle ära", "Ootan ministeeriumi", "Jälgin menetlust"):
         assert title in body, title
-    # Ordered by date, whatever the mode.
+    # Ordered by date, whatever the stored kind.
     assert body.index("Teen selle ära") < body.index("Ootan ministeeriumi")
     assert body.index("Ootan ministeeriumi") < body.index("Jälgin menetlust")
-    # And each row says which kind of step it is.
-    assert "mode--do" in body
-    assert "mode--wait" in body
-    assert "mode--monitor" in body
+    # And no row says which kind of step it is: the sentence a lawyer wrote is
+    # the whole of the action cell now (ADR 0054). The three titles above are
+    # the *text* of three steps, which is why they are still expected.
+    for retired in ("mode--do", "mode--wait", "mode--monitor", "TEEN", "OOTAN", "JÄLGIN"):
+        assert retired not in body, retired
 
 
 def test_the_summary_counts_each_action_once(signed_in, specialist):
@@ -651,7 +652,7 @@ def test_the_edit_page_invents_no_date_for_a_matter_that_has_none(specialist):
 
 
 # ---------------------------------------------------------------------------
-# §7 — the mode chips are legible in both states
+# §7 — the mode chips are gone
 # ---------------------------------------------------------------------------
 
 
@@ -663,44 +664,25 @@ def _static_css() -> str:
     return (Path(settings.BASE_DIR) / "static" / "css" / "app.css").read_text(encoding="utf-8")
 
 
-def test_mode_chip_selection_is_carried_by_colour_not_by_opacity():
-    """Contrast, not opacity.
+def test_the_mode_chip_has_no_rules_left_to_be_legible_in():
+    """§7 asked whether the three chips stayed legible selected and unselected.
 
-    The chips carried their unselected state as `opacity: 0.55` against a
-    selected `1`. On a dark surface that is two greys, one slightly greyer —
-    a difference hands-on QA could not see. Selection changes the background and
-    the border now, and every label is painted at full strength (Teema QA §7).
+    Both answers are now moot. The composer stopped asking for the
+    classification (ADR 0052), `Uus teema` stopped asking for it after that, and
+    the stored kind is not displayed anywhere at all (ADR 0054) — so the chips
+    have no renderer and their rules are gone with them. Kept as an assertion
+    rather than deleted, because a stylesheet is exactly where a retired
+    component comes back: a rule nothing uses looks like a rule something is
+    about to.
     """
-    css = _static_css()
-    chips = css[css.index(".modeselect__option {") :]
+    import re
 
-    # The declaration, not the word: the rule above these lines explains in
-    # prose why opacity was the wrong tool, and a naive substring search finds
-    # its own documentation.
-    assert "opacity:" not in chips.split("/* -- the composer")[0]
-    for mode in ("do", "wait", "monitor", "none"):
-        rule = f".modeselect__option .modechip__input:checked + .modechip--{mode}"
-        assert rule in chips, mode
+    # Comments only. The stylesheet still explains, where the rules used to
+    # live, why they are not there — which is the note the next person needs.
+    css = re.sub(r"/\*.*?\*/", " ", _static_css(), flags=re.S)
 
-
-def test_each_mode_keeps_its_shape_when_selected():
-    """Shape carries the meaning for a reader who cannot separate the colours.
-
-    TEEN filled, OOTAN solid-bordered, JÄLGIN dashed — before selection and
-    after it (master specification 18.8).
-
-    Still asked on `Uus teema`, and no longer on the Teema composer, which
-    stopped asking anybody to classify their work (ADR 0052). The chips and
-    these rules are unchanged; where they are rendered is what moved.
-    """
-    css = _static_css()
-    chips = css[css.index(".modeselect__option {") :].split("/* -- the composer")[0]
-
-    monitor = chips[chips.index(":checked + .modechip--monitor") :]
-    assert "dashed" in monitor[: monitor.index("}")]
-
-    wait = chips[chips.index(":checked + .modechip--wait") :]
-    assert "solid" in wait[: wait.index("}")]
+    for retired in (".modeselect", ".modechip", ".mode--do", ".mode--wait", ".mode--monitor"):
+        assert retired not in css, retired
 
 
 # ---------------------------------------------------------------------------

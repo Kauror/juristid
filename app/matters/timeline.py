@@ -130,6 +130,12 @@ _MEETING_KINDS: frozenset[str] = frozenset(
 class TimelineNextStep:
     """What one save decided, as its own strip under what the save said.
 
+    The sentence and the date, and no stored kind. `mode` was carried here for
+    one round after the chronology stopped printing it, on the reasoning that
+    the register and the reporting surfaces still asked for the classification;
+    neither does now, and a display read model holding a value with no reader is
+    how one comes back (ADR 0052 §6, ADR 0054).
+
     Read off the `NextAction` the event points at rather than off the event's
     payload, so the date prints at the precision it was recorded to. The payload
     carries an anchor date and no precision, and rendering `01.09` for an
@@ -137,11 +143,6 @@ class TimelineNextStep:
     named (master specification 3.5).
     """
 
-    #: The stored kind, in words. Read off the domain and still carried here —
-    #: the register and the reporting surfaces ask for it — but the Teema
-    #: chronology stopped printing it with the rest of the classification
-    #: vocabulary (ADR 0052 §6).
-    mode: str
     text: str
     date_label: str
     date_value: str
@@ -549,7 +550,6 @@ def _with_next_steps(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
 
     steps = {
         action.pk: TimelineNextStep(
-            mode=str(action.get_kind_display()).upper(),
             text=action.text,
             date_label=action.date_label,
             date_value=action.display_date if action.target_date else "",

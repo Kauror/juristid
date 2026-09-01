@@ -178,7 +178,7 @@ def test_important_is_reserved_for_the_two_places_that_need_it() -> None:
 def template_classes() -> dict[str, set[str]]:
     """Every class literal in every template, mapped to the files using it.
 
-    Names produced by interpolation (`mode--{{ kind|lower }}`) are skipped:
+    Names produced by interpolation (`uxtl__kind--{{ marker }}`) are skipped:
     the prefix on its own is not a class anybody wrote.
     """
     used: dict[str, set[str]] = defaultdict(set)

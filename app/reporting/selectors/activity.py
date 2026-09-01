@@ -16,12 +16,12 @@ people stop believing (master specification 18.8).
 from __future__ import annotations
 
 from django.db.models import Exists, OuterRef, QuerySet
-from django.urls import reverse
 
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import RecordMode
 from app.matters.models import Entry, Matter
 from app.matters.selectors import MISSING
+from app.matters.selectors import REVIEW_DUE as REVIEW_DUE_FILTER
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import definition
@@ -35,7 +35,7 @@ from app.reporting.selectors.base import (
     simple_result,
     visible_matters,
 )
-from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
+from app.workflow.enums import REVIEW_KINDS, ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 
 
@@ -172,69 +172,31 @@ def overdue_do_deadline(context: ReportingContext) -> MetricResult:
         value=count(actions),
         population_count=count(open_actions(context)),
         url=corpus_url(context, olek="avatud", tegevus="hilinenud"),
-        notes=("Ainult TEEN koos tähtajaga. Ootamine ja jälgimine ei ole hilinemine.",),
+        notes=("Ainult tähtajaks tehtav töö saab hilineda. Ülevaatus ei ole hilinemine.",),
     )
 
 
-def _review_due(context: ReportingContext, kind: str) -> QuerySet[NextAction]:
-    return open_actions(context).filter(
-        kind=kind,
+def review_due(context: ReportingContext) -> MetricResult:
+    """Review dates that have arrived — one number over both review kinds.
+
+    `WAIT` and `MONITOR` are still separate values in the database and still
+    decide this population; they stopped being two published figures because
+    they answer the same question, and the difference between them is the
+    classification the product no longer asks a reader to hold (ADR 0054).
+    """
+    spec = definition(keys.REVIEW_DUE)
+    due = open_actions(context).filter(
+        kind__in=REVIEW_KINDS,
         target_date__isnull=False,
         target_date__lte=context.today,
     )
-
-
-def wait_review_due(context: ReportingContext) -> MetricResult:
-    spec = definition(keys.WAIT_REVIEW_DUE)
     return simple_result(
         spec,
         context=context,
-        value=count(_review_due(context, ActionKind.WAIT)),
-        population_count=count(open_actions(context).filter(kind=ActionKind.WAIT)),
-        url=corpus_url(context, olek="avatud", tegevus="ootan-ulevaatus"),
+        value=count(due),
+        population_count=count(open_actions(context).filter(kind__in=REVIEW_KINDS)),
+        url=corpus_url(context, olek="avatud", tegevus=REVIEW_DUE_FILTER),
         notes=("Ülevaatuse aeg on käes. See ei ole tähtaja ületamine.",),
-    )
-
-
-def monitor_review_due(context: ReportingContext) -> MetricResult:
-    spec = definition(keys.MONITOR_REVIEW_DUE)
-    return simple_result(
-        spec,
-        context=context,
-        value=count(_review_due(context, ActionKind.MONITOR)),
-        population_count=count(open_actions(context).filter(kind=ActionKind.MONITOR)),
-        url=corpus_url(context, olek="avatud", tegevus="jalgin-ulevaatus"),
-        notes=("Ülevaatuse aeg on käes. See ei ole tähtaja ületamine.",),
-    )
-
-
-def next_action_by_kind(context: ReportingContext) -> MetricResult:
-    spec = definition(keys.NEXT_ACTION_BY_KIND)
-    labels = dict(ActionKind.choices)
-    #: One `?tegevus=` value per action kind, so each bar opens exactly the
-    #: Matters it counted. One open action per Matter is a database constraint,
-    #: which is what makes the action count and the Matter count the same
-    #: number (app/workflow/models.py).
-    parameters = {
-        ActionKind.DO.value: "teen",
-        ActionKind.WAIT.value: "ootan",
-        ActionKind.MONITOR.value: "jalgin",
-    }
-    rows = open_actions(context).values("kind").annotate(total=grouped_count()).order_by("kind")
-    segments = tuple(
-        Segment(
-            label=labels.get(row["kind"], row["kind"]),
-            value=row["total"],
-            url=corpus_url(context, olek="avatud", tegevus=parameters.get(row["kind"], "")),
-        )
-        for row in rows
-    )
-    return simple_result(
-        spec,
-        context=context,
-        value=count(open_actions(context)),
-        segments=segments,
-        url=reverse("matters:my_work"),
     )
 
 

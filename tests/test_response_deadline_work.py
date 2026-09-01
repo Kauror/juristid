@@ -196,7 +196,6 @@ def test_the_row_states_its_meaning_and_invents_no_sentence(specialist, today):
     assert item.meaning_line == "ARVAMUSE TÄHTAEG"
     assert item.text == ""
     assert item.action_kind == ""
-    assert item.action_kind_label == ""
     assert item.display_date == format_estonian_date(due)
 
 

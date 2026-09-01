@@ -106,10 +106,8 @@ NEW_NATIVE_MATTERS_YOY_CHANGE = "NEW_NATIVE_MATTERS_YOY_CHANGE"
 ACTIVE_WITHOUT_NEXT_ACTION = "ACTIVE_WITHOUT_NEXT_ACTION"
 ACTIVE_WITHOUT_OWNER = "ACTIVE_WITHOUT_OWNER"
 OVERDUE_DO_DEADLINE = "OVERDUE_DO_DEADLINE"
-WAIT_REVIEW_DUE = "WAIT_REVIEW_DUE"
-MONITOR_REVIEW_DUE = "MONITOR_REVIEW_DUE"
+REVIEW_DUE = "REVIEW_DUE"
 RESPONSE_DEADLINES_OPEN = "RESPONSE_DEADLINES_OPEN"
-NEXT_ACTION_BY_KIND = "NEXT_ACTION_BY_KIND"
 ENTRY_COUNT = "ENTRY_COUNT"
 ENTRY_COUNT_BY_KIND = "ENTRY_COUNT_BY_KIND"
 
@@ -653,41 +651,35 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         version=1,
         label_et="Tähtaeg möödas",
         description_et=(
-            "Ainult TEEN + TÄHTAEG saab olla hilinenud. Ootamist ega jälgimist "
-            "ei nimetata kunagi hilinenuks."
+            "Ainult tähtajaks tehtav töö saab hilineda. Kuupäev, mis tähendab "
+            "ülevaatust või oodatavat aega, ei ole tähtaeg ja seda ei nimetata "
+            "kunagi hilinenuks."
         ),
+        # The population statement names the stored values, not a label: `DO`
+        # and `DEADLINE` are the columns a reviewer would query, and they are
+        # exactly what did not change when the classification stopped being
+        # shown to readers (ADR 0054).
         source_population_et="Kehtivad järgmised tegevused, liik DO, kuupäeva tähendus DEADLINE",
         time_basis=TimeBasis.POINT_IN_TIME,
         required_fields=("target_date",),
         respects_period=False,
         drillthrough_et="Minu töö või teemade register",
     ),
+    #: One number, not two. `WAIT_REVIEW_DUE` and `MONITOR_REVIEW_DUE` counted
+    #: the same event — a review date that has arrived — and differed only by
+    #: the stored kind, which is not a distinction a reader is asked to make.
+    #: Their sum is this (ADR 0054).
     MetricDefinition(
-        key=WAIT_REVIEW_DUE,
+        key=REVIEW_DUE,
         version=1,
-        label_et="Ootan — ülevaatus käes",
-        description_et="Ootamised, mille ülevaatuse kuupäev on saabunud. Ei ole hilinemine.",
-        source_population_et="Kehtivad järgmised tegevused, liik WAIT, kuupäevaga",
+        label_et="Ülevaatus käes",
+        description_et=(
+            "Kehtivad tegevused, mille ülevaatuse kuupäev on saabunud. Ei ole hilinemine."
+        ),
+        source_population_et="Kehtivad järgmised tegevused, liik WAIT või MONITOR, kuupäevaga",
         time_basis=TimeBasis.POINT_IN_TIME,
         respects_period=False,
-    ),
-    MetricDefinition(
-        key=MONITOR_REVIEW_DUE,
-        version=1,
-        label_et="Jälgin — ülevaatus käes",
-        description_et="Jälgimised, mille ülevaatuse kuupäev on saabunud. Ei ole hilinemine.",
-        source_population_et="Kehtivad järgmised tegevused, liik MONITOR, kuupäevaga",
-        time_basis=TimeBasis.POINT_IN_TIME,
-        respects_period=False,
-    ),
-    MetricDefinition(
-        key=NEXT_ACTION_BY_KIND,
-        version=1,
-        label_et="Järgmised tegevused liigi järgi",
-        description_et="Teen, ootan, jälgin — kolm eri asja, mida ei liideta.",
-        source_population_et="Kehtivad järgmised tegevused",
-        time_basis=TimeBasis.POINT_IN_TIME,
-        respects_period=False,
+        drillthrough_et="Teemade register",
     ),
     _matter(
         RESPONSE_DEADLINES_OPEN,

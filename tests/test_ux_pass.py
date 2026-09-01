@@ -373,7 +373,9 @@ def test_a_saves_next_step_rides_with_it_at_the_precision_it_was_recorded(specia
     items, _ = tl.matter_timeline(matter=matter, user=specialist)
     step = next(item.next_step for item in items if item.next_step is not None)
 
-    assert step.mode == "JÄLGIN"
+    # The step is its sentence and its date. It carries no stored kind at all
+    # now — not an empty one, not a hidden one (ADR 0054).
+    assert not hasattr(step, "mode")
     assert step.text == "Jälgin menetlust"
     assert "01.09" not in step.date_value, "a month must not print as a day"
 

@@ -92,7 +92,7 @@ reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
                 {% if row.result.matter.is_open %}· avatud{% else %}· suletud{% endif %}
                 {% if row.result.matter.owner %}· vastutaja {{ row.result.matter.owner.display_name }}{% endif %}
                 {% if row.action %}
-                  · {{ row.action.get_kind_display|lower }}: {{ row.action.text|truncatechars:60 }}
+                  · järgmiseks: {{ row.action.text|truncatechars:60 }}
                 {% endif %}
               {% endif %}
             </span>

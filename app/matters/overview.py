@@ -444,7 +444,11 @@ def intervention_rows(
                 InterventionRow(
                     reason=REASON_RIPE,
                     value="üle vaadata",
-                    meaning=f"{item.action_kind_label.upper()} AL {_short(item.when)}",
+                    # The *date's* meaning — VAATAN ÜLE, OODATAV AEG — and
+                    # the day it fell on. Never the stored action kind: TEEN /
+                    # OOTAN / JÄLGIN is not a category this product asks a
+                    # reader to hold (ADR 0054).
+                    meaning=f"{item.meaning} {_short(item.when)}",
                     matter=item.matter,
                     detail=item.text,
                     owner=item.responsible,

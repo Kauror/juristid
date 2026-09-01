@@ -79,8 +79,7 @@ def test_every_published_metric_appears_on_some_tab() -> None:
         "ACTIVE_WITHOUT_OWNER",
         "ACTIVE_WITHOUT_STAGE",
         "RESPONSE_DEADLINES_OPEN",
-        "WAIT_REVIEW_DUE",
-        "MONITOR_REVIEW_DUE",
+        "REVIEW_DUE",
     }
     unplaced = set(CATALOGUE) - placed - exempt
     assert unplaced == set(), f"Defined but rendered nowhere: {sorted(unplaced)}"
