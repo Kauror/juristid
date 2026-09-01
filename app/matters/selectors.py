@@ -22,7 +22,7 @@ from app.matters.enums import REGISTER_YEAR_ORIGINS, MatterDataClass, RecordMode
 from app.matters.models import Matter
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
-from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
+from app.workflow.enums import REVIEW_KINDS, ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 
 HORIZON_DAYS = 7
@@ -42,9 +42,16 @@ MISSING = "puudub"
 #: next action, and each one exists because some statistic counts exactly it.
 #:
 #: The rule the whole set rests on is Stage 1's: only DO + DEADLINE can be
-#: overdue. `ootan-ulevaatus` and `jalgin-ulevaatus` are due for a look, and are
-#: never described as late, because an ordinary dependency on a ministry is not
-#: a failure (master specification 18.8).
+#: overdue. `ulevaatus` is due for a look, and is never described as late,
+#: because an ordinary dependency on a ministry is not a failure
+#: (master specification 18.8).
+#:
+#: There is deliberately no filter for the stored kind on its own. `teen`,
+#: `ootan`, `jalgin` and the two per-kind review values were here until the
+#: classification stopped being a user-facing concept; what survived is the
+#: pair of conditions a reader can actually act on — a deadline that has
+#: passed, and a review date that has arrived — with the kind doing its work
+#: inside them rather than in the URL (ADR 0054).
 #: What `?materjalid=` selects. Words rather than a boolean for the same reason
 #: `?allikas=` uses them: `materjalid=0` reads as "material number zero" in a URL
 #: somebody is editing by hand.
@@ -89,14 +96,13 @@ def filter_by_data_class(queryset: QuerySet[Matter], value: str) -> QuerySet[Mat
     return queryset.filter(data_class=stored)
 
 
+#: A review date that has arrived, whatever kind carries it.
+REVIEW_DUE = "ulevaatus"
+
 NEXT_ACTION_FILTERS: tuple[str, ...] = (
     MISSING,
-    "teen",
-    "ootan",
-    "jalgin",
     "hilinenud",
-    "ootan-ulevaatus",
-    "jalgin-ulevaatus",
+    REVIEW_DUE,
 )
 
 
@@ -182,25 +188,23 @@ def filter_by_materials(queryset: QuerySet[Matter], user: Any, value: str) -> Qu
 
 
 def _open_action_condition(value: str, today: date) -> Q:
-    """The `NextAction` condition behind one `?tegevus=` value."""
+    """The `NextAction` condition behind one `?tegevus=` value.
+
+    The stored kind is still what decides both conditions — it simply decides
+    them here rather than being offered as a filter of its own.
+    """
     open_now = Q(status=ActionStatus.OPEN)
-    if value == "teen":
-        return open_now & Q(kind=ActionKind.DO)
-    if value == "ootan":
-        return open_now & Q(kind=ActionKind.WAIT)
-    if value == "jalgin":
-        return open_now & Q(kind=ActionKind.MONITOR)
     if value == "hilinenud":
         return open_now & Q(
             kind=ActionKind.DO,
             date_semantics=DateSemantics.DEADLINE,
             target_date__lt=today,
         )
-    if value == "ootan-ulevaatus":
-        return open_now & Q(kind=ActionKind.WAIT, target_date__isnull=False, target_date__lte=today)
-    if value == "jalgin-ulevaatus":
+    if value == REVIEW_DUE:
         return open_now & Q(
-            kind=ActionKind.MONITOR, target_date__isnull=False, target_date__lte=today
+            kind__in=REVIEW_KINDS,
+            target_date__isnull=False,
+            target_date__lte=today,
         )
     return open_now
 

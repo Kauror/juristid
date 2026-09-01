@@ -78,9 +78,7 @@ COMPUTERS: dict[str, Computer] = {
     keys.ACTIVE_WITHOUT_STAGE: activity.active_without_stage,
     keys.RESPONSE_DEADLINES_OPEN: activity.response_deadlines_open,
     keys.OVERDUE_DO_DEADLINE: activity.overdue_do_deadline,
-    keys.WAIT_REVIEW_DUE: activity.wait_review_due,
-    keys.MONITOR_REVIEW_DUE: activity.monitor_review_due,
-    keys.NEXT_ACTION_BY_KIND: activity.next_action_by_kind,
+    keys.REVIEW_DUE: activity.review_due,
     keys.ENTRY_COUNT: activity.entry_count,
     keys.ENTRY_COUNT_BY_KIND: activity.entry_count_by_kind,
     # Organisatsioonid
@@ -318,7 +316,6 @@ ACTIVITY_ARCHIVE_MATRICES = [
 ACTIVITY_CHARTS = [
     keys.SUBMISSIONS_BY_KIND,
     keys.MATTERS_BY_SUBMISSION_COUNT,
-    keys.NEXT_ACTION_BY_KIND,
     keys.ENTRY_COUNT_BY_KIND,
 ]
 

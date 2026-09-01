@@ -9,10 +9,17 @@ row is noise.
 The date cell always carries its meaning in words. "27.08" alone does not tell
 anybody whether missing it matters, and TÄHTAEG, OODATAV AEG, VAATAN ÜLE and
 OLULINE TÄHTAEG are four different obligations that happen to share a column.
+That is a statement about the *date*, and it stays.
+
+The action cell is the sentence a lawyer wrote and nothing else. It used to lead
+with the stored kind as a chip; the classification is not a user-facing concept
+any more, and «JÄLGIN vaata üle septembris kui enne pole infot» said the same
+thing twice (ADR 0054).
 
 Only a DO with a deadline, and an Oluline tähtaeg, are ever coloured or worded
 as late. A WAIT or MONITOR whose review date has passed is ripe for a look,
-which is warning-level and is not lateness (master specification 18.8).
+which is warning-level and is not lateness (master specification 18.8). The row
+still reads the stored kind to decide that — it simply no longer prints it.
 
 The whole row is a link to the Matter, so Enter opens it from the keyboard.
 
@@ -36,10 +43,7 @@ control on this row: the row itself is the link.
     </span>
 
     <span class="workrow2__body">
-      <span class="workrow2__action">
-        {% if item.is_action %}<span class="mode mode--{{ item.action_kind|lower }}">{{ item.action_kind_label }}</span>{% endif %}
-        {{ item.text }}
-      </span>
+      <span class="workrow2__action">{{ item.text }}</span>
       <span class="workrow2__matter">
         {% if item.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ item.matter.title }}
       </span>

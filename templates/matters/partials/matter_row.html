@@ -98,7 +98,11 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
   <td class="table__action">
     <span class="table__actioncell">
       {% if action %}
-        <span class="mode mode--{{ action.kind|lower }}">{{ action.get_kind_display }}</span>
+        {% comment %}
+          The sentence, with no classification chip in front of it. TEEN /
+          OOTAN / JÄLGIN is not a concept this product asks a reader to hold,
+          and the step already says what it is (ADR 0054).
+        {% endcomment %}
         <span class="table__actiontext" title="{{ action.text }}">{{ action.text }}</span>
       {% elif source_instructions|get_item:matter.pk %}
         {% comment %}

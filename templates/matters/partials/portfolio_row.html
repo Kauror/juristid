@@ -5,8 +5,11 @@ Three cells, one line. The middle one is the *earliest* open step, because a
 Matter can carry several and the one a person needs to see is the next one.
 
 The row never says «üle» about a review. `short_date` already prints a passed
-OOTAN or JÄLGIN as a neutral «N p», and only a real deadline gets the word — the
+review date as a neutral «N p», and only a real deadline gets the word — the
 same rule the timeline rows above this section follow (01-EHITUSJUHIS §3.1).
+
+The step is its sentence and its date. The stored kind is not printed here, on
+this page or anywhere else a lawyer works (ADR 0054).
 
 A Matter with no open step at all says so and offers the way to fix it, rather
 than showing an empty cell somebody has to interpret.
@@ -27,7 +30,7 @@ than showing an empty cell somebody has to interpret.
         the step itself, which is the sentence a lawyer wrote
         (e2e/test_ui_regression.py CLOCK_DEPENDENT).
       {% endcomment %}
-      <span class="mode mode--{{ row.next_action.action_kind|lower }}">{{ row.next_action.action_kind_label }}</span>{{ row.next_action.text }}{% if row.action %} · {{ row.action.meaning|lower }} <span data-clock>{{ row.action.day_month }}{% if row.action.is_overdue or row.action.is_review_ripe %} · {{ row.action.short_date }}{% endif %}</span>{% endif %}
+      {{ row.next_action.text }}{% if row.action %} · {{ row.action.meaning|lower }} <span data-clock>{{ row.action.day_month }}{% if row.action.is_overdue or row.action.is_review_ripe %} · {{ row.action.short_date }}{% endif %}</span>{% endif %}
     </span>
   {% else %}
     <span class="pw-matter__next pw-matter__next--none">
