@@ -302,10 +302,19 @@ def test_no_script_can_reach_a_stack_it_was_not_given(script: Path) -> None:
     Every invocation goes through `juristid_compose`, which uses the two
     variables the script was started with, and every entry point validates the
     project against an allow-list first.
+
+    A script that touches no stack at all is not asked to validate a project it
+    was never given. `juristid-check-backup-age.sh` reads directory names and
+    starts nothing; requiring an allow-list check there would be requiring a
+    guard over a door that does not exist, and a `--project` flag nothing uses
+    is a flag somebody eventually believes means something.
     """
     text = script.read_text(encoding="utf-8")
-    assert "require_known_project" in text, script.name
-    for line in executable_lines(text):
+    lines = executable_lines(text)
+    touches_a_stack = any("docker compose" in line or "juristid_compose" in line for line in lines)
+    if touches_a_stack:
+        assert "require_known_project" in text, script.name
+    for line in lines:
         if "docker compose" not in line:
             continue
         assert '-p "$JURISTID_PROJECT"' in line, f"{script.name}: {line}"

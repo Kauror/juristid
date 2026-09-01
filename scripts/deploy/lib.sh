@@ -118,6 +118,29 @@ deployment_plan() {
 PLAN
 }
 
+# How many files a tree holds, and how many bytes they add up to.
+#
+# Shared, because the backup writes these two numbers into the manifest and the
+# verifier now reads them back — and two implementations of "how big is this
+# mirror" is how a check ends up disagreeing with the thing it is checking.
+#
+# `tree_bytes` sums the files' own sizes rather than asking `du`. `du` answers
+# in allocated blocks, which is a property of the filesystem the tree happens to
+# sit on: the same mirror copied to a destination with a different block size
+# reports a different number, and a verifier comparing those would fail on a
+# perfectly good off-host copy. The sum of file sizes is the same everywhere.
+#
+# `ls -ln` rather than `find -printf`, which is GNU-only, and in batches rather
+# than one process per file, because these trees hold tens of thousands of
+# objects. Column five is the size whatever the name contains.
+count_files() {
+  find "$1" -type f 2>/dev/null | wc -l | tr -d ' '
+}
+
+tree_bytes() {
+  find "$1" -type f -exec ls -ln {} + 2>/dev/null | awk '$5 ~ /^[0-9]+$/ { total += $5 } END { print total + 0 }'
+}
+
 # Free space in KiB at a path, for a script that would rather refuse than write
 # half a dump.
 free_kib() {

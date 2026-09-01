@@ -154,10 +154,6 @@ note "  backup set   $SET_DIR"
 # a backup can report success while recording that the Chamber has no evidence
 # at all, so it is checked rather than assumed.
 
-count_files() {
-  find "$1" -type f 2>/dev/null | wc -l | tr -d ' '
-}
-
 sync_tree() {
   local label="$1" source="$2" mirror="$3"
   local source_count mirror_count
@@ -218,10 +214,18 @@ sync_tree "legacy-source" "$LEGACY_SOURCE" "$LEGACY_MIRROR"
 
 step "Manifest"
 
+# The mirror figures the verifier reads back (`juristid-verify-backup.sh`).
+#
+# `total_bytes` is the sum of the files' own sizes, not `du`. `du` answers in
+# allocated blocks, so the same mirror on a destination with a different block
+# size reports a different number — which would make the check fail on a good
+# off-host copy and pass on a truncated same-host one. Manifest version 2 is
+# what says the field means this; version 1 sets carry the `du` figure and the
+# verifier deliberately does not compare it (`lib.sh`, `tree_bytes`).
 EVIDENCE_FILES="$(count_files "$EVIDENCE_MIRROR")"
 LEGACY_FILES="$(count_files "$LEGACY_MIRROR")"
-EVIDENCE_BYTES="$(du -sk "$EVIDENCE_MIRROR" | awk '{ print $1 * 1024 }')"
-LEGACY_BYTES="$(du -sk "$LEGACY_MIRROR" | awk '{ print $1 * 1024 }')"
+EVIDENCE_BYTES="$(tree_bytes "$EVIDENCE_MIRROR")"
+LEGACY_BYTES="$(tree_bytes "$LEGACY_MIRROR")"
 
 # Best effort. The application's own view of itself is worth recording, and a
 # database that cannot answer must not stop a dump that already succeeded.
@@ -230,7 +234,7 @@ PG_VERSION="$(juristid_compose exec -T db psql --no-password -U "$DB_USER" -d "$
 
 cat >"$PARTIAL_DIR/manifest.json" <<MANIFEST
 {
-  "manifest_version": 1,
+  "manifest_version": 2,
   "created_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "project": "$JURISTID_PROJECT",
   "application_revision": "${APP_REVISION:-unknown}",
@@ -255,7 +259,8 @@ cat >"$PARTIAL_DIR/manifest.json" <<MANIFEST
     "derivatives — rebuildable from evidence",
     "search projection — rebuildable from the database",
     "secrets — the environment file and the tunnel credential are backed up separately, never here",
-    "the historical source corpus — read-only input with its own recovery path"
+    "the historical source corpus — read-only input with its own recovery path",
+    "a recovery fingerprint — it cannot be taken inside this set's snapshot, so one stored here would describe a different moment (deploy/unraid-main/RECOVERY.md)"
   ]
 }
 MANIFEST

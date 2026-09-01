@@ -13,6 +13,7 @@ Everything below runs on the Unraid host. Nothing in it may be run against
 | --- | --- |
 | Back up | `scripts/deploy/juristid-backup.sh` — database, evidence, page XML |
 | Check a backup | `scripts/deploy/juristid-verify-backup.sh` — levels 1 and 2 |
+| Check a backup was taken *lately* | `scripts/deploy/juristid-check-backup-age.sh` |
 | Prove the procedure | the `recovery` job in CI, on synthetic data |
 | Restore | `scripts/deploy/juristid-restore.sh`, then verify, then publish |
 | Off-host copy | **not yet arranged** — see [Disaster recovery](#disaster-recovery) |
@@ -136,7 +137,7 @@ only the last one means much.
 | Level | Proves | Cost |
 | --- | --- | --- |
 | 1 | the files are present, non-empty, and hash to what the set recorded | seconds |
-| 2 | the archive is a PostgreSQL dump whose contents list the right tables | seconds |
+| 2 | the archive is a PostgreSQL dump whose contents list the right tables, **and** both mirrors still hold what the manifest recorded | seconds |
 | 3 | the set restores and the application reads the register back out of it | minutes |
 
 Levels 1 and 2:
@@ -147,6 +148,76 @@ scripts/deploy/juristid-verify-backup.sh --project juristid-main --compose-file 
 
 The backup script runs both before it renames a set into place, so a set that
 exists has already passed them.
+
+### The mirror check, and what it is not
+
+A set is `database.dump` plus the two mirrors it names. The manifest has always
+recorded how many files each mirror held and how many bytes they came to;
+nothing read those numbers back, so a set could pass every check it had while
+the evidence it depends on had been emptied — and the way that gets discovered
+is by needing it.
+
+Level 2 now recomputes both and compares:
+
+* **fewer files than recorded** is a failure. Objects are gone.
+* **fewer bytes with the right file count** is a failure. Something was
+  truncated in place.
+* **more of either** is reported and is not a failure. The mirrors are shared
+  between sets rather than copied per set, and evidence is append-only, so an
+  older set verified today is *supposed* to find more than it recorded.
+
+It runs before the compose file is even required, because there is no reason to
+make somebody start a container to be told the evidence is missing. Pass
+`--backup-root` if a set has been moved away from its mirrors, and
+`--no-mirror-check` to verify a set as a file rather than as a backup — which is
+what a set copied without its mirrors is.
+
+**It hashes nothing.** The evidence tree is ~7.4 GB and a routine check that
+reads all of it is a check somebody switches off. Proving the bytes is
+`recovery_fingerprint` without `--skip-evidence-bytes`, and that stays a
+deliberate exercise.
+
+**Byte totals are only compared on manifest version 2 and later.** Version 1
+recorded `du -sk`, which counts allocated blocks — a property of the filesystem
+the mirror happens to sit on, not of the data. Comparing that against a copy on
+different storage would fail on a good off-host set and could pass on a bad
+local one. Version 2 records the sum of the files' own sizes, which is the same
+number anywhere. Older sets are still checked on file count, and the verifier
+says which comparison it skipped and why.
+
+### Has a backup been taken lately?
+
+Verification says a set is intact. It says nothing about whether one was taken
+this week. As of this writing nothing schedules the backup at all — every set on
+the host was taken by hand before a deployment — so the answer has to be asked
+for:
+
+```bash
+scripts/deploy/juristid-check-backup-age.sh --backup-root /mnt/user/backups/juristid-main --max-age-hours 24
+```
+
+Read-only. It reads directory names and the three files a finished set holds;
+it opens no dump and starts no container.
+
+| Exit | Meaning |
+| --- | --- |
+| 0 | a complete set exists and is inside the limit |
+| 1 | the arguments or the backup root are wrong |
+| 2 | no complete set exists at all |
+| 3 | the newest complete set is older than the limit |
+
+Three codes rather than "non-zero", because "the backups have stopped", "there
+have never been any" and "you typed the path wrong" have three different first
+moves.
+
+**`--max-age-hours` is required and has no default.** The RPO — how much work
+the Chamber is willing to lose — is a decision for the people who would lose it,
+and a number written into a script becomes policy the day somebody reads it as
+one. 24, 4 and 1 are all defensible; none of them is chosen here
+(`docs/open-decisions.md`).
+
+A `.partial` directory never counts as a set. It is reported, because an
+unfinished run is worth looking at, but it is not a backup.
 
 **Level 3 is not run against production.** It is the `recovery` job in
 `.github/workflows/ci.yml`: a synthetic register is seeded, backed up by this
@@ -161,13 +232,46 @@ nothing except restoring one would.
 ### Fingerprinting the live system
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py recovery_fingerprint --skip-evidence-bytes --out /mnt/user/backups/juristid-main/fingerprint-latest.json
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py recovery_fingerprint --skip-evidence-bytes --out /mnt/user/backups/juristid-main/fingerprints/fp-before-<what-you-are-about-to-do>.json
 ```
 
-Non-secret: counts, digests and schema state, no content and no filenames. Keep
-one beside the backups. After a restore it is what turns "the site loads" into
-"every canonical row and every evidence object came back", and it is the input
-to `--compare`.
+Non-secret: counts, digests and schema state, no content and no filenames.
+
+**A fingerprint describes the live system at the moment it was taken. It does
+not describe a backup set, and it cannot.** This is worth stating plainly
+because the file this runbook used to name — `fingerprint-latest.json` — read
+like a property of the newest backup, and an operator comparing a restore
+against it would have been comparing it against a different moment.
+
+Three reasons it cannot be a property of a set, in the order they bite:
+
+1. **`pg_dump` has its own snapshot.** The dump is consistent as of the instant
+   it started. A `recovery_fingerprint` run beside it reads a second connection
+   at a second instant, and every entry, upload or assignment in between makes
+   the two disagree. A restore that came back *perfectly* would then be reported
+   as wrong.
+2. **The evidence and page-XML halves read a filesystem, which has no snapshot
+   at all.** The backup's own consistency argument for the mirrors is
+   deliberately a *superset* argument — the mirror may hold objects the dump
+   does not, and that is correct and expected. A fingerprint asserts equality,
+   and equality is the wrong relation for that half.
+3. **A fingerprint of a set would have to come from the set.** Which means
+   restoring it, which is level 3, which is the rehearsal.
+
+So what a fingerprint is actually for is a **round trip**: take one before a
+risky operation, do the operation, take another, `--compare`. That is how the
+CI rehearsal uses it and how the two files in
+`/mnt/user/backups/juristid-main/fingerprints/` were used for the release they
+are named after. Name the file after the operation, not after "latest": a file
+called `latest` that is nine days old is worse than no file.
+
+What this leaves, honestly stated: **production-set restore verification today
+proves the file, not the system.** Levels 1 and 2 prove a set is intact and
+structurally right, and level 3 proves the *procedure* on synthetic data. No
+production set has been proved to restore, and nothing short of restoring one
+would prove it. Closing that gap needs a set-consistent fingerprint or a
+rehearsal against a real set, and both are open items
+(`docs/open-decisions.md`).
 
 Drop `--skip-evidence-bytes` to re-hash every stored object. That reads the
 whole evidence tree, so it is a deliberate exercise rather than a routine one.
@@ -280,8 +384,18 @@ a missing mount, a writable source corpus, a PostgreSQL major that is too old,
 or a build that cannot say which commit it is.
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py recovery_fingerprint --compare /mnt/user/backups/juristid-main/fingerprint-latest.json
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py recovery_fingerprint --compare /mnt/user/backups/juristid-main/fingerprints/fp-before-<the-operation>.json
 ```
+
+The fingerprint taken **before the operation this restore is undoing** — not a
+"latest" file, and not one taken beside the backup. See
+[Fingerprinting the live system](#fingerprinting-the-live-system) for why a
+fingerprint cannot describe a set.
+
+If there is no such fingerprint — a disk failure gave nobody the chance to take
+one — say so rather than reaching for the nearest file. The comparison is then
+unavailable, `check_evidence_integrity` below still runs, and what the restore
+has been proved to be is "structurally consistent", not "everything came back".
 
 Any difference in canonical counts, evidence digests, page-XML digests or
 migration leaves exits non-zero and names what moved. Rebuildable counts are
@@ -487,6 +601,39 @@ out loud before doing it.
 
 ## Disaster recovery
 
+### Three layers, and only one of them is the Juristid backup
+
+Three different things on this host make copies of Juristid data. They are not
+interchangeable, and reaching for the wrong one during an incident is the
+mistake worth naming.
+
+| | What it is | What it holds | When |
+| --- | --- | --- | --- |
+| **The Juristid backup set** | `juristid-backup.sh` — the thing this file is about | `database.dump` + the evidence and page-XML mirrors, with a manifest and checksums | whenever somebody runs it |
+| **Unraid *Appdata Backup*** | a host plugin, unrelated to this repository | tar archives of the containers' appdata volumes, taken with the containers **stopped** | weekly |
+| **The historical source corpus** | the read-only import material | the Excel register, the OneNote export, the migration audit | copied once, never since |
+
+**Only the first is a set-consistent Juristid backup.** Appdata Backup stops the
+containers and tars their volumes, so what it produces is crash-consistent in
+the strong sense — nothing was running — but it is a host-level operational
+safety net, not this application's backup. It carries no manifest, no
+`SHA256SUMS`, no `pg_restore --list`, and nothing in this repository verifies or
+restores it. Treat it as a second chance, never as the plan.
+
+**Do not disable it.** It is currently the only thing copying some
+configuration state off the appdata tree — the tunnel credential among it — and
+until the secrets have a deliberate backup of their own, switching it off would
+quietly remove a recovery path nobody replaced. Its cost is real and should be
+recorded rather than hidden: it stops `juristid-main-web` and `juristid-main-db`
+for the length of the run. In the 31.08.2026 run that was **41 minutes**, from
+04:01 to 04:42 UTC, most of it spent tarring the ~7 GB evidence tree that the
+Juristid backup already mirrors. Whether that trade is worth making weekly is an
+operations decision, and it is an open one.
+
+**The historical corpus has no backup at all.** It is mounted read-only, it is
+not in a set, and its recovery path is a manual re-export from the Chamber's own
+systems. That is a real path and a slow one.
+
 ### A backup on the same disk is not disaster recovery
 
 The backups described above are a **local recovery copy**. They protect against
@@ -498,10 +645,19 @@ They do not protect against the disk, the array, the filesystem, the host, or
 the building. A copy that shares a failure boundary with the original is not a
 second copy of anything.
 
-At the time of writing, at least one evidence backup has been verified
-byte-for-byte and sits on the same physical disk as the production evidence.
-That verification is real and worth having. It is not disaster recovery, and
-calling it that is how a system ends up believing it has a recovery plan.
+At the time of writing that is not a theoretical caveat. Measured on the host on
+01.09.2026, production's appdata, the Juristid backup sets, the historical source
+corpus **and** the weekly Appdata Backup destination all resolve to the same
+single physical data disk. One disk, four things that were supposed to be
+independent. Array parity protects against that disk failing; it protects
+against nothing else — not a deletion, not ransomware, not filesystem
+corruption, not the loss of the host or the room.
+
+The disk layout is an observation with a date on it, not architecture: shares
+move, disks get added, and the next reader should re-check rather than trust
+this paragraph. What is *not* an observation is the rule — a copy is only a copy
+if it can survive the thing that takes the original — and no amount of
+rearranging disks inside one chassis satisfies it.
 
 ### What an off-host copy has to satisfy
 
@@ -576,9 +732,20 @@ These are operations decisions, recorded rather than invented
   adding a cron entry on this host means editing a file generated from the flash
   drive, which is its own hazard;
 * how long sets are kept, and what deletes them;
-* the **RPO** — how much work the Chamber is willing to lose;
+* the **RPO** — how much work the Chamber is willing to lose. It is the number
+  `juristid-check-backup-age.sh --max-age-hours` takes, and the script refuses
+  to invent one;
 * the **RTO** — how long it may take to come back;
-* the off-host destination and who holds its credentials.
+* the off-host destination and who holds its credentials;
+* **a set-consistent recovery fingerprint**, or a rehearsal against a real
+  production set. Today a fingerprint proves a round trip and levels 1–2 prove a
+  file; no production set has been proved to restore. See
+  [Fingerprinting the live system](#fingerprinting-the-live-system) for why the
+  current backup transaction model cannot produce one, and what it would take;
+* whether the weekly Appdata Backup's ~41-minute stop is a price worth paying
+  weekly, and what would have to exist first — a deliberate backup of the
+  configuration and tunnel credential — before it could be narrowed or switched
+  off.
 
 Nothing in this repository encodes an answer to any of them, on purpose. A
 retention period invented by an engineer and written into a script becomes
