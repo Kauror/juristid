@@ -120,6 +120,18 @@ addressee" does not. Where the register named a candidate, its proposal is
 kept: it carries the date and the addressee as well, and replacing it with a
 proceeding number would be less evidence rather than more.
 
+**A citation may file a link and still not file a dispatch.** The route exists
+to reach Matters whose VÄLJA is nowhere near the letter's own date, so taking
+that VÄLJA as the letter's `sent_at` is precisely the invention this stage
+refuses — the link would be right and the date made up. `_plan_submissions`
+therefore plans a Submission for an `EXACT_LAW_REFERENCE_MATTER` proposal only
+where the matcher already recorded `EXACT_SENT_DATE` or
+`SENT_DATE_WITHIN_ONE_DAY`. The link is unaffected in every case.
+
+On the real corpus that is 17 of the 20 citation matches keeping a Submission
+and **3 becoming link-only**. No other class is touched: they reached their
+Matter *through* the date, so the question is already answered for them.
+
 ## What this does not change
 
 - **No score, no threshold, no distance.** Every class still rests on tokens

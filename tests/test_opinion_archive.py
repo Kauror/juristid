@@ -1157,3 +1157,65 @@ def test_the_citation_class_may_be_applied_without_a_person():
     assert OpinionMatchClass.EXACT_LAW_REFERENCE_MATTER in AUTOMATIC_MATCH_CLASSES
     assert OpinionMatchClass.REVIEW_REQUIRED not in AUTOMATIC_MATCH_CLASSES
     assert OpinionMatchClass.CONTENT_MULTI_SIGNAL not in AUTOMATIC_MATCH_CLASSES
+
+
+def test_a_citation_across_a_date_gap_links_but_files_no_submission(archive_path):
+    """A subject relation is not a dispatch, and the apply must not read it as one.
+
+    `EXACT_LAW_REFERENCE_MATTER` exists to reach Matters whose VÄLJA is nowhere
+    near the letter's own date — Koda writes twice about one proceeding and the
+    register keeps the last dispatch. The real corpus has such a pair ten months
+    apart.
+
+    Left alone, `_sent_date_for` would take the register's VÄLJA for those and
+    file a Submission saying Koda sent *this* letter that day: the link right,
+    the date invented. So the link is planned and the Submission is not.
+    """
+    register_matter(
+        year=2021,
+        number=61,
+        title="Näidisjäätmete seaduse eelnõu 193 SE",
+        sent="2021-03-16",
+        counterparty="Näidiskomisjon",
+    )
+    item = syn.opinion(
+        date="2020-05-21",
+        recipient="Näidiskomisjon",
+        title="Täiendav arvamus eelnõule 193 SE",
+    )
+    plan = plan_for(archive_path([item]))
+    proposal = proposal_for(plan, item)
+
+    # Still an automatic class, so `derive_links` will file the relationship.
+    assert proposal.match_class == OpinionMatchClass.EXACT_LAW_REFERENCE_MATTER
+    assert proposal.matter_id is not None
+    # And no Submission, because nothing here says when the letter went out.
+    assert plan.submissions == []
+    assert "saadetud arvamust ei looda" in proposal.explanation
+
+
+def test_a_citation_on_the_same_day_still_files_a_submission(archive_path):
+    """The other side, so the guard cannot quietly become "never".
+
+    Where the register's VÄLJA is the letter's own day, the citation route has
+    the same dispatch evidence every other automatic class has, and withholding
+    the Submission would lose a real one.
+    """
+    register_matter(
+        year=2021,
+        number=62,
+        title="Näidisjäätmete seaduse eelnõu 194 SE",
+        sent="2021-03-16",
+        counterparty="Näidiskomisjon",
+    )
+    item = syn.opinion(
+        date="2021-03-16",
+        recipient="Muu näidisamet",
+        title="Arvamus eelnõule 194 SE",
+    )
+    plan = plan_for(archive_path([item]))
+    proposal = proposal_for(plan, item)
+
+    assert proposal.match_class == OpinionMatchClass.EXACT_LAW_REFERENCE_MATTER
+    assert OpinionSignal.EXACT_SENT_DATE in proposal.signals
+    assert [entry.matter_id for entry in plan.submissions] == [proposal.matter_id]
