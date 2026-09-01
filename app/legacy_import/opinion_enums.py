@@ -41,6 +41,15 @@ class OpinionMatchClass(models.TextChoices):
     EXACT_BINARY_MATTER = "EXACT_BINARY_MATTER", "Täpne bait ühel teemal"
     EXACT_BINARY_MULTI_MATTER = "EXACT_BINARY_MULTI_MATTER", "Täpne bait mitmel teemal"
     EXCEL_ONENOTE_EXACT = "EXCEL_ONENOTE_EXACT", "Exceli ja OneNote'i täpne ühilduvus"
+    #: A Riigikogu proceeding number naming exactly one Matter, corroborated.
+    #:
+    #: Above `STRICT_MULTI_SIGNAL` because a proceeding number is a *citation*:
+    #: both sources wrote down the same identifier for the same parliamentary
+    #: file, which is a stronger claim than sharing a word. It is never enough
+    #: on its own — the corroboration requirement lives in the matcher, not in
+    #: this label — because the register carries a proceeding number on 792
+    #: rows and 25 of its 165 distinct numbers name more than one Matter.
+    EXACT_LAW_REFERENCE_MATTER = "EXACT_LAW_REFERENCE_MATTER", "Täpne õigusakti viide ühel teemal"
     STRICT_MULTI_SIGNAL = "STRICT_MULTI_SIGNAL", "Mitu sõltumatut täpset signaali"
     #: Produced only by the second pass, from the letter's own text. It is
     #: deliberately absent from ``AUTOMATIC_MATCH_CLASSES``, and the reason is
@@ -61,6 +70,7 @@ AUTOMATIC_MATCH_CLASSES: frozenset[str] = frozenset(
     {
         OpinionMatchClass.EXACT_BINARY_MATTER,
         OpinionMatchClass.EXCEL_ONENOTE_EXACT,
+        OpinionMatchClass.EXACT_LAW_REFERENCE_MATTER,
         OpinionMatchClass.STRICT_MULTI_SIGNAL,
     }
 )

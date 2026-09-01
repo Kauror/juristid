@@ -878,3 +878,282 @@ def test_coverage_is_reported_per_year_not_as_one_average(archive_path):
     assert coverage["2024"]["automatic"] == 1
     assert coverage["2021"]["automatic"] == 0
     assert coverage["2021"]["occurrences"] == 1
+
+
+# ---------------------------------------------------------------------------
+# The reconciliation round: distinctiveness, aliases and citations
+#
+# Every string below is invented. The *shapes* come from the real corpus and
+# each is named in the report the round produced; the words are not.
+# ---------------------------------------------------------------------------
+
+
+def test_a_word_the_stopword_list_meant_to_exclude_is_not_a_third_signal(archive_path):
+    """The defect: a stopword written in a spelling `fold` never produces.
+
+    The list carried `poordumine` and `prdumine` for *pöördumine*, and `fold`
+    produces neither — it replaces each `ö` with a space, so the real token is
+    `rdumine`. Seven characters, in no stopword, and therefore accepted as
+    "distinctive" on 207 register titles.
+
+    Two letters here share the date, the addressee and the word *pöördumine*
+    and nothing else. That must not be automatic: the whole job of the third
+    signal is to say the two are about the same subject.
+    """
+    register_matter(
+        year=2024,
+        number=41,
+        title="Pöördumine näidisloomeprotsessi lihtsustamiseks",
+        sent="2024-05-02",
+        counterparty="Näidisministeerium",
+    )
+    item = syn.opinion(
+        date="2024-05-02",
+        recipient="Näidisministeerium",
+        title="Pöördumine seoses näidistariifidega",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.REVIEW_REQUIRED
+    assert OpinionConflict.TITLE_CONFLICT in proposal.conflicts
+    assert OpinionSignal.EXACT_TITLE_TOKEN not in proposal.signals
+
+
+def test_the_stopwords_are_the_tokens_fold_actually_produces():
+    """Intent and effect are one object, not two lists to keep in step.
+
+    Asserted directly rather than through a match, because the property is
+    about the list itself: every entry has to be something `title_tokens` could
+    emit, or it excludes nothing and the author cannot tell.
+    """
+    from app.legacy_import.opinion_sources import (
+        MINIMUM_TITLE_TOKEN,
+        TITLE_STOPWORDS,
+        fold,
+        title_tokens,
+    )
+
+    assert TITLE_STOPWORDS
+    for word in TITLE_STOPWORDS:
+        # Reachable: `fold` leaves it alone and it is long enough to be a
+        # token. An entry failing either is one that excludes nothing, which is
+        # exactly the defect that let `rdumine` through.
+        assert fold(word) == word, word
+        assert len(word) >= MINIMUM_TITLE_TOKEN, word
+        # And it is excluded rather than merely present in a list.
+        assert title_tokens(word) == frozenset(), word
+
+    assert title_tokens("pöördumine") == frozenset()
+    assert title_tokens("Euroopa Komisjoni konsultatsioon") == frozenset()
+    # And a genuine subject word still survives. Not "naidisregistri": `fold`
+    # replaces the `ä` with a space rather than transliterating it, so the
+    # token is the fragment after the split — which is the same fragment the
+    # register produces from the same word, and that symmetry is the point.
+    assert "idisregistri" in title_tokens("näidisregistri seaduse muutmine")
+
+
+def test_an_abbreviated_addressee_matches_the_words_it_abbreviates(archive_path):
+    """163 of 192 unmatched files failed on this and nothing else.
+
+    The archive filename writes the ministry out and the register KELLELE
+    writes the abbreviation. `fold` cannot converge those, and a reviewed pair
+    is the only thing that may.
+    """
+    register_matter(
+        year=2024,
+        number=42,
+        title="Näidisregistri seaduse muutmise seadus",
+        sent="2024-05-03",
+        counterparty="MKM",
+    )
+    item = syn.opinion(
+        date="2024-05-03",
+        recipient="Majandus- ja Kommunikatsiooniministeerium",
+        title="Arvamus näidisregistri seaduse muutmise kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.STRICT_MULTI_SIGNAL
+    assert OpinionSignal.EXACT_RECIPIENT in proposal.signals
+
+
+def test_a_letter_to_two_ministries_matches_a_row_naming_one(archive_path):
+    """A recipient string is a set of bodies, not one opaque name."""
+    register_matter(
+        year=2024,
+        number=43,
+        title="Näidisregistri seaduse muutmise seadus",
+        sent="2024-05-04",
+        counterparty="Siseministeerium",
+    )
+    item = syn.opinion(
+        date="2024-05-04",
+        recipient="Siseministeerium, Näidisministeerium",
+        title="Arvamus näidisregistri seaduse muutmise kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.STRICT_MULTI_SIGNAL
+    assert proposal.competing_matter_count == 1
+
+
+def test_one_row_named_twice_by_one_letter_is_still_one_candidate(archive_path):
+    """Both sides are sets now, so a row could be found once per shared name.
+
+    Without the dedup this reports two competing rows where there is one, and
+    refuses a match it should make.
+    """
+    register_matter(
+        year=2024,
+        number=44,
+        title="Näidisregistri seaduse muutmise seadus",
+        sent="2024-05-05",
+        counterparty="Siseministeerium, MKM",
+    )
+    item = syn.opinion(
+        date="2024-05-05",
+        recipient="Siseministeerium, Majandus- ja Kommunikatsiooniministeerium",
+        title="Arvamus näidisregistri seaduse muutmise kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.competing_matter_count == 1
+    assert proposal.match_class == OpinionMatchClass.STRICT_MULTI_SIGNAL
+
+
+def test_a_citation_matches_a_matter_the_date_route_cannot_see(archive_path):
+    """Koda writes twice about one proceeding; the register keeps one VÄLJA.
+
+    The archive file is ten months from the register dispatch date, so the
+    date-and-addressee route finds nothing at all. The proceeding number is the
+    same identifier in both sources, and the addressee corroborates it.
+    """
+    register_matter(
+        year=2021,
+        number=45,
+        title="Näidisjäätmete seaduse eelnõu 190 SE",
+        sent="2021-03-16",
+        counterparty="Näidiskomisjon",
+    )
+    item = syn.opinion(
+        date="2020-05-21", recipient="Näidiskomisjon", title="Täiendav arvamus eelnõule 190 SE"
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.EXACT_LAW_REFERENCE_MATTER
+    assert OpinionSignal.EXACT_LAW_REFERENCE in proposal.signals
+    # And it says the link is about the subject rather than about a dispatch.
+    assert "väljasaatmise" in proposal.explanation
+
+
+def test_a_citation_alone_is_not_identity(archive_path):
+    """Neither the addressee nor the date agrees, so the number is a question."""
+    register_matter(
+        year=2021,
+        number=46,
+        title="Näidisjäätmete seaduse eelnõu 191 SE",
+        sent="2021-03-16",
+        counterparty="Näidiskomisjon",
+    )
+    item = syn.opinion(
+        date="2020-05-21", recipient="Muu näidisamet", title="Täiendav arvamus eelnõule 191 SE"
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.REVIEW_REQUIRED
+    assert proposal.matter_id is not None
+
+
+def test_a_proceeding_number_on_two_matters_refuses_rather_than_picks(archive_path):
+    """25 of the register 165 distinct numbers name more than one Matter."""
+    for number in (47, 48):
+        register_matter(
+            year=2021,
+            number=number,
+            title=f"Näidisseaduse eelnõu 192 SE, osa {number}",
+            sent="2021-03-16",
+            counterparty="Näidiskomisjon",
+        )
+    item = syn.opinion(
+        date="2020-05-21", recipient="Näidiskomisjon", title="Arvamus eelnõule 192 SE"
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.REVIEW_REQUIRED
+    assert proposal.matter_id is None
+    assert proposal.competing_matter_count == 2
+
+
+def test_exact_date_and_addressee_outrank_an_ambiguous_citation(archive_path):
+    """The ordering defect this round found and reversed.
+
+    Six real files carry an exact date, an exact addressee and a proceeding
+    number that names two Matters. A citation-first pass sees the ambiguous
+    number, refuses, and throws away the two exact signals that resolve it —
+    withdrawing six links production already holds.
+
+    The rule is not "citations outrank dates". It is *more independent exact
+    signals outrank fewer*.
+    """
+    register_matter(
+        year=2025,
+        number=49,
+        title="Näidisraamatupidamise seaduse eelnõu 516 SE",
+        sent="2025-04-01",
+        counterparty="Näidisministeerium",
+    )
+    register_matter(
+        year=2025,
+        number=50,
+        title="Muu näidisseaduse eelnõu 516 SE menetlus",
+        sent="2025-09-09",
+        counterparty="Muu näidisamet",
+    )
+    item = syn.opinion(
+        date="2025-04-01",
+        recipient="Näidisministeerium",
+        title="Arvamus näidisraamatupidamise seaduse eelnõu 516 SE kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.STRICT_MULTI_SIGNAL
+    assert OpinionSignal.EXACT_SENT_DATE in proposal.signals
+    assert OpinionSignal.EXACT_RECIPIENT in proposal.signals
+
+
+def test_a_one_day_difference_is_still_not_automatic(archive_path):
+    """Unchanged by this round, and asserted so it cannot drift.
+
+    The register VÄLJA is the next day in 227 of 767 cases, which makes a
+    one-day window common and therefore exactly not an identity.
+    """
+    register_matter(
+        year=2024,
+        number=51,
+        title="Näidisregistri seaduse muutmise seadus",
+        sent="2024-05-07",
+        counterparty="Näidisministeerium",
+    )
+    item = syn.opinion(
+        date="2024-05-06",
+        recipient="Näidisministeerium",
+        title="Arvamus näidisregistri seaduse muutmise kohta",
+    )
+    proposal = proposal_for(plan_for(archive_path([item])), item)
+
+    assert proposal.match_class == OpinionMatchClass.REVIEW_REQUIRED
+    assert OpinionSignal.SENT_DATE_WITHIN_ONE_DAY in proposal.signals
+
+
+def test_the_citation_class_may_be_applied_without_a_person():
+    """It is in `AUTOMATIC_MATCH_CLASSES`, which is what makes it a link.
+
+    Stated as a property of the vocabulary rather than inferred from a plan, so
+    a later change that demotes the class fails here rather than silently
+    halving the coverage this round produced.
+    """
+    from app.legacy_import.opinion_enums import AUTOMATIC_MATCH_CLASSES
+
+    assert OpinionMatchClass.EXACT_LAW_REFERENCE_MATTER in AUTOMATIC_MATCH_CLASSES
+    assert OpinionMatchClass.REVIEW_REQUIRED not in AUTOMATIC_MATCH_CLASSES
+    assert OpinionMatchClass.CONTENT_MULTI_SIGNAL not in AUTOMATIC_MATCH_CLASSES

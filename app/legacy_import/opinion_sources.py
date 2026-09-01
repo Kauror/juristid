@@ -68,34 +68,60 @@ SIGNATURES: tuple[tuple[bytes, str], ...] = (
 )
 
 #: Words that appear in half the register and therefore distinguish nothing.
-#: Written in the ASCII skeleton the folding below produces, because that is
-#: the form they are compared in.
-TITLE_STOPWORDS: frozenset[str] = frozenset(
-    {
-        "arvamus",
-        "arvamuse",
-        "eelnou",
-        "eeln",
-        "esitamine",
-        "ettepanek",
-        "ettepanekud",
-        "kohta",
-        "maarus",
-        "maaruse",
-        "mruse",
-        "muudatused",
-        "muutmise",
-        "poordumine",
-        "prdumine",
-        "seadus",
-        "seaduse",
-        "seaduste",
-        "seonduvalt",
-        "sisend",
-        "teiste",
-        "vtk",
-    }
+#:
+#: Written as the *Estonian words themselves* and folded below, rather than as
+#: hand-typed ASCII skeletons. Writing the skeletons by hand is what produced
+#: the defect this replaces: the list carried ``poordumine`` and ``prdumine``
+#: for *pöördumine*, and `fold` produces neither. It replaces each ``ö`` with a
+#: space, so the real token is ``rdumine`` — seven characters, in no stopword,
+#: and therefore accepted as a "distinctive" word. It appears in 207 register
+#: titles, and it is the entire third signal under a link production holds
+#: today between "Pöördumine seoses õigusloome ja bürokraatia vähendamisega"
+#: and "Väljatöötamiskavatsustega seotud pöördumine" — two different subjects.
+#:
+#: Folding the list at import is what makes the intent and the effect the same
+#: thing. A word can now be added in the spelling a reader recognises, and
+#: whether `fold` mangles it stops being something the author has to predict.
+_STOPWORD_SOURCE: tuple[str, ...] = (
+    # Structural words: what the department *did*, never what about.
+    "arvamus",
+    "arvamuse",
+    "eelnõu",
+    "esitamine",
+    "esitamise",
+    "ettepanek",
+    "ettepanekud",
+    "kohta",
+    "määrus",
+    "määruse",
+    "muudatused",
+    "muutmine",
+    "muutmise",
+    "pöördumine",
+    "pöördumised",
+    "seadus",
+    "seaduse",
+    "seaduste",
+    "seonduvalt",
+    "sisend",
+    "teiste",
+    "vtk",
+    # Process and institution words the register writes on hundreds of
+    # unrelated rows. Each was measured against the real register before being
+    # added, and each was found carrying an automatic link on its own:
+    # "komisjoni" on 394 rows, "konsultatsioon" 396, "valitsuse" 204,
+    # "euroopa" 746, "direktiivi" 436.
+    "avalik",
+    "direktiivi",
+    "euroopa",
+    "komisjoni",
+    "konsultatsioon",
+    "sellega",
+    "tingimused",
+    "vabariigi",
+    "valitsuse",
 )
+
 
 #: How long a word has to be before sharing it says anything. Estonian
 #: compounds are long, so a seven-character shared word is a real token
@@ -144,6 +170,21 @@ def keyword_fold(value: object) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", text).split())
 
 
+def _folded_stopwords(words: tuple[str, ...]) -> frozenset[str]:
+    """Every token `fold` actually produces from the words above.
+
+    A word that folds to nothing long enough to be a title token — ``määruse``
+    becomes ``m ruse`` — contributes nothing and is simply absent, which is
+    correct: `title_tokens` could never have emitted it either.
+    """
+    return frozenset(
+        token for word in words for token in fold(word).split() if len(token) >= MINIMUM_TITLE_TOKEN
+    )
+
+
+TITLE_STOPWORDS: frozenset[str] = _folded_stopwords(_STOPWORD_SOURCE)
+
+
 def title_tokens(value: object) -> frozenset[str]:
     """Distinctive words in a title, for the third exact signal."""
     return frozenset(
@@ -159,6 +200,83 @@ def law_references(value: object) -> frozenset[str]:
         f"{match.group(1)} {match.group(2).upper()}"
         for match in LAW_REFERENCE.finditer(str(value or ""))
     )
+
+
+#: Ministry abbreviations the two sources do not share, as reviewed pairs.
+#:
+#: Measured rather than guessed. 163 of the 192 files the reconciliation left
+#: `UNMATCHED` have a register row on their own date that this alone kept them
+#: from seeing: the archive's filename writes *Majandus- ja
+#: Kommunikatsiooniministeerium* and the register's KELLELE writes *MKM*, and
+#: `fold` cannot converge an abbreviation with the words it abbreviates.
+#:
+#: A table rather than a similarity: an abbreviation either is one of these or
+#: it is not, and adding a pair is a reviewed act with a name on it. Nothing
+#: here is derived from the data at run time, and nothing resolves to an
+#: `Organisation` — this is a comparison key, not reference data
+#: (app/legacy_import/opinion_recipients.py keeps that boundary).
+#:
+#: Deliberately absent: *Keskkonnaministeerium* → *Kliimaministeerium*. They
+#: look alike and are not the same ministry, and only a reviewed alias may
+#: bridge one to the other (docs/adr/0019).
+ADDRESSEE_ALIASES: dict[str, str] = {
+    "mkm": "majandus ja kommunikatsiooniministeerium",
+    "htm": "haridus ja teadusministeerium",
+    "rm": "rahandusministeerium",
+    "sm": "sotsiaalministeerium",
+    "jm": "justiitsministeerium",
+    "km": "kliimaministeerium",
+    "kkm": "keskkonnaministeerium",
+    "rahandusmin": "rahandusministeerium",
+    "sotsiaalmin": "sotsiaalministeerium",
+    # A missing `e` in the archive's own spelling, not a different ministry.
+    "keskkonnaministerium": "keskkonnaministeerium",
+    "valitsus": "vabariigi valitsus",
+    "regionaalministeerium": "regionaal ja p llumajandusministeerium",
+    "rem": "regionaal ja p llumajandusministeerium",
+}
+
+#: How a source string separates several addressees, applied to the **raw**
+#: text rather than to a folded key.
+#:
+#: The order matters and cost a test to find: `fold` rewrites every
+#: non-alphanumeric character to a space, so a comma is already gone by the
+#: time a folded string exists. Splitting the folded form finds nothing to
+#: split on and silently returns the whole string as one body — which is the
+#: behaviour this was written to replace.
+ADDRESSEE_SEPARATOR = re.compile(r"[,;/]|ning", re.IGNORECASE)
+
+
+def addressee_bodies(value: object) -> frozenset[str]:
+    """Every body a recipient string names, as comparison keys.
+
+    Two changes from comparing ``fold(value)`` as one unit, and both are
+    measured on the real corpus rather than anticipated.
+
+    **A recipient string may name several bodies.** The archive writes
+    ``Siseministeerium, HTM`` where the register writes one of them, so the
+    whole-string comparison never fired. Splitting produces a *set*, and the
+    comparison becomes "do these two strings name a body in common" — which is
+    the question that was always being asked.
+
+    **An abbreviation is the same body as the words it abbreviates**, but only
+    where a reviewed pair says so.
+
+    The unsplit string is kept in the set beside the parts, so a register row
+    that spells the whole thing out the same way still matches exactly as it
+    did. This function can only ever make two strings *more* comparable, never
+    less: it is additive over the old key.
+    """
+    raw = str(value or "")
+    folded = fold(raw)
+    if not folded:
+        return frozenset()
+    bodies = {ADDRESSEE_ALIASES.get(folded, folded)}
+    for part in ADDRESSEE_SEPARATOR.split(raw):
+        piece = fold(part)
+        if piece:
+            bodies.add(ADDRESSEE_ALIASES.get(piece, piece))
+    return frozenset(bodies)
 
 
 def detect_type(head: bytes) -> str:
