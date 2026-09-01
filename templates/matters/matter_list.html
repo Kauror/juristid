@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load people %}
 {% block title %}Teemad · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -150,7 +151,7 @@ localStorage (Stage-2E.1 brief 12).
             {% for owner in owners %}
               <option value="{{ owner.pk }}"
                       {% if filters.vastutaja == owner.pk|stringformat:"s" %}selected{% endif %}>
-                {{ owner.get_short_name }}
+                {{ owner|name_among:owners }}
               </option>
             {% endfor %}
           </select>

@@ -1,3 +1,4 @@
+{% load people %}
 {% comment %}
   Whose work the application is showing, and a way to change it from anywhere.
 
@@ -61,7 +62,7 @@
         <p class="personaoption personaoption--current">
           <span class="personaoption__avatar personaoption__avatar--current"
                 aria-hidden="true">{{ person.initials }}</span>
-          <span class="personaoption__name">{{ person.get_short_name }}</span>
+          <span class="personaoption__name">{{ person|name_among:persona_candidates }}</span>
           <span class="personaoption__mark" aria-hidden="true">✓</span>
           <span class="visually-hidden">— praegu valitud</span>
         </p>
@@ -72,7 +73,7 @@
           <input type="hidden" name="next" value="{{ request.get_full_path }}">
           <button type="submit" class="personaoption" data-persona-option>
             <span class="personaoption__avatar" aria-hidden="true">{{ person.initials }}</span>
-            <span class="personaoption__name">{{ person.get_short_name }}</span>
+            <span class="personaoption__name">{{ person|name_among:persona_candidates }}</span>
             <span class="personaoption__mark"></span>
           </button>
         </form>

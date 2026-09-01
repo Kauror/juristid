@@ -285,7 +285,10 @@ def choose_persona(request: HttpRequest) -> HttpResponse:
         request,
         "accounts/choose_persona.html",
         {
-            "people": persona_candidates(),
+            # A list rather than the queryset: the page names each person
+            # relative to the others on it, so the population is read once per
+            # row (`app/accounts/naming.py`).
+            "people": list(persona_candidates()),
             "current": request.user if request.user.is_authenticated else None,
             "next_url": _safe_next(request),
         },
