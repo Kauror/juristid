@@ -72,8 +72,8 @@ def test_the_version_is_recorded_on_every_reading():
     mistaken for a source change — which is the whole reason it is a constant
     and not a comment.
     """
-    assert REGISTER_NEXT_ACTION_PARSER_VERSION == "2.0"
-    assert read("vaata üle septembris").parser_version == "2.0"
+    assert REGISTER_NEXT_ACTION_PARSER_VERSION == "2.1"
+    assert read("vaata üle septembris").parser_version == "2.1"
 
 
 # ---------------------------------------------------------------------------

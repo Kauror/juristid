@@ -159,6 +159,21 @@ REVIEWED_SNAPSHOTS: tuple[ReviewedSnapshot, ...] = (
         current_years=frozenset({2025, 2026}),
         snapshot_date=dt.date(2026, 8, 28),
     ),
+    # 1 September. Same scope again, and again a reviewed decision rather than a
+    # copied line: the department still maintains 2025 and 2026 and nothing in
+    # this workbook speaks for 2024 or earlier.
+    #
+    # The 30.08 workbook that sits beside it on the operator's desk is
+    # deliberately *not* here. A reviewed snapshot is a statement that somebody
+    # looked at those exact bytes, and nobody did; it was superseded before it
+    # was ever planned, and adding it now to tidy the sequence would record a
+    # review that never happened.
+    ReviewedSnapshot(
+        sha256="3db743ac9fe406e1cf837245895d07896d2fbf4e48d3eb80583fe7d244a86342",
+        label="Tööd eelnõudega 01.09.xlsx",
+        current_years=frozenset({2025, 2026}),
+        snapshot_date=dt.date(2026, 9, 1),
+    ),
 )
 
 
