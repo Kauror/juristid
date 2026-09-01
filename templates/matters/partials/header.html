@@ -1,3 +1,4 @@
+{% load people %}
 {% comment %}
 The Matter header band: identity, state, the four facts that matter at a
 glance, the plain-language summary, and the two tabs.
@@ -73,10 +74,7 @@ rather than read.
             </select>
             <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
           </form>
-          <p class="field__help">
-            Piiratud teemat näevad ainult vastutaja, kaastöötajad ja osakonnajuht.
-            Sissekanded, arvamused ja tõendid pärivad sama piirangu.
-          </p>
+          <p class="field__help">{% restricted_visibility_help %}</p>
         </div>
       </details>
     {% endif %}
@@ -151,7 +149,7 @@ rather than read.
             <option value="">Määramata</option>
             {% for person in owners %}
               <option value="{{ person.pk }}" {% if matter.owner_id == person.pk %}selected{% endif %}>
-                {{ person.get_short_name }}
+                {{ person|name_among:owners }}
               </option>
             {% endfor %}
           </select>

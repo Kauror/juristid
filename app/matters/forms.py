@@ -14,13 +14,16 @@ from typing import Any, cast
 from django import forms
 from django.db.models import QuerySet
 from django.utils import timezone
+from django.utils.functional import cached_property
 
 from app.accounts.models import User
+from app.accounts.naming import disambiguated_names
 from app.accounts.selectors import assignable_business_users, assignable_including
 from app.core.authorization import scoped_count
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.core.richtext import plain_text
+from app.core.visibility_help import RESTRICTED_VISIBILITY_HELP
 from app.core.widgets import DescribedRadioSelect, EstonianDateField, EstonianDateInput
 from app.documents.enums import DocumentRole
 from app.matters.entry_enums import EntryKind
@@ -83,14 +86,34 @@ class UserChoiceField(forms.ModelChoiceField):
     first name, and a row of chips reading *Ireen · Ann · Marko · Sandra* is
     read at a glance where full names are read one at a time.
 
-    ``get_short_name`` rather than a split written here, because the User model
-    already owns what a person is called informally and two copies of that rule
-    are two places for it to drift. Falls back to the UPN for an account with
-    no display name at all, exactly as before.
+    **Unless two of them are called the same thing.** Two `Sandra` rows in a
+    Vastutaja picker are two identical answers to a question with one right
+    answer, and picking the wrong one moves a file onto the wrong desk and sends
+    the notice there too. So the label is computed over *this field's own
+    queryset* — the people actually being offered — and only the names that
+    genuinely collide grow (``app.accounts.naming``, pilot QA F-03).
+
+    The value is the user's id throughout. Nothing here changes what is
+    submitted, validated or stored; a label is a label.
     """
 
+    #: The population the cached labels were computed from, held by identity.
+    #:
+    #: `ModelChoiceField.queryset` is a property whose setter stores
+    #: `queryset.all()` — a *new* object each time it is assigned. So comparing
+    #: identity invalidates the cache exactly when the field is pointed at a
+    #: different population, and never otherwise. Overriding the setter itself
+    #: would not work: Django binds the property to its own functions at class
+    #: definition, so a subclass's `_set_queryset` is simply not called.
+    _labels_for: Any = None
+    _labels: dict[Any, str] | None = None
+
     def label_from_instance(self, obj: Any) -> str:
-        return obj.get_short_name() or obj.upn
+        queryset = self.queryset
+        if self._labels is None or self._labels_for is not queryset:
+            self._labels = disambiguated_names(list(queryset) if queryset is not None else [])
+            self._labels_for = queryset
+        return self._labels.get(obj.pk) or obj.get_short_name() or obj.upn
 
 
 def set_choices(form: forms.Form, name: str, queryset: QuerySet) -> None:
@@ -783,7 +806,11 @@ class MatterEditForm(forms.Form):
         choices=Visibility.choices,
         required=False,
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
-        help_text="Piiratud teemat näevad ainult vastutaja ja osalejad.",
+        # The one explanation, shared with the Teema header and the banner.
+        # This line used to say "ainult vastutaja ja osalejad", which promised a
+        # narrower audience than the application has given since docs/adr/0042
+        # (pilot QA F-01, app/core/visibility_help.py).
+        help_text=RESTRICTED_VISIBILITY_HELP,
     )
 
     def __init__(
@@ -1463,10 +1490,24 @@ class ComposerForm(forms.Form):
     #: third and fourth time. One save, one narrative — the composer body — and
     #: the canonical records derive their wording from it
     #: (Teema closing redesign §2, §5, §10, §12).
-    close_matter = forms.BooleanField(label="Lõpeta teema", required=False)
+    #:
+    #: **There is no `Lõpeta see teema` box.** A seventh control confirming the
+    #: six answers above it was a place for answers to go missing: the pilot
+    #: filled the whole section, left the box alone, got a 200 and a note in the
+    #: chronology, and lost the disposition, the sent opinion, its date, its
+    #: recipients and the work victory without being told (pilot QA F-02).
+    #: Answering the closing section *is* the request to close;
+    #: :meth:`closure_requested` is the whole rule.
+    #:
+    #: `Põhjus` opens on nothing. It is a `ChoiceField`, so Django adds no blank
+    #: option of its own, and the select therefore submitted `COMPLETED` from
+    #: every composer save whether or not anybody had looked at it — which made
+    #: its own refusal, «Vali, miks teema lõpeb», unreachable, and would now
+    #: make every ordinary note a closure. An unanswered question has to be
+    #: representable before it can be either asked or refused.
     disposition = forms.ChoiceField(
         label="Põhjus",
-        choices=CLOSURE_CHOICES,
+        choices=(("", "Vali põhjus…"), *CLOSURE_CHOICES),
         required=False,
         widget=SELECT_WIDGET,
     )
@@ -1566,6 +1607,52 @@ class ComposerForm(forms.Form):
 
     # -- validation --------------------------------------------------------
 
+    #: The controls that only a closure has an answer for. Filling in any one of
+    #: them is what asks for the Matter to be closed — see
+    #: :meth:`closure_requested` (pilot QA F-02).
+    CLOSURE_FIELDS: tuple[str, ...] = (
+        "disposition",
+        "final_file",
+        "final_sent_on",
+        "final_recipients",
+        "final_recipient_names",
+        "work_victory",
+        "victory_effective_on",
+    )
+
+    @cached_property
+    def closure_requested(self) -> bool:
+        """Did this save answer anything only a closure is asked?
+
+        **Read from what was submitted, not from `cleaned_data`.** A closing
+        answer that fails its own field validation — an unreadable send date, a
+        recipient id that is not in the catalogue — is exactly the save that
+        must not fall through into an ordinary note, and by the time cleaning is
+        done it is no longer in `cleaned_data`. The raw data is what the person
+        actually did.
+
+        Blanks do not count. Every text box on this form posts on every save
+        whether or not anybody typed in it, so «submitted» has to mean «carries
+        a value», and `Põhjus` is the reason it now has an empty option to
+        carry.
+
+        The template reads this too: a refused closure has to come back with the
+        section open, or its errors are printed inside a panel nobody can see.
+        """
+        if not self.is_bound:
+            return False
+        for name in self.CLOSURE_FIELDS:
+            if name in self.files:
+                return True
+            if hasattr(self.data, "getlist"):
+                values = self.data.getlist(name)
+            else:
+                raw = self.data.get(name)
+                values = raw if isinstance(raw, (list, tuple)) else [raw]
+            if any(str(value).strip() for value in values if value is not None):
+                return True
+        return False
+
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
         body = (cleaned.get("body") or "").strip()
@@ -1576,7 +1663,10 @@ class ComposerForm(forms.Form):
         # not what happened and does not say where to look.
         wants_next = bool(next_text or cleaned.get("next_date") is not None)
         wants_deadline = bool((cleaned.get("deadline_title") or "").strip())
-        wants_closure = bool(cleaned.get("close_matter"))
+        # Closure-specific input *is* closure intent. There is no second box to
+        # tick and therefore no way to fill this section in, be told the save
+        # succeeded, and find none of it stored (pilot QA F-02).
+        wants_closure = self.closure_requested
         has_file = bool(cleaned.get("attachment"))
 
         if not (body or wants_next or wants_deadline or wants_closure or has_file):
@@ -2170,6 +2260,11 @@ class IncomingIntakeForm(forms.Form):
         choices=Visibility.choices,
         initial=Visibility.NORMAL,
         widget=SELECT_WIDGET,
+        # Intake is where a restricted letter is *first* filed — the template
+        # says as much — and it was the one visibility control on the product
+        # that explained nothing at all. Same sentence as everywhere else
+        # (pilot QA F-01).
+        help_text=RESTRICTED_VISIBILITY_HELP,
     )
 
     def __init__(self, *args: Any, viewer: Any = None, **kwargs: Any) -> None:

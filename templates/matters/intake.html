@@ -172,6 +172,13 @@ between; that is not "the rest of the record"
       <label class="field">
         <span class="field__label">{{ form.visibility.label }}</span>
         {{ form.visibility }}
+        {% comment %}
+          The help line the control never had. This is where a restricted letter
+          is first filed — the comment at the top of this file says so — and
+          somebody choosing Piiratud for confidential member feedback has to be
+          able to read who that actually shows it to (pilot QA F-01).
+        {% endcomment %}
+        <span class="field__help">{{ form.visibility.help_text }}</span>
         {% if form.visibility.errors %}
           <span class="field__error">{{ form.visibility.errors|first }}</span>
         {% endif %}

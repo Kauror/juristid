@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load people %}
 {% block title %}Vali kasutaja · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -52,7 +53,7 @@
             <p class="personarow personarow--current">
               <span class="personarow__avatar personarow__avatar--current"
                     aria-hidden="true">{{ person.initials }}</span>
-              <span class="personarow__name">{{ person.display_name }}</span>
+              <span class="personarow__name">{{ person|full_name_among:people }}</span>
               <span class="personarow__state">Praegu valitud</span>
             </p>
           {% else %}
@@ -68,7 +69,7 @@
               {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
               <button type="submit" class="personarow">
                 <span class="personarow__avatar" aria-hidden="true">{{ person.initials }}</span>
-                <span class="personarow__name">{{ person.display_name }}</span>
+                <span class="personarow__name">{{ person|full_name_among:people }}</span>
                 <span class="personarow__action">Vali</span>
               </button>
             </form>

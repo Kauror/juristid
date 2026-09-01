@@ -123,7 +123,8 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
     expect(page.locator("input[name=deadline_precision]").first).to_be_visible()
 
     page.get_by_role("button", name="+ Lõpeta teema").click()
-    expect(page.locator("#id_close_matter")).to_be_visible()
+    expect(page.locator("#koostaja-lopetamine")).to_be_visible()
+    expect(page.locator("#id_disposition")).to_be_visible()
 
 
 # =========================================================================
