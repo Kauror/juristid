@@ -76,10 +76,10 @@ the same reason:
   none. RECOVERY.md states this rather than papering over it with a file named
   `latest`.
 * **The weekly Unraid *Appdata Backup*.** It is undocumented outside this note,
-  it stops the Juristid containers for about 41 minutes every Monday, and it is
-  currently the only thing copying some configuration and credential state off
-  the appdata tree. It must not be disabled before that state has a backup of
-  its own.
+  it stops the Juristid containers for about 41 minutes every Monday
+  (01:00–01:45 UTC, 04:00–04:45 in Tallinn), and it is currently the only thing
+  copying some configuration and credential state off the appdata tree. It must
+  not be disabled before that state has a backup of its own.
 
 ## Decisions taken by the development agent in Stage 0
 

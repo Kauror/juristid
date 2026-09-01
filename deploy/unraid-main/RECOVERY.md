@@ -625,10 +625,15 @@ configuration state off the appdata tree — the tunnel credential among it — 
 until the secrets have a deliberate backup of their own, switching it off would
 quietly remove a recovery path nobody replaced. Its cost is real and should be
 recorded rather than hidden: it stops `juristid-main-web` and `juristid-main-db`
-for the length of the run. In the 31.08.2026 run that was **41 minutes**, from
-04:01 to 04:42 UTC, most of it spent tarring the ~7 GB evidence tree that the
-Juristid backup already mirrors. Whether that trade is worth making weekly is an
-operations decision, and it is an open one.
+for the length of the run. In the 31.08.2026 run that was **41 minutes** —
+`juristid-main-db` stopped at 01:01:17Z and started again at 01:42:22Z — most of
+it spent tarring the ~7 GB evidence tree that the Juristid backup already
+mirrors. The plugin's cron is `00 01 * * 1` and the host runs in UTC, so the
+window is Monday 01:00–01:45 UTC, which is 04:00–04:45 in Tallinn. (The
+plugin's own log stamps that as "04:00" — it renders local time while the host
+clock is UTC, which is worth knowing before comparing its lines against
+`docker inspect`.) Whether that trade is worth making weekly is an operations
+decision, and it is an open one.
 
 **The historical corpus has no backup at all.** It is mounted read-only, it is
 not in a set, and its recovery path is a manual re-export from the Chamber's own
