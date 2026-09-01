@@ -58,6 +58,29 @@ RPO and RTO are the same decision asked twice: how much work may be lost, and
 how long recovery may take. Both are business answers. What the repository can
 say is what is technically achievable, and that is written in RECOVERY.md.
 
+The RPO now has a place to be *entered* rather than merely agreed:
+`scripts/deploy/juristid-check-backup-age.sh --max-age-hours N`. The flag is
+required and has no default, which is the same refusal in executable form —
+the check can be wired into a schedule the day the number exists, and until
+then it refuses to pretend one does.
+
+Two further items were added by the 2026-09-01 backup/DR audit and are open for
+the same reason:
+
+* **A set-consistent recovery fingerprint, or a rehearsal against a real
+  production set.** `recovery_fingerprint` proves a round trip — before an
+  operation, after it — and the verifier proves a set is an intact file. Neither
+  proves a *production* set restores, and the current backup transaction model
+  cannot produce a fingerprint that describes one: the dump has its own
+  snapshot, and the evidence and page-XML halves read a filesystem that has
+  none. RECOVERY.md states this rather than papering over it with a file named
+  `latest`.
+* **The weekly Unraid *Appdata Backup*.** It is undocumented outside this note,
+  it stops the Juristid containers for about 41 minutes every Monday
+  (01:00–01:45 UTC, 04:00–04:45 in Tallinn), and it is currently the only thing
+  copying some configuration and credential state off the appdata tree. It must
+  not be disabled before that state has a backup of its own.
+
 ## Decisions taken by the development agent in Stage 0
 
 Recorded so they can be challenged rather than inherited silently:

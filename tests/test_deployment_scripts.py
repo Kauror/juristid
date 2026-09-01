@@ -29,6 +29,7 @@ COMPOSE = ROOT / "deploy" / "unraid-main" / "compose.yml"
 BACKUP = SCRIPTS / "juristid-backup.sh"
 VERIFY = SCRIPTS / "juristid-verify-backup.sh"
 RESTORE = SCRIPTS / "juristid-restore.sh"
+AGE = SCRIPTS / "juristid-check-backup-age.sh"
 PREFLIGHT = SCRIPTS / "juristid-deploy-preflight.sh"
 LIB = SCRIPTS / "lib.sh"
 
@@ -338,14 +339,14 @@ def test_the_printed_sequence_reaches_no_other_stack() -> None:
 # -- ordinary usability ----------------------------------------------------
 
 
-@pytest.mark.parametrize("script", [BACKUP, VERIFY, RESTORE, PREFLIGHT], ids=lambda p: p.name)
+@pytest.mark.parametrize("script", [BACKUP, VERIFY, RESTORE, PREFLIGHT, AGE], ids=lambda p: p.name)
 def test_every_script_explains_itself(script: Path) -> None:
     result = run(script, "--help")
     assert result.returncode == 0
     assert "Usage:" in result.stdout
 
 
-@pytest.mark.parametrize("script", [BACKUP, VERIFY, RESTORE, PREFLIGHT], ids=lambda p: p.name)
+@pytest.mark.parametrize("script", [BACKUP, VERIFY, RESTORE, PREFLIGHT, AGE], ids=lambda p: p.name)
 def test_an_unknown_argument_stops_the_script(script: Path) -> None:
     """Rather than being ignored.
 
