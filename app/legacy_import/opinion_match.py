@@ -37,6 +37,7 @@ import uuid
 from dataclasses import dataclass, field
 
 from app.legacy_import.opinion_enums import (
+    AUTOMATIC_MATCH_CLASSES,
     OpinionConflict,
     OpinionMatchClass,
     OpinionSignal,
@@ -44,6 +45,7 @@ from app.legacy_import.opinion_enums import (
 from app.legacy_import.opinion_sources import (
     ArchiveOccurrence,
     KodaDashRow,
+    addressee_bodies,
     fold,
     law_references,
     title_tokens,
@@ -126,22 +128,43 @@ class ReconciliationInput:
 
 
 def _register_index(rows: list[RegisterRow]) -> dict[tuple[datetime.date, str], list[RegisterRow]]:
-    """(sent date, folded addressee) -> rows. Built once, not per occurrence.
+    """(sent date, one addressee) -> rows. Built once, not per occurrence.
 
     The corpus is small, but an N-occurrences x N-matters scan is the shape that
     stops being small without anybody noticing (Stage-2H brief 82).
+
+    A row is filed under *every* body its KELLELE names — the whole folded
+    string as before, and each comma-separated part, and the expansion of any
+    reviewed abbreviation (`addressee_bodies`). A row naming one ministry is
+    reachable from a letter naming two, which is the case 163 of the 192
+    `UNMATCHED` files were failing on. Filing a row under several keys cannot
+    widen a lookup that already succeeded: the exact whole-string key is still
+    one of them.
     """
     index: dict[tuple[datetime.date, str], list[RegisterRow]] = {}
     for row in rows:
         if row.sent_date is None or not row.addressee_is_comparable:
             continue
-        key = (row.sent_date, fold(row.addressee_raw))
-        index.setdefault(key, []).append(row)
+        for body in addressee_bodies(row.addressee_raw):
+            index.setdefault((row.sent_date, body), []).append(row)
     return index
 
 
 def _by_reference(rows: list[RegisterRow]) -> dict[str, RegisterRow]:
     return {row.reference: row for row in rows if row.reference}
+
+
+def _law_index(rows: list[RegisterRow]) -> dict[str, list[RegisterRow]]:
+    """Riigikogu proceeding number -> the register rows citing it.
+
+    Deduplicated by Matter, because one Matter routinely has several register
+    rows and a number that names one Matter twice still names one Matter.
+    """
+    index: dict[str, dict[uuid.UUID, RegisterRow]] = {}
+    for row in rows:
+        for reference in law_references(row.title):
+            index.setdefault(reference, {}).setdefault(row.matter_id, row)
+    return {reference: list(rows_by_matter.values()) for reference, rows_by_matter in index.items()}
 
 
 def _third_signal(occurrence: ArchiveOccurrence, row: RegisterRow) -> str | None:
@@ -163,7 +186,11 @@ def classify(data: ReconciliationInput) -> list[MatchProposal]:
     """One proposal per archive occurrence, in evidence order."""
     index = _register_index(data.register_rows)
     by_reference = _by_reference(data.register_rows)
-    return [_classify_one(occurrence, data, index, by_reference) for occurrence in data.occurrences]
+    by_law = _law_index(data.register_rows)
+    return [
+        _classify_one(occurrence, data, index, by_reference, by_law)
+        for occurrence in data.occurrences
+    ]
 
 
 def _classify_one(
@@ -171,13 +198,52 @@ def _classify_one(
     data: ReconciliationInput,
     index: dict[tuple[datetime.date, str], list[RegisterRow]],
     by_reference: dict[str, RegisterRow],
+    by_law: dict[str, list[RegisterRow]],
 ) -> MatchProposal:
     placements = data.onenote_by_sha.get(occurrence.sha256, [])
     if placements:
         proposal = _from_binary(occurrence, placements, by_reference)
         if proposal is not None:
             return proposal
-    return _from_register(occurrence, data, index)
+    # The register first, and the citation only for what it could not settle.
+    #
+    # The obvious order is the other way round — a proceeding number is a
+    # citation and a date is not — and it is wrong, measured. Six archive files
+    # carry an *exact* date, an exact addressee and a proceeding number that
+    # names two Matters; a citation-first pass sees the ambiguous number,
+    # refuses, and throws away the two exact signals that resolve it. One more
+    # file matches 2020_69 on its own day and addressee while its proceeding
+    # number appears only on a 2021 Matter, and citation-first files it ten
+    # months away from the letter.
+    #
+    # So the rule is not "citations outrank dates"; it is **more independent
+    # exact signals outrank fewer**. The register route already requires three,
+    # and where it produces one of those, nothing here may overrule it. The
+    # citation route exists for the corpus the register route cannot see at
+    # all: a letter whose VÄLJA is months from its own date, or whose addressee
+    # the register spells in a way no reviewed alias covers.
+    from_register = _from_register(occurrence, data, index)
+    if from_register.match_class in AUTOMATIC_MATCH_CLASSES:
+        return from_register
+
+    cited = _from_citation(occurrence, by_law)
+    if cited is None:
+        return from_register
+    if cited.match_class in AUTOMATIC_MATCH_CLASSES:
+        return cited
+
+    # Neither route reached an automatic class, so this is a queue entry and
+    # the only question is which explanation is worth more to the reviewer.
+    #
+    # A citation that named nothing usable still beats "no register row was
+    # sent on that day to that addressee", which is what an UNMATCHED file says
+    # and which tells a reviewer nowhere to look. Where the register *did*
+    # name a candidate, its proposal is kept: it carries the date and the
+    # addressee as well as whatever the title shared, and dropping that to
+    # report a proceeding number would be less evidence, not more.
+    if from_register.match_class == OpinionMatchClass.UNMATCHED:
+        return cited
+    return from_register
 
 
 def _from_binary(
@@ -242,6 +308,112 @@ def _from_binary(
     return base
 
 
+def _from_citation(
+    occurrence: ArchiveOccurrence,
+    by_law: dict[str, list[RegisterRow]],
+) -> MatchProposal | None:
+    """Class C: the letter and the register cite the same parliamentary file.
+
+    A Riigikogu proceeding number is the one thing in this corpus that both
+    sources wrote down *as an identifier*. `662 SE` is not a word that happens
+    to be shared and it is not a distance between two titles — it names a file
+    on the Riigikogu's own docket, and two documents citing it are about the
+    same legislative matter.
+
+    That is why this route sits above the register's date-and-addressee route
+    rather than inside it as a third signal: a citation does not need a date to
+    mean something, and the corpus contains letters written months apart about
+    one proceeding — an archive file dated 2020-08-12 citing `190 SE` against a
+    register row whose VÄLJA is 2021-03-16, because Koda wrote twice and the
+    register keeps the last dispatch. The date-first route cannot see that pair
+    at all; this one can, and says so with a date gap rather than pretending
+    the days agree.
+
+    **It is never enough on its own.** 25 of the register's 165 distinct
+    proceeding numbers name more than one Matter — a bill split, or two
+    Chamber files opened on one proceeding — so a number resolving to several
+    Matters is a question, not an answer. And a number resolving to exactly one
+    Matter still has to be corroborated by the addressee or the date, because a
+    proceeding number appearing in a title is not proof that *this* letter is
+    the one the register row recorded. Both refusals are returned as
+    REVIEW_REQUIRED with the competing count intact, never as a pick.
+
+    Returns ``None`` when the filename cites nothing, which hands the
+    occurrence to the register route unchanged.
+    """
+    references = law_references(occurrence.filename_title)
+    if not references:
+        return None
+
+    matched: dict[uuid.UUID, RegisterRow] = {}
+    for reference in references:
+        for row in by_law.get(reference, []):
+            matched.setdefault(row.matter_id, row)
+    if not matched:
+        return None
+
+    shared = sorted(reference for reference in references if by_law.get(reference))
+    proposal = MatchProposal(
+        sha256=occurrence.sha256,
+        relative_path=occurrence.relative_path,
+        match_class=OpinionMatchClass.REVIEW_REQUIRED,
+        signals=[OpinionSignal.EXACT_LAW_REFERENCE],
+        competing_matter_count=len(matched),
+    )
+    if len(matched) > 1:
+        proposal.conflicts.append(OpinionConflict.MULTIPLE_SOURCE_ROWS)
+        proposal.explanation = (
+            f"Õigusakti viide {', '.join(shared)} esineb {len(matched)} teemal. "
+            "Viide üksi ei ütle, milline neist on see kiri."
+        )
+        return proposal
+
+    row = next(iter(matched.values()))
+    proposal.matter_id = row.matter_id
+    proposal.excel_reference = row.reference
+    proposal.excel_sent_date = row.sent_date
+    proposal.excel_addressee_raw = row.addressee_raw
+
+    # Corroboration. Either signal is independent of the citation: the
+    # addressee comes from the register's own KELLELE, the date from its VÄLJA.
+    recipients_agree = bool(
+        row.addressee_is_comparable
+        and addressee_bodies(occurrence.filename_recipient) & addressee_bodies(row.addressee_raw)
+    )
+    gap: int | None = None
+    if row.sent_date is not None and occurrence.filename_date is not None:
+        gap = abs((occurrence.filename_date - row.sent_date).days)
+
+    if recipients_agree:
+        proposal.signals.append(OpinionSignal.EXACT_RECIPIENT)
+    if gap == 0:
+        proposal.signals.append(OpinionSignal.EXACT_SENT_DATE)
+    elif gap == 1:
+        proposal.signals.append(OpinionSignal.SENT_DATE_WITHIN_ONE_DAY)
+
+    if not recipients_agree and (gap is None or gap > 1):
+        proposal.explanation = (
+            f"Õigusakti viide {', '.join(shared)} osutab täpselt ühele teemale, kuid ei adressaat "
+            "ega kuupäev seda ei kinnita. Viide üksi ei ole identiteet."
+        )
+        return proposal
+
+    proposal.match_class = OpinionMatchClass.EXACT_LAW_REFERENCE_MATTER
+    corroboration = "sama adressaat" if recipients_agree else f"kuupäevade vahe {gap} päeva"
+    proposal.explanation = (
+        f"Mõlemad allikad viitavad samale menetlusele ({', '.join(shared)}), mis registris "
+        f"osutab täpselt ühele teemale. Kinnitab {corroboration}."
+    )
+    if gap is not None and gap > 1:
+        # Said out loud rather than left to be inferred from two dates: this is
+        # a link about subject matter, and it is not evidence of a dispatch on
+        # the archive file's own day.
+        proposal.explanation += (
+            f" Registri VÄLJA on {gap} päeva kaugusel — seos käib teema, mitte väljasaatmise kohta."
+        )
+    return proposal
+
+
 def _from_register(
     occurrence: ArchiveOccurrence,
     data: ReconciliationInput,
@@ -273,22 +445,16 @@ def _from_register(
         )
         return proposal
 
+    bodies = addressee_bodies(occurrence.filename_recipient)
     recipient = fold(occurrence.filename_recipient)
-    exact_rows = index.get((occurrence.filename_date, recipient), [])
-    near_rows = _within_one_day(index, occurrence.filename_date, recipient)
+    exact_rows = _rows_on(index, occurrence.filename_date, bodies)
+    near_rows = _within_one_day(index, occurrence.filename_date, bodies)
 
     if len(exact_rows) == 1:
         return _single_exact(occurrence, proposal, exact_rows[0])
 
     if len(exact_rows) > 1:
-        proposal.match_class = OpinionMatchClass.REVIEW_REQUIRED
-        proposal.signals += [OpinionSignal.EXACT_SENT_DATE, OpinionSignal.EXACT_RECIPIENT]
-        proposal.conflicts.append(OpinionConflict.MULTIPLE_SOURCE_ROWS)
-        proposal.competing_matter_count = len(exact_rows)
-        proposal.explanation = (
-            f"{len(exact_rows)} registri rida saadeti samal päeval samale adressaadile."
-        )
-        return proposal
+        return _resolve_exact_tie(occurrence, proposal, exact_rows)
 
     if len(near_rows) == 1:
         row = near_rows[0]
@@ -326,6 +492,95 @@ def _from_register(
     return proposal
 
 
+def _adopt_row(proposal: MatchProposal, row: RegisterRow) -> None:
+    """Copy the register row a proposal has settled on into the proposal.
+
+    Extracted because two routes now settle on a row — one exact row, and an
+    exact tie a single third signal resolved — and a second copy of these four
+    assignments is how the two would drift apart.
+    """
+    proposal.matter_id = row.matter_id
+    proposal.excel_reference = row.reference
+    proposal.excel_sent_date = row.sent_date
+    proposal.excel_addressee_raw = row.addressee_raw
+
+
+def _resolve_exact_tie(
+    occurrence: ArchiveOccurrence, proposal: MatchProposal, rows: list[RegisterRow]
+) -> MatchProposal:
+    """Several register rows share the date and the addressee. Ask the third signal.
+
+    Refusing here the moment a second row appeared was wrong, and wrong in a
+    way that got worse as the matcher got better. `addressee_bodies` made a row
+    whose KELLELE names three ministries reachable from a letter naming one of
+    them — correct, and the reason 76 files stopped being `UNMATCHED`. But a row
+    that becomes *comparable* is not thereby a *competitor*: it arrives holding
+    two signals, the date and the addressee, and the refusal then discarded a
+    row holding three. Widening what the matcher can see demoted a match it had
+    already earned, which inverts this module's one ordering rule — more
+    independent exact signals outrank fewer.
+
+    So the tie is put to the same question `_single_exact` asks, once per
+    competing Matter, and the answer is counted rather than scored:
+
+    * **exactly one** row carries a third signal — it is the only row with three
+      exact signals against the others' two, and it wins as `STRICT_MULTI_SIGNAL`;
+    * **none** does — every row has the same two signals and nothing separates
+      them, which is the case this branch was written for;
+    * **more than one** does — each has three, they are level on the only
+      evidence this matcher accepts, and a person decides.
+
+    Deliberately binary. Two shared title tokens do not beat one, a law
+    reference does not beat a title token, and no count, distance, frequency or
+    confidence is compared anywhere in here: `_third_signal` already ranks the
+    two kinds *within* a row, and borrowing that to rank rows *against each
+    other* would be a new hierarchy invented to break a tie rather than
+    evidence that the tie is broken.
+
+    Only exact same-day rows reach this. A one-day gap stays review evidence
+    (`_within_one_day` below), because the thing being resolved here is which
+    of several equally-dated rows the letter is — not whether a differently
+    dated row is the same letter at all.
+    """
+    proposal.signals += [OpinionSignal.EXACT_SENT_DATE, OpinionSignal.EXACT_RECIPIENT]
+    # Retained on both paths: it says how many Matters competed, which stays
+    # true — and worth reading — after one of them won.
+    proposal.competing_matter_count = len(rows)
+
+    qualifying = [
+        (row, signal) for row in rows if (signal := _third_signal(occurrence, row)) is not None
+    ]
+
+    if len(qualifying) != 1:
+        proposal.match_class = OpinionMatchClass.REVIEW_REQUIRED
+        proposal.conflicts.append(OpinionConflict.MULTIPLE_SOURCE_ROWS)
+        proposal.explanation = (
+            f"{len(rows)} registri rida saadeti samal päeval samale adressaadile. "
+            + (
+                "Ükski neist ei jaga faili pealkirjaga eristavat sõna ega õigusakti viidet."
+                if not qualifying
+                else f"Neist {len(qualifying)} jagab eristavat sõna või õigusakti viidet, "
+                "seega valiku teeb inimene."
+            )
+        )
+        return proposal
+
+    row, third = qualifying[0]
+    _adopt_row(proposal, row)
+    proposal.signals.append(third)
+    proposal.match_class = OpinionMatchClass.STRICT_MULTI_SIGNAL
+    proposal.explanation = (
+        f"{len(rows)} registri rida saadeti samal päeval samale adressaadile, kuid ainult "
+        "ühel neist on kolmas sõltumatu täpne signaal: "
+        + (
+            "sama õigusakti viide."
+            if third == OpinionSignal.EXACT_LAW_REFERENCE
+            else "sama eristav pealkirjasõna."
+        )
+    )
+    return proposal
+
+
 def _single_exact(
     occurrence: ArchiveOccurrence, proposal: MatchProposal, row: RegisterRow
 ) -> MatchProposal:
@@ -336,10 +591,7 @@ def _single_exact(
     entirely different subject. The third signal is what separates the 253
     that may be filed from the 38 that must not (Stage-2H brief 15 D, 16).
     """
-    proposal.matter_id = row.matter_id
-    proposal.excel_reference = row.reference
-    proposal.excel_sent_date = row.sent_date
-    proposal.excel_addressee_raw = row.addressee_raw
+    _adopt_row(proposal, row)
     proposal.signals += [OpinionSignal.EXACT_SENT_DATE, OpinionSignal.EXACT_RECIPIENT]
     proposal.competing_matter_count = 1
 
@@ -366,12 +618,32 @@ def _single_exact(
     return proposal
 
 
+def _rows_on(
+    index: dict[tuple[datetime.date, str], list[RegisterRow]],
+    day: datetime.date,
+    bodies: frozenset[str],
+) -> list[RegisterRow]:
+    """Every register row sent on ``day`` to any body the letter names.
+
+    Deduplicated by Matter, because both sides are now *sets* of names: a row
+    whose KELLELE reads "Siseministeerium, HTM" is filed under three keys, and
+    a letter addressed the same way would otherwise find it three times and
+    report three competing rows where there is one.
+    """
+    seen: dict[uuid.UUID, RegisterRow] = {}
+    for body in bodies:
+        for row in index.get((day, body), []):
+            seen.setdefault(row.matter_id, row)
+    return list(seen.values())
+
+
 def _within_one_day(
     index: dict[tuple[datetime.date, str], list[RegisterRow]],
     day: datetime.date,
-    recipient: str,
+    bodies: frozenset[str],
 ) -> list[RegisterRow]:
-    rows: list[RegisterRow] = []
+    seen: dict[uuid.UUID, RegisterRow] = {}
     for offset in (-1, 0, 1):
-        rows.extend(index.get((day + datetime.timedelta(days=offset), recipient), []))
-    return rows
+        for row in _rows_on(index, day + datetime.timedelta(days=offset), bodies):
+            seen.setdefault(row.matter_id, row)
+    return list(seen.values())

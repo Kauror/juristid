@@ -20,7 +20,7 @@ other's parameter name, so typing in one box cannot narrow the other list — an
 a link somebody pastes carries both states exactly as they were on screen.
 
 **The archive boundary is asked before anything is counted.**
-``may_read_archive`` decides whether the Arhiiv tab exists *and* whether the
+``may_read_archive`` decides whether the Arhiivikirjad tab exists *and* whether the
 archive is queried at all. A reader who may not read it cannot reach archive
 rows, an archive count, or the corpus's date range by hand-editing
 ``?arvamus_vaade=arhiiv`` — that value falls back to Saadetud in Python, before
@@ -176,7 +176,7 @@ def embedded_context(request: HttpRequest) -> dict[str, Any]:
     # One count each, not the workspace's full headline sets.
     #
     # The section is a passenger on a page that already does plenty, so it asks
-    # for exactly what it prints: the Saadetud tab's figure, and the Arhiiv
+    # for exactly what it prints: the Saadetud tab's figure, and the Arhiivikirjad
     # tab's. ``workspace.sent_counts`` answers three questions and
     # ``archive_counts`` four; six of those seven would be computed for a strip
     # with two numbers on it. The standalone workspace still uses both, where

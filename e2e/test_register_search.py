@@ -258,8 +258,15 @@ def test_the_register_scope_segments_work(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_register(page, base_url)
 
-    segments = page.locator(".segmented")
-    segments.get_by_role("link", name=re.compile(r"^Arhiiv")).click()
+    # Scoped to the register's own strip by its `aria-label`. `.segmented` is
+    # no longer unique on this page: the Arvamused section carries one too, and
+    # since ADR 0056 a specialist may read the archive, so its source tab is
+    # rendered as well. That tab is now «Arhiivikirjad», so the two controls no
+    # longer share a name — but the scoping stays. It is what makes this test
+    # assert about the register's strip rather than about whichever `.segmented`
+    # the DOM happened to put first.
+    segments = page.locator('.segmented[aria-label="Kirje seis"]')
+    segments.get_by_role("link", name=re.compile(r"^Arhiiv\b")).click()
     page.wait_for_url(re.compile(r"olek=arhiiv"))
     expect(page.locator(".table--register")).to_contain_text(ARCHIVE_TITLE)
     expect(page.locator(".table--register")).not_to_contain_text(OPEN_TITLE)

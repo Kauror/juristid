@@ -8,13 +8,22 @@ Matter is searchable there through its `DocumentVersion`, by the ordinary
 machinery, and duplicating it into the global projection from here would produce
 two results for one document with two different authorization stories.
 
-**Authorization is the operator boundary, not the Matter one.** An unmatched
+**Authorization is a corpus boundary, not the Matter one.** An unmatched
 archive letter has no Matter to inherit visibility from, so there is nothing to
-inherit. Rather than invent a rule, this reuses the boundary the reconciliation
-queue already has: the archive is administrative migration work, and it is
-readable by whoever may read that queue. It is applied in one place, before
-anything is counted, so a refused reader cannot learn the size of the corpus
-from a total.
+inherit, and the question has to be asked about the corpus instead. It is
+`may_read_archive` and nothing else — the two lawyer roles plus the
+administrator, since these are the department's own outgoing letters rather
+than a migration artefact (docs/adr/0056). It is deliberately *not* the
+reconciliation queue's boundary, which is narrower and stays the
+administrator's: reading a letter and deciding which Matter it belongs to are
+different acts.
+
+Applied in one place, before anything is counted, so a refused reader cannot
+learn the size of the corpus from a total.
+
+Nothing about a reader is stored in the projection — `visible_archive` asks at
+query time — so widening who may read needs no rebuild and does not move
+`ARCHIVE_INDEX_VERSION`.
 """
 
 from __future__ import annotations
@@ -280,12 +289,14 @@ class ArchiveFilters:
 def visible_archive(user: Any) -> QuerySet[OpinionArchiveSearchDocument]:
     """The archive rows this reader may see, before anything is counted.
 
-    All or nothing, and deliberately so. The unresolved archive is migration
-    material with no Matter to inherit a restriction from, so there is no
-    per-row rule to apply — only the question of whether this person is one of
-    the people who work the reconciliation queue. Anyone else gets an empty
-    queryset, which also means an empty count: a refused reader must not be able
-    to learn how large the corpus is.
+    All or nothing, and deliberately so. The unresolved archive has no Matter to
+    inherit a restriction from, so there is no per-row rule to apply — only the
+    question `may_read_archive` answers about the corpus. Anyone else gets an
+    empty queryset, which also means an empty count: a refused reader must not
+    be able to learn how large the corpus is.
+
+    Asked here rather than stored on the row, which is what lets the reader set
+    widen without a projection rebuild (docs/adr/0056).
     """
     from app.legacy_import.opinion_access import may_read_archive
 

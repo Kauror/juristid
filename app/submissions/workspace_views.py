@@ -10,7 +10,7 @@ person to copy whichever decorator was nearest.
 defaulting to SENT. Production holds zero of them today, and the empty state
 says why rather than looking like a failed query.
 
-**Arhiiv** is historical evidence: the 767 held letters, read through the same
+**Arhiivikirjad** is historical evidence: the 767 held letters, read through the same
 ``search_archive`` the administrative browse uses. It is offered only to readers
 ``may_read_archive`` admits, and the route refuses a crafted URL regardless.
 Nothing here widens that boundary; ``docs/adr/0028`` decides it, and a workspace
@@ -48,7 +48,7 @@ from app.submissions.workspace import PAGE_SIZE, SentFilters, SubmissionQueryRef
 #: system recorded, then what the department sent before it existed.
 TABS: tuple[tuple[str, str, str], ...] = (
     ("saadetud", "Saadetud", "submissions:sent"),
-    ("arhiiv", "Arhiiv", "submissions:archive"),
+    ("arhiiv", "Arhiivikirjad", "submissions:archive"),
 )
 
 
@@ -127,7 +127,7 @@ def sent(request: HttpRequest) -> HttpResponse:
 
 @gate_required
 def archive(request: HttpRequest) -> HttpResponse:
-    """Arhiiv — the held historical letters, read-only.
+    """Arhiivikirjad — the held historical letters, read-only.
 
     Read-only on purpose, and narrower than the administrative browse it shares
     a search function with: no candidate state, no link form, no withdraw

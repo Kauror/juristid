@@ -1,9 +1,9 @@
 """The opinion archive in a browser.
 
 The database suite already proves the boundary from every angle it can reach.
-What only a browser proves is the part a database test cannot: that an
-administrator can *get to* a held letter through the interface and read it in
-the tab, and that a specialist following the same URL is refused rather than
+What only a browser proves is the part a database test cannot: that a reader
+who may can *get to* a held letter through the interface and read it in the
+tab, and that one who may not, following the same URL, is refused rather than
 shown a smaller list.
 
 That distinction is the whole reason the archive has its own boundary. The
@@ -27,7 +27,7 @@ from app.core.management.commands.seed_e2e_data import (
     RESTRICTED_TITLE,
     archive_letter_sha,
 )
-from e2e.conftest import ADMIN, HEAD, MARTIN, go_to, navigation_targets, sign_in, sign_out
+from e2e.conftest import ADMIN, HEAD, MARTIN, READER, go_to, navigation_targets, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -46,16 +46,34 @@ def open_archive(page, base_url):
 # -- the boundary ------------------------------------------------------------
 
 
-def test_a_specialist_following_the_url_is_refused(page, base_url):
+def test_a_reader_following_the_url_is_refused(page, base_url):
     """Refused, not shown an empty archive.
 
     An empty list would tell a reader the corpus is empty, which is a different
     and untrue statement about what Koda holds.
+
+    READER rather than a specialist since docs/adr/0056 — the same substitution
+    ADR 0042 already forced on the rest of these tests, arriving here now that
+    the archive uses that set too. A specialist can no longer play this part
+    because these are the department's own letters.
+    """
+    sign_in(page, base_url, READER)
+    response = page.goto(f"{base_url}{ARCHIVE_PATH}")
+    assert response is not None
+    assert response.status == 403
+
+
+def test_a_specialist_reaches_the_archive(page, base_url):
+    """The other side of the same boundary, which only a browser proves.
+
+    A specialist following the URL gets the corpus, not a 403 and not a smaller
+    list — the half of docs/adr/0056 that the department actually asked for.
     """
     sign_in(page, base_url, MARTIN)
     response = page.goto(f"{base_url}{ARCHIVE_PATH}")
     assert response is not None
-    assert response.status == 403
+    assert response.status == 200
+    expect(page.get_by_role("heading", name="Arvamuste arhiiv")).to_be_visible()
 
 
 def test_an_administrator_reaches_the_archive_from_the_queue(page, base_url):
@@ -223,17 +241,20 @@ def test_the_administrator_is_offered_no_way_into_the_restricted_matter(page, ba
 # -- what did not widen -------------------------------------------------------
 
 
-def test_a_department_head_is_still_refused_outside_the_shared_gate(page, base_url):
-    """This deployment authenticates individuals, so nothing was widened here.
+def test_reading_the_archive_does_not_depend_on_which_door_was_answered(page, base_url):
+    """This deployment authenticates individuals, and the head reads here too.
 
-    The head's archive access is a shared-gate concession made because that mode
-    cannot say who is at the keyboard. Where identity is real, the question is a
-    different one and gets asked later on its own merits (brief 9, 46).
+    The old rule made the head's access a shared-gate concession and narrowed
+    to the administrator alone where identity is real — which would have taken
+    the archive from the whole department the day Cloudflare Access replaced
+    the shared password. `ARCHIVE_READERS` is now one set asked in every mode,
+    and this is that claim made where the deployment authenticates individuals
+    (docs/adr/0056).
     """
     sign_in(page, base_url, HEAD)
     response = page.goto(f"{base_url}{ARCHIVE_PATH}")
     assert response is not None
-    assert response.status == 403
+    assert response.status == 200
 
 
 def test_neither_arvamused_nor_the_archive_is_a_destination_on_the_bar(page, base_url):
@@ -266,7 +287,7 @@ def test_neither_arvamused_nor_the_archive_is_a_destination_on_the_bar(page, bas
 
 
 def test_the_teemad_section_is_how_a_reader_reaches_the_archive(page, base_url):
-    """Teemad → Arvamused → Arhiiv, without knowing a URL.
+    """Teemad → Arvamused → Arhiivikirjad, without knowing a URL.
 
     The path both removed bar items used to be. It has to work for the persona
     who may read the corpus, or the consolidation took a destination away
@@ -282,9 +303,9 @@ def test_the_teemad_section_is_how_a_reader_reaches_the_archive(page, base_url):
     section = page.locator("#arvamused")
     expect(section.get_by_role("heading", name="Arvamused")).to_be_visible()
 
-    section.get_by_role("link", name=re.compile(r"^Arhiiv")).click()
+    section.get_by_role("link", name=re.compile(r"^Arhiivikirjad")).click()
     page.wait_for_load_state("networkidle")
-    expect(section.get_by_role("link", name=re.compile(r"^Arhiiv"))).to_have_attribute(
+    expect(section.get_by_role("link", name=re.compile(r"^Arhiivikirjad"))).to_have_attribute(
         "aria-current", "true"
     )
     expect(section.get_by_text(UNLINKED_TITLE)).to_be_visible()
@@ -363,12 +384,12 @@ def test_the_opinion_tab_does_not_undo_a_live_teemad_search(page, base_url):
     narrowed = page.locator("#teemad-tulemused tbody tr").count()
     expect(page.locator(".registercount")).to_contain_text("pakendiseaduse")
 
-    page.locator("#arvamused").get_by_role("link", name=re.compile(r"^Arhiiv")).click()
+    page.locator("#arvamused").get_by_role("link", name=re.compile(r"^Arhiivikirjad")).click()
     page.wait_for_load_state("networkidle")
 
     # The archive opened...
     expect(
-        page.locator("#arvamused").get_by_role("link", name=re.compile(r"^Arhiiv"))
+        page.locator("#arvamused").get_by_role("link", name=re.compile(r"^Arhiivikirjad"))
     ).to_have_attribute("aria-current", "true")
     # ...and the register is still holding the search that was typed into it.
     assert "q=pakendiseaduse" in page.url
@@ -427,7 +448,7 @@ def opinion_row_count(page) -> int:
     """How many rows the Arvamused section is showing, whichever tab is open.
 
     Two shapes since the v2 rebuild: `Saadetud` draws two-line `submission`
-    cards, `Arhiiv` keeps its table because its four columns are the same four
+    cards, `Arhiivikirjad` keeps its table because its four columns are the same four
     facts on every row (02-EKRAANID §C).
     """
     results = page.locator("#arvamused-tulemused")

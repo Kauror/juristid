@@ -222,12 +222,19 @@ def link_url(binary):
 # ---------------------------------------------------------------------------
 
 
-def test_the_shared_gate_admits_exactly_two_roles_to_the_corpus(
+def test_the_corpus_admits_the_two_lawyer_roles_and_the_administrator(
     shared, reader, administrator, specialist, library_reader
 ):
+    """`ARCHIVE_READERS` is `ROLES_WITH_RESTRICTED_ACCESS` plus ADMINISTRATOR.
+
+    The specialist is here since ADR 0042: the same person reads every
+    RESTRICTED Matter these letters are filed onto, and could not open the
+    letter. `library_reader` — the READER role — is the one deliberately left
+    out, and its absence is what keeps this from being "anybody signed in".
+    """
     assert may_read_archive(reader)
     assert may_read_archive(administrator)
-    assert not may_read_archive(specialist)
+    assert may_read_archive(specialist)
     assert not may_read_archive(library_reader)
 
 
@@ -252,20 +259,28 @@ def test_an_inactive_high_authority_account_is_refused(shared, reader, administr
     assert not may_read_archive(administrator)
 
 
-def test_outside_the_shared_gate_nothing_widened(settings, reader, administrator):
-    """Cloudflare behaviour is decided later and on purpose, not as a side effect.
+def test_reading_does_not_depend_on_which_door_was_answered(
+    settings, reader, administrator, specialist, library_reader
+):
+    """One set, asked in every mode — and only *reading* is the same.
 
-    The head gets the archive because this deployment currently has no way to
-    say who is at the keyboard. Under an identity provider that question has a
-    real answer, and the department-head grant should be argued on its own
-    merits rather than inherited from a workaround (brief 9, docs/adr/0028).
+    The old rule widened under the shared gate and narrowed to the
+    administrator outside it, so the department would have lost the archive on
+    the day Cloudflare Access replaced the shared password. Access
+    authenticates the individual better; it does not make a lawyer less
+    entitled to their own department's correspondence.
+
+    Filing is asserted here too, because it is the half that did *not* move:
+    the administrator still may not make the business claim, in any mode.
     """
-    for mode in (AuthMode.NONE, AuthMode.CLOUDFLARE_ACCESS):
+    for mode in (AuthMode.NONE, AuthMode.CLOUDFLARE_ACCESS, AuthMode.SHARED_GATE):
         settings.AUTH_MODE = mode
-        assert may_read_archive(administrator)
-        assert not may_read_archive(reader)
-        assert may_manage_archive_links(administrator)
-        assert not may_manage_archive_links(reader)
+        assert may_read_archive(administrator), mode
+        assert may_read_archive(specialist), mode
+        assert may_read_archive(reader), mode
+        assert not may_read_archive(library_reader), mode
+        assert not may_manage_archive_links(specialist), mode
+        assert not may_manage_archive_links(library_reader), mode
 
 
 def test_under_the_shared_gate_the_administrator_reads_but_does_not_file(
@@ -375,17 +390,45 @@ def test_a_non_department_account_cannot_become_a_persona_and_reach_the_letters(
     assert behind_the_gate.get(detail_url(stored)).status_code in (302, 403)
 
 
-def test_an_ordinary_persona_is_refused_every_archive_surface(
-    behind_the_gate, stored, normal_matter
-):
-    person = factories.UserFactory(role=UserRole.SPECIALIST)
-    act_as(behind_the_gate, person)
+def test_a_reader_is_refused_every_archive_surface(individually, stored, normal_matter):
+    """The role outside `ARCHIVE_READERS` reaches none of the four surfaces.
 
-    assert behind_the_gate.get(browse_url()).status_code == 403
-    assert behind_the_gate.get(detail_url(stored)).status_code == 403
-    assert behind_the_gate.get(file_url(stored)).status_code == 403
+    Browse, detail, file and the link POST are asserted together on purpose:
+    the boundary is only worth anything if every one of them asks it.
+
+    Signed in individually rather than through a persona, because READER is not
+    a selectable persona at all (docs/adr/0034) — a `act_as` POST for one is
+    refused before the archive is ever consulted, which would prove the persona
+    rule a second time and this rule not at all.
+    """
+    client = individually(factories.UserFactory(role=UserRole.READER))
+
+    assert client.get(browse_url()).status_code == 403
+    assert client.get(detail_url(stored)).status_code == 403
+    assert client.get(file_url(stored)).status_code == 403
     assert (
-        behind_the_gate.post(
+        client.post(
+            link_url(stored), {"action": "link", "viide": normal_matter.display_reference}
+        ).status_code
+        == 403
+    )
+    assert OpinionArchiveMatterLink.objects.count() == 0
+
+
+def test_a_specialist_reaches_the_letters_but_not_the_filing(individually, stored, normal_matter):
+    """The two halves of the widening, on one person.
+
+    Reading moved and filing did not, so the same specialist opens the browse,
+    the detail and the file, and is refused the POST that would say which
+    Matter the letter concerns.
+    """
+    client = individually(factories.UserFactory(role=UserRole.SPECIALIST))
+
+    assert client.get(browse_url()).status_code == 200
+    assert client.get(detail_url(stored)).status_code == 200
+    assert client.get(file_url(stored)).status_code == 200
+    assert (
+        client.post(
             link_url(stored), {"action": "link", "viide": normal_matter.display_reference}
         ).status_code
         == 403
@@ -408,29 +451,28 @@ def test_a_session_with_no_persona_is_refused_the_letters(behind_the_gate, store
     assert b"%PDF" not in response.content
 
 
-def test_a_refused_persona_cannot_learn_the_size_of_the_corpus(shared, specialist, binary):
+def test_a_refused_persona_cannot_learn_the_size_of_the_corpus(shared, library_reader, binary):
     """Authorization comes before counting, not after it.
 
-    A refusal that still returned totals would tell a specialist how many
+    A refusal that still returned totals would tell a refused reader how many
     letters Koda holds and how many remain unfiled — which is most of what the
     boundary is protecting.
     """
     from app.legacy_import.opinion_search import ArchiveFilters
 
-    counts = archive_counts(specialist)
+    counts = archive_counts(library_reader)
     assert counts == {"total": 0, "with_body": 0, "linked": 0, "with_submission": 0}
-    assert search_archive(user=specialist, filters=ArchiveFilters()).count() == 0
+    assert search_archive(user=library_reader, filters=ArchiveFilters()).count() == 0
 
 
-def test_the_direct_file_url_serves_nothing_to_a_refused_persona(
-    behind_the_gate, stored, specialist
+def test_the_direct_file_url_serves_nothing_to_a_refused_reader(
+    individually, stored, library_reader
 ):
     """Knowing the exact binary UUID is not a credential either."""
     from app.audit.enums import SecurityEventType
     from app.audit.models import SecurityAuditEvent
 
-    act_as(behind_the_gate, specialist)
-    response = behind_the_gate.get(file_url(stored))
+    response = individually(library_reader).get(file_url(stored))
 
     assert response.status_code == 403
     assert not SecurityAuditEvent.objects.filter(
@@ -477,20 +519,27 @@ def test_the_workspace_offers_the_archive_tab_to_a_reader(behind_the_gate, reade
     act_as(behind_the_gate, reader)
     body = behind_the_gate.get(reverse("submissions:sent")).content.decode()
     assert reverse("submissions:archive") in body
-    assert ">Arhiiv" in body
+    assert ">Arhiivikirjad" in body
 
 
-def test_the_workspace_does_not_offer_the_archive_tab_to_anybody_else(behind_the_gate, specialist):
+def test_the_workspace_does_not_offer_the_archive_tab_to_a_refused_reader(
+    individually, library_reader
+):
     """And says the corpus exists rather than pretending it does not.
 
-    A refused reader is told the archive is held and administratively read,
-    which is a different statement from a page that silently omits it — and no
-    count appears with it (docs/adr/0028).
+    A refused reader is told the archive is held and separately read, which is
+    a different statement from a page that silently omits it — and no count
+    appears with it (docs/adr/0028).
     """
-    act_as(behind_the_gate, specialist)
-    body = behind_the_gate.get(reverse("submissions:sent")).content.decode()
+    body = individually(library_reader).get(reverse("submissions:sent")).content.decode()
     assert reverse("submissions:archive") not in body
     assert "arvamuste arhiiv on eraldi hoiul" in body
+
+
+def test_the_workspace_offers_the_archive_tab_to_a_specialist(individually, specialist):
+    """The other side of the same strip, so neither can drift alone."""
+    body = individually(specialist).get(reverse("submissions:sent")).content.decode()
+    assert reverse("submissions:archive") in body
 
 
 def test_the_candidate_queue_is_not_offered_to_a_reader_who_cannot_use_it(

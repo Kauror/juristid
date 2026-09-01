@@ -31,6 +31,7 @@ from app.legacy_import.opinion_enums import (
     HUMAN_DECIDED_STATES,
     OpinionConflict,
     OpinionMatchClass,
+    OpinionSignal,
     RecipientBasis,
     SentDateBasis,
 )
@@ -340,6 +341,13 @@ def _plan_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]:
         if occurrence is None:
             continue
 
+        if not _citation_supports_a_dispatch(proposal):
+            proposal.explanation += (
+                " Seos käib teema kohta: viide tuvastab menetluse, kuid registri VÄLJA ei "
+                "ole selle kirja enda kuupäeva lähedal, seega saadetud arvamust ei looda."
+            )
+            continue
+
         sent_date, basis = _sent_date_for(plan, proposal, occurrence)
         if sent_date is None:
             proposal.match_class = OpinionMatchClass.REVIEW_REQUIRED
@@ -379,6 +387,35 @@ def _plan_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]:
             )
         )
     return _withhold_decided_occurrences(plan, _withhold_same_day_bundles(plan, planned))
+
+
+def _citation_supports_a_dispatch(proposal: MatchProposal) -> bool:
+    """Whether a citation match may also assert *when* the letter went out.
+
+    `EXACT_LAW_REFERENCE_MATTER` establishes a **subject** relation: both
+    sources named the same parliamentary proceeding. That is what makes it a
+    link, and it is deliberately not a claim about a dispatch — the route
+    exists precisely to reach Matters whose VÄLJA is nowhere near the letter's
+    own date, because Koda writes twice about one proceeding and the register
+    keeps the last one. The real corpus has such a pair ten months apart.
+
+    Left alone, `_sent_date_for` would take the register's VÄLJA for those and
+    file a Submission saying Koda sent *this* letter that day. The link would be
+    right and the date would be invented, which is the one thing this whole
+    stage refuses.
+
+    So a citation-class proposal may become a Submission only where the letter's
+    own date and the register's agree to within the window the corpus actually
+    shows — which the matcher has already recorded as `EXACT_SENT_DATE` or
+    `SENT_DATE_WITHIN_ONE_DAY`. Every other class is unaffected: they reached
+    their Matter *through* the date, so the question is already answered.
+    """
+    if proposal.match_class != OpinionMatchClass.EXACT_LAW_REFERENCE_MATTER:
+        return True
+    return bool(
+        {OpinionSignal.EXACT_SENT_DATE, OpinionSignal.SENT_DATE_WITHIN_ONE_DAY}
+        & set(proposal.signals)
+    )
 
 
 def _withhold_decided_occurrences(

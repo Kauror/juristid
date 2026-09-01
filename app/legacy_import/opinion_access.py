@@ -27,17 +27,27 @@ this module's development-phase widening: that surface records candidate
 decisions which a later apply may turn into canonical Submissions, and it stays
 with the administrator in every mode.
 
-The development-phase widening (docs/adr/0028) is the shared-gate branch below.
-Until Cloudflare Access is in front of this deployment the department works
-behind one shared password and a selected persona, and refusing the archive
-outright left 767 held letters unreadable by anybody. What that mode may *say*
-about who read a letter is limited, and the audit rows say so themselves rather
-than the corpus being withheld to compensate: every archive download records
-``authenticated_via`` beside the persona (app/accounts/shared_gate.py).
+**Reading is no longer conditional on how the door was answered.** It used to
+be: the shared gate widened the corpus to the department head, and outside it
+only the administrator could read anything. That produced two problems the
+department actually hit. A specialist — who reads every RESTRICTED Matter in
+the department under ADR 0042, including the ones these letters are filed onto
+— could not open the Chamber's own letter about a file they were working. And
+the narrowing outside the shared gate meant the whole department would silently
+lose the archive on the day Cloudflare Access replaced the shared password,
+which is backwards: Access authenticates the individual *better*.
 
-Outside shared gate nothing here is widened. The administrator remains the
-archive reader and the link reviewer, exactly as before, so the Cloudflare
-behaviour this deployment is heading for is decided later and on purpose.
+So `ARCHIVE_READERS` is one set, asked in every mode. What the shared gate can
+honestly *say* about who read a letter is still limited, and the audit rows say
+so themselves rather than the corpus being withheld to compensate: every
+archive download records ``authenticated_via`` beside the persona
+(app/accounts/shared_gate.py).
+
+Writing did not move. Filing a letter onto a Matter and working the
+reconciliation queue are unchanged in every mode, and they are now the only
+things this module narrows — which is the shape it should have had:
+**reading the department's own correspondence is not a privilege; asserting
+what it concerns is** (docs/adr/0028, docs/adr/0042).
 """
 
 from __future__ import annotations
@@ -47,14 +57,54 @@ from typing import Any
 from app.accounts.enums import UserRole
 from app.accounts.shared_gate import is_shared_gate
 
-#: Roles that may read the corpus while the department is behind the shared
-#: gate. Both are people the department already trusts with the whole register:
-#: the head by role, the administrator because operating the migration is the
-#: job. Deliberately not a superset of anything — a specialist or a reader who
-#: knows the shared password still gets nothing here.
-SHARED_GATE_ARCHIVE_READERS: frozenset[str] = frozenset(
-    {UserRole.DEPARTMENT_HEAD.value, UserRole.ADMINISTRATOR.value}
+#: Roles that may read the corpus, in every authentication mode.
+#:
+#: The two lawyer roles, plus the administrator because operating the migration
+#: is the job. It is deliberately `ROLES_WITH_RESTRICTED_ACCESS` **plus**
+#: ADMINISTRATOR, and both halves of that are decisions.
+#:
+#: *Why the specialist is here.* ADR 0042 settled that the confidentiality
+#: boundary is the application rather than the Matter, and put SPECIALIST and
+#: DEPARTMENT_HEAD in one set that reads department-wide — including every
+#: RESTRICTED Matter these letters are filed onto. This module predates that
+#: and was left behind by it, and the gap was not theoretical: a specialist
+#: could open the Matter, its timeline, its documents and their filenames, and
+#: could not open the Chamber's own outgoing letter about it. Historical
+#: outgoing opinions are ordinary department work product, not a migration
+#: tool, and 767 of them were unreadable by the people whose work they are.
+#:
+#: *Why the administrator is still here, and what it is not.* Operating the
+#: reconciliation requires reading what is being reconciled. It stays what it
+#: always was — a statement about the **corpus**, never about a Matter — and
+#: ADMINISTRATOR remains outside `ROLES_WITH_RESTRICTED_ACCESS`, so an
+#: administrator who reaches an archive row still learns nothing about which
+#: register entries they may open. Everything the archive renders about a
+#: Matter goes through `Matter.objects.visible_to` exactly as before.
+#:
+#: *Why this is no longer a shared-gate special case.* The old rule widened
+#: under the shared gate and narrowed to the administrator alone outside it,
+#: which meant the department would silently lose the archive on the day
+#: Cloudflare Access replaced the shared door — the opposite of what that
+#: change is for. Access authenticates the individual *better*; it does not
+#: make a lawyer less entitled to their own department's correspondence. One
+#: set, asked in every mode, is also one fewer thing that can disagree with
+#: itself.
+#:
+#: `READER` is absent, deliberately and for ADR 0042's reason: it is a
+#: different audience with a different question behind it, and widening it is a
+#: separate decision that is not taken here. `DepartmentViewer` — the shared
+#: password with no persona chosen — has an empty role and is in no set.
+ARCHIVE_READERS: frozenset[str] = frozenset(
+    {
+        UserRole.SPECIALIST.value,
+        UserRole.DEPARTMENT_HEAD.value,
+        UserRole.ADMINISTRATOR.value,
+    }
 )
+
+#: Kept as the name the shared-gate branch used, so nothing importing it breaks
+#: while the two are the same set. It is the same frozenset object.
+SHARED_GATE_ARCHIVE_READERS: frozenset[str] = ARCHIVE_READERS
 
 #: Who may add or withdraw a reviewed archive-to-Matter relationship while the
 #: department is behind the shared gate. The department head alone, and the
@@ -98,19 +148,18 @@ def may_read_archive(user: Any) -> bool:
     role = _acting_role(user)
     if not role:
         return False
-    if is_shared_gate():
-        return role in SHARED_GATE_ARCHIVE_READERS
-    return role == UserRole.ADMINISTRATOR
+    return role in ARCHIVE_READERS
 
 
 def may_manage_archive_links(user: Any) -> bool:
     """Whether this person may record or withdraw a reviewed archive link.
 
     Never wider than reading: a reviewer has to be able to open the letter they
-    are filing. Under the shared gate it is deliberately *narrower*, because the
-    two roles that may read the corpus are trusted with it for different
-    reasons and only one of them is answerable for what the department's
-    correspondence concerns.
+    are filing. It is deliberately much *narrower*, and the gap widened when
+    reading did: three roles may now read the corpus, and only one of them is
+    answerable for what the department's correspondence concerns. A specialist
+    reading a historical letter is doing their job; a specialist asserting
+    which Matter it belongs to is making a claim the department signs.
     """
     if not may_read_archive(user):
         return False

@@ -277,8 +277,15 @@ def test_archive_letters_still_render_where_they_are_allowed(client, specialist)
     assert "Varasem kiri" in body
 
 
-def test_a_reader_who_may_not_open_the_archive_sees_no_letters(signed_in, specialist):
-    """The other half of the same rule, unchanged by this round."""
+def test_a_reader_who_may_not_open_the_archive_sees_no_letters(client, specialist):
+    """The other half of the same rule.
+
+    The refused reader is a READER since ADR 0056 — the two lawyer roles read
+    the corpus now, so a specialist is the wrong person to ask this about.
+    """
+    from app.accounts.enums import UserRole
+
+    reader = factories.UserFactory(role=UserRole.READER)
     matter = factories.MatterFactory(owner=specialist)
     head = factories.DepartmentHeadFactory()
     link_matter(
@@ -288,7 +295,8 @@ def test_a_reader_who_may_not_open_the_archive_sees_no_letters(signed_in, specia
         actor=head,
     )
 
-    assert "Seotud arhiivikirjad" not in _page(signed_in, matter)
+    client.force_login(reader)
+    assert "Seotud arhiivikirjad" not in _page(client, matter)
 
 
 def test_the_rail_still_travels_with_the_page(signed_in, specialist):
