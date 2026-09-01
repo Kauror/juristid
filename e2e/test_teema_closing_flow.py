@@ -53,7 +53,10 @@ def open_closing_section(page):
     page.locator(".disclosure-chip", has_text="+ Lõpeta teema").click()
     section = page.locator("#koostaja-lopetamine")
     expect(section).to_be_visible()
-    page.locator("#id_close_matter").check()
+    # No confirmation box to tick. Answering the section is the request to
+    # close, and the primary button says so as soon as anything is answered
+    # (pilot QA F-02).
+    expect(page.locator("#id_close_matter")).to_have_count(0)
     return section
 
 

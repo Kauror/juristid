@@ -1535,7 +1535,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # exact date: deferring a step recorded as *september 2026* by a day
         # would turn a period somebody deliberately left vague into a day they
         # never named (master specification 3.5).
-        "defer_choices": defer_choices(timezone.localdate()),
+        "defer_choices": defer_choices(defer_base(current_action, timezone.localdate())),
         "quick_dates": quick_date_choices(timezone.localdate()),
         "can_defer": current_action is not None and not current_action.is_approximate,
         "today": timezone.localdate(),
@@ -1977,7 +1977,7 @@ def _next_action_row_context(request: HttpRequest, matter: Matter) -> dict[str, 
         "source_snapshot": snapshot_label() if source_instruction else "",
         "can_write": may_write_business_content(request.user),
         "can_defer": current_action is not None and not current_action.is_approximate,
-        "defer_choices": defer_choices(timezone.localdate()),
+        "defer_choices": defer_choices(defer_base(current_action, timezone.localdate())),
     }
 
 
@@ -2080,10 +2080,7 @@ def quick_date_choices(today: date) -> list[dict[str, Any]]:
     ]
 
 
-#: What «Lükka edasi» offers, and how far each option moves the date. Counted
-#: from today rather than from the date on the step: somebody deferring a
-#: deadline that passed six days ago means "give me another week", not "make it
-#: a day later than the day I already missed" (design handoff 1c).
+#: What «Lükka edasi» offers, and how far each option moves the date.
 DEFER_OPTIONS: tuple[tuple[int, str], ...] = ((1, "+1 päev"), (7, "+1 nädal"))
 
 #: How far the free-date box will accept a deferral. Two years is well past any
@@ -2092,20 +2089,47 @@ DEFER_OPTIONS: tuple[tuple[int, str], ...] = ((1, "+1 päev"), (7, "+1 nädal"))
 DEFER_MAX_DAYS = 730
 
 
-def defer_choices(today: date) -> list[dict[str, Any]]:
+def defer_base(action: Any, today: date) -> date:
+    """The day a deferral counts from.
+
+    **A step already dated in the future moves from its own date.** The pilot
+    found this the hard way: a review due 30.09, deferred by a day on 31.08,
+    became 01.09 — a date in the *past* relative to the plan it replaced, and
+    four weeks earlier than the day the lawyer was looking at. «+1 päev» means
+    one day later than the day the step is on, not one day later than the day
+    somebody happened to press the button (pilot QA F-05).
+
+    **An overdue step moves from today.** Somebody deferring a deadline that
+    passed six days ago means "give me another week", not "make it a day later
+    than the day I already missed" (design handoff 1c). `max` is the whole rule:
+    the base is the later of today and the date on the step.
+
+    **An undated historical row moves from today**, because there is no other
+    day to count from. It is the only case where the base is not a date somebody
+    chose, and it is the one case where today is the honest answer.
+    """
+    target = getattr(action, "target_date", None) if action is not None else None
+    return max(today, target) if target else today
+
+
+def defer_choices(base: date) -> list[dict[str, Any]]:
     """The quick options, with the day each one actually lands on.
 
     Resolved here, in Europe/Tallinn, and rendered on the control. A chip that
     said only "+1 nädal" would leave the reader to do the arithmetic, and one
     that worked it out in the browser would answer in the reader's timezone
     rather than in the department's.
+
+    `base` is :func:`defer_base` for the step being offered, never today: the
+    label and the write have to agree, and a chip reading «+1 päev · K 02.09»
+    over a step dated 30.09 is the defect it is supposed to prevent.
     """
     return [
         {
             "days": days,
             "label": label,
-            "when": f"{weekday_letter(today + timedelta(days=days))} "
-            f"{short_day_month(today + timedelta(days=days))}",
+            "when": f"{weekday_letter(base + timedelta(days=days))} "
+            f"{short_day_month(base + timedelta(days=days))}",
         }
         for days, label in DEFER_OPTIONS
     ]
@@ -2127,6 +2151,15 @@ def defer_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
     Nothing new is decided here. Both services validate, both write their own
     change event, and both refuse a closed Matter — this view chooses between
     them and computes no business rule of its own (app/workflow/services.py).
+
+    **It swaps the Järgmiseks row and nothing else**, exactly as «✓ Tehtud»
+    does. This used to re-render the whole overview column — the row *and the
+    open composer under it* — so deferring a step threw away every unsaved
+    character somebody had typed about it, which is the same defect ADR 0052 §8
+    fixed on the completion control and missed here (pilot QA F-04).
+
+    **It counts from the day the step is on**, not from today. See
+    :func:`defer_base` (pilot QA F-05).
     """
     matter = get_visible_matter(request, pk)
     action = get_object_or_404(
@@ -2134,6 +2167,10 @@ def defer_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
     )
 
     today = timezone.localdate()
+    # The day the delta is added to. Not today: a step already dated in the
+    # future moves from its own date, which is the whole of F-05
+    # (:func:`defer_base`).
+    base = defer_base(action, today)
     raw_days = (request.POST.get("paevad") or "").strip()
     raw_date = (request.POST.get("kuupaev") or "").strip()
     target: date | None = None
@@ -2143,12 +2180,14 @@ def defer_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
         except ValueError:
             days = 0
         if 0 < days <= DEFER_MAX_DAYS:
-            target = today + timedelta(days=days)
+            target = base + timedelta(days=days)
     elif raw_date:
+        # A typed date names a day. Nothing is added to it — the box is the
+        # answer to "when instead", not to "how much later".
         target = parse_flexible_date(raw_date)
 
-    if target is None or target > today + timedelta(days=DEFER_MAX_DAYS):
-        return _overview_error(request, matter, "Kirjuta kuupäev kujul 7.9.2026.")
+    if target is None or target > base + timedelta(days=DEFER_MAX_DAYS):
+        return _next_action_error(request, matter, "Kirjuta kuupäev kujul 7.9.2026.")
 
     try:
         if action.kind in REVIEW_KINDS:
@@ -2168,22 +2207,25 @@ def defer_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
                 actor=request.user,
             )
     except DomainError as error:
-        return _overview_error(request, matter, str(error))
+        return _next_action_error(request, matter, str(error))
 
-    return _render_overview(request, matter)
+    context = _next_action_row_context(request, matter)
+    return render(request, "matters/partials/next_action_row.html", context)
 
 
-def _overview_error(request: HttpRequest, matter: Matter, message: str) -> HttpResponse:
-    """The Matter surface again, with the refusal on it.
+def _next_action_error(request: HttpRequest, matter: Matter, message: str) -> HttpResponse:
+    """The Järgmiseks row again, with the refusal inside it.
 
-    The shape every write on this page already uses: 400 with the re-rendered
-    view, so somebody pressing a button that could not do what it said reads why
-    (static/js/app.js, `responseHandling`).
+    400 with the re-rendered fragment, so somebody pressing a button that could
+    not do what it said reads why (static/js/app.js, `responseHandling`). The
+    *row*, because the row is what the response replaces: rendering the whole
+    overview into a target that holds one row would nest the page inside itself,
+    and re-rendering the column is what threw away the open composer
+    (pilot QA F-04).
     """
-    context = _overview_context(request, matter)
-    context.update(_header_context(request, matter))
-    context["composer_error"] = message
-    return render(request, "matters/partials/overview.html", context, status=400)
+    context = _next_action_row_context(request, matter)
+    context["next_action_error"] = message
+    return render(request, "matters/partials/next_action_row.html", context, status=400)
 
 
 FIELD_SERVICES = {

@@ -380,23 +380,57 @@
 
     /* The composer's primary button says what the save will actually do. A
        button reading "Salvesta" that closes the file is the one thing a
-       destructive-ish action must never look like (Teema redesign §15). */
-    scope.querySelectorAll("[data-closes-matter]").forEach(function (toggle) {
-      if (!once(toggle, "Closes")) {
+       destructive-ish action must never look like (Teema redesign §15).
+
+       It follows the *answers* now, not a confirmation checkbox: since the
+       pilot found that unticking that box threw the whole closing section away
+       (F-02), answering the section is what closes the Matter, and the button
+       has to track exactly the same condition the server reads. It keeps
+       tracking it when the panel is hidden again — Escape closes the disclosure
+       without emptying it, and a hidden answer still closes the file, so the
+       button is the one place that says so. */
+    function closingAnswered(section) {
+      var controls = section.querySelectorAll("input, select, textarea");
+      for (var i = 0; i < controls.length; i += 1) {
+        var control = controls[i];
+        if (control.type === "checkbox" || control.type === "radio") {
+          if (control.checked) {
+            return true;
+          }
+        } else if (control.type === "file") {
+          if (control.files && control.files.length) {
+            return true;
+          }
+        } else if (String(control.value || "").trim() !== "") {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    scope.querySelectorAll("[data-closing-section]").forEach(function (section) {
+      if (!once(section, "Closing")) {
         return;
       }
-      var form = toggle.form;
+      var form = section.closest("form");
       var submit = form ? form.querySelector("[data-composer-submit]") : null;
       if (!submit) {
         return;
       }
       var sync = function () {
-        submit.textContent = toggle.checked
+        var closing = closingAnswered(section);
+        submit.textContent = closing
           ? submit.getAttribute("data-label-closing")
           : submit.getAttribute("data-label-default");
-        submit.classList.toggle("button--danger", toggle.checked);
+        submit.classList.toggle("button--danger", closing);
       };
-      toggle.addEventListener("change", sync);
+      /* Delegated to the section, so the `Muu` chips — which are added and
+         removed after this runs — are covered without rebinding. */
+      section.addEventListener("input", sync);
+      section.addEventListener("change", sync);
+      section.addEventListener("click", function () {
+        window.setTimeout(sync, 0);
+      });
       sync();
     });
 

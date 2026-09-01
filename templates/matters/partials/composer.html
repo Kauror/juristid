@@ -252,30 +252,34 @@ field with no visible focus at all (static/css/app.css).
     </div>
 
     {% comment %}
-      Open whenever the save being re-rendered was a closure, and closed
-      otherwise. A refused closure returns the whole surface with its errors in
-      place, and the one refusal this form makes most often — `Töövõit` with no
-      answer — would otherwise come back inside a panel nobody can see.
+      Open whenever the save being re-rendered answered anything in it, and
+      closed otherwise. A refused closure returns the whole surface with its
+      errors in place, and the one refusal this form makes most often —
+      `Töövõit` with no answer — would otherwise come back inside a panel nobody
+      can see.
     {% endcomment %}
     <div class="composer__optional composer__optional--closing" id="koostaja-lopetamine"
-         {% if not composer_form.close_matter.value %}hidden{% endif %}>
+         data-closing-section
+         {% if not composer_form.closure_requested %}hidden{% endif %}>
       {% comment %}
         Finishing the Matter, inside the composer rather than in a sidebar
         panel. Closing is something a lawyer does at the end of a professional
         update — usually the same one that records the final opinion — and a
         separate box in the rail made it look like an administrative setting
         (Teema redesign §15).
+
+        **There is no `Lõpeta see teema` box here.** It confirmed the six
+        answers below it and was the only thing that made them count: the pilot
+        filled the whole section, left the box alone, and got a successful save
+        that stored a note and silently discarded the disposition, the sent
+        opinion, its date, its recipients and the work victory. Answering this
+        section is the request; the button says so, and the server reads it the
+        same way (pilot QA F-02, app/matters/forms.py `closure_requested`).
       {% endcomment %}
-      <label class="composer__closing-toggle">
-        <input type="checkbox" name="close_matter" id="id_close_matter"
-               data-closes-matter
-               {% if composer_form.close_matter.value %}checked{% endif %}>
-        <span>Lõpeta see teema</span>
-      </label>
       <p class="field__help">
-        Sulgemine tähendab, et Koda ei tegele teemaga enam aktiivselt. See on eraldi
-        otsus menetluse etapist — jõustunud akt ei sulge teemat automaatselt.
-        Kehtiv järgmine samm lõpetatakse koos teemaga.
+        Vastamine siin lõpetab teema. Sulgemine tähendab, et Koda ei tegele teemaga
+        enam aktiivselt. See on eraldi otsus menetluse etapist — jõustunud akt ei
+        sulge teemat automaatselt. Kehtiv järgmine samm lõpetatakse koos teemaga.
       </p>
       {% include "intelligence/partials/field.html" with field=composer_form.disposition %}
 
@@ -411,7 +415,6 @@ field with no visible focus at all (static/css/app.css).
              {% if composer_form.work_victory.value != "JAH" %}hidden{% endif %}>
           {% include "intelligence/partials/field.html" with field=composer_form.victory_effective_on %}
         </div>
-      </fieldset>
       </fieldset>
     </div>
   </form>
