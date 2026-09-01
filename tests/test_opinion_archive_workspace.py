@@ -519,7 +519,7 @@ def test_the_workspace_offers_the_archive_tab_to_a_reader(behind_the_gate, reade
     act_as(behind_the_gate, reader)
     body = behind_the_gate.get(reverse("submissions:sent")).content.decode()
     assert reverse("submissions:archive") in body
-    assert ">Arhiiv" in body
+    assert ">Arhiivikirjad" in body
 
 
 def test_the_workspace_does_not_offer_the_archive_tab_to_a_refused_reader(

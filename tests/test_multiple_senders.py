@@ -699,7 +699,7 @@ def test_rendering_many_senders_costs_no_query_per_row(
     # measured at two sizes (docs/adr/0047).
     # 37 rather than 36 since ADR 0056: a specialist may now read the archive,
     # so the section pays the sixth query ADR 0047 already wrote down for a
-    # reader who may — `visible_archive(viewer).count()`, the Arhiiv tab's
+    # reader who may — `visible_archive(viewer).count()`, the Arhiivikirjad tab's
     # figure. Constant like the other five, and it is the whole difference.
     add(20)
     with django_assert_max_num_queries(37):

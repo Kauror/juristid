@@ -11,7 +11,7 @@ fuller would destroy the only distinction that lets anybody count opinions.
 Matter, so a letter filed against a RESTRICTED entry cannot be used to learn its
 title or reference.
 
-**Nothing widened.** ``may_read_archive`` decides the Arhiiv tab exactly as it
+**Nothing widened.** ``may_read_archive`` decides the Arhiivikirjad tab exactly as it
 decides the administrative browse, and a specialist gets neither.
 """
 
@@ -249,7 +249,7 @@ def test_kind_is_shown_so_a_supplementary_letter_is_not_read_as_the_opinion(
 
 
 # ---------------------------------------------------------------------------
-# Arhiiv — who may open it
+# Arhiivikirjad — who may open it
 # ---------------------------------------------------------------------------
 
 
@@ -434,7 +434,7 @@ def test_a_linked_letter_is_visible_from_the_matter_it_concerns(client, shared):
     # by a sentence under it: two sections with two headings, and the archive
     # row links to the archive rather than to a Submission. The explanatory
     # `cardnote` was one of the four the v2 design removed from the Teema
-    # sub-pages, and the sentence itself survives on the Arhiiv tab, where the
+    # sub-pages, and the sentence itself survives on the Arhiivikirjad tab, where the
     # archive is the whole subject (02-EKRAANID §C, and the test above).
     assert "Koja varasemad kirjad" not in body
     letters = body.split('id="arhiivikirjad-heading"', 1)[1]

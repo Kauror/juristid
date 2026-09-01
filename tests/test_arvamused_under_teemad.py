@@ -17,7 +17,7 @@ the brief and most of the file is about it.
 resolve, still carry their own filters and their own pager, and are still where
 «Vaata kõiki arvamusi» leads. A bookmark from before this change still works.
 
-**Nothing widened.** ``may_read_archive`` decides the Arhiiv tab in the section
+**Nothing widened.** ``may_read_archive`` decides the Arhiivikirjad tab in the section
 exactly as it decides it in the workspace, and it decides it before anything is
 counted. A specialist may not reach archive rows, an archive count, or the
 corpus's date range by hand-editing the section's parameter.
@@ -431,7 +431,7 @@ def test_the_opinion_fragment_route_answers_with_opinions_only(
 
 
 # ---------------------------------------------------------------------------
-# 8-9. Saadetud and Arhiiv, under the authorization that already existed
+# 8-9. Saadetud and Arhiivikirjad, under the authorization that already existed
 # ---------------------------------------------------------------------------
 
 
@@ -450,7 +450,7 @@ def test_the_archive_tab_is_offered_to_a_reader_who_may_read_it(client, administ
 
     section = opinion_section_of(body_of(client.get(TEEMAD_URL)))
 
-    assert ">Arhiiv" in section
+    assert ">Arhiivikirjad" in section
     assert "arvamus_vaade=arhiiv" in section
 
 
@@ -468,7 +468,7 @@ def test_the_archive_tab_is_not_offered_to_a_reader_who_may_not(client, reader) 
 
     section = opinion_section_of(body_of(client.get(TEEMAD_URL)))
 
-    assert ">Arhiiv" not in section
+    assert ">Arhiivikirjad" not in section
 
 
 def test_the_archive_tab_is_offered_to_a_specialist(client, specialist) -> None:
@@ -480,7 +480,7 @@ def test_the_archive_tab_is_offered_to_a_specialist(client, specialist) -> None:
 
     section = opinion_section_of(body_of(client.get(TEEMAD_URL, {"arvamus_vaade": "arhiiv"})))
 
-    assert ">Arhiiv" in section
+    assert ">Arhiivikirjad" in section
     assert "Varasem kiri pakendite kohta" in section
 
 
@@ -520,7 +520,7 @@ def test_a_refused_reader_cannot_reach_the_archive_by_asking_for_it(client, read
 
     assert response.status_code == 200
     assert "Salajane varasem kiri" not in body
-    assert ">Arhiiv" not in section
+    assert ">Arhiivikirjad" not in section
     # Falls back to the canonical source rather than showing nothing at all.
     assert "ei ole veel ühtegi arvamust välja saadetud" in section
 
@@ -565,7 +565,7 @@ def test_a_refused_reader_is_told_nothing_about_the_corpus_size(client, reader) 
     section = opinion_section_of(body_of(client.get(TEEMAD_URL)))
 
     assert "Varasem kiri" not in section
-    assert ">Arhiiv" not in section
+    assert ">Arhiivikirjad" not in section
     assert "<strong>3</strong>" not in section
 
 
@@ -854,7 +854,7 @@ def test_the_default_source_is_not_written_into_the_address(signed_in) -> None:
 
 
 def test_the_chosen_source_is_written_into_the_address(client, administrator) -> None:
-    """Arhiiv is a choice, so it survives a reload and a pasted link."""
+    """Arhiivikirjad is a choice, so it survives a reload and a pasted link."""
     client.force_login(administrator)
 
     pushed = client.get(BLOCK_URL, {"arvamus_vaade": "arhiiv"}).headers["HX-Push-Url"]

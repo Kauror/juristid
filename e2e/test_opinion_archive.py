@@ -287,7 +287,7 @@ def test_neither_arvamused_nor_the_archive_is_a_destination_on_the_bar(page, bas
 
 
 def test_the_teemad_section_is_how_a_reader_reaches_the_archive(page, base_url):
-    """Teemad → Arvamused → Arhiiv, without knowing a URL.
+    """Teemad → Arvamused → Arhiivikirjad, without knowing a URL.
 
     The path both removed bar items used to be. It has to work for the persona
     who may read the corpus, or the consolidation took a destination away
@@ -303,9 +303,9 @@ def test_the_teemad_section_is_how_a_reader_reaches_the_archive(page, base_url):
     section = page.locator("#arvamused")
     expect(section.get_by_role("heading", name="Arvamused")).to_be_visible()
 
-    section.get_by_role("link", name=re.compile(r"^Arhiiv")).click()
+    section.get_by_role("link", name=re.compile(r"^Arhiivikirjad")).click()
     page.wait_for_load_state("networkidle")
-    expect(section.get_by_role("link", name=re.compile(r"^Arhiiv"))).to_have_attribute(
+    expect(section.get_by_role("link", name=re.compile(r"^Arhiivikirjad"))).to_have_attribute(
         "aria-current", "true"
     )
     expect(section.get_by_text(UNLINKED_TITLE)).to_be_visible()
@@ -384,12 +384,12 @@ def test_the_opinion_tab_does_not_undo_a_live_teemad_search(page, base_url):
     narrowed = page.locator("#teemad-tulemused tbody tr").count()
     expect(page.locator(".registercount")).to_contain_text("pakendiseaduse")
 
-    page.locator("#arvamused").get_by_role("link", name=re.compile(r"^Arhiiv")).click()
+    page.locator("#arvamused").get_by_role("link", name=re.compile(r"^Arhiivikirjad")).click()
     page.wait_for_load_state("networkidle")
 
     # The archive opened...
     expect(
-        page.locator("#arvamused").get_by_role("link", name=re.compile(r"^Arhiiv"))
+        page.locator("#arvamused").get_by_role("link", name=re.compile(r"^Arhiivikirjad"))
     ).to_have_attribute("aria-current", "true")
     # ...and the register is still holding the search that was typed into it.
     assert "q=pakendiseaduse" in page.url
@@ -448,7 +448,7 @@ def opinion_row_count(page) -> int:
     """How many rows the Arvamused section is showing, whichever tab is open.
 
     Two shapes since the v2 rebuild: `Saadetud` draws two-line `submission`
-    cards, `Arhiiv` keeps its table because its four columns are the same four
+    cards, `Arhiivikirjad` keeps its table because its four columns are the same four
     facts on every row (02-EKRAANID §C).
     """
     results = page.locator("#arvamused-tulemused")

@@ -23,7 +23,7 @@ there from here.
   <div class="opinionblock__head">
     {% comment %}
       No caption under the heading. The tab strip immediately below names both
-      sources — Saadetud and Arhiiv — so a sentence saying the same thing is a
+      sources — Saadetud and Arhiivikirjad — so a sentence saying the same thing is a
       line a reader steps over on every visit (02-EKRAANID §C).
     {% endcomment %}
     <h2 class="opinionblock__title" id="arvamused-pealkiri">Arvamused</h2>
@@ -51,7 +51,7 @@ there from here.
     the live address on click, and with JavaScript off there is no live search
     to go stale from, so the server-rendered href is already correct.
 
-    Arhiiv appears only for a reader `may_read_archive` admits, and the same
+    Arhiivikirjad appears only for a reader `may_read_archive` admits, and the same
     predicate decides whether the archive is queried at all — the tab's absence
     is the visible half of a boundary enforced in Python before anything is
     counted (app/submissions/embedded.py, docs/adr/0028).
@@ -66,7 +66,7 @@ there from here.
       <a class="segmented__option {% if opinion_view == opinion_archive_view %}is-active{% endif %}"
          {% if opinion_view == opinion_archive_view %}aria-current="true"{% endif %}
          data-opinion-tab="{{ opinion_archive_view }}"
-         href="{{ opinion_archive_link }}">Arhiiv
+         href="{{ opinion_archive_link }}">Arhiivikirjad
         <span class="segmented__count">{{ opinion_archive_total }}</span></a>
     {% endif %}
   </nav>

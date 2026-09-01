@@ -456,7 +456,7 @@ def navigation_of(response) -> str:
 def test_the_bar_no_longer_offers_arvamused(client, specialist) -> None:
     """ADR 0044 put one `Arvamused` on the bar; ADR 0047 took it off entirely.
 
-    Not a reversal of 0044 — its decision that `Saadetud` and `Arhiiv` belong to
+    Not a reversal of 0044 — its decision that `Saadetud` and `Arhiivikirjad` belong to
     one destination is intact, and that destination still exists at
     `/arvamused/`. What moved is where the bar puts it: an arvamus is an outcome
     of a teema rather than a parallel place to be, so the workspace is a section
@@ -488,11 +488,11 @@ def test_the_bar_no_longer_offers_a_separate_archive(client, administrator) -> N
 
 
 def test_the_workspace_still_has_both_tabs(client, administrator) -> None:
-    """Saadetud and Arhiiv, which is where the archive now lives."""
+    """Saadetud and Arhiivikirjad, which is where the archive now lives."""
     client.force_login(administrator)
     body = client.get(reverse("submissions:sent")).content.decode()
     assert ">Saadetud" in body
-    assert ">Arhiiv" in body
+    assert ">Arhiivikirjad" in body
     assert reverse("submissions:archive") in body
 
 

@@ -16,7 +16,7 @@
   defensible archive letters into real Submissions — those simply start
   appearing under Saadetud on their own.
 
-  Arhiiv appears only for a reader `may_read_archive` admits. It is captioned
+  Arhiivikirjad appears only for a reader `may_read_archive` admits. It is captioned
   rather than silently dropped for everybody else: hiding it entirely would say
   "there is no archive", which is untrue, and a lawyer who has heard about the
   767 letters would reasonably think the feature was broken.
@@ -38,7 +38,7 @@
     {% if can_read_archive %}
       <a class="segmented__option {% if active_tab == 'arhiiv' %}is-active{% endif %}"
          {% if active_tab == 'arhiiv' %}aria-current="page"{% endif %}
-         href="{% url 'submissions:archive' %}">Arhiiv
+         href="{% url 'submissions:archive' %}">Arhiivikirjad
         <span class="segmented__count">{{ archive_total }}</span></a>
     {% endif %}
   </nav>

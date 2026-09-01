@@ -34,7 +34,7 @@ and the two sections that were genuinely the head's are decided on the page
   filters and their own pager, and are still where «Vaata kõiki arvamusi»
   leads. Every bookmark, every internal link and every historical archive link
   still works. Nothing about access moved either — `may_read_archive` decides
-  the Arhiiv tab in both places, and decides it before anything is counted
+  the Arhiivikirjad tab in both places, and decides it before anything is counted
   (docs/adr/0028, docs/adr/0047).
 {% endcomment %}
 {% comment %}
@@ -66,7 +66,7 @@ and the two sections that were genuinely the head's are decided on the page
   click further in and one fewer thing to read on arrival.
 
   Nothing about access moved with the link. `may_read_archive` still decides who
-  may open the workspace's Arhiiv tab, the administrative browse keeps its own
+  may open the workspace's Arhiivikirjad tab, the administrative browse keeps its own
   route and refuses a crafted URL with a 403 exactly as before, and every
   existing archive URL still resolves (app/legacy_import/opinion_access.py,
   docs/adr/0028).
