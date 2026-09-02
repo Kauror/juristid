@@ -4,8 +4,8 @@
  * CVI-MAPPED. These are the Chamber's own values, not placeholders: Chamber
  * blue #009FDA and the graphite-derived dark neutral ramp come from the supplied
  * Koda CVI usage in Kauror/koda and Kauror/dashkoda, and the ramp is the one
- * already validated for colour-blind legibility there. The typeface is FF DIN
- * Pro with Barlow as the approved visual fallback until the web licence lands.
+ * already validated for colour-blind legibility there. The typeface is Barlow,
+ * self-hosted and complete (docs/adr/0058).
  *
  * Architecture is unchanged from Stage 0 (docs/adr/0009):
  *   1. Primitives are raw values and are never used by components.
@@ -115,10 +115,14 @@
   --radius-circle: 50%;
 
   /* ---- typography --------------------------------------------------
-   * FF DIN Pro is the CVI face; its web licence is pending. Barlow is the
-   * approved fallback and is self-hosted (see fonts.css).
+   * Barlow is the typeface, not a fallback for one (docs/adr/0058). It is
+   * self-hosted and complete (see fonts.css), so every machine renders the
+   * same page. FF DIN Pro used to sit in front of it and the application
+   * shipped no @font-face for it, so it resolved only on machines that
+   * happened to hold the desktop licence — two renderings of one design,
+   * with nothing saying which was the product.
    */
-  --typography-font-sans: "FF DIN Pro", Barlow, Arial, sans-serif;
+  --typography-font-sans: Barlow, Arial, sans-serif;
   --typography-font-mono: ui-monospace, Menlo, "Cascadia Mono", Consolas, monospace;
 
   --typography-size-page-title: 20px;

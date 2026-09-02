@@ -5,12 +5,18 @@ built so that each one lands cheaply when it is made; where a decision was
 needed to make progress, the placeholder is marked as provisional in the code
 and named here.
 
-## Blocking or shaping Stage 1
+## Blocking or shaping the product
+
+Every numbered stage through 2A–2I is merged, so these are no longer "Stage 1"
+decisions; a heading that names a stage is a heading that goes stale, and this
+one had. A row struck through is one the repository can show is settled — the
+code is cited beside it — and it stays visible rather than being deleted,
+because a decision register people trust is one that shows its own history.
 
 | Decision | Owner | Why it matters now | Where it lands |
 | --- | --- | --- | --- |
-| Official CVI package, permitted web fonts, dark-mode interpretation | Communications/CVI | Every colour in `static/css/tokens.css` is a marked placeholder. Components must not be built on placeholders. | ADR 0009, one file |
-| Final `Hetkeseis` vocabulary, help text, track applicability and closure mapping | Department head + lawyers | `StageVocabulary` and `LegacyStatusMapping` are empty; the dev seed uses provisional labels flagged `is_provisional`. The workbook's 11 authoritative labels must be transcribed from the live file, not reconstructed. | Reviewed data migration |
+| ~~Official CVI package, permitted web fonts, dark-mode interpretation~~ | Communications/CVI | **Decided and deployed, both halves.** The colours are CVI-mapped, not provisional — Chamber blue `#009FDA` and the graphite-derived dark ramp come from the supplied CVI usage, and that ramp is the one already validated for colour-blind legibility. The typeface question is closed too, and closed *away* from the CVI face: Barlow is the typeface rather than a fallback for FF DIN Pro, because the application shipped no `@font-face` for FF DIN Pro and it therefore resolved only on machines holding the desktop licence — two renderings of one design. Nothing is being waited on. | Done — `static/css/tokens.css`, ADR 0009 and ADR 0058 |
+| ~~Final `Hetkeseis` vocabulary, help text, track applicability and closure mapping~~ | Department head + lawyers | **Decided and deployed.** The workbook's eleven authoritative labels were transcribed from the live file, not reconstructed, and seeded by `workflow/0004_seed_stage_vocabulary`. Ten became procedural stages; the eleventh, *rohkem pole tegevusi plaanis*, is a closure reason rather than a stage, because it says Koda stopped working on the file. `jõustunud` stayed a stage — an act entering into force does not finish Koda's file. Both `StageVocabulary` and `LegacyStatusMapping` are seeded. | Done — `app/workflow/migrations/0004_seed_stage_vocabulary.py` |
 | Matter numbering and successor reference rules | Department head | `YYYY_N` is implemented as the default. Allocation is isolated in `allocate_matter_reference()`. | One function |
 | Submission kinds, recipients, and what counts as a reportable written opinion | Department head + reporting owner | Drives `submission_sent_count` in the export contract and the Stage-1 Submission model. | ADR 0007 + Stage-1 schema |
 | Controlled Tag seed, taxonomy owner | Department head + lawyers | **The PolicyArea half is decided and deployed** — the nine areas Koda publishes, seeded by `taxonomy/0002` and recorded in ADR 0029. `Tag` still ships empty on purpose and its authoritative vocabulary is unreviewed; the dev seed uses only the tag concepts the specification itself names. | ADR 0029 for the areas; a reviewed data migration for the tags |

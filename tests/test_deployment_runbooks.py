@@ -492,3 +492,50 @@ def test_nothing_schedules_a_full_checksum_pass() -> None:
             assert "--verify-sha" not in line, (
                 f"{path.name}: a full checksum pass must be asked for by hand\n  {line}"
             )
+
+
+# ---------------------------------------------------------------------------
+# The decision register must not still be asking for what has arrived
+# ---------------------------------------------------------------------------
+
+
+def test_the_decision_register_does_not_call_the_tokens_provisional() -> None:
+    """A settled decision listed as blocking asks somebody for what they sent.
+
+    `docs/open-decisions.md` said "every colour in `static/css/tokens.css` is a
+    marked placeholder" for as long as it took the CVI package to arrive, be
+    mapped, and ship — while `tokens.css` itself opened with **CVI-MAPPED …
+    not placeholders**. The same sentence had gone stale in `README.md`, and
+    fixing one and not the other is how a claim survives.
+
+    This is the cheap half of the check: the two files cannot both be right, so
+    the register is asserted against the stylesheet rather than against a date.
+    """
+    root = Path(__file__).resolve().parent.parent
+    register = (root / "docs" / "open-decisions.md").read_text(encoding="utf-8")
+    tokens = (root / "static" / "css" / "tokens.css").read_text(encoding="utf-8")
+
+    if "CVI-MAPPED" not in tokens:
+        pytest.skip("tokens.css no longer claims to be CVI-mapped; check the register by hand")
+
+    assert "is a marked placeholder" not in register, (
+        "docs/open-decisions.md still calls the design tokens provisional while "
+        "static/css/tokens.css says CVI-MAPPED. One of the two is wrong, and the "
+        "register is the one that asks a person for something."
+    )
+
+
+def test_the_decision_register_does_not_call_the_stage_vocabulary_empty() -> None:
+    """`StageVocabulary` was seeded from the reviewed workbook in
+    `workflow/0004_seed_stage_vocabulary`. A register still calling it empty
+    asks the department head to transcribe eleven labels they already
+    transcribed."""
+    root = Path(__file__).resolve().parent.parent
+    register = (root / "docs" / "open-decisions.md").read_text(encoding="utf-8")
+    seed = root / "app" / "workflow" / "migrations" / "0004_seed_stage_vocabulary.py"
+
+    assert seed.exists(), "the seed migration moved; re-check the register by hand"
+    assert "`StageVocabulary` and `LegacyStatusMapping` are empty" not in register, (
+        "docs/open-decisions.md still calls the stage vocabulary empty, but "
+        f"{seed.relative_to(root)} seeds it"
+    )
