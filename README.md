@@ -548,8 +548,9 @@ only.
 
 **The values are CVI-mapped, not placeholders.** Chamber blue `#009FDA` and the
 graphite-derived dark ramp come from the supplied Koda CVI usage, and the ramp is
-the one already validated for colour-blind legibility. The typeface is FF DIN Pro
-with Barlow as the approved visual fallback until the web licence lands. The
+the one already validated for colour-blind legibility. The typeface is Barlow,
+self-hosted and complete, chosen over the CVI's FF DIN Pro so that every machine
+renders the same page ([ADR 0058](docs/adr/0058-barlow-is-the-typeface.md)). The
 architecture is unchanged from Stage 0
 ([ADR 0009](docs/adr/0009-design-token-foundation.md)). The running application
 shows the whole set at `/disainisusteem/`.

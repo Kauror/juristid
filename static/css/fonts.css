@@ -1,9 +1,9 @@
 /*
  * Barlow, self-hosted.
  *
- * The CVI typeface is FF DIN Pro; its web licence has not been delivered, so
- * Barlow is the approved visual fallback and ships first in the stack after it.
- * Swapping in FF DIN Pro later is an @font-face addition, not a redesign.
+ * The typeface, not a stand-in for one (docs/adr/0058). Barlow was the CVI's own
+ * approved visual fallback, and it is what this application renders everywhere:
+ * complete here, so no machine substitutes anything of its own.
  *
  * Served from our own origin rather than a font CDN: this application will hold
  * confidential member material, and a third-party request on every page view is
