@@ -77,7 +77,7 @@ ROLES_WITH_BUSINESS_WRITE: frozenset[str] = frozenset(
 ROLES_WITH_WORK_VICTORY_REVIEW: frozenset[str] = frozenset({UserRole.DEPARTMENT_HEAD.value})
 
 
-def _business_role(user: object | None) -> str:
+def acting_role(user: object | None) -> str:
     """The role a *person* is acting under, or "" if there is no person.
 
     The shared-gate sentinel and anonymous users fall through to "", which is in
@@ -112,12 +112,12 @@ def may_write_business_content(user: object | None) -> bool:
     can now open a restricted file still cannot review a `Töövõit`, because that
     is decided by `may_review_work_victory` rather than by reach.
     """
-    return _business_role(user) in ROLES_WITH_BUSINESS_WRITE
+    return acting_role(user) in ROLES_WITH_BUSINESS_WRITE
 
 
 def may_review_work_victory(user: object | None) -> bool:
     """May this user confirm a work victory, or record that it did not happen?"""
-    return _business_role(user) in ROLES_WITH_WORK_VICTORY_REVIEW
+    return acting_role(user) in ROLES_WITH_WORK_VICTORY_REVIEW
 
 
 @dataclass(frozen=True)
@@ -189,13 +189,13 @@ def is_department_head(user: object | None) -> bool:
     department's password proves somebody is behind the door, never that they
     are the head (Stage-2F brief 28).
 
-    Resolved through `_business_role` so that "who is acting" is decided in one
+    Resolved through `acting_role` so that "who is acting" is decided in one
     place. Stage 2G arrived with its own copy of those three refusals for
     `may_review_work_victory`, which answers the same question about the same
     person; two copies that agree today are two copies that can stop agreeing
     the day one of them learns about a new kind of non-person.
     """
-    return _business_role(user) == UserRole.DEPARTMENT_HEAD.value
+    return acting_role(user) == UserRole.DEPARTMENT_HEAD.value
 
 
 def department_scope() -> Scope:

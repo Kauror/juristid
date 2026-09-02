@@ -319,7 +319,20 @@ def test_a_reader_cannot_reach_the_edit_page(client, specialist):
     assert matter.title != "Kaaperdatud"
 
 
-def test_the_edit_page_respects_matter_visibility(client, specialist, reader):
+def test_the_edit_page_is_unreachable_for_a_reader(client, specialist, reader):
+    """A READER cannot open the edit page of a RESTRICTED Matter.
+
+    The 404 now comes from the write gate rather than from
+    `get_visible_matter`: `@business_write_required` runs first, and this
+    actor may not write. That is not a weaker guarantee — it is an earlier
+    one — but it does mean this route can no longer *demonstrate* the
+    visibility rule, because every actor who fails visibility also fails the
+    write gate (`ROLES_WITH_BUSINESS_WRITE` is a subset of
+    `ROLES_WITH_RESTRICTED_ACCESS`). The visibility rule itself is asserted
+    where it is still observable, in `tests/test_authorization.py`, and
+    `tests/test_one_write_gate.py` guards the subset relation that makes this
+    reasoning true.
+    """
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     client.force_login(reader)
 

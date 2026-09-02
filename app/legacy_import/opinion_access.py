@@ -56,6 +56,7 @@ from typing import Any
 
 from app.accounts.enums import UserRole
 from app.accounts.shared_gate import is_shared_gate
+from app.core.authorization import acting_role
 
 #: Roles that may read the corpus, in every authentication mode.
 #:
@@ -102,9 +103,6 @@ ARCHIVE_READERS: frozenset[str] = frozenset(
     }
 )
 
-#: Kept as the name the shared-gate branch used, so nothing importing it breaks
-#: while the two are the same set. It is the same frozenset object.
-SHARED_GATE_ARCHIVE_READERS: frozenset[str] = ARCHIVE_READERS
 
 #: Who may add or withdraw a reviewed archive-to-Matter relationship while the
 #: department is behind the shared gate. The department head alone, and the
@@ -113,22 +111,6 @@ SHARED_GATE_ARCHIVE_READERS: frozenset[str] = ARCHIVE_READERS
 #: administration becoming business authorship by accident is exactly what
 #: `ROLES_WITH_BUSINESS_WRITE` refuses elsewhere (app/core/authorization.py).
 SHARED_GATE_LINK_REVIEWERS: frozenset[str] = frozenset({UserRole.DEPARTMENT_HEAD.value})
-
-
-def _acting_role(user: Any) -> str:
-    """The role a *person* is acting under, or "" when there is no person.
-
-    The shared-gate sentinel, an anonymous visitor and a deactivated account all
-    fall through to "", which is in none of the sets above. That is the property
-    that keeps knowing the shared password from being enough on its own: a
-    session that has passed the door but chosen no persona is a
-    `DepartmentViewer`, which has an empty role and cannot be an audit actor.
-    """
-    if user is None or not getattr(user, "is_authenticated", False):
-        return ""
-    if not getattr(user, "is_active", True):
-        return ""
-    return str(getattr(user, "role", "") or "")
 
 
 def may_read_archive(user: Any) -> bool:
@@ -145,7 +127,7 @@ def may_read_archive(user: Any) -> bool:
     open: everything the archive renders about a Matter is still filtered
     through `Matter.objects.visible_to` (docs/adr/0028).
     """
-    role = _acting_role(user)
+    role = acting_role(user)
     if not role:
         return False
     return role in ARCHIVE_READERS
@@ -163,7 +145,7 @@ def may_manage_archive_links(user: Any) -> bool:
     """
     if not may_read_archive(user):
         return False
-    role = _acting_role(user)
+    role = acting_role(user)
     if is_shared_gate():
         return role in SHARED_GATE_LINK_REVIEWERS
     return role == UserRole.ADMINISTRATOR
@@ -180,7 +162,7 @@ def may_use_opinion_queue(user: Any) -> bool:
     asks this question before it renders the link rather than offering a button
     that only produces a 403 (Stage-2H brief 62, docs/adr/0028).
     """
-    return _acting_role(user) == UserRole.ADMINISTRATOR
+    return acting_role(user) == UserRole.ADMINISTRATOR
 
 
 def require_archive_reader(user: Any) -> None:

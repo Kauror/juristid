@@ -156,7 +156,20 @@ def test_an_anonymous_visitor_is_sent_to_sign_in(client, restricted_world):
 
 
 def test_posting_to_a_restricted_matter_is_refused(client, reader, restricted_world):
-    """Write routes are protected by the same lookup, not only read routes."""
+    """Write routes are protected, and now by the write gate rather than the
+    visibility lookup.
+
+    The 404 now comes from the write gate rather than from
+    `get_visible_matter`: `@business_write_required` runs first, and this
+    actor may not write. That is not a weaker guarantee — it is an earlier
+    one — but it does mean this route can no longer *demonstrate* the
+    visibility rule, because every actor who fails visibility also fails the
+    write gate (`ROLES_WITH_BUSINESS_WRITE` is a subset of
+    `ROLES_WITH_RESTRICTED_ACCESS`). The visibility rule itself is asserted
+    where it is still observable, in `tests/test_authorization.py`, and
+    `tests/test_one_write_gate.py` guards the subset relation that makes this
+    reasoning true.
+    """
     client.force_login(reader)
     matter = restricted_world["matter"]
 

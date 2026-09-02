@@ -1186,6 +1186,7 @@ def organisation_choices(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def matter_create(request: HttpRequest) -> HttpResponse:
     """Create a Matter, with the files it arrived with.
@@ -1196,15 +1197,6 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     other three, which is the failure mode the intake surface already avoids
     (Stage-2E.1 brief 23).
     """
-    # The same check `matter_edit`, the composer and the intake surface make,
-    # and it was missing here: `Uus teema` was reachable — and worked — for a
-    # READER, who may read the register and change nothing in it. 404 rather
-    # than 403, matching every other refusal in this module: a reader who may
-    # not write is not told which surfaces exist for those who may
-    # (app/core/authorization.py, master specification 5.1).
-    if not may_write_business_content(request.user):
-        raise Http404("Uut teemat saab luua ainult sisu muutmise õigusega.")
-
     form = MatterCreateForm(request.POST or None, viewer=request.user)
     # Bound only when somebody actually asked for a next action. Bound
     # unconditionally, a refused save — a missing title, a rejected file —
@@ -1813,17 +1805,11 @@ def _render_overview(
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def compose(request: HttpRequest, pk: Any) -> HttpResponse:
     """The unified composer save. Entry and `Järgmiseks` land together."""
     matter = get_visible_matter(request, pk)
-    # Every sub-action the composer can perform is business content, and the
-    # unified surface does not unify the permission: the same check the
-    # engagement and closure endpoints make is made here, once, before anything
-    # is parsed (Teema redesign §34).
-    if not may_write_business_content(request.user):
-        raise Http404("Sissekandeid saab lisada ainult sisu muutmise õigusega.")
-
     form = ComposerForm(request.POST, request.FILES, matter=matter, viewer=request.user)
 
     if not form.is_valid():
@@ -1846,13 +1832,11 @@ def compose(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
     """Record one `Kaasamine` on this Matter."""
     matter = get_visible_matter(request, pk)
-    if not may_write_business_content(request.user):
-        raise Http404("Kaasamist saab lisada ainult sisu muutmise õigusega.")
-
     form = EngagementForm(request.POST)
     if not form.is_valid():
         return _overview_with_engagement_error(request, matter, form)
@@ -1874,13 +1858,11 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def update_engagement_view(request: HttpRequest, pk: Any, engagement_id: Any) -> HttpResponse:
     """Correct one `Kaasamine`. There is no delete; a wrong row is edited."""
     matter = get_visible_matter(request, pk)
-    if not may_write_business_content(request.user):
-        raise Http404("Kaasamist saab muuta ainult sisu muutmise õigusega.")
-
     # Scoped through the child's own `visible_to`, not fetched by id off the
     # Matter: a record may carry a stricter visibility override than its parent,
     # and reading it any other way would bypass that.
@@ -2241,6 +2223,7 @@ FIELD_SERVICES = {
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
     """`Muuda teemat` — the whole record, edited once.
@@ -2262,11 +2245,6 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
     returns early when the value it was given is the value already there.
     """
     matter = get_visible_matter(request, pk)
-    if not may_write_business_content(request.user):
-        # 404, matching `get_visible_matter`: a reader who may not write should
-        # not learn that an edit surface exists for this Matter.
-        raise Http404("Teemat saab muuta ainult sisu muutmise õigusega.")
-
     if request.method == "GET":
         form = MatterEditForm(initial=edit_initial(matter), matter=matter, viewer=request.user)
         return render(request, "matters/matter_edit.html", _edit_context(request, matter, form))
@@ -2497,6 +2475,7 @@ def set_data_class(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
     """`position_summary` and `rationale_summary`, with **no native UI.**
@@ -2522,9 +2501,6 @@ def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
     correction would not have been.
     """
     matter = get_visible_matter(request, pk)
-    if not may_write_business_content(request.user):
-        raise Http404("Seisukohta saab muuta ainult sisu muutmise õigusega.")
-
     form = PositionForm(request.POST)
     if form.is_valid():
         set_position(
@@ -2538,6 +2514,7 @@ def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def update_summary(request: HttpRequest, pk: Any) -> HttpResponse:
     """`Lühikokkuvõte`, edited in place under the meta line.
@@ -2547,9 +2524,6 @@ def update_summary(request: HttpRequest, pk: Any) -> HttpResponse:
     its own audit event, and it re-renders the header band it sits in.
     """
     matter = get_visible_matter(request, pk)
-    if not may_write_business_content(request.user):
-        raise Http404("Lühikokkuvõtet saab muuta ainult sisu muutmise õigusega.")
-
     form = BriefSummaryForm(request.POST)
     if not form.is_valid():
         context = _header_context(request, matter)
@@ -2591,13 +2565,11 @@ def save_note(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def add_working_document(request: HttpRequest, pk: Any) -> HttpResponse:
     """Reference a living SharePoint file from the Dokumendid tab."""
     matter = get_visible_matter(request, pk)
-    if not may_write_business_content(request.user):
-        raise Http404("Töödokumenti saab lisada ainult sisu muutmise õigusega.")
-
     form = WorkingDocumentForm(request.POST)
     if form.is_valid():
         try:
@@ -2617,12 +2589,10 @@ def add_working_document(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["POST"])
 def close(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
-    if not may_write_business_content(request.user):
-        raise Http404("Teemat saab sulgeda ainult sisu muutmise õigusega.")
-
     form = CloseMatterForm(request.POST)
     if form.is_valid():
         try:
