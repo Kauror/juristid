@@ -154,7 +154,7 @@ def important_dates(request: HttpRequest) -> HttpResponse:
     )
     paginator = Paginator(rows, PAGE_SIZE)
     page = paginator.get_page(request.GET.get("leht"))
-    entries = selectors.hydrate_calendar(list(page.object_list), viewer)
+    entries = selectors.hydrate_calendar(list(page.object_list), viewer, today)
 
     base = {"suund": direction, "allikad": sources, "aasta": year}
     context = _shell(request, "tahtajad")

@@ -914,8 +914,33 @@ def area_rows(
     return active_rows, empty
 
 
+@dataclass(frozen=True)
+class AreaMatterLine:
+    """One Matter under an expanded area row, with lateness already decided.
+
+    The flag is computed here rather than compared in the template for the same
+    reason :class:`wi.WorkItem` carries its own ``today``: a template's ``today``
+    is whatever the view happened to put in the context, so the same question
+    asked from two pages could quietly get two answers.
+
+    This is the register's *Arvamuse tähtaeg* read plainly — the date is past.
+    It is deliberately not :func:`wi.outstanding_response_deadlines`, which also
+    asks whether a ``Järgmiseks`` has since superseded the date (docs/adr/0050);
+    that is a stronger rule and adopting it here would change what this rail
+    shows, which is a product decision rather than a cleanup.
+    """
+
+    matter: Any
+    deadline: date | None
+    is_overdue: bool
+
+
 def attach_area_matters(
-    user: Any, rows: list[AreaRow], limit: int = 1, pop: Populations | None = None
+    user: Any,
+    rows: list[AreaRow],
+    today: date,
+    limit: int = 1,
+    pop: Populations | None = None,
 ) -> None:
     """Load the compact Matter lines for the rows that open on arrival.
 
@@ -928,11 +953,18 @@ def attach_area_matters(
         object.__setattr__(
             row,
             "matters",
-            list(
-                people.open_matters.filter(policy_areas__key=row.key)
+            [
+                AreaMatterLine(
+                    matter=matter,
+                    deadline=matter.response_deadline,
+                    is_overdue=(
+                        matter.response_deadline is not None and matter.response_deadline < today
+                    ),
+                )
+                for matter in people.open_matters.filter(policy_areas__key=row.key)
                 .select_related("stage", "owner")
                 .order_by("response_deadline")[:AREA_MATTER_PREVIEW]
-            ),
+            ],
         )
 
 
@@ -1019,6 +1051,7 @@ def build_overview(
     today: date | None = None,
     sort: str = SORT_OPEN,
     show_empty_areas: bool = False,
+    items: list[wi.WorkItem] | None = None,
 ) -> Overview:
     """Assemble the Valdkonniti scope.
 
@@ -1036,13 +1069,15 @@ def build_overview(
     page = Overview(scope=scope_from(scope), today=today, sort=sort)
     people = Populations.for_user(user)
 
-    # One read of the shared work model, reused by the table and the rail.
-    items = wi.work_items(user, today=today)
+    # One read of the shared work model, reused by the table and the rail —
+    # the composing page's own read when it has one, since it is the same list
+    # for the same reader on the same day.
+    items = items if items is not None else wi.work_items(user, today=today)
 
     areas, empty = area_rows(
         user, today, items, sort=sort, include_empty=show_empty_areas, pop=people
     )
-    attach_area_matters(user, areas, pop=people)
+    attach_area_matters(user, areas, today, pop=people)
     page.areas = areas
     page.empty_areas = empty
     page.show_empty_areas = show_empty_areas

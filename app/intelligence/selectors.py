@@ -14,12 +14,13 @@ commencement moves it in both places at once (Stage-2G brief 47, 48).
 from __future__ import annotations
 
 import calendar
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 from uuid import UUID
 
 from django.db.models import CharField, Q, QuerySet, Value
+from django.utils import timezone
 
 from app.intelligence.enums import EffectiveDateKind, EventKind, WorkVictoryStatus
 from app.intelligence.models import (
@@ -295,11 +296,21 @@ def calendar_rows(
 
 @dataclass(frozen=True)
 class CalendarEntry:
-    """One rendered calendar line, and which table it came from."""
+    """One rendered calendar line, and which table it came from.
+
+    ``today`` is carried on the row for the same reason
+    :class:`app.matters.work_items.WorkItem` carries it: a Django template
+    cannot hand an argument to a property, so a row that had to be told what day
+    it is would end up being told twice, differently. Whether a date has passed
+    is therefore decided once, here, from the day the page was built — not by a
+    comparison written into the template against whatever ``today`` the view
+    happened to put in the context.
+    """
 
     event_kind: str
     important_date: MatterImportantDate | None = None
     effective_date: MatterEffectiveDate | None = None
+    today: date = field(default_factory=timezone.localdate)
 
     @property
     def record(self) -> MatterImportantDate | MatterEffectiveDate:
@@ -320,6 +331,22 @@ class CalendarEntry:
         return self.event_kind == EventKind.EFFECTIVE_DATE
 
     @property
+    def is_overdue(self) -> bool:
+        """A deadline that has passed. Never a commencement.
+
+        A commencement that has passed is not late — the act came into force,
+        which is the thing everybody was waiting for (02-EKRAANID §D).
+        """
+        end = self.record.period_end
+        return not self.is_effective_date and end is not None and end < self.today
+
+    @property
+    def has_taken_effect(self) -> bool:
+        """*Jõustus* rather than *Jõustub* — tense, not lateness."""
+        end = self.record.period_end
+        return self.is_effective_date and end is not None and end < self.today
+
+    @property
     def title(self) -> str:
         if self.important_date is not None:
             return self.important_date.title
@@ -331,7 +358,9 @@ class CalendarEntry:
         return period_label(self.record.date_value, self.record.date_precision)
 
 
-def hydrate_calendar(rows: list[dict[str, Any]], user: Any) -> list[CalendarEntry]:
+def hydrate_calendar(
+    rows: list[dict[str, Any]], user: Any, today: date | None = None
+) -> list[CalendarEntry]:
     """Turn a page of union rows back into records, in the union's order.
 
     Two queries rather than one per row, and both re-scoped: the union already
@@ -359,19 +388,28 @@ def hydrate_calendar(rows: list[dict[str, Any]], user: Any) -> list[CalendarEntr
         .select_related("matter", "matter__owner")
     }
 
+    day = today or timezone.localdate()
     entries: list[CalendarEntry] = []
     for row in rows:
         if row["event_kind"] == EventKind.IMPORTANT_DATE.value:
             record = important.get(row["id"])
             if record is not None:
                 entries.append(
-                    CalendarEntry(event_kind=EventKind.IMPORTANT_DATE.value, important_date=record)
+                    CalendarEntry(
+                        event_kind=EventKind.IMPORTANT_DATE.value,
+                        important_date=record,
+                        today=day,
+                    )
                 )
             continue
         found = effective.get(row["id"])
         if found is not None:
             entries.append(
-                CalendarEntry(event_kind=EventKind.EFFECTIVE_DATE.value, effective_date=found)
+                CalendarEntry(
+                    event_kind=EventKind.EFFECTIVE_DATE.value,
+                    effective_date=found,
+                    today=day,
+                )
             )
     return entries
 

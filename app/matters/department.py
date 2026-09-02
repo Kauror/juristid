@@ -156,7 +156,14 @@ def build_department(
     scope = ov.scope_from(scope)
     page = Department(scope=scope, today=today, is_head=is_head)
 
-    page.seis = dd.seis_figures(viewer, today)
+    # One read of the shared work model for the whole page, both scopes, read
+    # before the first consumer rather than by each of them. Every surface below
+    # wants the same list — this reader, this day, unnarrowed — and the ones
+    # that used to read it themselves went to the database five times for one
+    # answer while both modules' docstrings claimed they went once.
+    items = wi.work_items(viewer, today=today)
+
+    page.seis = dd.seis_figures(viewer, today, items=items)
 
     if scope == ov.SCOPE_AREAS:
         page.area_page = ov.build_overview(
@@ -165,6 +172,7 @@ def build_department(
             today=today,
             sort=sort,
             show_empty_areas=show_empty_areas,
+            items=items,
         )
         page.open_matters = page.area_page.open_matters
         # The same Aruandlus block the department scope prints, from the same
@@ -174,11 +182,6 @@ def build_department(
         return page
 
     people = ov.Populations.for_user(viewer)
-    # One read of the shared work model, reused by the intervention list and by
-    # the Matter count beside it. The alternative is the same query twice with
-    # two slightly different filters, which is how a heading stops agreeing with
-    # the list under it.
-    items = wi.work_items(viewer, today=today)
 
     # The population `Populations` already resolved, not a fifth
     # `visible_to`: `wi.open_matters` and `dashboard.active_matters` are the
@@ -216,7 +219,7 @@ def build_department(
         # Built only here. A specialist's request never reaches these two, so
         # the manager-only populations are not read at all rather than read and
         # withheld by a template condition (brief §4, §41).
-        page.team = dd.team_rows(viewer, today)
+        page.team = dd.team_rows(viewer, today, items=items)
         page.previous_week_label = dd.short_range(*dd.previous_week(today))
         period = dd.period_from(params, today)
         kind = dd.kind_from(params)

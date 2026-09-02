@@ -104,7 +104,9 @@ def reconciliation_pending(context: ReportingContext) -> MetricResult:
         spec,
         context=context,
         value=pending.count(),
-        population_count=visible_candidates(context).count(),
+        population_count=context.shared(
+            "quality.visible_candidates", lambda: visible_candidates(context).count()
+        ),
         url=_review_url(context, olek=CandidateState.PENDING.value),
     )
 
@@ -118,7 +120,9 @@ def reconciliation_conflict(context: ReportingContext) -> MetricResult:
         spec,
         context=context,
         value=conflicts.count(),
-        population_count=visible_candidates(context).count(),
+        population_count=context.shared(
+            "quality.visible_candidates", lambda: visible_candidates(context).count()
+        ),
         url=_review_url(
             context, olek=CandidateState.PENDING.value, klass=CandidateClass.CONFLICT.value
         ),
@@ -161,7 +165,9 @@ def unlinked_substantive_pages(context: ReportingContext) -> MetricResult:
         spec,
         context=context,
         value=unlinked.count(),
-        population_count=visible_candidates(context).count(),
+        population_count=context.shared(
+            "quality.visible_candidates", lambda: visible_candidates(context).count()
+        ),
         url=_review_url(
             context, olek=CandidateState.PENDING.value, klass=CandidateClass.UNLINKED_PAGE.value
         ),
@@ -380,7 +386,8 @@ def queues(context: ReportingContext) -> list[QualityQueue]:
 def data_quality_attention(context: ReportingContext) -> MetricResult:
     """How many rows are waiting for a person, coverage notes excluded."""
     spec = definition(keys.DATA_QUALITY_ATTENTION)
-    actionable = [row for row in queues(context) if not row.is_coverage_note]
+    rows = context.shared("quality.queues", lambda: queues(context))
+    actionable = [row for row in rows if not row.is_coverage_note]
     return simple_result(
         spec,
         context=context,

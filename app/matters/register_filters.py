@@ -236,6 +236,7 @@ def filter_by_work_state(
     today: date | None = None,
     window_start_raw: str = "",
     window_end_raw: str = "",
+    shared_items: list[Any] | None = None,
 ) -> QuerySet[Matter]:
     """Apply `?too=`, through the read model Ülevaade counted with.
 
@@ -246,6 +247,16 @@ def filter_by_work_state(
     An unrecognised value empties the list rather than being ignored, for the
     reason every other filter in this module does: a chip above the whole
     register is a lie the reader has no way to catch.
+
+    ``shared_items`` is the **unnarrowed** ``work_items(user, today=today)`` for
+    this same reader and this same day, offered by a page that has already read
+    it. It is deliberately not called ``items``: the local ``items`` below is
+    the list *after* ``?too_vastutaja=`` narrowing, and the two must never be
+    confused — passing the shared list where the narrowed one belongs would
+    return every colleague's work under one person's name. When narrowing
+    applies the shared list is only the *source* it is filtered from; when it
+    does not, it is passed straight through. Omitting it reads the same model
+    with the same authorization, so every other caller is unaffected.
     """
     from app.matters import work_items as wi
 
@@ -261,9 +272,10 @@ def filter_by_work_state(
                 responsible = uuid.UUID(responsible_raw)
             except ValueError:
                 return queryset.none()
+        source = shared_items if shared_items is not None else wi.work_items(user, today=today)
         items = [
             item
-            for item in wi.work_items(user, today=today)
+            for item in source
             if (item.responsible.pk if item.responsible is not None else None) == responsible
         ]
     # An unreadable window empties the list rather than being ignored, for the
@@ -278,7 +290,14 @@ def filter_by_work_state(
         window = (start or (today or timezone.localdate()), end)
 
     ids = wi.work_population_ids(
-        user, value, today=today, items=items, responsible=responsible, window=window
+        user,
+        value,
+        today=today,
+        # The narrowed list when `?too_vastutaja=` applied, the shared read
+        # otherwise. Never the shared read when narrowing applied.
+        items=items if items is not None else shared_items,
+        responsible=responsible,
+        window=window,
     )
     return queryset.filter(pk__in=ids)
 
@@ -289,6 +308,7 @@ def apply_register_filters(
     params: Any,
     *,
     today: date | None = None,
+    shared_items: list[Any] | None = None,
 ) -> tuple[QuerySet[Matter], dict[str, str]]:
     """Narrow an already-authorized register queryset by every `?` parameter.
 
@@ -296,6 +316,9 @@ def apply_register_filters(
     (`?q=`) is applied by the view *before* this, so that everything here
     narrows an already-searched population and the count beside the search box
     is the count of the list under it.
+
+    ``shared_items`` is forwarded untouched to :func:`filter_by_work_state`,
+    which documents what it must be. It is read only when `?too=` is present.
     """
     status = params.get("olek", "avatud")
     if status == "avatud":
@@ -380,6 +403,7 @@ def apply_register_filters(
             today,
             (params.get(WORK_WINDOW_START_PARAM) or "").strip(),
             (params.get(WORK_WINDOW_END_PARAM) or "").strip(),
+            shared_items=shared_items,
         )
     for parameter, (field, many) in ORGANISATION_FILTERS.items():
         raw = params.get(parameter)
@@ -442,6 +466,7 @@ def register_population(
     *,
     today: date | None = None,
     population: QuerySet[Matter] | None = None,
+    shared_items: list[Any] | None = None,
 ) -> QuerySet[Matter]:
     """The exact rows ``matters:matter_list?<params>`` would page through.
 
@@ -461,9 +486,15 @@ def register_population(
     lookups. It must be ``Matter.objects.visible_to(user)`` or a narrowing of
     it; anything wider would be this function counting rows the reader may not
     see (app/core/authorization.py).
+
+    ``shared_items`` is the same offer one level down: a page that has already
+    read the work model hands it over rather than making every `?too=` figure
+    read it again. :func:`filter_by_work_state` documents what it must be.
     """
     base = Matter.objects.visible_to(user) if population is None else population
-    queryset, _ = apply_register_filters(base, user, as_text(params), today=today)
+    queryset, _ = apply_register_filters(
+        base, user, as_text(params), today=today, shared_items=shared_items
+    )
     return queryset.distinct()
 
 
