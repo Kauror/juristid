@@ -351,11 +351,21 @@ def test_the_landing_page_answers_its_questions_in_order(page, base_url, screens
         "teemad menetlusliigi järgi",
     ]
 
-    # Every figure on the strip is a link, and so is every row of the rail.
-    assert (
-        page.locator(".seis .seis__figure[href]").count()
-        == page.locator(".seis .seis__figure").count()
-    )
+    # A figure either opens the rows it counted or offers nothing at all. It
+    # never offers an empty destination: `[href]` matches href="" too, so the
+    # equality this test used to assert was satisfied by the very defect it was
+    # written to catch — /statistika/ was serving `<a href="">` for «teemat kõik
+    # aastad», which is measured on the arrival date and so cannot open the
+    # register's reporting-year list (app/reporting/selectors/activity.py,
+    # `new_native_full_matters`). Asserted on the value now, not on the
+    # attribute's presence.
+    links = page.locator(".seis .seis__figure[href]")
+    assert links.count() >= 1
+    for index in range(links.count()):
+        assert links.nth(index).get_attribute("href"), (
+            "a figure links to nowhere; a linkless figure is a <span>"
+        )
+    assert page.locator('.seis .seis__figure[href=""]').count() == 0
     screenshots(page, "statistika-ulevaade-2")
 
 

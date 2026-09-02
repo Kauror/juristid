@@ -37,16 +37,7 @@ are the two places it is visible at all, which is why the strip leads with it
     dropped: «0 vastutajata teemat» is a warning about nothing
     (01-EHITUSJUHIS §3.7).
   {% endcomment %}
-  <div class="seis seis--compact">
-    {% for figure in seis %}
-      {% if figure.value %}
-        <a class="seis__figure" href="{{ figure.url }}">
-          <span class="seis__number{% if figure.tone %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
-          <span class="seis__caption">{{ figure.caption }}</span>
-        </a>
-      {% endif %}
-    {% endfor %}
-  </div>
+  {% include "components/seis.html" with figures=seis compact=1 %}
 
   <section aria-labelledby="maaramata-heading">
     <h2 class="sectionlabel" id="maaramata-heading">

@@ -1,0 +1,21 @@
+{% comment %}
+Osakond's sort control, the last child of the Seis strip rather than a control
+above the table: `seis__spacer` pushes it to the right end of the row the
+figures are already on, and a picker on its own line would be a second band.
+Rendered by components/seis.html through its `trailing` parameter.
+
+`page` and `sort_options` reach it through inherited context, as they did when
+this markup sat inline.
+{% endcomment %}
+  {% if page.is_areas %}
+    <span class="seis__spacer"></span>
+    <details class="rangepicker">
+      <summary class="rangepicker__trigger">Järjesta: {% for key, label in sort_options %}{% if key == page.area_page.sort %}{{ label }}{% endif %}{% endfor %} ▾</summary>
+      <div class="rangepicker__menu">
+        {% for key, label in sort_options %}
+          <a class="rangepicker__item{% if key == page.area_page.sort %} is-active{% endif %}"
+             href="?vaade=valdkonniti&amp;jarjesta={{ key }}">{{ label }}</a>
+        {% endfor %}
+      </div>
+    </details>
+  {% endif %}

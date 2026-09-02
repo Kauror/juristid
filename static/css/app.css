@@ -383,13 +383,6 @@
   font-size: var(--typography-size-chip-sm);
 }
 
-.avatar--composer {
-  width: 26px;
-  height: 26px;
-  border-color: var(--border-control);
-  font-size: var(--typography-size-chip-sm);
-}
-
 /* ---- the bounded workspace ------------------------------------------
  *
  * The one place the application decides how wide work may get. Every page
@@ -473,12 +466,6 @@
   color: var(--text-muted);
 }
 
-.pagehead__summary {
-  margin-left: auto;
-  font-size: var(--typography-size-sm);
-  color: var(--text-secondary);
-}
-
 /* Outside `.app__main` — it is a band, not page content — so it repeats the
    workspace bound and the gutter rather than inheriting them. Without the
    gutter it was flush against the viewport edge below 1440 while the page
@@ -546,18 +533,7 @@
    the label rather than floating above the table it belongs to. `wrap`,
    because five period links and a heading do not fit a narrow column and a
    segmented control that overflows is one nobody can reach the end of. */
-.sectionhead {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--spacing-3);
-  flex-wrap: wrap;
-  padding-right: var(--spacing-3);
-}
 
-.sectionhead .sectionlabel {
-  padding-right: 0;
-}
 
 /* "kuvatud 50" beside a larger total. Quieter than the count itself, because
    it qualifies the number rather than competing with it. */
@@ -568,37 +544,17 @@
   text-transform: none;
 }
 
-.sectionlabel--today {
-  color: var(--status-warning);
-}
-
-.sectionlabel--overdue {
-  color: var(--status-danger);
-}
-
-.sectionlabel--later,
-.sectionlabel--undated {
-  color: var(--text-muted);
-}
-
 /* The band that holds both a missed deadline and a review that has come round.
    Deliberately *not* danger: the band contains both, and colouring the heading
    red would say every row in it is late. The rows say which is which
    (master specification 18.8). */
-.sectionlabel--passed {
-  color: var(--status-warning);
-}
+
 
 .card {
   background: var(--surface-raised);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
   overflow: hidden;
-}
-
-.card--quiet {
-  background: var(--surface-panel);
-  border-color: var(--border-subtle);
 }
 
 /* A card that holds a form: the padding belongs to the variant rather than to
@@ -638,12 +594,6 @@ p.formnote {
   color: var(--text-muted);
   max-width: 76ch;
   margin: var(--spacing-4) 0 0;
-}
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-45);
 }
 
 .reference {
@@ -696,14 +646,6 @@ p.formnote {
   font-weight: var(--typography-weight-bold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-.flag--overdue {
-  color: var(--status-danger);
-}
-
-.flag--review {
-  color: var(--status-warning);
 }
 
 /* ====================================================================
@@ -821,198 +763,37 @@ p.formnote {
  * Minu töö — work rows
  * ==================================================================== */
 
-.worklayout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 396px;
-  gap: var(--spacing-6);
-  align-items: start;
-}
-
-.workcolumn {
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  min-width: 0;
-}
-
-.workgroup {
-  display: flex;
-  flex-direction: column;
-}
-
-.workrow {
-  display: grid;
-  grid-template-columns: 66px minmax(0, 1fr) auto 28px;
-  gap: var(--spacing-35);
-  align-items: center;
-  padding: 9px var(--spacing-35);
-  border-bottom: 1px solid var(--border-subtle);
-  text-decoration: none;
-  color: inherit;
-}
-
-.workrow:last-child {
-  border-bottom: none;
-}
-
-.workrow:hover {
-  background: var(--surface-hover);
-}
-
-.workrow:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: calc(var(--focus-ring-offset-width) * -1);
-}
 
 /* Overdue carries a danger left edge as well as a danger date and the word. */
-.workrow--overdue {
-  border-left: 2px solid var(--status-danger);
-}
+
 
 /* A passed review date is warning, never danger. The list is one list now, so
    this distinction is the whole guard against a ministry that has not replied
    reading as something somebody is late with (master specification 18.8). */
-.workrow--review {
-  border-left: 2px solid var(--status-warning);
-}
 
-.workrow__datecell {
-  min-width: 0;
-}
-
-.workrow__date {
-  font-size: var(--typography-size-base);
-  font-weight: var(--typography-weight-semibold);
-  font-variant-numeric: tabular-nums;
-}
-
-.workrow__date--today {
-  color: var(--status-warning);
-  font-weight: var(--typography-weight-bold);
-}
-
-.workrow__date--overdue {
-  color: var(--status-danger);
-  font-weight: var(--typography-weight-bold);
-}
-
-.workrow__date--review {
-  color: var(--status-warning);
-  font-weight: var(--typography-weight-bold);
-}
 
 /* The date and the mode chip on one line, so the chip reads as qualifying the
    date rather than as a second fact beside it. `flex-wrap` because a 66px
    column and a three-letter chip do not always fit on one line at 1024. */
-.workrow__dateline {
-  display: flex;
-  align-items: baseline;
-  gap: var(--spacing-1);
-  flex-wrap: wrap;
-}
+
 
 /* The flag and the stage badge share the row's third column, so adding a flag
    did not mean re-cutting a grid other surfaces share. */
-.workrow__marks {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  justify-content: flex-end;
-  min-width: 0;
-}
+
 
 /* `overflow: hidden` does nothing to an inline box, so these were declaring a
    truncation they could not perform: a long Estonian title ran straight under
    the stage chip beside it. They are the row's two lines, so they are blocks. */
-.workrow__action {
-  display: block;
-  font-size: var(--typography-size-row);
-  font-weight: var(--typography-weight-medium);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
-.workrow__matter {
-  display: block;
-  font-size: var(--typography-size-meta);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.workrow__body {
-  display: block;
-  min-width: 0;
-}
 
 /* "Later" is deliberately dimmer: it is real work, just not now. */
-.workgroup--later .workrow__action,
-.workgroup--undated .workrow__action {
-  font-size: var(--typography-size-base);
-  font-weight: var(--typography-weight-regular);
-  color: var(--text-body);
-}
 
-.workgroup--later .workrow__datecell,
-.workgroup--undated .workrow__datecell {
-  min-width: 0;
-}
 
 /* Scoped to the group. Unscoped, this rule sat after `.workrow__date--today`
    and `--overdue` at equal specificity and quietly won, so every date on Minu
    töö rendered in the same neutral colour and "täna" and "üle tähtaja" carried
    no colour signal at all. */
-.workgroup--later .workrow__date,
-.workgroup--undated .workrow__date {
-  font-weight: var(--typography-weight-medium);
-  color: var(--text-secondary);
-}
 
-.attentionrow {
-  padding: var(--spacing-25) var(--spacing-35);
-  border-bottom: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.attentionrow:last-child {
-  border-bottom: none;
-}
-
-.attentionrow__title {
-  font-size: var(--typography-size-base);
-  font-weight: var(--typography-weight-medium);
-  color: inherit;
-  text-decoration: none;
-}
-
-.attentionrow__title:hover {
-  text-decoration: underline;
-}
-
-.attentionrow__meta {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-25);
-  font-size: var(--typography-size-meta-sm);
-  color: var(--text-muted);
-}
-
-.attentionrow__cta {
-  margin-left: auto;
-  font-size: var(--typography-size-meta);
-  font-weight: var(--typography-weight-semibold);
-  color: var(--accent-link);
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.attentionrow__cta:hover {
-  color: var(--accent-hover);
-}
 
 /* ====================================================================
  * Register table
@@ -1481,25 +1262,6 @@ p.formnote {
   font-size: var(--typography-size-chip);
 }
 
-.metastrip {
-  display: flex;
-  gap: 28px;
-  flex-wrap: wrap;
-  padding: var(--spacing-05) 0 var(--spacing-15);
-  margin: 0;
-}
-
-.metafield {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-05);
-  margin: 0;
-  min-width: 0;
-  /* The anchor for the field's own edit control, which opens over the page
-     rather than growing the band. */
-  position: relative;
-}
-
 .metafield__missing {
   color: var(--status-warning);
 }
@@ -1507,29 +1269,7 @@ p.formnote {
 /* A fact whose value is a date. Tabular figures so the two date fields line up
    with each other, and a hook the screenshot suite masks: these are the only
    values in the band that change with the calendar. */
-.metafield--date .metafield__value {
-  font-variant-numeric: tabular-nums;
-}
 
-.metafield__label {
-  font-size: 10.5px;
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-chip);
-  color: var(--text-muted);
-  text-transform: uppercase;
-}
-
-.metafield__value {
-  font-size: var(--typography-size-base);
-  font-weight: var(--typography-weight-medium);
-  margin: 0;
-}
-
-.metafield__value--deadline {
-  color: var(--status-warning);
-  font-weight: var(--typography-weight-semibold);
-  font-variant-numeric: tabular-nums;
-}
 
 /* Inline edit affordance: a dashed underline, strengthening on hover, over a
    disclosure that opens the real control above the page. A <details> rather
@@ -1570,12 +1310,7 @@ p.formnote {
  * the caret keeps its width. The reader gets an ellipsis, which says
  * "there is more", and a caret, which says where to find it (Agent-E brief 33).
  */
-.inlineedit__value {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
+
 
 .inlineedit__trigger::-webkit-details-marker {
   display: none;
@@ -1593,10 +1328,7 @@ p.formnote {
 
 /* The rightmost facts open leftwards, so a popover under the last field in the
    strip cannot hang off a 1024px screen. */
-.metastrip .metafield:nth-last-child(-n + 2) .inlineedit__form {
-  left: auto;
-  right: 0;
-}
+
 
 .inlineedit__caret {
   color: var(--text-muted);
@@ -1670,21 +1402,6 @@ p.formnote {
 .tabs__count {
   color: var(--text-muted);
   font-weight: var(--typography-weight-medium);
-}
-
-.matterlayout {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 336px;
-  gap: 28px;
-  align-items: start;
-  padding-top: var(--spacing-5);
-}
-
-.mattermain {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-4);
-  min-width: 0;
 }
 
 .rail {
@@ -1776,51 +1493,6 @@ p.formnote {
  * Järgmiseks card
  * ==================================================================== */
 
-.nextaction {
-  background: var(--surface-raised);
-  border: 1px solid var(--border-default);
-  border-left: 3px solid var(--accent-primary);
-  border-radius: var(--radius-card);
-  padding: var(--spacing-35) 18px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-}
-
-.nextaction--overdue {
-  border-left-color: var(--status-danger);
-}
-
-.nextaction--empty {
-  border-left-color: var(--border-strong);
-}
-
-.nextaction__head {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-25);
-  flex-wrap: wrap;
-}
-
-.card > .nextaction__label {
-  display: block;
-  margin-bottom: var(--spacing-3);
-}
-
-.nextaction__label {
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  color: var(--text-secondary);
-  margin: 0;
-  text-transform: uppercase;
-}
-
-.nextaction__responsible {
-  margin-left: auto;
-  font-size: var(--typography-size-meta);
-  color: var(--text-secondary);
-}
 
 .nextaction__text {
   font-size: var(--typography-size-lg);
@@ -1828,13 +1500,6 @@ p.formnote {
   line-height: var(--typography-line-normal);
   margin: 0;
   max-width: 72ch;
-}
-
-.nextaction__actions {
-  display: flex;
-  gap: var(--spacing-25);
-  align-items: center;
-  flex-wrap: wrap;
 }
 
 .nextaction__note {
@@ -1884,12 +1549,6 @@ p.formnote {
 .composer:focus-within {
   border-color: var(--accent-border);
   box-shadow: 0 0 0 3px var(--accent-halo);
-}
-
-.composer__top {
-  padding: var(--spacing-3) var(--spacing-4) var(--spacing-1);
-  display: flex;
-  gap: var(--spacing-3);
 }
 
 /* Collapsed, the composer is one line. It grows when somebody reaches for it,
@@ -1983,41 +1642,9 @@ p.formnote {
   gap: var(--spacing-1);
 }
 
-.timeline__head {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  padding: var(--spacing-1) var(--spacing-05);
-}
-
-.timeline__label {
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-label);
-  color: var(--text-muted);
-  margin: 0;
-  text-transform: uppercase;
-}
-
 /* Authored entries are cards; system events are one-liners. The difference is
    the point: a person wrote one and the system recorded the other. */
-.entrycard {
-  background: var(--surface-raised);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-card);
-  padding: var(--spacing-3) var(--spacing-4);
-  display: flex;
-  gap: var(--spacing-3);
-  margin: var(--spacing-1) 0;
-}
 
-.entrycard__body {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-15);
-}
 
 .entrycard__meta {
   display: flex;
@@ -2027,11 +1654,6 @@ p.formnote {
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
   margin: 0;
-}
-
-.entrycard__author {
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-secondary);
 }
 
 .systemevent {
@@ -2650,10 +2272,6 @@ fieldset.field > legend {
     grid-template-columns: minmax(0, 1fr) 340px;
   }
 
-  .matterlayout {
-    grid-template-columns: minmax(0, 1fr) 300px;
-  }
-
   .searchfield {
     flex-basis: 240px;
   }
@@ -2754,72 +2372,10 @@ fieldset.field > legend {
    dashboard is another dense reading surface, not a separate visual language.
    --------------------------------------------------------------------------- */
 
-.cardrow {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--spacing-3);
-  margin-bottom: var(--spacing-5);
-}
-
-.statcard {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-  padding: var(--spacing-4);
-  background: var(--surface-raised);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  color: var(--text-primary);
-  text-decoration: none;
-}
-
-.statcard:hover {
-  background: var(--surface-hover);
-  border-color: var(--border-strong);
-}
-
-.statcard__value {
-  font-size: var(--typography-size-page-title);
-  font-weight: var(--typography-weight-bold);
-  line-height: var(--typography-line-tight);
-  font-variant-numeric: tabular-nums;
-}
-
-.statcard__label {
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-semibold);
-  letter-spacing: var(--typography-tracking-label);
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.statcard__note {
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-}
 
 /* Only a real overdue count turns red. A count of things merely due for review
    must never borrow this treatment, or the colour stops meaning anything. */
-.statcard--alert .statcard__value {
-  color: var(--status-danger);
-}
 
-.dashgrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  gap: var(--spacing-5);
-  align-items: start;
-}
-
-.dashgrid__main {
-  min-width: 0;
-}
-
-.dashgrid__rail {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-4);
-}
 
 .countrow {
   display: flex;
@@ -2850,12 +2406,6 @@ fieldset.field > legend {
   color: var(--text-secondary);
 }
 
-@media (max-width: 1100px) {
-  .dashgrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
 /* The organisation quick-create sits inside another form, so it is a block
    rather than a nested <form>: nesting forms is invalid HTML and submits the
    wrong one. */
@@ -2881,10 +2431,6 @@ fieldset.field > legend {
 
 .orgpicker__add {
   white-space: nowrap;
-}
-
-.incoming {
-  margin-bottom: var(--spacing-4);
 }
 
 .filelist {
@@ -2987,39 +2533,6 @@ fieldset.field > legend {
   border-left: 2px solid var(--status-success-border);
 }
 
-.fragments {
-  list-style: none;
-  margin: var(--spacing-3) 0 0;
-  padding: 0;
-  display: grid;
-  gap: var(--spacing-3);
-}
-
-.fragment {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--spacing-2);
-}
-
-.fragment__locator {
-  margin: 0 0 var(--spacing-15);
-  color: var(--text-muted);
-  font-size: var(--typography-size-label);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.fragment__text {
-  margin: 0;
-  font-size: var(--typography-size-row);
-  line-height: 1.55;
-  white-space: pre-wrap;
-}
-
-.badge--ocr {
-  color: var(--status-warning);
-  border-color: var(--status-warning-border);
-}
-
 .badge--source {
   color: var(--accent-link);
   border-color: var(--accent-border);
@@ -3045,26 +2558,6 @@ fieldset.field > legend {
   color: var(--accent-link);
   padding: 0 2px;
   border-radius: 2px;
-}
-
-.thumbnail {
-  margin: var(--spacing-3) 0 0;
-  max-width: 320px;
-}
-
-.thumbnail img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-sm);
-  background: var(--surface-panel);
-}
-
-.thumbnail figcaption {
-  margin-top: var(--spacing-15);
-  color: var(--text-muted);
-  font-size: var(--typography-size-label);
 }
 
 /* Anything a link can jump to has to clear the sticky chrome.
@@ -4193,16 +3686,12 @@ a.barchart__row:hover {
  * rail, where a visible native box beside a full-width label is the right
  * density and a 13px pill would not be.
  */
-
-.choicecards,
 .checkitems {
   display: flex;
   flex-wrap: wrap;
   gap: var(--spacing-2);
   margin-top: var(--spacing-15);
 }
-
-.choicecard,
 .checkitem {
   display: inline-flex;
   align-items: center;
@@ -4214,20 +3703,15 @@ a.barchart__row:hover {
   cursor: pointer;
   font-size: var(--typography-size-row);
 }
-
-.choicecard:hover,
 .checkitem:hover {
   border-color: var(--accent-border);
 }
-
-.choicecard:has(input:checked),
 .checkitem:has(input:checked) {
   border-color: var(--accent-border);
   background: var(--surface-raised);
 }
 
 /* Focus has to survive on the label, because the input is the small part. */
-.choicecard:has(input:focus-visible),
 .checkitem:has(input:focus-visible) {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
@@ -4237,7 +3721,6 @@ a.barchart__row:hover {
  * checkbox is what makes "several of these may be ticked" legible to a
  * keyboard and to a screen reader, and `accent-color` is enough to make it
  * belong to the palette without replacing it with a div. */
-.choicecard__input,
 .checkitem__input {
   accent-color: var(--accent-primary);
   flex: none;
@@ -4253,21 +3736,12 @@ a.barchart__row:hover {
   padding: 0;
 }
 
-.checkitems__other {
-  margin-top: var(--spacing-3);
-  max-width: 32rem;
-}
-
 /* Two or three short fields on one line, and one per line as soon as they stop
    fitting. `auto-fit` rather than a breakpoint: the rule is "when a field would
    be narrower than 16rem, stack", which is the actual constraint — a media
    query would have to guess it from a viewport width and would be wrong inside
    the narrow page column. */
-.fieldrow {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
-  gap: var(--spacing-3);
-}
+
 
 .field--narrow {
   max-width: 16rem;
@@ -4431,12 +3905,7 @@ a.barchart__row:hover {
 /* An empty fact section is one line, beside its own heading. Three of them
    stacked as boxes took a third of the first screen of a Matter to say that
    nothing had been recorded yet. */
-p.factsection__none {
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-  margin-right: auto;
-  padding-bottom: var(--spacing-2);
-}
+
 
 .factsection__head > .sectionlabel + .button {
   margin-left: auto;
@@ -4554,21 +4023,7 @@ p.factsection__none {
 
 /* The two event kinds in the combined calendar are never merged visually.
    A commencement is a legal fact; a watched milestone is somebody's plan. */
-.eventkind {
-  font-size: var(--typography-size-meta);
-  font-weight: var(--typography-weight-semibold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-control);
-  padding: 1px 6px;
-}
 
-.eventkind--commencement {
-  color: var(--accent-link);
-  border-color: var(--accent-border);
-}
 
 /* Candidate, confirmed and not-realized differ in weight and border, never in
    colour alone (the CVI rule Stage 1 established for DO/WAIT/MONITOR). */
@@ -4591,15 +4046,6 @@ p.factsection__none {
 .victorystate--not_realized {
   border-style: dotted;
   color: var(--text-muted);
-}
-
-.periodhead {
-  font-size: var(--typography-size-meta);
-  font-weight: var(--typography-weight-semibold);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-  margin: var(--spacing-4) 0 0;
 }
 
 .periodfilter {
@@ -5356,8 +4802,7 @@ p.factsection__none {
 /* The field that was refused, marked on the box as well as under it. Colour is
    never the only signal: the message below the field says what is wrong in
    words (Uus teema redesign §7). */
-.createform .field:has(.field__error) .field__input,
-.createform .field:has(.field__error) .dropzone__input {
+.createform .field:has(.field__error) .field__input{
   border-color: var(--status-danger-border);
   box-shadow: 0 0 0 3px var(--status-danger-halo);
 }
@@ -5398,11 +4843,6 @@ p.factsection__none {
 
 /* -- department work ------------------------------------------------------- */
 
-.lawyer__name {
-  font-size: var(--typography-size-row);
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-primary);
-}
 
 /* -- reconciliation queues ------------------------------------------------- */
 
@@ -5436,15 +4876,6 @@ p.factsection__none {
   max-width: 76ch;
 }
 
-.railcard__row--tags {
-  flex-wrap: wrap;
-  gap: var(--spacing-1);
-}
-
-.composer__error {
-  padding: 0 var(--spacing-4);
-}
-
 
 .filterbar--spaced {
   margin-bottom: var(--spacing-3);
@@ -5472,42 +4903,16 @@ p.factsection__none {
  * morning read is a read: one line per row, whatever the title's length.
  * ==================================================================== */
 
-.table--dash {
-  min-width: 52rem;
-  table-layout: fixed;
-}
-
-.table--dash .table__owner {
-  width: 140px;
-}
-
-.table--dash .table__stage {
-  width: 150px;
-}
 
 /* Why a Matter needs attention, in words. */
-.table--dash .table__reason {
-  width: 210px;
-}
 
-.table--dash .table__org {
-  width: 170px;
-}
 
 /* "Tähendus" carries the date-meaning label on its own where the column
    layout already separates it from the date. */
-.table--dash .table__meaning {
-  width: 150px;
-}
 
-.table--dash .table__date {
-  width: 180px;
-}
 
 /* A date column that carries only the number, no inline meaning label. */
-.table--dash .table__date--tight {
-  width: 120px;
-}
+
 
 /* -- responsibility rows ---------------------------------------------------
  *
@@ -5592,23 +4997,7 @@ p.factsection__none {
 /* The register's own sentence on a Matter that has no structured step: the
    context for setting one, labelled as Excel's, one clipped line. It reuses
    the register's source label so the provenance reads the same everywhere. */
-.attentionrow__source {
-  display: flex;
-  align-items: baseline;
-  gap: var(--spacing-15);
-  min-width: 0;
-}
 
-.attentionrow__sourcetext {
-  font-size: var(--typography-size-meta);
-  font-style: italic;
-  color: var(--text-muted);
-  min-width: 0;
-  flex: 0 1 auto;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 /* ====================================================================
  * The opinion archive
@@ -5977,35 +5366,7 @@ p.factsection__none {
  * Still a radio underneath. The card is styling on a real control, never a
  * clickable div — the selected state, the focus ring and the keyboard
  * behaviour all come from the input. */
-.choicecards--described {
-  align-items: stretch;
-}
 
-.choicecard--described {
-  align-items: flex-start;
-  /* Wide enough for a clause, capped so three cards sit on one row at desktop
-     width and wrap cleanly below it rather than stretching to fill. */
-  flex: 1 1 15rem;
-  max-width: 22rem;
-  padding: var(--spacing-3);
-}
-
-.choicecard__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-  min-width: 0;
-}
-
-.choicecard__hint {
-  font-size: var(--typography-size-meta);
-  line-height: var(--typography-line-normal);
-  color: var(--text-muted);
-}
-
-.choicecard:has(input:checked) .choicecard__hint {
-  color: var(--text-secondary);
-}
 
 /* ====================================================================
  * The Teema workspace
@@ -6310,15 +5671,6 @@ p.factsection__none {
   border-top-color: var(--status-warning-border);
 }
 
-.composer__closing-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  font-size: var(--typography-size-base);
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-primary);
-}
-
 .composer__group {
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
@@ -6601,14 +5953,6 @@ button.accordion__action:focus-visible {
   border-radius: var(--radius-chip);
   padding: 1px 6px;
   flex: none;
-}
-
-.entrycard__did {
-  color: var(--text-secondary);
-}
-
-.entrycard--facts {
-  background: var(--surface-panel);
 }
 
 /* -- the rail --------------------------------------------------------- */
@@ -6970,8 +6314,6 @@ button.accordion__action:focus-visible {
   .teema .matterhead,
   .uxnext,
   .teema .composer,
-  .positionblock,
-  .sentstrip,
   .historicalrow,
   .accordion__head,
   .accordion__body,
@@ -7374,27 +6716,8 @@ button.accordion__action:focus-visible {
   font-size: var(--typography-size-base);
   color: var(--text-muted);
 }
-
-.workhead__spacer,
 .ovhead__spacer {
   flex: 1;
-}
-
-.workhead__summary {
-  font-size: var(--typography-size-sm);
-  color: var(--text-secondary);
-}
-
-.workhead__figure {
-  font-weight: var(--typography-weight-semibold);
-}
-
-.workhead__figure--danger {
-  color: var(--status-danger);
-}
-
-.workhead__figure--warning {
-  color: var(--status-warning);
 }
 
 /* ---- Ülevaade scope tabs: links, never a client-side tab strip ------ */
@@ -7539,11 +6862,6 @@ button.accordion__action:focus-visible {
   color: var(--status-danger);
 }
 
-.workband__title--ulevaatamiseks_kups,
-.workband__title--tana {
-  color: var(--status-warning);
-}
-
 .workband__title--hiljem {
   color: var(--text-body);
 }
@@ -7567,8 +6885,6 @@ button.accordion__action:focus-visible {
   flex-direction: column;
   gap: 2px;
 }
-
-.workband__note,
 .ovnote {
   margin: 0;
   font-size: var(--typography-size-meta);
@@ -7957,8 +7273,7 @@ button.accordion__action:focus-visible {
   color: var(--status-warning);
 }
 
-.railblock__count,
-.railblock__hint {
+.railblock__count{
   font-weight: var(--typography-weight-regular);
   letter-spacing: normal;
   color: var(--text-muted);
@@ -8085,8 +7400,6 @@ button.accordion__action:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.loadrow,
 .railrow,
 .arearail {
   display: flex;
@@ -8097,14 +7410,10 @@ button.accordion__action:focus-visible {
   text-decoration: none;
   padding: 1px 0;
 }
-
-.loadrow:hover,
 .railrow:hover,
 .arearail:hover {
   color: var(--text-primary);
 }
-
-.loadrow__name,
 .railrow__key,
 .arearail__name {
   flex: 1;
@@ -8113,9 +7422,6 @@ button.accordion__action:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.loadrow__open,
-.loadrow__overdue,
 .railrow__value,
 .arearail__count {
   font-variant-numeric: tabular-nums;
@@ -8124,48 +7430,11 @@ button.accordion__action:focus-visible {
   text-align: right;
 }
 
-.loadrow__overdue {
-  color: var(--text-muted);
-}
-
-.loadrow__overdue--bad {
-  color: var(--status-danger);
-}
-
 /* Koormus rows carry two destinations — the person's open Matters and the late
  * work they are responsible for — so the row is a container of links rather
  * than one link. `__who` takes the flex space the name used to, which keeps the
  * two numbers on the right where they were. */
-.loadrow__who {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  flex: 1;
-  min-width: 0;
-  text-decoration: none;
-  color: inherit;
-}
 
-.loadrow__open,
-.loadrow__overdue {
-  text-decoration: none;
-  color: inherit;
-}
-
-a.loadrow__who:hover,
-a.loadrow__open:hover,
-a.loadrow__overdue:hover {
-  text-decoration: underline;
-}
-
-a.loadrow__overdue--bad {
-  color: var(--status-danger);
-}
-
-.loadrow--unassigned .loadrow__name,
-.loadrow--unassigned .loadrow__open {
-  color: var(--status-warning);
-}
 
 .railrow__value--warning {
   color: var(--status-warning);
@@ -8598,12 +7867,6 @@ a.loadrow__overdue--bad {
   font-size: var(--typography-size-matter-title);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: var(--typography-tracking-title);
-}
-
-.opinionblock__caption {
-  margin: 0;
-  font-size: var(--typography-size-base);
-  color: var(--text-muted);
 }
 
 /* Laid out like the register's own search row, so the two boxes on this page

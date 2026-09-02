@@ -124,9 +124,7 @@
 }
 
 /* The KAUGEMAL line carries no owner: it stands for several Matters. */
-.uxdl__row--far {
-  grid-template-columns: 60px minmax(0, 1fr);
-}
+
 
 /* The date cell is 60px, which is what an exact date needs — «R 28.08» — and
    the column is fixed so every title in the panel starts at the same place.
@@ -162,16 +160,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.uxdl__far {
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.uxdl__farlink {
-  color: var(--accent-link);
-  font-weight: 600;
 }
 
 .uxdl__empty {
@@ -744,24 +732,9 @@
   font-size: var(--typography-size-row);
 }
 
-.uxcomp__morebody {
-  margin-top: 8px;
-  padding: 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 6px;
-  background: var(--surface-base);
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
 /* The exact-date box, behind the «Kuupäev…» chip. A `<details>`, so the field
    is reachable and submittable with scripting switched off entirely. */
 .uxcomp__date {
-  position: relative;
-}
-
-.uxcomp__more {
   position: relative;
 }
 
@@ -794,20 +767,10 @@
   text-decoration: none;
 }
 
-.uxchip--mode {
-  font: 700 10px/1.6 var(--typography-font-sans);
-  letter-spacing: 0.06em;
-}
-
 .uxchip.is-selected {
   background: var(--accent-soft);
   color: var(--accent-link);
   border-color: var(--accent-border);
-}
-
-.uxchip--quiet {
-  color: var(--text-muted);
-  border-color: var(--border-subtle);
 }
 
 .uxchip--dashed {
@@ -837,56 +800,17 @@
 
 /* The form is a wrapper with no box of its own: the button inside it is what
    is positioned against the row. */
-.uxdone__form {
-  display: contents;
-}
 
-.uxdone {
-  position: absolute;
-  left: -11px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 1px solid var(--status-success);
-  background: var(--surface-base);
-  color: var(--status-success);
-  font: 700 12px/1 var(--typography-font-sans);
-  cursor: pointer;
-  padding: 0;
-  opacity: 0;
-  transition: opacity var(--motion-duration-fast) var(--motion-easing-standard);
-  z-index: 2;
-}
 
 /* Hover reveals it; focus reveals it too, so it is not a mouse-only control.
    The ⋯ menu beside the row still offers the same act in words. */
-.workrow2:hover .uxdone,
-.workrow2:focus-within .uxdone,
-.uxdone:focus-visible {
-  opacity: 1;
-}
+
 
 /* The selected row, when somebody is moving with J and K. A left bar as well
    as a tint: the selection must be visible to a reader who sees no colour. */
 .workrow2.is-selected {
   background: var(--surface-hover);
   box-shadow: inset 3px 0 0 0 var(--accent-primary);
-}
-
-.workrow2.is-selected .uxdone {
-  opacity: 1;
-}
-
-.uxkeys {
-  margin: 2px 0 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font: 400 11.5px/1.4 var(--typography-font-sans);
-  color: var(--text-muted);
-  flex-wrap: wrap;
 }
 
 /* ====================================================================
@@ -1227,13 +1151,6 @@ a.uxstat__row:hover {
   min-width: 0;
 }
 
-.uxdg__more {
-  margin: 4px 0 0;
-  padding: 0 10px;
-  font: 400 12.5px/1.4 var(--typography-font-sans);
-  color: var(--text-muted);
-}
-
 /* The period control, as one group in the section head. The head itself does
    not wrap — it is one line of title, spacer and meta on every other section —
    so the five chips wrap inside their own box instead of pushing the last of
@@ -1339,12 +1256,6 @@ a.uxstat__row:hover {
   .uxdg__text {
     grid-column: 2;
     grid-row: 1;
-  }
-
-  .uxdone {
-    /* Inside the row rather than hanging off its edge: at this width the row
-       has no gutter to hang into. */
-    left: 2px;
   }
 
   /* And below this the quote goes too. «Ajajoon · 14 kirjet · Ava ajajoon» is

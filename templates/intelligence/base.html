@@ -41,16 +41,7 @@ somebody can paste into a message.
     Zeros are dropped for the same reason they are dropped everywhere else.
   {% endcomment %}
   {% if seis %}
-    <div class="seis seis--compact">
-      {% for figure in seis %}
-        {% if figure.value %}
-          <a class="seis__figure" href="{{ figure.url }}">
-            <span class="seis__number{% if figure.tone %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
-            <span class="seis__caption">{{ figure.caption }}</span>
-          </a>
-        {% endif %}
-      {% endfor %}
-    </div>
+    {% include "components/seis.html" with figures=seis compact=1 %}
   {% endif %}
 
   <div class="filters">

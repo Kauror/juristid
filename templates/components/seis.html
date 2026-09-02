@@ -1,0 +1,58 @@
+{% comment %}
+The Seis strip: a row of numbers, each one the list it counted. Five surfaces
+render it and this is the only markup for it.
+
+**Zeros are dropped.** «0 üle tähtaja» is a warning about nothing, and a page
+that cries wolf every morning is a page people stop reading
+(01-EHITUSJUHIS §3.7). Osakond is the exception and says so at its call site:
+its six figures are the department's whole position, and a figure that
+disappeared at zero would read as a figure somebody removed
+(docs/adr/0049 §4).
+
+**A figure with no destination is a span.** `url` is empty for a figure the
+application cannot open exactly — an honest number beats a link to a different
+list (app/matters/department_dashboard.py, `SeisFigure`). Before this component
+only Osakond honoured it and the other four emitted `<a href="">`: a control
+that looks clickable, takes a tab stop and reloads the page. Statistika was
+serving one, because `MetricResult.drillthrough_url` defaults to empty and a
+catalogued metric without a drill-through lands here with no template edit at
+all.
+
+**The tone needs the value.** A tinted `0` is the same warning about nothing the
+zero rule refuses, and Osakond is the one surface that can render one. On the
+four that drop zeros the enclosing test already guarantees a value, so this is
+the stricter form of one rule rather than a second rule.
+
+`trailing` is the caller's own last child of the strip, *inside* the flex row —
+Osakond's sort control sits on this line, right of a `seis__spacer`, and a
+control lifted out of the row would be a different page. Django's `{% include %}`
+has no slot, so it is a template name, the same way
+`intelligence/partials/tracking_section.html` takes `row_template`.
+
+No emptiness guard here: four callers render this band's rule and padding
+whether or not a figure survives, and Osakond renders `trailing` inside it.
+Jälgimine is the one surface that drops the band, and it keeps its own
+`{% if seis %}` around the include.
+
+`figures` is duck-typed on `value`, `caption`, `url` and `tone`. Four different
+dataclasses feed this — two `SeisFigure`s and two `Figure`s — and only two of
+them carry `key`, which no template has ever read.
+{% endcomment %}
+<div class="seis{% if compact %} seis--compact{% endif %}">
+  {% for figure in figures %}
+    {% if show_zeros or figure.value %}
+      {% if figure.url %}
+        <a class="seis__figure" href="{{ figure.url }}">
+          <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
+          <span class="seis__caption">{{ figure.caption }}</span>
+        </a>
+      {% else %}
+        <span class="seis__figure">
+          <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
+          <span class="seis__caption">{{ figure.caption }}</span>
+        </span>
+      {% endif %}
+    {% endif %}
+  {% endfor %}
+  {% if trailing %}{% include trailing %}{% endif %}
+</div>

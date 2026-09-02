@@ -55,41 +55,13 @@ nothing to hide (app/matters/department.py).
     No «SEIS» label in front of it. The figures caption themselves, and a word
     that names the component rather than the content is a word a reader has to
     step over on every page it appears on (01-EHITUSJUHIS §4).
+
+    All six always, zeros included, which is this page's exception to the rule
+    the other four surfaces keep: these figures are the department's whole
+    position, and one that vanished at zero would read as a figure somebody
+    removed rather than a number that happens to be none (docs/adr/0049 §4).
   {% endcomment %}
-  <div class="seis">
-    {% for figure in page.seis %}
-      {% comment %}
-        A figure with no destination is a span. One of the six counts a window
-        the Arvamused workspace cannot express, and a link to a longer list
-        would be the disagreement the strip exists to prevent — so it states
-        the number and offers nothing (app/matters/department_dashboard.py,
-        `seis_figures`).
-      {% endcomment %}
-      {% if figure.url %}
-        <a class="seis__figure" href="{{ figure.url }}">
-          <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
-          <span class="seis__caption">{{ figure.caption }}</span>
-        </a>
-      {% else %}
-        <span class="seis__figure">
-          <span class="seis__number{% if figure.tone and figure.value %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
-          <span class="seis__caption">{{ figure.caption }}</span>
-        </span>
-      {% endif %}
-    {% endfor %}
-    {% if page.is_areas %}
-      <span class="seis__spacer"></span>
-      <details class="rangepicker">
-        <summary class="rangepicker__trigger">Järjesta: {% for key, label in sort_options %}{% if key == page.area_page.sort %}{{ label }}{% endif %}{% endfor %} ▾</summary>
-        <div class="rangepicker__menu">
-          {% for key, label in sort_options %}
-            <a class="rangepicker__item{% if key == page.area_page.sort %} is-active{% endif %}"
-               href="?vaade=valdkonniti&amp;jarjesta={{ key }}">{{ label }}</a>
-          {% endfor %}
-        </div>
-      </details>
-    {% endif %}
-  </div>
+  {% include "components/seis.html" with figures=page.seis show_zeros=1 trailing="matters/partials/department_seis_sort.html" %}
 
   <div class="ovbody">
     <div class="ovbody__main">

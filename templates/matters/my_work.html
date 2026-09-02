@@ -94,16 +94,7 @@ The rail holds only what has no honest place on a timeline.
     survives is a link, and the list behind it is the population it counted
     (01-EHITUSJUHIS §3.3, §3.7).
   {% endcomment %}
-  <div class="seis seis--compact">
-    {% for figure in work.seis %}
-      {% if figure.value %}
-        <a class="seis__figure" href="{{ figure.url }}">
-          <span class="seis__number{% if figure.tone %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
-          <span class="seis__caption">{{ figure.caption }}</span>
-        </a>
-      {% endif %}
-    {% endfor %}
-  </div>
+  {% include "components/seis.html" with figures=work.seis compact=1 %}
 
   <div class="worklayout2">
     <div class="worklayout2__main">
