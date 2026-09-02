@@ -20,9 +20,9 @@ from __future__ import annotations
 from django.db.models import Q, QuerySet
 from django.urls import reverse
 
-from app.accounts.enums import UserRole
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_visibility_q, matter_visibility_q, scope_for_user
+from app.legacy_import.opinion_access import may_use_opinion_queue
 from app.legacy_import.opinion_archive import (
     OpinionArchiveItem,
     OpinionMatchCandidate,
@@ -50,7 +50,11 @@ def visible_candidates(context: ReportingContext) -> QuerySet[OpinionMatchCandid
 
 
 def _queue_url(context: ReportingContext, **params: str) -> str:
-    if getattr(context.viewer, "role", None) != UserRole.ADMINISTRATOR:
+    # The link this builds *is* `legacy_import:opinion_queue`, so offer and
+    # serve are decided by one predicate. Offering a button that can only
+    # produce a 403 is the failure `archive_views` names at its own call to
+    # this (DUP-05).
+    if not may_use_opinion_queue(context.viewer):
         return ""
     base = reverse("legacy_import:opinion_queue")
     query = "&".join(f"{key}={value}" for key, value in params.items() if value)

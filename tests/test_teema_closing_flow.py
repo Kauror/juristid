@@ -723,7 +723,13 @@ def test_a_closure_on_an_invisible_matter_is_a_404(client, restricted_matter):
     An ADMINISTRATOR rather than a lawyer, because the department's
     confidentiality boundary is the application: both lawyer roles read
     RESTRICTED content by design, and technical administration is the role that
-    genuinely cannot (`ROLES_WITH_RESTRICTED_ACCESS`, docs/adr/0042)."""
+    genuinely cannot (`ROLES_WITH_RESTRICTED_ACCESS`, docs/adr/0042).
+
+    That same reasoning is why the 404 now arrives from the write gate instead:
+    an ADMINISTRATOR may not write either, and `@business_write_required` runs
+    before `get_visible_matter`. The refusal and the silence are both still
+    asserted here; what this route can no longer show is *which* rule produced
+    them. See `tests/test_one_write_gate.py`."""
     outsider = factories.AdministratorFactory()
     client.force_login(outsider)
 

@@ -29,14 +29,14 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
-from django.http import Http404, HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from app.core.authorization import may_review_work_victory, may_write_business_content
-from app.core.decorators import WRITE_REFUSED, gate_required, viewer_for
+from app.core.authorization import may_review_work_victory
+from app.core.decorators import business_write_required, gate_required, viewer_for
 from app.core.errors import DomainError
 from app.intelligence import filters, sections, selectors, services
 from app.intelligence.enums import WorkVictoryStatus
@@ -120,24 +120,6 @@ def _year_param(request: HttpRequest) -> int | None:
 
 def _matter_for(request: HttpRequest, matter_id: Any) -> Matter:
     return get_object_or_404(Matter.objects.visible_to(request.user), pk=matter_id)
-
-
-def _require_business_write(request: HttpRequest) -> None:
-    """The same refusal as every other business write, in the same words.
-
-    This module answered 403 while `app.matters.views` answered 404 for the
-    identical question. Both were secure; the pair was not. A 403 says "you
-    could do this with another role", which hands a description of the
-    application to the one caller who should learn nothing from it — and a
-    reader who met 403 here and 404 there could map the difference.
-
-    404 is the settled convention (`app.core.decorators.business_write_required`).
-    The *stricter* work-victory review below keeps its 403 on purpose: that
-    asks a different question of somebody who may already write and may already
-    see the record.
-    """
-    if not may_write_business_content(request.user):
-        raise Http404(WRITE_REFUSED)
 
 
 def _matter_anchor(matter: Matter, anchor: str) -> str:
@@ -496,10 +478,10 @@ def _render_form(
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def add_important_date(request: HttpRequest, matter_id: Any) -> HttpResponse:
     matter = _matter_for(request, matter_id)
-    _require_business_write(request)
     action = reverse("intelligence:add_important_date", kwargs={"matter_id": matter.pk})
 
     if request.method == "POST":
@@ -539,10 +521,10 @@ def add_important_date(request: HttpRequest, matter_id: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def edit_important_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpResponse:
     matter = _matter_for(request, matter_id)
-    _require_business_write(request)
     record = get_object_or_404(
         MatterImportantDate.objects.visible_to(request.user), pk=pk, matter=matter
     )
@@ -584,10 +566,10 @@ def edit_important_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpRe
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def cancel_important_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpResponse:
     matter = _matter_for(request, matter_id)
-    _require_business_write(request)
     record = get_object_or_404(
         MatterImportantDate.objects.visible_to(request.user), pk=pk, matter=matter
     )
@@ -634,10 +616,10 @@ def cancel_important_date(request: HttpRequest, matter_id: Any, pk: Any) -> Http
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def add_effective_date(request: HttpRequest, matter_id: Any) -> HttpResponse:
     matter = _matter_for(request, matter_id)
-    _require_business_write(request)
     action = reverse("intelligence:add_effective_date", kwargs={"matter_id": matter.pk})
 
     if request.method == "POST":
@@ -678,10 +660,10 @@ def add_effective_date(request: HttpRequest, matter_id: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def edit_effective_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpResponse:
     matter = _matter_for(request, matter_id)
-    _require_business_write(request)
     record = get_object_or_404(
         MatterEffectiveDate.objects.visible_to(request.user), pk=pk, matter=matter
     )
@@ -723,10 +705,10 @@ def edit_effective_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpRe
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def cancel_effective_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpResponse:
     matter = _matter_for(request, matter_id)
-    _require_business_write(request)
     record = get_object_or_404(
         MatterEffectiveDate.objects.visible_to(request.user), pk=pk, matter=matter
     )
@@ -770,6 +752,7 @@ def cancel_effective_date(request: HttpRequest, matter_id: Any, pk: Any) -> Http
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def add_work_victory(request: HttpRequest, matter_id: Any) -> HttpResponse:
     """A colleague writes down a work victory, and it is one.
@@ -784,7 +767,6 @@ def add_work_victory(request: HttpRequest, matter_id: Any) -> HttpResponse:
     imported candidate, which is a judgement about somebody else's proposal.
     """
     matter = _matter_for(request, matter_id)
-    _require_business_write(request)
     action = reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk})
 
     if request.method == "POST":
@@ -823,10 +805,10 @@ def add_work_victory(request: HttpRequest, matter_id: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
 @require_http_methods(["GET", "POST"])
 def edit_work_victory(request: HttpRequest, matter_id: Any, pk: Any) -> HttpResponse:
     matter = _matter_for(request, matter_id)
-    _require_business_write(request)
     record = get_object_or_404(
         MatterWorkVictory.objects.visible_to(request.user), pk=pk, matter=matter
     )
