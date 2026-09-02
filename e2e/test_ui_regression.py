@@ -714,7 +714,7 @@ def signed_in(page, base_url: str, path: str, width: int = 1440, height: int = 9
     return page
 
 
-def open_matter(page, base_url: str, title: str, tab: str = ""):
+def signed_in_matter(page, base_url: str, title: str, tab: str = ""):
     """Open a named Matter from the register.
 
     Named rather than "the first row": the register's default ordering put the
@@ -768,19 +768,19 @@ def test_register_with_the_narrowing_panel_open(page, base_url):
 
 
 def test_matter_overview(page, base_url):
-    open_matter(page, base_url, OPEN_TITLE)
+    signed_in_matter(page, base_url, OPEN_TITLE)
     compare("teema-ulevaade", capture(page, "teema-ulevaade"))
 
 
 def test_matter_header_only(page, base_url):
     """The band on its own: identity, state, facts and tabs, and how tall."""
-    open_matter(page, base_url, OPEN_TITLE)
+    signed_in_matter(page, base_url, OPEN_TITLE)
     compare("teema-pais", capture(page, "teema-pais", clip_to=".matterhead"))
 
 
 def test_matter_in_a_special_state(page, base_url):
     """Archive: an imported record whose known uncertainty is kept."""
-    open_matter(page, base_url, ARCHIVE_TITLE)
+    signed_in_matter(page, base_url, ARCHIVE_TITLE)
     compare("teema-arhiiv", capture(page, "teema-arhiiv"))
 
 
@@ -792,7 +792,7 @@ def test_matter_opinions(page, base_url):
     and the surface behind this link is where the formal Submission workflow
     lives (templates/matters/partials/opinion_rail.html).
     """
-    open_matter(page, base_url, OPEN_TITLE)
+    signed_in_matter(page, base_url, OPEN_TITLE)
     page.locator("#koja-arvamus .railcard__more").click()
     page.wait_for_load_state("networkidle")
     compare("teema-seisukoht", capture(page, "teema-seisukoht"))
@@ -805,7 +805,7 @@ def test_matter_composer_expanded(page, base_url):
     optional blocks, each of which is a form, and the question is whether the
     composer still reads as one surface when a lawyer has opened all of them.
     """
-    open_matter(page, base_url, OPEN_TITLE)
+    signed_in_matter(page, base_url, OPEN_TITLE)
     # The composer is a disclosure now, so the chips inside it are not clickable
     # until it is open (design handoff 1d).
     open_composer(page)
@@ -830,7 +830,7 @@ def test_matter_closed(page, base_url):
 
 def test_matter_at_1024(page, base_url):
     """The rail folds under the content and the reading order does not change."""
-    open_matter(page, base_url, OPEN_TITLE)
+    signed_in_matter(page, base_url, OPEN_TITLE)
     page.set_viewport_size({"width": 1024, "height": 900})
     page.wait_for_load_state("networkidle")
     compare("teema-1024", capture(page, "teema-1024"))
@@ -865,13 +865,13 @@ def test_kaasamine_collapsed_with_nothing_recorded(page, base_url):
     that also holds no engagement — the scratch Matter the interactive tests use
     is empty only until they run.
     """
-    open_matter(page, base_url, ARCHIVE_TITLE)
+    signed_in_matter(page, base_url, ARCHIVE_TITLE)
     compare("kaasamine-suletud", capture(page, "kaasamine-suletud", clip_to="#kaasamine"))
 
 
 def test_kaasamine_open_with_nothing_recorded(page, base_url):
     """One click, and what it opens onto is the form itself."""
-    open_matter(page, base_url, ARCHIVE_TITLE)
+    signed_in_matter(page, base_url, ARCHIVE_TITLE)
     _kaasamine(page).locator(".accordion__head").click()
     _at_rest(page)
     compare("kaasamine-tyhi", capture(page, "kaasamine-tyhi", clip_to="#kaasamine"))
@@ -879,7 +879,7 @@ def test_kaasamine_open_with_nothing_recorded(page, base_url):
 
 def test_kaasamine_open_with_a_record(page, base_url):
     """The records, and the composer waiting behind its own control."""
-    open_matter(page, base_url, OPEN_TITLE)
+    signed_in_matter(page, base_url, OPEN_TITLE)
     _kaasamine(page).locator(".accordion__head").click()
     _at_rest(page)
     compare("kaasamine-kirjed", capture(page, "kaasamine-kirjed", clip_to="#kaasamine"))
@@ -887,14 +887,14 @@ def test_kaasamine_open_with_a_record(page, base_url):
 
 def test_kaasamine_composer_open_over_a_record(page, base_url):
     """`+ Lisa` from collapsed: the section and the form in one action."""
-    open_matter(page, base_url, OPEN_TITLE)
+    signed_in_matter(page, base_url, OPEN_TITLE)
     _kaasamine(page).locator("[data-engagement-add-trigger]").click()
     _at_rest(page)
     compare("kaasamine-lisa", capture(page, "kaasamine-lisa", clip_to="#kaasamine"))
 
 
 def test_matter_documents(page, base_url):
-    open_matter(page, base_url, OPEN_TITLE, tab="Dokumendid")
+    signed_in_matter(page, base_url, OPEN_TITLE, tab="Dokumendid")
     compare("teema-dokumendid", capture(page, "teema-dokumendid"))
 
 

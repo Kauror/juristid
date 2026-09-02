@@ -38,7 +38,14 @@ def overflows(page) -> bool:
     )
 
 
-def open_matter(page, base_url: str, title: str) -> None:
+def open_matter_by_clicking(page, base_url: str, title: str) -> None:
+    """Deliberately not `conftest.open_matter`, which follows the href.
+
+    Named apart because the difference is behavioural, not stylistic: this
+    clicks, and the sticky table head can sit over the first row. The tests
+    below want the click path; anything that merely wants to be on the Matter
+    page should import the conftest helper instead.
+    """
     page.goto(f"{base_url}/teemad/?olek=koik&q={title.split()[0]}")
     page.wait_for_load_state("networkidle")
     page.get_by_role("link", name=title, exact=False).first.click()
@@ -54,7 +61,7 @@ def test_the_composer_opens_with_l_and_never_while_somebody_is_typing(page, base
     """`L` is a shortcut, not the only way in: the closed row is its own
     <summary> and opens on a click (design handoff 1d)."""
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url, OPEN_TITLE)
+    open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     composer = page.locator("details.uxcomp")
     expect(composer).to_have_count(1)
@@ -71,7 +78,7 @@ def test_the_composer_opens_with_l_and_never_while_somebody_is_typing(page, base
 
 def test_a_quick_date_fills_the_field_that_is_actually_submitted(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url, OPEN_TITLE)
+    open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     page.locator("summary.uxcomp__collapsed").click()
     chip = page.locator("[data-quickdate]").filter(has_text="+1 nädal").first
@@ -87,7 +94,7 @@ def test_a_quick_date_fills_the_field_that_is_actually_submitted(page, base_url)
 
 def test_the_composer_still_saves_with_ctrl_enter(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url, OPEN_TITLE)
+    open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     page.keyboard.press("l")
     page.locator("textarea.composer__body").fill("Sünteetiline kiirsissekanne klaviatuurilt.")
@@ -107,7 +114,7 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
     autumn" is a real answer.
     """
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url, OPEN_TITLE)
+    open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     page.locator("summary.uxcomp__collapsed").click()
 
@@ -136,7 +143,7 @@ def test_the_next_action_row_says_the_step_and_its_date_and_nothing_else(page, b
     """The date is a date. What it *means* is no longer a word beside it, and
     the three-category vocabulary is not on this surface at all (ADR 0052 §6)."""
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url, OPEN_TITLE)
+    open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     row = page.locator(".uxnext").first
     expect(row).to_be_visible()
@@ -149,7 +156,7 @@ def test_the_next_action_row_says_the_step_and_its_date_and_nothing_else(page, b
 
 def test_deferring_moves_the_date_and_says_which_day_it_lands_on(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url, OPEN_TITLE)
+    open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     defer = page.locator("details.uxnext__defer")
     if not defer.count():
@@ -165,7 +172,7 @@ def test_deferring_moves_the_date_and_says_which_day_it_lands_on(page, base_url)
 
 def test_the_defer_popover_closes_on_escape_and_returns_focus(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url, OPEN_TITLE)
+    open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     defer = page.locator("details.uxnext__defer")
     if not defer.count():
@@ -186,7 +193,7 @@ def test_the_defer_popover_closes_on_escape_and_returns_focus(page, base_url):
 
 def test_the_closed_timeline_carries_more_than_a_counter(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url, OPEN_TITLE)
+    open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     summary = page.locator(".accordion--timeline > summary")
     expect(summary).to_contain_text("kirjet")
@@ -195,7 +202,7 @@ def test_the_closed_timeline_carries_more_than_a_counter(page, base_url):
 
 def test_the_timeline_draws_one_spine(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url, OPEN_TITLE)
+    open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     # Open on arrival since the v2 rebuild (02-EKRAANID §C), so there is
     # nothing to click before the spine is on screen.
@@ -343,7 +350,7 @@ def test_no_page_scrolls_sideways_at_any_supported_width(page, base_url, width):
 def test_the_matter_workspace_holds_its_width(page, base_url, width):
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": width, "height": 900})
-    open_matter(page, base_url, OPEN_TITLE)
+    open_matter_by_clicking(page, base_url, OPEN_TITLE)
 
     assert not overflows(page), f"the Matter page overflows at {width}px"
     # The composer and the Järgmiseks row are both reachable and readable.

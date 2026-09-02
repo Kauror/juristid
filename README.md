@@ -9,82 +9,92 @@ Kaubandus-Tööstuskoda.
 > [Secure Pilot Gate](docs/secure-pilot-gate.md). Local development uses
 > synthetic data only.
 
-## Current stage
+## Where this is
 
-**Stage 0 — complete, merged.** Application skeleton, foundational schema, the
-central authorization boundary, the design-token foundation, the architecture
-decisions and the CI pipeline that keeps them honest.
+**Every numbered stage is merged.** Stage 0 laid the skeleton, the foundational
+schema, the central authorization boundary, the design-token foundation and the
+CI pipeline that keeps the decisions honest. Stage 1 built the core lawyer
+workflow. Stage 2 arrived in pieces, each in its own pull request:
 
-**Stage 1 — complete, merged.** The core lawyer workflow, and there is a real
-production UI: Minu asjad, Saabunud, Teemad, the Matter page,
-the unified Sissekanne composer, `Järgmiseks` next actions, Submissions with
-immutable final evidence, and global search — all in the Koda CVI dark-mode
-interface.
+| | |
+| --- | --- |
+| 2A | the legacy register import — per-era workbook contracts, offline inspection, dry run and apply, immutable provenance — and the rebuildable `SearchDocument` projection behind Estonian full-text search |
+| 2A.5 | the rehearsal's operational foundation, and the corrections a week of real browser use produced |
+| 2B | content extraction and everything that depends on it: `DocumentDerivative`, parsers for PDF, DOCX, XLSX, PPTX, TXT, CSV, EML, MSG and images, local OCR, a database-backed worker, email attachments captured as evidence, and search extended to entries, submissions and document contents |
+| 2D | the OneNote desktop archive as first-class history beside the register, and `AUTH_MODE` as the authentication seam |
+| 2E | a code-defined, versioned metric catalogue and the `Statistika` workspace, with coverage on every number and drill-through from every figure |
+| 2E.1 | the corrections real data made obvious once there was some |
+| 2F | the current portfolio and the department-head view |
+| 2G | structured Matter facts — important dates, entry into force, work victories |
+| 2H, 2H.1, 2H.2 | the historical opinions archive, its applied candidates, and making the whole corpus searchable evidence |
+| 2I | the historical cutover state, and what a closed archive row may claim |
 
-**Stage 2A — complete, merged.** The legacy register import (per-era workbook
-contracts, offline inspection, dry run and apply, immutable provenance) and the
-rebuildable `SearchDocument` projection behind Estonian full-text search.
+**Since then the work has been named by decision rather than by number**, because
+the stages had stopped describing it. The final register cutover replaced the
+year-only rule for current work with a reviewed snapshot; the approved v2 design
+was implemented over the application that already existed rather than beside it;
+`Ülevaade` and `Osakonna töö` became one `/osakond/`; `Arvamused` became a
+section of `Teemad`; the persona switcher, department-wide lawyer access and one
+HTTP write boundary settled who may read and write what; the test suite was
+sharded; and a remediation programme has been closing what a full-codebase
+review found.
 
-**Stage 2A.5 — complete, merged.** The rehearsal's operational foundation:
-`Ülevaade`, the ministries as public reference data, `Saabunud` as a multi-file
-intake surface, and the corrections a week of real browser use produced.
+**[`docs/adr/README.md`](docs/adr/README.md) is the record, not this section.**
+Fifty-seven decisions, each with its status, context, alternatives and
+consequences. A hand-maintained prose list of stages is a thing that goes stale
+between releases; the ADR index is written as part of the change it describes.
 
-**Stage 2B — complete, merged.** Content extraction and everything that depends on it:
-`DocumentDerivative` and locator-aware text fragments, parsers for PDF, DOCX,
-XLSX, PPTX, TXT, CSV, EML, MSG and images, local OCR for scanned pages, a
-database-backed extraction worker, email attachments captured as evidence with
-provenance back to the exact message, safe previews and thumbnails, and search
-extended to entries, submissions and document contents with child authorization
-evaluated live.
+**The phase is pre-QA, behind the shared gate.** Every ADR from 0040 onward
+records it that way, and it is what `AUTH_MODE=shared_gate` means on the
+real-data instance: one department password, then a persona, with Cloudflare
+Access — implemented, verified against the team's published keys, and not yet
+the mode in force — as the hardening step after it
+([ADR 0016](docs/adr/0016-authentication-modes-and-the-shared-gate.md)).
+[`docs/production-readiness.md`](docs/production-readiness.md) is the gate
+sequence for anything that changes production.
 
-**Stage 2D — in review.** Historical corpus integration: the OneNote desktop
-archive as first-class history beside the register. `LegacySourcePage` and its
-resources, a case-file rendering that keeps each file inside the narrative that
-introduces it, an operator queue for the matches a person still has to settle,
-and Cloudflare Access as the production authenticator. See
-[ADR 0015](docs/adr/0015-historical-corpus-integration.md).
-
-**Teema workspace redesign — implemented.** The approved Matter-page redesign:
-two tabs instead of three, a plain-language `Lühikokkuvõte`, an always-visible
-one-line `Järgmiseks`, one composer that records an entry, a file, the next
-step, a deadline, a consultation and a closure in one save — and one line in the
-chronology for it, with every underlying audit fact intact. The twenty-three
-reviewed `Valdkonnad` replace the nine public focus areas as the working
-vocabulary, without a single existing classification being remapped. See
-[ADR 0030](docs/adr/0030-teema-workspace-redesign.md).
-
-**Stage 2E — implemented on a feature branch, pending integration.** Statistics,
-reporting and data quality: a code-defined, versioned metric catalogue, a
-Statistika workspace of five tabs, coverage on every number, drill-through from
-every chart segment, CSV exports and a daily operational snapshot. Nothing here
-is deployed yet. See
-[ADR 0017](docs/adr/0017-statistics-and-the-metric-catalogue.md).
+**What the running build calls itself is a label, not a gate.**
+`APPLICATION_STAGE` defaults to `Stage 2I` in `config/settings.py` and is what
+the footer of every page, the signed-out landing and `/healthz` report. A
+deployment does not pin it: a stage copied into a `.env` is a stage that goes
+stale where nobody looks, which is why
+[`deploy/unraid-main/.env.example`](deploy/unraid-main/.env.example) deliberately
+omits it and a test keeps it omitted.
 
 **Synthetic rehearsal — deployed.** An instance on the Unraid host running
 invented data only, for the class of defect CI structurally cannot reach. See
 [`deploy/unraid-test/`](deploy/unraid-test/).
 
 **Real-data instance — deployed.** A separate stack with no host port at all,
-reachable only through a Cloudflare tunnel and only behind an authenticator: the
-shared gate today, Cloudflare Access as the next hardening step
-([ADR 0016](docs/adr/0016-authentication-modes-and-the-shared-gate.md)). How it
-is deployed is [`deploy/unraid-main/README.md`](deploy/unraid-main/README.md);
+reachable only through a Cloudflare tunnel and only behind an authenticator. How
+it is deployed is [`deploy/unraid-main/README.md`](deploy/unraid-main/README.md);
 how it is backed up and restored is
 [`deploy/unraid-main/RECOVERY.md`](deploy/unraid-main/RECOVERY.md) and
 [ADR 0022](docs/adr/0022-deployment-backup-and-recovery.md).
 
-**No real data in this repository.** The repository is public. Only code and
-generated synthetic fixtures enter Git: every fixture the tests read is built at
-test time from code you can read, so a checked-in file could only be a real one
-that arrived by accident.
+**No real data in this repository.** The repository is public. What enters Git
+is code, the synthetic fixtures the tests build from it at test time, the brand
+assets and web fonts the interface needs, and the browser suite's visual
+baselines — screenshots of a seeded synthetic world.
+`tests/test_repository_data_safety.py` fails if a workbook or a row-level import
+report is ever tracked, and every directory an operator is told to use for real
+material is ignored.
 
-**Deliberately unbuilt.** Stage 2C: Kaasamine and structured member responses.
-Later still: EIS and Riigikogu integration, advocacy outcomes and attribution,
-and anything involving embeddings, semantic search or AI summarisation. Each stage is authorized by its own written brief; nothing is
-built ahead of one.
+**Deliberately unbuilt.** `Kaasamine` exists and is deliberately small: which
+channel, what it was called, an optional link and an optional date. It is a
+pointer to outreach, not a campaign tool — no recipient list, no response store,
+no click tracking, no provider integration, because the Chamber already buys
+that product and a worse copy inside the case file would bury the one fact the
+file needs ([ADR 0027](docs/adr/0027-matter-engagement.md)). **Structured member
+responses are the part that is not built**, and that ADR is why. Later still:
+EIS and Riigikogu integration, advocacy outcomes and attribution, and anything
+involving embeddings, semantic search or AI summarisation. Each is authorized by
+its own written brief; nothing is built ahead of one.
 
 [`docs/open-decisions.md`](docs/open-decisions.md) lists what still belongs to
-named people rather than to the code.
+named people rather than to the code. `/haldus/arendus/` in the running
+application lists what the v2 design could not settle on its own
+(`app/core/development_status.py`).
 
 ## Authoritative specification
 
@@ -272,9 +282,12 @@ Promotion writes no snapshot and rewrites none. The next
 
 ## Search
 
-Search reads a rebuildable projection. Ordinary writes keep it current by
-themselves, inside the transaction that made them, so a matter, an entry, an
-opinion or a `Kaasamine` is findable the instant it is saved.
+It covers matters, entries, submissions, `Kaasamine`, the historical OneNote
+pages and the contents of documents. A search result says which of those it is
+and where inside it the match was — `lk 17`, `slaid 3`, `leht "Kulud"` — and
+clicking one opens that document rather than merely its matter. Each kind is its
+own row rather than text folded into the Matter's, because a child record may be
+more restricted than its Matter and a Matter row cannot express that.
 
 A rename is different. Renaming an organisation, editing its aliases, renaming a
 tag or a policy area changes the indexed text of every record naming them —
@@ -353,11 +366,12 @@ check, which is why it is never implied.
 
 ## Statistics
 
-`Statistika` is the fifth main-navigation item and five tabs: Üldpilt, Teemad,
-Koja tegevus, Ajalooline materjal and Andmekvaliteet. It answers what the corpus
-says about Koda's work, which is a different question from Ülevaade's "what
-needs attention now" — and keeping them apart is why it has its own destination
-rather than another panel on the dashboard.
+`Statistika` is its own destination — on the bar at generous widths and under
+«Veel» below that — and six tabs: Ülevaade, Teemad, Tegevus, Ajalugu,
+Andmekvaliteet and Definitsioonid. It answers what the corpus says about Koda's
+work, which is a different question from Osakond's "what needs attention now" —
+and keeping them apart is why it has a destination of its own rather than
+another panel on the department page.
 
 Three rules run through it, and they are the reason to trust a number on it.
 
@@ -398,8 +412,20 @@ See [ADR 0017](docs/adr/0017-statistics-and-the-metric-catalogue.md).
 
 ## Tests and checks
 
-Everything below is exactly what CI runs. The test suite needs a PostgreSQL 18
-database; set `POSTGRES_*` or `DATABASE_URL` first.
+Everything below is part of what CI runs, and it is the part that needs no
+browser. The test suite needs a PostgreSQL 18 database; set `POSTGRES_*` or
+`DATABASE_URL` first.
+
+**It is not the whole of what CI runs, and a green run here is not a green
+build.** `pyproject.toml` sets `testpaths = ["tests"]`, so a bare `pytest` does
+not touch `e2e/` at all — 32 browser files and 35 visual baselines. CI also
+shards the suite five ways and the browser suite six, and adds the jobs a single
+machine cannot usefully repeat: visual regression, the compose smoke test, the
+backup-and-restore rehearsal, migration safety, `check_era_contracts`,
+`check_search_capabilities`, `check_ocr_runtime`, `manage.py check --deploy`,
+shellcheck and `assert_shard_completeness.py`.
+[`docs/ci-architecture.md`](docs/ci-architecture.md) says what each one proves.
+CI remains the only full verifier.
 
 ```bash
 uv run ruff format --check .
@@ -516,12 +542,17 @@ scripts/                   development container entrypoint
 
 `static/css/tokens.css` holds the token architecture: primitives, semantic
 tokens, dark theme (the MVP theme) and a light theme block that proves a future
-light theme needs different values rather than different components.
+light theme needs different values rather than different components. `base.css`,
+`app.css` and `ux.css` are the layers over it, and they consume semantic tokens
+only.
 
-**Every colour value is provisional.** The official Koda CVI package has not
-been supplied, so the current values are contrast-oriented placeholders, not
-brand values. See [ADR 0009](docs/adr/0009-design-token-foundation.md). The
-running application shows them at `/disainisusteem/`.
+**The values are CVI-mapped, not placeholders.** Chamber blue `#009FDA` and the
+graphite-derived dark ramp come from the supplied Koda CVI usage, and the ramp is
+the one already validated for colour-blind legibility. The typeface is FF DIN Pro
+with Barlow as the approved visual fallback until the web licence lands. The
+architecture is unchanged from Stage 0
+([ADR 0009](docs/adr/0009-design-token-foundation.md)). The running application
+shows the whole set at `/disainisusteem/`.
 
 ## Secrets
 

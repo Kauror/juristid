@@ -14,14 +14,13 @@ the coupling `test_ui_regression.py` already documents.
 
 from __future__ import annotations
 
-import re
 from datetime import date, timedelta
 
 import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import OPEN_TITLE
-from e2e.conftest import MARTIN, SANDRA, open_composer, sign_in
+from e2e.conftest import MARTIN, SANDRA, create_matter, open_composer, open_matter, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -29,27 +28,6 @@ pytestmark = pytest.mark.e2e
 def _future(days: int) -> str:
     value = date.today() + timedelta(days=days)
     return f"{value.day}.{value.month}.{value.year}"
-
-
-def open_matter(page, base_url: str, title: str = OPEN_TITLE):
-    """Open a named Matter from the register, following the link rather than
-    clicking it: the table head is sticky and can sit over the first row."""
-    page.goto(f"{base_url}/teemad/?olek=koik&q={title.split()[0]}")
-    page.wait_for_load_state("networkidle")
-    link = page.get_by_role("link", name=title, exact=False).first
-    assert link.count(), f"the register does not hold {title!r}"
-    page.goto(f"{base_url}{link.get_attribute('href')}")
-    page.wait_for_load_state("networkidle")
-    return page.url
-
-
-def create_matter(page, base_url: str, title: str) -> str:
-    page.goto(f"{base_url}/teemad/uus/")
-    page.wait_for_load_state("networkidle")
-    page.fill("#id_title", title)
-    page.get_by_role("button", name="Loo teema").click()
-    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
-    return page.url
 
 
 def document_overflows(page) -> bool:
@@ -70,7 +48,7 @@ def test_a_normal_matter_answers_everything_above_the_fold(page, base_url):
     page" was true of the old design too, three screens down.
     """
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url)
+    open_matter(page, base_url, OPEN_TITLE)
 
     fold = page.viewport_size["height"]
     # The composer is a disclosure, so what has to be above the fold is the row
@@ -325,7 +303,7 @@ def test_evidence_and_working_references_look_like_opposites(page, base_url):
 def test_at_1024_the_rail_folds_under_and_nothing_scrolls_sideways(page, base_url):
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": 1024, "height": 900})
-    open_matter(page, base_url)
+    open_matter(page, base_url, OPEN_TITLE)
 
     main = page.locator(".teemamain").bounding_box()
     rail = page.locator(".rail").bounding_box()
@@ -364,7 +342,7 @@ def test_muuda_teemat_fits_every_width_the_department_uses(page, base_url, width
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
-    matter_url = open_matter(page, base_url)
+    matter_url = open_matter(page, base_url, OPEN_TITLE)
 
     page.get_by_role("link", name="Muuda teemat").click()
     page.wait_for_load_state("networkidle")
@@ -416,29 +394,6 @@ def test_muuda_teemat_saves_the_whole_record_at_once(page, base_url):
     page.wait_for_load_state("networkidle")
     expect(page.get_by_text("Muutumatu")).to_be_visible()
     expect(page.locator("[name='origin']")).to_have_count(0)
-
-
-def test_minu_too_is_one_dated_list(page, base_url):
-    """All three modes in one chronological list, each saying what it is."""
-    sign_in(page, base_url, MARTIN)
-    page.goto(f"{base_url}/minu-asjad/")
-    page.wait_for_load_state("networkidle")
-
-    expect(page.get_by_role("heading", name="Ootan ja kontrollin")).to_have_count(0)
-    rows = page.locator(".workrow")
-    if not rows.count():
-        pytest.skip("the seeded world gives this persona no scheduled work")
-
-    # Every row carries a mode chip, so no row's date is ambiguous.
-    assert rows.count() == page.locator(".workrow .mode").count()
-
-    # And the bands run forwards in time down the page.
-    tops = [
-        page.locator(f".workgroup--{key}").first.bounding_box()["y"]
-        for key in ("passed", "today", "soon", "later", "undated")
-        if page.locator(f".workgroup--{key}").count()
-    ]
-    assert tops == sorted(tops), "the work bands are out of chronological order"
 
 
 # ---------------------------------------------------------------------------

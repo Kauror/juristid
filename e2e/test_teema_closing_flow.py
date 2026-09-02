@@ -12,12 +12,10 @@ PDF header.
 
 from __future__ import annotations
 
-import re
-
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, open_composer, sign_in
+from e2e.conftest import MARTIN, create_matter, open_composer, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -37,15 +35,6 @@ OPINION_PDF = {
     "mimeType": "application/pdf",
     "buffer": b"%PDF-1.4 synthetic opinion",
 }
-
-
-def create_matter(page, base_url: str, title: str) -> str:
-    page.goto(f"{base_url}/teemad/uus/")
-    page.wait_for_load_state("networkidle")
-    page.fill("#id_title", title)
-    page.get_by_role("button", name="Loo teema").click()
-    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
-    return page.url
 
 
 def open_closing_section(page):

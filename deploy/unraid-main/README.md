@@ -275,6 +275,593 @@ If it says the index has been owed a rebuild for too long, the worker is what to
 look at first. `rebuild_search_index` remains the manual answer and is always
 safe to run.
 
+## Recurring operations — refreshing the register
+
+Everything above this point happens once, or happens when something is wrong.
+This is the one operation that is *meant* to be repeated: the department edits
+`Tööd eelnõudega.xlsx` every week, and reading a newer copy of it into Juristid
+is a routine act with a fixed shape (ADR 0045). It has been performed three
+times — the 21.08, 28.08 and 01.09 workbooks — and ADR 0053 is the worked
+example of a repeat.
+
+**Six steps, and the order is a dependency rather than a preference.**
+
+| | Step | Command | Writes |
+| --- | --- | --- | --- |
+| 1 | What does the newer workbook say? | `register_snapshot_delta` | nothing, ever |
+| 2 | Catalogue it | `import_legacy_register … --apply` | source references, and new Matters |
+| 3 | Plan | `refresh_current_register plan` | nothing |
+| 4 | Review | *a person* | — |
+| 5 | Apply | `refresh_current_register apply` | currency, fields, actions, engagements |
+| 6 | Verify | re-plan, and the checks in `docs/production-readiness.md` §4 | nothing |
+
+Step 2 is the one people leave out, and leaving it out used to produce a plan
+reporting zero changes everywhere — which reads as *the newer workbook changes
+nothing*, and is the one wrong answer an operator would believe because it is
+the answer they were hoping for. It now produces a refusal naming the command to
+run (ADR 0045 §10). That refusal is the reason this table has six rows.
+
+### Before any of it: two things that are not commands
+
+**The workbook has to be approved, and approving it is a code change.**
+`REVIEWED_SNAPSHOTS` in `app/legacy_import/final_cutover.py` names each approved
+workbook by the SHA-256 of its bytes, with the sheet years it was approved for
+and the day it was taken off somebody's desktop. There is no flag, no
+environment variable and no argument that can approve one at the command line:
+retiring or activating the department's whole portfolio from whatever file
+happened to be on a desktop is not something a command line should be able to
+do. Adding a digest is a pull request, reviewed and merged and deployed like any
+other, and it is the department head's decision that those bytes are
+authoritative — not the operator's.
+
+A workbook that was superseded before anybody planned against it does **not**
+get added afterwards to make the sequence look continuous. The 30 August file is
+deliberately absent for exactly that reason (ADR 0053 §1). A reviewed snapshot
+is a statement that somebody looked at those exact bytes.
+
+**The snapshot date is not decoration.** It is what lets a `JÄRGMISEKS` cell
+reading *vaata üle 15.09* resolve to 2026, and only on a sheet whose year matches
+it (ADR 0045 §2). A digest added without one silently refuses every year-less
+date in the workbook.
+
+### The shell, and where the files live
+
+Two prefixes, because two of these steps need a writable path and the rest do
+not. Run them on the Unraid host, from the repository checkout:
+
+```bash
+# uid 10001 is the application user, fixed in the image so a rebuild cannot
+# change it (Dockerfile). Created root-owned, the container cannot even traverse
+# this directory, and `refresh_current_register plan` then dies *after* printing
+# its whole report and *before* printing the plan digest step 5 needs — so the
+# review happens and the digest never arrives. Same rule as RECOVERY.md.
+install -d -m 700 -o 10001 -g 10001 /mnt/user/juristid-main/refresh
+install -d -m 700 -o 10001 -g 10001 /mnt/user/juristid-main/refresh/2026-09-01
+
+C="docker compose -p juristid-main -f compose.yml run --rm web python manage.py"
+R="docker compose -p juristid-main -f compose.yml run --rm \
+   -v /mnt/user/juristid-main/refresh:/refresh web python manage.py"
+```
+
+The workbook goes in the read-only source tree beside the one the historical
+import reads, and is referenced by its path *inside* the container:
+
+```
+/mnt/user/juristid-main/source/excel/Tööd eelnõudega 01.09.xlsx
+  → /srv/historical-source/excel/Tööd eelnõudega 01.09.xlsx
+```
+
+**Never overwrite `excel/Tööd eelnõudega.xlsx` with a newer snapshot.** That
+exact filename is what `historical_import` resolves by convention
+(`historical_import.py:325`), and replacing it changes what the historical
+corpus import reads without anything saying so. New snapshots sit beside it
+under their own names. The tree is mounted `:ro`, which is what you want: these
+commands hash the file and never write to it.
+
+`/refresh` is a working directory for review files and catalogue reports, and it
+exists because **none of the container's writable mounts is a safe place for
+them**. `--rows`, `--candidates` and `--report-dir` all write real files;
+`--report-dir` defaults to `import-output/import`, which is relative to `/app`
+and disappears with the `--rm` container. Writing them into `/app/evidence`
+instead is the accident of 2026-08-24 repeated by hand — see *Never run the
+application test suite through this stack* — and `check_evidence_integrity` has
+been reporting the last one ever since.
+
+Keep the campaign export in `/refresh` too, and **delete it when the refresh is
+done**. It is member mailing data.
+
+### 1. Ask what the newer workbook says
+
+```bash
+$C register_snapshot_delta \
+  --workbook "/srv/historical-source/excel/Tööd eelnõudega 01.09.xlsx" \
+  --expect-sha256 3db743ac9fe406e1cf837245895d07896d2fbf4e48d3eb80583fe7d244a86342
+```
+
+**Reads** the workbook, the immutable per-cell provenance in
+`MatterSourceReference.source_row_raw`, the derived register state, and the
+`ChangeEvent` rows people wrote after the last catalogue. **Writes nothing.**
+There is no `--apply` and adding one would turn a report into the Excel-to-
+Juristid bridge the cutover exists to remove. Every collection is sorted before
+it is emitted, so two runs over one workbook produce byte-identical output and a
+diff of two reports is a diff of the register.
+
+Flags, in full: `--workbook PATH` (required), `--expect-sha256 SHA` (refuse
+unless the bytes hash to exactly this), `--years 2025,2026` (the years the
+portfolio arithmetic is scoped to; every other sheet is still compared cell by
+cell), `--json`.
+
+`--expect-sha256` is how you state which bytes you meant. Given a digest that
+does not match, the command refuses rather than reporting on a file nobody
+approved. Use it — the point of this step is to find out what a *named* file
+says.
+
+Read four blocks and stop on two of them:
+
+- **Read** — `IDENTSED` / `MUUDETUD` / `UUED` / `KADUNUD`, and `sisulisi välju`,
+  which counts the differences that mean something as opposed to formatting.
+- **Jooksev töö** — ends either `identiteedid kattuvad tootmisega` or
+  `identiteedid EI kattu tootmisega` followed by the references that would
+  activate and retire. **Equal totals with a swapped membership is the failure a
+  headline figure cannot show**, which is why the identities are named and not
+  merely counted.
+- **Omakirjed pärast kataloogimist** — what people have written here since.
+- **Topeltkirjutuse konfliktid** — a Matter the workbook moved *and* somebody
+  worked on here. **If this is not `ei leitud`, stop.** Nothing resolves a
+  dual write automatically, and nothing should.
+
+The last line reads `Andmebaasi ei kirjutatud.` If it does not, you ran
+something else.
+
+This step is optional in the sense that nothing enforces it, and it is the step
+that tells you whether the rest is worth doing. It answers "does production
+disagree with the register", which is the question, rather than "did somebody
+edit the spreadsheet", which is not.
+
+### 2. Back up, then catalogue
+
+Back up first. Steps 2 to 5 are one data operation and this is the copy they are
+rolled back to:
+
+```bash
+scripts/deploy/juristid-backup.sh --project juristid-main --compose-file deploy/unraid-main/compose.yml --data-root /mnt/user/appdata/juristid-main --backup-root /mnt/user/backups/juristid-main
+```
+
+Then the catalogue. Dry run first — it is free and it is where a changed header
+surfaces:
+
+```bash
+$R import_legacy_register "/srv/historical-source/excel/Tööd eelnõudega 01.09.xlsx" \
+   --dry-run --report-dir /refresh/2026-09-01/catalogue
+
+$R import_legacy_register "/srv/historical-source/excel/Tööd eelnõudega 01.09.xlsx" \
+   --apply --report-dir /refresh/2026-09-01/catalogue
+```
+
+**Reads** the workbook and the existing Matters. **Writes** an `ImportBatch`, an
+`ImportRowLedger` row per non-blank row, a `MatterSourceReference` per matched or
+created row, and **a new Matter for every row the register has that this database
+does not**. That last one is why the backup is above and not below.
+
+Flags, in full: positional `workbook`; exactly one of `--dry-run` / `--apply`
+(the group is required — omitting both is an error rather than a safe guess,
+because the safe guess is the one people stop reading); `--report-dir`
+(default `import-output/import`, which is inside the container and lost with it —
+always pass a path under `/refresh`); `--mapping-file` (reviewed owner /
+organisation / record-mode mappings, TOML or JSON); `--accept-review-rows`;
+`--notes`.
+
+**Idempotent for what the refresh reads.** A row already recorded under this
+exact digest comes back as `ALREADY_IMPORTED` and no second source reference is
+written, so re-cataloguing the same workbook cannot double what step 3 reads. It
+does add another `ImportBatch` and another ledger, so do not do it for fun.
+
+`--apply` refuses unless `REAL_DATA_ALLOWED` is on, and refuses while any row
+still needs review unless you say `--accept-review-rows` in as many words —
+which imports the rest and leaves those rows out rather than guessing them.
+
+**The gate here is the era contracts, and it is the one gate that can stop the
+whole cycle.** A workbook whose headers no longer match the reviewed contract for
+its sheet raises a `ContractError` in the dry run. That is a code change
+(`docs/data-contracts/*.toml`), reviewed, and not something to work around. Do
+**not** run `check_era_contracts` bare to investigate: without `--check` it
+rewrites a generated Markdown file inside `/app`. Use `check_era_contracts
+--check`, which validates and reports.
+
+Verify afterwards: the dry run and the apply agree on `rows considered` and
+`accounting complete: True`, and the apply's `already imported` plus `created`
+plus `matched` accounts for every matter row. Step 3 checks the rest.
+
+### 3. Plan
+
+```bash
+$R refresh_current_register plan \
+  --workbook "/srv/historical-source/excel/Tööd eelnõudega 01.09.xlsx" \
+  --rows /refresh/2026-09-01/rows.json
+```
+
+**Reads** the workbook's bytes (to hash them), the source references step 2
+wrote, every current Matter, the derived register state, and the audit log.
+**Writes nothing** — no Matter, no action, no engagement, no audit row. It says
+so itself at the end, and it prints the plan digest, which is the only thing
+`apply` will accept.
+
+Flags, in full: positional `plan` (there is no `--dry-run` on this command; the
+mode is the argument); `--workbook PATH` (required); `--campaigns PATH`;
+`--links PATH`; `--expect-plan-sha256`; `--expect-mapping-sha256`; `--today
+ISO`; `--json`; `--rows PATH`; `--candidates PATH`.
+
+The first two lines are the gates, in order:
+
+```
+Workbook  Tööd eelnõudega 01.09.xlsx
+          3db743ac…
+Catalogue 2458 rows of 2460 source references
+```
+
+The two catalogue numbers are close by construction, not by coincidence:
+`real_rows` is `references` minus the rows carrying no source title, so a large
+gap between them means the catalogue is wrong rather than that the workbook is
+small. The first pair is the workbook digest checked against `REVIEWED_SNAPSHOTS`; an
+unreviewed file is refused here with a message telling you to record the digest
+first. The `Catalogue` line is step 2's receipt: if it refuses instead, step 2
+did not happen for *these bytes*.
+
+> **A warning on that line you can ignore.** If the report prints *"an import
+> batch for this snapshot recorded N source rows, more than the M references this
+> database holds — the catalogue may be incomplete"*, that is expected on a
+> complete catalogue and not a finding. The batch counts every row it read,
+> including the 451 blank padding rows and the reserved numbers; the references
+> count only the rows that became Matters. The two are never equal on this
+> workbook. Judge the catalogue by the `Catalogue` line's own figures and by step
+> 2's accounting, not by this warning.
+
+`--today` exists because **staleness moves the digest**. A `JÄRGMISEKS` period
+that ends yesterday is `STALE_SOURCE` today and `AUTO` the day before, and only
+`AUTO` is inside the plan digest. So:
+
+> **Plan and apply on the same Tallinn day, or pass the same `--today` to both.**
+> Otherwise the apply refuses a plan nobody changed, and the refusal names the
+> database rather than the calendar.
+
+The report tells you which day it used: `evaluated on`.
+
+`--rows` writes the per-Matter review file. It carries stable identifiers, the
+reading and the outcome, and **no register prose**: a title, a `HETKESEIS`
+wording and a `JÄRGMISEKS` sentence appear nowhere in it, and a source sentence
+appears only as its hash. That is what makes the file safe to open on a laptop
+and unsafe to treat as a substitute for the Matter page.
+
+### 4. Review
+
+The report is complete before anything is written — that is the property the
+whole design is built around, and it cost real machinery: the enrichment reads
+the derived state table, and at plan time that table still describes the
+*previous* workbook, so the plan projects the rows the reconciliation would write
+and plans over those. One derivation, so the report and the apply cannot drift.
+
+Read, in this order:
+
+**Current work.** `before` and `after`, then the six outcomes. `ACTIVATE` and
+`RETIRE` are the portfolio moving. `REVIEW_REQUIRED` is a row where a person
+decides, with the reason named — a recorded closure, an ambiguous continuation,
+entries somebody wrote here, an open next action, a submission made here.
+
+**Source-authoritative fields.** Five fields the register is allowed to move:
+owner, stage, received date, response deadline, addressee. Below them, the
+unresolved owner and organisation values with how many rows each is holding up —
+that list is a work item, not an error — but a mapping file cannot move it. `refresh_current_register` takes no `--mapping-file`: it resolves with `MappingTables.empty()`, so the only routes open to it are `KnownPeople` for owners and an exact normalised name — or a reviewed alias — for organisations (`app/legacy_import/resolution.py`). The remedy is reference data or a real account, applied separately; `--mapping-file` belongs to step 2, which does take one. `multi-
+addressee rows (canonical untouched)` counts cells naming more than one body:
+the raw cell and the cardinality are kept, and the canonical singular field is
+deliberately left alone rather than recording that Koda wrote to one ministry
+when it wrote to three.
+
+**VÄLJA.** Four answers — a date, *ei saatnud*, something else, empty — and
+`Submissions created from VÄLJA`, which is `0` and is structurally always 0: a
+spreadsheet cell is not final evidence and cannot become a canonical Submission
+(ADR 0011).
+
+**Member feedback.** Two columns, each split into a number, an explicit zero and
+*not recorded*. Nothing divides one by the other; they are not subsets of one
+another and the real data holds rows where more members answered than were asked
+directly.
+
+**JÄRGMISEKS.** This block decides whether you may proceed at all. See the gate
+immediately below.
+
+**Outreach candidates**, if `--campaigns` was given. See *Outreach* below.
+
+### The JÄRGMISEKS gate — read this before step 5
+
+`refresh_current_register apply` performs the reconciliation **and** the next-
+action enrichment in one transaction. There is no flag that omits the second
+half, and there should not be: the report an operator approved is a report about
+both.
+
+`docs/production-readiness.md` records the `JÄRGMISEKS` / NextAction enrichment
+as **blocked, pending a decision by the department head and the lawyers**. The
+plan reports an AUTO set; the real-data audit established that those proposals
+are not all defensible, so the number is not an approval.
+
+That gate binds this command. The test is arithmetic on the report you are
+already reading:
+
+> **In the plan's `JÄRGMISEKS` block, add `AUTO` + `REFRESH_IMPORTED` +
+> `REMOVE_STALE_IMPORTED`. Those three are the only outcomes an apply writes.**
+>
+> - **Zero** — the refresh touches no next action. Proceed.
+> - **Above zero** — the apply would create, supersede or withdraw that many
+>   structured actions from register prose. **Do not run it.** Take the plan to
+>   the department head and the lawyers, and record the outcome in
+>   `docs/open-decisions.md`.
+
+`IMPORTED_UP_TO_DATE`, `HUMAN_WINS`, `STALE_SOURCE`, `REVIEW_REQUIRED` and every
+`SKIP_*` write nothing. `HUMAN_WINS` in particular is the guarantee that makes
+re-running safe at all: one signed-in person anywhere in a Matter's action
+history and the whole Matter is theirs, permanently.
+
+For scale: on the 01.09 workbook, two 2026 rows convert that did not convert
+before (ADR 0053). Two is above zero.
+
+### 5. Apply
+
+Back up again if anything has happened since step 2 — and something has, because
+lawyers use this system every day:
+
+```bash
+scripts/deploy/juristid-backup.sh --project juristid-main --compose-file deploy/unraid-main/compose.yml --data-root /mnt/user/appdata/juristid-main --backup-root /mnt/user/backups/juristid-main
+```
+
+```bash
+$R refresh_current_register apply \
+  --workbook "/srv/historical-source/excel/Tööd eelnõudega 01.09.xlsx" \
+  --expect-plan-sha256 <the digest step 3 printed>
+```
+
+**Reads** everything step 3 read. **Writes**, in one transaction: Matter currency
+and the five source-authoritative fields; the derived `CurrentRegisterState`
+rows; next actions created, superseded and withdrawn; and — only with `--links`
+— `MatterEngagement` pointers. It also refreshes the search projection for every
+Matter it touched, so no rebuild is owed afterwards.
+
+**The plan is re-derived inside the transaction and the digest re-compared before
+anything is written.** A plan is a photograph; between taking it and approving it
+somebody may have closed a Matter, set an action or corrected an owner. A
+difference aborts everything rather than applying the part that still matches —
+a partial apply against an approved digest would leave a state neither the plan
+nor the database describes. **A refusal here is the gate working.** Re-plan,
+re-read, re-approve. Do not go looking for a way round it.
+
+Four digests, each answering a different question:
+
+| Digest | Says | Supplied by |
+| --- | --- | --- |
+| workbook | which bytes were reviewed | hashed from the file; checked against `REVIEWED_SNAPSHOTS` |
+| plan | nothing in the database moved between deciding and writing | `--expect-plan-sha256` |
+| campaign set | which campaigns the candidates came from | inside the plan digest; re-supply `--campaigns` |
+| mapping | which links a person actually approved | `--expect-mapping-sha256` |
+
+The campaign set is **inside** the plan digest, so a plan approved with campaigns
+cannot be applied without them, or the reverse. Pass the same `--campaigns` file
+to the apply that you passed to the plan.
+
+The output is ten counts — became current, stayed current, left current work,
+fields refreshed, derived state rows, next actions created / refreshed /
+withdrawn, engagements created / corrected. Write them down beside the plan
+digest; step 6 checks against them.
+
+**Nothing here is attributed to you.** Every write records `CURRENT_REGISTER`
+provenance and a null actor, deliberately: attributing a machine's reading of a
+spreadsheet to whoever happened to run the command would put a person's name on
+it, and it is precisely the null actor that tells the *next* refresh nobody has
+touched these rows. That is what makes a re-run free.
+
+### 6. Verify
+
+**Convergence — the operation's own dry run reports no work.** Re-run step 3
+unchanged. On a converged refresh it prints `ACTIVATE 0`, `RETIRE 0`, every
+field change `0`, and the actions that were written now reading
+`IMPORTED_UP_TO_DATE`. Running the apply again from that fresh plan changes
+nothing at all, engagements and audit rows included — that is asserted by
+`tests/test_current_register_refresh.py::test_a_second_identical_apply_changes_nothing_including_engagements`.
+
+Note that you cannot replay the old digest: after an apply the plan is a
+different plan, legitimately, and needs its own approval.
+
+**The reconciliation, on its own:**
+
+```bash
+$C final_register_cutover --snapshot 3db743ac… --dry-run
+```
+
+Same answer, from the other direction: `ACTIVATE 0`, `RETIRE 0`, and the current
+counts by sheet.
+
+**The rest of §4 of `docs/production-readiness.md`,** with two adjustments for
+this operation:
+
+```bash
+$C check_evidence_integrity --skip-storage-scan
+$C check_search_freshness
+$C check_era_contracts --check
+```
+
+`--skip-storage-scan` answers "has any row lost its bytes", which is the question
+a register refresh can affect. The full scan also walks the store for
+unreferenced objects, and this host still holds the 63 orphaned fixtures from the
+2026-08-24 test-suite accident — a non-zero exit from that scan is that, not
+this.
+
+A `recovery_fingerprint --compare` against a fingerprint taken before the refresh
+**will exit non-zero, and that is the correct result**: canonical counts moved,
+which is what you asked for. Take one before and one after and read the
+difference; do not treat the exit code as a verdict. That comparison is a restore
+check, not a data-operation check.
+
+**And look at the product.** Open Ülevaade and a Matter the plan said moved. The
+register's own wording is on the page; the report deliberately never carried it.
+
+### Outreach — the fourth phase, and the only thing that writes a Kaasamine
+
+Optional, and separate because **the matcher writes nothing, ever**.
+
+```bash
+$R refresh_current_register plan \
+  --workbook "/srv/historical-source/excel/Tööd eelnõudega 01.09.xlsx" \
+  --campaigns /refresh/2026-09-01/campaigns.csv \
+  --rows /refresh/2026-09-01/rows.json \
+  --candidates /refresh/2026-09-01/candidates.json
+```
+
+The export is a semicolon-delimited CSV and **five columns are read**: `Section
+name`, `Template name`, `Template preview`, `Due at`, `Enqueues`. Deliveries,
+bounces, opens, open rate, views, clicks, click rate, unsubscribes, forwards and
+complaints are all in the file and none of them is imported. They are engagement
+analytics about identifiable members, and a legal file is not where they belong.
+The allowlist is an allowlist so that a future export gaining a column cannot
+become importable because nobody remembered to exclude it.
+
+The candidate window is fixed in code at 1 January – 28 August 2026 and is
+deliberately not a flag: which months of outreach are being placed is a reviewed
+decision about a pilot. **It has not moved for the 01.09 snapshot** (ADR 0053), so
+a September campaign is outside it. Widening it is a decision about outreach, not
+about reading a newer register.
+
+The report gives `HIGH_CONFIDENCE` and `CANDIDATE` counts and, always,
+`written without a reviewed mapping   0`. Only a reviewed mapping file creates a
+`MatterEngagement` — a JSON list, prepared by a person from `--candidates`, each
+entry carrying `reference`, `channel` (`EMAIL_CAMPAIGN` or `PUBLIC_PAGE`),
+`source_key` (the template URL or the public page URL), `title`, and optionally
+`url`, `occurred_on`, `note`. Every one of the first four is required; nothing is
+defaulted into existence, because a mapping missing a `source_key` would produce
+a pointer with no import identity and a duplicate waiting for the next run.
+
+```bash
+$R refresh_current_register apply \
+  --workbook "/srv/historical-source/excel/Tööd eelnõudega 01.09.xlsx" \
+  --campaigns /refresh/2026-09-01/campaigns.csv \
+  --expect-plan-sha256 <plan digest> \
+  --links /refresh/2026-09-01/approved-links.json \
+  --expect-mapping-sha256 <mapping digest, printed when --links is read>
+```
+
+Idempotent by construction rather than by comparison: identity lives in
+`RegisterEngagementImport` on `(matter, channel, source_key)`, so a second run of
+the same approval corrects the engagement it already wrote instead of adding a
+second one — even if somebody has since edited that engagement's title, which is
+the case title matching cannot survive.
+
+**Sendsmaily enqueues are not the register's feedback count.** One 2026 file
+records 273 members asked directly against 234 addresses enqueued. Both are true,
+the mailing is one channel of several, and neither is ever substituted for the
+other.
+
+Delete the export from `/refresh` afterwards.
+
+### Three commands in this family that are not part of the cycle
+
+**`register_next_action_enrichment`** — `plan` / `apply`, with
+`--expect-snapshot-sha256` (required), `--expect-plan-sha256`, `--json`,
+`--rows`. It is the standalone form of the refresh's fourth phase and **is the
+door the JÄRGMISEKS decision is actually written on**. Do not apply it; see the
+gate above. `plan` is read-only and safe.
+
+Two things will surprise you if you run `plan` after a refresh:
+
+- It may refuse with *"Derived register state carries more than one snapshot
+  digest"*. That is correct, not a fault: a Matter the newer workbook no longer
+  names keeps its old derived row, legitimately, and this command fails closed
+  rather than planning half from one workbook and half from another. The
+  composed refresh handles it; the standalone command cannot.
+- Its `apply` success message reports only *next actions created* and states that
+  nothing was superseded. Since ADR 0045 that is not true of what it can do — it
+  also refreshes and withdraws — so read the counts from
+  `refresh_current_register` instead, which reports all three.
+
+**`onenote_policy_area_enrichment`** — `inventory` / `plan` / `apply`, with
+`--expect-plan-sha256` and `--json`. Nothing to do with the register refresh; it
+proposes canonical `Valdkonnad` from where a lawyer filed a page in OneNote.
+`inventory` and `plan` are read-only and are the right way to keep the numbers
+current. **`apply` awaits a human review that has not happened** — the first
+real-data plan exists (71 relations, 4 of 24 filing locations exact-matched) and
+nobody has read it. Mappings enter production only through `REVIEWED_ALIAS_RULES`
+in `app/legacy_import/onenote_policy_areas.py`, which is a code change and
+therefore reviewed; there is deliberately no admin table, because an unreviewed
+row in a database is exactly the guess the module exists to prevent. The apply is
+additive — it never removes an area, never creates one, never creates a `Tag`,
+never rewrites a captured section — so a second run is a genuine no-op.
+
+**`resolve_archive_recipients`** — read-only unless `--apply`; also `--mappings
+PATH` (a reviewed alias file, TOML or JSON) and `--show N` (default 25, `0` for
+all). It attaches historical opinion recipients that improved reference data can
+now resolve exactly. Idempotent: a Submission that already carries the
+organisation is counted `juba seotud` and skipped before resolution is even
+attempted. It never creates an `Organisation`, never creates a `Submission` and
+never rewrites `recipient_raw`.
+
+**On this instance it has nothing to do, and will have nothing to do for a
+while.** It walks `OpinionSubmissionImport` rows, and no canonical opinion
+Submission has been filed here — that operation is blocked by two independent
+gates (see below). Run it without `--apply` if you like; the unresolved-value
+list is the work list for reviewed aliases, ordered most-blocking first. Note
+that `--mappings` is the one input in this whole family with **no digest gate**:
+whatever file you point it at is what it believes. Keep it under review the way
+you would keep a migration under review.
+
+### What must not be run here, and why
+
+- **`refresh_current_register apply` while the plan's `AUTO` +
+  `REFRESH_IMPORTED` + `REMOVE_STALE_IMPORTED` is above zero.** The JÄRGMISEKS
+  decision belongs to the department head and the lawyers and has not been made.
+  There is no flag that separates the two halves of the apply, and adding one
+  would be adding a way to approve one report and perform another.
+- **`register_next_action_enrichment apply`.** Same decision, said plainly.
+- **`opinion_archive apply`.** Canonical historical opinion Submissions are
+  blocked by **two** gates and clearing either alone is not enough: filing needs
+  an identified administrator, which `AUTH_MODE=shared_gate` does not honestly
+  provide, *and* the production canonical-apply path still lacks its P4
+  hardening. The plan proposes 244 Submissions. Changing the authentication mode
+  would not make applying them correct.
+- **`promote_current_register --apply`.** Superseded for the maintained years by
+  the reconciliation this cycle runs. Promoting a year would activate rows the
+  cutover has decided to retire, from a decision made in a different operation.
+- **`historical_cutover_state --apply`** and **`backfill_legacy_owners`** as part
+  of a refresh. Each is its own reviewed operation with its own gate. A refresh
+  is not the occasion.
+- **`final_register_cutover --apply` to advance to a newer snapshot.** The
+  refresh composes it, and running it alone applies the reconciliation without
+  the enrichment, without the plan digest and without the campaign pin — the
+  plan/apply gate removed. It has one legitimate solo use, named in
+  `docs/production-readiness.md` §3.9.4: rebuilding the derived state, against
+  the snapshot *already* applied, after a migration adds a column to
+  `CurrentRegisterState`.
+- **`check_era_contracts` without `--check`.** It regenerates a Markdown file
+  under the container's `/app`. Always `--check` here.
+- **Writing `--rows`, `--candidates` or `--report-dir` anywhere under
+  `/app/evidence`.** The evidence tree is the one thing in this system that
+  cannot be regenerated, and a stray review file in it is a permanent finding in
+  `check_evidence_integrity`.
+- **Editing the workbook to make a plan come out differently.** The digest is
+  over the bytes; an edited file is an unreviewed file and is refused. If the
+  register is wrong, it is corrected at the source and re-approved.
+- **Everything already in *What must not happen here* below**, which applies to
+  this section unchanged — no `down -v`, no prunes, no test suite through this
+  stack, no real data leaving this host.
+
+### If it goes wrong
+
+| | Situation | Answer |
+| --- | --- | --- |
+| | The plan digest no longer matches | The gate worked. Re-plan, re-read, re-approve. Never force it. |
+| | The apply refused mid-cycle | Nothing was written; it is one transaction. |
+| | The apply succeeded and the numbers are wrong | Restore from the set taken in step 2/5 and re-plan. A data operation is not undone by re-running it. |
+| | The catalogue is wrong | Restore. Source references are immutable by design. |
+| | Search looks stale | Rebuild — `rebuild_search_index` is always safe, and derived state is never a reason to restore. |
+
+The decision tree for anything that needs a restore is in
+[`RECOVERY.md`](RECOVERY.md), and `docs/production-readiness.md` §5 is the short
+form.
+
 ## Deploying a new build
 
 Deploy a **commit**, never a branch. `git pull` deploys whatever `main` has
