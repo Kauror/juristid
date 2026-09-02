@@ -38,6 +38,7 @@ from typing import Any
 
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
+from django.db import transaction
 from django.http import HttpRequest
 from django.utils import timezone
 
@@ -169,14 +170,76 @@ def record_failure(request: HttpRequest) -> int:
     Per client, never global. A global counter would let one attacker lock the
     department out of its own system, which is a denial-of-service primitive
     dressed as a control (Stage-2D auth brief 9).
+
+    **The count is taken under the row's own lock.** It used to be read into
+    Python, incremented and written back with nothing making two writers take
+    turns, so attempts arriving together each read the same value and each wrote
+    the same value: parallel guesses recorded one failure between them and never
+    reached the threshold that arms the lockout. An attacker who opens twenty
+    connections instead of sending twenty requests in a row was not slowed at
+    all, which made the escalation this control exists for unreachable (SEC-01).
+
+    The lock is on **one row**, and that is the same boundary that keeps the
+    control per client: two attempts against the same client key take turns,
+    while a different client key is a different row and waits for nobody. A
+    table-level lock would fix the counter by recreating the denial-of-service
+    primitive the design refuses.
+
+    `FOR UPDATE` rather than the `FOR NO KEY UPDATE` that `app.matters.locks`
+    argues for, because that argument does not apply here: it exists so that
+    inserting a row which *references* the locked one does not queue behind it,
+    and nothing references a throttle row. This is a counter nobody points at —
+    the same shape, and the same lock, as `MatterReferenceSequence`
+    (`app.matters.services.allocate_matter_reference`).
+
+    The table sits outside the Matter → Submission → Document order entirely and
+    nothing else in the application locks it, so this adds no edge to that graph.
+    """
+    with transaction.atomic():
+        record = _locked_throttle(client_key(request))
+        return record.register_failure(
+            max_attempts=settings.SHARED_GATE_MAX_ATTEMPTS,
+            base_seconds=settings.SHARED_GATE_LOCKOUT_SECONDS,
+            ceiling_seconds=settings.SHARED_GATE_MAX_LOCKOUT_SECONDS,
+        )
+
+
+def _locked_throttle(key: str) -> Any:
+    """This client's throttle row, created if absent, held under its own lock.
+
+    Two statements rather than one, in this order, because each ordering closes
+    a different race and only this one closes both.
+
+    ``get_or_create`` first, so two *first* attempts from one client cannot lose
+    each other. Django runs the insert in its own savepoint and re-reads on a
+    unique-key collision, so the loser continues instead of surfacing a database
+    error to somebody who merely mistyped a password — and the winner's row is
+    then what both of them lock.
+
+    The locking read second, because the row returned above was read without a
+    lock and may already be superseded. A transaction that waited here was by
+    definition waiting for another writer, and a lock that only delays a stale
+    read closes nothing (`app.matters.locks`).
+
+    Between those two statements the row can *disappear*: a correct password
+    from the same client deletes it, which is `record_success` doing exactly
+    what it is for. That must not become a 500 on the sign-in page, so absence
+    is tolerated and the row is made again. The second pass cannot fail — a row
+    this transaction created is one no other transaction can delete until this
+    one commits — which is why the bound is two and not a retry loop.
     """
     from app.accounts.models import SharedGateThrottle
 
-    record, _ = SharedGateThrottle.objects.get_or_create(client_key=client_key(request))
-    return record.register_failure(
-        max_attempts=settings.SHARED_GATE_MAX_ATTEMPTS,
-        base_seconds=settings.SHARED_GATE_LOCKOUT_SECONDS,
-        ceiling_seconds=settings.SHARED_GATE_MAX_LOCKOUT_SECONDS,
+    for _ in range(2):
+        SharedGateThrottle.objects.get_or_create(client_key=key)
+        record = SharedGateThrottle.objects.select_for_update().filter(client_key=key).first()
+        if record is not None:
+            return record
+    # Unreachable for the reason the docstring gives. Deliberately without the
+    # client key in it: the key is a hash rather than an address, but an
+    # exception message is the wrong place to carry either.
+    raise SharedGateThrottle.DoesNotExist(  # pragma: no cover - see the docstring
+        "the throttle row was deleted twice while this attempt was being counted"
     )
 
 
