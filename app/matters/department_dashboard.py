@@ -272,19 +272,28 @@ def sent_submissions(user: Any, *, since: date, until: date | None = None) -> Qu
     return queryset
 
 
-def seis_figures(user: Any, today: date | None = None) -> list[SeisFigure]:
+def seis_figures(
+    user: Any, today: date | None = None, *, items: list[wi.WorkItem] | None = None
+) -> list[SeisFigure]:
     """The strip, in the head's reading order: what is late, then what is loose.
 
     Every count runs through the register's own filter pipeline over the
     parameters that *are* its definition, so the number and the list behind it
     are one query rather than two similar ones (`register_population`, master
     specification 18.9).
+
+    ``items`` is the page's single unnarrowed read of the work model, offered so
+    that the two `?too=` figures here do not each read it again. It changes no
+    number: it is the same list `register_population` would otherwise fetch for
+    the same reader on the same day.
     """
     today = today or timezone.localdate()
     population = Matter.objects.visible_to(user)
 
     def count(params: dict[str, Any]) -> int:
-        return register_population(user, params, today=today, population=population).count()
+        return register_population(
+            user, params, today=today, population=population, shared_items=items
+        ).count()
 
     overdue = {**_open_full(), WORK_PARAM: wi.WORK_OVERDUE}
     this_week = {**_open_full(), WORK_PARAM: wi.WORK_DEADLINE_THIS_WEEK}
@@ -493,7 +502,9 @@ def _sent_by_owner(user: Any, *, since: date, until: date | None = None) -> dict
     return {row["matter__owner_id"]: row["total"] for row in grouped}
 
 
-def team_rows(user: Any, today: date | None = None) -> list[TeamRow]:
+def team_rows(
+    user: Any, today: date | None = None, *, items: list[wi.WorkItem] | None = None
+) -> list[TeamRow]:
     """Every caseworker, the unassigned pile, and the total that reconciles.
 
     Nine grouped queries plus one for the people — not one per person per
@@ -511,7 +522,10 @@ def team_rows(user: Any, today: date | None = None) -> list[TeamRow]:
     year_start, year_end = reporting_year(today)
 
     active = active_matters(user)
-    items = wi.work_items(user, today=today)
+    # The page's own read when it has one — the same list, for the same reader
+    # on the same day, which is why the Seis strip and this table are obliged to
+    # agree and now cannot even in principle disagree by reading twice.
+    items = items if items is not None else wi.work_items(user, today=today)
     counts = {
         "open": _by_owner(active),
         "overdue": _by_owner(

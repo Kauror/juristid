@@ -990,14 +990,16 @@ def work_population_ids(
     if key not in WORK_POPULATION_LABELS:
         return set()
     today = today or timezone.localdate()
-    if items is None:
-        items = work_items(user, today=today)
-    ids = {item.matter_id for item in work_population_items(items, key, today, window=window)}
     if key == WORK_QUIET_30:
         # A Matter-level state, not a dated obligation, so it has no responsible
         # person of its own. Narrowed by *owner* when one is named — the same
         # reading `WORK_NEEDS_ATTENTION` gives its two undated halves below,
         # because a file nobody has touched belongs to whoever carries it.
+        #
+        # Answered before the work model is read, because it does not consult
+        # it: `work_population_items` has no branch for this key. Reading it
+        # here cost three queries and a full row materialisation that the next
+        # line threw away, on every `?too=muutusteta-30` in the product.
         quiet_ids = quiet_matters(user, today)
         if responsible is ANY_PERSON:
             return set(quiet_ids)
@@ -1008,6 +1010,9 @@ def work_population_ids(
             else owned.filter(owner=responsible)
         )
         return set(owned.values_list("pk", flat=True))
+    if items is None:
+        items = work_items(user, today=today)
+    ids = {item.matter_id for item in work_population_items(items, key, today, window=window)}
     if key == WORK_NEEDS_ATTENTION:
         # Reused when the caller has them, because `visible_to` resolves the
         # reader's scope on every call and resolving it asks the database

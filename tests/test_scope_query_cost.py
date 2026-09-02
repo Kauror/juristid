@@ -293,9 +293,18 @@ def test_an_expired_grant_is_remembered_as_absent_not_as_present(
 #:
 #:     /osakond/                     head 52, reader 38   (was 94 / 65)
 #:     /statistika/andmekvaliteet/   head 84, reader 85   (was 174 / 174)
+#: Absolute ceilings, measured against `measured_world` and left roughly a fifth
+#: of headroom so ordinary work does not trip them. They were 70 and 105 before
+#: Wave 6 shared the department's work-model read and the reporting pages'
+#: denominators; the measured costs at the time of writing are 40 / 23 / 52 /
+#: 53 / 58. A ceiling that no longer bites is a ceiling that stopped saying
+#: anything, so these are lowered whenever a round makes a page cheaper.
 PAGE_BUDGETS = [
-    ("/osakond/", 70),
-    ("/statistika/andmekvaliteet/", 105),
+    ("/osakond/", 48),
+    ("/osakond/?vaade=valdkonniti", 30),
+    ("/statistika/andmekvaliteet/", 62),
+    ("/statistika/ajalooline/", 63),
+    ("/statistika/teemad/", 68),
 ]
 
 

@@ -89,7 +89,9 @@ def _state_result(
         definition(key),
         context=context,
         value=queryset.count(),
-        population_count=visible_versions(context).count(),
+        population_count=context.shared(
+            "documents.visible_versions", lambda: visible_versions(context).count()
+        ),
         # No URL: the product has no list of evidence versions, and a link that
         # opened a Matter register filtered by nothing in particular would be a
         # promise this number cannot keep. The definition says where the files
@@ -159,7 +161,9 @@ def extraction_not_applicable(context: ReportingContext) -> MetricResult:
 def extraction_states(context: ReportingContext) -> tuple[Segment, ...]:
     """The five states as one chart, adding up to the visible version count."""
     versions = visible_versions(context)
-    waiting = awaiting_scanner(context).count()
+    waiting = context.shared(
+        "documents.awaiting_scanner", lambda: awaiting_scanner(context).count()
+    )
     pending = (
         versions.filter(extraction_state__in=(ExtractionState.PENDING, ExtractionState.PROCESSING))
         .filter(eligibility_q())
@@ -196,10 +200,12 @@ def searchable_document_coverage(context: ReportingContext) -> MetricResult:
     """
     spec = definition(keys.SEARCHABLE_DOCUMENT_COVERAGE)
     versions = visible_versions(context)
-    total = versions.count()
+    total = context.shared("documents.visible_versions", versions.count)
     openable = versions.exclude(extraction_state=ExtractionState.NOT_APPLICABLE).count()
     extracted = versions.filter(extraction_state=ExtractionState.DONE).count()
-    waiting = awaiting_scanner(context).count()
+    waiting = context.shared(
+        "documents.awaiting_scanner", lambda: awaiting_scanner(context).count()
+    )
 
     notes = [
         "Nimetajast on välja jäetud failid, mida ükski parser ei ava.",

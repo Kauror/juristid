@@ -11,7 +11,7 @@ than its destination — the Matter is what a lawyer needs (Stage-2G brief 18).
 {% endcomment %}
 <tr>
   <td class="table__date">
-    <span class="datemeaning">{% if row.effective_date.period_end < today %}Jõustus{% else %}Jõustub{% endif %}</span>
+    <span class="datemeaning">{% if row.has_taken_effect %}Jõustus{% else %}Jõustub{% endif %}</span>
     <span class="dateline {% if row.effective_date.is_approximate %}dateline--approximate{% endif %}">
       {{ row.effective_date.display_date }}
     </span>

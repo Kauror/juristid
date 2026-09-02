@@ -377,7 +377,7 @@ def historical_resource_occurrences(context: ReportingContext) -> MetricResult:
     return simple_result(
         spec,
         context=context,
-        value=resources.count(),
+        value=context.shared("historical.resource_occurrences", resources.count),
         url=_materials_url(context),
         notes=("Esinemine lehel. Sama fail kahel lehel on kaks esinemist.",),
     )
@@ -386,8 +386,11 @@ def historical_resource_occurrences(context: ReportingContext) -> MetricResult:
 def historical_unique_binary_contents(context: ReportingContext) -> MetricResult:
     spec = definition(keys.HISTORICAL_UNIQUE_BINARY_CONTENTS)
     resources = visible_resources(context)
-    unique = resources.values("sha256").distinct().count()
-    occurrences = resources.count()
+    unique = context.shared(
+        "historical.unique_binary_contents",
+        lambda: resources.values("sha256").distinct().count(),
+    )
+    occurrences = context.shared("historical.resource_occurrences", resources.count)
     return simple_result(
         spec,
         context=context,
@@ -412,7 +415,7 @@ def historical_resource_bytes(context: ReportingContext) -> MetricResult:
         spec,
         context=context,
         value=int(total),
-        population_count=resources.count(),
+        population_count=context.shared("historical.resource_occurrences", resources.count),
         url=_materials_url(context),
     )
 

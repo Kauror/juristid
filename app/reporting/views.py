@@ -278,7 +278,7 @@ def data_quality(request: HttpRequest) -> HttpResponse:
             "extraction_states": charts.bars(
                 _extraction_chart(context),
             ),
-            "queues": quality.queues(context),
+            "queues": context.shared("quality.queues", lambda: quality.queues(context)),
             "deferred": sorted(DEFERRED_METRICS.items()),
             "export_url": exports.export_url(context, "andmekvaliteet"),
         },
@@ -293,7 +293,9 @@ def _extraction_chart(context: ReportingContext) -> MetricResult:
     Giving it a definition of its own would put a number in the catalogue whose
     meaning is "the other five, side by side".
     """
-    total = documents.visible_versions(context).count()
+    total = context.shared(
+        "documents.visible_versions", lambda: documents.visible_versions(context).count()
+    )
     return MetricResult(
         definition=definition(metric_keys.EXTRACTION_ELIGIBLE),
         value=total,

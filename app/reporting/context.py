@@ -24,15 +24,18 @@ the same question depending on which page you asked it from (brief 14).
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time
-from typing import Any
+from typing import Any, TypeVar, cast
 
 from django.http import HttpRequest
 from django.utils import timezone
 
 from app.core.decorators import viewer_for
 from app.workflow.dates import year_from
+
+T = TypeVar("T")
 
 #: URL parameter names. Estonian and ASCII: a filter people paste into chat
 #: must not depend on how their client encodes ``ä``.
@@ -199,6 +202,37 @@ class ReportingContext:
     #: Populated by ``filters.describe`` for the chip strip; kept on the context
     #: so a template never has to re-derive what is active.
     chips: tuple[tuple[str, str, str], ...] = field(default_factory=tuple)
+
+    #: Answers already computed for *this* filter state. A page asks the same
+    #: question several times — a denominator once per metric, a queue list once
+    #: per surface — and each answer is by construction the same, so it is read
+    #: once and remembered here.
+    #:
+    #: ``init=False`` is load-bearing rather than tidiness. The context is the
+    #: filter state; ``with_period`` builds a *different* filter state with
+    #: ``dataclasses.replace``, and an ``init=True`` field would hand the new
+    #: state the old state's dict by reference — a denominator surviving a
+    #: filter change, which is exactly the failure this must not have.
+    #: ``compare=False`` keeps the frozen dataclass hashable.
+    _shared: dict[str, Any] = field(default_factory=dict, init=False, compare=False, repr=False)
+
+    def shared(self, key: str, compute: Callable[[], T]) -> T:
+        """An answer that is the same for every caller on this page.
+
+        ``key`` is written out literally at each call site and never derived
+        from a function's name: ``visible_candidates`` exists twice over two
+        different models and both are computed on one page, so a name-derived
+        key would silently merge two populations. For the same reason no key is
+        shared between counts that happen to be equal today — occurrences and
+        distinct binaries are 767 apiece in production and are different facts.
+
+        The memo lives on the filter state, so a different filter is a
+        different object and cannot see it. It never outlives the request,
+        because the context is built per request from ``request.GET``.
+        """
+        if key not in self._shared:
+            self._shared[key] = compute()
+        return cast("T", self._shared[key])
 
     def with_period(self, period: Period) -> ReportingContext:
         return replace(self, period=period)
