@@ -24,6 +24,8 @@ from django.utils import timezone
 
 from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
+from app.matters import department as dep
+from app.matters import department_dashboard as dd
 from app.matters import overview as ov
 from app.matters.services import (
     add_entry,
@@ -213,13 +215,17 @@ def test_a_deadline_past_the_month_is_on_the_page_rather_than_nowhere(
     no screen at all until it became next week's problem (design handoff 1a).
     """
     today = timezone.localdate()
-    _due(department_head, days=40, title="Ehitusseadustiku muutmise seaduse eelnõu")
+    # Seeded from the far window's own start rather than a fixed day count: the
+    # month window ends at the end of the month *after* next week, so it can
+    # reach ~43 days out and a hard-coded +40 would sometimes not be far at all.
+    far_start = dd.upcoming_windows(today)[-1][2]
+    days = (far_start - today).days + 3
+    _due(department_head, days=days, title="Ehitusseadustiku muutmise seaduse eelnõu")
 
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    far = next(group for group in page.deadlines if group.is_far)
+    groups = dep.build_department(department_head, is_head=True, today=today).upcoming
+    far = next(group for group in groups if group.is_far)
     assert far.count == 1
-    assert far.first is not None
-    assert far.first.matter.title == "Ehitusseadustiku muutmise seaduse eelnõu"
+    assert far.preview[0].matter.title == "Ehitusseadustiku muutmise seaduse eelnõu"
 
     client.force_login(department_head)
     body = client.get(reverse("matters:department") + "?vaade=osakond").content.decode()
@@ -228,29 +234,6 @@ def test_a_deadline_past_the_month_is_on_the_page_rather_than_nowhere(
     # A list, not the one-line pointer it was, and no «registris» at the end of
     # the link (docs/adr/0049 §5, brief §33).
     assert "registris" not in body
-
-
-@pytest.mark.django_db
-def test_each_group_link_opens_exactly_the_matters_it_counted(department_head) -> None:
-    """`kõik N →` is a promise about the list behind it.
-
-    The register is asked for the group's own URL rather than for a condition
-    rebuilt here, so this cannot pass by two similar queries agreeing with each
-    other (app/matters/register_filters.py, `register_population`).
-    """
-    from urllib.parse import parse_qsl, urlparse
-
-    from app.matters.register_filters import register_population
-
-    today = timezone.localdate()
-    for days, title in ((1, "Sel nädalal"), (9, "Järgmisel"), (25, "Kuu jooksul"), (60, "Kaugel")):
-        _due(department_head, days=days, title=f"{title} — eelnõu")
-
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    for group in page.deadlines:
-        query = dict(parse_qsl(urlparse(group.url).query))
-        listed = register_population(department_head, query, today=today)
-        assert listed.count() == group.matter_count, f"{group.key} promises what it cannot show"
 
 
 @pytest.mark.django_db

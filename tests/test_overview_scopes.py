@@ -18,6 +18,7 @@ from django.utils import timezone
 
 from app.core.enums import Visibility
 from app.intelligence.services import add_important_date
+from app.matters import department as dep
 from app.matters import overview as ov
 from app.matters import work_items as wi
 from app.matters.enums import RecordMode
@@ -31,22 +32,6 @@ from tests import factories
 pytestmark = pytest.mark.django_db
 
 OVERVIEW = "matters:department"
-
-
-def register_rows(user, url: str, *, today=None):
-    """Exactly the Matters ``matters:matter_list`` would page for this link.
-
-    The figure's own URL, parsed and run back through the register's filter
-    pipeline — never a re-derived condition. A test that rebuilt the query would
-    prove the two similar conditions agree with each other rather than that the
-    figure and the list are one query.
-    """
-    from urllib.parse import parse_qsl, urlparse
-
-    from app.matters.register_filters import register_population
-
-    parsed = urlparse(url)
-    return list(register_population(user, dict(parse_qsl(parsed.query)), today=today))
 
 
 def _sent(matter, *, title: str, sent):
@@ -129,41 +114,14 @@ def test_an_ownerless_matter_reaches_the_intervention_list_and_the_count(departm
         received_date=today - timedelta(days=2),
     )
 
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    reasons = {(row.reason, row.matter.title) for row in page.interventions}
+    built = dep.build_department(department_head, is_head=True, today=today)
+    reasons = {(row.reason, row.matter.title) for row in built.interventions}
 
     assert (ov.REASON_OWNERLESS, "Meresõiduohutuse seaduse eelnõu") in reasons
-    assert page.unassigned == 1
+    assert next(f for f in built.seis if f.key == "unassigned").value == 1
 
 
 # --- C: a restricted Matter is counted for those entitled, masked for the rest
-
-
-def test_a_restricted_matter_is_counted_for_the_head_and_invisible_to_others(
-    department_head, specialist, reader, today
-):
-    """The whole boundary, from both sides.
-
-    ``visible_to`` is the single gate: a Matter a reader may not see reaches no
-    count, no row and no title. The department head is entitled by role in the
-    central authorization, not by a special case on this page.
-    """
-    create_matter(
-        title="Konkurentsiseaduse järelevalvemenetlus",
-        owner=specialist,
-        reference_year=2026,
-        visibility=Visibility.RESTRICTED,
-        actor=specialist,
-    )
-
-    head_page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    stranger_page = ov.build_overview(reader, scope=ov.SCOPE_DEPARTMENT, today=today)
-
-    head_open = next(f for f in head_page.figures if f.key == "open")
-    stranger_open = next(f for f in stranger_page.figures if f.key == "open")
-
-    assert head_open.count == 1
-    assert stranger_open.count == 0
 
 
 def test_a_restricted_title_never_reaches_a_non_participants_page(
@@ -181,39 +139,6 @@ def test_a_restricted_title_never_reaches_a_non_participants_page(
     body = client.get(reverse(OVERVIEW) + "?vaade=osakond").content.decode()
 
     assert "Konkurentsiseaduse" not in body
-
-
-# --- D: ownership and responsibility are different questions -------------
-
-
-def test_open_matters_count_ownership_while_overdue_counts_responsibility(
-    department_head, specialist, other_specialist, today
-):
-    matter = create_matter(
-        title="Riigihangete seaduse VTK",
-        owner=specialist,
-        reference_year=2026,
-        actor=specialist,
-    )
-    set_next_action(
-        matter=matter,
-        text="Esitan arvamuse",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=today - timedelta(days=3),
-        responsible=other_specialist,
-        actor=specialist,
-    )
-
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    loads = {person.user.pk: person for person in page.loads}
-
-    # The file sits with its owner; the late instruction sits with whoever must
-    # do it. Summing the two into one "workload" would answer neither question.
-    assert loads[specialist.pk].open_count == 1
-    assert loads[specialist.pk].overdue == 0
-    assert loads[other_specialist.pk].open_count == 0
-    assert loads[other_specialist.pk].overdue == 1
 
 
 # --- E: only a real deadline is called a deadline ------------------------
@@ -345,8 +270,7 @@ def test_an_area_is_unowned_only_when_nobody_owns_any_of_its_work(
     assert by_key[unwatched.key].is_unowned is True
 
     page = ov.build_overview(department_head, scope=ov.SCOPE_AREAS, today=today)
-    unowned_figure = next(f for f in page.figures if f.key == "unowned")
-    assert unowned_figure.count == 1
+    assert [row.key for row in page.unowned_areas] == [unwatched.key]
 
 
 # --- H: an opinion is a canonical Submission, not an archive file --------
@@ -362,118 +286,55 @@ def test_only_canonical_sent_submissions_count_as_opinions(department_head, spec
     # An archive row, which is what the historical corpus looks like here.
     factories.ArchiveMatterFactory(title="Ajalooline kiri", record_mode=RecordMode.ARCHIVE)
 
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    submissions = next(f for f in page.figures if f.key == "submissions")
+    built = dep.build_department(department_head, is_head=True, today=today)
 
-    assert submissions.count == 1
+    assert next(f for f in built.seis if f.key == "sent").value == 1
+    assert {row.label: row.count for row in built.reporting}["Saadetud arvamusi"] == 1
 
 
 # --- I: every figure leads somewhere real --------------------------------
 
 
-@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_AREAS])
-def test_every_seis_figure_resolves_to_a_real_list(client, department_head, scope, today):
-    """No dead numbers. A figure a reader cannot follow is a figure they stop trusting."""
+def test_every_seis_figure_resolves_to_a_real_list(client, department_head, today):
+    """No dead numbers. A figure a reader cannot follow is a figure they stop trusting.
+
+    Quantified over the strip rather than over a list of keys, so a figure added
+    later is inside this guarantee without anybody remembering to add it. The
+    one figure that deliberately carries no destination is `sent`, and that
+    exception is pinned by name in `tests/test_department_page.py`; here it is
+    simply skipped, because this test is about links that exist being real.
+    """
     client.force_login(department_head)
-    page = ov.build_overview(department_head, scope=scope, today=today)
+    built = dep.build_department(department_head, is_head=True, today=today)
 
-    assert page.figures
-    for figure in page.figures:
-        assert figure.url, f"{figure.key} has no destination"
-        # A relative destination is this page narrowing itself — the honest home
-        # for the two figures that count something the register does not list,
-        # namely people and policy areas.
-        url = figure.url if figure.url.startswith("/") else reverse(OVERVIEW) + figure.url
-        response = client.get(url)
-        assert response.status_code == 200, f"{figure.key} -> {url}"
+    assert built.seis
+    for figure in built.seis:
+        if not figure.url:
+            continue
+        response = client.get(figure.url)
+        assert response.status_code == 200, f"{figure.key} -> {figure.url}"
 
 
-@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_AREAS])
-def test_a_figure_that_opens_the_register_carries_a_filter(department_head, scope, today):
+def test_a_figure_that_opens_the_register_carries_a_filter(department_head, today):
     """A figure linking to the bare register is the defect this page keeps finding.
 
-    Not every figure opens the register — *N inimest* opens the list of people
-    on this page — but every one that does must arrive somewhere narrowed, or
-    the reader is looking at the whole corpus and a number that no longer means
-    anything.
+    Not every figure opens the register — *saadetud* states a number it cannot
+    open — but every one that does must arrive somewhere narrowed, or the reader
+    is looking at the whole corpus and a number that no longer means anything.
+    `register_link` returns the bare register plus the results anchor when its
+    parameter dict is empty, so the anchor test next door cannot see this.
     """
     from urllib.parse import parse_qsl, urlparse
 
-    page = ov.build_overview(department_head, scope=scope, today=today)
+    built = dep.build_department(department_head, is_head=True, today=today)
     register = reverse("matters:matter_list")
 
-    for figure in page.figures:
+    for figure in built.seis:
         if not figure.url.startswith(register):
             continue
         assert dict(parse_qsl(urlparse(figure.url).query)), (
             f"{figure.key} opens an unfiltered register"
         )
-
-
-@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_AREAS])
-def test_a_register_figure_lands_on_the_results(department_head, scope, today):
-    """The fragment is part of the promise, not decoration.
-
-    A filtered register opens on a search box, a status strip and a narrowing
-    panel that expands itself whenever a filter is applied. Somebody who clicked
-    a number wants the rows.
-    """
-    page = ov.build_overview(department_head, scope=scope, today=today)
-    register = reverse("matters:matter_list")
-
-    for figure in page.figures:
-        if figure.url.startswith(register):
-            assert figure.url.endswith(ov.RESULTS_ANCHOR), f"{figure.key} lands above the rows"
-
-
-def test_the_overdue_figure_and_its_list_hold_the_same_rows(department_head, specialist, today):
-    """The figure counts late work; the register list it opens holds exactly that.
-
-    An `Oluline tähtaeg` that has passed is genuinely late and carries no open
-    action, so `?tegevus=` could never express it — which is why the figure used
-    to narrow this page's own intervention list instead of opening the register
-    like every figure beside it. `?too=` expresses the read model's own
-    population, so the figure now leads where a reader expects and the two
-    halves are still one query (Ülevaade QA §3).
-    """
-    late_action = create_matter(
-        title="Hilinenud tegevusega", owner=specialist, reference_year=2026, actor=specialist
-    )
-    set_next_action(
-        matter=late_action,
-        text="Hilinenud",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=today - timedelta(days=2),
-        actor=specialist,
-    )
-    late_milestone = create_matter(
-        title="Hilinenud tähtajaga", owner=specialist, reference_year=2026, actor=specialist
-    )
-    add_important_date(
-        matter=late_milestone,
-        title="Möödunud oluline tähtaeg",
-        date_value=today - timedelta(days=5),
-        period_end=today - timedelta(days=5),
-        actor=specialist,
-    )
-    waiting = create_matter(title="Ootav", owner=specialist, reference_year=2026, actor=specialist)
-    set_next_action(
-        matter=waiting,
-        text="Ootan",
-        kind=ActionKind.WAIT,
-        date_semantics=DateSemantics.REVIEW_ON,
-        target_date=today - timedelta(days=9),
-        actor=specialist,
-    )
-
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    figure = next(f for f in page.figures if f.key == "overdue")
-    rows = register_rows(department_head, figure.url, today=today)
-
-    assert figure.count == 2
-    assert {matter.title for matter in rows} == {"Hilinenud tegevusega", "Hilinenud tähtajaga"}
-    assert figure.count == len(rows)
 
 
 def test_the_month_filter_narrows_the_sent_list(client, department_head, specialist):

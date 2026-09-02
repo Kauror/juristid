@@ -45,6 +45,14 @@ from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.workflow.dates import year_from
 
+#: The register's results region. Every link that lands a reader on rows
+#: rather than on the filter panel above them carries it.
+#:
+#: Here rather than in either page that uses it, because both did: Ülevaade
+#: owned it, Osakonna töö copied it, and the merged page inherited two
+#: definitions of one string (docs/adr/0049, DUP-04).
+RESULTS_ANCHOR = "#tulemused"
+
 #: What `?allikas=` means. A word rather than a boolean, because `allikas=0`
 #: reads as "source number zero" in a URL somebody is editing by hand.
 SOURCE_PRESENT = "on"

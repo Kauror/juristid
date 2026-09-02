@@ -33,6 +33,7 @@ from django.utils import timezone
 
 from app.accounts.enums import UserRole
 from app.documents.models import DocumentVersion
+from app.matters import department as dep
 from app.matters import overview as ov
 from app.matters.models import Matter, MatterPersonalNote
 from app.submissions.models import Submission
@@ -40,7 +41,7 @@ from app.taxonomy.models import PolicyArea
 from app.workflow.enums import ActionKind
 from app.workflow.models import NextAction
 from tests import factories
-from tests.test_overview_drilldowns import list_claims, register_claims, shown_total
+from tests.test_overview_drilldowns import list_claims, shown_total
 
 pytestmark = pytest.mark.django_db
 
@@ -110,9 +111,8 @@ def test_the_form_produces_the_whole_record_in_one_go(created, specialist, stage
 
 def test_the_new_matter_reaches_the_overview_it_was_created_from(created, specialist):
     """Created on one page, counted on the other. The whole point of the seam."""
-    page = ov.build_overview(specialist, scope=ov.SCOPE_DEPARTMENT)
-    open_figure = next(figure for figure in page.figures if figure.key == "open")
-    assert open_figure.count >= 1
+    page = dep.build_department(specialist, is_head=True, today=timezone.localdate())
+    assert page.open_matters >= 1
 
     titles = set(
         Matter.objects.visible_to(specialist)
@@ -122,17 +122,24 @@ def test_the_new_matter_reaches_the_overview_it_was_created_from(created, specia
     assert TITLE in titles
 
 
-@pytest.mark.parametrize("scope", [ov.SCOPE_DEPARTMENT, ov.SCOPE_AREAS])
+@pytest.mark.parametrize("scope", [ov.SCOPE_AREAS])
 def test_count_and_list_still_agree_once_a_matter_arrives_this_way(
     signed_in, specialist, created, scope
 ):
     """#63's promise, re-asked with #64's Matter in the population.
 
-    Every number Ülevaade prints is walked and its destination opened through
+    Every number Valdkonniti prints is walked and its destination opened through
     the real view, exactly as the drill-down suite does — the difference is only
     that one of the rows being counted was posted by the redesigned form. A
     figure that counted this Matter and a list that lost it would be invisible
     to either round on its own.
+
+    Valdkonniti is where the seam can actually tear: the count comes from the
+    area group-by while the destination total comes from the register's own
+    filter pipeline, so the two are separate queries that can genuinely
+    disagree. On the merged department strip a figure and its link are one
+    `register_population` call built from the same parameters, which is why that
+    scope is not walked a second time here.
     """
     page = ov.build_overview(specialist, scope=scope)
     claims = list_claims(page)
@@ -146,10 +153,15 @@ def test_the_new_matter_is_reachable_from_at_least_one_number(
     signed_in, specialist, created, stage
 ):
     """Not merely counted somewhere: findable by clicking something."""
-    page = ov.build_overview(specialist, scope=ov.SCOPE_DEPARTMENT)
+    page = dep.build_department(specialist, is_head=True, today=timezone.localdate())
+    destinations = [row.url for row in page.areas]
+    destinations += [figure.url for figure in page.seis if figure.url]
+    if page.intervention_url:
+        destinations.append(page.intervention_url)
+
     reached = set()
-    for claim in register_claims(page):
-        response = signed_in.get(claim.url)
+    for url in destinations:
+        response = signed_in.get(url)
         reached.update(matter.title for matter in response.context["page"].object_list)
     assert TITLE in reached
 

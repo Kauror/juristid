@@ -48,14 +48,12 @@ from datetime import timedelta
 from urllib.parse import urlparse
 
 import pytest
-from django.urls import reverse
 from django.utils import timezone
 
 from app.core.enums import Visibility
 from app.intelligence.services import add_important_date
 from app.matters import overview as ov
 from app.matters import work_items as wi
-from app.matters.models import Matter
 from app.matters.services import close_matter, create_matter
 from app.submissions.enums import SubmissionStatus
 from app.taxonomy.models import PolicyArea
@@ -236,22 +234,6 @@ def claims_for(page: ov.Overview) -> list[Claim]:
     """
     claims: list[Claim] = []
 
-    for figure in page.figures:
-        claims.append(Claim(f"seis:{figure.key}", figure.count, figure.url))
-
-    if page.intervention_url:
-        claims.append(Claim("vajab-sekkumist", page.intervention_matters, page.intervention_url))
-
-    for group in page.deadlines:
-        claims.append(Claim(f"tahtajad:{group.key}", group.matter_count, group.url))
-
-    for person in page.loads:
-        claims.append(Claim(f"koormus:{person.name}:avatud", person.open_count, person.url))
-        claims.append(Claim(f"koormus:{person.name}:hilinenud", person.overdue, person.overdue_url))
-        claims.append(
-            Claim(f"koormus:{person.name}:tegevuseta", person.no_action, person.no_action_url)
-        )
-
     for row in page.areas:
         claims.append(Claim(f"valdkond:{row.key}:avatud", row.open_count, row.url))
         claims.append(Claim(f"valdkond:{row.key}:hilinenud", row.overdue, row.overdue_url))
@@ -261,15 +243,9 @@ def claims_for(page: ov.Overview) -> list[Claim]:
                 Claim(f"valdkond:{row.key}:vastutajata", row.open_count, row.unassigned_url)
             )
 
-    for name, rows in (
-        ("valdkonnad-rail", page.area_rail),
-        ("uued-teemad", page.incoming),
-        ("asutused", page.organisations),
-        ("aruandlus", page.reporting),
-    ):
-        for row in rows:
-            if row.url:
-                claims.append(Claim(f"{name}:{row.label}", row.count, row.url))
+    for row in page.organisations:
+        if row.url:
+            claims.append(Claim(f"asutused:{row.label}", row.count, row.url))
 
     return claims
 
@@ -303,7 +279,10 @@ def rows_at(client, url: str) -> set[str]:
     return {matter.title for matter in client.get(url).context["page"].object_list}
 
 
-ALL_SCOPES = [ov.SCOPE_DEPARTMENT, ov.SCOPE_AREAS]
+#: One scope now. The department scope of `build_overview` is gone with the
+#: page it fed, and the merged page's own figures are walked the same way in
+#: `tests/test_department_page.py`, against the object that page builds.
+ALL_SCOPES = [ov.SCOPE_AREAS]
 
 
 @pytest.mark.parametrize("scope", ALL_SCOPES)
@@ -381,149 +360,6 @@ def test_a_restricted_matter_is_absent_from_both_halves(client, reader, world, s
 # ---------------------------------------------------------------------------
 
 
-def test_the_overdue_figure_counts_matters_and_not_late_rows(department_head, world, today):
-    """One Matter with two missed deadlines is one row in the list it opens."""
-    items = wi.work_items(department_head, today=today)
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    figure = next(f for f in page.figures if f.key == "overdue")
-
-    assert len(wi.overdue_items(items)) == 3, (
-        "the fixture no longer holds two late rows on one file"
-    )
-    assert figure.count == 2
-
-
-def test_the_unowned_areas_figure_opens_the_list_of_areas(client, department_head, world, today):
-    """It counts policy areas, so it may not open a list of Matters."""
-    client.force_login(department_head)
-    page = ov.build_overview(department_head, scope=ov.SCOPE_AREAS, today=today)
-    figure = next(f for f in page.figures if f.key == "unowned")
-
-    assert not urlparse(figure.url).path.startswith(REGISTER)
-    assert figure.url.endswith(ov.UNOWNED_ANCHOR)
-    assert figure.count == len(page.unowned_areas)
-
-    body = client.get(reverse("matters:overview") + figure.url).content.decode()
-    assert 'id="vastutajata-valdkonnad"' in body
-
-
-def test_the_strip_counts_the_department_and_not_the_sum_of_the_rail_rows(
-    client, department_head, world, today
-):
-    """Summing per-person counts drops every unowned file.
-
-    The rail lists those separately as *Vastutajata*, so the strip was short by
-    exactly that many while the register link beside it was not. Asserted on
-    Kogu osakond's Koormus rail, which is where the per-person rows live now
-    that Minu tiim is retired (docs/adr/0039).
-    """
-    client.force_login(department_head)
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    figure = next(f for f in page.figures if f.key == "open")
-
-    assert page.unassigned >= 1
-    assert figure.count == sum(person.open_count for person in page.loads) + page.unassigned
-    assert shown_total(client, figure.url) == figure.count
-
-
-def test_a_persons_overdue_link_asks_about_responsibility_not_ownership(
-    client, department_head, world, other_specialist, today
-):
-    """A late instruction belongs to whoever must do it, not to the file's owner.
-
-    The old link said ``?vastutaja=``, which asks who owns the Matter — so a
-    colleague carrying one delegated late step and owning a different file
-    opened the wrong list under a number that read 1.
-    """
-    client.force_login(department_head)
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    person = next(load for load in page.loads if load.user.pk == other_specialist.pk)
-
-    assert person.overdue == 1
-    # The file they own carries no late work at all, which is the whole point.
-    assert person.open_count == 1
-    assert rows_at(client, person.overdue_url) == {"Hilinenud volitatud tegevus"}
-    assert rows_at(client, person.url) == {"Järgmise tegevuseta"}
-
-
-def test_the_deadline_group_link_holds_that_window_and_not_the_register(
-    client, department_head, world, today
-):
-    """ "Näita ülejäänud 3" opened the whole register sorted by date."""
-    client.force_login(department_head)
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    groups = {group.key: group for group in page.deadlines}
-
-    assert "Selle nädala tähtaeg" in rows_at(client, groups["sel_nadalal"].url)
-
-    # The later deadline, in whichever window its date falls in. Named by
-    # lookup rather than by key because the window boundaries move with the
-    # month, and a test that hard-codes one is a test that fails on the last
-    # week of September for a reason that has nothing to do with links.
-    later = next(
-        group
-        for group in page.deadlines
-        if any(item.matter.title == "Järgmise nädala tähtaeg" for item in group.items)
-    )
-    assert later.key != "sel_nadalal"
-    listed = rows_at(client, later.url)
-    assert "Järgmise nädala tähtaeg" in listed
-    assert "Selle nädala tähtaeg" not in listed, "the window link reopened this week"
-
-
-def test_the_intervention_link_holds_every_reason_at_once(client, department_head, world, today):
-    """Vajab sekkumist mixes four kinds of trouble; its link must hold all four."""
-    client.force_login(department_head)
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    titles = rows_at(client, page.intervention_url)
-
-    assert {
-        "Kaks möödunud tähtaega",
-        "Hilinenud volitatud tegevus",
-        "Ülevaatamiseks küps",
-        "Järgmise tegevuseta",
-        "Vastutajata teema",
-    } <= titles
-    assert "Selle nädala tähtaeg" not in titles
-
-
-def test_show_all_under_the_intervention_list_shows_all_of_it(department_head, world, today):
-    """The footer promised the whole list and opened the late rows only."""
-    whole = ov.build_overview(
-        department_head,
-        scope=ov.SCOPE_DEPARTMENT,
-        today=today,
-        intervention_filter=ov.INTERVENTION_ALL,
-    )
-    unfiltered = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-
-    assert whole.intervention_total == unfiltered.intervention_total
-    assert len(whole.intervention_preview) == whole.intervention_total
-
-
-def test_naita_veel_holds_the_remainder_of_the_same_list(department_head, world, today):
-    """The rows behind «Näita veel N ▾» are the rest of the list above them.
-
-    The v2 design replaced the footer link — which reloaded the page with a
-    wider filter — with a disclosure holding the remainder of the same read
-    (02-EKRAANID §B). The browser test that followed the old link went with it,
-    and this is what it was really asserting: the number on the control, the
-    rows on screen and the rows behind it are three readings of one answer, not
-    a second query that can disagree with the first.
-    """
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-
-    assert page.intervention_preview + page.intervention_rest == page.interventions
-    assert page.intervention_remaining == len(page.intervention_rest)
-    assert page.intervention_total == len(page.interventions)
-
-    # And no row is on screen *and* behind the disclosure. Two copies of a row
-    # is the defect a slice can produce without changing any count.
-    shown = [id(row) for row in page.intervention_preview]
-    hidden = [id(row) for row in page.intervention_rest]
-    assert not set(shown) & set(hidden)
-
-
 def test_the_area_footer_opens_every_area_including_the_empty_ones(department_head, world, today):
     """A number of areas opens a list of areas, and all of them are in it."""
     folded = ov.build_overview(department_head, scope=ov.SCOPE_AREAS, today=today)
@@ -533,44 +369,3 @@ def test_the_area_footer_opens_every_area_including_the_empty_ones(department_he
 
     assert folded.empty_areas > 0
     assert len(expanded.areas) == folded.area_total
-
-
-def test_the_reporting_rail_carries_its_year_into_the_link(client, department_head, world, today):
-    """*Suletud teemasid 2026* opened every closed Matter there has ever been."""
-    client.force_login(department_head)
-    close_matter(
-        matter=create_matter(title="Ammu suletud", owner=None, actor=department_head),
-        disposition=Disposition.COMPLETED,
-        actor=department_head,
-    )
-    Matter.objects.filter(title="Ammu suletud").update(
-        closed_at=timezone.now() - timedelta(days=800)
-    )
-
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    row = next(row for row in page.reporting if row.label.startswith("Suletud"))
-
-    assert rows_at(client, row.url) == {"Suletud teema"}
-    assert shown_total(client, row.url) == row.count
-
-
-def test_the_drafting_figure_counts_canonical_opinions_being_written(
-    client, department_head, world, today
-):
-    """Canonical Submissions in DRAFT, and nothing that merely looks like one.
-
-    Not the register's VÄLJA column, which is what the Excel era knew about a
-    sent date, and not the historical archive — 767 letters that were sent
-    rather than written, and that are not Submission rows at all.
-    """
-    client.force_login(department_head)
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    figure = next(f for f in page.figures if f.key == "drafting")
-
-    assert figure.count == 1
-    assert urlparse(figure.url).path == OPINIONS
-    assert shown_total(client, figure.url) == 1
-
-    response = client.get(figure.url)
-    listed = {submission.status for submission in response.context["page"].object_list}
-    assert listed == {SubmissionStatus.DRAFT}
