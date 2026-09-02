@@ -1286,3 +1286,29 @@ def test_a_specialist_pays_for_less_than_the_head(client, department_head, speci
         client.get(PAGE)
 
     assert len(specialist_queries) < len(head_queries)
+
+
+def test_naita_veel_holds_the_remainder_of_the_same_list(department_head, world, today):
+    """The rows behind «Näita veel N ▾» are the rest of the list above them.
+
+    Moved here from `tests/test_overview_drilldowns.py` when the department
+    scope of `build_overview` was retired. The invariant did not move with the
+    page — `Department` carries these three properties now — and it is the one
+    thing in that file with no equivalent already asserted here, so it travelled
+    rather than being deleted with the read model it used to be read from.
+
+    The number on the control, the rows on screen and the rows behind it are
+    three readings of one answer, not a second query that can disagree with the
+    first.
+    """
+    page = dep.build_department(department_head, is_head=True, today=today)
+
+    assert page.intervention_preview + page.intervention_rest == page.interventions
+    assert page.intervention_remaining == len(page.intervention_rest)
+    assert page.intervention_total == len(page.interventions)
+
+    # And no row is on screen *and* behind the disclosure. Two copies of a row
+    # is the defect a slice can produce without changing any count.
+    shown = [id(row) for row in page.intervention_preview]
+    hidden = [id(row) for row in page.intervention_rest]
+    assert not set(shown) & set(hidden)

@@ -79,9 +79,19 @@ def _deadline(
     return matter
 
 
+def _deadline_groups(user, today: date) -> list[ov.DeadlineGroup]:
+    """The three-window read model, read directly.
+
+    It used to be reached through `build_overview`'s department scope. That
+    branch is gone with the page it fed, and the read model is fenced until its
+    coverage against the live five-window panel is settled — so these tests call
+    it the way `activity_feed`'s tests already call theirs: by name.
+    """
+    return ov.deadline_groups(wi.work_items(user, today=today), today)
+
+
 def _groups(user, today: date) -> dict[str, ov.DeadlineGroup]:
-    page = ov.build_overview(user, scope=ov.SCOPE_DEPARTMENT, today=today)
-    return {group.key: group for group in page.deadlines}
+    return {group.key: group for group in _deadline_groups(user, today)}
 
 
 def _titles(group) -> set[str]:
@@ -455,13 +465,12 @@ def test_the_group_link_opens_exactly_the_matters_the_header_counted(
     _deadline(department_head, on=date(2026, 9, 25), title="Kuu lõpus")
     _deadline(department_head, on=date(2026, 11, 5), title="Novembris")
 
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    for group in page.deadlines:
+    for group in _deadline_groups(department_head, today):
         query = dict(parse_qsl(urlparse(group.url).query))
         listed = register_population(department_head, query, today=today)
         assert listed.count() == group.matter_count, f"{group.key} promises what it cannot show"
 
-    rest = {group.key: group for group in page.deadlines}["ulejaanud_kuu"]
+    rest = _groups(department_head, today)["ulejaanud_kuu"]
     assert rest.count == 3, "two dates on one Matter are two rows"
     assert rest.matter_count == 2, "two dates on one Matter are one file to open"
 
@@ -617,8 +626,7 @@ def test_the_week_group_holds_a_date_that_has_already_passed_this_week(
     today = wednesday
     _deadline(department_head, on=date(2026, 8, 31), title="Esmaspäevane tähtaeg")
 
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    week = {group.key: group for group in page.deadlines}["sel_nadalal"]
+    week = _groups(department_head, today)["sel_nadalal"]
     assert _titles(week) == {"Esmaspäevane tähtaeg"}
 
     items = wi.work_items(department_head, today=today)

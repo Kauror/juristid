@@ -533,4 +533,33 @@ ITEMS: tuple[StatusItem, ...] = (
             "app/matters/overview.py, `activity_feed`",
         ),
     ),
+    StatusItem(
+        key="DS-26",
+        area="Osakond · Eesolev",
+        issue=(
+            "Tähtaegade kolme akna lugemismudel (`deadline_windows`, "
+            "`deadline_groups`, `DeadlineGroup`, `real_deadlines`) ei ole enam "
+            "ühelgi lehel — /osakond/ joonistab viie akna paneeli "
+            "(`department_dashboard.upcoming_groups`, ADR 0049 §5). Mudel ja "
+            "selle kakskümmend testi on alles."
+        ),
+        why=(
+            "Eemaldamine tähendaks otsust, et `tests/test_deadline_grouping.py` "
+            "on elava paneeli enda testidega täielikult kaetud. Kattuvus on "
+            "suur, aga see ei ole tõestatult täielik — ja suure eemalduse lõpus "
+            "tehtud kattuvusotsus on just see, mis vaikselt ühe invariandi "
+            "kaotab. Sama põhjus, mis hoiab alles `activity_feed`-i (DS-25)."
+        ),
+        state=OPEN,
+        next_step=(
+            "Võrrelda kolme akna testide invariandid ükshaaval "
+            "`tests/test_department_page.py` Eesoleva testidega; katmata osa "
+            "tõsta ümber, seejärel mudel koos testidega eemaldada."
+        ),
+        sources=(
+            "docs/adr/0049-one-department-page.md",
+            "app/matters/overview.py, `deadline_groups`",
+            "tests/test_deadline_grouping.py",
+        ),
+    ),
 )

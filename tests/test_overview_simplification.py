@@ -29,8 +29,11 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
+from app.accounts.enums import UserRole
 from app.core.enums import Visibility
 from app.intelligence.services import add_important_date
+from app.matters import department as dep
+from app.matters import department_dashboard as dd
 from app.matters import overview as ov
 from app.matters.services import create_matter
 from app.submissions.enums import SubmissionStatus
@@ -44,21 +47,6 @@ OVERVIEW = "matters:department"
 
 #: The three that survived, in the order Aruandlus prints them.
 RETAINED = ("Sissekandeid sel nädalal", "Saadetud arvamusi", "Tähtaegu sel nädalal")
-
-#: Everything the retired scope put on the page. Named rather than described,
-#: because "no team content" is only checkable against a list of what team
-#: content was.
-GONE = (
-    "Minu tiim",
-    "vaade=tiim",
-    "Tiimi tegevus",
-    "Tiimi tähtajad",
-    "personblock",
-    "teamrow",
-    'id="inimesed"',
-    # The footnote the view needed because it could not mean its own name.
-    "Tiimi koosseisu ei ole süsteemis eraldi kirjas",
-)
 
 
 @pytest.fixture
@@ -75,14 +63,6 @@ def midweek():
     what these tests check would hold by coincidence.
     """
     return datetime.date(2026, 8, 12)
-
-
-def aruandlus(page: ov.Overview) -> dict[str, int]:
-    return {row.label: row.count for row in page.reporting}
-
-
-def row_starting(page: ov.Overview, prefix: str):
-    return next(row for row in page.reporting if row.label.startswith(prefix))
 
 
 def entry_on(matter, when, *, author, restricted: bool = False):
@@ -122,7 +102,11 @@ def sent_on(matter, when, *, title="Arvamus", restricted=False):
         matter=matter,
         title=title,
         status=SubmissionStatus.SENT,
-        sent_at=datetime.datetime.combine(when, datetime.time(9, 0), tzinfo=datetime.UTC),
+        sent_at=(
+            when
+            if isinstance(when, datetime.datetime)
+            else datetime.datetime.combine(when, datetime.time(9, 0), tzinfo=datetime.UTC)
+        ),
         final_version=version,
         visibility_override=Visibility.RESTRICTED if restricted else "",
     )
@@ -158,28 +142,6 @@ def test_the_department_page_still_renders_kogu_osakond(client, department_head)
     assert "uxstat__row" in body
 
 
-@pytest.mark.parametrize("marker", GONE)
-def test_no_trace_of_the_retired_view_reaches_the_page(client, department_head, specialist, marker):
-    """Asserted on a populated page, so an empty one cannot pass it by default."""
-    matter = a_matter(specialist)
-    set_next_action(
-        matter=matter,
-        text="Esitan arvamuse",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=timezone.localdate() + timedelta(days=1),
-        actor=specialist,
-    )
-    client.force_login(department_head)
-
-    body = client.get(reverse(OVERVIEW)).content.decode()
-
-    # Populated, so an empty page cannot pass this by default. The Meeskond
-    # grid rather than the Koormus rail: that is where the people are now.
-    assert body.count("uxstat__row") >= 1, "the Meeskond grid should be populated"
-    assert marker not in body
-
-
 def test_the_retired_scope_is_not_reachable_by_asking_for_it(client, department_head):
     """Not merely untabbed. There is no second body behind the parameter."""
     client.force_login(department_head)
@@ -190,35 +152,9 @@ def test_the_retired_scope_is_not_reachable_by_asking_for_it(client, department_
     assert "Tiimi tegevus" not in body
 
 
-def test_the_department_page_carries_no_second_per_person_projection(department_head, today):
-    """`PersonLoad` stopped carrying rows when the view that printed them went.
-
-    A dataclass still assembling a week of work items per colleague would be the
-    dead second implementation this change exists to remove — invisible on the
-    page and paid for on every request.
-    """
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-
-    assert not hasattr(page, "people")
-    assert not hasattr(page, "team_activity")
-    assert not hasattr(page, "is_team")
-    assert all(not hasattr(load, "items") for load in page.loads)
-
-
 # ---------------------------------------------------------------------------
 # B. The three metrics survived, in Aruandlus, still calculated
 # ---------------------------------------------------------------------------
-
-
-def test_aruandlus_holds_the_three_retained_rows_and_the_year_rows(department_head, today):
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    labels = [row.label for row in page.reporting]
-
-    assert labels[0] == "Sissekandeid sel nädalal"
-    assert labels[1].startswith("Saadetud arvamusi ")
-    assert labels[2] == "Tähtaegu sel nädalal"
-    # The block they moved into, not a block of their own beside it.
-    assert f"Suletud teemasid {today.year}" in labels
 
 
 def test_the_aruandlus_block_holds_the_three_approved_year_rows(client, department_head):
@@ -248,79 +184,9 @@ def test_the_aruandlus_block_holds_the_three_approved_year_rows(client, departme
     assert block.count("railrow__key") == 3
 
 
-def test_each_retained_row_counts_what_the_database_holds(department_head, specialist, midweek):
-    """Values come from queries: seed one of each, and each row moves by one."""
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=midweek)
-    before = aruandlus(page)
-    month_label = row_starting(page, "Saadetud arvamusi ").label
-
-    matter = a_matter(specialist)
-    entry_on(matter, midweek, author=specialist)
-    sent_on(matter, midweek)
-    set_next_action(
-        matter=matter,
-        text="Esitan arvamuse",
-        kind=ActionKind.DO,
-        date_semantics=DateSemantics.DEADLINE,
-        target_date=midweek + timedelta(days=1),
-        actor=specialist,
-    )
-
-    after = aruandlus(ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=midweek))
-
-    assert after["Sissekandeid sel nädalal"] == before["Sissekandeid sel nädalal"] + 1
-    assert after[month_label] == before[month_label] + 1
-    assert after["Tähtaegu sel nädalal"] == before["Tähtaegu sel nädalal"] + 1
-
-
-@pytest.mark.parametrize(
-    ("when", "expected"),
-    [
-        (datetime.date(2026, 8, 12), "augustis"),
-        (datetime.date(2026, 9, 12), "septembris"),
-        (datetime.date(2026, 5, 12), "mais"),
-        (datetime.date(2026, 3, 12), "märtsis"),
-    ],
-)
-def test_the_month_wording_follows_the_date_and_stays_estonian(department_head, when, expected):
-    """Derived from the day, spelled from the table.
-
-    The inessive is not one suffix: *mais* drops nothing, *märtsis* adds two
-    letters and *septembris* loses a vowel. A rule guessed from three examples
-    produces *augusts*, which is the small wrongness that makes a page read as
-    machine-written (app/matters/overview.py).
-    """
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=when)
-
-    assert row_starting(page, "Saadetud arvamusi ").label == f"Saadetud arvamusi {expected}"
-
-
 # ---------------------------------------------------------------------------
 # C. Date semantics: each row is bounded by the period it names
 # ---------------------------------------------------------------------------
-
-
-def test_the_entry_week_runs_monday_to_sunday_and_excludes_both_neighbours(
-    department_head, specialist, midweek
-):
-    """Work already written up, so the window is the whole ISO week.
-
-    The upper bound is the half this move added: it was open-ended, so an entry
-    somebody dated into next month counted towards *this week* (docs/adr/0039).
-    """
-    matter = a_matter(specialist)
-    monday = midweek - timedelta(days=midweek.weekday())
-    sunday = monday + timedelta(days=6)
-
-    entry_on(matter, monday, author=specialist)
-    entry_on(matter, sunday, author=specialist)
-    entry_on(matter, monday - timedelta(days=1), author=specialist)
-    entry_on(matter, sunday + timedelta(days=1), author=specialist)
-    entry_on(matter, midweek + timedelta(days=40), author=specialist)
-
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=midweek)
-
-    assert aruandlus(page)["Sissekandeid sel nädalal"] == 2
 
 
 def test_the_deadline_week_runs_today_to_sunday(department_head, specialist, midweek):
@@ -330,8 +196,11 @@ def test_the_deadline_week_runs_today_to_sunday(department_head, specialist, mid
     overdue, and the Seis strip and the intervention list are where the
     department is told about it; counting it again under *sel nädalal* would say
     there is still time.
+
+    One Matter per date, because the figure this now reads counts Matters where
+    the retired row counted date rows — four dates on one Matter would be a 1
+    whichever way the window fell, and the boundary would be invisible.
     """
-    matter = a_matter(specialist)
     monday = midweek - timedelta(days=midweek.weekday())
     sunday = monday + timedelta(days=6)
 
@@ -342,53 +211,16 @@ def test_the_deadline_week_runs_today_to_sunday(department_head, specialist, mid
         ("next-week", sunday + timedelta(days=1)),
     ):
         add_important_date(
-            matter=matter,
+            matter=a_matter(specialist, title=f"Teema {label}"),
             title=f"Tähtaeg {label}",
             date_value=when,
             period_end=when,
             actor=specialist,
         )
 
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=midweek)
+    page = dep.build_department(department_head, is_head=True, today=midweek)
 
-    assert aruandlus(page)["Tähtaegu sel nädalal"] == 2
-
-
-def test_the_month_row_holds_this_month_across_the_transition(department_head, specialist, midweek):
-    """The last day of the month is in it; the first of the next is not."""
-    matter = a_matter(specialist)
-    first = midweek.replace(day=1)
-    last = datetime.date(2026, 8, 31)
-
-    sent_on(matter, first, title="Kuu algus")
-    sent_on(matter, last, title="Kuu lõpp")
-    sent_on(matter, last + timedelta(days=1), title="Järgmine kuu")
-    sent_on(matter, first - timedelta(days=1), title="Eelmine kuu")
-
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=midweek)
-
-    assert row_starting(page, "Saadetud arvamusi ").count == 2
-
-
-def test_the_month_row_opens_exactly_the_month_it_names(client, department_head, specialist):
-    """The one of the three with a list behind it, so the link carries the month.
-
-    A label that says *augustis* over a link that opens the whole year is the
-    defect ADR 0033 was written for, and it is the reason this row keeps its
-    `?aasta=&kuu=` rather than borrowing the year rows' link.
-    """
-    today = timezone.localdate()
-    matter = a_matter(specialist)
-    sent_on(matter, today, title="Selle kuu arvamus")
-
-    page = ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=today)
-    row = row_starting(page, "Saadetud arvamusi ")
-
-    assert f"aasta={today.year}" in row.url and f"kuu={today.month}" in row.url
-
-    client.force_login(department_head)
-    listed = client.get(row.url).context["page"].paginator.count
-    assert listed == row.count
+    assert next(f for f in page.seis if f.key == "week").value == 2
 
 
 # ---------------------------------------------------------------------------
@@ -464,28 +296,43 @@ def restricted_pair(specialist, when):
     return matter
 
 
+def counted_for(user, when):
+    """The three numbers on /osakond/ that the three restricted children reach.
+
+    One per child kind, so a restriction that leaked would move exactly one of
+    them: the entry reaches the Ülevaade digest, the opinion reaches the
+    Aruandlus year row, the deadline reaches the Seis strip's week figure.
+    """
+    page = dep.build_department(user, is_head=user.role == UserRole.DEPARTMENT_HEAD, today=when)
+    digest = page.digest or dd.build_digest(user, dd.period_from({}, when), dd.KIND_ALL)
+    reporting = {row.label: row.count for row in page.reporting}
+    return {
+        "entries": digest.entries,
+        "sent": reporting["Saadetud arvamusi"],
+        "deadlines": next(f for f in page.seis if f.key == "week").value,
+    }
+
+
 def test_a_restricted_child_is_absent_from_all_three_counts_for_a_stranger(specialist, midweek):
     stranger = factories.ReaderFactory()
     restricted_pair(specialist, midweek)
 
-    counts = aruandlus(ov.build_overview(stranger, scope=ov.SCOPE_DEPARTMENT, today=midweek))
-    month = next(label for label in counts if label.startswith("Saadetud arvamusi "))
+    counts = counted_for(stranger, midweek)
 
-    assert counts["Sissekandeid sel nädalal"] == 0
-    assert counts[month] == 0
-    assert counts["Tähtaegu sel nädalal"] == 0
+    assert counts["entries"] == 0
+    assert counts["sent"] == 0
+    assert counts["deadlines"] == 0
 
 
 def test_the_same_children_are_counted_for_the_colleague_entitled_to_them(specialist, midweek):
     """The other half. Without it the assertions above hold for an empty page."""
     restricted_pair(specialist, midweek)
 
-    counts = aruandlus(ov.build_overview(specialist, scope=ov.SCOPE_DEPARTMENT, today=midweek))
-    month = next(label for label in counts if label.startswith("Saadetud arvamusi "))
+    counts = counted_for(specialist, midweek)
 
-    assert counts["Sissekandeid sel nädalal"] == 1
-    assert counts[month] == 1
-    assert counts["Tähtaegu sel nädalal"] == 1
+    assert counts["entries"] == 1
+    assert counts["sent"] == 1
+    assert counts["deadlines"] == 1
 
 
 def test_the_stranger_still_sees_the_matter_itself(client, specialist, midweek):
@@ -509,10 +356,10 @@ def test_the_department_head_reads_the_restricted_children_by_role(
     """Entitlement here is the central rule, not a special case on this page."""
     restricted_pair(specialist, midweek)
 
-    counts = aruandlus(ov.build_overview(department_head, scope=ov.SCOPE_DEPARTMENT, today=midweek))
+    counts = counted_for(department_head, midweek)
 
-    assert counts["Sissekandeid sel nädalal"] == 1
-    assert counts["Tähtaegu sel nädalal"] == 1
+    assert counts["entries"] == 1
+    assert counts["deadlines"] == 1
 
 
 def test_a_restricted_matters_children_are_hidden_from_the_counts_too(specialist, midweek):
@@ -523,15 +370,8 @@ def test_a_restricted_matters_children_are_hidden_from_the_counts_too(specialist
     matter.save(update_fields=["visibility"])
     entry_on(matter, midweek, author=specialist)
 
-    stranger_counts = aruandlus(
-        ov.build_overview(stranger, scope=ov.SCOPE_DEPARTMENT, today=midweek)
-    )
-    owner_counts = aruandlus(
-        ov.build_overview(specialist, scope=ov.SCOPE_DEPARTMENT, today=midweek)
-    )
-
-    assert stranger_counts["Sissekandeid sel nädalal"] == 0
-    assert owner_counts["Sissekandeid sel nädalal"] == 1
+    assert counted_for(stranger, midweek)["entries"] == 0
+    assert counted_for(specialist, midweek)["entries"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -584,40 +424,31 @@ def test_the_overview_costs_the_same_whatever_is_on_it(client, department_head, 
     assert small == large, f"{small} queries for 3 Matters, {large} for 18"
 
 
-def test_the_week_of_entries_is_one_aggregate_in_the_departments_timezone(
-    client, department_head, specialist
+def test_a_date_window_is_cut_in_the_departments_timezone_and_not_in_utc(
+    department_head, specialist
 ):
-    """The one query the three rows actually added, and the timezone it runs in.
+    """`sent_at` is a moment and Aruandlus counts *days*, so the cast decides.
 
-    Of the three, the month's opinions narrow a population the page already
-    resolved and are handed the Seis strip's own number rather than counting it
-    again; the week's deadlines are counted in Python off the work items the
-    page already read. Only the entries bring an aggregate of their own.
+    An opinion sent at half past midnight on New Year's Day in Tallinn is
+    22:30 on the 31st in UTC — one year out on either side of the boundary. The
+    row is asserted from the Tallinn side, so a server or a query drifting to
+    UTC moves this opinion into the previous year and the row reads zero, while
+    nothing on the page looks wrong.
 
-    `occurred_at` is a moment and the row counts *days*, so the boundary depends
-    entirely on which timezone the cast uses. Asserted against the SQL, because
-    a server drifting to UTC would move the Monday by three hours and nothing on
-    the page would look wrong.
+    A behavioural assertion rather than a grep for `AT TIME ZONE`: the point is
+    which day the sender was living in, not how the ORM spells it.
     """
-    from django.db import connection
-    from django.test.utils import CaptureQueriesContext
+    matter = a_matter(specialist)
+    # 22:30 UTC on 31.12 is 00:30 on 01.01 in Tallinn (UTC+2 in winter).
+    sent_on(
+        matter,
+        datetime.datetime(2026, 12, 31, 22, 30, tzinfo=datetime.UTC),
+        title="Uusaastaöine arvamus",
+    )
 
-    seed_rows(specialist, 3)
-    client.force_login(department_head)
+    page = dep.build_department(department_head, is_head=True, today=datetime.date(2027, 1, 5))
+    reporting = {row.label: row.count for row in page.reporting}
 
-    with CaptureQueriesContext(connection) as captured:
-        assert client.get(reverse(OVERVIEW)).status_code == 200
-
-    # The week's aggregate specifically — other statements join `matters_entry`
-    # for the feed and for "järgmise tegevuseta", and matching those would make
-    # this assert something it does not mean.
-    week_counts = [
-        query["sql"]
-        for query in captured.captured_queries
-        if "COUNT(" in query["sql"]
-        and "matters_entry" in query["sql"]
-        and "occurred_at" in query["sql"]
-    ]
-
-    assert len(week_counts) == 1, week_counts
-    assert "AT TIME ZONE 'Europe/Tallinn'" in week_counts[0]
+    assert reporting["Saadetud arvamusi"] == 1, (
+        "the opinion was cut into the previous year, so the window ran in UTC"
+    )

@@ -100,6 +100,7 @@ from app.matters.enums import RecordMode
 from app.matters.models import Entry, Matter
 from app.matters.register_filters import (
     OPINION_DRAFTING,
+    RESULTS_ANCHOR,
     WORK_PARAM,
     register_population,
 )
@@ -129,18 +130,6 @@ CASEWORK_ROLES: tuple[str, ...] = (
     UserRole.SPECIALIST.value,
     UserRole.DEPARTMENT_HEAD.value,
 )
-
-
-#: The register's results region. Every link from this page carries it, so
-#: arriving from a number lands on the rows rather than on the filter panel the
-#: reader then has to scroll past to find out whether anything came back.
-#:
-#: It was Ülevaade's alone (`overview.RESULTS_ANCHOR`) and the two pages
-#: therefore behaved differently from the same kind of number. On the merged
-#: page they are one strip, so they land the same way — caught by
-#: `e2e/test_kpi_navigation.py`, which is the only place a fragment is
-#: observable at all.
-RESULTS_ANCHOR = "#tulemused"
 
 
 def register_url(**params: Any) -> str:

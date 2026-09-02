@@ -166,7 +166,7 @@ def build_department(
             sort=sort,
             show_empty_areas=show_empty_areas,
         )
-        page.open_matters = page.area_page.figures[0].count if page.area_page.figures else 0
+        page.open_matters = page.area_page.open_matters
         # The same Aruandlus block the department scope prints, from the same
         # selectors. Switching scope must not change a number nobody asked to
         # change (docs/adr/0049 §8).
