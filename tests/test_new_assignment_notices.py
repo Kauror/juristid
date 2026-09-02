@@ -765,12 +765,18 @@ def test_a_person_reading_their_own_page_by_the_person_route_still_gets_it(
 def test_the_rail_query_does_not_grow_with_the_number_of_notices(
     django_assert_num_queries, specialist, other_specialist, count
 ):
-    """The same two queries at 0, 1 and 20 notices. No growth per row.
+    """The same one query at 0, 1 and 20 notices. No growth per row.
 
-    Two and not one, and both are constant: `visible_to` resolves the reader's
-    scope, which asks whether they hold a break-glass grant, and then the rail
-    is read in a single statement with the Matter joined. Twenty notices cost
-    what one costs; that is the property worth locking.
+    The property is the constancy, not the constant: twenty notices cost what
+    one costs, and the rail is read in a single statement with the Matter
+    joined.
+
+    It was two. The second was `visible_to` resolving the reader's scope, which
+    asked whether they hold a break-glass grant — and for a SPECIALIST that
+    answer could never change what they see, because the role already grants
+    sight of RESTRICTED content. It is not asked any more, so the constant fell
+    to one (PERF-01). The assertion is tighter than it was, not looser: a
+    per-row lookup returning would still fail it at 20.
 
     Asserted against the selector rather than the whole page, because the page's
     own count moves whenever an unrelated band changes and a test that failed
@@ -783,7 +789,7 @@ def test_the_rail_query_does_not_grow_with_the_number_of_notices(
             actor=other_specialist,
         )
 
-    with django_assert_num_queries(2):
+    with django_assert_num_queries(1):
         rows = unread_assignment_notices(specialist)
         # The template reads the title through the join, so touching it here is
         # what makes the assertion mean "no N+1" rather than "no evaluation".
