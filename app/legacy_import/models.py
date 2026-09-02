@@ -84,6 +84,55 @@ class ImportBatch(BaseModel):
         return f"{self.source_system} {self.started_at:%Y-%m-%d %H:%M}"
 
 
+#: Import outcomes that count as a reading of the source.
+#:
+#: ``COMPLETED_WITH_GAPS`` belongs here: the gap is source rows that did not
+#: become Matters, not doubt about the rows that did
+#: (:mod:`app.legacy_import.apply`). ``RUNNING`` and ``FAILED`` do not — a
+#: half-written snapshot is not a reading of the register.
+FINISHED_IMPORTS: tuple[str, ...] = (
+    ReconciliationStatus.COMPLETED,
+    ReconciliationStatus.COMPLETED_WITH_GAPS,
+)
+
+
+def latest_finished_snapshot(source_system: str) -> str:
+    """The snapshot digest of the most recent finished import, or ``""``.
+
+    **The only answer to "which source file is current".** Two callers ask it
+    for different reasons — a reconciliation has to read one register rather
+    than the union of every register ever imported
+    (:func:`app.legacy_import.opinion_plan.select_register_snapshot`), and the
+    register text on a work list has to name the workbook it is a photograph of
+    (:func:`app.legacy_import.register_display.snapshot_label`) — and two
+    answers to that question is how one surface names the file another surface
+    is reading.
+
+    The chronology is ``ImportBatch``'s because it is the only record of *when*
+    a snapshot was read and whether the reading finished. A file's timestamp, a
+    SHA's lexical order and a row's number all say nothing about which register
+    is current, and the tie-break is the primary key so that two batches started
+    in the same millisecond still resolve to one digest rather than to
+    whichever the database happened to return.
+
+    Returning ``""`` means *nothing finished*, never *nothing exists*. What a
+    caller does about that is its own decision: the reconciliation refuses,
+    because reconciling against the wrong register corrupts a match; the label
+    says nothing, because a page must render.
+    """
+    return (
+        ImportBatch.objects.filter(
+            source_system=source_system,
+            reconciliation_status__in=FINISHED_IMPORTS,
+        )
+        .exclude(source_snapshot_sha256="")
+        .order_by("-started_at", "-pk")
+        .values_list("source_snapshot_sha256", flat=True)
+        .first()
+        or ""
+    )
+
+
 class MatterSourceReference(BaseModel):
     """Immutable evidence of where one Matter came from.
 
