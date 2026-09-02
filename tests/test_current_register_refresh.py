@@ -1675,3 +1675,54 @@ def test_the_command_renders_a_full_report_with_campaigns(world, tmp_path, monke
     # And it really wrote nothing.
     assert CurrentRegisterState.objects.count() == 0
     assert NextAction.objects.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# The plan is dated where the department is, not where the container is
+# ---------------------------------------------------------------------------
+
+
+def test_the_plan_is_dated_in_tallinn_rather_than_in_utc(world, monkeypatch):
+    """CORR-03. `today` decides staleness, so the wrong day cancels real work.
+
+    The production containers run UTC and the department works in Tallinn, so
+    for the last two or three hours of every Tallinn day the two are different
+    dates. `build_refresh_plan` defaulted its own `today` with
+    `datetime.date.today()` — the *system* date — while the enrichment one layer
+    below it defaulted the same value with `timezone.localdate()`. One operation,
+    one date, two ways of deciding it.
+
+    What that costs is not cosmetic. `ParsedInstruction.is_stale` is
+    `period_end < today`, and it chooses between refreshing an instruction and
+    cancelling it as passed. A refresh run at half past midnight in Tallinn
+    planned against yesterday, so an instruction whose period ended yesterday
+    was judged still live — and the report stamped `evaluated_on` with a day the
+    operator had not been in.
+
+    The clock is frozen far from any real one, so this cannot pass by
+    coincidence on the one day of the year the two happen to agree.
+    """
+    add_matter(world, title="Sünteetiline ajavööndi eelnõu", reference=310)
+
+    # 22:00 UTC on 30 June is already 01:00 on 1 July in Tallinn (UTC+3).
+    frozen = dt.datetime(2035, 6, 30, 22, 0, tzinfo=dt.UTC)
+    monkeypatch.setattr(timezone, "now", lambda: frozen)
+
+    plan = build_refresh_plan(snapshot_sha256=SNAPSHOT)
+
+    assert plan.today == dt.date(2035, 7, 1), (
+        "the plan was dated in UTC; an operator working late in Tallinn would "
+        "be planning against yesterday"
+    )
+    # And the same date reaches the enrichment, which is the layer that reads it.
+    assert plan.next_actions.today == dt.date(2035, 7, 1)
+
+
+def test_an_explicit_today_still_wins(world, monkeypatch):
+    """`--today` is an operator override and this must not have taken it away."""
+    add_matter(world, title="Sünteetiline ülekirjutuse eelnõu", reference=311)
+    monkeypatch.setattr(timezone, "now", lambda: dt.datetime(2035, 6, 30, 22, 0, tzinfo=dt.UTC))
+
+    plan = build_refresh_plan(snapshot_sha256=SNAPSHOT, today=dt.date(2026, 8, 28))
+
+    assert plan.today == dt.date(2026, 8, 28)

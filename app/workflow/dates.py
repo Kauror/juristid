@@ -52,6 +52,40 @@ def _check_year(year: int) -> int:
     return year
 
 
+def year_from(raw: str | None) -> int | None:
+    """A supported year read from untrusted text, or ``None``.
+
+    The range this module already owns, applied to the other direction: forms
+    reach it through ``_check_year`` and refuse with a sentence, while a value
+    arriving in a query string has no form to refuse it and every surface that
+    reads one was checking only that it looked like a number.
+
+    That gap was reachable and it was a crash rather than a wrong answer.
+    ``?aasta=99999`` and ``?periood=0`` reached ``date(year, 1, 1)`` and raised
+    ``ValueError``; ``?periood=9999`` reached ``date(end_year + 1, 1, 1)`` and
+    raised on the *year after* a year that is itself in range; a twenty-digit
+    value raised ``OverflowError``. Six parameters across seven surfaces, each
+    one a 500 on a page somebody had hand-edited the URL of (CORR-02).
+
+    **The caller decides what absence means**, which is why this returns
+    ``None`` rather than raising or substituting. The surfaces disagree on that
+    deliberately — Statistika falls back to its default period, Jälgimine drops
+    the filter and shows everything, the register empties the list, and the
+    Arvamused workspace refuses with a sentence — and those are four settled
+    answers to "what should a nonsense filter do here", not an inconsistency to
+    flatten under one rule.
+
+    ``isascii()`` as well as ``isdigit()``, because ``"²".isdigit()`` is ``True``
+    and ``int("²")`` raises: the check that looks like it covers this is exactly
+    the one that does not.
+    """
+    value = (raw or "").strip()
+    if not (value.isascii() and value.isdigit()):
+        return None
+    year = int(value)
+    return year if MIN_YEAR <= year <= MAX_YEAR else None
+
+
 def exact_bounds(value: date) -> tuple[date, date]:
     return value, value
 

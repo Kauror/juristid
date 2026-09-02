@@ -43,6 +43,7 @@ from app.legacy_import.source_pages import MatterSourcePage
 from app.matters import selectors
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
+from app.workflow.dates import year_from
 
 #: What `?allikas=` means. A word rather than a boolean, because `allikas=0`
 #: reads as "source number zero" in a URL somebody is editing by hand.
@@ -339,10 +340,15 @@ def apply_register_filters(
         # Aruandlus rail counts the files the department *finished* this year,
         # which is a different question from which year a file belongs to — a
         # 2024 consultation closed in 2026 is one of 2026's completions.
-        if not closed_year.isdigit():
+        # An unreadable year empties the list rather than being ignored, so the
+        # rows never contradict the chip above them. A year outside the
+        # supported range is unreadable in the same way, and used to pass this
+        # test and raise inside the ORM instead (CORR-02).
+        year = year_from(closed_year)
+        if year is None:
             queryset = queryset.none()
         else:
-            queryset = queryset.filter(closed_at__year=int(closed_year))
+            queryset = queryset.filter(closed_at__year=year)
     if source := params.get("allikas"):
         if source == SOURCE_SEVERAL:
             queryset = queryset.annotate(

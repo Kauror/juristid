@@ -35,6 +35,7 @@ from app.reporting.metric_catalogue import CATALOGUE, DEFERRED_METRICS, definiti
 from app.reporting.metric_types import MetricResult
 from app.reporting.selectors import documents, historical, quality
 from app.reporting.selectors import submissions as submission_selectors
+from app.workflow.dates import year_from
 
 PAGE_SIZE = 50
 
@@ -318,13 +319,22 @@ def _uuid_param(request: HttpRequest, name: str) -> uuid.UUID | None:
 
 
 def _year_param(request: HttpRequest) -> int | None:
+    """``?aasta=`` as a supported year, or nothing.
+
+    This surface refuses rather than dropping the filter, because it is a
+    drill-through: arriving here from a chart with a year that cannot be read
+    means the link was edited, and showing every year instead would answer a
+    question nobody asked. A year outside the supported range is the same kind
+    of unreadable as a word — it used to pass through and raise inside the ORM
+    instead (CORR-02).
+    """
     raw = request.GET.get("aasta", "").strip()
     if not raw:
         return None
-    try:
-        return int(raw)
-    except ValueError:
-        raise Http404("Tundmatu aasta.") from None
+    year = year_from(raw)
+    if year is None:
+        raise Http404("Tundmatu aasta.")
+    return year
 
 
 @gate_required
