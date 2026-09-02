@@ -63,6 +63,7 @@ from typing import Any
 
 from django.db import transaction
 from django.db.models import Count, Sum
+from django.utils import timezone
 
 from app.legacy_import import next_action_enrichment as enrichment
 from app.legacy_import import register_outreach as outreach
@@ -480,7 +481,15 @@ def build_refresh_plan(
     here is per-row (brief 38).
     """
     digest = (snapshot_sha256 or "").strip().lower()
-    today = today or dt.date.today()
+    # `timezone.localdate()`, not `date.today()`. The containers run UTC and the
+    # department works in Tallinn, so between 21:00 UTC and midnight the two are
+    # different days — and this date decides `is_stale`, which chooses between
+    # refreshing an instruction and cancelling it as passed. A refresh run late
+    # in the Tallinn evening was planning against yesterday and stamping the
+    # report `evaluated_on` a day the operator had not been in. The layer below
+    # already defaults the same value this way (`next_action_enrichment`), so
+    # one operation was defaulting one date two different ways (CORR-03).
+    today = today or timezone.localdate()
 
     cutover = build_cutover_plan(snapshot_sha256=digest)
     projected = projected_state_rows(cutover)

@@ -52,6 +52,7 @@ from app.intelligence.models import (
     MatterWorkVictory,
 )
 from app.matters.models import Matter
+from app.workflow.dates import year_from
 
 PAGE_SIZE = 50
 
@@ -109,11 +110,12 @@ def _year_param(request: HttpRequest) -> int | None:
 
     A value that is not a year is dropped rather than raised on: a URL somebody
     hand-edited should show the unfiltered page, not a stack trace.
+
+    ``99999`` is not a year either, and used to be treated as one — it passed
+    ``isdigit()``, reached the ORM and raised, which is precisely the stack
+    trace the sentence above promises not to produce (CORR-02).
     """
-    raw = request.GET.get("aasta", "").strip()
-    if not raw.isdigit():
-        return None
-    return int(raw)
+    return year_from(request.GET.get("aasta"))
 
 
 def _matter_for(request: HttpRequest, matter_id: Any) -> Matter:
@@ -386,8 +388,11 @@ def work_victories(request: HttpRequest) -> HttpResponse:
     year: str | int | None = None
     if year_param == selectors.UNKNOWN_PERIOD:
         year = selectors.UNKNOWN_PERIOD
-    elif year_param.isdigit():
-        year = int(year_param)
+    else:
+        # Through the same reader as every other `?aasta=`, so a year outside
+        # the supported range drops the filter here too rather than reaching
+        # `period_date__year` and raising (CORR-02).
+        year = year_from(year_param)
 
     queryset = selectors.work_victories(user=viewer, status=status, year=year)
     paginator = Paginator(queryset, PAGE_SIZE)

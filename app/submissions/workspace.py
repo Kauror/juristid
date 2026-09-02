@@ -41,6 +41,7 @@ from django.db.models import Q, QuerySet
 from app.organisations.models import Organisation
 from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import Submission
+from app.workflow.dates import MAX_YEAR, MIN_YEAR, year_from
 
 #: Rows per page. The same figure the archive browse uses, so the two tabs of
 #: one workspace do not paginate differently.
@@ -135,12 +136,17 @@ def sent_queryset(user: Any, filters: SentFilters) -> QuerySet[Submission]:
         rows = rows.filter(_matches(term)).distinct()
 
     if filters.year:
-        if not filters.year.isdigit():
-            raise SubmissionQueryRefused("Aasta peab olema arv.")
+        # Refused with a sentence, the way the month below is, rather than
+        # dropped: this workspace tells the reader what it would not do. The
+        # range is the one every dated form enforces, and it used to be missing
+        # here — `99999` passed `isdigit()` and raised inside the ORM (CORR-02).
+        year = year_from(filters.year)
+        if year is None:
+            raise SubmissionQueryRefused(f"Aasta peab olema arv vahemikus {MIN_YEAR}-{MAX_YEAR}.")
         # On `sent_at`, not on the Matter's reference year: the question this
         # page answers is when the letter went out, and a 2024 file answered in
         # 2026 belongs in 2026.
-        rows = rows.filter(sent_at__year=int(filters.year))
+        rows = rows.filter(sent_at__year=year)
 
     if filters.month:
         if not filters.month.isdigit() or not 1 <= int(filters.month) <= 12:

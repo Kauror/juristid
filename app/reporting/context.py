@@ -32,6 +32,7 @@ from django.http import HttpRequest
 from django.utils import timezone
 
 from app.core.decorators import viewer_for
+from app.workflow.dates import year_from
 
 #: URL parameter names. Estonian and ASCII: a filter people paste into chat
 #: must not depend on how their client encodes ``ä``.
@@ -134,6 +135,17 @@ def parse_period(raw: str, today: date) -> Period:
     drill-through link from a year bar produces. A value that cannot be read is
     the default, not an error page: a statistics URL is something people edit by
     hand and forward to each other.
+
+    A year outside :data:`app.workflow.dates.MIN_YEAR`–:data:`MAX_YEAR` is one
+    that cannot be read, and used to be accepted anyway. ``?periood=0`` and
+    ``?periood=99999`` reached ``date(year, 1, 1)`` and turned the sentence
+    above into a 500; ``?periood=9999`` passed that and raised on
+    ``date(end_year + 1, 1, 1)`` instead. Bounding here is what makes the
+    promise true rather than aspirational, and it is the same range every dated
+    form in the application already enforces (CORR-02).
+
+    It also stops ``?periood=1-99999`` building a hundred thousand integers in
+    :attr:`Period.years` for a page that wants a handful.
     """
     value = (raw or "").strip()
     options = {option.key: option for option in period_options(today)}
@@ -141,16 +153,14 @@ def parse_period(raw: str, today: date) -> Period:
         return options[value]
 
     parts = value.split("-")
-    try:
-        if len(parts) == 1 and parts[0]:
-            single = int(parts[0])
+    if len(parts) == 1:
+        single = year_from(parts[0])
+        if single is not None:
             return Period(str(single), str(single), single, single)
-        if len(parts) == 2 and all(parts):
-            first, last = int(parts[0]), int(parts[1])
-            if first <= last:
-                return Period(f"{first}-{last}", f"{first}–{last}", first, last)
-    except ValueError:
-        pass
+    elif len(parts) == 2:
+        first, last = year_from(parts[0]), year_from(parts[1])
+        if first is not None and last is not None and first <= last:
+            return Period(f"{first}-{last}", f"{first}–{last}", first, last)
 
     return options[DEFAULT_PERIOD]
 
