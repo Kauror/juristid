@@ -383,3 +383,22 @@ def test_the_search_worker_runs_the_same_image_and_no_evidence_mount(
     assert "volumes" not in services["searchindex"]
     assert "ports" not in services["searchindex"]
     assert services["searchindex"]["networks"] == ["internal"]
+
+
+def test_the_rehearsal_template_pins_no_stage_number(env_example: dict[str, str]) -> None:
+    """A label may say which instance this is; it may not say which stage.
+
+    This file read `Stage 2A rehearsal` from 2A through 2I. A stage copied into a
+    `.env` is a stage that goes stale where nobody looks — the same defect
+    `tests/test_deployment_unraid_main.py` already refuses for the real-data
+    stack, which pins no stage at all. The rehearsal keeps a label because
+    distinguishing the synthetic instance from the real one is worth a word; the
+    number comes from `config/settings.py`.
+    """
+    stage = env_example.get("APPLICATION_STAGE", "")
+
+    assert stage, "the rehearsal instance should still say which instance it is"
+    assert not re.search(r"Stage|\d", stage), (
+        f"APPLICATION_STAGE={stage!r} pins a stage number; it will be wrong by the "
+        "next merge and nobody reads a footer to check"
+    )

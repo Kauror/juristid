@@ -18,6 +18,7 @@ from django.urls import reverse
 from app.accounts import shared_gate
 from app.accounts.enums import AuthMode
 from tests import factories
+from tests.gate import apply_shared_gate
 
 pytestmark = pytest.mark.django_db
 
@@ -96,14 +97,7 @@ def test_an_anonymous_visitor_still_gets_the_doorway(client, settings):
 
 @pytest.fixture
 def gate_mode(settings):
-    settings.AUTH_MODE = AuthMode.SHARED_GATE
-    settings.SHARED_GATE_PASSWORD = PASSWORD
-    settings.SHARED_GATE_MAX_ATTEMPTS = 5
-    settings.SHARED_GATE_LOCKOUT_SECONDS = 300
-    settings.SHARED_GATE_MAX_LOCKOUT_SECONDS = 3600
-    settings.DEV_LOGIN_ENABLED = False
-    settings.LOGIN_URL = "accounts:choose_persona"
-    return settings
+    return apply_shared_gate(settings, PASSWORD)
 
 
 @pytest.fixture

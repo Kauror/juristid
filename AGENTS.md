@@ -19,7 +19,7 @@ Work only on the currently authorized stage.
 
 Do not implement later-stage features early unless they are a cheap schema hook explicitly required by the master specification to prevent a future rewrite.
 
-The current authorized stage at repository creation is **Stage 0 only**.
+Every numbered stage through 2A–2I is merged, and the Secure Pilot Gate is not signed off. The authorized scope is therefore the current written brief, not a stage number: `README.md` says where the product stands and `docs/adr/` records what is already decided. This line said "**Stage 0 only** at repository creation" for long enough to become the first thing a new reader got wrong — a sentence that is literally true and practically misleading is worse than a stale one, because nothing ever makes it false.
 
 ## Product principles
 

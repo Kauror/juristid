@@ -35,7 +35,7 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
-from app.accounts.enums import AuthMode, UserRole
+from app.accounts.enums import UserRole
 from app.core.enums import Visibility
 from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.services import (
@@ -54,6 +54,7 @@ from app.submissions.enums import SubmissionStatus
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Disposition
 from app.workflow.services import set_next_action
 from tests import factories
+from tests.gate import apply_shared_gate
 
 pytestmark = pytest.mark.django_db
 
@@ -331,11 +332,9 @@ class TestSharedGate:
 
     @pytest.fixture(autouse=True)
     def gate_mode(self, settings):
-        settings.AUTH_MODE = AuthMode.SHARED_GATE
-        settings.SHARED_GATE_PASSWORD = self.PASSWORD
-        settings.DEV_LOGIN_ENABLED = False
-        settings.LOGIN_URL = "accounts:choose_persona"
-        return settings
+        # Through the shared helper, which states the throttle rather than
+        # inheriting whatever `config/settings.py` happens to default to.
+        return apply_shared_gate(settings, self.PASSWORD)
 
     @pytest.fixture
     def behind_the_gate(self, client):

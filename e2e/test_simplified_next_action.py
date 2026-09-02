@@ -19,7 +19,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import OPEN_TITLE, REVIEW_DUE_TITLE
-from e2e.conftest import MARTIN, SANDRA, open_composer, sign_in
+from e2e.conftest import MARTIN, SANDRA, create_matter, open_composer, open_matter, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -37,25 +37,6 @@ def _short(days: int) -> str:
     """The `pp.kk` form the row and the defer chips print."""
     value = date.today() + timedelta(days=days)
     return f"{value.day:02d}.{value.month:02d}"
-
-
-def open_matter(page, base_url: str, title: str) -> str:
-    page.goto(f"{base_url}/teemad/?olek=koik&q={title.split()[0]}")
-    page.wait_for_load_state("networkidle")
-    link = page.get_by_role("link", name=title, exact=False).first
-    assert link.count(), f"the register does not hold {title!r}"
-    page.goto(f"{base_url}{link.get_attribute('href')}")
-    page.wait_for_load_state("networkidle")
-    return page.url
-
-
-def create_matter(page, base_url: str, title: str) -> str:
-    page.goto(f"{base_url}/teemad/uus/")
-    page.wait_for_load_state("networkidle")
-    page.fill("#id_title", title)
-    page.get_by_role("button", name="Loo teema").click()
-    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
-    return page.url
 
 
 def set_step(page, text: str, days: int) -> None:

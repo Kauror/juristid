@@ -31,7 +31,7 @@ from itertools import pairwise
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, READER, sign_in, sign_out
+from e2e.conftest import MARTIN, READER, create_matter, open_matter, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -43,25 +43,6 @@ OPINION_PDF = {
     "mimeType": "application/pdf",
     "buffer": b"%PDF-1.4 synthetic opinion",
 }
-
-
-def create_matter(page, base_url: str, title: str) -> str:
-    page.goto(f"{base_url}/teemad/uus/")
-    page.wait_for_load_state("networkidle")
-    page.fill("#id_title", title)
-    page.get_by_role("button", name="Loo teema").click()
-    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
-    return page.url
-
-
-def open_matter_by_title(page, base_url: str, title: str) -> str:
-    page.goto(f"{base_url}/teemad/?olek=koik&q={title.split()[0]}")
-    page.wait_for_load_state("networkidle")
-    link = page.get_by_role("link", name=title, exact=False).first
-    assert link.count(), f"the register does not hold {title!r}"
-    page.goto(f"{base_url}{link.get_attribute('href')}")
-    page.wait_for_load_state("networkidle")
-    return page.url
 
 
 def facts_card(page):
@@ -225,7 +206,7 @@ def test_a_multi_sender_value_wraps_and_pushes_the_rest_down(page, base_url):
     list is the fact, and the rows below it move down.
     """
     sign_in(page, base_url, MARTIN)
-    open_matter_by_title(page, base_url, MULTI_SENDER_TITLE)
+    open_matter(page, base_url, MULTI_SENDER_TITLE)
 
     rows = {row["key"]: row for row in row_geometry(page)}
     senders = rows["Kellelt"]
@@ -438,7 +419,7 @@ def test_a_reader_is_offered_no_editors_at_all(page, base_url):
 
 def test_the_koja_seisukoht_block_is_absent(page, base_url):
     sign_in(page, base_url, MARTIN)
-    open_matter_by_title(page, base_url, MULTI_SENDER_TITLE)
+    open_matter(page, base_url, MULTI_SENDER_TITLE)
 
     expect(page.locator("#koja-seisukoht")).to_have_count(0)
     expect(page.get_by_text("Seisukohta ei ole")).to_have_count(0)
@@ -453,7 +434,7 @@ def test_the_arvamused_surface_carries_no_seisukoht_either(page, base_url):
     somebody typed. The page is the Submission workflow and nothing else.
     """
     sign_in(page, base_url, MARTIN)
-    open_matter_by_title(page, base_url, MULTI_SENDER_TITLE)
+    open_matter(page, base_url, MULTI_SENDER_TITLE)
     page.locator("#koja-arvamus .railcard__more").click()
     page.wait_for_load_state("networkidle")
 

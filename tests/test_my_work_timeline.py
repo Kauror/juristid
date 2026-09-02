@@ -590,3 +590,57 @@ def test_the_page_renders_ten_rows_and_puts_three_behind_the_disclosure(client, 
     assert before.count("data-workrow") == 10
     assert "Näita veel 3" in behind
     assert behind.count("data-workrow") == 3
+
+
+def test_the_bands_render_in_reading_order(client, specialist, today):
+    """Chronology is the page's whole argument for being one list.
+
+    Minu töö replaced three mode-named sections with one timeline, and the claim
+    that makes it readable is that the page runs forwards: what is late, then
+    this week, then the month, then later. Nothing asserted that against the
+    rendered page — it was true by construction (`work_items.BAND_ORDER`, and a
+    template that iterates `work.bands`), and true-by-construction is exactly
+    what stops being true when somebody reorders a loop.
+
+    Inherited from `e2e/test_teema_redesign.py::test_minu_too_is_one_dated_list`,
+    which asserted it in a browser and had been skipping itself since 2026-08-24:
+    its `.workrow` locator could not match `.workrow2`, so `rows.count()` was 0
+    and the test reached `pytest.skip` on every run. Two of its three claims were
+    already covered or since reversed by ADR 0054; this was the third, and it
+    needs no browser — the order is in the markup.
+    """
+    # One dated obligation in each band, so every band actually renders and the
+    # order is observable rather than vacuously true of a one-band page.
+    for offset, title in (
+        (-4, "Hilinenud"),
+        (1, "Sel nädalal"),
+        (20, "Kuu jooksul"),
+        (45, "Hiljem"),
+    ):
+        matter = _matter(specialist, title=f"{title} teema")
+        set_next_action(
+            matter=matter,
+            text=f"Tegevus — {title}",
+            kind=ActionKind.DO,
+            date_semantics=DateSemantics.DEADLINE,
+            target_date=today + timedelta(days=offset),
+            actor=specialist,
+        )
+
+    client.force_login(specialist)
+    body = client.get(reverse("matters:my_work")).content.decode()
+
+    positions = [
+        (key, body.index(f'workband--{key}"'))
+        for key in wi.BAND_ORDER
+        if f'workband--{key}"' in body
+    ]
+
+    # All four, so the ordering assertion cannot pass by there being one band.
+    assert [key for key, _ in positions] == list(wi.BAND_ORDER), (
+        f"expected every band to render, got {[k for k, _ in positions]}"
+    )
+    assert [key for key, _ in positions] == sorted(
+        (key for key, _ in positions), key=wi.BAND_ORDER.index
+    ), f"the bands are out of chronological order: {[k for k, _ in positions]}"
+    assert [where for _, where in positions] == sorted(where for _, where in positions)

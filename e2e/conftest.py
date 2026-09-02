@@ -12,6 +12,7 @@ does not require a browser.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 
 import pytest
@@ -191,3 +192,40 @@ def go_to(page, name: str) -> None:
         page.locator(".topnav__trigger").click()
     link.click()
     page.wait_for_load_state("networkidle")
+
+
+def create_matter(page, base_url: str, title: str) -> str:
+    """Create a Matter through the real form and return its detail URL.
+
+    Four browser files had this verbatim. It stays a plain function rather than
+    becoming a fixture for the same reason `sign_in` and `go_to` do: a fixture
+    is implicit, and a test that navigates should say so on the line where it
+    navigates.
+    """
+    page.goto(f"{base_url}/teemad/uus/")
+    page.wait_for_load_state("networkidle")
+    page.fill("#id_title", title)
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    return page.url
+
+
+def open_matter(page, base_url: str, title: str) -> str:
+    """Find a Matter in the register by title and open it, returning its URL.
+
+    **Follows the link rather than clicking it.** The register's table head is
+    sticky and can sit over the first row, so a click is a coin-toss that fails
+    on a narrow viewport and passes on a wide one. `e2e/test_ui_regression.py`
+    carries the same reasoning.
+
+    No default title: this file deliberately imports no application code
+    (see the note at the top), and the seeded titles live in
+    `app.core.management.commands.seed_e2e_data`. Callers pass their own.
+    """
+    page.goto(f"{base_url}/teemad/?olek=koik&q={title.split()[0]}")
+    page.wait_for_load_state("networkidle")
+    link = page.get_by_role("link", name=title, exact=False).first
+    assert link.count(), f"the register does not hold {title!r}"
+    page.goto(f"{base_url}{link.get_attribute('href')}")
+    page.wait_for_load_state("networkidle")
+    return page.url

@@ -25,16 +25,16 @@ consequences and reversibility.
 | [0014](0014-content-extraction-and-derivatives.md) | Content extraction and rebuildable derivatives | Accepted |
 | [0015](0015-historical-corpus-integration.md) | Historical corpus integration | Accepted |
 | [0016](0016-authentication-modes-and-the-shared-gate.md) | Authentication modes and the shared gate | Accepted |
-| [0017](0017-statistics-and-the-metric-catalogue.md) | Statistics, the metric catalogue and operational snapshots | Accepted, on a feature branch |
-| [0018](0018-structured-matter-facts.md) | Structured Matter facts, and the generated department views | Accepted, on a feature branch |
-| [0019](0019-opinion-archive-reconciliation.md) | Reconstructing historical submissions from the opinions archive | Accepted, on a feature branch |
-| [0020](0020-historical-cutover-current-state.md) | The historical cutover, and what a closed archive row may claim | Accepted, on a feature branch |
-| [0021](0021-final-register-cutover.md) | The final register cutover, and the two columns that mean different things | Accepted, on a feature branch |
+| [0017](0017-statistics-and-the-metric-catalogue.md) | Statistics, the metric catalogue and operational snapshots | Accepted |
+| [0018](0018-structured-matter-facts.md) | Structured Matter facts, and the generated department views | Accepted |
+| [0019](0019-opinion-archive-reconciliation.md) | Reconstructing historical submissions from the opinions archive | Accepted |
+| [0020](0020-historical-cutover-current-state.md) | The historical cutover, and what a closed archive row may claim | Accepted |
+| [0021](0021-final-register-cutover.md) | The final register cutover, and the two columns that mean different things | Accepted |
 | [0022](0022-deployment-backup-and-recovery.md) | Deployment, backup and recovery on the Unraid host | Accepted |
-| [0023](0023-searchable-opinion-archive.md) | Making the whole opinions archive searchable evidence | Accepted, on a feature branch |
-| [0024](0024-test-data-classification.md) | Test data is a stored class on the Matter, and purging it is a later decision | Accepted, on a feature branch |
+| [0023](0023-searchable-opinion-archive.md) | Making the whole opinions archive searchable evidence | Accepted |
+| [0024](0024-test-data-classification.md) | Test data is a stored class on the Matter, and purging it is a later decision | Accepted |
 | [0025](0025-multiple-matter-senders.md) | A Matter has zero, one or several senders; the addressee stays singular | Accepted |
-| [0026](0026-source-data-enrichment.md) | Source facts are never rewritten; interpretation is added on top of them | Accepted, on a feature branch |
+| [0026](0026-source-data-enrichment.md) | Source facts are never rewritten; interpretation is added on top of them | Accepted |
 | [0027](0027-matter-engagement.md) | `Kaasamine` is a pointer to outreach, not an engagement system | Accepted |
 | [0028](0028-development-archive-workspace-access.md) | The archive is readable behind the shared gate; the register is not | Accepted |
 | [0029](0029-reference-data-foundation.md) | Reference data is governed, additive, and never invented from source strings | Accepted |
@@ -56,17 +56,17 @@ consequences and reversibility.
 | [0044](0044-one-arvamused-destination-and-live-header-search.md) | One `Arvamused` destination, and live suggestions under the header search | Accepted |
 | [0045](0045-the-repeatable-current-register-refresh.md) | The repeatable current-register refresh: authorship decides, and the sheet's own year settles a date | Accepted |
 | [0046](0046-two-deadline-groups-a-week-and-the-rest-of-the-month.md) | Tähtajad in two groups: the calendar week whole, the rest of the month behind «Näita veel», and one line past it | Accepted |
-| [0047](0047-arvamused-as-a-section-of-teemad.md) | Arvamused as a section of Teemad, with two searches that never meet | Proposed, on a feature branch |
-| [0048](0048-the-v2-design-implementation.md) | Implementing the v2 design over the application that exists | Proposed, on a feature branch |
-| [0049](0049-one-department-page.md) | One department page: `/ulevaade/` and `/osakonna-too/` become `/osakond/` | Proposed, on a feature branch |
-| [0050](0050-an-open-jargmiseks-outranks-arvamuse-tahtaeg.md) | An open `Järgmiseks` outranks `Arvamuse tähtaeg` in the work model | Proposed, on a feature branch |
-| [0051](0051-uus-asi-new-assignment-notices.md) | «Uus asi»: a personal receipt for a Matter somebody just put on your desk | Proposed, on a feature branch |
-| [0052](0052-the-simplified-teema-next-action-workflow.md) | The simplified Teema next-action workflow | Proposed, on a feature branch |
-| [0053](0053-the-1-september-snapshot-and-two-spellings-the-parser-could-not-see.md) | The 1 September snapshot, and two spellings the parser could not see | Proposed, on a feature branch |
-| [0054](0054-the-action-kind-is-not-a-user-facing-concept.md) | The action kind is not a user-facing concept | Proposed, on a feature branch |
-| [0055](0055-what-counts-as-evidence-for-an-archive-link.md) | What counts as evidence that a letter belongs to a Matter | Proposed, on a feature branch |
-| [0056](0056-the-archive-is-department-work-product.md) | The opinion archive is department work product, not a migration tool | Proposed, on a feature branch |
-| [0057](0057-a-baseline-holds-the-product-not-the-clock-or-the-seed.md) | A baseline holds the product, not the clock and not the seed | Proposed, on a feature branch |
+| [0047](0047-arvamused-as-a-section-of-teemad.md) | Arvamused as a section of Teemad, with two searches that never meet | Accepted |
+| [0048](0048-the-v2-design-implementation.md) | Implementing the v2 design over the application that exists | Accepted |
+| [0049](0049-one-department-page.md) | One department page: `/ulevaade/` and `/osakonna-too/` become `/osakond/` | Accepted |
+| [0050](0050-an-open-jargmiseks-outranks-arvamuse-tahtaeg.md) | An open `Järgmiseks` outranks `Arvamuse tähtaeg` in the work model | Accepted |
+| [0051](0051-uus-asi-new-assignment-notices.md) | «Uus asi»: a personal receipt for a Matter somebody just put on your desk | Accepted |
+| [0052](0052-the-simplified-teema-next-action-workflow.md) | The simplified Teema next-action workflow | Accepted |
+| [0053](0053-the-1-september-snapshot-and-two-spellings-the-parser-could-not-see.md) | The 1 September snapshot, and two spellings the parser could not see | Accepted |
+| [0054](0054-the-action-kind-is-not-a-user-facing-concept.md) | The action kind is not a user-facing concept | Accepted |
+| [0055](0055-what-counts-as-evidence-for-an-archive-link.md) | What counts as evidence that a letter belongs to a Matter | Accepted |
+| [0056](0056-the-archive-is-department-work-product.md) | The opinion archive is department work product, not a migration tool | Accepted |
+| [0057](0057-a-baseline-holds-the-product-not-the-clock-or-the-seed.md) | A baseline holds the product, not the clock and not the seed | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
