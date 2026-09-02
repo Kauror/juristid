@@ -764,19 +764,8 @@ def select_register_snapshot(explicit: str = "") -> str:
     says which is current, that is a question about the Chamber's records and
     not one this function may answer by picking.
     """
-    from app.legacy_import.models import (
-        ImportBatch,
-        MatterSourceReference,
-        ReconciliationStatus,
-    )
+    from app.legacy_import.models import MatterSourceReference, latest_finished_snapshot
     from app.legacy_import.parser import SOURCE_SYSTEM
-
-    # An import that finished. ``COMPLETED_WITH_GAPS`` is one of these: the gap
-    # is source rows that did not become Matters, not doubt about the rows that
-    # did (`app.legacy_import.apply`), and the register importer's own tests
-    # treat the two as one successful outcome. ``RUNNING`` and ``FAILED`` are
-    # not eligible — a half-written snapshot is not a reading of the register.
-    finished = (ReconciliationStatus.COMPLETED, ReconciliationStatus.COMPLETED_WITH_GAPS)
 
     present = set(
         MatterSourceReference.objects.filter(source_system=SOURCE_SYSTEM)
@@ -797,17 +786,12 @@ def select_register_snapshot(explicit: str = "") -> str:
         # No register import at all. There are no rows to disagree about.
         return ""
 
-    latest = (
-        ImportBatch.objects.filter(
-            source_system=SOURCE_SYSTEM,
-            reconciliation_status__in=finished,
-        )
-        .exclude(source_snapshot_sha256="")
-        .order_by("-started_at", "-pk")
-        .values_list("source_snapshot_sha256", flat=True)
-        .first()
-    )
-    if latest in present:
+    # The chronology, and the only place it is decided
+    # (`app.legacy_import.models.latest_finished_snapshot`). The register label
+    # a lawyer reads asks the same question, and one answer is what keeps the
+    # page from naming a workbook the matcher is not reading.
+    latest = latest_finished_snapshot(SOURCE_SYSTEM)
+    if latest and latest in present:
         return latest
 
     if len(present) == 1:

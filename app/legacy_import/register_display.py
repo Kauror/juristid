@@ -57,11 +57,6 @@ def source_instructions_for(matters: Any) -> dict[Any, str]:
 def snapshot_label() -> str:
     """Which approved workbook the register text on screen came from.
 
-    Every ``CurrentRegisterState`` row in one deployment is written by a single
-    reconciliation against a single reviewed snapshot, so this is one label for
-    the whole surface rather than one per Matter — and asking per row would be a
-    join on every work list to render a constant.
-
     It exists because the text those rows carry is a *photograph* of a
     spreadsheet several people are still editing. An instruction reading "uuri
     21.08 ministeeriumilt" is not wrong, it is from the 21st; a lawyer who has
@@ -69,20 +64,63 @@ def snapshot_label() -> str:
     looking at, and the fix for that is a date on the label, not a quiet import
     of whatever the newest file happens to say.
 
-    Returns "" when nothing is derived yet, or when the digest production holds
-    is not one anybody approved — in which case saying nothing is better than
-    naming a workbook the reviewed list has never heard of.
+    **The table can hold two workbooks, and this used to pick between them by
+    accident.** The old implementation took an unordered ``.first()`` and
+    therefore inherited ``Meta.ordering`` — ``-source_sheet, matter`` — so the
+    winner was the row with the highest reference number on the highest sheet,
+    which says nothing about which workbook is current. The docstring asserted
+    that one deployment holds one snapshot; ``register_refresh`` says the
+    opposite in as many words, because a Matter the newer workbook no longer
+    names *keeps its old row, legitimately*. So after any refresh that retires a
+    row, the label could name the **older** workbook while every current row on
+    screen came from the newer one — which is the exact failure
+    ``opinion_plan.register_snapshot_sha256`` records having already had in
+    production, from an unordered ``.first()`` over the same kind of column
+    (CORR-01).
+
+    Now the chronology decides, through the one function that owns it
+    (:func:`app.legacy_import.models.latest_finished_snapshot`), narrowed to the
+    digests this table actually holds. One digest present is answered directly,
+    which is both the common case and the cheap one.
+
+    Returns "" when nothing is derived yet, when the digest production holds is
+    not one anybody approved, or when several are present and no finished import
+    says which is current. Saying nothing is better than naming a workbook the
+    reviewed list has never heard of — and better than naming the wrong one of
+    two.
+
+    **This is still one label for a whole page**, and where two workbooks are
+    present that is true of the majority of rows rather than all of them: a
+    retired row keeps text from the older file and would be captioned with the
+    newer one. Making it exact means carrying the digest per row, which is
+    genuinely cheap now — ``source_instructions_for`` already reads these rows
+    and would need one more column, not another query — but it turns one chip
+    into a per-row label, and that is a design decision rather than a defect fix.
     """
     from app.legacy_import.current_state import CurrentRegisterState
     from app.legacy_import.final_cutover import reviewed_snapshot
+    from app.legacy_import.models import latest_finished_snapshot
+    from app.legacy_import.parser import SOURCE_SYSTEM
 
-    digest = (
+    # `order_by()` clears `Meta.ordering`, which otherwise joins `matters_matter`
+    # and sorts the whole table on each of the surfaces that render this — to
+    # read what is meant to be a constant.
+    present = set(
         CurrentRegisterState.objects.exclude(source_snapshot_sha256="")
+        .order_by()
         .values_list("source_snapshot_sha256", flat=True)
-        .first()
+        .distinct()
     )
-    if not digest:
+    if not present:
         return ""
+
+    if len(present) == 1:
+        digest = next(iter(present))
+    else:
+        digest = latest_finished_snapshot(SOURCE_SYSTEM)
+        if digest not in present:
+            return ""
+
     snapshot = reviewed_snapshot(digest)
     return snapshot.label if snapshot else ""
 
