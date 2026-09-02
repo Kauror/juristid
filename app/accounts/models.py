@@ -257,6 +257,14 @@ class SharedGateThrottle(BaseModel):
 
         Each completed lockout cycle doubles the next one, so a scripted attack
         slows geometrically while a person who mistyped waits five minutes once.
+
+        **Call this on a row held under its own lock.** The arithmetic is a
+        read-modify-write over four columns and there is no version check under
+        it, so two callers holding the same row unlocked will each read the same
+        counter and each write the same value — which is not a slow lockout but
+        no lockout at all (SEC-01). `app.accounts.shared_gate.record_failure` is
+        the caller that takes the lock; a second caller must do the same rather
+        than reach for this on an instance it happens to be holding.
         """
         now = now or timezone.now()
         self.failures += 1
