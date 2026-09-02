@@ -19,10 +19,14 @@ Three rules matter and are tested:
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import functools
 import operator
 import uuid
+from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Any
 
 from django.apps import apps
 from django.db.models import Case, CharField, Count, Q, QuerySet, Value, When
@@ -123,6 +127,14 @@ class Scope:
     user: object | None
     is_authenticated: bool
     sees_restricted_by_role: bool
+    #: The grant this scope *relies on*, which is not the same as every grant
+    #: the user holds. A role that already sees RESTRICTED content relies on no
+    #: grant, so this is ``None`` for both lawyer roles even where one exists —
+    #: and that is the honest reading: the grant is a reason for seeing
+    #: restricted work, and for those two it is not the reason.
+    #:
+    #: Nothing may read this to answer "does this person hold a grant". The one
+    #: consumer is :attr:`sees_all_restricted`, which asks the role first.
     break_glass_grant_id: uuid.UUID | None
 
     @property
@@ -201,7 +213,75 @@ def department_scope() -> Scope:
     )
 
 
+#: Grants already looked up during the request being served, by user id.
+#:
+#: ``None`` — the default, and what every management command, worker and test
+#: sees — means *no request is being served*, so nothing is remembered and the
+#: database is asked every time. A cache that is absent by default cannot go
+#: stale in a process nobody wrapped.
+#:
+#: A :class:`~contextvars.ContextVar` rather than a module global for the reason
+#: :mod:`app.search.indexing` gives at its own: a global is one value for the
+#: whole process, so one request would answer an authorization question on
+#: behalf of another. This is per-thread and per-async-task for free.
+_looked_up_grants: contextvars.ContextVar[dict[Any, uuid.UUID | None] | None] = (
+    contextvars.ContextVar("break_glass_grants_this_request", default=None)
+)
+
+
+@contextlib.contextmanager
+def remember_grants_for_one_request() -> Iterator[None]:
+    """Ask the database once per person per request, instead of once per read.
+
+    ``scope_for_user`` runs on every ``visible_to``, which is 109 call sites and
+    over a hundred calls on a statistics page, and each one asked the same
+    question about the same person and got the same answer. For the two lawyer
+    roles the question is not asked at all any more; for a READER or an
+    administrator it is asked, and it was asked ninety times on
+    ``/statistika/andmekvaliteet/`` alone (PERF-01).
+
+    **Bounded to one request, by a token reset in ``finally``.** The lifecycle
+    is the whole safety argument: a dict that outlived its request would be an
+    authorization answer served to somebody who never asked it, which is worse
+    than the queries it saves. :class:`app.core.middleware.RequestScopeMiddleware`
+    is what opens and closes it.
+
+    **A grant created while a page is rendering is not seen by that page**, and
+    that is the intended reading rather than a tolerated one: a request should
+    resolve one person's authorization once and answer consistently, instead of
+    widening halfway down a page and printing a total that no single scope
+    produced. Grants are created by a POST to
+    :func:`app.accounts.services.grant_break_glass`, never on a read path, so
+    the following request sees it.
+    """
+    token = _looked_up_grants.set({})
+    try:
+        yield
+    finally:
+        _looked_up_grants.reset(token)
+
+
 def active_break_glass_grant_id(user: object) -> uuid.UUID | None:
+    """The grant this user is currently relying on, if any.
+
+    Remembered for the rest of the request when one is being served. The key is
+    the user's primary key, and the two callers that have no primary key never
+    reach here: ``scope_for_user`` answers the shared-gate sentinel and the
+    anonymous visitor before this, from their own early returns.
+
+    That ordering is what makes a ``pk`` key safe, and it is not incidental.
+    ``DepartmentViewer.pk`` and ``AnonymousUser.pk`` are **both** ``None`` while
+    mapping to opposite scopes — NORMAL visibility and nothing at all — so a
+    cache keyed on ``pk`` that either of them could enter would eventually hand
+    a shared-gate reader's scope to an anonymous one. They cannot enter it.
+    ``tests/test_authorization.py`` asserts both halves: that they never reach
+    this, and that a request following a shared-gate request still sees nothing.
+    """
+    identifier = getattr(user, "pk", None)
+    remembered = _looked_up_grants.get()
+    if remembered is not None and identifier is not None and identifier in remembered:
+        return remembered[identifier]
+
     grant_model = apps.get_model("accounts", "BreakGlassGrant")
     grant = (
         grant_model.objects.active_at(timezone.now())
@@ -209,7 +289,11 @@ def active_break_glass_grant_id(user: object) -> uuid.UUID | None:
         .order_by("-created_at")
         .first()
     )
-    return grant.id if grant is not None else None
+    found = grant.id if grant is not None else None
+
+    if remembered is not None and identifier is not None:
+        remembered[identifier] = found
+    return found
 
 
 def scope_for_user(user: object | None) -> Scope:
@@ -234,11 +318,17 @@ def scope_for_user(user: object | None) -> Scope:
         )
 
     role = getattr(user, "role", "")
+    sees_by_role = role in ROLES_WITH_RESTRICTED_ACCESS
     return Scope(
         user=user,
         is_authenticated=True,
-        sees_restricted_by_role=role in ROLES_WITH_RESTRICTED_ACCESS,
-        break_glass_grant_id=active_break_glass_grant_id(user),
+        sees_restricted_by_role=sees_by_role,
+        # Not asked when the role already answers the only question the grant is
+        # consulted for. `sees_all_restricted` short-circuits on the role, so for
+        # a lawyer the lookup was a database round trip whose result could not
+        # change anything — and `scope_for_user` runs once per `visible_to`,
+        # which is over a hundred times on a statistics page (PERF-01).
+        break_glass_grant_id=None if sees_by_role else active_break_glass_grant_id(user),
     )
 
 

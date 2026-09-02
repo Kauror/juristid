@@ -23,6 +23,7 @@ from typing import Any
 from django.http import HttpRequest, HttpResponse
 
 from app.accounts import shared_gate
+from app.core.authorization import remember_grants_for_one_request
 
 #: Paths whose responses are identical for everybody and safe to cache.
 PUBLIC_PREFIXES = ("/static/", "/healthz", "/favicon.ico")
@@ -49,3 +50,30 @@ class PrivateResponseMiddleware:
             response.setdefault("Cache-Control", NO_STORE)
             response.setdefault("Pragma", "no-cache")
         return response
+
+
+class RequestScopeMiddleware:
+    """Open the per-request authorization memo, and close it again.
+
+    `scope_for_user` runs on every `visible_to`, and a page asks it over a
+    hundred times about the same person. This is the boundary that lets the
+    second and later asks reuse the first answer
+    (`app.core.authorization.remember_grants_for_one_request`).
+
+    **The `finally` is the whole point.** The memo lives in a `ContextVar`, and
+    a worker thread serves one request after another: a dict that survived its
+    request would answer an authorization question on behalf of somebody who
+    never asked it. So this exists to guarantee the close, including when the
+    view raises — which is why it wraps `get_response` rather than setting up in
+    `process_request` and hoping for a matching `process_response`.
+
+    Outermost of the application's own middleware, so the memo covers everything
+    that can read business content, including the authenticator below it.
+    """
+
+    def __init__(self, get_response: Any) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: HttpRequest) -> HttpResponse:
+        with remember_grants_for_one_request():
+            return self.get_response(request)

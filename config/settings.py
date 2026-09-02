@@ -75,6 +75,11 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Before anything that reads business content, and it wraps the rest of the
+    # stack so its `finally` runs even when a view raises. It holds one
+    # request's authorization lookups and nothing else
+    # (app/core/authorization.py, `remember_grants_for_one_request`).
+    "app.core.middleware.RequestScopeMiddleware",
     # After AuthenticationMiddleware, because it decides whether the session
     # Django just restored belongs to the person Cloudflare authenticated.
     # Inert unless AUTH_MODE says otherwise (app/accounts/middleware.py).
