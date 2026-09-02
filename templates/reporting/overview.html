@@ -28,16 +28,7 @@ definition in the catalogue (docs/design-v2-compatibility.md, DS-19).
     Zeros are dropped, and each figure opens the population it counted
     (01-EHITUSJUHIS §3.3, §3.7).
   {% endcomment %}
-  <div class="seis">
-    {% for figure in seis %}
-      {% if figure.value %}
-        <a class="seis__figure" href="{{ figure.url }}">
-          <span class="seis__number{% if figure.tone %} seis__number--{{ figure.tone }}{% endif %}">{{ figure.value }}</span>
-          <span class="seis__caption">{{ figure.caption }}</span>
-        </a>
-      {% endif %}
-    {% endfor %}
-  </div>
+  {% include "components/seis.html" with figures=seis %}
 
   <div class="ovbody">
     <div class="ovbody__main">
