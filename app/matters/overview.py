@@ -923,11 +923,17 @@ class AreaMatterLine:
     is whatever the view happened to put in the context, so the same question
     asked from two pages could quietly get two answers.
 
-    This is the register's *Arvamuse tähtaeg* read plainly — the date is past.
-    It is deliberately not :func:`wi.outstanding_response_deadlines`, which also
-    asks whether a ``Järgmiseks`` has since superseded the date (docs/adr/0050);
-    that is a stronger rule and adopting it here would change what this rail
-    shows, which is a product decision rather than a cleanup.
+    ``is_overdue`` is the **operational** answer, not "the date is past". The
+    line prints the Matter's own *Arvamuse tähtaeg* and marks it *üle*, so it
+    has to mean what every other late figure in the product means: a deadline
+    with no SENT Submission, no ``VÄLJA`` completion mark and no open
+    ``Järgmiseks`` (docs/adr/0050, docs/adr/0059).
+
+    It used to read ``response_deadline < today`` plainly, and that is how a
+    count and the list behind it come apart: the number in the row above is
+    taken from the shared work model, so a caret opened onto rows marked *üle*
+    that the figure had not counted. The flag is now read from the **same list**
+    the count is — no second query, no second definition (§18.9).
     """
 
     matter: Any
@@ -941,14 +947,32 @@ def attach_area_matters(
     today: date,
     limit: int = 1,
     pop: Populations | None = None,
+    items: list[wi.WorkItem] | None = None,
 ) -> None:
     """Load the compact Matter lines for the rows that open on arrival.
 
     Only the rows that are actually expanded. Fetching every area's Matters so
     that a caret *could* open instantly is a page that reads the whole register
     to render a table of counts (§27).
+
+    ``items`` is the shared work model the caller has already read — the same
+    list :func:`area_rows` counts its *Üle tähtaja* column from. It is passed in
+    rather than re-read so that the caret's rows and the number above them are
+    literally the same set, and it is the response-deadline half of it that
+    decides ``is_overdue``, because that is the date these lines print. Omitting
+    it reads the model again with the same authorization, so a caller that has
+    not got one is not forced to invent it.
     """
     people = _populations(user, pop)
+    shared = items if items is not None else wi.work_items(user, today=today)
+    # The response-deadline rows only. A Matter can be late on a DO deadline it
+    # has nothing to do with, and marking *this* date üle for that reason would
+    # be a third meaning of the word on one page.
+    overdue_deadlines = {
+        item.matter_id
+        for item in shared
+        if item.source_type == wi.SOURCE_RESPONSE_DEADLINE and item.is_overdue
+    }
     for row in rows[:limit]:
         object.__setattr__(
             row,
@@ -957,9 +981,7 @@ def attach_area_matters(
                 AreaMatterLine(
                     matter=matter,
                     deadline=matter.response_deadline,
-                    is_overdue=(
-                        matter.response_deadline is not None and matter.response_deadline < today
-                    ),
+                    is_overdue=matter.pk in overdue_deadlines,
                 )
                 for matter in people.open_matters.filter(policy_areas__key=row.key)
                 .select_related("stage", "owner")
@@ -1077,7 +1099,7 @@ def build_overview(
     areas, empty = area_rows(
         user, today, items, sort=sort, include_empty=show_empty_areas, pop=people
     )
-    attach_area_matters(user, areas, today, pop=people)
+    attach_area_matters(user, areas, today, pop=people, items=items)
     page.areas = areas
     page.empty_areas = empty
     page.show_empty_areas = show_empty_areas

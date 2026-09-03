@@ -233,6 +233,31 @@ OPINION_SENT_STATES: tuple[str, ...] = (
     OpinionSentState.BLANK,
 )
 
+#: The two readings that mean *the opinion work on this file is finished*.
+#:
+#: The register's own convention, confirmed by the product owner as the meaning
+#: of column F: a date says the opinion went out on that day, ``ei saatnud``
+#: says a decision was taken not to send one, and **both** end the drafting
+#: step. A blank cell says the file is still being worked on (ADR 0059).
+#:
+#: ``RECORDED_OTHER`` is deliberately **not** here, and that omission is the
+#: whole reason this is a set rather than ``not BLANK``. Something is written
+#: that the parser could not read as a date and that is not one of the
+#: ``ei saatnud`` wordings — so it may mean the opinion went out, or that it did
+#: not, or something about the file entirely. Treating it as completion would
+#: discharge an obligation on the strength of a cell nobody has read; it is a
+#: data-quality question for the register owner and is surfaced as one.
+#:
+#: Still not a ``Submission`` and still incapable of becoming one. This says the
+#: work is finished, never *what Koda sent* — that needs immutable final
+#: evidence, which a spreadsheet cell is not (ADR 0011, DATA-001).
+OPINION_WORK_COMPLETE_STATES: frozenset[str] = frozenset(
+    {
+        OpinionSentState.DATE,
+        OpinionSentState.NOT_SENT,
+    }
+)
+
 #: The wordings that mean Koda decided not to send. A closed allowlist on the
 #: same discipline as the status vocabulary: the 28.08 workbook writes one form
 #: sixteen times, and a stem match would also swallow *ei saatnud veel*, which

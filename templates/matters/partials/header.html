@@ -253,8 +253,24 @@ rather than read.
         <span class="metaline__label">Tähtaeg</span>
         <details class="inlineedit">
           <summary class="inlineedit__trigger">
+            {% comment %}
+              Four readings of one date, decided in `selectors.active_deadline`
+              and never here (UX-010):
+
+                today                  · täna
+                ahead, within 60 days  · N p
+                behind and outstanding · N p üle
+                behind and discharged  the date alone
+
+              The last one is the whole of CUR-001. A passed Arvamuse tähtaeg
+              whose opinion work the register records as finished — sent, or
+              decided against — is no longer late, and the header must not say
+              it is while every work list has stopped counting it. Why it is
+              not late is stated on the facts panel, in the register's own
+              words (ADR 0059).
+            {% endcomment %}
             <span class="metaline__value metaline__value--deadline"
-                  title="{{ active_deadline.label }}">{{ active_deadline.display }}{% if not active_deadline.is_past %}{% if active_deadline.days_remaining <= 60 %} · {{ active_deadline.days_remaining }} p{% endif %}{% endif %}</span>
+                  title="{{ active_deadline.label }}">{{ active_deadline.display }}{% if active_deadline.is_today %} · täna{% elif active_deadline.is_overdue %} · {{ active_deadline.days_late }} p üle{% elif not active_deadline.is_past and active_deadline.days_remaining <= 60 %} · {{ active_deadline.days_remaining }} p{% endif %}</span>
           </summary>
           <form class="inlineedit__form inlineform"
                 hx-post="{% url 'matters:update_field' pk=matter.pk field='response_deadline' %}"
