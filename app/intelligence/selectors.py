@@ -57,6 +57,20 @@ CALENDAR_SOURCES: tuple[tuple[str, str], ...] = (
 #: (Stage-2E's fourth defect class).
 UNKNOWN_PERIOD = "teadmata"
 
+#: The internal state a record is in when it is a `Töövõit`.
+#:
+#: The department no longer keeps *kandidaat* and *kinnitatud töövõit* apart as
+#: two things a reader chooses between: a colleague writes down a work victory
+#: and it is one (app/intelligence/views.py::add_work_victory). What survives is
+#: the internal review of a proposal a *machine* or an import made, which nobody
+#: has yet decided on — so the stored state stays, and the ordinary product
+#: surface simply shows the population that is actually a work victory.
+#:
+#: Named here rather than repeated at each call site so the rows, the year
+#: options and the figure above them cannot drift into counting three different
+#: populations.
+VISIBLE_VICTORY_STATUS = WorkVictoryStatus.CONFIRMED
+
 #: The columns the two calendar sources project so they can be combined. Same
 #: names, same order, on both sides: a union compares positionally.
 CALENDAR_COLUMNS = ("id", "matter_id", "date_value", "period_end", "date_precision", "event_kind")
@@ -215,11 +229,18 @@ def effective_date_years(user: Any) -> list[int]:
     )
 
 
-def work_victory_years(user: Any) -> list[int]:
+def work_victory_years(user: Any, *, status: str = "") -> list[int]:
+    """Every year the offered population actually has a record in.
+
+    ``status`` narrows it to the same rows the caller is about to list. The
+    Töövõidud page offers a year only if choosing it shows something: a year
+    built from rows the page does not display is a filter that empties the
+    page it is attached to.
+    """
     return sorted(
         {
             value
-            for value in MatterWorkVictory.objects.visible_to(user).values_list(
+            for value in work_victories(user=user, status=status).values_list(
                 "period_date__year", flat=True
             )
             if value is not None
@@ -578,5 +599,9 @@ def work_victory_counts(user: Any) -> dict[str, int]:
     return {value: queryset.filter(status=value).count() for value in WorkVictoryStatus.values}
 
 
-def has_any_undated_victory(user: Any) -> bool:
-    return MatterWorkVictory.objects.visible_to(user).filter(period_date__isnull=True).exists()
+def has_any_undated_victory(user: Any, *, status: str = "") -> bool:
+    """Whether *Teadmata periood* is worth offering, over the same population.
+
+    Scoped like :func:`work_victory_years`, and for the same reason.
+    """
+    return work_victories(user=user, status=status).filter(period_date__isnull=True).exists()

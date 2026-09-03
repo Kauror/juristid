@@ -77,10 +77,9 @@ def _confirmed_victories(viewer: Any, year: int) -> int:
 
 
 def _victories_url(year: int) -> str:
-    return (
-        f"{reverse('intelligence:work_victories')}"
-        f"?staatus={WorkVictoryStatus.CONFIRMED}&aasta={year}"
-    )
+    # `?aasta=` only: the Töövõidud page has no state filter, so a `?staatus=`
+    # here would name a parameter nothing reads.
+    return f"{reverse('intelligence:work_victories')}?aasta={year}"
 
 
 def _in_force(viewer: Any, today: date) -> int:

@@ -98,9 +98,14 @@ because a plan that changed is part of the file's history.
     {% if can_write %}
       {% comment %}
         "Lisa töövõit", because that is what the button does: a colleague who
-        may write on this Matter records a win and it is recorded as one.
-        Kandidaat is what a machine suggestion or an import arrives as, and
-        those are reviewed with the controls on the rows below.
+        may write on this Matter records a win and it is recorded as one. Their
+        row carries no state chip for the same reason the Töövõidud page does
+        not — it is a Töövõit, and saying so twice says nothing.
+
+        Kandidaat is what a machine suggestion or an import arrives as. Those
+        rows keep their chip and their review controls: an unreviewed proposal
+        that looked like an established work victory would be this page
+        asserting something nobody has decided.
       {% endcomment %}
       <a class="button button--quiet button--tiny"
          href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}">+ Lisa töövõit</a>
@@ -119,9 +124,11 @@ because a plan that changed is part of the file's history.
             {% endif %}
           </span>
           <span class="factrow__body">
-            <span class="victorystate victorystate--{{ record.status|lower }}">
-              {{ record.get_status_display }}
-            </span>
+            {% if not record.is_confirmed %}
+              <span class="victorystate victorystate--{{ record.status|lower }}">
+                {{ record.get_status_display }}
+              </span>
+            {% endif %}
             <span class="factrow__title">{{ record.title }}</span>
             {% if record.detail %}<span class="muted">{{ record.detail }}</span>{% endif %}
             {% if record.confirmed_by %}
