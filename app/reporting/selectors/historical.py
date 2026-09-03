@@ -575,9 +575,23 @@ def materialisation_failed(context: ReportingContext) -> MetricResult:
 def list_rows(
     context: ReportingContext, *, file_type: str = "", state: str = ""
 ) -> QuerySet[LegacySourceResource]:
-    """The drill-through list, from the same selector the numbers used."""
+    """The drill-through list, from the same selector the numbers used.
+
+    The filing order is the three keys it always was: section, then the page's
+    place in it, then the filename. None of them is unique and neither is the
+    three of them together — one OneNote page routinely carries the same pasted
+    `image001.png` a dozen times, as different blocks and different bytes — so
+    this list is paginated over rows that can tie completely. `pk` last makes
+    the order total, which is what stops an OFFSET slice from serving one
+    occurrence twice and dropping another. It orders nothing a reader can see.
+    """
     return (
         visible_resources(context, file_type=file_type, state=state)
         .select_related("source_page")
-        .order_by("source_page__source_section", "source_page__page_order", "original_filename")
+        .order_by(
+            "source_page__source_section",
+            "source_page__page_order",
+            "original_filename",
+            "pk",
+        )
     )
