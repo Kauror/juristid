@@ -461,3 +461,142 @@ def test_reading_a_letter_is_recorded(client, administrator, stored):
     assert event is not None
     assert event.detail["source"] == "opinion_archive"
     assert event.detail["sha256"] == stored.sha256
+
+
+# ---------------------------------------------------------------------------
+# Freshness: the archive projection is inside the ADR 0041 contract (UX-006)
+# ---------------------------------------------------------------------------
+#
+# `is_linked` and `has_submission` are computed at index time from relations
+# that nothing about a binary touches. Before these handlers existed, a corpus
+# could be fully linked while every row still read `Sidumata` and this module's
+# own `archive_index_findings` reported a clean run — which is how 320 links
+# stayed invisible on `/arvamused/arhiiv/` for a fortnight (docs/adr/0041).
+
+
+def _row(binary):
+    return OpinionArchiveSearchDocument.objects.get(binary=binary)
+
+
+def test_linking_a_matter_refreshes_that_row_without_a_rebuild(held, specialist):
+    """The defect, in one test: link after indexing, and read the list."""
+    from app.legacy_import.opinion_enums import ArchiveLinkBasis
+    from app.legacy_import.opinion_links import link_matter
+    from app.matters.services import create_matter
+
+    first, second = held
+    assert _row(first).is_linked is False
+
+    matter = create_matter(title="Ehitusseadustik", owner=specialist, reference_year=2026)
+    link_matter(binary=first, matter=matter, basis=ArchiveLinkBasis.EXACT_BINARY)
+
+    # No rebuild_archive_index() here, deliberately.
+    assert _row(first).is_linked is True
+    # And only that row: relinking one letter must not touch the corpus.
+    assert _row(second).is_linked is False
+
+
+def test_unlinking_a_matter_takes_the_flag_back(held, specialist):
+    from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
+    from app.legacy_import.opinion_enums import ArchiveLinkBasis
+    from app.legacy_import.opinion_links import link_matter
+    from app.matters.services import create_matter
+
+    first, _second = held
+    matter = create_matter(title="Ehitusseadustik", owner=specialist, reference_year=2026)
+    link_matter(binary=first, matter=matter, basis=ArchiveLinkBasis.EXACT_BINARY)
+    assert _row(first).is_linked is True
+
+    # Through the model rather than `unlink_matter`, which refuses a derived
+    # basis on purpose. The projection question is the same either way: the
+    # relation is gone, so the row must stop claiming it.
+    OpinionArchiveMatterLink.objects.get(binary=first, matter=matter).delete()
+
+    assert _row(first).is_linked is False
+
+
+def test_a_canonical_import_sets_has_submission_on_its_binary(held, specialist):
+    """`has_submission` is a fact about the bytes, reached through the item."""
+    from app.legacy_import.opinion_archive import (
+        OpinionArchiveBatch,
+        OpinionArchiveItem,
+        OpinionSubmissionImport,
+    )
+    from app.matters.services import create_matter
+    from app.submissions.services import create_submission
+
+    first, second = held
+    assert _row(first).has_submission is False
+
+    matter = create_matter(title="Ehitusseadustik", owner=specialist, reference_year=2026)
+    submission = create_submission(matter=matter, title="Koja arvamus", actor=specialist)
+    OpinionSubmissionImport.objects.create(
+        item=OpinionArchiveItem.objects.filter(binary=first).first(),
+        submission=submission,
+        batch=OpinionArchiveBatch.objects.first(),
+    )
+
+    assert _row(first).has_submission is True
+    assert _row(second).has_submission is False
+
+
+def test_verify_reports_a_projection_that_no_longer_matches_canon(held, specialist):
+    """The detector, on the exact drift that used to pass silently."""
+    from app.legacy_import.opinion_enums import ArchiveLinkBasis
+    from app.legacy_import.opinion_links import link_matter
+    from app.matters.services import create_matter
+
+    first, _second = held
+    assert archive_index_findings() == []
+
+    matter = create_matter(title="Ehitusseadustik", owner=specialist, reference_year=2026)
+    link_matter(binary=first, matter=matter, basis=ArchiveLinkBasis.EXACT_BINARY)
+    assert archive_index_findings() == []
+
+    # Desynchronise by hand, the way a bulk write that owed a refresh and did
+    # not pay it would leave things. `update()` sends no signals, which is
+    # precisely the shape being guarded against.
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(is_linked=False)
+
+    findings = archive_index_findings()
+    assert any("teemaseose" in finding for finding in findings), findings
+    # Detected, not repaired: the row is still wrong after verify has run.
+    assert _row(first).is_linked is False
+
+
+def test_verify_reports_a_row_claiming_a_submission_it_does_not_have(held):
+    first, _second = held
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(has_submission=True)
+
+    findings = archive_index_findings()
+    assert any("arvamuse olek" in finding for finding in findings), findings
+
+
+def test_a_bulk_writer_that_suspends_owes_a_bounded_refresh(held, specialist):
+    """The other half of the contract: suspend, then pay, and pay only for what you touched."""
+    from app.legacy_import.opinion_enums import ArchiveLinkBasis
+    from app.legacy_import.opinion_links import link_matter
+    from app.legacy_import.opinion_search import (
+        refresh_archive_binaries,
+        suspend_archive_indexing,
+    )
+    from app.matters.services import create_matter
+
+    first, second = held
+    matter = create_matter(title="Ehitusseadustik", owner=specialist, reference_year=2026)
+
+    with suspend_archive_indexing():
+        link_matter(binary=first, matter=matter, basis=ArchiveLinkBasis.EXACT_BINARY)
+
+    # Suspended means stale, and `verify` is what notices.
+    assert _row(first).is_linked is False
+    assert any("teemaseose" in finding for finding in archive_index_findings())
+
+    written = refresh_archive_binaries([first.pk])
+    assert written == 1
+    assert _row(first).is_linked is True
+    assert archive_index_findings() == []
+
+    # Bounded: a second pass over an already-fresh binary writes nothing, and
+    # the untouched letter was never rewritten at all.
+    assert refresh_archive_binaries([first.pk, second.pk]) == 0

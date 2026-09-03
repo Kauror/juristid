@@ -56,6 +56,77 @@
     }
   }
 
+  /* ---- Arriving at the next step from another page ----------------------
+   * `Määra` on Minu asjad, and `Muuda` / `Märgi tehtuks` / `Vaatasin üle…` in a
+   * work row's menu, are the product's most repeated request — and all four are
+   * links to *another* page, so the `[data-focus]` click handler below can
+   * never run for them. They used to name `#jargmiseks`, which is not an id
+   * anything renders; the browser found nothing, and arrival left the reader at
+   * the top of the document with the composer shut (UX-003).
+   *
+   * They now name the two elements that actually exist, and this reproduces on
+   * arrival exactly what clicking a `[data-focus]` control produces on the page
+   * itself — one behaviour, not two implementations of it.
+   *
+   * The two destinations are not interchangeable, because the control each link
+   * promises lives in a different place: «✓ Tehtud» and «Lükka edasi» are in the
+   * Järgmiseks row, and a next step is *written* only in the composer.
+   *
+   * The composer is rendered only for a writer on an open Matter
+   * (matters/partials/overview.html), so `#teema-koostaja` can legitimately be
+   * absent. Falling back to the row — which every branch renders — is what stops
+   * a link from stranding the browser at `scrollY = 0` the way the broken
+   * fragment did. This never opens the composer on an ordinary page load: it
+   * runs once, on a hash somebody followed deliberately.
+   *
+   * **On `load`, not on `DOMContentLoaded`, and that is not a detail.**
+   * Navigating to a fragment makes the browser run its own focusing steps on
+   * the indicated element, and a `<details>` is not focusable — so the browser
+   * puts focus back on `<body>`. It does that *after* `DOMContentLoaded`, which
+   * silently undid the focus this sets: measured in Chromium, the composer
+   * opened correctly and the caret was on the body. Running last is the only
+   * order in which the focus survives. */
+  var NEXT_STEP_TARGETS = ["teema-koostaja", "jargmiseks-rida"];
+
+  function focusQuietly(element) {
+    /* The scroll is ours, just above; focusing again would fight it. */
+    try {
+      element.focus({ preventScroll: true });
+    } catch (error) {
+      element.focus();
+    }
+  }
+
+  function arriveAtNextStep() {
+    var wanted = (window.location.hash || "").slice(1);
+    if (NEXT_STEP_TARGETS.indexOf(wanted) === -1) {
+      return;
+    }
+    var target = document.getElementById(wanted) || document.getElementById("jargmiseks-rida");
+    if (!target) {
+      return;
+    }
+    if (target.tagName === "DETAILS") {
+      /* Open before scrolling, so the box is its real height when it is
+         centred, and so the field inside it is focusable at all. */
+      target.open = true;
+      target.scrollIntoView({ block: "center", behavior: "auto" });
+      /* The same query app.js uses for `[data-focus]`. Not `input` in general:
+         every form here opens with a hidden CSRF token. */
+      var box = target.querySelector("textarea, select, input:not([type=hidden])");
+      if (box) {
+        box.focus();
+      }
+      return;
+    }
+    /* The row. Deliberately *not* the first field inside it — that is the
+       «Kuupäev…» box inside the closed `Lükka edasi` popover, and focusing into
+       a shut disclosure puts the cursor nowhere. The row carries the buttons
+       this link promised, so the row is what the reader is shown. */
+    target.scrollIntoView({ block: "center", behavior: "auto" });
+    focusQuietly(target);
+  }
+
   /* Any control that sends the reader to a collapsed disclosure has to open it
      first. app.js focuses the first field inside a `[data-focus]` target, and a
      field inside a closed <details> is not focusable — «Muuda» on the
@@ -389,6 +460,12 @@
   document.addEventListener("DOMContentLoaded", function () {
     bindAll(document);
   });
+
+  /* Once, on the way in — and deliberately not inside `bindAll`, which also
+     runs after every HTMX swap. Re-opening the composer on each swap would
+     reopen a box the reader had just closed. See the note above for why this
+     waits for `load` rather than joining the handler above. */
+  window.addEventListener("load", arriveAtNextStep);
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
     bindAll(event.target);

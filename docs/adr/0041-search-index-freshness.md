@@ -407,3 +407,88 @@ lifecycle as this one had before the correction. It is a separate service with a
 separate queue and it is out of scope here, but whoever touches it next should
 know that `close_if_unusable_or_obsolete` between passes is what keeps a
 long-lived loop alive across a database restart.
+
+---
+
+## Amendment (2026-09-03) — the archive projection is inside this contract
+
+- Status: accepted
+- Related: ADR 0056 (the archive is department work product), UX-006
+
+### What this ADR missed
+
+Everything above is about `SearchDocument`, and the invalidation map is
+exhaustive for it. There is a **second** projection —
+`OpinionArchiveSearchDocument`, added later with the searchable opinion archive
+— and this record never mentioned it. It arrived with a rebuild
+(`rebuild_archive_index`) and no handlers at all, so the decision that
+"a mutation may not leave the projection stale with nothing recording that it
+did" was written down for one projection and true of one projection.
+
+The consequence was the whole point of this ADR, reproduced exactly. Two of the
+archive projection's columns are computed at index time from relations that
+nothing about a binary touches:
+
+| Column | Computed from |
+| --- | --- |
+| `is_linked` | `OpinionArchiveMatterLink` on the binary |
+| `has_submission` | `OpinionSubmissionImport` on any of the binary's items |
+
+Links and canonical Submissions were created after the corpus was indexed and
+nothing refreshed the projection, so `/arvamused/arhiiv/` reported
+`767 kirja · 0 teemaga seotud · 0 kanoonilise arvamusena` over a corpus holding
+320 links and 313 Submissions. Every letter's own detail page named its Teema
+correctly, because the detail page reads the canonical relation. The list, the
+`Teemaga seotud` tab and the header count read the projection. A lawyer
+filtering to linked letters got an empty workspace, and the archive — the one
+thing in the product whose purpose is to be connected to the register — looked
+entirely disconnected from it (UX-006).
+
+`archive_index_findings()` reported none of this. It checked for missing rows,
+a stale `index_version` and a null tsvector, and passed cleanly throughout.
+
+### Decision
+
+**`OpinionArchiveSearchDocument` is covered by the same contract**, in the same
+two-class shape, with one addition.
+
+**One-binary mutation path — class A.** `OpinionArchiveMatterLink` and
+`OpinionSubmissionImport`, created, updated or deleted, invalidate exactly one
+archive row. They are refreshed **inside the business transaction** by
+`app/legacy_import/opinion_search_signals.py`, so a committed link and a
+findable link are the same event and a rolled-back link takes its refresh with
+it. There is no high-fanout mutation on this projection and therefore no
+durable-debt half: the archive has no equivalent of renaming an Organisation.
+
+**Bulk-caller responsibility.** `suspend_archive_indexing()` suppresses those
+handlers and `refresh_archive_binaries(ids)` is what the caller owes in
+return — a refresh bounded by the binaries it actually touched. A rebuild of the
+corpus after every bulk operation is **not** the discharge: it makes each apply
+pay for hundreds of letters it did not write, and it is the "rebuild somebody
+remembers" this ADR replaced, merely relocated.
+
+`apply_plan` is the one current bulk writer that needs it, and it needs it for
+three reasons rather than one: it touches the same binary several times, it
+marks candidates applied with a `QuerySet.update()` that sends no signals, and
+`review_state` and `match_class` are projected from exactly those candidates.
+It suspends, and refreshes the binaries its batch catalogued, inside its own
+atomic block. `derive_links` needs nothing: it creates links one at a time
+through `link_matter`, so the handlers already cover it.
+
+**Drift verification.** A contract nothing checks is a comment. `verify` now
+compares both columns against canon in both directions and reports the count of
+rows that disagree — it **detects and does not repair**, because a verify that
+quietly fixed what it found would make the next occurrence invisible too. It
+reports aggregates only, like every other finding here: a count and a class of
+problem, never a filename, a title or a SHA.
+
+### What this amendment does not do
+
+It does not touch archive semantics, the archive authorization boundary
+(ADR 0056 — still asked at query time, still not stored on the row, so widening
+the reader set still needs no rebuild), or what counts as evidence for a link
+(ADR 0055). It is about freshness and nothing else.
+
+It also does not run the rebuild that converges the corpus as it stands today.
+The code stops the projection drifting again; the existing drift is an
+operational one-off, authorised and performed separately.

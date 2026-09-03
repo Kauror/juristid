@@ -681,10 +681,30 @@ def build_my_work(
     # order to offer "Näita kaugemaid tähtaegu" honestly.
     everything = wi.work_items(user, today=today, responsible=subject)
     week_end = wi.end_of_iso_week(today)
-    bands = wi.band_items(everything, today, week_end=week_end, horizon=horizon.until)
+    # The *same* string the strip's own «üle tähtaja» figure links to, built once
+    # and handed to both. A band whose population outgrows the render cap must
+    # open the list its heading counted, and the only way to be sure of that is
+    # for the two to be one URL rather than two that agree today (UX-002).
+    overdue_url = _work_url(subject, wi.WORK_OVERDUE)
+    bands = wi.band_items(
+        everything,
+        today,
+        week_end=week_end,
+        horizon=horizon.until,
+        # Only *Üle tähtaja*. `Sel nädalal` mixes ripe reviews with this week's
+        # deadlines, which is two named populations and therefore no single
+        # honest link; the other two are windows the register does not name the
+        # same way. A band with no exact list keeps its honest heading and
+        # offers no link, rather than offering an approximate one.
+        overflow_urls={wi.BAND_OVERDUE: overdue_url},
+    )
 
-    banded = {item.object_id for band in bands for item in band.items}
-    beyond = sum(1 for item in everything if item.object_id not in banded)
+    # Every item either landed in a band or fell outside the horizon, so the
+    # remainder is arithmetic rather than a second pass. It reads `total`, not
+    # the rendered rows: counting from the capped lists made everything the cap
+    # dropped — late 2025 work, in the first band — report itself as a deadline
+    # *beyond* the window, which is the opposite of what it is (UX-002).
+    beyond = len(everything) - sum(band.total for band in bands)
 
     quiet, quiet_total = quiet_matters(user, subject, today)
     undated, undated_total = undated_items(user, subject)
@@ -708,9 +728,7 @@ def build_my_work(
 
     seis = [
         SeisFigure("open", open_matters, "avatud teemat", _register_url(subject)),
-        SeisFigure(
-            "overdue", overdue, "üle tähtaja", _work_url(subject, wi.WORK_OVERDUE), "danger"
-        ),
+        SeisFigure("overdue", overdue, "üle tähtaja", overdue_url, "danger"),
         SeisFigure(
             "week",
             week,

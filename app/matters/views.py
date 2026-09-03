@@ -126,7 +126,7 @@ from app.matters.timeline import (
 from app.organisations.models import Organisation
 from app.search import services as search_services
 from app.submissions import embedded as opinions
-from app.submissions.enums import RecipientRole
+from app.submissions.enums import RecipientRole, SubmissionStatus
 from app.submissions.forms import SubmissionCreateForm
 from app.submissions.models import Submission
 from app.taxonomy.models import PolicyArea
@@ -1414,19 +1414,55 @@ def _opinion_documents(request: HttpRequest, matter: Matter) -> list[Document]:
     rail block that carried one is gone with it; what a lawyer reaches for in
     this column is the letter itself.
 
-    `DocumentRole.KODA_SUBMISSION_FINAL` is that file, and it is already the
-    canonical role for it: the closing flow writes one (`_closure_final_opinion`),
-    `select_final_evidence` writes one, and the opinion archive import writes one.
-    So this lists the role rather than the Submissions, and a directly uploaded
-    opinion and one bound to a SENT Submission arrive in the same list without
-    either being stored twice.
+    **Two ways a file becomes the Chamber's opinion, and the role is only one of
+    them.** This block used to list `DocumentRole.KODA_SUBMISSION_FINAL` alone,
+    on the stated grounds that every path writes it. Two do not, and the page
+    said so out loud: a Matter whose opinion had been sent rendered
+    `Koja arvamused 1 · Saadetud` in the main column and
+    `Arvamust ei ole lisatud` in this rail, in one viewport, offering
+    `+ Lisa arvamus` for a letter the Chamber had already posted (UX-005).
 
-    `visible_to` and nothing else. A Document carries its own visibility
-    override and may be more restricted than its Matter, and the filename is the
-    disclosure whether or not the bytes are refused (AUTH-003 §21).
+    * `attach_final_evidence` sets the role when it *creates* the document, and
+      only then — handed an existing one it binds the evidence and leaves the
+      classification alone;
+    * `select_final_evidence`, the path a lawyer takes when the file is already
+      on the Matter, writes `final_version` and nothing else.
+
+    So the question this asks is the business one rather than the storage one:
+    **which visible documents on this Matter represent a Chamber opinion?** —
+    the union of the role and the evidence bound to a `SENT` Submission. The
+    role branch is what keeps a directly uploaded opinion here without asserting
+    that anything was sent; the Submission branch is the record of the send
+    itself, which is the fact `Document.role` was never the register of.
+
+    `Document.role` is deliberately **not** rewritten to compensate. It
+    classifies a file — a letter that arrived from a ministry is a
+    `Saabunud ametlik dokument` whether or not somebody later relied on those
+    bytes — and promoting it would falsify one true fact to answer a question
+    asked in the wrong place. `Submission` remains the canonical outbound record.
+
+    **`SENT` only.** A DRAFT's `final_version` is a file somebody is preparing,
+    and listing it in a block headed `Koja arvamus` would be this defect in the
+    other direction.
+
+    `visible_to` and nothing else, applied to the whole union. A Document
+    carries its own visibility override and may be more restricted than its
+    Matter, and the filename is the disclosure whether or not the bytes are
+    refused (AUTH-003 §21).
     """
+    # Scoped to this Matter on both sides: `attach_final_evidence` already
+    # refuses evidence from another Matter, and saying so here as well makes a
+    # cross-Matter document structurally unreachable rather than merely
+    # unwritten.
+    sent_opinion_documents = Submission.objects.filter(
+        matter=matter,
+        status=SubmissionStatus.SENT,
+        final_version__isnull=False,
+    ).values_list("final_version__document_id", flat=True)
+
     return list(
-        Document.objects.filter(matter=matter, role=DocumentRole.KODA_SUBMISSION_FINAL)
+        Document.objects.filter(matter=matter)
+        .filter(Q(role=DocumentRole.KODA_SUBMISSION_FINAL) | Q(pk__in=sent_opinion_documents))
         .visible_to(request.user)
         .select_related("current_version")
         .order_by("-created_at")

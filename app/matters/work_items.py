@@ -154,8 +154,12 @@ BAND_ORDER: tuple[str, ...] = (BAND_OVERDUE, BAND_WEEK, BAND_NEXT_30, BAND_LATER
 #: screen, which is the same failure in the other direction. The approved rule
 #: is the one this dictionary now states: overdue work is ordered oldest-first,
 #: the ten oldest rows are immediately visible, and the remainder stays
-#: available inline behind «Näita veel N ▾» — nothing leaves the page, and the
-#: count in the heading is still the honest total.
+#: available inline behind «Näita veel N ▾».
+#:
+#: That inline remainder is bounded by ``BAND_LIMIT`` below, so on a big enough
+#: band it is not the whole of it. What leaves the page leaves by the link the
+#: band renders, and the heading counts the population either way — see
+#: ``WorkBand.total``.
 BAND_VISIBLE: dict[str, int | None] = {
     BAND_OVERDUE: 10,
     BAND_WEEK: 10,
@@ -166,8 +170,14 @@ BAND_VISIBLE: dict[str, int | None] = {
 #: How far past this week *Järgmised 30 päeva* reaches.
 NEXT_30_DAYS = 30
 
-#: How many rows a page may render before it stops being read. The count above
-#: each list is the honest total either way.
+#: How many rows a page may render before it stops being read.
+#:
+#: This is a *render* bound and nothing else. It used to be applied to the list
+#: the band then counted, so it silently became the count as well — the heading
+#: read 60 where the population was 64, and the four rows past it were behind no
+#: control at all (UX-002). ``band_items`` now records ``WorkBand.total`` before
+#: slicing, and a band that overflows says so and links to the register list
+#: holding all of it.
 BAND_LIMIT = 60
 
 
@@ -352,17 +362,38 @@ class WorkBand:
     *same* list. One query produces both, so the number in the heading, the rows
     under it and the number on «Näita veel N ▾» are three readings of one answer
     and cannot disagree.
+
+    **``total`` is the population; ``items`` is what the page renders.** They are
+    two different numbers whenever the band is bigger than ``BAND_LIMIT``, and
+    conflating them is what made *Minu asjad* contradict itself: ``count`` used
+    to read ``len(items)``, and ``items`` had already been sliced to the cap, so
+    a strip figure of 64 sat 40 px above a heading of 60 and four late rows were
+    reachable by no control on the page (UX-002). The heading counts the
+    obligations that exist; the rows are the ones worth rendering; ``more_url``
+    is where the difference can be read in full.
     """
 
     key: str
     label: str
+    #: Capped at ``BAND_LIMIT`` — what this page renders and expands inline.
     items: list[WorkItem]
+    #: Everything the band holds, *before* the render cap. The heading's number.
+    total: int
     #: ``None`` shows everything.
     visible: int | None = None
+    #: The register list holding this band's whole population, for the rows past
+    #: the cap. Empty where no single named population names exactly these rows —
+    #: an approximate link would be a second definition of the count above it.
+    more_url: str = ""
 
     @property
     def count(self) -> int:
-        return len(self.items)
+        return self.total
+
+    @property
+    def beyond_cap(self) -> int:
+        """How many of ``total`` this page will not render even when expanded."""
+        return max(0, self.total - len(self.items))
 
     @property
     def preview(self) -> list[WorkItem]:
@@ -736,12 +767,21 @@ def band_items(
     *,
     week_end: date | None = None,
     horizon: date | None = None,
+    overflow_urls: dict[str, str] | None = None,
 ) -> list[WorkBand]:
     """The bands that actually hold something, in reading order.
 
     An empty band is omitted rather than rendered empty: four headings above
     four "ei ole ühtegi" lines is a page that looks like a data-quality problem
     rather than a quiet morning.
+
+    ``overflow_urls`` maps a band key to the register list holding that band's
+    whole population, for the rows the cap will not render. It is supplied by
+    the caller rather than built here because the URL is *this person's* work
+    list, and only the caller knows whose desk is being drawn — which is also
+    what makes it the same string the strip figure above already links to,
+    rather than a second one that resolves to a similar list
+    (``app/matters/my_work.py``).
     """
     week_end = week_end or end_of_iso_week(today)
     next_30_end = today + timedelta(days=NEXT_30_DAYS)
@@ -757,12 +797,16 @@ def band_items(
     # *Sel nädalal* (design handoff 03 §1: «vanimad ees»).
     grouped[BAND_OVERDUE].sort(key=lambda item: item.period_end or item.when or date.max)
 
+    overflow = overflow_urls or {}
     return [
         WorkBand(
             key=key,
             label=BAND_LABELS[key],
             items=grouped[key][:BAND_LIMIT],
+            # Before the slice, not after it. This is the whole of UX-002.
+            total=len(grouped[key]),
             visible=BAND_VISIBLE[key],
+            more_url=overflow.get(key, ""),
         )
         for key in BAND_ORDER
         if grouped[key]
