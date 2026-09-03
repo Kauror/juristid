@@ -210,8 +210,25 @@ def test_a_decision_reaches_the_projection_on_the_next_rebuild(held):
     assert row.is_linked is True
 
 
-def test_a_new_binary_is_reported_as_unindexed_until_it_is_rebuilt(held):
-    hold(sha="d" * 64, title="Kolmas")
+def test_a_binary_with_no_occurrences_yet_is_reported_as_unindexed(held):
+    """Held bytes the projection does not describe, and the rebuild that fixes it.
+
+    The binary arrives here on its own, which is the state `materialize` really
+    passes through: `_binary_for` writes the row and `_link_occurrences` points
+    the occurrences at it afterwards, in a second statement. Cataloguing an
+    occurrence *does* index its binary now — that is the freshness handler this
+    module gained — so a letter held complete is no longer a way to reach this
+    state, and pretending otherwise would test the fixture rather than the
+    detector.
+    """
+    OpinionArchiveBinary.objects.create(
+        sha256="d" * 64,
+        size_bytes=1024,
+        mime_type="application/pdf",
+        storage_key="opinion-archive/dd/dd/" + "d" * 64,
+        source_archive_sha256="a" * 64,
+        materialized_at=timezone.now(),
+    )
     assert unindexed_binaries().count() == 1
     assert any("otsinguprojektsioonis" in finding for finding in archive_index_findings())
 
@@ -957,3 +974,415 @@ def test_a_candidates_register_reference_reaches_the_row_it_is_searchable_from(h
     assert "2024_317" in _row(first).identifiers
     rows = search_archive(user=administrator, filters=ArchiveFilters(query="2024_317"))
     assert [row.binary_id for row in rows] == [first.pk]
+
+
+# ---------------------------------------------------------------------------
+# Freshness: the occurrence half
+# ---------------------------------------------------------------------------
+#
+# `OpinionArchiveItem` is the relation the other three hang off, and the last to
+# be covered. Six columns are read off a binary's live occurrences at index time
+# — `occurrence_count`, `occurrence_paths`, `identifiers`, `title`, `recipient`
+# and `document_date`, with `source_year` following the date — so removing one
+# filing of a letter moves all six at once.
+#
+# Nothing noticed before these handlers. The candidate handler above *does* fire
+# during that cascade, but it fires before the occurrence row goes — the
+# collector removes children first — so it recomputed a row that still held the
+# occurrence being deleted, and `archive_index_findings` had no check that could
+# tell the difference.
+
+
+def a_filing(binary, *, path: str, filename: str, title: str = "", date=None):
+    """One more filing of the same letter, at a new path and under a new name.
+
+    Distinct names as well as distinct paths, deliberately: the fixture's own two
+    occurrences share `esimene.pdf`, so `identifiers` collapses them and removing
+    one moves nothing there. A copy that was renamed on its way into the second
+    folder is the shape that shows the column really is derived from the live set.
+    """
+    batch = OpinionArchiveBatch.objects.first()
+    assert batch is not None
+    return OpinionArchiveItem.objects.create(
+        batch=batch,
+        archive_sha256="a" * 64,
+        archive_relative_path=path,
+        original_filename=filename,
+        sha256=binary.sha256,
+        size_bytes=1024,
+        detected_type="application/pdf",
+        filename_date=date,
+        filename_title=title,
+        binary=binary,
+    )
+
+
+def test_deleting_one_filing_leaves_the_row_describing_the_others(held):
+    """The defect, in one test: remove an occurrence and read the list."""
+    first, second = held
+    a_filing(first, path="Opinions/kolmas/kolmas.pdf", filename="kolmas.pdf")
+    row = _row(first)
+    assert row.occurrence_count == 3
+    assert "kolmas.pdf" in row.identifiers
+
+    OpinionArchiveItem.objects.get(archive_relative_path="Opinions/kolmas/kolmas.pdf").delete()
+
+    # No rebuild_archive_index() here, deliberately.
+    row = _row(first)
+    assert row.occurrence_count == 2
+    assert "Opinions/kolmas/kolmas.pdf" not in row.occurrence_paths
+    assert "Opinions/2024/esimene.pdf" in row.occurrence_paths
+    assert "kolmas.pdf" not in row.identifiers
+    assert archive_index_findings() == []
+    # And only that row: removing one filing must not touch the corpus.
+    assert _row(second).occurrence_count == 1
+
+
+def test_deleting_the_last_filing_leaves_exactly_what_a_rebuild_would(held):
+    """The binary outlives its catalogue, and the row stays to say so.
+
+    Not a guess: the expected state is read off `rebuild_archive_index`, which
+    writes a row for every held binary whether the archive still lists it or not.
+    The bytes are canonical evidence and the catalogue is not what makes them
+    real, so a letter whose filings are all gone is still held, still openable
+    and still findable by its hash.
+    """
+    first, _second = held
+    OpinionArchiveItem.objects.filter(binary=first).delete()
+
+    row = _row(first)
+    assert row.occurrence_count == 0
+    assert row.occurrence_paths == ""
+    assert row.title == ""
+    assert row.recipient == ""
+    assert row.document_date is None
+    assert row.source_year is None
+    assert row.identifiers == first.sha256
+
+    # The invariant that makes a bounded refresh trustworthy at all.
+    assert rebuild_archive_index().written == 0
+    assert archive_index_findings() == []
+
+
+def test_cataloguing_a_further_filing_reaches_the_row_at_once(held):
+    """A later snapshot finding the same letter at a new path."""
+    first, _second = held
+    a_filing(
+        first,
+        path="Opinions/2025/uuesti.pdf",
+        filename="uuesti.pdf",
+        title="Ehitusseadustiku muutmine",
+    )
+
+    row = _row(first)
+    assert row.occurrence_count == 3
+    assert "Opinions/2025/uuesti.pdf" in row.occurrence_paths
+    assert "uuesti.pdf" in row.identifiers
+    assert archive_index_findings() == []
+
+
+def test_renaming_a_filing_moves_what_the_letter_is_found_by(held, administrator):
+    """The five columns a save can move, through the model that owns them.
+
+    No production writer edits a catalogued occurrence today — a later snapshot
+    adds occurrences rather than rewriting the ones already recorded — so this is
+    the shell session and the next writer. The handler covers it because the
+    columns are the row builder's, not because a caller exists.
+
+    The renamed filing is dated *earlier* than its sibling on purpose. `title`,
+    `recipient` and `document_date` are the first occurrence's, and "first" is
+    the model's own ordering — `filename_date`, then `original_filename` — not
+    the order the rows were written in. A test that renamed the arbitrary
+    first-by-id row would be asserting a coincidence.
+    """
+    first, _second = held
+    item = OpinionArchiveItem.objects.filter(binary=first).order_by("pk").first()
+    assert item is not None
+
+    item.archive_relative_path = "Opinions/2024/ymber-nimetatud.pdf"
+    item.original_filename = "ymber-nimetatud.pdf"
+    item.filename_title = "Ehitusseadustiku muutmise seaduse eelnou"
+    item.filename_recipient = "Kliimaministeerium"
+    item.filename_date = datetime.date(2024, 1, 5)
+    item.save()
+
+    row = _row(first)
+    assert "Opinions/2024/ymber-nimetatud.pdf" in row.occurrence_paths
+    assert "ymber-nimetatud.pdf" in row.identifiers
+    assert row.title == "Ehitusseadustiku muutmise seaduse eelnou"
+    assert row.recipient == "Kliimaministeerium"
+    assert row.document_date == datetime.date(2024, 1, 5)
+    assert row.source_year == 2024
+    assert archive_index_findings() == []
+    # And the bounded refresh landed where a rebuild would, ordering included.
+    assert rebuild_archive_index().written == 0
+
+    found = search_archive(user=administrator, filters=ArchiveFilters(query="ymber-nimetatud.pdf"))
+    assert [hit.binary_id for hit in found] == [first.pk]
+
+
+def test_moving_a_filing_refreshes_the_row_it_left_and_the_row_it_joined(held):
+    """Both binaries, because an occurrence takes its columns with it.
+
+    `post_save` can only see where the occurrence ended up, so the one it left is
+    captured on `pre_save` and refreshed alongside. Not reachable from the
+    product — `materialize` sets `binary` only where it was null, and does it
+    with a queryset `update()` no signal sees — and covered because the field is
+    mutable and the row it abandons would otherwise go on counting it.
+    """
+    first, second = held
+    item = OpinionArchiveItem.objects.filter(binary=first).order_by("pk").first()
+    assert item is not None
+    assert _row(first).occurrence_count == 2
+    assert _row(second).occurrence_count == 1
+
+    item.binary = second
+    item.save(update_fields=["binary", "updated_at"])
+
+    assert _row(first).occurrence_count == 1
+    assert _row(second).occurrence_count == 2
+    assert "Opinions/2024/esimene.pdf" in _row(second).occurrence_paths
+    assert "Opinions/2024/esimene.pdf" not in _row(first).occurrence_paths
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+def test_clearing_a_filings_binary_frees_the_row_it_leaves(held):
+    """The same move, to nowhere: an occurrence back to a catalogue row."""
+    first, _second = held
+    item = OpinionArchiveItem.objects.filter(binary=first).order_by("pk").first()
+    assert item is not None
+
+    item.binary = None
+    item.save(update_fields=["binary", "updated_at"])
+
+    assert _row(first).occurrence_count == 1
+    assert archive_index_findings() == []
+
+
+def test_a_queryset_delete_frees_every_row_it_touched(held):
+    """`QuerySet.delete()` sends `post_delete` per row, unlike `QuerySet.update()`.
+
+    Which is why deletion needs a handler and the `update()` in `materialize`
+    needs its caller to pay instead. Across two binaries in one statement, so a
+    handler that refreshed only the first would show.
+    """
+    first, second = held
+    OpinionArchiveItem.objects.filter(
+        archive_relative_path__in=["Opinions/koopia/esimene.pdf", "Opinions/naidis.pdf"]
+    ).delete()
+
+    assert _row(first).occurrence_count == 1
+    assert _row(second).occurrence_count == 0
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+def test_no_cascade_can_reach_an_occurrence(held):
+    """Why the delete handler re-projects rather than asking where the delete began.
+
+    An occurrence's only foreign keys are its batch and its binary, and both are
+    `PROTECT`. So there is no parent whose deletion takes an occurrence with it:
+    every deletion begins at the row or at a queryset of them, and the binary is
+    always still there afterwards to be refreshed.
+    """
+    from django.db.models import ForeignKey
+    from django.db.models.deletion import PROTECT, ProtectedError
+
+    parents = [
+        field
+        for field in OpinionArchiveItem._meta.get_fields()
+        if isinstance(field, ForeignKey) and field.model is OpinionArchiveItem
+    ]
+    assert {field.name for field in parents} == {"batch", "binary"}
+    assert all(field.remote_field.on_delete is PROTECT for field in parents)
+
+    # And the database says so too, not only the field declarations.
+    first, _second = held
+    with pytest.raises(ProtectedError):
+        first.delete()
+    batch = OpinionArchiveBatch.objects.first()
+    assert batch is not None
+    with pytest.raises(ProtectedError):
+        batch.delete()
+
+
+def test_a_rolled_back_deletion_takes_its_projection_change_with_it(held):
+    """One event, both halves. Class A in ADR 0041's terms is what this asserts."""
+    from django.db import transaction
+
+    first, _second = held
+    assert _row(first).occurrence_count == 2
+
+    with transaction.atomic():
+        doomed = OpinionArchiveItem.objects.filter(binary=first).order_by("pk").first()
+        assert doomed is not None
+        doomed.delete()
+        assert _row(first).occurrence_count == 1
+        transaction.set_rollback(True)
+
+    assert OpinionArchiveItem.objects.filter(binary=first).count() == 2
+    assert _row(first).occurrence_count == 2
+    assert archive_index_findings() == []
+
+
+def test_suspension_holds_occurrence_writes_back_and_a_bounded_refresh_pays(held):
+    """The bulk half, and the exact state the corpus was in before the handlers.
+
+    Suspending reproduces the defect rather than simulating it with an `update()`
+    on the projection: the canonical rows really move, the row really does not,
+    and `verify` is what has to notice.
+    """
+    from app.legacy_import.opinion_search import (
+        refresh_archive_binaries,
+        suspend_archive_indexing,
+    )
+
+    first, second = held
+    with suspend_archive_indexing():
+        a_filing(first, path="Opinions/2025/neljas.pdf", filename="neljas.pdf")
+        OpinionArchiveItem.objects.get(archive_relative_path="Opinions/koopia/esimene.pdf").delete()
+
+    row = _row(first)
+    assert row.occurrence_count == 2
+    assert "Opinions/koopia/esimene.pdf" in row.occurrence_paths
+    findings = archive_index_findings()
+    assert any("arhiiviteed" in finding for finding in findings), findings
+    assert any("tunnused" in finding for finding in findings), findings
+
+    assert refresh_archive_binaries([first.pk]) == 1
+    row = _row(first)
+    assert row.occurrence_count == 2
+    assert "Opinions/koopia/esimene.pdf" not in row.occurrence_paths
+    assert "Opinions/2025/neljas.pdf" in row.occurrence_paths
+    assert archive_index_findings() == []
+
+    # Bounded: the untouched letter was never rewritten.
+    assert refresh_archive_binaries([first.pk, second.pk]) == 0
+
+
+def test_an_incremental_refresh_matches_a_clean_rebuild(held, normal_matter):
+    """The key invariant, over a mixture of every mutation this module covers.
+
+    A bounded refresh is only worth having if it lands where a rebuild would.
+    `rebuild_archive_index` recomputes every row and writes only the ones that
+    differ, so `written == 0` is the whole assertion.
+    """
+    first, second = held
+    a_filing(first, path="Opinions/2025/viies.pdf", filename="viies.pdf", title="Viies")
+    OpinionMatchCandidate.objects.create(
+        item=OpinionArchiveItem.objects.filter(binary=second).first(),
+        batch=OpinionArchiveBatch.objects.first(),
+        matter=normal_matter,
+        match_class=OpinionMatchClass.REVIEW_REQUIRED,
+        state=OpinionCandidateState.PENDING,
+        excel_reference="2024_412",
+    )
+    moved = OpinionArchiveItem.objects.get(archive_relative_path="Opinions/koopia/esimene.pdf")
+    moved.binary = second
+    moved.save(update_fields=["binary", "updated_at"])
+    OpinionArchiveItem.objects.filter(archive_relative_path="Opinions/naidis.pdf").delete()
+
+    report = rebuild_archive_index()
+    assert report.binaries == 2
+    assert report.written == 0
+    assert archive_index_findings() == []
+
+
+# ---------------------------------------------------------------------------
+# Drift: what `verify` can now see
+# ---------------------------------------------------------------------------
+#
+# Desynchronised with `update()` on the projection, which sends no signals —
+# precisely the shape of a future write path that bypasses the handlers above.
+# Both directions in each case, because a recomputed value differing from a
+# stored one is one test whether the stored one claims too much or too little.
+
+
+def test_verify_reports_a_row_counting_filings_that_are_gone(held):
+    first, _second = held
+    assert archive_index_findings() == []
+
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(occurrence_count=7)
+
+    findings = archive_index_findings()
+    assert any("esinemiste arv" in finding for finding in findings), findings
+    # Detected, not repaired: the row is still wrong after verify has run.
+    assert _row(first).occurrence_count == 7
+
+
+def test_verify_reports_a_row_missing_a_filing_it_should_count(held):
+    first, _second = held
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(occurrence_count=1)
+
+    assert any("esinemiste arv" in finding for finding in archive_index_findings())
+
+
+def test_verify_reports_a_row_whose_archive_paths_no_longer_match(held):
+    first, _second = held
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(
+        occurrence_paths="Opinions/2024/esimene.pdf"
+    )
+
+    findings = archive_index_findings()
+    assert any("arhiiviteed" in finding for finding in findings), findings
+    assert not any("esinemiste arv" in finding for finding in findings), findings
+
+
+def test_verify_reports_a_row_carrying_an_identifier_nothing_holds(held):
+    """The check the candidate round could not make.
+
+    Subtracting one identifier from the column cannot be told apart from the rest
+    of it by inspection; recomputing the whole column from the live occurrences,
+    their metadata and their candidates can.
+    """
+    first, _second = held
+    row = _row(first)
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(
+        identifiers=row.identifiers + "\n2024_999"
+    )
+
+    findings = archive_index_findings()
+    assert any("tunnused" in finding for finding in findings), findings
+
+
+def test_verify_reports_a_row_whose_heading_no_longer_matches_its_filings(held):
+    first, _second = held
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(title="Hoopis teine pealkiri")
+    assert any("pealkiri, saaja" in finding for finding in archive_index_findings())
+
+    rebuild_archive_index(force=True)
+    assert archive_index_findings() == []
+
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(source_year=1999)
+    assert any("pealkiri, saaja" in finding for finding in archive_index_findings())
+
+
+def test_a_letter_with_nothing_catalogued_is_not_a_finding(held):
+    """No false positives, including for a letter whose filings are all gone."""
+    first, _second = held
+    OpinionArchiveItem.objects.filter(binary=first).delete()
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+def test_the_occurrence_findings_report_counts_and_nothing_else(held):
+    """Operator output, so it may name a number and a class of problem only."""
+    first, _second = held
+    row = _row(first)
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(
+        occurrence_count=9,
+        occurrence_paths="Opinions/salajane/leke.pdf",
+        identifiers="leke.pdf",
+        title="Lekkinud pealkiri",
+    )
+
+    findings = archive_index_findings()
+    assert len(findings) == 4
+    for finding in findings:
+        assert first.sha256 not in finding
+        assert row.title not in finding
+        assert row.occurrence_paths not in finding
+        assert row.identifiers not in finding
+        assert "leke.pdf" not in finding
+        assert "Lekkinud" not in finding

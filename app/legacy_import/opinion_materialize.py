@@ -337,7 +337,27 @@ def _binary_for(
 def _link_occurrences(
     group: Iterable[_Occurrence], binary: OpinionArchiveBinary, report: MaterializeReport
 ) -> None:
-    """Point every occurrence of these bytes at the one stored binary."""
+    """Point every occurrence of these bytes at the one stored binary.
+
+    **And pay the projection for what that moved.** `occurrence_count`,
+    `occurrence_paths`, `identifiers` and the letter's own title, recipient and
+    date are all read off the live occurrences of a binary, and the `update()`
+    below is deliberately a compare-and-set — it links only a row still holding
+    no binary — so no `post_save` handler can see it. That makes this the bulk
+    half of the ADR 0041 contract: the caller owes a refresh bounded by what it
+    touched, and here that is exactly one binary.
+
+    It matters most for the bytes we already hold. A later snapshot cataloguing
+    the same letter at a new path reuses the existing binary, which by then has
+    an indexed row — and before this, that row went on reporting one filing
+    where the archive held two, with `verify` reporting a clean run.
+
+    Inside the atomic block on purpose: a link that rolls back takes its
+    projection write with it.
+    """
+    from app.legacy_import.opinion_search import refresh_archive_binary
+
+    linked = 0
     for occurrence in group:
         if occurrence.already_linked:
             report.occurrences_already_linked += 1
@@ -347,5 +367,8 @@ def _link_occurrences(
         ).update(binary=binary)
         if updated:
             report.occurrences_linked += 1
+            linked += 1
         else:
             report.occurrences_already_linked += 1
+    if linked:
+        refresh_archive_binary(binary.pk)
