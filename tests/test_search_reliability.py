@@ -617,6 +617,55 @@ def test_no_module_outside_search_reads_the_projection() -> None:
 # ---------------------------------------------------------------------------
 
 
+def test_every_searchable_kind_is_counted_by_the_integrity_check() -> None:
+    """The registry that says what «healthy» means must know every kind there is.
+
+    `_expected_populations` is a hand-written list, and everything the integrity
+    report concludes is scoped to it: a kind absent from it is never counted, so
+    its rows can be missing in every one and the command still prints a clean
+    bill of health. That is not a hypothetical. AUTH-003 made `Kaasamine` a
+    source kind and did not extend this list, and for that whole release a
+    consultation could be recorded, never projected into the corpus, and never
+    reported — the check said the index was fine while content sat outside it.
+
+    So the two vocabularies are compared rather than counted. A `== 6` here
+    would pass the moment somebody added a seventh kind and removed a sixth,
+    which is the same defect wearing the right total.
+
+    `_expected_populations` is private and imported anyway: this test *is* the
+    completeness contract for that registry, and a contract asserted from
+    outside the module it constrains is the only kind that catches a change made
+    inside it.
+    """
+    from app.search.management.commands.check_search_integrity import _expected_populations
+
+    declared = [kind for _, kind, _ in _expected_populations()]
+
+    assert set(declared) == set(SearchSourceKind.values), (
+        "the integrity check and the searchable vocabulary disagree. Not counted: "
+        f"{sorted(set(SearchSourceKind.values) - set(declared))}; counted but not a "
+        f"source kind: {sorted(set(declared) - set(SearchSourceKind.values))}"
+    )
+
+
+def test_no_source_kind_is_counted_twice_by_the_integrity_check() -> None:
+    """Set equality alone would not notice a kind listed twice.
+
+    Two entries for one kind is not merely untidy: `build_report` compares each
+    line's expected total against the *same* projected count, so a duplicate
+    either reports one shortfall as two findings or — if the second line counts
+    a different canonical population — makes the report contradict itself about
+    the same rows. Uniqueness is asserted separately because it fails for its
+    own reason.
+    """
+    from app.search.management.commands.check_search_integrity import _expected_populations
+
+    declared = [kind for _, kind, _ in _expected_populations()]
+    duplicates = sorted({kind for kind in declared if declared.count(kind) > 1})
+
+    assert not duplicates, f"counted more than once by the integrity check: {duplicates}"
+
+
 def test_a_healthy_index_reports_healthy(one_of_everything) -> None:
     from app.search.management.commands.check_search_integrity import build_report
 

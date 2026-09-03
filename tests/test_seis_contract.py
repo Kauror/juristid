@@ -51,10 +51,28 @@ FIGURE = re.compile(r'<(a|span)\s+class="seis__figure"(?:\s+href="([^"]*)")?')
 
 
 def _seeded(owner, today):
-    """Enough work that the strips are not empty and the zeros are not dropped."""
+    """Enough work that the strips are not empty and the zeros are not dropped.
+
+    Ordinary Matters keep four of the five strips alive, and for a while that
+    was the whole fixture — which left the fifth one parameterized over a page
+    with no figures on it at all. `components/seis.html` drops zeros by design,
+    so a Jälgimine strip counting nothing renders *nothing*, and every loop in
+    this file iterated an empty list for that surface: each contract passed,
+    none of them was asked. The one below, added with this seed, immediately
+    found a case no assertion here had ever seen.
+
+    Jälgimine counts `MatterImportantDate`, not Matters, so it needs its own
+    seed. Both directions the strip reports are given one — a date still ahead
+    and inside the thirty-day window, and one already passed — through
+    `add_important_date`, the service the application writes them with, rather
+    than a row pushed into the table behind it.
+    """
+    from datetime import timedelta
+
+    from app.intelligence.services import add_important_date
     from app.matters.services import create_matter
 
-    for index in range(3):
+    matters = [
         create_matter(
             title=f"Seisu teema {index}",
             owner=owner,
@@ -62,6 +80,31 @@ def _seeded(owner, today):
             actor=owner,
             received_date=today,
         )
+        for index in range(3)
+    ]
+
+    ahead = today + timedelta(days=NEAR_IN_DAYS)
+    add_important_date(
+        matter=matters[0],
+        title="Eelnõu tagasiside tähtaeg",
+        date_value=ahead,
+        period_end=ahead,
+        actor=owner,
+    )
+    passed = today - timedelta(days=5)
+    add_important_date(
+        matter=matters[1],
+        title="Möödunud kooskõlastustähtaeg",
+        date_value=passed,
+        period_end=passed,
+        actor=owner,
+    )
+    return matters
+
+
+#: Inside `sections.NEAR_DAYS`, so the seeded upcoming date lands in the window
+#: «30 päeva jooksul» counts and in the section that figure points at.
+NEAR_IN_DAYS = 10
 
 
 @pytest.fixture
@@ -115,6 +158,75 @@ def test_the_statistika_strip_states_a_number_it_cannot_open(client, populated):
     )
 
 
+def test_the_jalgimine_strip_is_asked_a_question_with_an_answer(client, populated):
+    """The seed above is load-bearing, so it is asserted rather than trusted.
+
+    Everything in this file is a loop over five surfaces, and a loop is only as
+    good as the world it runs in. Jälgimine counts a table nothing else here
+    writes to, so before `_seeded` grew its two `add_important_date` calls the
+    parameterized cases walked a page whose strip had been emptied by the
+    zero-dropping rule: each contract held over nothing at all. A strip that
+    counts nothing cannot link to the wrong list.
+
+    So this pins the world rather than the markup. Delete the seed and the
+    cases above stay green while quietly meaning nothing — this one fails and
+    says why.
+
+    Read off the view's own `seis` context rather than scraped back out of the
+    HTML: the number the strip renders *is* `Figure.value`, and a regex that
+    re-derived it would be asserting against its own parse.
+    """
+    client.force_login(populated)
+
+    response = client.get(reverse("intelligence:important_dates"))
+    figures = response.context["seis"]
+
+    assert figures, "the Jälgimine strip rendered no figures at all"
+    zeros = [figure.caption for figure in figures if figure.value <= 0]
+    assert not zeros, (
+        f"the Jälgimine strip counts nothing for {zeros}, so the contracts above "
+        "loop over a page with no populations and prove nothing about it. Restore "
+        "the MatterImportantDate seed in `_seeded`."
+    )
+
+
+def test_every_jalgimine_figure_opens_something_real(client, populated):
+    """The linked half of the contract, on the strip that can now answer it.
+
+    Two of these figures carry a query and one carries a fragment, and the
+    difference matters: a `?suund=` is a filtered read of this page, so it is
+    asserted the way every other drill-down in the product is — the destination
+    holds exactly the number the figure printed. The fragment names a section of
+    the page already on screen, so what it promises is that the section is
+    there to scroll to.
+
+    An honest destination that happens to be empty is the failure this catches:
+    it is the same lie as `<a href="">`, told one navigation later.
+    """
+    client.force_login(populated)
+    route = reverse("intelligence:important_dates")
+    figures = client.get(route).context["seis"]
+
+    for figure in figures:
+        if figure.url.startswith("#"):
+            body = client.get(route).content.decode()
+            assert f'id="{figure.url[1:]}"' in body, (
+                f"«{figure.caption}» points at {figure.url}, which this page does "
+                "not render — the reader clicks and nothing moves"
+            )
+            continue
+
+        landing = client.get(route + figure.url)
+        assert landing.status_code == 200, f"«{figure.caption}» does not resolve"
+        assert landing.context["total"] == figure.value, (
+            f"«{figure.caption}» says {figure.value} and {figure.url} shows "
+            f"{landing.context['total']}"
+        )
+        assert landing.context["page"].object_list, (
+            f"«{figure.caption}» counted {figure.value} and opens an empty list"
+        )
+
+
 @pytest.mark.parametrize(("label", "route", "params"), STRIPS, ids=[s[0] for s in STRIPS])
 def test_every_link_that_is_offered_is_real(client, populated, label, route, params):
     """The other half: a destination that exists must actually resolve.
@@ -122,6 +234,15 @@ def test_every_link_that_is_offered_is_real(client, populated, label, route, par
     Stated separately from the span rule because the two fail for opposite
     reasons — one is a link that should not exist, this is a link that should
     and does not.
+
+    Three destination shapes are in the product and all three are on-site: a
+    path, a filtered read of the current page, and a fragment naming a section
+    of it — «30 päeva jooksul» *is* the first section of Jälgimine, and linking
+    a figure to the rows already under it is a destination like any other
+    (`app/intelligence/views.py`). The fragment case went unasserted until the
+    seed above gave that strip a number to print, so it is checked here for
+    what it has to be: an id this very page renders. A `#` that scrolls
+    nowhere is the same broken promise as an `href=""`.
     """
     client.force_login(populated)
 
@@ -130,7 +251,11 @@ def test_every_link_that_is_offered_is_real(client, populated, label, route, par
 
     for href in links:
         assert href, f"{label} emitted an anchor with no destination"
-        assert href.startswith(("/", "?")), f"{label} figure points off-site: {href}"
+        assert href.startswith(("/", "?", "#")), f"{label} figure points off-site: {href}"
+        if href.startswith("#"):
+            assert f'id="{href[1:]}"' in body, (
+                f"{label} figure points at {href}, which this page does not render"
+            )
 
 
 def test_the_component_is_the_only_renderer_of_the_strip():
