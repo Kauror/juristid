@@ -103,13 +103,17 @@ register and is resolved on the detail page instead (docs/adr/0028).
       {% else %}
         {% comment %}
           Two lines per letter, in the `submission` component the Matter's own
-          Arvamused page uses. Not a table: the meta line is four facts of very
+          Arvamused page uses. Not a table: the meta line is three facts of very
           different lengths, and a table gave the shortest of them a fifth of
           the width (02-EKRAANID §C).
 
-          No «Saadetud» badge and no kind chip. Everything in this tab is sent
-          by construction — the tab strip above says so — and a badge repeating
-          the tab on every row is a word a reader steps over N times.
+          Four things per row and no fifth: the Teema as the heading, when it
+          went, who it went to, and the file. No «Saadetud» badge and no kind
+          chip — everything in this tab is sent by construction, the tab strip
+          above says so, and a badge repeating the tab on every row is a word a
+          reader steps over N times. No version number and no byte size either;
+          they are facts about the evidence, and the Teema's own page is where
+          evidence is stated.
 
           The file sits at the end of the meta line, and only for a reader who
           may open it: the download route already refuses the bytes, but naming
@@ -118,8 +122,18 @@ register and is resolved on the detail page instead (docs/adr/0028).
         {% for submission in opinion_rows %}
           <article class="submission">
             <div class="submission__head">
+              {% comment %}
+                The Teema is the row's identity, so it is the headline. An
+                arvamus's own title is a near-copy of the Teema it came out of —
+                printed above a «TEEMA …» line it gave every row two headings
+                saying the same thing, and the reader had to read both to learn
+                which one named the work.
+
+                The destination is the Teema, unchanged: the label moved into
+                the heading, the link did not move with the heading it replaced.
+              {% endcomment %}
               <h3 class="submission__title">
-                <a href="{% url 'matters:matter_position' pk=submission.matter_id %}">{{ submission.title }}</a>
+                <a href="{% url 'matters:matter_detail' pk=submission.matter_id %}">{{ submission.matter.title }}</a>
               </h3>
             </div>
             <dl class="submission__meta">
@@ -143,18 +157,6 @@ register and is resolved on the detail page instead (docs/adr/0028).
                 </dd>
               </div>
               <div>
-                <dt>Teema</dt>
-                <dd>
-                  {% comment %}
-                    The way back to the work. An arvamus is an outcome of a
-                    teema, and a reader who found the letter must not have to
-                    search again to reach the file it came out of — which is the
-                    whole reason this section sits under the register.
-                  {% endcomment %}
-                  <a href="{% url 'matters:matter_detail' pk=submission.matter_id %}">{{ submission.matter.title }}</a>
-                </dd>
-              </div>
-              <div>
                 <dt>Adressaat</dt>
                 <dd>
                   {% for organisation in submission.addressee_list %}{{ organisation.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
@@ -164,8 +166,15 @@ register and is resolved on the detail page instead (docs/adr/0028).
                 <dt class="visually-hidden">Fail</dt>
                 <dd>
                   {% if submission.final_version and submission.final_version_readable %}
+                    {% comment %}
+                      The filename and nothing after it. The version number and
+                      the byte size were true and neither answered a question a
+                      reader of this list asks: there is one final file per sent
+                      arvamus, and «v1 · 224,8 kB» is two facts about it that
+                      only matter on the Teema's own page, where the evidence
+                      block states them properly.
+                    {% endcomment %}
                     <a href="{% url 'documents:download' pk=submission.final_version.pk %}">{{ submission.final_version.original_filename }}</a>
-                    <span class="muted">v{{ submission.final_version.version_number }} · {{ submission.final_version.size_bytes|filesizeformat }}</span>
                   {% else %}
                     <span class="muted">Fail puudub</span>
                   {% endif %}

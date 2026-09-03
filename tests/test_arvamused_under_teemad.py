@@ -135,6 +135,15 @@ MATTER_TITLES = (
 )
 OPINION_TITLES = ("Alfaseisukoht", "Beetaseisukoht", "Gammaseisukoht")
 
+#: Which Teema each of those opinions came out of.
+#:
+#: A sent row is headed by its *Teema*: the arvamus's own title is a near-copy
+#: of it, and printing both gave every row two headings saying the same thing.
+#: So a test that searches by one and looks for the other is doing exactly what
+#: it means to — the search still reads `Submission.title`, and the row names
+#: the work that title belongs to.
+TEEMA_OF = dict(zip(OPINION_TITLES, MATTER_TITLES, strict=True))
+
 
 @pytest.fixture
 def three_pairs(specialist, capture_evidence):
@@ -174,6 +183,29 @@ def register_section_of(body: str) -> str:
     """Just the register's results block, for the same reason in reverse."""
     start = body.index('<div id="teemad-tulemused"')
     return body[start : body.index('<section class="opinionblock"')]
+
+
+def submission_rows_of(section: str) -> list[str]:
+    """Each sent row's own markup, one string per row.
+
+    Needed because most of what this file now checks about a row is a *negative*
+    — no version number, no byte size, no «Teema» label — and a negative
+    asserted over a whole section is answered by whatever else is on the page.
+    Scoped to the article, "v1 is not there" means the row.
+    """
+    parts = section.split('<article class="submission">')[1:]
+    return [part[: part.index("</article>")] for part in parts]
+
+
+def meta_labels_of(row: str) -> list[str]:
+    """The row's metadata labels, in the order they are rendered."""
+    return [label.strip() for label in re.findall(r"<dt[^>]*>(.*?)</dt>", row, re.S)]
+
+
+def file_cell_of(row: str) -> str:
+    """The row's file cell — the last thing on the meta line."""
+    start = row.index('<div class="submission__meta__file">')
+    return row[start : row.index("</dl>", start)]
 
 
 # ---------------------------------------------------------------------------
@@ -302,18 +334,26 @@ def test_teemad_search_still_narrows_teemad(signed_in, specialist) -> None:
 
 
 def test_arvamused_search_still_narrows_arvamused(signed_in, specialist, capture_evidence) -> None:
+    """Two arvamused on *one* Teema, so the narrowing is proved on submissions.
+
+    Both rows are headed by the same Teema title, which is the point: with two
+    Matters, a search that quietly matched Matters instead of Submissions would
+    pass this. The file is what tells the two rows apart, and neither filename
+    contains the search term.
+    """
     matter = factories.MatterFactory(owner=specialist, title="Ühine teema")
-    evidence = capture_evidence(matter, b"%PDF-1.4 synthetic", "a.pdf", "application/pdf")
+    evidence = capture_evidence(matter, b"%PDF-1.4 synthetic", "esimene.pdf", "application/pdf")
     sent_submission(matter, evidence=evidence, title="Seisukoht pakendiaktsiisist")
-    other = capture_evidence(matter, b"%PDF-1.4 teine", "b.pdf", "application/pdf")
+    other = capture_evidence(matter, b"%PDF-1.4 teine", "teine.pdf", "application/pdf")
     sent_submission(matter, evidence=other, title="Seisukoht ehitusloast")
 
     section = opinion_section_of(
         body_of(signed_in.get(TEEMAD_URL, {"arvamus_q": "pakendiaktsiis"}))
     )
 
-    assert "Seisukoht pakendiaktsiisist" in section
-    assert "Seisukoht ehitusloast" not in section
+    assert len(submission_rows_of(section)) == 1
+    assert "esimene.pdf" in section
+    assert "teine.pdf" not in section
 
 
 def test_searching_arvamused_leaves_the_teemad_list_alone(three_pairs, signed_in) -> None:
@@ -333,8 +373,8 @@ def test_searching_arvamused_leaves_the_teemad_list_alone(three_pairs, signed_in
         assert title in after
     # And the opinion list did narrow, or the assertion above proves nothing.
     section = opinion_section_of(body)
-    assert "Beetaseisukoht" in section
-    assert "Alfaseisukoht" not in section
+    assert TEEMA_OF["Beetaseisukoht"] in section
+    assert TEEMA_OF["Alfaseisukoht"] not in section
 
 
 def test_searching_teemad_leaves_the_arvamused_list_alone(three_pairs, signed_in) -> None:
@@ -346,7 +386,7 @@ def test_searching_teemad_leaves_the_arvamused_list_alone(three_pairs, signed_in
     assert "<strong>1</strong> teemat" in register
     # The register narrowed to one; the opinion section still holds all three.
     assert "<strong>3</strong> vastet" in section
-    for title in OPINION_TITLES:
+    for title in MATTER_TITLES:
         assert title in section
 
 
@@ -361,8 +401,8 @@ def test_the_two_searches_coexist_in_one_address(three_pairs, signed_in) -> None
 
     assert "Ehitusseadustiku revisjon" in register
     assert "Pakendiseaduse muudatused" not in register
-    assert "Gammaseisukoht" in section
-    assert "Alfaseisukoht" not in section
+    assert TEEMA_OF["Gammaseisukoht"] in section
+    assert TEEMA_OF["Alfaseisukoht"] not in section
 
 
 def test_the_opinion_form_carries_the_register_state(signed_in, specialist) -> None:
@@ -424,7 +464,7 @@ def test_the_opinion_fragment_route_answers_with_opinions_only(
     fragment = body_of(signed_in.get(BLOCK_URL, {"arvamus_q": "pakendiaktsiis"}))
 
     assert 'id="arvamused-tulemused"' in fragment
-    assert "Seisukoht pakendiaktsiisist" in fragment
+    assert "Pakendiseaduse muudatused" in fragment
     # Not the whole page, and not the register.
     assert 'id="teemad-tulemused"' not in fragment
     assert '<nav class="topnav"' not in fragment
@@ -439,7 +479,7 @@ def test_saadetud_is_the_sections_default_source(signed_in, opinion_on_a_matter)
     section = opinion_section_of(body_of(signed_in.get(TEEMAD_URL)))
 
     assert "Saadetud" in section
-    assert "Seisukoht pakendiaktsiisist" in section
+    assert "Pakendiseaduse muudatused" in section
 
 
 def test_the_archive_tab_is_offered_to_a_reader_who_may_read_it(client, administrator) -> None:
@@ -622,7 +662,10 @@ def test_the_section_shows_at_most_the_bound(signed_in, specialist, capture_evid
 
     section = opinion_section_of(body_of(signed_in.get(TEEMAD_URL)))
 
-    assert section.count("Arvamus number") == EMBEDDED_ROWS
+    # Counted by row rather than by title: these are all on one Teema and
+    # therefore all headed by the same words, which makes the article the only
+    # honest unit here.
+    assert len(submission_rows_of(section)) == EMBEDDED_ROWS
     # And the real total is stated rather than implied by the rows shown.
     assert f"<strong>{EMBEDDED_ROWS + 4}</strong> vastet" in section
     assert f"kuvatud {EMBEDDED_ROWS}" in section
@@ -656,15 +699,238 @@ def test_the_section_does_not_paginate(signed_in, specialist, capture_evidence) 
 
 
 def test_each_opinion_row_links_to_its_teema(signed_in, opinion_on_a_matter) -> None:
-    """The whole reason the section sits here: no second search to get back."""
+    """The whole reason the section sits here: no second search to get back.
+
+    One destination per row, and it is the Teema. The row used to carry two —
+    its own heading to the Matter's Arvamused page, and a «TEEMA …» line to the
+    Matter — which is one link too many on a line whose job is to say what the
+    letter was about. The heading is the Teema now and keeps the Teema's
+    address; the reader reaches the arvamus surface from there.
+    """
     matter, _submission = opinion_on_a_matter
 
     section = opinion_section_of(body_of(signed_in.get(TEEMAD_URL)))
 
-    assert reverse("matters:matter_detail", kwargs={"pk": matter.pk}) in section
+    detail = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    # The whole attribute value, because `matter_detail` is `/teemad/<pk>/` and
+    # `matter_position` is `/teemad/<pk>/seisukoht/` — the first is a prefix of
+    # the second, and a bare `in` would be answered by either.
+    assert f'href="{detail}"' in section
     assert "Pakendiseaduse muudatused" in section
-    # And to the opinion itself, which is a different destination.
-    assert reverse("matters:matter_position", kwargs={"pk": matter.pk}) in section
+    assert reverse("matters:matter_position", kwargs={"pk": matter.pk}) not in section
+
+
+# ---------------------------------------------------------------------------
+# What a sent row says: the Teema, when, to whom, and the file
+# ---------------------------------------------------------------------------
+#
+# The row printed its own title as a heading and the Teema underneath it as a
+# labelled field. Both are sentences about the same piece of work — an arvamus
+# is usually named after the teema it came out of — so every row asked the
+# reader to read two headings to learn one thing, and the tail of the line
+# carried «v1 · 224,8 kB», which is two facts about a file nobody was choosing
+# between. The row is the Teema, when it went, who it went to, and the file.
+#
+# Every test below uses `opinion_on_a_matter`, whose two titles are deliberately
+# different: that is what makes "the Matter title is rendered" a claim about
+# which field the template reads rather than a coincidence.
+
+
+def one_row(client, params=None) -> str:
+    """The section's single sent row, or a failure that says how many there were."""
+    rows = submission_rows_of(opinion_section_of(body_of(client.get(TEEMAD_URL, params or {}))))
+    assert len(rows) == 1, f"expected one sent row, got {len(rows)}"
+    return rows[0]
+
+
+def test_the_row_is_headed_by_its_teema(signed_in, opinion_on_a_matter) -> None:
+    """Requirement: the Teema is the row's identity, so it is the headline."""
+    matter, submission = opinion_on_a_matter
+    assert submission.title != matter.title, "the fixture must be able to tell the two apart"
+
+    heading = re.search(r'<h3 class="submission__title">(.*?)</h3>', one_row(signed_in), re.S)
+
+    assert heading, "the row has no headline"
+    assert matter.title in heading.group(1)
+
+
+def test_the_headline_keeps_the_teemas_own_destination(signed_in, opinion_on_a_matter) -> None:
+    """The label moved into the heading; the link did not move with the heading.
+
+    `matter_detail` is where the «TEEMA …» field went, and it is where the
+    heading goes now. Asserted inside the `<h3>` rather than over the row, so a
+    link that survived somewhere else on the line could not answer this — and as
+    the whole `href`, because `/teemad/<pk>/` is a prefix of the arvamus surface
+    the old heading pointed at and a bare `in` would pass on either.
+    """
+    matter, _submission = opinion_on_a_matter
+
+    heading = re.search(r'<h3 class="submission__title">(.*?)</h3>', one_row(signed_in), re.S)
+
+    assert heading
+    detail = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    assert f'href="{detail}"' in heading.group(1)
+
+
+def test_the_submissions_own_title_is_not_printed_in_the_row(
+    signed_in, opinion_on_a_matter
+) -> None:
+    """The heading was replaced, not duplicated.
+
+    The title is still stored, still searched and still shown on the Matter's
+    own Arvamused page — this is about the register's list, where it was the
+    second of two headings.
+    """
+    _matter, submission = opinion_on_a_matter
+
+    assert submission.title not in one_row(signed_in)
+
+
+def test_the_row_carries_exactly_three_facts(signed_in, opinion_on_a_matter) -> None:
+    """Saadetud, Adressaat, and the file. No «Teema» label, and no fourth.
+
+    Asserted as the whole ordered list rather than as three separate `in`
+    checks: what this change removed is a *field*, and only the complete list
+    can say that nothing was left behind or quietly added back.
+    """
+    assert meta_labels_of(one_row(signed_in)) == ["Saadetud", "Adressaat", "Fail"]
+
+
+def test_the_row_still_says_when_it_was_sent(signed_in, opinion_on_a_matter) -> None:
+    _matter, submission = opinion_on_a_matter
+    sent = timezone.localtime(submission.sent_at)
+
+    row = one_row(signed_in)
+
+    assert "<dt>Saadetud</dt>" in row
+    assert f"{sent.day}.{sent.month}.{sent.year}" in row
+
+
+def test_a_reconstructed_date_still_refuses_to_invent_a_time(
+    signed_in, specialist, capture_evidence
+) -> None:
+    """The precision logic is untouched by the row losing a field.
+
+    A register-sourced arvamus carries a date and no time. The anchor in the
+    column is an implementation detail, and printing it as "00:00" would tell a
+    lawyer the letter went out at midnight (Stage-2H brief 20).
+    """
+    from app.submissions.enums import SentAtPrecision
+
+    matter = factories.MatterFactory(owner=specialist, title="Ajalooline teema")
+    evidence = capture_evidence(matter, b"%PDF-1.4 s", "vana.pdf", "application/pdf")
+    submission = sent_submission(
+        matter,
+        evidence=evidence,
+        title="Ajalooline arvamus",
+        when=datetime.datetime(2026, 8, 29, tzinfo=datetime.UTC),
+    )
+    Submission.objects.filter(pk=submission.pk).update(sent_at_precision=SentAtPrecision.DATE)
+
+    row = one_row(signed_in)
+
+    assert "29.8.2026" in row
+    assert "00:00" not in row
+
+
+def test_the_row_still_says_who_it_went_to(signed_in, specialist, capture_evidence) -> None:
+    """Adressaat keeps its label and its list semantics."""
+    from app.submissions.enums import RecipientRole
+
+    matter = factories.MatterFactory(owner=specialist, title="Adressaadiga teema")
+    evidence = capture_evidence(matter, b"%PDF-1.4 s", "kiri.pdf", "application/pdf")
+    submission = sent_submission(matter, evidence=evidence, title="Arvamus adressaadiga")
+    for name in ("Näidisministeerium", "Teine näidisamet"):
+        submission.recipient_rows.create(
+            organisation=factories.OrganisationFactory(name=name),
+            role=RecipientRole.ADDRESSEE,
+        )
+
+    row = one_row(signed_in)
+
+    assert "<dt>Adressaat</dt>" in row
+    assert "Näidisministeerium, Teine näidisamet" in row
+
+
+def test_the_file_is_named_and_downloadable(signed_in, opinion_on_a_matter) -> None:
+    """The original filename, through the authorization-checked route."""
+    _matter, submission = opinion_on_a_matter
+
+    cell = file_cell_of(one_row(signed_in))
+
+    assert submission.final_version.original_filename == "arvamus.pdf"
+    assert "arvamus.pdf" in cell
+    assert reverse("documents:download", kwargs={"pk": submission.final_version.pk}) in cell
+
+
+def test_the_file_carries_no_version_and_no_size(signed_in, opinion_on_a_matter) -> None:
+    """«v1 · 224,8 kB» is gone, and the cell is the link and nothing else.
+
+    Matched as the whole rendered `<dd>` rather than as `"v1" not in html`: the
+    page around it is full of ones and of «kB»-shaped strings, and a global
+    substring would either pass by accident or fail by accident. The one
+    assertion that cannot do either is "this cell is exactly an anchor".
+    """
+    from django.template.defaultfilters import filesizeformat
+
+    _matter, submission = opinion_on_a_matter
+    version = submission.final_version
+
+    cell = file_cell_of(one_row(signed_in))
+    rendered = re.search(r"<dd>(.*?)</dd>", cell, re.S)
+
+    assert rendered
+    assert re.fullmatch(r'<a href="[^"]+">arvamus\.pdf</a>', rendered.group(1).strip()), (
+        rendered.group(1)
+    )
+    assert f"v{version.version_number}" not in cell
+    assert filesizeformat(version.size_bytes) not in cell
+
+
+def test_an_unreadable_file_is_still_not_named(client, reader, specialist, capture_evidence):
+    """AUTH-003 §21, unchanged: naming the file is itself a disclosure.
+
+    A Submission a reader may see can point at a Document restricted below it,
+    because a Document carries its own override. The row appears — this is not a
+    test about hiding the arvamus — and says «Fail puudub» where the filename
+    would be.
+    """
+    matter = factories.MatterFactory(owner=specialist, title="Nähtav teema")
+    evidence = capture_evidence(
+        matter,
+        b"%PDF-1.4 s",
+        "Salajane_arvamus.pdf",
+        "application/pdf",
+        visibility_override=Visibility.RESTRICTED,
+    )
+    sent_submission(matter, evidence=evidence, title="Arvamus salajase failiga")
+    client.force_login(reader)
+
+    row = one_row(client)
+
+    assert "Nähtav teema" in row
+    assert "Salajane_arvamus.pdf" not in row
+    assert "Fail puudub" in row
+    assert reverse("documents:download", kwargs={"pk": evidence.pk}) not in row
+
+
+def test_the_archive_tab_keeps_its_own_row_shape(client, administrator) -> None:
+    """Out of scope and proved so.
+
+    The archive is a table of four identical columns and is not the `submission`
+    component. A change to the sent row must not have reached it.
+    """
+    hold(sha="7" * 64, title="Varasem kiri pakenditest", recipient="Näidisministeerium")
+    rebuild_archive_index()
+    client.force_login(administrator)
+
+    section = opinion_section_of(body_of(client.get(TEEMAD_URL, {"arvamus_vaade": "arhiiv"})))
+
+    assert '<table class="table">' in section
+    assert submission_rows_of(section) == []
+    for column in ("Kuupäev", "Kiri", "Saaja", "Seisund"):
+        assert f'<th scope="col">{column}</th>' in section
+    assert "Varasem kiri pakenditest" in section
 
 
 def test_an_archive_row_never_names_a_teema(client, administrator, specialist) -> None:
@@ -776,8 +1042,10 @@ def test_the_register_live_search_does_not_pay_for_the_section(
     fragment = body_of(signed_in.get(TEEMAD_URL, {"q": "Ehitusseadustiku"}, HTTP_HX_REQUEST="true"))
 
     assert "opinionblock" not in fragment
-    for title in OPINION_TITLES:
-        assert title not in fragment
+    # By the component rather than by title: a sent row is headed by its Teema
+    # now, and `Ehitusseadustiku revisjon` is legitimately in this fragment as a
+    # *register* row. The article is the thing that must not be built.
+    assert '<article class="submission">' not in fragment
 
 
 # ---------------------------------------------------------------------------
@@ -879,5 +1147,5 @@ def test_the_pushed_address_reproduces_both_states_when_followed(signed_in, thre
     section = opinion_section_of(body)
     assert "Ehitusseadustiku revisjon" in register
     assert "Pakendiseaduse muudatused" not in register
-    assert "Beetaseisukoht" in section
-    assert "Alfaseisukoht" not in section
+    assert TEEMA_OF["Beetaseisukoht"] in section
+    assert TEEMA_OF["Alfaseisukoht"] not in section
