@@ -1027,6 +1027,57 @@ jobs:
           resolve > untagged.json
           python3 scripts/ci/assert_deployment_identity.py untagged.json --fallback
 
+      # The real-data rehearsal template is never started here — it exists to
+      # hold a production backup set, and CI has none. What CI can prove is the
+      # two things that would otherwise only be discovered mid-rehearsal, by
+      # somebody in a hurry: that the file parses, and that its guards fire.
+      #
+      # `config` interpolates and validates. It builds nothing and starts
+      # nothing, so the stack is never brought up against real data by running
+      # it.
+      - name: The real-data rehearsal template refuses to resolve without its paths
+        run: |
+          set -euo pipefail
+          REAL=deploy/recovery-rehearsal/compose.real-data.yml
+          SRC=deploy/recovery-rehearsal/compose.real-data.source.yml
+          # Nothing is exported here on purpose: this is the state an operator is
+          # in when they forget a step, and `${VAR:?}` has to stop them.
+          if docker compose -p juristid-recovery-rehearsal -f "$REAL" config >/dev/null 2>&1; then
+            echo "::error::resolved with no scratch paths set; a forgotten export would bind something"
+            exit 1
+          fi
+          echo "no scratch paths -> refused, as it must"
+
+          ENV_FILE="$(mktemp)"
+          if JURISTID_REHEARSAL_ENV_FILE="$ENV_FILE" \
+             JURISTID_REHEARSAL_DATA_ROOT=/tmp/rehearsal \
+             JURISTID_REHEARSAL_PGDATA=/tmp/rehearsal/postgres \
+             JURISTID_REHEARSAL_IMAGE_TAG=deadbeefdead \
+             docker compose -p juristid-recovery-rehearsal -f "$REAL" -f "$SRC" config >/dev/null 2>&1; then
+            echo "::error::the source overlay resolved without a corpus path"
+            exit 1
+          fi
+          echo "no corpus path -> the overlay refused too, as it must"
+
+      - name: The real-data rehearsal template resolves to an isolated stack
+        run: |
+          set -euo pipefail
+          ENV_FILE="$(mktemp)"
+          export JURISTID_REHEARSAL_ENV_FILE="$ENV_FILE"
+          export JURISTID_REHEARSAL_DATA_ROOT=/tmp/rehearsal
+          export JURISTID_REHEARSAL_PGDATA=/tmp/rehearsal/postgres
+          export JURISTID_REHEARSAL_IMAGE_TAG=deadbeefdead
+          export JURISTID_REHEARSAL_SOURCE_ROOT=/tmp/rehearsal/source
+          # `--profile workers` so the gated services appear in the output at all;
+          # whether they are gated is then read off their own `profiles` key,
+          # which survives the profile being active. Without this the output
+          # would depend on how the installed Compose filters profiles.
+          docker compose -p juristid-recovery-rehearsal --profile workers \
+            -f deploy/recovery-rehearsal/compose.real-data.yml \
+            -f deploy/recovery-rehearsal/compose.real-data.source.yml \
+            config --format json > rehearsal.json
+          python3 scripts/ci/assert_rehearsal_isolation.py rehearsal.json
+
       - name: Container logs on failure
         if: failure()
         run: docker compose logs

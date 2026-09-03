@@ -73,19 +73,53 @@ then it refuses to pretend one does.
 Two further items were added by the 2026-09-01 backup/DR audit and are open for
 the same reason:
 
-* **A set-consistent recovery fingerprint, or a rehearsal against a real
-  production set.** `recovery_fingerprint` proves a round trip — before an
-  operation, after it — and the verifier proves a set is an intact file. Neither
-  proves a *production* set restores, and the current backup transaction model
-  cannot produce a fingerprint that describes one: the dump has its own
-  snapshot, and the evidence and page-XML halves read a filesystem that has
-  none. RECOVERY.md states this rather than papering over it with a file named
-  `latest`.
+* **A set-consistent recovery fingerprint.** `recovery_fingerprint` proves a
+  round trip — before an operation, after it — and the verifier proves a set is
+  an intact file. The current backup transaction model still cannot produce a
+  fingerprint that *describes a set* on demand: the dump has its own snapshot,
+  and the evidence and page-XML halves read a filesystem that has none.
+  RECOVERY.md states this rather than papering over it with a file named
+  `latest`. **Partly answered on 03.09.2026:** a rehearsal against the real
+  production set `20260902T182850Z` restored it into a disposable PostgreSQL 18
+  stack, `deployment_readiness` passed on the deployed image, every evidence
+  object the restored database refers to was deep-hash verified, and the
+  restored fingerprint matched live production exactly. That comparison was
+  only available because nothing had been written between the dump and the
+  comparison — luck, not design. What remains open is **how often** such a
+  rehearsal is run; nothing schedules one.
 * **The weekly Unraid *Appdata Backup*.** It is undocumented outside this note,
   it stops the Juristid containers for about 41 minutes every Monday
   (01:00–01:45 UTC, 04:00–04:45 in Tallinn), and it is currently the only thing
   copying some configuration and credential state off the appdata tree. It must
   not be disabled before that state has a backup of its own.
+
+Four more were measured by the 03.09.2026 real-set restore rehearsal. They are
+recorded and deliberately not implemented — each is an operations decision or a
+host change, and a repository that implements those quietly acquires policy
+nobody agreed to. `deploy/unraid-main/RECOVERY.md`,
+[What is not yet fixed](../deploy/unraid-main/RECOVERY.md#what-is-not-yet-fixed),
+carries the operational detail.
+
+* **DR0 — one physical disk holds the data, the backups and the source
+  corpus.** Not merely one host. Array parity covers that disk failing and
+  nothing else: not a deletion, not the loss of the host or the room. This
+  outranks everything else on this page, and the off-host destination is the
+  decision that would close it.
+* **DR1-A — nothing takes a backup *after* a deploy,** so the newest set always
+  describes the previous release and the running revision has no recovery point
+  of its own. Survivable only while the release in between carries no
+  migration. It is the same scheduling decision as the first item above, asked
+  from the other end.
+* **DR1-B — every operator SSH key has to live in the Unraid GUI key store.**
+  The WebGUI regenerates `authorized_keys` from `/boot/config/ssh/root.pubkeys`
+  by replacement, so any hand-appended key is erased the next time anybody
+  touches that screen. It happened mid-rehearsal and revoked two working keys.
+  A host setting, not a code change — but a recovery procedure whose access
+  channel can vanish silently is worth writing down.
+* **DR1-C — where the production secrets and the tunnel credential are backed
+  up is not recorded, and no copy was found on the host.** A restore that
+  recovers the database, the evidence and the page XML still cannot bring the
+  deployment back without them. Naming the destination is a custody decision.
 
 ## Decisions taken by the development agent in Stage 0
 
