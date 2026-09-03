@@ -800,3 +800,50 @@ def test_verify_reports_an_applied_candidate_that_produced_nothing(archive_path)
 
     with pytest.raises(CommandError):
         call_command("opinion_archive", "verify", stdout=io.StringIO())
+
+
+# =========================================================================
+# The archive projection an apply owns for what it wrote
+# =========================================================================
+
+
+def test_the_bulk_candidate_update_stays_visible_in_the_archive_projection(
+    archive_path, evidence_root
+):
+    """`_mark_candidate_applied` is a `QuerySet.update()`, and no signal sees one.
+
+    The sequence an operator actually performs: catalogue, materialise, index,
+    then apply. `apply_plan` suspends the per-row handlers because it touches
+    the same binary several times, and pays for exactly the binaries its batch
+    catalogued — so the row has to converge without anybody rebuilding the
+    corpus. Both halves are asserted: the projection agrees with canon, and the
+    two letters it did not touch were not rewritten to make it so.
+    """
+    from app.legacy_import.opinion_apply import catalogue_plan
+    from app.legacy_import.opinion_materialize import materialize
+    from app.legacy_import.opinion_search import (
+        archive_index_findings,
+        rebuild_archive_index,
+        refresh_archive_binaries,
+    )
+    from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
+
+    _matter, item = strict_pair(number=231)
+    path = archive_path([item])
+    plan = plan_for(path)
+    catalogue_plan(plan, batch=open_batch(plan))
+    materialize(archive_path=path, expected_archive_sha256=plan.archive_sha256)
+    rebuild_archive_index()
+
+    row = OpinionArchiveSearchDocument.objects.get()
+    assert row.review_state == OpinionCandidateState.PENDING
+    assert archive_index_findings() == []
+
+    apply_plan(plan_for(path), batch=open_batch(plan))
+
+    row.refresh_from_db()
+    assert OpinionMatchCandidate.objects.get().state == OpinionCandidateState.APPLIED
+    assert row.review_state == OpinionCandidateState.APPLIED
+    assert archive_index_findings() == []
+    # Already converged, so the bounded refresh finds nothing left to write.
+    assert refresh_archive_binaries([row.binary_id]) == 0
