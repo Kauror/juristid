@@ -819,7 +819,7 @@ def test_the_signal_and_the_rebuild_write_the_same_row(specialist):
 LOCK_WAIT_TIMEOUT = 20
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_two_consumers_do_not_corrupt_each_other(specialist) -> None:
     """Nothing here assumes it is the only worker.
 
@@ -861,7 +861,7 @@ def test_two_consumers_do_not_corrupt_each_other(specialist) -> None:
     assert SearchDocument.objects.filter(source_kind=SearchSourceKind.MATTER).count() == 1
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_a_matter_save_during_a_debt_driven_rebuild_still_succeeds(specialist) -> None:
     """The consumer inherits the rebuild gate rather than reinventing one.
 
@@ -1244,7 +1244,7 @@ def _rebuild_that_violates_a_not_null_constraint(monkeypatch) -> None:
     monkeypatch.setattr(indexing, "_document_values", without_indexed_at)
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_a_database_failure_does_not_persist_the_row_that_failed(monkeypatch, specialist):
     factories.MatterFactory(owner=specialist, title=SENTINEL_TITLE)
     freshness.mark_rebuild_owed(SearchRebuildReason.TAG_RENAMED)
@@ -1263,7 +1263,7 @@ def test_a_database_failure_does_not_persist_the_row_that_failed(monkeypatch, sp
     assert "Failing row contains" not in debt.last_error
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_a_sanitised_failure_still_says_what_broke(monkeypatch, specialist):
     """Useful, not merely safe.
 
@@ -1284,7 +1284,7 @@ def test_a_sanitised_failure_still_says_what_broke(monkeypatch, specialist):
     assert "search_searchdocument.indexed_at" in debt.last_error
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_the_freshness_probe_never_prints_the_row_that_failed(monkeypatch, specialist, capsys):
     """The place the leak would have been read from.
 
@@ -1309,7 +1309,7 @@ def test_the_freshness_probe_never_prints_the_row_that_failed(monkeypatch, speci
     assert "ebaõnnestunud 1 korda" in printed.err
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_a_failed_rebuild_is_still_a_fault_after_sanitisation(monkeypatch, specialist):
     """Sanitising the message must not soften the state.
 
@@ -1347,7 +1347,7 @@ def test_a_failure_with_no_database_underneath_it_still_records_its_class():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_a_worker_pass_reconnects_after_the_connection_is_lost(specialist):
     """`restart: unless-stopped` cannot see this failure, so the loop has to.
 
@@ -1385,7 +1385,7 @@ def test_a_worker_pass_reconnects_after_the_connection_is_lost(specialist):
     assert found("Keskkonnaamet", specialist) == [(SearchSourceKind.MATTER.value, str(matter.pk))]
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_the_loop_without_the_hygiene_would_stay_wedged(specialist):
     """What makes the test above load-bearing rather than decorative.
 
@@ -1404,7 +1404,7 @@ def test_the_loop_without_the_hygiene_would_stay_wedged(specialist):
     assert freshness.outstanding().count() == 1
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_a_healthy_pass_keeps_the_connection_it_had(specialist):
     """The hygiene must be free in the ordinary case.
 
@@ -1420,7 +1420,7 @@ def test_a_healthy_pass_keeps_the_connection_it_had(specialist):
     assert connection.connection is before
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_the_integrity_check_does_not_print_the_row_that_failed(monkeypatch, specialist):
     """The second reader of the same column.
 

@@ -873,7 +873,7 @@ def _wait_for_a_blocked_backend() -> None:
                 return
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_a_matter_save_during_a_full_rebuild_still_succeeds(specialist, monkeypatch) -> None:
     """The race, with both halves in real transactions on real connections.
 

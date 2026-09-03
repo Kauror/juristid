@@ -1,10 +1,110 @@
 from __future__ import annotations
 
 import zipfile
+from collections.abc import Generator
+from dataclasses import dataclass
 
 import pytest
+from pytest_django.plugin import DjangoDbBlocker
 
-from tests import factories
+from tests import factories, reference_baseline
+
+# ---------------------------------------------------------------------------
+# The migrated reference-data baseline
+# ---------------------------------------------------------------------------
+#
+# A `django_db(transaction=True)` test flushes every table when it finishes, and
+# the rows data migrations seeded — the stage vocabulary, the policy areas,
+# their legacy mappings — go with the rest. Nothing re-runs those migrations, so
+# without the two pieces below the next test to read canonical reference data
+# fails, and whether it does depends only on what ran before it.
+#
+# pytest-django hides this in the ordinary case by sorting transactional tests
+# after every other database test in the same process. That sort is real, and
+# the serial suite depends on it; what it does not survive is a second process
+# reusing the same database (`--reuse-db` after any transactional run, including
+# one `-x` abandoned), or any queue that hands a worker whole files in another
+# order (`pytest -n --dist loadfile`, docs/ci-architecture.md).
+#
+# So the contract is stated where it can be enforced instead: a transactional
+# test puts the migrated baseline back when it is done. See
+# `tests/reference_baseline.py` for how, and
+# `tests/test_reference_data_isolation.py` for the guard that keeps every
+# transactional test inside it.
+
+
+@dataclass
+class TestDatabase:
+    """The session's test database, while it exists.
+
+    ``live`` is what stops the teardown hook reaching for a database that has
+    already been dropped. At the end of a session pytest finalises *everything*
+    in one pass — the last item's fixtures, then the session's — and the hook
+    below runs after all of it, so on the final test of a run the database is
+    gone by the time it is asked to restore anything. That was not theoretical:
+    it is an `ERROR at teardown` on whichever transactional test happened to
+    come last, and it hides completely in any run that ends with a test needing
+    no database, which is most of them.
+    """
+
+    blocker: DjangoDbBlocker
+    live: bool = True
+
+
+#: Where that state is kept for the teardown hook, which runs outside any
+#: fixture and so cannot ask for it by name.
+TEST_DATABASE = pytest.StashKey[TestDatabase]()
+
+
+@pytest.fixture(scope="session")
+def django_db_setup(
+    request: pytest.FixtureRequest,
+    django_db_setup: None,  # pytest-django's own, wrapped rather than replaced
+    django_db_blocker: DjangoDbBlocker,
+) -> Generator[None]:
+    """Wrap pytest-django's database set-up to own the window it is alive in.
+
+    Overriding a fixture by requesting the same name is pytest-django's own
+    documented extension point, and it is the seam that matters here: this
+    finaliser runs *before* theirs, which is the last moment the test database
+    still exists.
+
+    That window is where the hand-over to the next process happens. Under
+    `--reuse-db` the database outlives the session, and a run whose last test
+    was transactional — or which `-x` abandoned inside one — would otherwise
+    leave it flushed for whoever opens it next. Worse than one bad session: the
+    next `--reuse-db` run snapshots what it finds, so a flushed database becomes
+    a flushed *baseline*, and the restore has nothing left to restore.
+    """
+    state = TestDatabase(blocker=django_db_blocker)
+    request.config.stash[TEST_DATABASE] = state
+
+    yield
+
+    if request.config.getvalue("reuse_db"):
+        with django_db_blocker.unblock():
+            reference_baseline.restore_migrated_baseline()
+    state.live = False
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_teardown(item: pytest.Item) -> Generator[None, object, object]:
+    """Restore the migrated baseline after a transactional test tore down.
+
+    A hook wrapper rather than a fixture, because the restore has to happen
+    *after* pytest-django's `_django_db_helper` has flushed — and that fixture
+    is set up before anything a conftest can declare, so anything a conftest
+    declares finalises before it. Wrapping the teardown hook puts this after all
+    of the item's fixtures, whatever order they were in, and `finally` keeps it
+    there when the test itself errored.
+    """
+    try:
+        return (yield)
+    finally:
+        state = item.config.stash.get(TEST_DATABASE, None)
+        if state is not None and state.live and reference_baseline.uses_real_transactions(item):
+            with state.blocker.unblock():
+                reference_baseline.restore_migrated_baseline()
 
 
 @pytest.fixture
