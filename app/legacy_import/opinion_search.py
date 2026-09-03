@@ -683,7 +683,7 @@ def _candidate_drift_findings() -> list[str]:
 def _occurrence_drift_findings() -> list[str]:
     """Where the projection and the live occurrences disagree about a letter.
 
-    The third relation of the same shape, and the one the other two hang off.
+    The fourth relation of the same shape, and the one the other three hang off.
     `OpinionArchiveItem` is what says a letter was found at this path under this
     name, and `occurrence_count`, `occurrence_paths`, `identifiers`, `title`,
     `recipient` and `document_date` are all read off the live set of them at
@@ -718,17 +718,26 @@ def _occurrence_drift_findings() -> list[str]:
         "document_date",
         "source_year",
     )
-    for row in stored.iterator():
-        binary_id, sha256 = row[0], row[1]
+    for (
+        binary_id,
+        sha256,
+        stored_count,
+        stored_paths,
+        stored_identifiers,
+        stored_title,
+        stored_recipient,
+        stored_date,
+        stored_year,
+    ) in stored.iterator():
         canonical = _occurrence_values(
             sha256=sha256,
             occurrences=occurrences.get(binary_id, []),
             metadata=metadata.get(binary_id, []),
             candidates=candidates.get(binary_id, []),
         )
-        count_drift += int(canonical["occurrence_count"] != row[2])
-        path_drift += int(canonical["occurrence_paths"] != row[3])
-        identifier_drift += int(canonical["identifiers"] != row[4])
+        count_drift += int(canonical["occurrence_count"] != stored_count)
+        path_drift += int(canonical["occurrence_paths"] != stored_paths)
+        identifier_drift += int(canonical["identifiers"] != stored_identifiers)
         # One finding for the three columns a letter is *described* by, because
         # they move together: they are the first occurrence's filename fields,
         # falling back to KodaDash's reading of it, and `source_year` is only
@@ -740,7 +749,7 @@ def _occurrence_drift_findings() -> list[str]:
                 canonical["document_date"],
                 canonical["source_year"],
             )
-            != (row[5], row[6], row[7], row[8])
+            != (stored_title, stored_recipient, stored_date, stored_year)
         )
 
     findings: list[str] = []
