@@ -82,12 +82,24 @@ juristid_compose() {
 #      so it can answer "No pending migrations." for a release that carries
 #      several. The reassuring answer, at the one moment it must be trustworthy.
 #
-#   2. The identity variables are exported once, before the build, so every
-#      later command in that shell resolves the same image. Prefixing individual
-#      commands is how `migrate` ends up resolving
-#      `juristid-main-web:local` — Compose's fallback tag, the one hand-built
-#      images overwrite — and a schema change made by an unreviewed build is the
-#      failure this whole sequence exists to prevent.
+#   2. The identity variables are exported once, before the first command that
+#      resolves the release image, so every later command in that shell resolves
+#      the same one. Prefixing individual commands is how `migrate` ends up
+#      resolving `juristid-main-web:local` — Compose's fallback tag, the one a
+#      hand-built image overwrites — and a schema change made by an unreviewed
+#      build is the failure this whole sequence exists to prevent.
+#
+# And one thing the sequence deliberately does not contain: a build. The
+# release image is built off the host by `.github/workflows/release-image.yml`
+# for exactly one reviewed commit, carried over as an archive with its SHA-256
+# and manifest, checked, and `docker load`ed under `juristid-main-web:<sha12>`
+# before this plan is followed (deploy/unraid-main/README.md, "Deploying a
+# release"). The host's image operations are `docker load` and `docker compose
+# up`, nothing else: its writable Docker storage sits behind a USB parity disk
+# and BuildKit has died mid-build on it. So the plan proves the loaded image is
+# the target commit, and the replacement says `--no-build` — `compose.yml`
+# still carries a `build:` stanza for CI, and the command rather than the
+# operator's memory is what keeps this host from using it.
 #
 # `deployment_readiness` stays `exec`, and that is not an inconsistency: it asks
 # about the process now serving, which by then is the new image. The rule is
@@ -105,14 +117,17 @@ deployment_plan() {
   git -C $repo checkout --detach $target
   export JURISTID_GIT_SHA=$target
   export JURISTID_IMAGE_TAG=${target:0:12}
-  docker compose -p $project -f $compose_file build
+  # The release image was built off-host for this commit and docker-loaded here
+  # already (README, "Deploying a release"). Nothing below builds one. This line
+  # must print $target, or stop: it is the image run --rm resolves next.
+  docker run --rm --entrypoint cat juristid-main-web:${target:0:12} /app/GIT_SHA
   docker compose -p $project -f $compose_file run --rm web python manage.py migration_plan
   # Release-specific pre-migration audits, where the release note asks for one:
   # the same run --rm shape, for the same reason — the new release's check,
   # against the schema it has not migrated yet. Stop on a finding.
   scripts/deploy/juristid-backup.sh --project $project --compose-file $compose_file ...
   docker compose -p $project -f $compose_file run --rm web python manage.py migrate
-  docker compose -p $project -f $compose_file up -d
+  docker compose -p $project -f $compose_file up -d --no-build
   docker compose -p $project -f $compose_file exec -T web python manage.py deployment_readiness
   curl -s https://juristid.orgusaar.ee/healthz   # revision must equal $target
 PLAN

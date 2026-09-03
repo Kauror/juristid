@@ -72,6 +72,11 @@ services:
       start_period: 20s
 
   web:
+    # Never run on the production host. The release image is built off-host by
+    # .github/workflows/release-image.yml and `docker load`ed here under the
+    # `image:` tag below; the runbook's `up -d --no-build` is what keeps this
+    # stanza from being used there. It stays because CI resolves it — the
+    # compose smoke job checks that the build receives the full GIT_SHA.
     build:
       context: ../..
       dockerfile: Dockerfile

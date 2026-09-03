@@ -33,7 +33,7 @@ back independently.
 | | Step | Command |
 | --- | --- | --- |
 | 1.1 | Preflight | `scripts/deploy/juristid-deploy-preflight.sh` |
-| 1.2 | Build the target image, then read its migration plan | `deploy/unraid-main/README.md` §"Deploying a new build" |
+| 1.2 | Verify and load the off-host-built release image, then read its migration plan | `deploy/unraid-main/README.md` §"Deploying a release" |
 | 1.3 | Back up, immediately before the schema moves | `scripts/deploy/juristid-backup.sh` |
 | 1.4 | Migrate, then replace | the same README section, same exported identity |
 | 1.5 | Post-flight | `manage.py deployment_readiness`, then the A–L browser list in the same README |
@@ -141,7 +141,7 @@ derived column:
 | | Step |
 | --- | --- |
 | 3.9.1 | Back up |
-| 3.9.2 | Build the target image |
+| 3.9.2 | Verify and load the target release image (built off-host) |
 | 3.9.3 | Apply the migration with the target image |
 | 3.9.4 | **Rebuild the derived state before the new web container serves traffic** — `final_register_cutover --snapshot <approved> --apply`, which is idempotent and, on an already-reconciled portfolio, performs ACTIVATE 0 / RETIRE 0 and only rewrites derived rows |
 | 3.9.5 | Verify the derived table before exposing it: row count, CURRENT count, drafting count |
@@ -181,7 +181,7 @@ manual answer and is always safe.
 
 | | Situation | Answer |
 | --- | --- | --- |
-| 5.1 | The build is wrong | Redeploy the previous commit — `deploy/unraid-main/README.md` §"Rolling back" |
+| 5.1 | The release is wrong | Redeploy the previous commit — `deploy/unraid-main/README.md` §"Rolling back" |
 | 5.2 | A migration is wrong | Restore; a schema change is not undone by redeploying code |
 | 5.3 | A data operation is wrong | Restore from the set taken at gate 2, then re-plan |
 | 5.4 | Evidence is missing | `check_evidence_integrity` names the rows; restore the evidence tree |

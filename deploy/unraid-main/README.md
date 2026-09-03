@@ -185,19 +185,33 @@ with `AUTH_MODE=shared_gate` the application authenticates its own requests. Whe
 the Access application exists, set `CF_ACCESS_TEAM_DOMAIN`, `CF_ACCESS_AUDIENCE`
 and `AUTH_MODE=cloudflare_access`, and restart. Nothing else changes.
 
-### 4. Start
+### 4. Load the release image
+
+This host does not build the image — not on the first deployment and not on any
+later one. Build it off-host for the reviewed commit, transfer the artifact,
+verify its digest and load it, exactly as **Deploying a release** parts A and B
+describe below; the exports, the digest check and `docker load` are the same
+commands. Come back here with the image loaded and the two variables exported
+in this shell.
+
+### 5. Start
 
 ```bash
-docker compose -p juristid-main -f compose.yml build
 docker compose -p juristid-main -f compose.yml up -d db
 docker compose -p juristid-main -f compose.yml run --rm web python manage.py migrate
-docker compose -p juristid-main -f compose.yml up -d
+docker compose -p juristid-main -f compose.yml up -d --no-build
 ```
+
+`JURISTID_GIT_SHA` and `JURISTID_IMAGE_TAG` must still be exported here.
+Without them `run --rm web` resolves `juristid-main-web:local`, and since no
+such image exists on a fresh host, Compose would *build* one — which is the
+thing this host must not do. `--no-build` on the replacement is the same
+guarantee stated on the command itself.
 
 Migrations are a deliberate step, never container start-up work: on boot they
 would run on every restart.
 
-### 5. Accounts
+### 6. Accounts
 
 Create the real people, by hand, once. There is no self-service and no
 auto-provisioning:
@@ -862,7 +876,7 @@ The decision tree for anything that needs a restore is in
 [`RECOVERY.md`](RECOVERY.md), and `docs/production-readiness.md` §5 is the short
 form.
 
-## Deploying a new build
+## Deploying a release
 
 Deploy a **commit**, never a branch. `git pull` deploys whatever `main` has
 become since somebody decided to deploy, and on a repository several people and
@@ -871,6 +885,54 @@ difference is invisible until something unreviewed is serving members' material.
 
 So the target is a full 40-character SHA, and the preflight refuses an
 abbreviation — two commits can share a prefix and the resolution is silent.
+
+A release is two halves in two places, and the boundary between them is a
+contract rather than a preference:
+
+| | Where | What happens |
+| --- | --- | --- |
+| **A** | off the host — GitHub Actions | the image is built for that one commit, saved, digested, and published as a release artifact |
+| **B** | on the Unraid host | the artifact is verified, loaded, and the already-built image is deployed |
+
+**The Unraid host never builds the production image.** Not `docker build`, not
+`docker compose build`, not `up --build`. Its writable Docker storage sits
+behind a USB-attached parity disk, an on-host build is slow enough that BuildKit
+has died in the middle of one, and the machine serving the Chamber's real data
+is the wrong place to find out how a half-finished build fails. The host's only
+image operations are `docker load` and `docker compose up`. `compose.yml` still
+carries a `build:` stanza — CI resolves and checks it — which is exactly why
+every command below that could build says `--no-build`: the command, not the
+operator's memory, is what keeps the contract.
+
+### A. Build the release image — off the host
+
+`.github/workflows/release-image.yml` is the build. It takes one input, the full
+40-character commit, checks out exactly that commit, refuses a dirty tree,
+builds `linux/amd64` with `GIT_SHA` baked in, asks the image which commit it is
+and refuses one that answers wrongly, proves the application imports inside it,
+and saves it. Run it from the Actions tab, or:
+
+```bash
+gh workflow run release-image.yml -f sha=<full-40-char-sha>
+```
+
+The artifact it uploads is named `release-image-<sha12>` and holds three files,
+where `<sha12>` is the first twelve characters of the commit:
+
+| File | What it is |
+| --- | --- |
+| `juristid-main-web-<sha12>.tar.gz` | the image, `docker save`d and gzipped, tagged `juristid-main-web:<sha12>` |
+| `juristid-main-web-<sha12>.tar.gz.sha256` | the archive's SHA-256, in `sha256sum -c` format |
+| `release-manifest-<sha12>.txt` | revision, image tag, image id, platform, build stamp, archive size and SHA-256, builder |
+
+That is the whole artifact contract. There is no second format, no `latest`, and
+no image built anywhere else that counts as a release. Download the artifact
+from the workflow run and transfer all three files to the host — the path they
+land in is the operator's; nothing below depends on it.
+
+### B. Deploy the release — on the Unraid host
+
+Everything from here runs on the host, in **one shell**, in this order.
 
 ### 1. Write down what is running now
 
@@ -910,12 +972,18 @@ git -C /mnt/user/appdata/juristid-main/repo checkout --detach <full-40-char-sha>
 Detached on purpose. The deployment is at a commit, not on a branch that can
 move underneath it.
 
+The checkout is no longer where the application code comes from — that is
+inside the loaded image. What the checkout supplies is `compose.yml` and the
+scripts under `scripts/deploy/` at the reviewed revision, so that the Compose
+file the stack is started from and the backup script that runs before the
+migration are the ones that commit was reviewed with.
+
 ### 4. Name the release
 
-Two variables, exported once, before anything is built. Everything after this
-point — the build, the migration plan, the migration, the replacement — reads
-them, and that is the point: one shell, one identity, no step that can quietly
-resolve a different image.
+Two variables, exported once, before the first command that resolves the
+release image. Everything after this point — the identity check, the migration
+plan, the migration, the replacement — reads them, and that is the point: one
+shell, one identity, no step that can quietly resolve a different image.
 
 ```bash
 export JURISTID_GIT_SHA=<full-40-char-sha>
@@ -925,26 +993,57 @@ export JURISTID_GIT_SHA=<full-40-char-sha>
 export JURISTID_IMAGE_TAG=${JURISTID_GIT_SHA:0:12}
 ```
 
-The SHA is passed into the build so the image can say what code it is. The tag
-names the image, so the previous build stays on the host under its own name and
-a rollback is a tag rather than a rebuild.
+The SHA is what the image was built from and what it reports as its revision.
+The tag names the image `docker load` puts on the host in the next step, so the
+previous release stays on the host under its own name and a rollback is a tag
+rather than a rebuild.
 
 `juristid-main-web:local` is the fallback tag Compose uses when
 `JURISTID_IMAGE_TAG` is unset, and it is deliberately the one tag that gets
 overwritten. A `migrate` that runs against `:local` is a schema change made by
 whatever was last hand-built on this host, which is not the thing that was
-reviewed. Exporting both variables first is what stops that.
+reviewed. Exporting both variables first is what stops that. And on this host
+it stops one more thing: a `run --rm web` whose tag resolves to an image that
+does not exist would make Compose build one, here, from the `build:` stanza.
 
-### 5. Build the target image
+### 5. Verify and load the release image
+
+With the three files from part A in the directory they were transferred to,
+check the digest **before** loading — the `.sha256` was written beside the
+archive by the job that built it, and it is the only thing that proves the
+bytes the host is about to load are the bytes that job produced:
 
 ```bash
-docker compose -p juristid-main -f compose.yml build
+sha256sum -c juristid-main-web-${JURISTID_IMAGE_TAG}.tar.gz.sha256
 ```
 
-Build before reading the migration plan, deliberately. A build writes no
-business data, mutates no database and does not replace the running
-application — it only produces the candidate image. Everything that changes
-something still happens after the backup in step 8.
+It must print `OK`. Compare the digest with the `archive_sha256` line of
+`release-manifest-${JURISTID_IMAGE_TAG}.txt` as well, and the manifest's
+`revision` line with `$JURISTID_GIT_SHA`. Anything else — a mismatch, a missing
+file, a manifest for a different commit — means the transfer is not the
+release, and nothing is loaded.
+
+Then load it:
+
+```bash
+docker load < juristid-main-web-${JURISTID_IMAGE_TAG}.tar.gz
+```
+
+`docker load` prints the tag it restored, which must be
+`juristid-main-web:${JURISTID_IMAGE_TAG}` — the same tag Compose resolves from
+the variables exported in step 4. Then ask the image itself:
+
+```bash
+docker run --rm --entrypoint cat juristid-main-web:${JURISTID_IMAGE_TAG} /app/GIT_SHA
+```
+
+It must print the full `$JURISTID_GIT_SHA`. This is the line the preflight's
+printed plan carries, and it is load-bearing: it is the last check before a
+command that would *build* if the image were missing.
+
+Loading writes no business data, mutates no database and does not replace the
+running application — it only puts the candidate image on the host. Everything
+that changes something still happens after the backup in step 8.
 
 ### 6. Read the migration plan — from the target image
 
@@ -962,7 +1061,7 @@ inside it. Asked there, `migration_plan` reads the old release's migration graph
 and can answer "No pending migrations." for a release that carries several,
 which is the reassuring answer given at exactly the wrong moment.
 
-`run --rm web` starts a one-off container from the image built in step 5 — the
+`run --rm web` starts a one-off container from the image loaded in step 5 — the
 target code — against the running database. That is the pair the question is
 about: **new code, current schema.** It reports and never migrates.
 
@@ -1044,10 +1143,9 @@ scripts/deploy/juristid-backup.sh --project juristid-main --compose-file deploy/
 
 This is the copy a failed migration is rolled back to. Everything written
 between it and the failure is lost in that rollback, which is why it is taken
-now — after the build and the plan, immediately before the first command that
-changes the database — and not earlier. The build moving ahead of it does not
-move it: a build is not a schema change, and the backup's job is to be the last
-thing before one.
+now — after the image is loaded and the plan is read, immediately before the
+first command that changes the database — and not earlier. Loading an image is
+not a schema change, and the backup's job is to be the last thing before one.
 
 ### 9. Migrate, then replace
 
@@ -1059,8 +1157,15 @@ docker compose -p juristid-main -f compose.yml run --rm web python manage.py mig
 ```
 
 ```bash
-docker compose -p juristid-main -f compose.yml up -d
+docker compose -p juristid-main -f compose.yml up -d --no-build
 ```
+
+`--no-build` is not decoration. `compose.yml` has a `build:` stanza, and a plain
+`up -d` that found the tag missing — a typo in the export, a load that did not
+happen — would build the image on this host, silently, from whatever the
+checkout holds. With `--no-build` the same mistake is an error naming the
+missing image, which is the honest outcome. Unqualified otherwise: `web`,
+`extractor` and `searchindex` all run the release image and all move together.
 
 Migrations are a deliberate step, never container start-up work: on boot they
 would run on every restart, including the restart that happens at three in the
@@ -1099,10 +1204,11 @@ Then confirm the running revision is the one that was deployed:
 curl -s https://juristid.orgusaar.ee/healthz
 ```
 
-`revision` should be the SHA that was built — the exact one, compared in full,
-not the twelve characters the image tag happens to share with it. The footer's
-build time moves with the image on its own, so a revision that changed beside a
-build time that did not is a build that did not actually replace anything.
+`revision` should be `$JURISTID_GIT_SHA` — the exact one, compared in full, not
+the twelve characters the image tag happens to share with it. The footer's build
+time is the `build_stamp` from the release manifest and moves with the image on
+its own, so a revision that changed beside a build time that did not is a
+replacement that did not actually happen.
 
 Anything beyond this is release-specific and the release note names it. A
 release that changes how something is indexed, projected or derived may need a
@@ -1192,9 +1298,13 @@ difference between a search that works and one that silently answers nothing.
 
 ### Rolling back
 
-Code-only rollback is the same sequence with the previous reviewed SHA. Rolling
-back *across* a migration is not, and it is not a command —
-[`RECOVERY.md`](RECOVERY.md) has the decision tree.
+Code-only rollback is the same part-B sequence with the previous reviewed SHA.
+Its image is still on the host under `juristid-main-web:<its sha12>` unless
+somebody removed it, so step 5 is usually only the `docker run … /app/GIT_SHA`
+check; if the tag is gone, re-download that commit's release artifact and load
+it — never build it here. Rolling back *across* a migration is not the same
+sequence, and it is not a command — [`RECOVERY.md`](RECOVERY.md) has the
+decision tree.
 
 ### What a deployment must never do
 
@@ -1221,6 +1331,9 @@ recovery.
   troubleshooting step.** This host runs other people's services.
 - **Nothing that stops or removes `juristid-test`** or any unrelated container.
 - **No `git clean`** in the checkout.
+- **No image build.** Not `docker build`, not `docker compose build`, not
+  `up --build`. The release image comes from `release-image.yml`, verified and
+  `docker load`ed; see **Deploying a release**.
 - **No weakening of the safety checks** to get a process to start. If
   `manage.py check` refuses, the configuration is wrong, not the check.
 - **No real data leaving this host.** Not into Git, not into CI, not into a PR
