@@ -238,7 +238,7 @@ def test_a_deadline_past_the_month_is_on_the_page_rather_than_nowhere(
 
 @pytest.mark.django_db
 def test_today_says_today_and_nobody_says_so_in_more_than_colour(client, department_head) -> None:
-    """Two rows in one group, so «kõik 2 →» is a claim about a group.
+    """Two rows in one group, so «kõik 2» is a claim about a group.
 
     Both are dated *today*, which is the one window whose membership does not
     move with the weekday the suite runs on: every other boundary in
@@ -262,7 +262,11 @@ def test_today_says_today_and_nobody_says_so_in_more_than_colour(client, departm
     assert '<span class="visually-hidden">Vastutajata</span>' in flat
     # The footer the design replaced with a header link.
     assert "Ava kõik" not in flat
-    assert "kõik 2 →" in flat
+    # The group's own control, which opens the two rows in place rather than
+    # leaving for the register: «kõik 2», no arrow, and the count is deadlines
+    # rather than files because that is what it discloses.
+    assert "kõik 2" in flat
+    assert "kõik 2 →" not in flat
 
 
 # ---------------------------------------------------------------------------

@@ -689,18 +689,40 @@ class UpcomingGroup:
 
     @property
     def count(self) -> int:
+        """Deadlines in the window, which is what *Eesolev* discloses.
+
+        Two dated obligations on one file are two rows, so this is the number
+        the window's own «kõik N» control states: it opens N rows, and a count
+        of files would be describing a different population from the one it
+        reveals. `matter_count` is the register's answer to the same window and
+        stays beside it rather than replacing it.
+        """
         return len(self.items)
 
     @property
     def matter_count(self) -> int:
+        """Files in the window, which is what the register would list.
+
+        Not on the panel any more — the per-window control stopped being a link
+        to the register when the window became a disclosure — but still the
+        honest count for `url`, and the pair the window's own tests hold apart.
+        """
         return len({item.matter_id for item in self.items})
 
     @property
     def preview(self) -> list[wi.WorkItem]:
+        """The head of the window, and no longer what *Eesolev* renders.
+
+        The panel showed `preview` and put `rest` behind a «Näita veel N»
+        disclosure inside the group. The group is itself a disclosure now and
+        owns every row, so the template reads `items`: opening «kõik N» that
+        revealed some of N would be the same lie the old count was.
+        """
         return self.items[: self.shown]
 
     @property
     def rest(self) -> list[wi.WorkItem]:
+        """The tail `preview` leaves. Unrendered, for the same reason."""
         return self.items[self.shown :]
 
     @property
@@ -723,7 +745,7 @@ class UpcomingGroup:
 
     @property
     def is_far(self) -> bool:
-        """The open-ended window. It discloses differently, and nothing else."""
+        """The open-ended window. It is headed differently, and nothing else."""
         return self.ends is None
 
     @property
@@ -742,9 +764,16 @@ class UpcomingGroup:
     def url(self) -> str:
         """The register, narrowed to exactly this window of real deadlines.
 
-        `?too=tahtaeg-vahemik` with the window's own two dates, so the list
-        behind «kõik N →» holds the Matters the number counted rather than a
-        superset that happens to contain them (app/matters/work_items.py).
+        `?too=tahtaeg-vahemik` with the window's own two dates, so what the
+        register lists for a window is exactly that window rather than a
+        superset that happens to contain it (app/matters/work_items.py).
+
+        No longer rendered: the window's own control opens the rows in place
+        instead of leaving the page. Kept because it is the one expression of a
+        window's boundaries the register can be *asked*, and the partition is
+        asserted through it — `register_population` answering `matter_count` for
+        every window is a check no comparison rewritten in a test could be
+        (tests/test_deadline_grouping.py).
         """
         params: dict[str, Any] = {
             **_open_full(),
@@ -756,13 +785,12 @@ class UpcomingGroup:
         return register_url(**params)
 
 
-#: How many rows a group shows before the rest go behind a disclosure. Five, and
-#: only in the two windows a reader is planning in rather than working in: today
-#: and tomorrow are shown whole because they are already decided, and next week
-#: because that is the week being planned (design handoff C §3.3).
+#: Where `preview` cuts a group, for the two windows that carry a cut at all.
+#: *Eesolev* does not render the cut any more — every window is one disclosure
+#: and opening it shows the whole window — so this now describes the read model
+#: alone. Five, matching `overview.DEADLINE_PREVIEW`, which does still slice
+#: (docs/adr/0046).
 UPCOMING_PREVIEW = 5
-#: How many more the disclosure opens at a time, before offering the next batch.
-UPCOMING_BATCH = 10
 
 #: The windows are cut here rather than where they are rendered, because two of
 #: the five boundaries are the kind that look obvious and are not: *järgmine
@@ -809,8 +837,9 @@ def upcoming_windows(today: date) -> tuple[tuple[str, str, date, date | None], .
     )
 
 
-#: How many rows each window shows before the rest go behind a disclosure.
-#: `None` means "all of them".
+#: Where each window's `preview` cuts. `None` means "all of them", and the panel
+#: renders all of them either way: *Eesolev*'s windows are disclosures now and
+#: none of them slices.
 _UPCOMING_SHOWN: dict[str, int | None] = {
     "tana": None,
     "homme": None,
@@ -835,9 +864,8 @@ def upcoming_groups(
     again" (master specification 18.8).
 
     *Kaugemal* is a real list now rather than the one-line summary it was. A
-    deadline in November was on no screen anywhere until November, and the count
-    beside the heading is still the honest full population whatever the
-    disclosure shows (design handoff C §3.3).
+    deadline in November was on no screen anywhere until November, and every
+    window states the full population it holds (design handoff C §3.3).
     """
     today = today or timezone.localdate()
     # ``items`` lets a page that has already read the work model avoid reading
@@ -850,8 +878,9 @@ def upcoming_groups(
     groups = []
     for key, label, starts, ends in upcoming_windows(today):
         # Through the read model's own window selector rather than a comparison
-        # written here, so the rows, the count and the `?too=tahtaeg-vahemik`
-        # link behind «kõik N →» are one definition (app/matters/work_items.py).
+        # written here, so the rows a window discloses, the count on its heading
+        # and the `?too=tahtaeg-vahemik` register query for the same window are
+        # one definition (app/matters/work_items.py).
         window = wi.work_population_items(
             deadlines, wi.WORK_DEADLINE_WINDOW, today, window=(starts, ends)
         )

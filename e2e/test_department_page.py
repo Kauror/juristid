@@ -387,19 +387,82 @@ def test_a_custom_period_is_a_real_date_control(page, base_url):
     assert "periood=vahemik" in page.url
 
 
-def test_an_upcoming_group_opens_exactly_its_own_window(page, base_url):
-    """`kõik N →` is a promise about the list behind it."""
+def test_an_upcoming_window_opens_its_own_rows_on_the_page(page, base_url):
+    """«kõik N» opens N deadlines where the reader is standing, and shuts again.
+
+    The window is a native `<details>`, so this is the one assertion no Django
+    test can make: that a real browser toggles it with no script, that the rows
+    were shut when the page arrived, and that clicking the summary does not
+    navigate. `expect(...).to_be_visible()` is the check that matters — the rows
+    are in the markup either way, and a CSS mistake that left them displayed
+    would pass any assertion about the HTML.
+
+    Every window on the page, not the first: the far one used to be the window
+    that hid rows behind a second control, and it is the one this would most
+    plausibly regress on.
+    """
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    link = page.locator(".uxdl__all").first
-    if not link.count():
+    windows = page.locator("details.uxdl")
+    if not windows.count():
         pytest.skip("the seeded world holds no upcoming deadlines today")
-    expected = int(link.inner_text().split()[1])
 
-    link.click()
+    for index in range(windows.count()):
+        window = windows.nth(index)
+        summary = window.locator("summary.uxdl__head")
+        promised = int(summary.locator(".uxdl__all").inner_text().split()[1])
+        rows = window.locator(".uxdl__row")
+
+        # Shut on arrival, and the rows are served with the page rather than
+        # fetched: they are in the DOM and not on screen.
+        assert not window.evaluate("element => element.open"), f"window {index} opened itself"
+        assert rows.count() == promised, (
+            f"window {index} counts {promised} and holds {rows.count()}"
+        )
+        expect(rows.first).to_be_hidden()
+
+        was = page.url
+        summary.click()
+        assert page.url == was, "opening a window navigated away from the page"
+        assert window.evaluate("element => element.open")
+        for row in range(promised):
+            expect(rows.nth(row)).to_be_visible()
+
+        # And it is a toggle, not a one-way reveal: «Näita veel N» disappeared
+        # once opened, and this control has to be able to put the window back.
+        summary.click()
+        assert not window.evaluate("element => element.open")
+        expect(rows.first).to_be_hidden()
+
+
+def test_the_windows_open_independently_and_the_section_link_still_navigates(page, base_url):
+    """One window opening does not open its neighbours, and one link still leaves.
+
+    «Kõik tähtajad →» in the section head is navigation and stayed navigation;
+    the per-window control stopped being. Both halves are asserted here because
+    it is the distinction the round is about, and a change that turned the
+    section link into a disclosure too would look correct in every other test.
+    """
+    sign_in(page, base_url, HEAD)
+    open_work(page, base_url)
+
+    windows = page.locator("details.uxdl")
+    if windows.count() < 2:
+        pytest.skip("the seeded world holds fewer than two upcoming windows today")
+
+    windows.first.locator("summary.uxdl__head").click()
+    assert windows.first.evaluate("element => element.open")
+    for index in range(1, windows.count()):
+        assert not windows.nth(index).evaluate("element => element.open"), (
+            f"opening the first window opened window {index} as well"
+        )
+
+    section = page.locator('section[aria-label="Eesolev"]')
+    expect(section.locator("summary a")).to_have_count(0)
+    section.get_by_role("link", name="Kõik tähtajad →").click()
     page.wait_for_load_state("networkidle")
-    expect(page.locator(".pagehead__context")).to_have_text(f"{expected} teemat")
+    assert "/teemad/" in page.url
 
 
 # =========================================================================

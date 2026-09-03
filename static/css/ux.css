@@ -54,25 +54,55 @@
  * 1a — Tähtajad, on Ülevaade and again as Eesolev on Osakond
  * ==================================================================== */
 
+/* One window, and a real `<details>`: the head is the `<summary>` that opens it
+   and the deadline rows are its body.
+
+   The `.uxdl:first-of-type` exception that used to sit here — no divider above
+   the first window — is deleted rather than carried over, and the panel looks
+   exactly as it did. It never matched: `:first-of-type` is the first sibling of
+   the same *element*, and `.ovsection__head` is the section's first `<div>`, so
+   under the `<div>` this replaces every window including the first was drawn
+   under a line. Changing the element would have quietly switched it on. This
+   round replaces the control, not the panel, so the line stays. */
 .uxdl {
   display: block;
-  padding-top: 10px;
+  /* 6 rather than 10, because the summary now carries 4px of its own above the
+     heading so a hover state has something to paint. The heading sits where it
+     always did. */
+  padding-top: 6px;
   border-top: 1px solid var(--border-subtle);
   margin-top: 10px;
-}
-
-.uxdl:first-of-type {
-  border-top: 0;
-  margin-top: 0;
-  padding-top: 0;
 }
 
 .uxdl__head {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 0 8px 4px;
+  padding: 4px 8px;
   flex-wrap: wrap;
+  cursor: pointer;
+  border-radius: 5px;
+  /* `display: flex` already drops the disclosure triangle in Chromium. This and
+     the `::-webkit-details-marker` rule below are for the other two engines, and
+     they are the pattern the rest of the application's disclosures use
+     (`.chipdetails__summary`, `.uxdl__more`). */
+  list-style: none;
+}
+
+.uxdl__head::-webkit-details-marker {
+  display: none;
+}
+
+/* The whole heading is the control, so the whole heading answers the pointer —
+   the same tint `.uxdl__row` and `.uxdl__more summary` use, and no border, box
+   or badge: this is a row of a list, not a button. */
+.uxdl__head:hover {
+  background: var(--surface-hover);
+}
+
+.uxdl__head:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
 }
 
 .uxdl__title {
@@ -97,14 +127,26 @@
   color: var(--text-muted);
 }
 
+/* «kõik 2 ▾» — the disclosure's own affordance, in the place and the weight the
+   link it replaces had. The glyph is here rather than in the template so it
+   stays out of the accessible name, and it turns rather than disappearing:
+   unlike «Näita veel N», this control is how the window is shut again. */
 .uxdl__all {
   margin-left: auto;
   font: 600 11.5px/1 var(--typography-font-sans);
   color: var(--accent-link);
-  text-decoration: none;
 }
 
-.uxdl__all:hover {
+.uxdl__all::after {
+  content: " ▾";
+  color: var(--text-muted);
+}
+
+.uxdl[open] > .uxdl__head .uxdl__all::after {
+  content: " ▴";
+}
+
+.uxdl__head:hover .uxdl__all {
   color: var(--accent-hover);
 }
 
@@ -169,9 +211,11 @@
   color: var(--text-muted);
 }
 
-/* «Näita veel N ▾». A real disclosure, so it opens with no script and the
-   trigger disappears once what it promised is on screen. Also used by the
-   Tehtud digest, which asks the same question of a longer list. */
+/* «Näita kõiki N sissekannet ▾», the Tehtud digest's tail. A real disclosure,
+   so it opens with no script, and the trigger disappears once what it promised
+   is on screen — which is what separates it from `.uxdl__head` above: that one
+   shuts its window again, this one has nothing left to say. Eesolev's windows
+   used it too until each of them became a disclosure in its own right. */
 .uxdl__more summary {
   cursor: pointer;
   list-style: none;

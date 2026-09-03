@@ -92,6 +92,13 @@ the department's silence.
 > longer feed it. Both remain register populations, with their meanings
 > unchanged; `muutusteta-30` is untouched.
 
+> **Amended 2026-09-03.** A window no longer *owes* a «kõik N →» at all: each is
+> a `<details>` that opens its own rows in place, and the register link moved to
+> the section's own «Kõik tähtajad →» (ADR 0049 §5, amended). Nothing here about
+> `?too=tahtaeg-vahemik` changes — it is still the one parameterised population,
+> still what that link narrows, and still what every window's boundaries are
+> asserted through.
+
 `?too_alates=` is deliberately distinct from `?tahtaeg_alates=`. The latter
 filters a Matter's own `Arvamuse tähtaeg` column; the former filters the dated
 work model, which also holds `Oluline tähtaeg` and excludes a WAIT's expected

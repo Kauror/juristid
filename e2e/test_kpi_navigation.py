@@ -49,10 +49,13 @@ SCOPES = ("osakond", "valdkonniti")
 NUMBERED_LINKS: tuple[tuple[str, str], ...] = (
     (".seis__figure", ".seis__number"),
     (".ovsection__head .ovsection__link", ""),
-    # The deadline panel's own header links, one per window. The footer row
-    # they replace is gone: each group now states its interval and links to
-    # exactly its own population (design handoff 1a).
-    (".uxdl__all", ""),
+    # `.uxdl__all` is deliberately absent. The deadline panel's per-window
+    # control used to be a link into the register and is now the summary of the
+    # window's own `<details>`: it opens rows on this page, so there is no
+    # destination whose count could be compared with it. What it discloses is
+    # asserted in `e2e/test_department_page.py` and against the database in
+    # `tests/test_department_page.py`. The section's own «Kõik tähtajad →» is
+    # still navigation and is still covered, by `.ovsection__link` above.
     ("a.loadrow__open", ""),
     ("a.loadrow__overdue", ""),
     (".loadrow--unassigned", ".loadrow__open"),

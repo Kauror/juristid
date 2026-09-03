@@ -34,6 +34,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import escape
 
 from app.accounts.enums import UserRole
 from app.core.enums import Visibility
@@ -690,6 +691,326 @@ def test_a_deadline_group_counts_rows_and_links_matters(department_head, special
     group = next(g for g in dd.upcoming_groups(specialist, today) if g.key == "tana")
     assert group.count == 2
     assert group.matter_count == 1
+
+
+# =========================================================================
+# Eesolev discloses its windows in place
+#
+# Each window used to head itself with «kõik N →», a link into the register. It
+# is a native `<details>` now: the heading is the summary, the deadlines are the
+# body, and «kõik N» opens them where the reader is standing.
+#
+# Two things follow, and both are asserted rather than assumed. The count is the
+# *deadlines* it reveals and no longer the Matters the register would have
+# listed, because a control that opens two rows and says «kõik 1» is describing
+# a different population from the one it produces. And the second, nested
+# «Näita veel N» disclosure the two sliced windows carried is gone: opening a
+# window shows the whole window.
+#
+# What did not change: the section's own «Kõik tähtajad →» is still the
+# register, and nothing about which dates are eligible, whose they are or what
+# order they come in.
+# =========================================================================
+
+
+def eesolev(client, person) -> str:
+    """The rendered *Eesolev* section, and nothing else on the page.
+
+    Sliced rather than parsed, and the status is checked first: a redirect
+    decodes to a body holding none of these strings, so an assertion about
+    absence would pass on a page nobody could open.
+    """
+    client.force_login(person)
+    response = client.get(PAGE)
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert 'aria-label="Eesolev"' in body
+    return body.split('aria-label="Eesolev"')[-1].split("</section>")[0]
+
+
+def windows_of(panel: str) -> list[str]:
+    """Each window's `<details>`, in the order the panel prints them."""
+    return [chunk.split("</details>")[0] for chunk in panel.split('<details class="uxdl">')[1:]]
+
+
+def bodies_of(panel: str) -> list[str]:
+    """What each window discloses: its `<details>` with the `<summary>` cut off."""
+    return [window.split("</summary>")[-1] for window in windows_of(panel)]
+
+
+@pytest.fixture
+def four_windows(specialist, today):
+    """One populated window at each of three horizons, and a WAIT beside one.
+
+    The three deadlines in *kaugemal* are what makes the ordering and the
+    "everything is inside the disclosure" assertions worth making: the far
+    window is one of the two that used to print five rows and hide the rest.
+    """
+
+    def deadline(title, *, when):
+        matter = create_matter(title=title, owner=specialist, reference_year=2026, actor=specialist)
+        set_next_action(
+            matter=matter,
+            text="Esita arvamus",
+            kind=ActionKind.DO,
+            date_semantics=DateSemantics.DEADLINE,
+            target_date=when,
+            actor=specialist,
+        )
+        return matter
+
+    starts = {key: begins for key, _label, begins, _ends in dd.upcoming_windows(today)}
+    made = {
+        "tana": [deadline("Tänane tähtaeg", when=starts["tana"])],
+        "nadal": [deadline("Nädala tähtaeg", when=starts["nadal"])],
+        "kaugemal": [
+            deadline(f"Kauge tähtaeg {index}", when=starts["kaugemal"] + timedelta(days=index))
+            for index in range(3)
+        ],
+    }
+
+    # Not a deadline, and it sits in the same window as one that is. A predicate
+    # that widened by one kind would put it on this panel and nothing else here
+    # would notice (master specification 18.8).
+    watched = create_matter(
+        title="Ootel — mitte tähtaeg", owner=specialist, reference_year=2026, actor=specialist
+    )
+    set_next_action(
+        matter=watched,
+        text="Ootan vastust",
+        kind=ActionKind.WAIT,
+        date_semantics=DateSemantics.REVIEW_ON,
+        target_date=starts["nadal"],
+        actor=specialist,
+    )
+    made["ootel"] = [watched]
+    return made
+
+
+def test_every_populated_window_is_one_details_shut_by_default(
+    client, department_head, four_windows, today
+):
+    """A native disclosure, and none of them opens itself.
+
+    The tag is matched exactly, so `<details class="uxdl" open>` fails here
+    rather than shipping a panel that decides which window the reader came for.
+    The `<div>` it replaces fails the same assertion, and so would a scripted
+    imitation of one.
+    """
+    panel = eesolev(client, department_head)
+    populated = [group for group in dd.upcoming_groups(department_head, today) if group.count]
+
+    assert len(populated) == 3
+    assert panel.count('<details class="uxdl">') == len(populated)
+    assert panel.count('<summary class="uxdl__head">') == len(populated)
+    assert '<div class="uxdl">' not in panel
+    assert "<details" not in panel.replace('<details class="uxdl">', "")
+
+
+def test_each_summary_names_its_window_and_counts_the_deadlines_it_opens(
+    client, department_head, four_windows, today
+):
+    """Label, interval and «kõik N» — and N is rows, not files.
+
+    The count is read off the group rather than written here, so a window whose
+    population changes cannot make this pass while the page says something
+    else.
+    """
+    panel = eesolev(client, department_head)
+    populated = [group for group in dd.upcoming_groups(department_head, today) if group.count]
+    summaries = [window.split("</summary>")[0] for window in windows_of(panel)]
+
+    assert len(summaries) == len(populated)
+    for group, summary in zip(populated, summaries, strict=True):
+        assert group.label.upper() in summary, group.key
+        assert group.range_label in summary, group.key
+        assert f"kõik {group.count}" in summary, group.key
+        # The chevron is a `::after` in the stylesheet. In the markup it would
+        # be in the accessible name, read out as a word.
+        assert "▾" not in summary and "▴" not in summary
+
+
+def test_the_count_on_the_summary_is_deadlines_and_not_matters(
+    client, department_head, specialist, today
+):
+    """Two obligations on one file open two rows, so the control says «kõik 2».
+
+    This is the count semantics the disclosure changed. «kõik N →» used to open
+    the register, which lists files, so it counted files; «kõik N» opens the
+    rows underneath it, so it counts rows. The fixture is the one case where the
+    two numbers differ, and the old number is asserted absent as well — a panel
+    that printed both would pass a test that only looked for the new one.
+    """
+    matter = create_matter(
+        title="Kaks tähtaega ühel teemal", owner=specialist, reference_year=2026, actor=specialist
+    )
+    set_next_action(
+        matter=matter,
+        text="Esita arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=today,
+        actor=specialist,
+    )
+    add_important_date(
+        matter=matter,
+        title="Oluline tähtaeg täna",
+        date_value=today,
+        period_end=today,
+        actor=specialist,
+    )
+
+    group = next(g for g in dd.upcoming_groups(department_head, today) if g.key == "tana")
+    assert (group.count, group.matter_count) == (2, 1)
+
+    panel = eesolev(client, department_head)
+    assert "kõik 2" in panel
+    assert "kõik 1" not in panel
+
+
+def test_opening_a_window_exposes_every_row_it_counted_in_its_own_order(
+    client, department_head, four_windows, today
+):
+    """«kõik 3» opens three rows, in the order the read model put them.
+
+    Every row is inside its own window's `<details>`, so this fails if a row
+    leaks into the panel around the disclosures as well as if one is missing.
+    The order is compared against `group.items` rather than against a list
+    written here: sorting is not this round's to change, and an assertion that
+    restated it would go green on a branch that broke it.
+    """
+    panel = eesolev(client, department_head)
+    populated = [group for group in dd.upcoming_groups(department_head, today) if group.count]
+    bodies = bodies_of(panel)
+
+    assert len(bodies) == len(populated)
+    for group, body in zip(populated, bodies, strict=True):
+        titles = [item.matter.title for item in group.items]
+        assert len(titles) == group.count
+        positions = [body.find(title) for title in titles]
+        assert all(position >= 0 for position in positions), f"{group.key}: {titles}"
+        assert positions == sorted(positions), f"{group.key} reordered its rows"
+
+
+def test_a_window_holds_the_whole_of_itself_rather_than_a_preview(
+    client, department_head, specialist, today
+):
+    """The rows the read model still calls `rest` are in the same disclosure.
+
+    *Kaugemal* is one of the two windows that used to print five rows and put
+    the remainder behind a second «Näita veel N» control inside the group. Six
+    rows, one disclosure, and the nested control is gone from the panel
+    entirely — `deadline_more.html` was deleted with it, so this guards against
+    it coming back rather than against a live branch.
+    """
+    far_starts = dd.upcoming_windows(today)[-1][2]
+    for index in range(6):
+        matter = create_matter(
+            title=f"Kauge tähtaeg {index}", owner=specialist, reference_year=2026, actor=specialist
+        )
+        set_next_action(
+            matter=matter,
+            text="Esita arvamus",
+            kind=ActionKind.DO,
+            date_semantics=DateSemantics.DEADLINE,
+            target_date=far_starts + timedelta(days=index),
+            actor=specialist,
+        )
+
+    group = next(g for g in dd.upcoming_groups(department_head, today) if g.key == "kaugemal")
+    assert group.count == 6
+    assert group.preview and group.rest, "the fixture no longer exercises the old split"
+
+    panel = eesolev(client, department_head)
+    assert "Näita veel" not in panel
+    assert "Näita kõiki" not in panel
+
+    (body,) = bodies_of(panel)
+    for item in [*group.preview, *group.rest]:
+        assert item.matter.title in body, item.matter.title
+
+
+def test_the_window_no_longer_links_to_the_register_and_the_section_still_does(
+    client, department_head, four_windows, today
+):
+    """One link left the panel and one stayed, and they are not the same link.
+
+    «Kõik tähtajad →» opens the register on every open deadline and is
+    navigation. A window's own control is not: it opens rows on this page. The
+    register URL each window used to carry is asserted absent by its own value,
+    and `too_alates` — the parameter that made a link a *window's* link, which
+    the section's link does not carry — is asserted absent too, so this cannot
+    pass by the whole panel having lost its links.
+    """
+    panel = eesolev(client, department_head)
+
+    for group in dd.upcoming_groups(department_head, today):
+        if group.count:
+            assert escape(group.url) not in panel, group.key
+    assert "too_alates" not in panel
+
+    assert "Kõik tähtajad →" in panel
+    assert "?olek=avatud&amp;liik=FULL&amp;too=tahtaeg-vahemik" in panel
+
+    # And nothing interactive inside a disclosure trigger: a link there would be
+    # two controls in one place, whatever it pointed at.
+    for window in windows_of(panel):
+        head = window.split("</summary>")[0]
+        assert "<a " not in head
+        assert "<button" not in head
+
+
+def test_a_review_date_still_never_reaches_a_window(client, department_head, four_windows, today):
+    """WAIT and MONITOR are «look at this again», and the disclosure did not widen that.
+
+    The fixture puts a WAIT in the same window as a real deadline, so a panel
+    that had started accepting review dates would print it beside one that
+    belongs — and the count on that summary would grow with it.
+    """
+    panel = eesolev(client, department_head)
+    assert "Ootel — mitte tähtaeg" not in panel
+
+    week = next(g for g in dd.upcoming_groups(department_head, today) if g.key == "nadal")
+    assert week.count == 1
+    assert "kõik 1" in panel
+
+
+def test_a_restricted_deadline_is_disclosed_to_the_team_and_not_to_a_reader(
+    client, department_head, specialist, reader, today
+):
+    """Authorization is upstream of the disclosure, and stayed there.
+
+    Serving the rows with the page and hiding them in CSS would be a leak no
+    assertion about the *visible* panel could see, so this reads the markup: the
+    title is in the department head's HTML and not in the reader's, and each of
+    them is offered a window counting only what they may see.
+
+    A `READER` rather than a second specialist, because since docs/adr/0042 a
+    second specialist is not an outsider — asserting absence against one would
+    be asserting nothing (`tests/conftest.py`).
+    """
+    restricted = create_matter(
+        title="Piiratud tähtajaga teema",
+        owner=specialist,
+        reference_year=2026,
+        actor=specialist,
+        visibility=Visibility.RESTRICTED,
+    )
+    set_next_action(
+        matter=restricted,
+        text="Esita arvamus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=today,
+        actor=specialist,
+    )
+
+    for person, may_see in ((department_head, True), (reader, False)):
+        panel = eesolev(client, person)
+        assert ("Piiratud tähtajaga teema" in panel) is may_see, person
+        group = next(g for g in dd.upcoming_groups(person, today) if g.key == "tana")
+        assert group.count == (1 if may_see else 0)
+        assert ("kõik 1" in panel) is may_see, person
 
 
 # =========================================================================
