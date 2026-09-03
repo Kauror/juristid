@@ -324,11 +324,25 @@ def matters_with_multiple_submissions(context: ReportingContext) -> MetricResult
 
 
 def list_rows(context: ReportingContext, **filters: Any) -> QuerySet[Submission]:
-    """The drill-through list, from the same selector the numbers used."""
+    """The drill-through list, from the same selector the numbers used.
+
+    Ordered on three keys because this list is paginated, and an OFFSET slice
+    only returns each row once if the ordering is total. `sent_at` is nowhere
+    near unique — the archive import writes a whole day's letters at one anchor
+    time (`opinion_apply._write_one_submission`) — so `-sent_at` alone left the
+    tied rows in whatever order the planner produced, and a reader paging
+    through them could see one row twice and another not at all.
+
+    `-created_at` is not a new rule: it is the second key `Submission.Meta`
+    already declares, which this `order_by` was replacing outright. `pk` then
+    resolves rows that tie on both. It says nothing about the records — it is
+    row identity, ascending, the same final key `search_documents` and
+    `OpinionArchiveSearchDocument` use for the same reason.
+    """
     return (
         sent_submissions(context, **filters)
         .select_related("matter", "matter__owner", "sent_by")
         .prefetch_related("recipient_rows__organisation")
         .distinct()
-        .order_by("-sent_at")
+        .order_by("-sent_at", "-created_at", "pk")
     )
