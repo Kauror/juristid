@@ -15,6 +15,7 @@ chances for one of them to be generous.
 from __future__ import annotations
 
 import datetime
+from typing import Any
 
 import pytest
 from django.urls import reverse
@@ -23,13 +24,20 @@ from django.utils import timezone
 from app.legacy_import.opinion_archive import (
     OpinionArchiveBatch,
     OpinionArchiveItem,
+    OpinionArchiveMetadata,
     OpinionMatchCandidate,
+    OpinionSubmissionImport,
 )
-from app.legacy_import.opinion_binary import OpinionArchiveBinary, OpinionArchiveText
+from app.legacy_import.opinion_binary import (
+    OpinionArchiveBinary,
+    OpinionArchiveMatterLink,
+    OpinionArchiveText,
+)
 from app.legacy_import.opinion_enums import (
     ArchiveTextState,
     OpinionCandidateState,
     OpinionMatchClass,
+    OpinionMetadataSystem,
 )
 from app.legacy_import.opinion_search import (
     ArchiveFilters,
@@ -164,21 +172,31 @@ def test_a_rebuild_is_idempotent(held):
 
 
 def test_extracting_text_and_rebuilding_puts_the_body_in_the_index(held, administrator):
-    """The one sequence the runbook actually performs.
+    """The rebuild rule the runbook's `extract-text`, `rebuild` sequence rests on.
 
     A rebuild that skipped rows already at the current index version would do
     nothing here and report a clean run, leaving every freshly extracted body
     out of the search.
+
+    Extracted under `suspend_archive_indexing`, because that is now the only
+    way to reach the state the rule is about: a row at the current index
+    version and stale. An extraction refreshes its own row
+    (`refresh_on_text_save`), so the unsuspended sequence converges before the
+    rebuild runs, and a test that used it would be asserting the handler
+    rather than the rebuild.
     """
+    from app.legacy_import.opinion_search import suspend_archive_indexing
+
     _, second = held
-    OpinionArchiveText.objects.create(
-        binary=second,
-        state=ArchiveTextState.DONE,
-        body="Riigilõivuseaduse muutmise kohta.",
-        characters=33,
-        parser="test",
-        parser_version="1",
-    )
+    with suspend_archive_indexing():
+        OpinionArchiveText.objects.create(
+            binary=second,
+            state=ArchiveTextState.DONE,
+            body="Riigilõivuseaduse muutmise kohta.",
+            characters=33,
+            parser="test",
+            parser_version="1",
+        )
 
     report = rebuild_archive_index()
     assert report.written == 1
@@ -1434,3 +1452,1027 @@ def test_the_occurrence_findings_report_counts_and_nothing_else(held):
         assert row.identifiers not in finding
         assert "leke.pdf" not in finding
         assert "Lekkinud" not in finding
+
+
+# ---------------------------------------------------------------------------
+# Freshness: the metadata half
+# ---------------------------------------------------------------------------
+#
+# The fifth relation, and the one that reads as inert until you look at what it
+# feeds. `OpinionArchiveMetadata` is KodaDash's reading of one filing, and the
+# row builder takes four columns off it: `external_id` is unioned into
+# `identifiers` unconditionally, and `title`, `recipient_raw` and
+# `document_date` supply the letter's heading wherever the *filename* did not.
+#
+# Which is why the fixture below exists. `hold()` gives every occurrence a
+# filename title, recipient and date, so metadata never wins there and a test
+# that changed one would assert that nothing happened — and pass. The archive
+# really contains letters whose names carry none of the three.
+#
+# The write that mattered is `_write_metadata`, shared by `catalogue_plan` and
+# `apply_plan` and suspended by only the second. A KodaDash workbook arriving
+# after the archive was catalogued and materialised is one `catalogue` run
+# writing readings against occurrences already held and already indexed.
+
+
+def a_nameless_letter(
+    sha: str, *, path: str, date: datetime.date | None = None
+) -> OpinionArchiveBinary:
+    """A held letter whose filename told us nothing about it.
+
+    The only shape in which metadata's title, recipient and date are the values
+    being *projected* rather than spares behind the filename's. The parser reads
+    those three out of the name where the archive's convention was followed, and
+    it was not always followed; this is the other case.
+
+    `date` is the one part a caller may put back, and it is not cosmetic: a letter
+    filed twice is ordered by `filename_date` first, so two undated filings fall
+    through to a filename comparison and the answer becomes a question about the
+    database's collation. A caller that cares which filing is first passes dates.
+    """
+    batch = OpinionArchiveBatch.objects.create(
+        archive_sha256="a" * 64,
+        importer_version="test/0",
+        started_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+    )
+    binary = OpinionArchiveBinary.objects.create(
+        sha256=sha,
+        size_bytes=1024,
+        mime_type="application/pdf",
+        storage_key=f"opinion-archive/{sha[:2]}/{sha[2:4]}/{sha}",
+        source_archive_sha256="a" * 64,
+        materialized_at=timezone.now(),
+    )
+    OpinionArchiveItem.objects.create(
+        batch=batch,
+        archive_sha256="a" * 64,
+        archive_relative_path=path,
+        original_filename=path.rsplit("/", 1)[-1],
+        sha256=sha,
+        size_bytes=1024,
+        detected_type="application/pdf",
+        filename_date=date,
+        filename_recipient="",
+        filename_title="",
+        binary=binary,
+    )
+    return binary
+
+
+def a_reading(
+    binary=None,
+    *,
+    item=None,
+    external_id: str = "X-501",
+    title: str = "",
+    recipient: str = "",
+    date: datetime.date | None = None,
+):
+    """KodaDash's reading of one filing of these bytes."""
+    target = item or OpinionArchiveItem.objects.filter(binary=binary).order_by("pk").first()
+    assert target is not None
+    return OpinionArchiveMetadata.objects.create(
+        item=target,
+        source_system=OpinionMetadataSystem.KODADASH,
+        source_artifact_name="kd.xlsx",
+        source_artifact_sha256="d" * 64,
+        external_id=external_id,
+        captured_at=timezone.now(),
+        title=title,
+        recipient_raw=recipient,
+        document_date=date,
+    )
+
+
+def test_a_reading_written_after_indexing_reaches_the_row(held):
+    """The plainest case: index first, read the workbook second."""
+    first, second = held
+    assert "X-501" not in _row(first).identifiers
+
+    a_reading(first)
+
+    # No rebuild_archive_index() here, deliberately.
+    assert "X-501" in _row(first).identifiers
+    assert archive_index_findings() == []
+    # And only that letter.
+    assert "X-501" not in _row(second).identifiers
+
+
+def test_a_register_handle_becomes_searchable_without_a_rebuild(held, administrator):
+    """`external_id` is the letter's KodaDash-side handle and is indexed as one."""
+    first, _second = held
+    a_reading(first, external_id="KD-2024-88")
+
+    found = search_archive(user=administrator, filters=ArchiveFilters(query="KD-2024-88"))
+    assert [hit.binary_id for hit in found] == [first.pk]
+
+
+def test_editing_an_external_id_takes_the_old_one_out_of_the_row(held):
+    """Not only creation: the column is derived, so a change has to move it."""
+    first, _second = held
+    reading = a_reading(first, external_id="KD-1")
+    assert "KD-1" in _row(first).identifiers
+
+    reading.external_id = "KD-2"
+    reading.save(update_fields=["external_id", "updated_at"])
+
+    row = _row(first)
+    assert "KD-2" in row.identifiers
+    assert "KD-1" not in row.identifiers
+    assert archive_index_findings() == []
+
+
+def test_a_reading_supplies_the_heading_the_filename_did_not(held):
+    """Title, recipient and date together, because they fall back together."""
+    nameless = a_nameless_letter("1" * 64, path="Opinions/nimeta/1.pdf")
+    rebuild_archive_index()
+    row = _row(nameless)
+    assert (row.title, row.recipient, row.document_date, row.source_year) == ("", "", None, None)
+
+    a_reading(
+        nameless,
+        title="Riigilõivuseaduse muutmine",
+        recipient="Rahandusministeerium",
+        date=datetime.date(2023, 7, 14),
+    )
+
+    row = _row(nameless)
+    assert row.title == "Riigilõivuseaduse muutmine"
+    assert row.recipient == "Rahandusministeerium"
+    assert row.document_date == datetime.date(2023, 7, 14)
+    assert row.source_year == 2023
+    assert archive_index_findings() == []
+    # And it landed where a rebuild would have.
+    assert rebuild_archive_index().written == 0
+
+
+def test_editing_a_reading_moves_the_heading_it_supplied(held):
+    """The correction case, which is what a second workbook revision is."""
+    nameless = a_nameless_letter("2" * 64, path="Opinions/nimeta/2.pdf")
+    rebuild_archive_index()
+    reading = a_reading(nameless, title="Esialgne pealkiri", recipient="Esialgne saaja")
+    assert _row(nameless).title == "Esialgne pealkiri"
+
+    reading.title = "Parandatud pealkiri"
+    reading.recipient_raw = "Parandatud saaja"
+    reading.document_date = datetime.date(2022, 2, 2)
+    reading.save()
+
+    row = _row(nameless)
+    assert row.title == "Parandatud pealkiri"
+    assert row.recipient == "Parandatud saaja"
+    assert row.document_date == datetime.date(2022, 2, 2)
+    assert row.source_year == 2022
+    assert archive_index_findings() == []
+
+
+def test_the_filename_still_outranks_the_reading_and_the_handler_fires_anyway(held):
+    """Precedence is the row builder's, and freshness must not quietly change it.
+
+    The letter here *has* a filename title, so KodaDash's differing one must not
+    reach `title` — asserting that it did would be asserting a change of
+    semantics this round has no business making. What must still happen is the
+    refresh: `identifiers` picks the `external_id` up regardless of precedence,
+    which is how the row proves the handler ran at all.
+    """
+    first, _second = held
+    assert _row(first).title == "Ehitusseadustiku muutmine"
+
+    a_reading(first, external_id="KD-9", title="KodaDashi oma pealkiri", recipient="Keegi muu")
+
+    row = _row(first)
+    assert row.title == "Ehitusseadustiku muutmine"
+    assert row.recipient == "Naidisministeerium"
+    assert "KD-9" in row.identifiers
+    assert archive_index_findings() == []
+
+
+def test_deleting_a_reading_takes_its_contribution_back(held):
+    """Both halves: the handle leaves `identifiers`, the heading falls back."""
+    nameless = a_nameless_letter("3" * 64, path="Opinions/nimeta/3.pdf")
+    rebuild_archive_index()
+    reading = a_reading(
+        nameless,
+        external_id="KD-77",
+        title="Kaob ära",
+        recipient="Kaob ka",
+        date=datetime.date(2021, 3, 4),
+    )
+    assert "KD-77" in _row(nameless).identifiers
+
+    reading.delete()
+
+    row = _row(nameless)
+    assert "KD-77" not in row.identifiers
+    assert row.identifiers == nameless.sha256 + "\n3.pdf"
+    assert row.title == ""
+    assert row.recipient == ""
+    assert row.document_date is None
+    assert row.source_year is None
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+def test_a_second_reading_still_covers_a_deleted_one(held):
+    """Falling back to the *next* canonical source rather than to nothing.
+
+    Both filings are dated, and differently, because otherwise the answer is not
+    this code's. `_metadata_rows` carries the model's `["item", "source_system"]`
+    ordering, and Django resolves an ordering *by a relation* through the related
+    model's own default — `filename_date`, then `original_filename` — so two
+    undated filings are tie-broken by a filename string. Whether `4b.pdf` sorts
+    before `4.pdf` is then a question about the collation: glibc `en_US.utf8`
+    ignores the dot at the primary level, the local ICU cluster does not, and the
+    test passed here and failed in CI. A date decides it in both.
+    """
+    nameless = a_nameless_letter(
+        "4" * 64, path="Opinions/nimeta/4.pdf", date=datetime.date(2021, 1, 11)
+    )
+    second_filing = a_filing(
+        nameless,
+        path="Opinions/nimeta/koopia/4.pdf",
+        filename="4b.pdf",
+        date=datetime.date(2021, 6, 22),
+    )
+    rebuild_archive_index()
+
+    first_reading = a_reading(nameless, external_id="KD-A", title="Esimene lugem")
+    a_reading(item=second_filing, external_id="KD-B", title="Teine lugem")
+    assert _row(nameless).title == "Esimene lugem"
+
+    first_reading.delete()
+
+    row = _row(nameless)
+    assert row.title == "Teine lugem"
+    assert "KD-A" not in row.identifiers
+    assert "KD-B" in row.identifiers
+    assert archive_index_findings() == []
+
+
+def test_a_reading_of_an_unmaterialised_filing_is_ignored_rather_than_fatal(held):
+    """A catalogued path whose bytes nobody has copied yet has no row to move."""
+    first, _second = held
+    batch = OpinionArchiveBatch.objects.first()
+    assert batch is not None
+    orphan = OpinionArchiveItem.objects.create(
+        batch=batch,
+        archive_sha256="a" * 64,
+        archive_relative_path="Opinions/kataloogitud/lugem.pdf",
+        original_filename="lugem.pdf",
+        sha256="9" * 64,
+        size_bytes=10,
+        detected_type="application/pdf",
+        binary=None,
+    )
+    reading = a_reading(item=orphan, external_id="KD-ORB")
+
+    reading.title = "Muudetud"
+    reading.save(update_fields=["title", "updated_at"])
+    reading.delete()
+
+    assert OpinionArchiveSearchDocument.objects.count() == 2
+    assert "KD-ORB" not in _row(first).identifiers
+    assert archive_index_findings() == []
+
+
+def test_an_item_cascade_lands_on_the_final_projection_without_an_early_refresh(held):
+    """The delete guard, and why it is the link's rather than the candidate's.
+
+    Metadata is `CASCADE` from its occurrence and the collector removes children
+    first, so a refresh fired from the metadata handler here would recompute a
+    row that still contained the occurrence being deleted — one statement early,
+    which is indistinguishable from not running. The occurrence's own
+    `post_delete` is what owns the answer, and this asserts the answer rather
+    than the mechanism: what is left is exactly what a rebuild would write.
+    """
+    first, _second = held
+    doomed = OpinionArchiveItem.objects.filter(binary=first).order_by("pk").first()
+    assert doomed is not None
+    a_reading(item=doomed, external_id="KD-CASCADE")
+    assert "KD-CASCADE" in _row(first).identifiers
+
+    doomed.delete()
+
+    assert OpinionArchiveMetadata.objects.count() == 0
+    row = _row(first)
+    assert "KD-CASCADE" not in row.identifiers
+    assert row.occurrence_count == 1
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+def test_an_item_cascade_fires_exactly_one_refresh_and_it_is_the_items(held):
+    """The delete guard itself, not only what it leaves behind.
+
+    The test above asserts the *outcome*, and the outcome is right under either
+    guard: a metadata handler firing mid-cascade would recompute a row that
+    still contained the occurrence being deleted, and the occurrence's own
+    `post_delete` would then correct it. Right answer, wasted work, and — the
+    part that matters — a projection that was briefly wrong inside the
+    transaction for no reason.
+
+    So this counts. One refresh, fired after the children are gone, is what
+    `_started_here` on the metadata handler buys; `_binary_survives` there would
+    make it two.
+    """
+    from app.legacy_import import opinion_search_signals as signals
+
+    first, _second = held
+    doomed = OpinionArchiveItem.objects.filter(binary=first).order_by("pk").first()
+    assert doomed is not None
+    a_reading(item=doomed, external_id="KD-COUNTED")
+
+    refreshed: list[Any] = []
+    real = signals.refresh_archive_binary
+
+    def counting(binary_id: Any) -> int:
+        if binary_id is not None:
+            refreshed.append(binary_id)
+        return real(binary_id)
+
+    signals.refresh_archive_binary = counting  # type: ignore[assignment]
+    try:
+        doomed.delete()
+    finally:
+        signals.refresh_archive_binary = real  # type: ignore[assignment]
+
+    assert refreshed == [first.pk], refreshed
+    assert "KD-COUNTED" not in _row(first).identifiers
+
+
+def test_moving_a_reading_refreshes_the_row_it_left_and_the_row_it_joined(held):
+    """Both binaries, because a reading takes its four columns with it.
+
+    Nothing in production reassigns `item`: `_write_metadata` only ever creates,
+    and a changed workbook writes a new row because the artefact's hash is part
+    of the key. The field is an ordinary editable foreign key with no unique
+    constraint over it, so an ordinary save can do this — which is the whole
+    reason the binary it left is captured on `pre_save`.
+    """
+    first, second = held
+    reading = a_reading(first, external_id="KD-MOVE")
+    assert "KD-MOVE" in _row(first).identifiers
+    assert "KD-MOVE" not in _row(second).identifiers
+
+    reading.item = OpinionArchiveItem.objects.filter(binary=second).order_by("pk").first()
+    reading.save(update_fields=["item", "updated_at"])
+
+    assert "KD-MOVE" not in _row(first).identifiers
+    assert "KD-MOVE" in _row(second).identifiers
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+def test_moving_a_reading_between_filings_of_one_letter_moves_no_row(held):
+    """The same save, where both filings are the same bytes: one row, unchanged."""
+    first, _second = held
+    reading = a_reading(first, external_id="KD-SAME")
+    before = _row(first).indexed_at
+
+    filings = list(OpinionArchiveItem.objects.filter(binary=first).order_by("pk"))
+    reading.item = filings[1]
+    reading.save(update_fields=["item", "updated_at"])
+
+    row = _row(first)
+    assert "KD-SAME" in row.identifiers
+    # `_reindex` compares before it writes, so a save that moved nothing the
+    # projection can see does not rewrite the row.
+    assert row.indexed_at == before
+    assert archive_index_findings() == []
+
+
+def test_a_rolled_back_reading_takes_its_projection_change_with_it(held):
+    """One event, both halves. Class A in ADR 0041's terms is what this asserts."""
+    from django.db import transaction
+
+    first, _second = held
+    assert "KD-ROLL" not in _row(first).identifiers
+
+    with transaction.atomic():
+        a_reading(first, external_id="KD-ROLL")
+        assert "KD-ROLL" in _row(first).identifiers
+        transaction.set_rollback(True)
+
+    assert OpinionArchiveMetadata.objects.count() == 0
+    assert "KD-ROLL" not in _row(first).identifiers
+    assert archive_index_findings() == []
+
+
+def test_suspension_holds_readings_back_and_a_bounded_refresh_pays(held):
+    """The bulk half, for the relation `apply_plan` writes under suspension."""
+    from app.legacy_import.opinion_search import (
+        refresh_archive_binaries,
+        suspend_archive_indexing,
+    )
+
+    first, second = held
+    with suspend_archive_indexing():
+        a_reading(first, external_id="KD-BULK")
+
+    # Suspended means stale, and `verify` is what notices.
+    assert "KD-BULK" not in _row(first).identifiers
+    assert any("tunnused" in finding for finding in archive_index_findings())
+
+    assert refresh_archive_binaries([first.pk]) == 1
+    assert "KD-BULK" in _row(first).identifiers
+    assert archive_index_findings() == []
+
+    # Bounded: the untouched letter was never rewritten.
+    assert refresh_archive_binaries([first.pk, second.pk]) == 0
+
+
+def test_cataloguing_a_reading_pays_nothing_for_a_move_that_cannot_have_happened(
+    held, django_assert_num_queries
+):
+    """The performance guard on `pre_save`, for the model written 767 times.
+
+    `BaseModel` fills the primary key in from a `uuid7` default, so
+    `instance.pk is None` is false for an unsaved row and only `_state.adding`
+    can tell a create from a move. One INSERT, no SELECT — and no refresh, since
+    the occurrence has no bytes yet.
+    """
+    batch = OpinionArchiveBatch.objects.first()
+    assert batch is not None
+    orphan = OpinionArchiveItem.objects.create(
+        batch=batch,
+        archive_sha256="a" * 64,
+        archive_relative_path="Opinions/kataloogitud/loendus.pdf",
+        original_filename="loendus.pdf",
+        sha256="8" * 64,
+        size_bytes=10,
+        detected_type="application/pdf",
+        binary=None,
+    )
+    with django_assert_num_queries(2):
+        # One INSERT, and the one `_binary_of` lookup that finds no bytes.
+        a_reading(item=orphan, external_id="KD-COUNT")
+
+
+def test_verify_reports_a_row_carrying_a_register_handle_nothing_holds(held):
+    """Metadata drift, through the identifier check rather than a second copy of it.
+
+    `_occurrence_values` already unions `external_id` into `identifiers`, so the
+    check that recomputes the whole column sees a metadata change without any
+    metadata-specific comparison — which is why this round adds no verifier for
+    it. Desynchronised with `update()` on the projection, which sends no signals.
+    """
+    first, _second = held
+    a_reading(first, external_id="KD-DRIFT")
+    assert archive_index_findings() == []
+
+    row = _row(first)
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(
+        identifiers=row.identifiers.replace("KD-DRIFT", "KD-KUSKIL-MUJAL")
+    )
+
+    findings = archive_index_findings()
+    assert any("tunnused" in finding for finding in findings), findings
+    # Detected, not repaired.
+    assert "KD-DRIFT" not in _row(first).identifiers
+
+
+def test_verify_reports_a_heading_that_no_longer_matches_its_reading(held):
+    """The other direction of the same fallback, and the date with it."""
+    nameless = a_nameless_letter("5" * 64, path="Opinions/nimeta/5.pdf")
+    rebuild_archive_index()
+    a_reading(nameless, title="Kanooniline pealkiri", date=datetime.date(2020, 5, 6))
+    assert archive_index_findings() == []
+
+    OpinionArchiveSearchDocument.objects.filter(binary=nameless).update(title="Vana pealkiri")
+    assert any("pealkiri, saaja" in finding for finding in archive_index_findings())
+
+    rebuild_archive_index(force=True)
+    assert archive_index_findings() == []
+
+    OpinionArchiveSearchDocument.objects.filter(binary=nameless).update(source_year=1999)
+    assert any("pealkiri, saaja" in finding for finding in archive_index_findings())
+
+
+def test_a_letter_with_no_reading_at_all_is_not_a_finding(held):
+    """The clean corpus stays clean: absence is a value, not drift."""
+    assert OpinionArchiveMetadata.objects.count() == 0
+    assert archive_index_findings() == []
+
+
+# ---------------------------------------------------------------------------
+# Freshness: the text half
+# ---------------------------------------------------------------------------
+#
+# The sixth relation, and the one the archive's full-text search is made of:
+# `body_text` is what both search vectors are built from and `has_body_text` is
+# what the `Sisuga` filter and the coverage figure read.
+#
+# Written through `opinion_text._record` rather than through the model, because
+# that is the one production writer — an `update_or_create` per binary inside
+# its own atomic block, called by `extract_all` for every letter whose text is
+# not already current. Testing `OpinionArchiveText.objects.create()` would
+# exercise a path nothing runs, and the interesting half is the *update*: a
+# re-extraction replacing a body, or a policy change withdrawing one.
+#
+# The synthetic PDFs in `tests/synthetic_opinions.py` carry no text stream, so
+# a body has to be recorded directly here; `tests/test_opinion_archive_evidence.py`
+# walks the real `extract_all` end to end for the outcomes it can produce.
+
+
+def a_parse(binary, *, body: str = "", state: str = ArchiveTextState.DONE, note: str = ""):
+    """One extraction outcome, through the function every extraction goes through."""
+    from app.legacy_import.opinion_text import _record
+
+    return _record(binary, state=state, body=body, note=note)
+
+
+def test_extracting_text_reaches_the_row_through_the_writer_that_extracts_it(held):
+    """The plainest case: index first, extract second, read the list."""
+    first, second = held
+    assert _row(second).has_body_text is False
+    assert _row(second).body_text == ""
+
+    a_parse(second, body="Riigilõivuseaduse muutmise kohta.")
+
+    # No rebuild_archive_index() here, deliberately.
+    row = _row(second)
+    assert row.has_body_text is True
+    assert row.body_text == "Riigilõivuseaduse muutmise kohta."
+    assert archive_index_findings() == []
+    # And it landed where a rebuild would have, vectors included.
+    assert rebuild_archive_index().written == 0
+    # Only that letter.
+    assert _row(first).body_text.startswith("Käesolevaga")
+
+
+def test_a_freshly_extracted_body_is_searchable_without_a_rebuild(held, administrator):
+    """Held, extracted and findable are one event rather than three."""
+    _first, second = held
+    a_parse(second, body="Sünteetiline lõik riigilõivude ümberkorraldamise kohta.")
+
+    found = search_archive(user=administrator, filters=ArchiveFilters(query="ümberkorraldamise"))
+    assert [hit.binary_id for hit in found] == [second.pk]
+
+
+def test_a_re_extraction_replaces_what_the_letter_is_findable_by(held, administrator):
+    """The direction the old lag check could not see.
+
+    A body that was replaced left the row serving the previous parse, so the
+    letter stayed findable by words that had been superseded and could not be
+    found by the ones that replaced them. `update_or_create` is the real writer
+    and this is its update branch.
+    """
+    first, _second = held
+    assert "ehitusseadustiku" in _row(first).body_text.lower()
+
+    a_parse(first, body="Hoopis teine sisu: keskkonnatasude arvestus.")
+
+    row = _row(first)
+    assert row.body_text == "Hoopis teine sisu: keskkonnatasude arvestus."
+    assert row.has_body_text is True
+    assert (
+        list(search_archive(user=administrator, filters=ArchiveFilters(query="keskkonnatasude")))
+        != []
+    )
+    assert (
+        list(search_archive(user=administrator, filters=ArchiveFilters(query="ehitusseadustiku")))
+        != []
+    ), "still found by its title, which is not the body"
+    body_hit = search_archive(user=administrator, filters=ArchiveFilters(query="Käesolevaga"))
+    assert list(body_hit) == [], "the superseded body is gone from the index"
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+@pytest.mark.parametrize(
+    "state",
+    [ArchiveTextState.BLOCKED, ArchiveTextState.NO_TEXT_LAYER, ArchiveTextState.FAILED],
+)
+def test_an_outcome_that_is_not_a_body_clears_the_searchable_one(held, state):
+    """Every honest non-body outcome removes from the corpus, and must say so.
+
+    `BLOCKED` is the real one: turning `REAL_DATA_ALLOWED` on withdraws the
+    parser's permission and re-records every row, and a projection that went on
+    serving those bodies would be searchable content the policy had just
+    forbidden opening. `NO_TEXT_LAYER` and `FAILED` are the same shape.
+    """
+    first, _second = held
+    assert _row(first).has_body_text is True
+
+    a_parse(first, state=state, note="Poliitika või parser.")
+
+    row = _row(first)
+    assert row.has_body_text is False
+    assert row.body_text == ""
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+def test_a_done_row_that_came_back_empty_is_not_a_body_either(held):
+    """`has_body` folds the state question into the emptiness one, in one place."""
+    first, _second = held
+    a_parse(first, state=ArchiveTextState.DONE, body="")
+
+    row = _row(first)
+    assert row.has_body_text is False
+    assert row.body_text == ""
+    assert archive_index_findings() == []
+
+
+def test_deleting_a_parse_clears_the_searchable_body(held):
+    """Dropping a parse to force a re-extraction, which is a real operator move."""
+    first, _second = held
+    text = OpinionArchiveText.objects.get(binary=first)
+
+    text.delete()
+
+    row = _row(first)
+    assert row.has_body_text is False
+    assert row.body_text == ""
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+def test_a_queryset_delete_of_parses_frees_every_row_it_touched(held):
+    """`QuerySet.delete()` sends `post_delete` per row, across two letters at once."""
+    first, second = held
+    a_parse(second, body="Teine keha.")
+    assert _row(first).has_body_text is True
+    assert _row(second).has_body_text is True
+
+    OpinionArchiveText.objects.all().delete()
+
+    assert _row(first).has_body_text is False
+    assert _row(second).has_body_text is False
+    assert archive_index_findings() == []
+
+
+def test_deleting_a_binary_neither_recreates_its_row_nor_fails(held):
+    """The reason the delete handler asks `_binary_survives` rather than nothing.
+
+    Text is `CASCADE` from the binary and is the *first* archive relation where
+    that path is reachable: the occurrences and candidates are kept off it by
+    `OpinionArchiveItem.binary` being `PROTECT`. A handler that re-projected
+    mid-cascade would insert a row the collector had already swept past, and the
+    binary's own delete would then fail on a foreign key at COMMIT.
+    """
+    first, _second = held
+    stray = OpinionArchiveBinary.objects.create(
+        sha256="7" * 64,
+        size_bytes=32,
+        mime_type="application/pdf",
+        storage_key="opinion-archive/77/77/" + "7" * 64,
+        source_archive_sha256="a" * 64,
+        materialized_at=timezone.now(),
+    )
+    a_parse(stray, body="Kirja keha, mille kataloogikirjed on kustutatud.")
+    assert OpinionArchiveSearchDocument.objects.filter(binary=stray).exists()
+
+    stray.delete()
+
+    assert not OpinionArchiveBinary.objects.filter(pk=stray.pk).exists()
+    assert not OpinionArchiveText.objects.filter(binary_id=stray.pk).exists()
+    assert not OpinionArchiveSearchDocument.objects.filter(binary_id=stray.pk).exists()
+    assert _row(first).has_body_text is True
+    assert archive_index_findings() == []
+
+
+def test_moving_a_parse_refreshes_the_row_it_left_and_the_row_it_joined(held):
+    """Both binaries, because a body is only searchable under the bytes it is on.
+
+    `binary` is a `OneToOneField`, so this is legal only onto bytes holding no
+    text of their own — and it is legal, which is why the row it left is
+    captured on `pre_save`. No production writer does it: `_record` keys
+    `update_or_create` on the binary it was handed.
+    """
+    first, second = held
+    assert _row(second).has_body_text is False
+    text = OpinionArchiveText.objects.get(binary=first)
+
+    text.binary = second
+    text.save(update_fields=["binary", "updated_at"])
+
+    assert _row(first).has_body_text is False
+    assert _row(first).body_text == ""
+    assert _row(second).has_body_text is True
+    assert _row(second).body_text.startswith("Käesolevaga")
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+def test_a_rolled_back_extraction_takes_its_projection_change_with_it(held):
+    """One event, both halves — and `_record` already opens the transaction."""
+    from django.db import transaction
+
+    _first, second = held
+    assert _row(second).has_body_text is False
+
+    with transaction.atomic():
+        a_parse(second, body="Kirjutamata keha.")
+        assert _row(second).has_body_text is True
+        transaction.set_rollback(True)
+
+    assert not OpinionArchiveText.objects.filter(binary=second).exists()
+    row = _row(second)
+    assert row.has_body_text is False
+    assert row.body_text == ""
+    assert archive_index_findings() == []
+
+
+def test_suspension_holds_extractions_back_and_a_bounded_refresh_pays(held):
+    """The bulk half, and both directions of it in one run."""
+    from app.legacy_import.opinion_search import (
+        refresh_archive_binaries,
+        suspend_archive_indexing,
+    )
+
+    first, second = held
+    with suspend_archive_indexing():
+        a_parse(second, body="Uus keha, mida projektsioon veel ei tea.")
+        a_parse(first, state=ArchiveTextState.BLOCKED, note="Poliitika muutus.")
+
+    # Suspended means stale, and `verify` is what notices — in both directions.
+    assert _row(second).has_body_text is False
+    assert _row(first).has_body_text is True
+    findings = archive_index_findings()
+    assert any("otsitav tekst" in finding for finding in findings), findings
+    assert any("tekstiolek" in finding for finding in findings), findings
+
+    assert refresh_archive_binaries([first.pk, second.pk]) == 2
+    assert _row(second).body_text == "Uus keha, mida projektsioon veel ei tea."
+    assert _row(first).body_text == ""
+    assert _row(first).has_body_text is False
+    assert archive_index_findings() == []
+
+    # Bounded: a second pass over already-fresh rows writes nothing.
+    assert refresh_archive_binaries([first.pk, second.pk]) == 0
+
+
+def test_an_extraction_pays_nothing_for_a_move_it_cannot_have_made(held):
+    """The performance guard on `pre_save`, over the real writer.
+
+    `_record` hands `update_or_create` eight concrete columns and none of them
+    is `binary`, so Django saves with `update_fields` and `note_text_move`
+    returns before its lookup — the same guard `note_occurrence_move` carries,
+    for the same reason: an extraction over the whole corpus must not pay a
+    SELECT per letter for a reassignment its writer cannot perform.
+
+    Asserted relatively rather than against a number. The bounded refresh's own
+    query count belongs to `_row_values` and will move when a column joins it;
+    what this is about is the one lookup the guard skips, so it compares a save
+    that names its fields against the same save that does not.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    first, _second = held
+    recorded = a_parse(first, body="Teine lugem.")
+    assert getattr(recorded, "_archive_binary_before", None) is None
+
+    text = OpinionArchiveText.objects.get(binary=first)
+    with CaptureQueriesContext(connection) as named:
+        text.note = "Nimetatud väljad."
+        text.save(update_fields=["note", "updated_at"])
+    with CaptureQueriesContext(connection) as everything:
+        text.note = "Kõik väljad."
+        text.save()
+
+    # Exactly one query apart, and it is the move lookup. Neither save moves a
+    # projected column, so both pay the same comparison and neither writes.
+    assert len(everything.captured_queries) == len(named.captured_queries) + 1
+
+
+def test_extraction_is_not_batched_behind_a_suspension(held):
+    """The design decision, asserted rather than described.
+
+    Suspending indexing for the whole of `extract_all` and refreshing at the end
+    would be cheaper and wrong: hundreds of canonical bodies would commit while
+    their rows stayed stale, and an extraction killed halfway would leave
+    exactly the search this closes. `_record` is atomic per letter, so each
+    committed body is committed with its projection.
+    """
+    import inspect
+
+    from app.legacy_import import opinion_text
+
+    source = inspect.getsource(opinion_text)
+    assert "suspend_archive_indexing" not in source
+    assert "refresh_archive_binaries" not in source
+
+
+# ---------------------------------------------------------------------------
+# Drift: what `verify` can now see about text
+# ---------------------------------------------------------------------------
+#
+# The check this replaces was one-directional — canonical `DONE` with a body,
+# projection saying it has none — which was the case that had happened and not
+# the class of case. Both columns are now recomputed through `_text_values`, the
+# row builder's own function, and compared against what is stored.
+
+
+def test_verify_reports_a_body_the_projection_has_not_picked_up(held):
+    """The original finding's case, still detected after the rewrite."""
+    _first, second = held
+    a_parse(second, body="Eraldatud keha.")
+    assert archive_index_findings() == []
+
+    OpinionArchiveSearchDocument.objects.filter(binary=second).update(
+        body_text="", has_body_text=False
+    )
+
+    findings = archive_index_findings()
+    assert any("otsitav tekst" in finding for finding in findings), findings
+    assert any("tekstiolek" in finding for finding in findings), findings
+
+
+def test_verify_reports_a_stale_body_whose_flag_still_says_true(held):
+    """The case the flag alone cannot show, and the worse of the two.
+
+    `has_body_text` is right, so every count and filter looks healthy; the
+    *searchable* text is the previous extraction's, so the letter answers to
+    words nothing holds. A verifier that compared only the flag would report a
+    clean corpus.
+    """
+    first, _second = held
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(
+        body_text="Eelmise eraldamise keha, mida enam ei ole."
+    )
+
+    findings = archive_index_findings()
+    assert any("otsitav tekst" in finding for finding in findings), findings
+    assert not any("tekstiolek" in finding for finding in findings), findings
+    # Detected, not repaired.
+    assert _row(first).body_text.startswith("Eelmise")
+
+
+def test_verify_reports_a_row_claiming_a_body_after_the_policy_withdrew_it(held):
+    """Canonical text is no longer searchable and the row still says it is."""
+    first, _second = held
+    OpinionArchiveText.objects.filter(binary=first).update(state=ArchiveTextState.BLOCKED)
+
+    findings = archive_index_findings()
+    assert any("otsitav tekst" in finding for finding in findings), findings
+    assert any("tekstiolek" in finding for finding in findings), findings
+
+
+def test_verify_reports_a_row_claiming_a_body_that_was_never_extracted(held):
+    """No canonical text row at all, and the projection carrying one anyway."""
+    _first, second = held
+    assert not OpinionArchiveText.objects.filter(binary=second).exists()
+    OpinionArchiveSearchDocument.objects.filter(binary=second).update(
+        body_text="Välja mõeldud keha.", has_body_text=True
+    )
+
+    findings = archive_index_findings()
+    assert any("otsitav tekst" in finding for finding in findings), findings
+    assert any("tekstiolek" in finding for finding in findings), findings
+
+
+def test_verify_reports_a_flag_that_has_come_apart_from_its_body(held):
+    """The inconsistency in isolation: the body is right, the flag is not."""
+    first, _second = held
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(has_body_text=False)
+
+    findings = archive_index_findings()
+    assert any("tekstiolek" in finding for finding in findings), findings
+    assert not any("otsitav tekst" in finding for finding in findings), findings
+
+
+def test_a_clean_metadata_and_text_projection_produces_no_finding(held):
+    """No false positives over the whole of what this round added.
+
+    A letter with a reading and a body, a letter with a reading and no body, and
+    a letter with neither — plus the fallback shape, where metadata is the value
+    being projected rather than a spare.
+    """
+    first, second = held
+    nameless = a_nameless_letter("6" * 64, path="Opinions/nimeta/6.pdf")
+    a_reading(first, external_id="KD-CLEAN-1")
+    a_reading(nameless, external_id="KD-CLEAN-2", title="Puhas", date=datetime.date(2019, 8, 9))
+    a_parse(second, body="Puhas keha.")
+    a_parse(nameless, state=ArchiveTextState.NO_TEXT_LAYER)
+
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+def test_the_text_findings_report_counts_and_nothing_else(held):
+    """Operator output, so it may name a number and a class of problem only.
+
+    The fixture values are deliberately secret-shaped: this output is meant to
+    be pasted into a ticket, and the columns being compared are the contents of
+    a letter and the name of a file.
+    """
+    first, second = held
+    leaky_body = "SALAJANE-KEHA-9931 sisemine seisukoht"
+    leaky_id = "SALAJANE-TUNNUS-4417"
+    leaky_title = "SALAJANE-PEALKIRI-2208"
+    a_reading(second, external_id=leaky_id, title=leaky_title)
+    a_parse(second, body=leaky_body)
+    assert archive_index_findings() == []
+
+    OpinionArchiveSearchDocument.objects.filter(binary=second).update(
+        body_text="SALAJANE-VANA-KEHA-7755", has_body_text=False, identifiers="SALAJANE-LEKE-1001"
+    )
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(title="SALAJANE-LEKE-1002")
+
+    findings = archive_index_findings()
+    assert findings
+    leaks = [
+        leaky_body,
+        leaky_id,
+        leaky_title,
+        "SALAJANE-VANA-KEHA-7755",
+        "SALAJANE-LEKE-1001",
+        "SALAJANE-LEKE-1002",
+        first.sha256,
+        second.sha256,
+        "Opinions/",
+        ".pdf",
+    ]
+    for finding in findings:
+        for leak in leaks:
+            assert leak not in finding, finding
+
+
+# ---------------------------------------------------------------------------
+# The invalidation map, discovered rather than listed
+# ---------------------------------------------------------------------------
+#
+# ADR 0041's contract is about completeness, and a completeness claim written
+# down as prose is a claim that stops being true quietly. The three follow-ups
+# that brought the archive projection inside the contract each began the same
+# way: somebody read `_row_values`, found a relation nobody had noticed, and
+# the corpus had been stale on it for a fortnight.
+#
+# So the map is read off the row builder rather than repeated beside it. What
+# the builder actually queries is what it depends on, and every table it
+# queries must have something listening for writes to it.
+
+
+def test_every_relation_the_archive_row_reads_has_a_freshness_owner(held):
+    """The whole invalidation map, taken from the queries the builder runs.
+
+    Not from a list, and not from its source text either: `OpinionArchiveText`
+    is reached as `binary.text` and is named nowhere in `_row_values`, so a
+    scan for model names would have missed the relation the archive's entire
+    full-text search is made of. The queries cannot miss it.
+
+    Deliberately a discovery and an assertion in one. A future column computed
+    from a seventh relation makes this fail with the table's own name, which is
+    the sentence the last three rounds each had to be told by a person.
+    """
+    import re
+
+    from django.apps import apps
+    from django.db import connection
+    from django.db.models.signals import post_delete, post_save
+    from django.test.utils import CaptureQueriesContext
+
+    from app.legacy_import.opinion_search import _row_values
+
+    first, _second = held
+
+    # Fetched without `select_related`, so every relation the builder reads
+    # costs a query and therefore shows up here. `_reindex` selects the text
+    # eagerly, which is an optimisation rather than a different set of inputs.
+    binary = OpinionArchiveBinary.objects.get(pk=first.pk)
+    with CaptureQueriesContext(connection) as captured:
+        _row_values(binary)
+
+    tables: set[str] = set()
+    for query in captured.captured_queries:
+        tables.update(re.findall(r'(?:FROM|JOIN) "([a-z0-9_]+)"', query["sql"]))
+
+    by_table = {model._meta.db_table: model for model in apps.get_models()}
+    inputs = {by_table[table] for table in tables if table in by_table}
+    # The binary itself is the row's subject rather than one of its inputs: it
+    # is already loaded, `sha256` is the only column of it that reaches the row,
+    # and no production writer saves one — `materialize` creates them and
+    # refreshes, and a binary with no row at all is what `unindexed_binaries`
+    # reports.
+    inputs.discard(OpinionArchiveBinary)
+    inputs.discard(OpinionArchiveSearchDocument)
+
+    assert inputs == {
+        OpinionArchiveItem,
+        OpinionArchiveMetadata,
+        OpinionMatchCandidate,
+        OpinionSubmissionImport,
+        OpinionArchiveMatterLink,
+        OpinionArchiveText,
+    }, sorted(model.__name__ for model in inputs)
+
+    unowned = [
+        model.__name__
+        for model in inputs
+        if not (
+            post_save.has_listeners(model)
+            and post_delete.has_listeners(model)
+            and model.__name__ in _signal_source()
+        )
+    ]
+    assert unowned == [], unowned
+
+
+def _signal_source() -> str:
+    import inspect
+
+    from app.legacy_import import opinion_search_signals
+
+    return inspect.getsource(opinion_search_signals)

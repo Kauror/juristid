@@ -847,3 +847,123 @@ def test_the_bulk_candidate_update_stays_visible_in_the_archive_projection(
     assert archive_index_findings() == []
     # Already converged, so the bounded refresh finds nothing left to write.
     assert refresh_archive_binaries([row.binary_id]) == 0
+
+
+def test_a_workbook_catalogued_after_materialisation_reaches_the_projection(
+    archive_path, evidence_root, tmp_path
+):
+    """The metadata staling path, through the sequence that produces it.
+
+    `catalogue_plan` deliberately does not suspend archive indexing, and does
+    not need to: it writes one row at a time through the model, so the per-row
+    handlers cover it. What it *can* do is write a reading against an occurrence
+    that is already materialised and already projected — which is exactly what
+    happens when the KodaDash workbook arrives after the archive did, one
+    `catalogue` run later.
+
+    Before the metadata handler, `external_id` never reached `identifiers` on
+    that run, the letter stayed unfindable by its KodaDash handle, and
+    `verify` reported a clean corpus throughout.
+    """
+    from app.legacy_import.opinion_apply import catalogue_plan
+    from app.legacy_import.opinion_archive import OpinionArchiveMetadata
+    from app.legacy_import.opinion_materialize import materialize
+    from app.legacy_import.opinion_search import (
+        archive_index_findings,
+        rebuild_archive_index,
+        refresh_archive_binaries,
+    )
+    from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
+
+    _matter, item = strict_pair(number=232)
+    path = archive_path([item])
+    plan = plan_for(path)
+    catalogue_plan(plan, batch=open_batch(plan))
+    materialize(archive_path=path, expected_archive_sha256=plan.archive_sha256)
+
+    # Materialisation leaves the letter indexed, which is what makes the next
+    # catalogue run a write against an *already projected* occurrence.
+    row = OpinionArchiveSearchDocument.objects.get()
+    assert OpinionArchiveMetadata.objects.count() == 0
+    assert "KD-KATALOOG" not in row.identifiers
+    assert archive_index_findings() == []
+
+    book = syn.write_kodadash_workbook(
+        tmp_path / "kd.xlsx",
+        [
+            {
+                "content_id": "KD-KATALOOG",
+                "file_sha256": item.sha256,
+                "recipient_raw": "Näidisministeerium",
+                "title": "KodaDashi lugem",
+            }
+        ],
+    )
+    later = build_plan(archive_path=path, kodadash_path=book)
+    catalogue_plan(later, batch=open_batch(later))
+
+    # No rebuild_archive_index() here, deliberately.
+    assert OpinionArchiveMetadata.objects.count() == 1
+    row.refresh_from_db()
+    assert "KD-KATALOOG" in row.identifiers
+    assert archive_index_findings() == []
+    # It landed where a rebuild would have, and nothing was left owing.
+    assert rebuild_archive_index().written == 0
+    assert refresh_archive_binaries([row.binary_id]) == 0
+    # And it created no Submission: this is still a catalogue.
+    assert Submission.objects.count() == 0
+
+
+def test_an_apply_converges_the_metadata_it_wrote_under_suspension(
+    archive_path, evidence_root, tmp_path
+):
+    """The bulk half, for the relation this round added.
+
+    `apply_plan` suspends the per-row handlers and pays one bounded refresh for
+    the binaries its batch catalogued, which is what makes this worth asserting
+    apart from the catalogue above: inside the apply the metadata handler pays
+    nothing at all, and the register handle reaches `identifiers` only because
+    the refresh recomputes the whole row. A refresh narrowed to the candidate
+    columns would leave it out and nothing would report it.
+    """
+    from app.legacy_import.opinion_apply import catalogue_plan
+    from app.legacy_import.opinion_archive import OpinionArchiveMetadata
+    from app.legacy_import.opinion_materialize import materialize
+    from app.legacy_import.opinion_search import (
+        archive_index_findings,
+        rebuild_archive_index,
+        refresh_archive_binaries,
+    )
+    from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
+
+    _matter, item = strict_pair(number=233)
+    path = archive_path([item])
+    base = plan_for(path)
+    catalogue_plan(base, batch=open_batch(base))
+    materialize(archive_path=path, expected_archive_sha256=base.archive_sha256)
+    row = OpinionArchiveSearchDocument.objects.get()
+    assert "KD-APPLY" not in row.identifiers
+
+    book = syn.write_kodadash_workbook(
+        tmp_path / "kd.xlsx",
+        [
+            {
+                "content_id": "KD-APPLY",
+                "file_sha256": item.sha256,
+                "recipient_raw": "Näidisministeerium",
+                "title": "KodaDashi lugem",
+            }
+        ],
+    )
+    plan = build_plan(archive_path=path, kodadash_path=book)
+    apply_plan(plan, batch=open_batch(plan))
+
+    assert OpinionArchiveMetadata.objects.count() == 1
+    row.refresh_from_db()
+    assert "KD-APPLY" in row.identifiers
+    assert row.has_submission is True
+    assert row.review_state == OpinionCandidateState.APPLIED
+    assert archive_index_findings() == []
+    # Bounded, and already converged: no rebuild of the corpus is required.
+    assert rebuild_archive_index().written == 0
+    assert refresh_archive_binaries([row.binary_id]) == 0

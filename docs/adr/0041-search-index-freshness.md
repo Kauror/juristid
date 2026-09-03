@@ -633,11 +633,145 @@ column cannot be told apart from the rest of it by inspection, but recomputing
 the whole column can. Aggregate counts only, like every other finding here — the
 column being checked is a filename, so leaking it would be its own finding.
 
-**Still not covered, and detected rather than fixed.** `OpinionArchiveMetadata`
-and `OpinionArchiveText` have no handlers of their own: a metadata row written
-against an already-indexed binary, or a body extracted after one, moves the
-projection with nothing refreshing it. Both are *reported* — the text case by the
-"text exists, the projection does not reflect it" finding that predates this, the
-metadata case now by the identifier and heading checks above — so neither can go
-stale in silence, which is the contract this ADR states. Closing them is the next
-relation's work, not this one's.
+**Not yet covered when this was written, and detected rather than fixed.**
+`OpinionArchiveMetadata` and `OpinionArchiveText` had no handlers of their own: a
+metadata row written against an already-indexed binary, or a body extracted after
+one, moved the projection with nothing refreshing it. Both were *reported* — the
+text case by the "text exists, the projection does not reflect it" finding that
+predates this, the metadata case by the identifier and heading checks above — so
+neither could go stale in silence, which is the contract this ADR states. The
+follow-up below closes them.
+
+### Follow-up (2026-09-03) — what an occurrence carries, and the map closed
+
+The four follow-ups above cover the relations that *point at* a letter and the
+occurrences they point through. Two inputs were named as not covered, in the
+paragraph immediately above this one, and this closes both.
+
+| Column | Computed from |
+| --- | --- |
+| `identifiers` | …plus the `external_id` of each `OpinionArchiveMetadata` on the binary's filings |
+| `title` | the first filing's `filename_title`, falling back to the metadata `title` |
+| `recipient` | the first filing's `filename_recipient`, falling back to `recipient_raw` |
+| `document_date` (and `source_year`) | the first filing's `filename_date`, falling back to the metadata `document_date` |
+| `body_text` | `OpinionArchiveText.body`, where that row `has_body` |
+| `has_body_text` | whether it does |
+
+**Metadata reads as inert, and is not.** `OpinionArchiveMetadata` is KodaDash's
+reading of one filing, and three of its four projected columns are *fallbacks* —
+they are what the row says only where the archive's filename said nothing. Where
+the naming convention was followed the column never moves, which is exactly what
+made the relation easy to leave out. But `external_id` is unioned into
+`identifiers` unconditionally, and it is the letter's register-side handle: the
+only string by which somebody holding a KodaDash reference can find the letter at
+all. And a great many archive filenames carry no recipient and no date, which is
+where the fallback is the value being projected rather than a spare.
+
+The write that mattered is an ordinary one and an operator reaches it in the
+normal course. `_write_metadata` is shared by `catalogue_plan` and `apply_plan`,
+and only the second suspends indexing — so a KodaDash workbook that arrives
+*after* the archive has been catalogued and materialised is one `catalogue` run
+writing readings against occurrences whose bytes are already held and already
+projected. Reproduced on `65f89cff`, synthetic data: catalogue, materialise,
+catalogue again with a workbook; the handle never reaches `identifiers` and the
+letter is unfindable by it until somebody rebuilds.
+
+**Text is the whole of the archive's full-text search.** `body_text` is what both
+tsvectors are built from and `has_body_text` is what the `Sisuga` filter and the
+coverage figure read. `opinion_text._record` is the one production writer — an
+`update_or_create` per binary — and the *update* branch is the case the existing
+verifier could not see: a re-extraction replaced the canonical body while the
+projection went on serving the previous parse, so the letter stayed findable by
+words that had been superseded and could not be found by the ones that replaced
+them. The same shape with the other sign is `DONE` → `BLOCKED`, which is what
+turning `REAL_DATA_ALLOWED` on does to a corpus that had been extracted: the
+policy withdraws permission to open the file and the search goes on serving its
+contents.
+
+**Same class as the other four.** One metadata row names one occurrence, which
+names at most one binary; one text row names exactly one binary. Both are
+bounded, so both refresh inside the business transaction through `_row_values`,
+in `opinion_search_signals.py`, and a rolled-back write takes its projection
+change with it.
+
+**Extraction is not batched behind a suspension, deliberately.** Wrapping
+`extract_all` in `suspend_archive_indexing` and refreshing at the end would be
+cheaper and would reintroduce the defect: hundreds of canonical bodies would
+commit while their rows stayed stale, and an extraction killed halfway — which is
+how a 767-file run over real bytes ends when something goes wrong — would leave
+exactly the stale search this closes. `_record` is already `@transaction.atomic`
+per letter, so each committed body is committed with its projection. `apply_plan`
+keeps its suspension and its bounded refresh, which now converge the metadata it
+wrote as well as the candidates.
+
+**Two different delete guards, and the difference is the point.**
+`OpinionArchiveMetadata` uses `_started_here`: its only foreign key is `item`, so
+the only cascade that can reach it is an occurrence's deletion, and that
+occurrence's own `post_delete` already owns the final refresh. Firing from the
+metadata handler during that cascade would be both redundant and *wrong* — the
+collector removes children before their parent, so it would recompute a row that
+still contained the occurrence being deleted, which is the one-statement-early
+mistake the candidate follow-up was written to avoid. `OpinionArchiveText` uses
+`_binary_survives`, and here that guard stops being defensive: text is `CASCADE`
+from the binary and is the first archive relation for which that path is
+reachable at all, because the occurrences and candidates are kept off it by
+`OpinionArchiveItem.binary` being `PROTECT`. Re-projecting a binary mid-cascade
+would insert a row the collector had already swept past and the binary's own
+delete would fail on a foreign key at COMMIT.
+
+**Both are move-capable, and neither writer moves them.** `metadata.item` is an
+ordinary editable foreign key and `text.binary` is a `OneToOneField`, so an
+ordinary save can repoint either — leaving the row it left still projecting a
+handle or a body that has gone elsewhere. The binary being left is captured on
+`pre_save`, believing `update_fields` and testing suspension before the lookup,
+so `_record` (which saves eight named columns, none of them `binary`) pays no
+SELECT for a move it cannot make.
+
+**Text drift verification, replaced rather than extended.** The check that stood
+here was one-directional — canonical `DONE` with a body, projection saying
+`has_body_text=False` — which caught the case that had happened and was silent
+about every other one. `archive_index_findings()` now recomputes both columns
+through `_text_values`, the row builder's own function, and reports the count of
+rows that disagree, in two findings: a flag that disagrees means the filter and
+the coverage figures are wrong, and a *body* that disagrees means the search is
+wrong, which is worse and far harder to notice by looking. Both directions follow
+from the comparison rather than from a list of cases. `has_body` is not restated
+anywhere: it stays the model's own property, and neither the builder nor the
+verifier re-derives it in Python or in SQL. Aggregate counts only — the column
+being compared is the contents of a letter.
+
+Metadata needed no new verifier. `_occurrence_values` already unions
+`external_id` into `identifiers` and already resolves the heading fallback, so
+the identifier and heading checks the previous follow-up added see a metadata
+change without any metadata-specific comparison — and adding one would have been
+a second copy of the precedence rule.
+
+**The map is now read off the row builder rather than written down beside it.**
+Every one of these follow-ups started the same way: somebody read `_row_values`,
+found a relation nobody had noticed, and the corpus had been stale on it for a
+fortnight. So `tests/test_opinion_archive_search.py` discovers the inputs by
+capturing the queries `_row_values` actually runs and asserting that every table
+among them has a `post_save` and a `post_delete` owner. A scan of the function's
+source text would not have done: `OpinionArchiveText` is reached as `binary.text`
+and is named nowhere in it. A seventh relation now fails that test with the
+table's own name.
+
+**After this, `OpinionArchiveSearchDocument` has no ordinary mutable input
+without a freshness owner.** The six relations are covered by handlers; the only
+other input is the binary's own `sha256`, and `OpinionArchiveBinary` has no
+`save()` anywhere in the application — `materialize` creates one and
+`_link_occurrences` refreshes it, deleting one takes its projection row with it
+by `CASCADE`, and a held binary with no row at all is what `unindexed_binaries()`
+reports. A `sha256` edited by hand would still be *detected*, by the identifier
+check that recomputes the column from it. `index_version` is the remaining input
+and is a constant, which is what the stale-version finding is for.
+
+### What this amendment does not do
+
+Nothing about extraction policy (ADR 0014 stands: an unscanned file is not opened
+where real data lives, and this makes it no more permissive), the parser, OCR,
+`ArchiveTextState` semantics, archive authorization (ADR 0056), matching
+classifications, or what counts as evidence for a link (ADR 0055). No schema
+change and no index-version bump: the projected values are byte-for-byte what the
+previous builder produced, so no rebuild is required by this change. It does not
+run any rebuild on production.
