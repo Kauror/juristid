@@ -97,6 +97,16 @@ A response deadline is fallback work only when **all** of these hold:
 The third condition is the rule the response-deadline work landed with; the
 fourth is this record.
 
+> **Amended by ADR 0059 (2026-09-03).** A fifth condition joined the list: the
+> Matter's **current** register state must not record the opinion work as
+> finished — `VÄLJA` reading either a date or *ei saatnud*. A blank cell and an
+> unreadable one both leave the deadline outstanding. That rule discharges the
+> *operational* obligation only: it creates no `Submission`, claims no evidence
+> about what was sent, and enters no opinion statistic. The precedence this
+> record establishes is unaffected — an open `NextAction` still outranks the
+> deadline whatever the register says — and `response_deadline` is still never
+> written.
+
 ### `Järgmise tegevuseta` does not move
 
 *Järgmise tegevuseta* (`?tegevus=puudub`) still means exactly *no open

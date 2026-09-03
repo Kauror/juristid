@@ -76,6 +76,8 @@ from app.core import dates
 from app.core.dates import format_estonian_date
 from app.intelligence.enums import FactStatus
 from app.intelligence.models import MatterImportantDate
+from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
+from app.legacy_import.register_semantics import OPINION_WORK_COMPLETE_STATES
 from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.submissions.enums import SubmissionStatus
@@ -598,6 +600,33 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
     ei ole saadetud* row and `selectors.attention_items` both test. That same
     definition is reused here rather than restated.
 
+    **The register discharges it too.** ``VÄLJA`` is where the department writes
+    that the opinion work on a file is finished: a date means the opinion went
+    out that day, ``ei saatnud`` means a decision was taken not to send one, and
+    both end the drafting step. A blank cell means the file is still being
+    worked on, so it discharges nothing (ADR 0059).
+
+    This is a statement about **work**, not about evidence. A ``VÄLJA`` value
+    creates no ``Submission``, proves nothing about which document was sent, and
+    enters no opinion statistic — a SENT Submission remains the only record that
+    can answer *what* Koda sent, and remains the stronger reason wherever both
+    exist (ADR 0011). ``response_deadline`` itself is untouched and keeps
+    stating itself in the Matter header, exactly as ADR 0050 requires.
+
+    Three narrowings, each load-bearing:
+
+    * **Only ``CURRENT``.** The same table holds thousands of ``RETIRED`` and
+      ``SUPERSEDED`` rows whose ``VÄLJA`` speaks for a finished file rather than
+      for live work.
+    * **Only ``DATE`` and ``NOT_SENT``** (:data:`OPINION_WORK_COMPLETE_STATES`).
+      ``RECORDED_OTHER`` is a cell nobody has read and is not an approved
+      completion state; it leaves the deadline outstanding and is surfaced as a
+      data-quality question instead. This is why the test is a state set and not
+      ``opinion_sent_recorded``, which would answer *is anything written* and
+      discharge on the strength of prose.
+    * **A Matter with no register row is never discharged here.** A file created
+      in the application has no ``VÄLJA`` to speak for it.
+
     **A `Järgmiseks` outranks it.** ``Arvamuse tähtaeg`` is the date the register
     arrived with: the fallback obligation a file carries until somebody says what
     happens next. The moment a lawyer records an open ``NextAction`` they have
@@ -621,15 +650,15 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
       structured ``JÄRGMISEKS`` value, so it is the department's instruction too.
       There is no second idea of a sufficiently human action here.
 
-    Both subqueries are ``Exists``, so the whole source stays one query however
-    many Matters it holds, and both are deliberately **reader-blind** — as the
-    fulfilment rule already was. Each can only ever *remove* a row, so neither
-    can widen what anybody sees, and a hidden child cannot be read through the
-    difference: what changes is whether one date is called work, never whether a
-    restricted record is disclosed. Scoping them would be worse than useless
-    here — it would make one reader's deadline live and another's suppressed,
-    which is two answers to a question about the Matter rather than about the
-    reader.
+    All three subqueries are ``Exists``, so the whole source stays one query
+    however many Matters it holds, and all three are deliberately
+    **reader-blind** — as the fulfilment rule already was. Each can only ever
+    *remove* a row, so none can widen what anybody sees, and a hidden child
+    cannot be read through the difference: what changes is whether one date is
+    called work, never whether a restricted record is disclosed. Scoping them
+    would be worse than useless here — it would make one reader's deadline live
+    and another's suppressed, which is two answers to a question about the
+    Matter rather than about the reader.
 
     ``owner`` narrows by ``Matter.owner``, for the reason
     :func:`important_deadlines` does: this deadline belongs to whoever carries
@@ -639,16 +668,48 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
     """
     sent = Submission.objects.filter(matter=OuterRef("pk"), status=SubmissionStatus.SENT)
     instructed = NextAction.objects.filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
+    completed = CurrentRegisterState.objects.filter(
+        matter=OuterRef("pk"),
+        currency=RegisterCurrency.CURRENT,
+        opinion_sent_state__in=OPINION_WORK_COMPLETE_STATES,
+    )
     queryset = (
         open_matters(user)
         .filter(response_deadline__isnull=False)
-        .annotate(has_sent_submission=Exists(sent), has_open_action=Exists(instructed))
-        .filter(has_sent_submission=False, has_open_action=False)
+        .annotate(
+            has_sent_submission=Exists(sent),
+            has_open_action=Exists(instructed),
+            register_says_complete=Exists(completed),
+        )
+        .filter(
+            has_sent_submission=False,
+            has_open_action=False,
+            register_says_complete=False,
+        )
         .select_related("stage", "owner")
     )
     if owner is not None:
         queryset = queryset.filter(owner=owner)
     return queryset
+
+
+def response_deadline_is_outstanding(matter: Matter, user: Any) -> bool:
+    """Whether this one Matter's ``Arvamuse tähtaeg`` is still operational work.
+
+    The same question :func:`outstanding_response_deadlines` answers for a
+    population, asked about one row — and answered *by that function*, not by a
+    second copy of its four clauses. A page that re-derived them would be the
+    divergence this module exists to prevent: the Matter header would call a
+    deadline late while the work list did not, and both would be right about
+    their own arithmetic.
+
+    ``False`` for a Matter with no deadline, for a closed or ``ARCHIVE`` record,
+    and for one this reader may not see — each because the population it is
+    drawn from already says so.
+    """
+    if matter.response_deadline is None:
+        return False
+    return outstanding_response_deadlines(user).filter(pk=matter.pk).exists()
 
 
 def work_items(
@@ -1194,6 +1255,7 @@ __all__ = [
     "ownerless_matters",
     "quiet_matters",
     "real_deadlines",
+    "response_deadline_is_outstanding",
     "review_ripe_items",
     "sort_items",
     "start_of_iso_week",

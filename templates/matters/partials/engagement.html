@@ -89,11 +89,53 @@ know (Teema redesign §14.2).
       recorded decision, not an unfinished draft and not a send date whose value
       was lost — and it can never become a Submission, which needs immutable
       final evidence a spreadsheet cell is not (ADR 0011, DATA-001).
+
+      It is also why the file's Arvamuse tähtaeg is no longer counted as work:
+      the opinion step is finished, with no opinion (ADR 0059). So the line
+      says both halves — the register's own two words, quoted, and what they
+      mean for the deadline above. The quotation is not decoration: it is the
+      difference between reporting what the source says and paraphrasing it,
+      and `test_the_page_says_ei_saatnud_in_words` has stood on it since the
+      28.08 refresh.
     {% endcomment %}
     {% if register_facts and register_facts.opinion_not_sent %}
       <p class="factnote">
         <span class="factnote__label">Arvamus · registri vaatlus</span>
-        registrisse on märgitud „ei saatnud“
+        registrisse märgitud „ei saatnud“: arvamust ei saadetud
+      </p>
+    {% endif %}
+
+    {% comment %}
+      Why a passed Arvamuse tähtaeg is not shown as late. The register recorded
+      a send date, so the opinion work is finished — and that is *all* this
+      says. Deliberately not «Koja arvamus saadetud»: Koda cannot show which
+      document went out on that day, and a page that claimed it could would be
+      asserting evidence the model refuses to store (ADR 0011, ADR 0059).
+
+      Suppressed entirely where a canonical Submission exists, because then the
+      page already states the stronger fact with the file attached and this
+      would be a weaker second sentence about the same event
+      (`RegisterFacts.opinion_sent_recorded_date`).
+    {% endcomment %}
+    {% if register_facts and register_facts.opinion_sent_recorded_date %}
+      <p class="factnote">
+        <span class="factnote__label">Arvamus · registri vaatlus</span>
+        registris märgitud väljasaadetuks {{ register_facts.opinion_sent_recorded_date|date:"j.n.Y" }}
+      </p>
+    {% endif %}
+
+    {% comment %}
+      A VÄLJA cell that is neither a date nor `ei saatnud`. Reported as a data
+      quality question and never as completion — it leaves the deadline
+      outstanding, which is the conservative direction and the one the product
+      owner approved. Zero rows carry this today (ADR 0059).
+    {% endcomment %}
+    {% if register_facts and register_facts.opinion_state_unreadable %}
+      <p class="factnote factnote--warning">
+        <span class="factnote__label">Arvamus · registri vaatlus</span>
+        VÄLJA lahtris on märge, mida ei õnnestunud lugeda kuupäevana ega
+        märkena „ei saatnud“ — tähtaeg jääb seetõttu avatuks ja märge vajab
+        registris ülevaatamist
       </p>
     {% endif %}
 
