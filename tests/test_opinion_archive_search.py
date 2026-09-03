@@ -1289,6 +1289,54 @@ def test_an_incremental_refresh_matches_a_clean_rebuild(held, normal_matter):
     assert archive_index_findings() == []
 
 
+def test_cataloguing_a_filing_pays_nothing_for_a_move_that_cannot_have_happened(
+    held, django_assert_num_queries
+):
+    """The performance guard on `pre_save`, and it caught a real defect.
+
+    A catalogue writes one of these per occurrence — 767 in one pass over the
+    real archive — and `pre_save` reads the stored binary to see whether the row
+    is moving. It must not do that for a row that is being created, and
+    `BaseModel` fills the primary key in from a `uuid7` default, so the usual
+    `instance.pk is None` test is false for every unsaved instance here. It has
+    to ask `_state.adding`, and this is what says so: one INSERT, no SELECT.
+    """
+    batch = OpinionArchiveBatch.objects.first()
+    assert batch is not None
+    with django_assert_num_queries(1):
+        OpinionArchiveItem.objects.create(
+            batch=batch,
+            archive_sha256="a" * 64,
+            archive_relative_path="Opinions/kataloogitud/uus.pdf",
+            original_filename="uus.pdf",
+            sha256="f" * 64,
+            size_bytes=10,
+            detected_type="application/pdf",
+            binary=None,
+        )
+
+
+def test_one_filing_refreshes_one_letter_and_no_others(held):
+    """Bounded, which is the other half of putting this in the transaction.
+
+    Three letters held; touch one. The other two must not be rewritten, and a
+    rebuild afterwards must find nothing to do — which is the same statement
+    made from the other side.
+    """
+    first, second = held
+    third = hold(sha="e" * 64, title="Kolmas", paths=["Opinions/kolmas.pdf"])
+    rebuild_archive_index()
+    stamps = dict(OpinionArchiveSearchDocument.objects.values_list("binary_id", "indexed_at"))
+
+    a_filing(first, path="Opinions/2025/kuues.pdf", filename="kuues.pdf")
+
+    after = dict(OpinionArchiveSearchDocument.objects.values_list("binary_id", "indexed_at"))
+    assert after[first.pk] != stamps[first.pk]
+    assert after[second.pk] == stamps[second.pk]
+    assert after[third.pk] == stamps[third.pk]
+    assert rebuild_archive_index().written == 0
+
+
 # ---------------------------------------------------------------------------
 # Drift: what `verify` can now see
 # ---------------------------------------------------------------------------

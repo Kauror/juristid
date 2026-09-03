@@ -278,19 +278,27 @@ def note_occurrence_move(sender: type[OpinionArchiveItem], instance: Any, **kwar
 
     The same shape `app/search/signals.py` uses for a rename, and for the same
     three reasons: it runs on `pre_save`, it believes `update_fields`, and it
-    compares rather than assuming. The suspension test comes first, ahead of the
-    lookup, so a bulk writer that has suspended pays nothing per row.
+    compares rather than assuming. Both free tests come before the lookup, so a
+    bulk writer that has suspended pays nothing per row and neither does a
+    create.
+
+    **`_state.adding`, never `pk is None`.** `BaseModel` fills the primary key in
+    from a `uuid7` default, so an unsaved instance already has one and the usual
+    test for a creation is false for every row here. Cataloguing an archive is
+    767 creations in one pass, and getting this wrong would have made each of
+    them pay a SELECT for a move that cannot have happened. There is a query
+    count in the suite rather than a comment.
 
     **No production path reassigns an occurrence today** and the guard is kept
     anyway. `materialize` is the only writer that sets `binary`, it sets it only
     where it was null, and it does so with a queryset `update()` that no signal
     sees at all — which is why that path owes the bounded refresh it now pays.
     What this covers is the shell session and the next writer, and the cost of
-    covering it is one indexed primary-key lookup on a model written once per
-    filing.
+    covering it is one indexed primary-key lookup on a model that is otherwise
+    written once per filing.
     """
     instance._archive_binary_before = None
-    if instance.pk is None or archive_indexing_is_suspended():
+    if instance._state.adding or archive_indexing_is_suspended():
         return
     update_fields = kwargs.get("update_fields")
     if update_fields is not None and "binary" not in set(update_fields):
