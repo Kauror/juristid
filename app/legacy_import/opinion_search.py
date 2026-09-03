@@ -212,66 +212,23 @@ def _matches_row(row: OpinionArchiveSearchDocument, values: dict[str, Any]) -> b
 
 def _row_values(binary: OpinionArchiveBinary) -> dict[str, Any]:
     """Everything the projection says about one letter, computed from canon."""
-    occurrences = list(
-        OpinionArchiveItem.objects.filter(binary=binary).values(
-            "archive_relative_path",
-            "original_filename",
-            "filename_title",
-            "filename_recipient",
-            "filename_date",
-            "sha256",
-        )
-    )
-    metadata = list(
-        OpinionArchiveMetadata.objects.filter(item__binary=binary).values(
-            "title", "recipient_raw", "recipient_normalized", "document_date", "external_id"
-        )
-    )
-    candidates = list(
-        OpinionMatchCandidate.objects.filter(item__binary=binary)
-        .exclude(state=OpinionCandidateState.SUPERSEDED)
-        .values("match_class", "state", "excel_reference")
-    )
     text = getattr(binary, "text", None)
-
-    title = _first(
-        [occurrence["filename_title"] for occurrence in occurrences]
-        + [row["title"] for row in metadata]
-    )
-    recipient = _first(
-        [occurrence["filename_recipient"] for occurrence in occurrences]
-        + [row["recipient_raw"] for row in metadata]
-    )
-    document_date = _first(
-        [occurrence["filename_date"] for occurrence in occurrences]
-        + [row["document_date"] for row in metadata]
-    )
-
-    identifiers = _unique(
-        [binary.sha256]
-        + [occurrence["original_filename"] for occurrence in occurrences]
-        + [row["external_id"] for row in metadata]
-        + [candidate["excel_reference"] for candidate in candidates]
-    )
-    paths = _unique(occurrence["archive_relative_path"] for occurrence in occurrences)
-
     linked = OpinionArchiveMatterLink.objects.filter(binary=binary)
     has_submission = OpinionSubmissionImport.objects.filter(item__binary=binary).exists()
+    candidates = _candidate_rows(binary=binary)
 
     return {
-        "title": title or "",
-        "recipient": recipient or "",
-        "occurrence_paths": "\n".join(paths),
-        "identifiers": "\n".join(identifiers),
+        **_occurrence_values(
+            sha256=binary.sha256,
+            occurrences=_occurrence_rows(binary=binary),
+            metadata=_metadata_rows(binary=binary),
+            candidates=candidates,
+        ),
         "body_text": text.body if text is not None and text.has_body else "",
-        "document_date": document_date,
-        "source_year": document_date.year if document_date else None,
-        "match_class": _first([candidate["match_class"] for candidate in candidates]) or "",
-        "review_state": _review_state(candidates),
+        **_candidate_values(candidates),
         "has_body_text": bool(text is not None and text.has_body),
         "is_linked": linked.exists(),
         "has_submission": has_submission,
-        "occurrence_count": len(occurrences),
         "index_version": ARCHIVE_INDEX_VERSION,
     }
 
@@ -317,6 +274,159 @@ def _unique(values: Any) -> list[str]:
         if text and text not in seen:
             seen.append(text)
     return seen
+
+
+def _occurrence_rows(*, binary: Any = None) -> list[dict[str, Any]]:
+    """The occurrence rows the projection reads, in the order it reads them in.
+
+    One definition, used by the row builder and by the drift check, for the same
+    reason `_candidate_rows` has one: a verifier that fetched its own columns in
+    its own order would be checking itself rather than the projection.
+
+    Only materialised occurrences. An `OpinionArchiveItem` with no binary is a
+    catalogued path whose bytes nobody has copied yet, and there is no row for it
+    to contribute to.
+
+    The order is the model's own (`filename_date`, then `original_filename`), and
+    it is what makes `title`, `recipient` and `document_date` well defined when a
+    letter is filed at several paths. Narrowing to one binary leaves the relative
+    order of that binary's rows unchanged, so the per-row caller and the
+    corpus-wide one see the same sequence for the same letter.
+    """
+    rows = (
+        OpinionArchiveItem.objects.filter(binary=binary)
+        if binary is not None
+        else OpinionArchiveItem.objects.filter(binary__isnull=False)
+    )
+    # `values()` is typed as a TypedDict by the stubs, which is narrower than
+    # either caller wants; the row shape is settled by `_occurrence_values`.
+    selected: Any = rows.values(
+        "binary_id",
+        "archive_relative_path",
+        "original_filename",
+        "filename_title",
+        "filename_recipient",
+        "filename_date",
+        "sha256",
+    )
+    return list(selected)
+
+
+def _metadata_rows(*, binary: Any = None) -> list[dict[str, Any]]:
+    """KodaDash's reading of those occurrences, on the same terms.
+
+    Occurrence-scoped like the candidates: `OpinionArchiveMetadata.item` is
+    `CASCADE`, so removing an occurrence removes the reading of it, and the
+    fallback title, recipient, date and external id it contributed go with it.
+    """
+    rows = (
+        OpinionArchiveMetadata.objects.filter(item__binary=binary)
+        if binary is not None
+        else OpinionArchiveMetadata.objects.filter(item__binary__isnull=False)
+    )
+    selected: Any = rows.values(
+        "item__binary_id",
+        "title",
+        "recipient_raw",
+        "recipient_normalized",
+        "document_date",
+        "external_id",
+    )
+    return list(selected)
+
+
+def _occurrence_values(
+    *,
+    sha256: str,
+    occurrences: Sequence[Mapping[str, Any]],
+    metadata: Sequence[Mapping[str, Any]],
+    candidates: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """The columns a letter's live occurrences decide.
+
+    Extracted for the same reason `_candidate_values` was: the row builder and
+    `archive_index_findings` must not be able to disagree about what the
+    projection *should* say. Every value here moves when an occurrence is
+    catalogued, removed or moved to another binary — including `identifiers`,
+    which unions the occurrence's own filename with the external ids and register
+    references hanging off it, and would otherwise go stale behind the two
+    obvious columns.
+
+    `sha256` is the binary's own and is passed in rather than looked up: it is
+    the one identifier that does not depend on the occurrences at all, and it is
+    what keeps a letter with no occurrences left findable by its hash.
+    """
+    title = _first(
+        [occurrence["filename_title"] for occurrence in occurrences]
+        + [row["title"] for row in metadata]
+    )
+    recipient = _first(
+        [occurrence["filename_recipient"] for occurrence in occurrences]
+        + [row["recipient_raw"] for row in metadata]
+    )
+    document_date = _first(
+        [occurrence["filename_date"] for occurrence in occurrences]
+        + [row["document_date"] for row in metadata]
+    )
+    identifiers = _unique(
+        [sha256]
+        + [occurrence["original_filename"] for occurrence in occurrences]
+        + [row["external_id"] for row in metadata]
+        + [candidate["excel_reference"] for candidate in candidates]
+    )
+    paths = _unique(occurrence["archive_relative_path"] for occurrence in occurrences)
+    return {
+        "title": title or "",
+        "recipient": recipient or "",
+        "document_date": document_date,
+        "source_year": document_date.year if document_date else None,
+        "identifiers": "\n".join(identifiers),
+        "occurrence_paths": "\n".join(paths),
+        "occurrence_count": len(occurrences),
+    }
+
+
+def _candidate_rows(*, binary: Any = None) -> list[dict[str, Any]]:
+    """The candidate rows the projection reads, in the order it reads them in.
+
+    One definition, used by the row builder and by the drift check, because two
+    would come apart and the drift check would then be measuring itself rather
+    than the projection.
+
+    ``SUPERSEDED`` is excluded here and nowhere else. A retired proposal is the
+    record of a belief that was replaced, so a workspace filtering on
+    `review_state` must not find a letter under a state nothing holds any more
+    — which is also why superseding a row moves the projection at all.
+
+    The order is the model's own (`match_class` first), and it is what makes
+    `match_class` below well defined. Narrowing to one binary leaves the
+    relative order of that binary's rows unchanged, so the per-row caller and
+    the corpus-wide one see the same sequence for the same letter.
+    """
+    rows = OpinionMatchCandidate.objects.exclude(state=OpinionCandidateState.SUPERSEDED)
+    rows = (
+        rows.filter(item__binary=binary)
+        if binary is not None
+        else rows.filter(item__binary__isnull=False)
+    )
+    # The stubs type `values()` as a TypedDict, which is narrower than either
+    # caller wants and not assignable to the plain mapping they share. The row
+    # shape is settled by `_candidate_values` reading it, not by this line.
+    selected: Any = rows.values("item__binary_id", "match_class", "state", "excel_reference")
+    return list(selected)
+
+
+def _candidate_values(candidates: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The two projected columns a letter's live candidates decide.
+
+    Extracted so the row builder and `archive_index_findings` cannot disagree
+    about what the projection *should* say: a verifier carrying its own priority
+    order would report drift where there is none and miss it where there is.
+    """
+    return {
+        "match_class": _first(candidate["match_class"] for candidate in candidates) or "",
+        "review_state": _review_state(candidates),
+    }
 
 
 def _review_state(candidates: Sequence[Mapping[str, Any]]) -> str:
@@ -512,4 +622,145 @@ def archive_index_findings() -> list[str]:
     if submission_drift:
         findings.append(f"{submission_drift} real ei ühti arvamuse olek kanooniliste kirjetega")
 
+    findings.extend(_candidate_drift_findings())
+    findings.extend(_occurrence_drift_findings())
+    return findings
+
+
+def _by_binary(rows: Iterable[Mapping[str, Any]], key: str) -> dict[Any, list[Mapping[str, Any]]]:
+    """Corpus-wide rows, gathered under the binary each one describes.
+
+    The drift checks read the whole corpus in a handful of queries and then walk
+    it, rather than asking per row: a few hundred letters is a walk, and a query
+    per letter is a corpus-sized loop inside a diagnostic.
+    """
+    grouped: dict[Any, list[Mapping[str, Any]]] = {}
+    for row in rows:
+        grouped.setdefault(row[key], []).append(row)
+    return grouped
+
+
+def _candidate_drift_findings() -> list[str]:
+    """Where the projection and the live candidates disagree about a letter.
+
+    `review_state` and `match_class` are the other two derived columns, and they
+    come from `OpinionMatchCandidate` — a relation that, like the two above,
+    nothing about a binary touches. A reviewer rejecting a letter, a rerun
+    superseding a proposal, an apply marking one APPLIED: each moves what the
+    projection should say without moving the binary, and every check above
+    passes cleanly throughout.
+
+    Computed through the same two helpers the row builder uses rather than
+    re-derived in SQL. `review_state` has a priority order and `match_class`
+    depends on the model's ordering; a second implementation of either would be
+    checking itself. Two queries and a walk over a few hundred rows, which is
+    what this costs and what a corpus-wide join would cost anyway.
+
+    Both directions, as above. A row still reading `Ootel` after a rejection is
+    the common case; a row claiming a decision no live candidate justifies is
+    the rarer and worse one, because the queue would then be filtering on
+    something nobody said.
+    """
+    by_binary = _by_binary(_candidate_rows(), "item__binary_id")
+
+    class_drift = state_drift = 0
+    stored = OpinionArchiveSearchDocument.objects.values_list(
+        "binary_id", "match_class", "review_state"
+    )
+    for binary_id, match_class, review_state in stored.iterator():
+        canonical = _candidate_values(by_binary.get(binary_id, []))
+        class_drift += int(canonical["match_class"] != match_class)
+        state_drift += int(canonical["review_state"] != review_state)
+
+    findings: list[str] = []
+    if state_drift:
+        findings.append(f"{state_drift} real ei ühti ülevaatuse olek elusate kandidaatidega")
+    if class_drift:
+        findings.append(f"{class_drift} real ei ühti sidumise klass elusate kandidaatidega")
+    return findings
+
+
+def _occurrence_drift_findings() -> list[str]:
+    """Where the projection and the live occurrences disagree about a letter.
+
+    The fourth relation of the same shape, and the one the other three hang off.
+    `OpinionArchiveItem` is what says a letter was found at this path under this
+    name, and `occurrence_count`, `occurrence_paths`, `identifiers`, `title`,
+    `recipient` and `document_date` are all read off the live set of them at
+    index time. Removing an occurrence therefore moves six columns at once,
+    takes that occurrence's metadata and candidates with it — and, before the
+    handlers in `opinion_search_signals`, left the row claiming the path, the
+    filename and the count of a filing that no longer exists, with every check
+    above reporting a clean run.
+
+    Both directions, like the checks above, and inherently so: a stale extra
+    path, a missing one, a count that never moved and an identifier left behind
+    are all the recomputed value differing from the stored one.
+
+    Computed through `_occurrence_values` rather than re-derived in SQL, for the
+    reason `_candidate_drift_findings` gives: the precedence between an
+    occurrence's filename and KodaDash's reading of it is the row builder's, and
+    a verifier carrying a second copy of it would be checking itself.
+    """
+    occurrences = _by_binary(_occurrence_rows(), "binary_id")
+    metadata = _by_binary(_metadata_rows(), "item__binary_id")
+    candidates = _by_binary(_candidate_rows(), "item__binary_id")
+
+    count_drift = path_drift = identifier_drift = heading_drift = 0
+    stored = OpinionArchiveSearchDocument.objects.values_list(
+        "binary_id",
+        "binary__sha256",
+        "occurrence_count",
+        "occurrence_paths",
+        "identifiers",
+        "title",
+        "recipient",
+        "document_date",
+        "source_year",
+    )
+    for (
+        binary_id,
+        sha256,
+        stored_count,
+        stored_paths,
+        stored_identifiers,
+        stored_title,
+        stored_recipient,
+        stored_date,
+        stored_year,
+    ) in stored.iterator():
+        canonical = _occurrence_values(
+            sha256=sha256,
+            occurrences=occurrences.get(binary_id, []),
+            metadata=metadata.get(binary_id, []),
+            candidates=candidates.get(binary_id, []),
+        )
+        count_drift += int(canonical["occurrence_count"] != stored_count)
+        path_drift += int(canonical["occurrence_paths"] != stored_paths)
+        identifier_drift += int(canonical["identifiers"] != stored_identifiers)
+        # One finding for the three columns a letter is *described* by, because
+        # they move together: they are the first occurrence's filename fields,
+        # falling back to KodaDash's reading of it, and `source_year` is only
+        # `document_date`'s year.
+        heading_drift += int(
+            (
+                canonical["title"],
+                canonical["recipient"],
+                canonical["document_date"],
+                canonical["source_year"],
+            )
+            != (stored_title, stored_recipient, stored_date, stored_year)
+        )
+
+    findings: list[str] = []
+    if count_drift:
+        findings.append(f"{count_drift} real ei ühti esinemiste arv kataloogitud kirjetega")
+    if path_drift:
+        findings.append(f"{path_drift} real ei ühti arhiiviteed kataloogitud kirjetega")
+    if identifier_drift:
+        findings.append(f"{identifier_drift} real ei ühti tunnused kataloogitud kirjetega")
+    if heading_drift:
+        findings.append(
+            f"{heading_drift} real ei ühti pealkiri, saaja või kuupäev kataloogitud kirjetega"
+        )
     return findings

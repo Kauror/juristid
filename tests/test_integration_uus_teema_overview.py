@@ -41,7 +41,13 @@ from app.taxonomy.models import PolicyArea
 from app.workflow.enums import ActionKind
 from app.workflow.models import NextAction
 from tests import factories
-from tests.test_overview_drilldowns import list_claims, shown_total
+from tests.test_overview_drilldowns import (
+    destination_ids,
+    list_claims,
+    register_claims,
+    shown_total,
+    walk,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -140,13 +146,23 @@ def test_count_and_list_still_agree_once_a_matter_arrives_this_way(
     disagree. On the merged department strip a figure and its link are one
     `register_population` call built from the same parameters, which is why that
     scope is not walked a second time here.
-    """
-    page = ov.build_overview(specialist, scope=scope)
-    claims = list_claims(page)
-    assert claims, f"{scope} rendered no list destinations at all"
 
-    for claim in claims:
+    The promise has two halves now, so re-asking it asks both: the destination
+    holds that many rows, and it holds *those* rows. Losing this Matter out of a
+    list while some other row kept the total intact is exactly the shape a
+    count-only check cannot see, and it is the shape a newly arrived Matter is
+    most likely to produce.
+    """
+    _, claims = walk(specialist, timezone.localdate(), scope=scope)
+    listed = list_claims(claims)
+    assert listed, f"{scope} rendered no list destinations at all"
+
+    for claim in listed:
         assert shown_total(signed_in, claim.url) == claim.count, claim
+
+    for claim in register_claims(claims):
+        assert len(claim.expected) == claim.count, claim
+        assert destination_ids(signed_in, claim.url) == claim.expected, claim
 
 
 def test_the_new_matter_is_reachable_from_at_least_one_number(
