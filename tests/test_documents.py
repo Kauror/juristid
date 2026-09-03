@@ -391,7 +391,7 @@ def test_prune_leaves_an_object_alone_when_age_cannot_be_established(specialist,
     assert "age-unknown" in output.getvalue()
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_concurrent_writers_get_distinct_version_numbers():
     """Two simultaneous captures must not race to the same version number."""
     matter = factories.MatterFactory()

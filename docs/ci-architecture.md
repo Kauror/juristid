@@ -93,7 +93,9 @@ first, and only then consider the split. Three things are worth knowing:
   of files. `tests/test_ci_sharding.py` normally catches that first.
 * **A failure that only appears in a shard** and not in the whole suite is an
   order dependency between test files. Reproduce it by running the shard's file
-  list in order; do not paper over it by moving the file.
+  list in order; do not paper over it by moving the file. The one such
+  dependency this repository is known to have had is closed, and guarded — see
+  "The order dependency it turned up, since closed".
 
 ## Visual regression runs in its own world
 
@@ -283,21 +285,51 @@ shard can be, whatever the shard count.
 `pytest -n` was benchmarked and rejected on two grounds, in that order: its work
 assignment is not reproducible, and running the whole suite through one
 PostgreSQL and four contended cores was measurably slower than the same work on
-independent runners. It also turned up a latent order dependency in the suite
-that independent shards do not (see below).
+independent runners. It also turned up an order dependency in the
+suite that independent shards do not (see below).
 
-## A latent order dependency, reported not fixed
+## The order dependency it turned up, since closed
 
 Under `pytest -n --dist loadfile`, which reorders whole files across workers,
-between 28 and 82 tests fail with `StageVocabulary.DoesNotExist` or
+between 28 and 82 tests failed with `StageVocabulary.DoesNotExist` or
 `PolicyArea.DoesNotExist`. Those rows are created by data migrations, and a
-`django_db(transaction=True)` test flushes every table at teardown without
-restoring them — so the serial suite is green partly because of the order its
-files happen to run in.
+`django_db(transaction=True)` test flushes every table at teardown; nothing
+re-runs a historical migration, so they were gone for whatever ran next.
 
-The sharding here does not depend on that luck being repeated: whole files, in
-collection order, means every shard is an order-preserving subsequence of the
-green serial run. But the fragility is real, it is in the test fixtures rather
-than in the application, and it will bite the next person who reorders anything.
-It is out of scope for a CI-performance change and is written down here so it is
-not rediscovered from scratch.
+Two things about that are worth keeping, because both were misread at the time.
+
+**The serial suite was not green by luck.** pytest-django sorts every collected
+item so that non-transactional database tests run before transactional ones, and
+the sort is stable — so within one process the flush can only ever land after
+the last test that needed the seeded rows. The sharding here inherits that
+directly: whole files, in collection order, means every shard is an
+order-preserving subsequence of the green serial run, and each shard is its own
+process that does its own sort.
+
+**What the sort does not survive is a second process.** `--reuse-db` after any
+transactional run picks up the flushed database, and a run abandoned by `-x`
+mid-file leaves one behind. That is a real failure people hit locally, and it
+reproduces in two ordinary invocations with no xdist and no plugin:
+
+```
+pytest --create-db --reuse-db tests/test_documents.py::test_concurrent_writers_get_distinct_version_numbers
+pytest --reuse-db tests/test_stage_vocabulary_seed.py::test_ten_canonical_stages_are_seeded
+```
+
+The contract now is that a test whose database teardown is a flush leaves the
+migrated baseline restored for whatever runs next — this process, the next
+process, or a worker taking files in any order at all. Three pieces hold it up:
+
+* every transactional test declares `serialized_rollback=True`, which is what
+  makes Django snapshot the migrated database once at session set-up, and what
+  stops its flush re-creating content types under fresh primary keys;
+* a teardown hook in `tests/conftest.py` puts that snapshot back after the
+  test's database teardown, through `tests/reference_baseline.py`;
+* `tests/test_reference_data_isolation.py` fails if a new transactional test
+  arrives without the marker, and fails if the restore stops happening.
+
+The restore is Django's own serialized rollback, moved to the other boundary:
+`serialized_rollback=True` alone restores the baseline *before* a transactional
+test, which is not the same question. Nothing in it restates a vocabulary — the
+snapshot is whatever `migrate` produced — so a reference-data migration added
+later is covered without touching any of it.

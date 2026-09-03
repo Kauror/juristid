@@ -26,7 +26,10 @@ from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
 from tests import factories
 
-pytestmark = pytest.mark.django_db(transaction=True)
+# Real transactions, so the teardown is a flush rather than a rollback and the
+# migrated reference data goes with it. `serialized_rollback=True` is how the
+# suite's isolation contract is declared — see tests/reference_baseline.py.
+pytestmark = pytest.mark.django_db(transaction=True, serialized_rollback=True)
 
 LOCK_WAIT_TIMEOUT = 15
 
