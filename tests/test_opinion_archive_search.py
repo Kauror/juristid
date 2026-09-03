@@ -623,8 +623,13 @@ def test_a_bulk_writer_that_suspends_owes_a_bounded_refresh(held, specialist):
 # by the state before it.
 
 
-def a_candidate(binary, *, klass=OpinionMatchClass.UNMATCHED, state=None, matter=None):
-    """One proposal about the first occurrence of these bytes."""
+def a_candidate(binary, *, klass=OpinionMatchClass.UNMATCHED, matter=None):
+    """One PENDING proposal about the first occurrence of these bytes.
+
+    Always PENDING, and the tests that want another state save it afterwards:
+    the transition is what the handler has to notice, and a row created in its
+    final state would prove only that creation refreshes.
+    """
     item = OpinionArchiveItem.objects.filter(binary=binary).order_by("pk").first()
     assert item is not None
     return OpinionMatchCandidate.objects.create(
@@ -632,7 +637,7 @@ def a_candidate(binary, *, klass=OpinionMatchClass.UNMATCHED, state=None, matter
         matter=matter,
         batch=item.batch,
         match_class=klass,
-        state=state or OpinionCandidateState.PENDING,
+        state=OpinionCandidateState.PENDING,
     )
 
 
