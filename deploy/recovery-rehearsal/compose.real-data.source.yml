@@ -1,0 +1,33 @@
+# Juristid — the optional historical-source overlay for a real-data rehearsal.
+#
+# FOR ISOLATED RECOVERY REHEARSAL ONLY. Use it only with
+# `compose.real-data.yml`, and only when the rehearsal genuinely needs the
+# source corpus:
+#
+#   docker compose -p juristid-recovery-rehearsal \
+#     -f deploy/recovery-rehearsal/compose.real-data.yml \
+#     -f deploy/recovery-rehearsal/compose.real-data.source.yml \
+#     run --rm web python manage.py deployment_readiness
+#
+# WHY IT IS A SEPARATE FILE
+#
+# `/mnt/user/juristid-main/source` is production's read-only input corpus. It is
+# **not in a backup set** and a restore does not recover it, so mounting it into
+# a rehearsal proves that the application is compatible with the corpus — never
+# that the corpus itself is recoverable. Keeping it out of the base file makes
+# that boundary something you have to opt into by naming this file, rather than
+# something a reader has to notice in a comment.
+#
+# It is mounted `:ro`, and there is no form of this overlay that mounts it
+# writable. That is the one production path a rehearsal may touch at all.
+#
+# Reports must say which of the two shapes was run. The 2026-09-03 rehearsal
+# mounted the corpus read-only and recorded it as *not* part of the backup-set
+# proof; see `deploy/unraid-main/RECOVERY.md`.
+
+services:
+  web:
+    environment:
+      HISTORICAL_SOURCE_ROOT: /srv/historical-source
+    volumes:
+      - ${JURISTID_REHEARSAL_SOURCE_ROOT:?set it to the read-only source corpus, e.g. /mnt/user/juristid-main/source}:/srv/historical-source:ro

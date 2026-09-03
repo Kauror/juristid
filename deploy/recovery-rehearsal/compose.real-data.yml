@@ -1,0 +1,209 @@
+# Juristid — FOR ISOLATED RECOVERY REHEARSAL ONLY.
+#
+# ============================================================================
+# THIS FILE RESTORES A REAL PRODUCTION BACKUP SET INTO A DISPOSABLE STACK.
+# IT IS NOT A DEPLOYMENT AND MUST NEVER BECOME ONE.
+# ============================================================================
+#
+# `compose.yml` beside this file is the *synthetic* rehearsal: it publishes a
+# host port and embeds a password, because nothing real may ever be pointed at
+# it. This file is the other half — the one a real set is restored into — and
+# every affordance that made the synthetic file convenient is deliberately gone.
+#
+# It exists because the 2026-09-03 rehearsal against a real production set had
+# to invent a temporary compose file outside the repository, which is the kind
+# of thing that gets re-invented differently under pressure. The next rehearsal
+# uses this.
+#
+# WHAT IT GUARANTEES, STRUCTURALLY
+#
+#   * no `ports:` — nothing is reachable from the host or the network;
+#   * `internal: true` — the containers cannot route off the bridge at all;
+#   * no tunnel, no Cloudflare, no authenticator anybody can reach;
+#   * `extractor` and `searchindex` sit behind the `workers` profile, so a
+#     plain `up` cannot start something that writes to the restored database;
+#   * `web` runs `sleep infinity`, never gunicorn — the application is driven
+#     with `run --rm`, so a rehearsal never serves a request;
+#   * no secret in this file: the environment comes from a file you generate;
+#   * every writable mount is a path you had to supply by name. There is no
+#     default, so a mistyped or forgotten variable stops Compose instead of
+#     quietly binding production.
+#
+# WHAT IT CANNOT GUARANTEE
+#
+# Compose cannot validate that the path you supply is a scratch path. It can
+# only refuse to guess one. If you point `JURISTID_REHEARSAL_DATA_ROOT` at
+# `/mnt/user/appdata/juristid-main` you will write to production, and no file in
+# this repository can stop you. What this file does remove is every way of doing
+# it *by accident*: the project name is not production's, the container names
+# are not production's, and nothing here has a default that resolves anywhere
+# near it.
+#
+# THE PROJECT NAME
+#
+# `juristid-recovery-rehearsal` is one of exactly two projects
+# `scripts/deploy/lib.sh` accepts; `juristid-test` is refused by name and
+# everything else is refused as unknown. Do not change it: the scripts are the
+# point of the rehearsal, and a project they refuse is a rehearsal that proves
+# nothing.
+#
+# HOW TO RUN ONE
+#
+#   1. Make a scratch root on a disk that is not production's, and inside it
+#      `postgres/`, `evidence/`, `legacy-source/`, `derivatives/`, `output/`.
+#      The application runs as uid 10001; `chown -R 10001:10001` the three
+#      storage directories or the restore lands unreadable.
+#
+#   2. Generate an environment file from `real-data.env.example` beside this
+#      one. Generate the secrets on the host — they are throwaway values for a
+#      stack nobody logs into, and they must not be production's.
+#
+#   3. Export the four required variables:
+#
+#        JURISTID_REHEARSAL_ENV_FILE    the file from step 2
+#        JURISTID_REHEARSAL_DATA_ROOT   the scratch root from step 1
+#        JURISTID_REHEARSAL_IMAGE_TAG   the exact deployed image tag
+#        JURISTID_REHEARSAL_PGDATA      the scratch postgres directory
+#
+#      The image tag has no default on purpose. A restore is only meaningful
+#      against the release you intend to come back on, and `:local` would let a
+#      rehearsal pass against an image nobody deployed.
+#
+#   4. Bring up only the database, verify the set at level 2, restore it, then
+#      drive the application with `run --rm`. The commands are in
+#      `deploy/unraid-main/RECOVERY.md`, under "Rehearsing against a real set".
+#
+#   5. Tear the stack down and delete the scratch root. It holds real member
+#      material and it is your job to remove it. Teardown for this stack uses
+#      the volume-removing form of `docker compose down`, which is forbidden in
+#      production and correct here; RECOVERY.md says which.
+#
+# `deploy/unraid-main/compose.yml` remains the only file that describes
+# production. Nothing here may be copied into it.
+
+name: juristid-recovery-rehearsal
+
+services:
+  db:
+    # The same major as production, and it has to be: a dump taken from
+    # PostgreSQL 18 is restored by PostgreSQL 18 (docs/adr/0022). The 2026-09-03
+    # rehearsal restored an 18.6 dump into 18.6.
+    image: postgres:18
+    container_name: juristid-recovery-rehearsal-real-db
+    # No `restart:`. A rehearsal database that comes back after a reboot is a
+    # copy of member material nobody remembered to delete.
+    env_file:
+      - ${JURISTID_REHEARSAL_ENV_FILE:?set it to the throwaway env file you generated from real-data.env.example}
+    environment:
+      POSTGRES_DB: juristid
+      POSTGRES_USER: juristid
+      # POSTGRES_PASSWORD comes from the env file. It is deliberately absent
+      # here: this file is committed, and a committed password is a password.
+    volumes:
+      # The 18 image keeps its cluster under this path; production mounts the
+      # same parent, so the restore exercises the same layout.
+      - ${JURISTID_REHEARSAL_PGDATA:?set it to a scratch postgres directory, never production appdata}:/var/lib/postgresql
+    networks:
+      - rehearsal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U juristid -d juristid"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  web:
+    # The exact image of the release being rehearsed. No fallback: see step 3.
+    image: juristid-main-web:${JURISTID_REHEARSAL_IMAGE_TAG:?set it to the exact deployed image tag, e.g. the short SHA production is running}
+    container_name: juristid-recovery-rehearsal-real-web
+    # Never gunicorn. The rehearsal reads the restored data with one-off
+    # commands — `run --rm web python manage.py …` — and a stack that cannot
+    # serve is a stack that cannot be reached by mistake.
+    command: ["sleep", "infinity"]
+    env_file:
+      - ${JURISTID_REHEARSAL_ENV_FILE:?set it to the throwaway env file you generated from real-data.env.example}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      EVIDENCE_ROOT: /app/evidence
+      DERIVATIVE_ROOT: /app/derivatives
+      LEGACY_SOURCE_ROOT: /app/legacy-source
+      SEED_DEV_DATA: "0"
+      JURISTID_RUNTIME: deployed
+      # HISTORICAL_SOURCE_ROOT is deliberately unset. The source corpus is not
+      # in a backup set and is not part of what a restore proves, so a rehearsal
+      # does not mount it unless it is explicitly asked for — which is what
+      # `compose.real-data.source.yml` is for.
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ${JURISTID_REHEARSAL_DATA_ROOT:?set it to your scratch root, never production appdata}/evidence:/app/evidence
+      - ${JURISTID_REHEARSAL_DATA_ROOT:?set it to your scratch root, never production appdata}/derivatives:/app/derivatives
+      - ${JURISTID_REHEARSAL_DATA_ROOT:?set it to your scratch root, never production appdata}/legacy-source:/app/legacy-source
+    networks:
+      - rehearsal
+
+  # -- behind a profile, so `up` cannot start them -------------------------
+  #
+  # Both write to the restored database. During a restore rehearsal that is
+  # usually wrong: the point is to observe what came back, and a worker that
+  # starts on its own changes it before anybody looks. They are here so that a
+  # rehearsal which *does* want to prove the workers can ask for them:
+  #
+  #   docker compose … --profile workers up -d extractor
+  #
+  extractor:
+    profiles: ["workers"]
+    image: juristid-main-web:${JURISTID_REHEARSAL_IMAGE_TAG:?set it to the exact deployed image tag, e.g. the short SHA production is running}
+    container_name: juristid-recovery-rehearsal-real-extractor
+    command: ["python", "manage.py", "run_extraction_worker"]
+    env_file:
+      - ${JURISTID_REHEARSAL_ENV_FILE:?set it to the throwaway env file you generated from real-data.env.example}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      EVIDENCE_ROOT: /app/evidence
+      DERIVATIVE_ROOT: /app/derivatives
+      LEGACY_SOURCE_ROOT: /app/legacy-source
+      SEED_DEV_DATA: "0"
+      JURISTID_RUNTIME: deployed
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ${JURISTID_REHEARSAL_DATA_ROOT:?set it to your scratch root, never production appdata}/evidence:/app/evidence
+      - ${JURISTID_REHEARSAL_DATA_ROOT:?set it to your scratch root, never production appdata}/derivatives:/app/derivatives
+      - ${JURISTID_REHEARSAL_DATA_ROOT:?set it to your scratch root, never production appdata}/legacy-source:/app/legacy-source
+    networks:
+      - rehearsal
+
+  searchindex:
+    profiles: ["workers"]
+    image: juristid-main-web:${JURISTID_REHEARSAL_IMAGE_TAG:?set it to the exact deployed image tag, e.g. the short SHA production is running}
+    container_name: juristid-recovery-rehearsal-real-searchindex
+    command: ["python", "manage.py", "run_search_refresh_worker"]
+    env_file:
+      - ${JURISTID_REHEARSAL_ENV_FILE:?set it to the throwaway env file you generated from real-data.env.example}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      SEED_DEV_DATA: "0"
+      JURISTID_RUNTIME: deployed
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - rehearsal
+
+networks:
+  rehearsal:
+    name: juristid-recovery-rehearsal-internal
+    driver: bridge
+    # No route off the bridge. A stack holding real member material has no
+    # business reaching the internet, and nothing on the host has any business
+    # reaching it.
+    internal: true

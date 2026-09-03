@@ -125,8 +125,11 @@ def test_every_compose_command_names_its_project_and_its_file(runbook: Path) -> 
 def _application_stacks() -> list[Path]:
     """Stack directories that deploy the application, not just a database.
 
-    `deploy/recovery-rehearsal` is a lone `db` service for restoring a dump
-    into, so it has nothing to keep in step and is not a counter-example.
+    `deploy/recovery-rehearsal/compose.yml` is a lone `db` service for restoring
+    a dump into, so it has nothing to keep in step and is not a counter-example.
+    Its `compose.real-data.yml` sibling *does* define `web`, and is deliberately
+    not picked up here: this glob reads `compose.yml` only, and a rehearsal is
+    not a deployment. Its own contract is `test_deployment_recovery_rehearsal`.
     """
     import yaml
 
@@ -260,6 +263,65 @@ def test_the_recovery_runbook_separates_a_local_copy_from_disaster_recovery() ->
     text = (DEPLOY / "unraid-main" / "RECOVERY.md").read_text(encoding="utf-8").lower()
     assert "off-host" in text
     assert "local recovery copy" in text
+
+
+def test_the_recovery_runbook_records_the_real_set_rehearsal() -> None:
+    """A restore rehearsal against a real set is worth exactly what it recorded.
+
+    "We tested the backups once" decays into "the backups are tested", and the
+    difference is which set, which PostgreSQL, and whether the evidence bytes
+    were read or merely counted. The runbook has to carry the identifiers so a
+    later reader can tell what was actually proved from what was assumed.
+    """
+    text = (DEPLOY / "unraid-main" / "RECOVERY.md").read_text(encoding="utf-8")
+    assert "20260902T182850Z" in text, "the tested set is not named"
+    assert "03.09.2026" in text, "the rehearsal has no date"
+    assert "PostgreSQL 18" in text
+    assert "53m46s" in text, "the measured duration is not recorded"
+    assert "deep-hash verified" in text, "evidence byte verification is not recorded"
+
+
+def test_the_recovery_runbook_keeps_the_rehearsals_limits_beside_its_result() -> None:
+    """The limits are the half that gets dropped when a summary is written.
+
+    A same-host restore says nothing about losing the host; a rehearsal with
+    generated secrets says nothing about recovering the real ones; and the set
+    that was tested described the *previous* release. Each of those is a way for
+    this result to be read as broader than it is, so each has to survive in the
+    same file as the result.
+    """
+    text = (DEPLOY / "unraid-main" / "RECOVERY.md").read_text(encoding="utf-8")
+    assert "What is not yet fixed" in text
+    for finding in ("DR0", "DR1-A", "DR1-B", "DR1-C"):
+        assert finding in text, f"{finding} is not recorded"
+    lowered = text.lower()
+    for limit in (
+        "same-host, same-disk",
+        "no off-host recovery was proved",
+        "secrets and tunnel recovery were not proved",
+        "source corpus was not independently recovered",
+        "one release behind the running application",
+    ):
+        assert limit in lowered, f"the runbook no longer states: {limit}"
+
+
+def test_the_real_data_rehearsal_is_not_confused_with_the_synthetic_one() -> None:
+    """Two files, one directory, one filename fragment apart.
+
+    The synthetic stack publishes a host port. Pointing a production set at it
+    would put the register on the host's network, so the runbook that sends an
+    operator to a rehearsal has to send them to the right file and say why the
+    other one is not it.
+    """
+    text = (DEPLOY / "unraid-main" / "RECOVERY.md").read_text(encoding="utf-8")
+    assert "compose.real-data.yml" in text
+    assert "publishes a host port" in text, "the runbook does not say why not the other one"
+    for line in command_lines(text):
+        if "juristid-recovery-rehearsal" not in line:
+            continue
+        assert "compose.real-data.yml" in line, (
+            "a rehearsal command points at the synthetic stack:\n  " + line
+        )
 
 
 # -- the scripts -----------------------------------------------------------
@@ -482,6 +544,8 @@ def test_nothing_schedules_a_full_checksum_pass() -> None:
         DEPLOY / "unraid-main" / "compose.yml",
         DEPLOY / "unraid-test" / "compose.yml",
         DEPLOY / "recovery-rehearsal" / "compose.yml",
+        DEPLOY / "recovery-rehearsal" / "compose.real-data.yml",
+        DEPLOY / "recovery-rehearsal" / "compose.real-data.source.yml",
         ROOT / "docker-compose.yml",
         ROOT / "Dockerfile",
     ]

@@ -15,8 +15,10 @@ Everything below runs on the Unraid host. Nothing in it may be run against
 | Check a backup | `scripts/deploy/juristid-verify-backup.sh` — levels 1 and 2 |
 | Check a backup was taken *lately* | `scripts/deploy/juristid-check-backup-age.sh` |
 | Prove the procedure | the `recovery` job in CI, on synthetic data |
+| Prove a *real* set | `deploy/recovery-rehearsal/compose.real-data.yml` — done once, 03.09.2026, see [Rehearsing against a real set](#rehearsing-against-a-real-set) |
 | Restore | `scripts/deploy/juristid-restore.sh`, then verify, then publish |
 | Off-host copy | **not yet arranged** — see [Disaster recovery](#disaster-recovery) |
+| Known gaps | [What is not yet fixed](#what-is-not-yet-fixed) — DR0, DR1-A, DR1-B, DR1-C |
 
 ## What has to survive, and what does not
 
@@ -32,8 +34,8 @@ backing up the wrong subset is worse.
 | Derivatives | `…/juristid-main/derivatives` | rebuildable — needs no backup |
 | Search projection | inside PostgreSQL | rebuildable — comes back empty and is rebuilt |
 | Historical corpus | `/mnt/user/juristid-main/source` | source — read-only input, own recovery path |
-| Secrets | `…/juristid-main/config/juristid.env` | secret — backed up separately, never in a set |
-| Tunnel credential | `…/juristid-main/cloudflared` | secret — backed up separately, or reissued |
+| Secrets | `…/juristid-main/config/juristid.env` | secret — never in a set; **where it is backed up is not recorded** (DR1-C) |
+| Tunnel credential | `…/juristid-main/cloudflared` | secret — never in a set; reissuable, but likewise unrecorded (DR1-C) |
 
 **Derivatives are genuinely safe to skip.** Extracted text, thumbnails and the
 search index are regenerated from the evidence by
@@ -265,16 +267,82 @@ CI rehearsal uses it and how the two files in
 are named after. Name the file after the operation, not after "latest": a file
 called `latest` that is nine days old is worse than no file.
 
-What this leaves, honestly stated: **production-set restore verification today
-proves the file, not the system.** Levels 1 and 2 prove a set is intact and
-structurally right, and level 3 proves the *procedure* on synthetic data. No
-production set has been proved to restore, and nothing short of restoring one
-would prove it. Closing that gap needs a set-consistent fingerprint or a
-rehearsal against a real set, and both are open items
-(`docs/open-decisions.md`).
+What a fingerprint leaves open, and what closed it: levels 1 and 2 prove a set
+is intact and structurally right, and the CI level 3 proves the *procedure* on
+synthetic data. None of them proves that a **production** set comes back. That
+was closed on 03.09.2026 by restoring one — see
+[Rehearsing against a real set](#rehearsing-against-a-real-set) — and it stays
+closed only for the set that was tested. It is a thing that is done
+periodically, not a property the system now has.
 
 Drop `--skip-evidence-bytes` to re-hash every stored object. That reads the
 whole evidence tree, so it is a deliberate exercise rather than a routine one.
+
+### Rehearsing against a real set
+
+The CI rehearsal restores synthetic data, which proves the procedure. Once in a
+while the thing itself has to be proved: a real set, the real mirrors, the image
+that is actually deployed.
+
+**Done once, on 03.09.2026.** What it established, so the next reader does not
+re-derive it:
+
+| | |
+| --- | --- |
+| Set | `20260902T182850Z` — 18,245,754 bytes, 811 archive entries |
+| Target | an empty, disposable **PostgreSQL 18.6** cluster; production is 18.6 |
+| `pg_restore` | succeeded |
+| Duration | **≈ 53m46s** end to end — 19,893 evidence files and 755 page-XML files copied, then the database |
+| Application | `deployment_readiness` passed on the deployed image; no pending and no unknown migrations |
+| Evidence bytes | **all 19,830 objects the restored database refers to were deep-hash verified** — `recovery_fingerprint` without `--skip-evidence-bytes`, ~2m33s, and the rollup matched what the database said it should be |
+| Integrity | `check_evidence_integrity` found no missing and no truncated object; the only finding was the 63 known orphans, which are a pre-existing property of the store and restored faithfully |
+| Canonical state | the restored fingerprint was **identical to live production's** — every canonical count, the evidence rollup and the page-XML rollup |
+
+Most of the wall-clock is the evidence mirror, not the database. Treat that
+figure as one measurement on a loaded parity-backed array, not as an RTO: an
+RTO is a decision nobody has taken (`docs/open-decisions.md`).
+
+**What it did not prove.** This matters more than the result, because a
+rehearsal that is remembered as broader than it was becomes a false assurance:
+
+* **It was a same-host, same-disk exercise.** The scratch stack ran on the same
+  machine and the same array as production. It says nothing about surviving the
+  loss of either — see
+  [A backup on the same disk is not disaster recovery](#a-backup-on-the-same-disk-is-not-disaster-recovery).
+* **No off-host recovery was proved**, because there is no off-host copy to
+  recover from. Scenario D is still the one this system cannot answer.
+* **Secrets and tunnel recovery were not proved.** The rehearsal generated
+  throwaway values; it did not, and could not, demonstrate that the real
+  environment file and the tunnel credential can be recovered. See
+  [Secrets](#secrets) and [Cloudflare tunnel recovery](#cloudflare-tunnel-recovery).
+* **The source corpus was not independently recovered.** It was mounted
+  read-only from production, which proves the application is compatible with
+  it — never that the corpus itself comes back.
+* **The set was one release behind the running application.** Backups are taken
+  before a deploy, so the newest set described the previous revision. It was
+  harmless because that release carried no migration, and `deployment_readiness`
+  confirmed the schema agreed. It would not have been harmless otherwise, and
+  that is its own open item below.
+
+**Running the next one.** `deploy/recovery-rehearsal/compose.real-data.yml` is
+the stack to use; its header carries the preparation steps, and
+`real-data.env.example` beside it is the throwaway environment. Do not reuse
+`deploy/recovery-rehearsal/compose.yml` — that one is synthetic-only and
+publishes a host port. Never copy production's environment file into either.
+
+```bash
+docker compose -p juristid-recovery-rehearsal -f deploy/recovery-rehearsal/compose.real-data.yml up -d --wait db
+scripts/deploy/juristid-verify-backup.sh --project juristid-recovery-rehearsal --compose-file deploy/recovery-rehearsal/compose.real-data.yml --set /mnt/user/backups/juristid-main/sets/<stamp> --backup-root /mnt/user/backups/juristid-main --level 2
+scripts/deploy/juristid-restore.sh --project juristid-recovery-rehearsal --compose-file deploy/recovery-rehearsal/compose.real-data.yml --set /mnt/user/backups/juristid-main/sets/<stamp> --backup-root /mnt/user/backups/juristid-main --data-root <scratch root>
+docker compose -p juristid-recovery-rehearsal -f deploy/recovery-rehearsal/compose.real-data.yml run --rm -T web python manage.py deployment_readiness
+docker compose -p juristid-recovery-rehearsal -f deploy/recovery-rehearsal/compose.real-data.yml run --rm -T web python manage.py recovery_fingerprint --out /app/derivatives/fp-restored.json
+docker compose -p juristid-recovery-rehearsal -f deploy/recovery-rehearsal/compose.real-data.yml run --rm -T web python manage.py check_evidence_integrity
+```
+
+Then take the stack down with the volume-removing form of
+`docker compose down` — the one this runbook forbids everywhere else — and
+delete the scratch root. It holds real member material, the rehearsal is the
+only reason it exists, and nothing schedules its removal but you.
 
 ### `recovery_fingerprint` and `check_evidence_integrity` are not the same check
 
@@ -713,6 +781,55 @@ as an emergency.
 copy of that particular export. If it is, that is worth fixing with a single
 manual copy to a different disk, once — recorded in `docs/open-decisions.md`.
 
+### What is not yet fixed
+
+The 03.09.2026 rehearsal proved a real set restores. It also measured four
+things that are still true afterwards. They are recorded here, deliberately
+unimplemented: each one is an operations decision or a host change, and a
+repository that quietly implements those acquires policy nobody agreed to.
+
+**DR0 — canonical data, the backups and the source corpus are all on one
+physical disk.** Not merely one host: measured on 01.09.2026 and again on
+03.09.2026, production's appdata, the backup sets, the historical corpus and the
+weekly Appdata Backup destination all resolve to the same data disk. Array
+parity protects against that disk failing and against nothing else. This is the
+one that outranks everything below, and the contract a fix has to meet is in
+[What an off-host copy has to satisfy](#what-an-off-host-copy-has-to-satisfy).
+
+**DR1-A — a backup is taken before a deploy and never after, so there is no
+recovery point for the revision that is running.** The newest set always
+describes the previous release. On 03.09.2026 the deployed revision had *no*
+set of its own, and the gap was survivable only because the release in between
+carried no migration. Had it carried one, restoring the newest set would have
+produced an application ahead of its own schema, which `deployment_readiness`
+refuses — correctly, and at the worst possible moment. The fix is a backup after
+a successful deploy as well as before it, or a schedule; both are the scheduling
+decision this file already refuses to invent.
+
+**DR1-B — every operator SSH key must live in the Unraid GUI key store.**
+Registering a key through the WebGUI writes `/boot/config/ssh/root.pubkeys` and
+regenerates `/root/.ssh/authorized_keys` **from it, by replacement**. Any key
+that was appended to `authorized_keys` by hand is erased the next time anybody
+touches that screen. It happened during the 03.09.2026 rehearsal and removed
+two working keys. It presents as `Permission denied (publickey)` on a host where
+every service is healthy, which reads like a flash-drive fault and is not one;
+repeated retries then trip OpenSSH's `srclimit_penalise` and make it look worse.
+Nothing in this repository can fix it — it is a host setting — but a recovery
+runbook whose access channel can be revoked silently by an unrelated action is
+a runbook with a hole in it, so: keep operator keys in the GUI store, and check
+`stat -c %y /root/.ssh/authorized_keys` against `ls /boot/config/ssh/` before
+concluding the flash drive has failed.
+
+**DR1-C — where the secrets live is neither documented nor proved.** The backup
+manifest excludes them on the grounds that "the environment file and the tunnel
+credential are backed up separately, never here". On 03.09.2026 a search of
+`/mnt/user/backups` found no copy of either. They may well exist somewhere
+deliberate; the point is that the runbook does not say where, so nobody can
+check, and a restore that recovers the database, the evidence and the page XML
+still cannot bring the deployment back without them. See [Secrets](#secrets).
+Naming the destination is a custody decision, which is why this file records the
+gap instead of choosing one.
+
 ## Scenarios
 
 | | What happened | What it costs |
@@ -742,11 +859,21 @@ These are operations decisions, recorded rather than invented
   to invent one;
 * the **RTO** — how long it may take to come back;
 * the off-host destination and who holds its credentials;
-* **a set-consistent recovery fingerprint**, or a rehearsal against a real
-  production set. Today a fingerprint proves a round trip and levels 1–2 prove a
-  file; no production set has been proved to restore. See
+* **how often a real set is rehearsed.** One has been restored
+  ([Rehearsing against a real set](#rehearsing-against-a-real-set)), which is
+  what closed the question of whether the procedure works on the real thing.
+  Nothing schedules the next one, and a rehearsal done once is a fact about
+  03.09.2026 rather than a property of the system;
+* **a set-consistent recovery fingerprint** in the general case. The 03.09.2026
+  rehearsal got one only because nothing had been written between the dump and
+  the comparison, which is luck rather than design. See
   [Fingerprinting the live system](#fingerprinting-the-live-system) for why the
-  current backup transaction model cannot produce one, and what it would take;
+  current backup transaction model cannot produce one on demand;
+* **a recovery point for the revision that is actually deployed.** Backups are
+  taken before a deploy and nothing takes one after, so the newest set always
+  describes the previous release. Restoring it into the running image is safe
+  only while the release in between carried no migration — see
+  [What is not yet fixed](#what-is-not-yet-fixed);
 * whether the weekly Appdata Backup's ~41-minute stop is a price worth paying
   weekly, and what would have to exist first — a deliberate backup of the
   configuration and tunnel credential — before it could be narrowed or switched
