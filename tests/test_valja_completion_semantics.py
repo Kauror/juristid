@@ -453,6 +453,38 @@ def test_the_header_calls_an_outstanding_deadline_late(specialist, today):
     assert deadline.days_late == 30
 
 
+def test_a_deadline_due_today_is_neither_late_nor_a_countdown(specialist, today):
+    """The fourth header state. Due today reads «täna», not «0 p».
+
+    The boundary between the two past/future branches, and the one a header
+    gets wrong by printing a countdown of zero.
+    """
+    matter = _matter(specialist, deadline=today)
+    _mark(matter, state=OpinionSentState.BLANK)
+
+    deadline = selectors.active_deadline(matter, specialist, today=today)
+
+    assert deadline is not None
+    assert deadline.is_today is True
+    assert deadline.is_past is False
+    assert deadline.is_overdue is False
+    assert deadline.days_late == 0
+
+
+def test_a_future_deadline_still_counts_down(specialist, today):
+    """The existing behaviour, pinned so UX-010 cannot quietly remove it."""
+    matter = _matter(specialist, deadline=today + timedelta(days=45))
+    _mark(matter, state=OpinionSentState.BLANK)
+
+    deadline = selectors.active_deadline(matter, specialist, today=today)
+
+    assert deadline is not None
+    assert deadline.is_past is False
+    assert deadline.is_today is False
+    assert deadline.is_overdue is False
+    assert deadline.days_remaining == 45
+
+
 @pytest.mark.parametrize(
     ("state", "phrase"),
     [
