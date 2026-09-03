@@ -32,17 +32,28 @@ filing that no longer existed. The candidate handler fires during that cascade
 and does not help: the collector removes children before their parent, so it
 recomputed a row that still contained the occurrence being deleted.
 
+**Six, which is all of them.** The two remaining inputs are what an occurrence
+*carries*: `OpinionArchiveMetadata`, KodaDash's reading of a filing, which
+supplies the title, recipient and date the filename did not and unions its
+`external_id` into the row's `identifiers`; and `OpinionArchiveText`, the parse
+of the bytes, which is `body_text` and `has_body_text` and therefore the whole
+of the archive's full-text search. A catalogue run picking up a KodaDash
+workbook after materialisation, and an extraction or a re-extraction of a letter
+already indexed, both committed with nothing refreshing the row.
+
 **Bounded fanout, so the refresh is in the transaction.** Linking one letter,
-importing one Submission, deciding one candidate and cataloguing one filing each
-invalidate exactly one archive row, which is class A in ADR 0041's terms: the
+importing one Submission, deciding one candidate, cataloguing one filing,
+reading one row of a workbook and extracting one letter's text each invalidate
+exactly one archive row, which is class A in ADR 0041's terms: the
 handler refreshes inside the business transaction, so a committed decision and a
 findable one are one event, and a rolled-back decision takes its refresh with it.
 There is no high-fanout mutation here and therefore no durable-debt half — the
 archive projection has no equivalent of renaming an Organisation.
 
 **A whole row, never a patch.** Each handler recomputes everything `_row_values`
-knows, so a candidate's `excel_reference` — which is indexed among the row's
-`identifiers` — cannot go stale while the two obvious columns stay fresh.
+knows, so a candidate's `excel_reference` and a metadata row's `external_id` —
+both indexed among the row's `identifiers` — cannot go stale while the obvious
+columns stay fresh.
 
 Bulk writers keep their own obligation. `suspend_archive_indexing` suppresses
 these handlers and `refresh_archive_binaries` is what the caller owes in return
@@ -70,10 +81,15 @@ from django.dispatch import receiver
 
 from app.legacy_import.opinion_archive import (
     OpinionArchiveItem,
+    OpinionArchiveMetadata,
     OpinionMatchCandidate,
     OpinionSubmissionImport,
 )
-from app.legacy_import.opinion_binary import OpinionArchiveBinary, OpinionArchiveMatterLink
+from app.legacy_import.opinion_binary import (
+    OpinionArchiveBinary,
+    OpinionArchiveMatterLink,
+    OpinionArchiveText,
+)
 from app.legacy_import.opinion_search import archive_indexing_is_suspended, refresh_archive_binary
 
 
@@ -353,6 +369,223 @@ def refresh_on_occurrence_delete(
     binary with an occurrence cannot be deleted at all — and the consequence of
     being wrong is a failed delete rather than a stale row, which is the
     asymmetry that decides it.
+    """
+    if _binary_survives(origin):
+        refresh_archive_binary(instance.binary_id)
+
+
+# ---------------------------------------------------------------------------
+# Metadata
+# ---------------------------------------------------------------------------
+#
+# KodaDash's reading of an occurrence, and the fifth relation the row builder
+# reads. It is a *fallback* rather than a source of its own, which is exactly
+# what made it easy to miss: `title`, `recipient` and `document_date` are the
+# first filing's filename fields, and metadata supplies them only where the
+# filename did not. Where the archive's names are good the column never moves,
+# and the relation looks inert.
+#
+# It is not inert. `external_id` is unioned into `identifiers` unconditionally,
+# so a KodaDash row is the letter's register-side handle and the only thing that
+# makes it findable by that handle — and a great many archive filenames carry no
+# recipient and no date at all, which is where the fallback is the value being
+# projected rather than a spare one.
+#
+# The write that mattered is the ordinary one. `_write_metadata` is shared by
+# `catalogue_plan` and `apply_plan`, and only the second suspends: a KodaDash
+# workbook that arrives *after* the archive has been catalogued and materialised
+# is one `catalogue` run writing metadata rows against occurrences whose bytes
+# are already held and already indexed. Every one of those committed with
+# nothing refreshing the row.
+#
+# Bounded like the other four — one metadata row names one occurrence, which
+# names at most one binary — so it is class A and the refresh belongs in the
+# business transaction.
+
+
+@receiver(pre_save, sender=OpinionArchiveMetadata, dispatch_uid="archive_note_metadata_move")
+def note_metadata_move(sender: type[OpinionArchiveMetadata], instance: Any, **kwargs: Any) -> None:
+    """Remember the binary a metadata row is moving away from.
+
+    The same shape as `note_occurrence_move` and for the same reason: a row that
+    changes which occurrence it describes invalidates *two* archive rows, and
+    `post_save` can only see the one it joined. Both free tests come first, so a
+    create pays nothing and a suspended bulk write pays nothing per row.
+
+    It compares `item` and resolves the binary only once the item has actually
+    changed. Moving a reading between two filings of the *same* letter moves no
+    projection row at all, and the stored `item__binary_id` comes back in the
+    same query that answers the question, so an ordinary save costs one lookup.
+
+    **No production writer reassigns `item`.** `_write_metadata` creates rows
+    with `get_or_create` and never edits one; a changed KodaDash snapshot writes
+    a new row rather than repointing an old one, because the artefact's own hash
+    is part of the key. Nothing about the model forbids it though — `item` is an
+    ordinary editable foreign key with no unique constraint over it — so this is
+    the shell session and the next writer, at the price of one indexed lookup.
+    """
+    instance._archive_binary_before = None
+    if instance._state.adding or archive_indexing_is_suspended():
+        return
+    update_fields = kwargs.get("update_fields")
+    if update_fields is not None and "item" not in set(update_fields):
+        return
+    stored = (
+        sender._default_manager.filter(pk=instance.pk)
+        .values_list("item_id", "item__binary_id")
+        .first()
+    )
+    if stored is not None and stored[0] != instance.item_id:
+        instance._archive_binary_before = stored[1]
+
+
+@receiver(post_save, sender=OpinionArchiveMetadata, dispatch_uid="archive_refresh_metadata_saved")
+def refresh_on_metadata_save(
+    sender: type[OpinionArchiveMetadata], instance: Any, **kwargs: Any
+) -> None:
+    """A reading that was written or edited must be projected as it is.
+
+    Both binaries, in the order they became wrong: the one the row left, then
+    the one it joined. `refresh_archive_binary` ignores a null, so the ordinary
+    case — a create, or a save that moved nothing — is one refresh, and a
+    reading of an occurrence still waiting for its bytes is a safe no-op through
+    `_binary_of`.
+
+    Not narrowed by ``update_fields``, like every other handler here: four of
+    the model's columns reach the row, `_write_metadata` writes eighteen at a
+    time, and a handler that tried to decide which of them matter would be
+    re-deriving `_occurrence_values` in miniature and wrong the day a column
+    joins it. `_reindex` writes nothing when nothing changed.
+    """
+    refresh_archive_binary(getattr(instance, "_archive_binary_before", None))
+    _refresh_behind_item(instance.item_id)
+
+
+@receiver(
+    post_delete, sender=OpinionArchiveMetadata, dispatch_uid="archive_refresh_metadata_removed"
+)
+def refresh_on_metadata_delete(
+    sender: type[OpinionArchiveMetadata],
+    instance: OpinionArchiveMetadata,
+    origin: Any = None,
+    **kwargs: Any,
+) -> None:
+    """A reading that is gone must stop being projected.
+
+    `_started_here`, deliberately — the link's guard rather than the candidate's,
+    and the two disagree here. A metadata row has exactly one foreign key,
+    `item`, so the only cascade that can reach it is an occurrence's deletion,
+    and that occurrence's own `post_delete` already owns the final refresh. It
+    is also the only handler that can produce the *right* answer: the collector
+    removes children before their parent, so a refresh fired from here during an
+    Item cascade recomputes a row that still contains the occurrence being
+    deleted — one statement early, which is the mistake the candidate handler
+    was written to avoid rather than a version of it worth repeating.
+
+    So refreshing from here during a cascade would be both redundant and briefly
+    wrong, and the Item handler is what makes it neither. A direct
+    `metadata.delete()` has no such owner and is refreshed here.
+    """
+    if _started_here(origin, OpinionArchiveMetadata):
+        _refresh_behind_item(instance.item_id)
+
+
+# ---------------------------------------------------------------------------
+# Extracted text
+# ---------------------------------------------------------------------------
+#
+# The sixth relation, and the one the archive's full-text search is made of.
+# `body_text` is what the Estonian and simple vectors are built from and
+# `has_body_text` is what the `Sisuga` filter and the coverage figure read, and
+# both come from an `OpinionArchiveText` row that nothing about a binary
+# touches.
+#
+# `opinion_text._record` is the one production writer: an `update_or_create` per
+# binary, inside its own atomic block, called by `extract_all` for every letter
+# whose text is not already current. Before this handler, a completed extraction
+# left the corpus holding bodies the search could not see, and a *re*-extraction
+# was worse than that — the row went on serving the previous parse, so a letter
+# stayed findable by words that had been replaced. The one-directional lag check
+# in `archive_index_findings` could see the first case and not the second; it is
+# now a comparison of both columns in both directions (`_text_drift_findings`).
+#
+# One text row names exactly one binary, so this is class A like the rest and
+# the refresh goes in the transaction `_record` already opens: an extraction
+# that rolls back takes its projection write with it. Deliberately *not* batched
+# behind a suspension around `extract_all` — that would commit hundreds of
+# canonical bodies and converge their rows only at the end, so an extraction
+# killed halfway would leave exactly the stale search this closes.
+
+
+@receiver(pre_save, sender=OpinionArchiveText, dispatch_uid="archive_note_text_move")
+def note_text_move(sender: type[OpinionArchiveText], instance: Any, **kwargs: Any) -> None:
+    """Remember the binary a text row is moving away from.
+
+    `binary` is a `OneToOneField`, so a move is only legal onto bytes that hold
+    no text of their own — and it is legal, which is the whole reason for this:
+    an ordinary save that repointed a body would leave the letter it came from
+    still searchable by it.
+
+    Both free tests before the lookup, as in `note_occurrence_move`, and
+    `_state.adding` rather than `pk is None` because `BaseModel` fills the
+    primary key in from a `uuid7` default. It believes `update_fields`, which is
+    what keeps the real writer off this path entirely: `_record` hands
+    `update_or_create` a defaults dict of eight concrete columns and none of
+    them is `binary`, so Django saves with `update_fields` and an extraction pays
+    no SELECT for a move it cannot have made.
+    """
+    instance._archive_binary_before = None
+    if instance._state.adding or archive_indexing_is_suspended():
+        return
+    update_fields = kwargs.get("update_fields")
+    if update_fields is not None and "binary" not in set(update_fields):
+        return
+    stored = (
+        sender._default_manager.filter(pk=instance.pk).values_list("binary_id", flat=True).first()
+    )
+    if stored != instance.binary_id:
+        instance._archive_binary_before = stored
+
+
+@receiver(post_save, sender=OpinionArchiveText, dispatch_uid="archive_refresh_text_saved")
+def refresh_on_text_save(sender: type[OpinionArchiveText], instance: Any, **kwargs: Any) -> None:
+    """Every extraction outcome, not only the one that found something.
+
+    `DONE` with a body is the case that adds to the corpus; `NO_TEXT_LAYER`,
+    `BLOCKED`, `FAILED` and a `DONE` that came back empty all *remove* from it,
+    and a row left claiming a body after the policy stopped permitting the parse
+    is the same defect wearing the other sign. Recomputing through `_row_values`
+    covers all of them without this handler knowing what `ArchiveTextState`
+    means — `_text_values` and the model's `has_body` decide that, in one place.
+
+    Both binaries, in the order they became wrong. `refresh_archive_binary`
+    ignores a null, so the ordinary re-extraction is one refresh.
+    """
+    refresh_archive_binary(getattr(instance, "_archive_binary_before", None))
+    refresh_archive_binary(instance.binary_id)
+
+
+@receiver(post_delete, sender=OpinionArchiveText, dispatch_uid="archive_refresh_text_removed")
+def refresh_on_text_delete(
+    sender: type[OpinionArchiveText],
+    instance: OpinionArchiveText,
+    origin: Any = None,
+    **kwargs: Any,
+) -> None:
+    """A body that is gone must stop being searchable.
+
+    `_binary_survives`, and here it is load-bearing rather than defensive.
+    `OpinionArchiveText.binary` is `CASCADE` and is the model's only foreign
+    key, so deleting a binary really does delete its text — and re-projecting
+    that binary mid-cascade would insert a row the collector has already swept
+    past, leaving the binary's own delete to fail on a foreign key at COMMIT.
+    This is the first archive relation where that path is reachable at all: the
+    occurrences and the candidates are kept off it by `OpinionArchiveItem.binary`
+    being `PROTECT`, and a binary holding text but no filings is an ordinary
+    state — a letter whose catalogue rows were removed while the evidence stayed.
+
+    A direct `text.delete()` — dropping a parse to force a re-extraction — has
+    no such owner, and clears the row's body here.
     """
     if _binary_survives(origin):
         refresh_archive_binary(instance.binary_id)

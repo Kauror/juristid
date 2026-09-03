@@ -49,7 +49,7 @@ from app.legacy_import.opinion_binary import (
     OpinionArchiveBinary,
     OpinionArchiveMatterLink,
 )
-from app.legacy_import.opinion_enums import ArchiveTextState, OpinionCandidateState
+from app.legacy_import.opinion_enums import OpinionCandidateState
 from app.legacy_import.opinion_search_models import (
     ARCHIVE_INDEX_VERSION,
     OpinionArchiveSearchDocument,
@@ -224,9 +224,8 @@ def _row_values(binary: OpinionArchiveBinary) -> dict[str, Any]:
             metadata=_metadata_rows(binary=binary),
             candidates=candidates,
         ),
-        "body_text": text.body if text is not None and text.has_body else "",
+        **_text_values(text),
         **_candidate_values(candidates),
-        "has_body_text": bool(text is not None and text.has_body),
         "is_linked": linked.exists(),
         "has_submission": has_submission,
         "index_version": ARCHIVE_INDEX_VERSION,
@@ -383,6 +382,33 @@ def _occurrence_values(
         "identifiers": "\n".join(identifiers),
         "occurrence_paths": "\n".join(paths),
         "occurrence_count": len(occurrences),
+    }
+
+
+def _text_values(text: Any) -> dict[str, Any]:
+    """The two columns a letter's extracted text decides.
+
+    Extracted for the reason `_candidate_values` and `_occurrence_values` were:
+    the row builder and `archive_index_findings` must not be able to disagree
+    about what the projection *should* say. Here that mattered more than
+    elsewhere, because the check this replaces asked a narrower question than
+    the builder answers — it looked for a body the projection had not picked up
+    yet and could not see a projection still carrying one nothing holds.
+
+    The two columns move together or not at all. `has_body_text` is what the
+    `Sisuga` filter reads and `body_text` is what the search vector is built
+    from, so a row whose flag has been cleared while its body survives is
+    filtered out of the corpus and still findable by the words in it.
+
+    `has_body` is **not** restated here. It is the model's own property — the
+    single definition of "this row has a searchable body", folding the
+    `ArchiveTextState` question into the emptiness one — and both callers read
+    it off an instance rather than re-deriving it, in Python or in SQL.
+    """
+    has_body = bool(text is not None and text.has_body)
+    return {
+        "body_text": text.body if has_body else "",
+        "has_body_text": has_body,
     }
 
 
@@ -586,18 +612,6 @@ def archive_index_findings() -> list[str]:
     if unvectorised:
         findings.append(f"{unvectorised} real puudub otsinguvektor")
 
-    # Text was extracted, but the projection still says the row has none. The
-    # rebuild is what closes this, and until it runs those letters are held,
-    # readable and unfindable by their contents.
-    from app.legacy_import.opinion_binary import OpinionArchiveText
-
-    with_text = OpinionArchiveText.objects.filter(state=ArchiveTextState.DONE).exclude(body="")
-    lagging = OpinionArchiveSearchDocument.objects.filter(
-        has_body_text=False, binary__text__in=with_text
-    ).count()
-    if lagging:
-        findings.append(f"{lagging} real on tekst olemas, kuid projektsioon seda ei kajasta")
-
     # The two columns the archive workspace answers "is this letter attached to
     # anything?" from. They are computed at index time from relations that
     # nothing about a binary touches, so before the freshness handlers existed a
@@ -624,6 +638,7 @@ def archive_index_findings() -> list[str]:
 
     findings.extend(_candidate_drift_findings())
     findings.extend(_occurrence_drift_findings())
+    findings.extend(_text_drift_findings())
     return findings
 
 
@@ -763,4 +778,61 @@ def _occurrence_drift_findings() -> list[str]:
         findings.append(
             f"{heading_drift} real ei ühti pealkiri, saaja või kuupäev kataloogitud kirjetega"
         )
+    return findings
+
+
+def _text_drift_findings() -> list[str]:
+    """Where the projection and the extracted text disagree about a letter.
+
+    The relation the projection reads for its two largest columns, and the last
+    of the six to be checked properly. What stood here before was a single
+    one-directional test — canonical `DONE` with a body, projection saying
+    `has_body_text=False` — which caught the case that had actually happened
+    (extract, forget to rebuild) and was silent about every other one. Once text
+    became a freshness dependency rather than something a rebuild picked up, a
+    check that could only see a body arriving was not enough: a re-extraction
+    that replaced a body, a letter the malware policy later declined to open, a
+    scanned file re-read as having no text layer, all move the projection the
+    other way, and a row left carrying the previous extraction's body is
+    findable by words the archive no longer holds.
+
+    So both columns are recomputed through `_text_values` — the row builder's own
+    function, for the reason `_candidate_drift_findings` shares
+    `_candidate_values` — and compared against what is stored. Both directions
+    then follow from the comparison rather than from a list of cases: a missing
+    body, a stale one, a phantom one and a flag that has come apart from its
+    body are all a recomputed value differing from a stored one.
+
+    Reported as two findings rather than one, because they are two different
+    operator problems. A flag that disagrees means the `Sisuga` filter and the
+    coverage figures are wrong; a body that disagrees means the *search* is
+    wrong, which is worse and much harder to notice by looking.
+
+    The one drift check that has to hold the column it compares in memory. The
+    canonical side is read as model instances so that `has_body` stays the
+    model's property, deferred to the three fields that decide it, and bounded
+    by `MAX_BODY_CHARACTERS` per letter over a corpus of hundreds — the same
+    bytes `rebuild_archive_index` already streams through a search vector.
+    """
+    from app.legacy_import.opinion_binary import OpinionArchiveText
+
+    canonical = {
+        row.binary_id: row
+        for row in OpinionArchiveText.objects.only("binary", "state", "body").iterator()
+    }
+
+    body_drift = flag_drift = 0
+    stored = OpinionArchiveSearchDocument.objects.values_list(
+        "binary_id", "body_text", "has_body_text"
+    )
+    for binary_id, body_text, has_body_text in stored.iterator():
+        expected = _text_values(canonical.get(binary_id))
+        body_drift += int(expected["body_text"] != body_text)
+        flag_drift += int(expected["has_body_text"] != has_body_text)
+
+    findings: list[str] = []
+    if body_drift:
+        findings.append(f"{body_drift} real ei ühti otsitav tekst eraldatud tekstiga")
+    if flag_drift:
+        findings.append(f"{flag_drift} real ei ühti tekstiolek eraldatud tekstiga")
     return findings

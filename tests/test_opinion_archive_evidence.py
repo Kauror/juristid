@@ -347,3 +347,85 @@ def test_a_later_snapshot_refiling_held_bytes_refreshes_that_row(catalogued, tmp
     assert archive_index_findings() == []
     # And it landed where a rebuild would have.
     assert rebuild_archive_index().written == 0
+
+
+def test_extraction_leaves_the_projection_fresh_without_a_rebuild(catalogued, settings):
+    """The whole walk, end to end, over stored bytes and the real parser.
+
+    `extract_all` records an outcome for every materialised binary through
+    `_record`, and until this round each of those committed while the search
+    projection went on describing the letter as it had been. The runbook's
+    answer was `rebuild`, run by a person, prompted by a `verify` run by a
+    person — which is the shape ADR 0041 exists to remove.
+
+    The synthetic PDFs carry no text stream, so what this proves is the
+    *removing* direction, which is the one an operator meets most: a scanned
+    letter recorded as `NO_TEXT_LAYER` must leave the row saying it has no
+    searchable body, and `verify` must agree.
+    """
+    from app.legacy_import.opinion_search import (
+        archive_index_findings,
+        rebuild_archive_index,
+        refresh_archive_binaries,
+    )
+    from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
+    from app.legacy_import.opinion_text import extract_all
+
+    path, digest, _ = catalogued
+    settings.REAL_DATA_ALLOWED = False
+    materialize(archive_path=path, expected_archive_sha256=digest)
+    assert archive_index_findings() == []
+
+    report = extract_all()
+    assert report.considered == 2
+    assert report.extracted == 0
+
+    # No rebuild_archive_index() here, deliberately.
+    assert set(OpinionArchiveSearchDocument.objects.values_list("has_body_text", flat=True)) == {
+        False
+    }
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+    assert refresh_archive_binaries(OpinionArchiveBinary.objects.values_list("pk", flat=True)) == 0
+
+
+def test_the_policy_withdrawing_permission_takes_the_searchable_body_with_it(catalogued, settings):
+    """`BLOCKED` is a re-extraction too, and it removes from the corpus.
+
+    `extract-text --force` in an environment where `REAL_DATA_ALLOWED` is on
+    re-records every row as `BLOCKED` (ADR 0014). A projection that went on
+    serving those bodies would keep the archive searchable by content the
+    policy had just forbidden opening — the same defect as a stale body, with a
+    policy consequence on top.
+
+    `--force` rather than a plain re-run, and not to make the test pass:
+    `_is_current` calls a row written by this parser at this version current
+    whatever the policy now says, so a plain re-run skips it. That is the
+    existing extraction contract and this round does not touch it; what is
+    asserted is that the outcome, once recorded, reaches the projection.
+
+    The body is recorded directly, because the synthetic PDFs have no text
+    layer and the state being left behind is what the test is about.
+    """
+    from app.legacy_import.opinion_search import archive_index_findings, rebuild_archive_index
+    from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
+    from app.legacy_import.opinion_text import _record, extract_all
+
+    path, digest, letters = catalogued
+    settings.REAL_DATA_ALLOWED = False
+    materialize(archive_path=path, expected_archive_sha256=digest)
+    binary = OpinionArchiveBinary.objects.get(sha256=letters[0].sha256)
+    _record(binary, state=ArchiveTextState.DONE, body="Sünteetiline eraldatud keha.")
+    row = OpinionArchiveSearchDocument.objects.get(binary=binary)
+    assert row.has_body_text is True
+    assert archive_index_findings() == []
+
+    settings.REAL_DATA_ALLOWED = True
+    report = extract_all(force=True)
+    assert report.blocked == 2
+
+    row.refresh_from_db()
+    assert row.has_body_text is False
+    assert row.body_text == ""
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
