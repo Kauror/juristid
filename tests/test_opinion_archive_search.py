@@ -15,6 +15,7 @@ chances for one of them to be generous.
 from __future__ import annotations
 
 import datetime
+from typing import Any
 
 import pytest
 from django.urls import reverse
@@ -1474,13 +1475,20 @@ def test_the_occurrence_findings_report_counts_and_nothing_else(held):
 # writing readings against occurrences already held and already indexed.
 
 
-def a_nameless_letter(sha: str, *, path: str) -> OpinionArchiveBinary:
+def a_nameless_letter(
+    sha: str, *, path: str, date: datetime.date | None = None
+) -> OpinionArchiveBinary:
     """A held letter whose filename told us nothing about it.
 
     The only shape in which metadata's title, recipient and date are the values
     being *projected* rather than spares behind the filename's. The parser reads
     those three out of the name where the archive's convention was followed, and
     it was not always followed; this is the other case.
+
+    `date` is the one part a caller may put back, and it is not cosmetic: a letter
+    filed twice is ordered by `filename_date` first, so two undated filings fall
+    through to a filename comparison and the answer becomes a question about the
+    database's collation. A caller that cares which filing is first passes dates.
     """
     batch = OpinionArchiveBatch.objects.create(
         archive_sha256="a" * 64,
@@ -1503,7 +1511,7 @@ def a_nameless_letter(sha: str, *, path: str) -> OpinionArchiveBinary:
         sha256=sha,
         size_bytes=1024,
         detected_type="application/pdf",
-        filename_date=None,
+        filename_date=date,
         filename_recipient="",
         filename_title="",
         binary=binary,
@@ -1666,9 +1674,26 @@ def test_deleting_a_reading_takes_its_contribution_back(held):
 
 
 def test_a_second_reading_still_covers_a_deleted_one(held):
-    """Falling back to the *next* canonical source rather than to nothing."""
-    nameless = a_nameless_letter("4" * 64, path="Opinions/nimeta/4.pdf")
-    second_filing = a_filing(nameless, path="Opinions/nimeta/koopia/4.pdf", filename="4b.pdf")
+    """Falling back to the *next* canonical source rather than to nothing.
+
+    Both filings are dated, and differently, because otherwise the answer is not
+    this code's. `_metadata_rows` carries the model's `["item", "source_system"]`
+    ordering, and Django resolves an ordering *by a relation* through the related
+    model's own default — `filename_date`, then `original_filename` — so two
+    undated filings are tie-broken by a filename string. Whether `4b.pdf` sorts
+    before `4.pdf` is then a question about the collation: glibc `en_US.utf8`
+    ignores the dot at the primary level, the local ICU cluster does not, and the
+    test passed here and failed in CI. A date decides it in both.
+    """
+    nameless = a_nameless_letter(
+        "4" * 64, path="Opinions/nimeta/4.pdf", date=datetime.date(2021, 1, 11)
+    )
+    second_filing = a_filing(
+        nameless,
+        path="Opinions/nimeta/koopia/4.pdf",
+        filename="4b.pdf",
+        date=datetime.date(2021, 6, 22),
+    )
     rebuild_archive_index()
 
     first_reading = a_reading(nameless, external_id="KD-A", title="Esimene lugem")
@@ -1734,6 +1759,45 @@ def test_an_item_cascade_lands_on_the_final_projection_without_an_early_refresh(
     assert row.occurrence_count == 1
     assert archive_index_findings() == []
     assert rebuild_archive_index().written == 0
+
+
+def test_an_item_cascade_fires_exactly_one_refresh_and_it_is_the_items(held):
+    """The delete guard itself, not only what it leaves behind.
+
+    The test above asserts the *outcome*, and the outcome is right under either
+    guard: a metadata handler firing mid-cascade would recompute a row that
+    still contained the occurrence being deleted, and the occurrence's own
+    `post_delete` would then correct it. Right answer, wasted work, and — the
+    part that matters — a projection that was briefly wrong inside the
+    transaction for no reason.
+
+    So this counts. One refresh, fired after the children are gone, is what
+    `_started_here` on the metadata handler buys; `_binary_survives` there would
+    make it two.
+    """
+    from app.legacy_import import opinion_search_signals as signals
+
+    first, _second = held
+    doomed = OpinionArchiveItem.objects.filter(binary=first).order_by("pk").first()
+    assert doomed is not None
+    a_reading(item=doomed, external_id="KD-COUNTED")
+
+    refreshed: list[Any] = []
+    real = signals.refresh_archive_binary
+
+    def counting(binary_id: Any) -> int:
+        if binary_id is not None:
+            refreshed.append(binary_id)
+        return real(binary_id)
+
+    signals.refresh_archive_binary = counting  # type: ignore[assignment]
+    try:
+        doomed.delete()
+    finally:
+        signals.refresh_archive_binary = real  # type: ignore[assignment]
+
+    assert refreshed == [first.pk], refreshed
+    assert "KD-COUNTED" not in _row(first).identifiers
 
 
 def test_moving_a_reading_refreshes_the_row_it_left_and_the_row_it_joined(held):
