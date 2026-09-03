@@ -227,11 +227,7 @@ def _row_values(binary: OpinionArchiveBinary) -> dict[str, Any]:
             "title", "recipient_raw", "recipient_normalized", "document_date", "external_id"
         )
     )
-    candidates = list(
-        OpinionMatchCandidate.objects.filter(item__binary=binary)
-        .exclude(state=OpinionCandidateState.SUPERSEDED)
-        .values("match_class", "state", "excel_reference")
-    )
+    candidates = _candidate_rows(binary=binary)
     text = getattr(binary, "text", None)
 
     title = _first(
@@ -266,8 +262,7 @@ def _row_values(binary: OpinionArchiveBinary) -> dict[str, Any]:
         "body_text": text.body if text is not None and text.has_body else "",
         "document_date": document_date,
         "source_year": document_date.year if document_date else None,
-        "match_class": _first([candidate["match_class"] for candidate in candidates]) or "",
-        "review_state": _review_state(candidates),
+        **_candidate_values(candidates),
         "has_body_text": bool(text is not None and text.has_body),
         "is_linked": linked.exists(),
         "has_submission": has_submission,
@@ -317,6 +312,49 @@ def _unique(values: Any) -> list[str]:
         if text and text not in seen:
             seen.append(text)
     return seen
+
+
+def _candidate_rows(*, binary: Any = None) -> list[dict[str, Any]]:
+    """The candidate rows the projection reads, in the order it reads them in.
+
+    One definition, used by the row builder and by the drift check, because two
+    would come apart and the drift check would then be measuring itself rather
+    than the projection.
+
+    ``SUPERSEDED`` is excluded here and nowhere else. A retired proposal is the
+    record of a belief that was replaced, so a workspace filtering on
+    `review_state` must not find a letter under a state nothing holds any more
+    — which is also why superseding a row moves the projection at all.
+
+    The order is the model's own (`match_class` first), and it is what makes
+    `match_class` below well defined. Narrowing to one binary leaves the
+    relative order of that binary's rows unchanged, so the per-row caller and
+    the corpus-wide one see the same sequence for the same letter.
+    """
+    rows = OpinionMatchCandidate.objects.exclude(state=OpinionCandidateState.SUPERSEDED)
+    rows = (
+        rows.filter(item__binary=binary)
+        if binary is not None
+        else rows.filter(item__binary__isnull=False)
+    )
+    # The stubs type `values()` as a TypedDict, which is narrower than either
+    # caller wants and not assignable to the plain mapping they share. The row
+    # shape is settled by `_candidate_values` reading it, not by this line.
+    selected: Any = rows.values("item__binary_id", "match_class", "state", "excel_reference")
+    return list(selected)
+
+
+def _candidate_values(candidates: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """The two projected columns a letter's live candidates decide.
+
+    Extracted so the row builder and `archive_index_findings` cannot disagree
+    about what the projection *should* say: a verifier carrying its own priority
+    order would report drift where there is none and miss it where there is.
+    """
+    return {
+        "match_class": _first(candidate["match_class"] for candidate in candidates) or "",
+        "review_state": _review_state(candidates),
+    }
 
 
 def _review_state(candidates: Sequence[Mapping[str, Any]]) -> str:
@@ -512,4 +550,47 @@ def archive_index_findings() -> list[str]:
     if submission_drift:
         findings.append(f"{submission_drift} real ei ühti arvamuse olek kanooniliste kirjetega")
 
+    findings.extend(_candidate_drift_findings())
+    return findings
+
+
+def _candidate_drift_findings() -> list[str]:
+    """Where the projection and the live candidates disagree about a letter.
+
+    `review_state` and `match_class` are the other two derived columns, and they
+    come from `OpinionMatchCandidate` — a relation that, like the two above,
+    nothing about a binary touches. A reviewer rejecting a letter, a rerun
+    superseding a proposal, an apply marking one APPLIED: each moves what the
+    projection should say without moving the binary, and every check above
+    passes cleanly throughout.
+
+    Computed through the same two helpers the row builder uses rather than
+    re-derived in SQL. `review_state` has a priority order and `match_class`
+    depends on the model's ordering; a second implementation of either would be
+    checking itself. Two queries and a walk over a few hundred rows, which is
+    what this costs and what a corpus-wide join would cost anyway.
+
+    Both directions, as above. A row still reading `Ootel` after a rejection is
+    the common case; a row claiming a decision no live candidate justifies is
+    the rarer and worse one, because the queue would then be filtering on
+    something nobody said.
+    """
+    by_binary: dict[Any, list[dict[str, Any]]] = {}
+    for candidate in _candidate_rows():
+        by_binary.setdefault(candidate["item__binary_id"], []).append(candidate)
+
+    class_drift = state_drift = 0
+    stored = OpinionArchiveSearchDocument.objects.values_list(
+        "binary_id", "match_class", "review_state"
+    )
+    for binary_id, match_class, review_state in stored.iterator():
+        canonical = _candidate_values(by_binary.get(binary_id, []))
+        class_drift += int(canonical["match_class"] != match_class)
+        state_drift += int(canonical["review_state"] != review_state)
+
+    findings: list[str] = []
+    if state_drift:
+        findings.append(f"{state_drift} real ei ühti ülevaatuse olek elusate kandidaatidega")
+    if class_drift:
+        findings.append(f"{class_drift} real ei ühti sidumise klass elusate kandidaatidega")
     return findings

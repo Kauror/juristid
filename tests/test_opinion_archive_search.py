@@ -20,9 +20,17 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
-from app.legacy_import.opinion_archive import OpinionArchiveBatch, OpinionArchiveItem
+from app.legacy_import.opinion_archive import (
+    OpinionArchiveBatch,
+    OpinionArchiveItem,
+    OpinionMatchCandidate,
+)
 from app.legacy_import.opinion_binary import OpinionArchiveBinary, OpinionArchiveText
-from app.legacy_import.opinion_enums import ArchiveTextState
+from app.legacy_import.opinion_enums import (
+    ArchiveTextState,
+    OpinionCandidateState,
+    OpinionMatchClass,
+)
 from app.legacy_import.opinion_search import (
     ArchiveFilters,
     ArchiveQueryRefused,
@@ -600,3 +608,352 @@ def test_a_bulk_writer_that_suspends_owes_a_bounded_refresh(held, specialist):
     # Bounded: a second pass over an already-fresh binary writes nothing, and
     # the untouched letter was never rewritten at all.
     assert refresh_archive_binaries([first.pk, second.pk]) == 0
+
+
+# ---------------------------------------------------------------------------
+# Freshness: the candidate half
+# ---------------------------------------------------------------------------
+#
+# `review_state` and `match_class` come from the same shape of relation and were
+# left out of the round that closed the other two. They are the worse omission
+# of the three, because `OpinionMatchCandidate` is the relation the product
+# actually writes: a reviewer answering the queue, a rerun retiring a proposal
+# it no longer believes, an apply marking one finished. Every one of those could
+# commit while `/arvamused/arhiiv/` went on labelling and filtering the letter
+# by the state before it.
+
+
+def a_candidate(binary, *, klass=OpinionMatchClass.UNMATCHED, matter=None):
+    """One PENDING proposal about the first occurrence of these bytes.
+
+    Always PENDING, and the tests that want another state save it afterwards:
+    the transition is what the handler has to notice, and a row created in its
+    final state would prove only that creation refreshes.
+    """
+    item = OpinionArchiveItem.objects.filter(binary=binary).order_by("pk").first()
+    assert item is not None
+    return OpinionMatchCandidate.objects.create(
+        item=item,
+        matter=matter,
+        batch=item.batch,
+        match_class=klass,
+        state=OpinionCandidateState.PENDING,
+    )
+
+
+def test_a_new_candidate_reaches_an_already_indexed_row(held):
+    """The plainest case: index first, propose second, read the list."""
+    first, second = held
+    assert _row(first).review_state == ""
+    assert _row(first).match_class == ""
+
+    a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
+
+    # No rebuild_archive_index() here, deliberately.
+    assert _row(first).review_state == OpinionCandidateState.PENDING
+    assert _row(first).match_class == OpinionMatchClass.REVIEW_REQUIRED
+    # And only that letter.
+    assert _row(second).review_state == ""
+
+
+def test_a_reviewer_rejecting_a_letter_moves_the_projection_at_once(client, administrator, held):
+    """Through the real POST the queue submits, not through the model.
+
+    `opinion_decide` is the one writer of every human state, and it saves seven
+    fields at once. A handler that guessed which of them mattered would be wrong
+    here.
+    """
+    first, _second = held
+    candidate = a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
+    assert _row(first).review_state == OpinionCandidateState.PENDING
+
+    client.force_login(administrator)
+    response = client.post(
+        reverse("legacy_import:opinion_decide", kwargs={"pk": candidate.pk}),
+        {"decision": "reject", "note": "Ei ole selle teema kohta."},
+    )
+    assert response.status_code == 302
+
+    assert _row(first).review_state == OpinionCandidateState.REJECTED
+
+
+def test_a_reviewer_linking_a_letter_moves_the_projection_at_once(
+    client, administrator, held, specialist
+):
+    from app.matters.services import create_matter
+
+    first, _second = held
+    candidate = a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
+    matter = create_matter(title="Ehitusseadustik", owner=specialist, reference_year=2026)
+
+    client.force_login(administrator)
+    response = client.post(
+        reverse("legacy_import:opinion_decide", kwargs={"pk": candidate.pk}),
+        {"decision": "link", "matter": str(matter.pk)},
+    )
+    assert response.status_code == 302
+
+    assert _row(first).review_state == OpinionCandidateState.LINKED
+
+
+def test_a_decided_state_outranks_an_undecided_one_on_the_same_letter(held):
+    """Two live proposals, and the projection says the one somebody answered."""
+    first, _second = held
+    a_candidate(first, klass=OpinionMatchClass.UNMATCHED)
+    answered = a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
+
+    answered.state = OpinionCandidateState.DEFERRED
+    answered.save(update_fields=["state", "updated_at"])
+
+    assert _row(first).review_state == OpinionCandidateState.DEFERRED
+
+
+def test_superseding_a_proposal_leaves_the_row_saying_what_is_left(held, normal_matter):
+    """The projection excludes SUPERSEDED, so retiring one has to move it.
+
+    `match_class` is what visibly moves, and it is the only thing that can:
+    only a PENDING proposal may be superseded, PENDING is the lowest-ranked
+    review state, and a supersession needs a live replacement on the same
+    occurrence — so the state the row is filed under is by construction decided
+    by somebody else. The class is not, and here the retired row was the one
+    naming it.
+
+    No special case inside `supersede_candidate` to make this pass: it saves
+    the row like anything else, and the general handler is what notices.
+    """
+    from app.legacy_import.opinion_supersede import supersede_candidate
+
+    first, _second = held
+    old = a_candidate(first, klass=OpinionMatchClass.CONFLICT)
+    replacement = a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED, matter=normal_matter)
+    assert _row(first).match_class == OpinionMatchClass.CONFLICT
+
+    supersede_candidate(
+        superseded=old, replacement=replacement, reason="Hilisem jooks liigitas ümber."
+    )
+
+    row = _row(first)
+    assert row.match_class == OpinionMatchClass.REVIEW_REQUIRED
+    assert row.review_state == OpinionCandidateState.PENDING
+    assert archive_index_findings() == []
+
+
+def test_deleting_a_candidate_cannot_leave_its_state_projected(held):
+    first, _second = held
+    candidate = a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
+    candidate.state = OpinionCandidateState.REJECTED
+    candidate.save(update_fields=["state", "updated_at"])
+    assert _row(first).review_state == OpinionCandidateState.REJECTED
+
+    candidate.delete()
+
+    assert _row(first).review_state == ""
+    assert _row(first).match_class == ""
+    assert archive_index_findings() == []
+
+
+def test_a_candidate_deleted_by_a_cascade_still_frees_the_row(held):
+    """The case `_started_here` would have got wrong.
+
+    A candidate is `CASCADE` from its Item, and from its Matter as well. The
+    binary outlives both: `OpinionArchiveItem.binary` is `PROTECT`, and here the
+    letter is catalogued at two paths, so removing one occurrence leaves the
+    bytes still represented by the other. Asking "did this delete begin at a
+    candidate" answers no and would leave the row projected under a proposal
+    that no longer exists.
+    """
+    first, _second = held
+    items = list(OpinionArchiveItem.objects.filter(binary=first).order_by("pk"))
+    assert len(items) == 2
+
+    candidate = OpinionMatchCandidate.objects.create(
+        item=items[0],
+        batch=items[0].batch,
+        match_class=OpinionMatchClass.REVIEW_REQUIRED,
+        state=OpinionCandidateState.REJECTED,
+    )
+    assert _row(first).review_state == OpinionCandidateState.REJECTED
+
+    items[0].delete()
+
+    assert not OpinionMatchCandidate.objects.filter(pk=candidate.pk).exists()
+    assert OpinionArchiveItem.objects.filter(binary=first).count() == 1
+    assert _row(first).review_state == ""
+    assert _row(first).match_class == ""
+
+
+def test_a_candidate_on_an_unmaterialised_occurrence_is_ignored_rather_than_fatal(held):
+    """A catalogued letter whose bytes nobody has copied yet has no row to move."""
+    first, _second = held
+    batch = OpinionArchiveBatch.objects.first()
+    assert batch is not None
+    orphan = OpinionArchiveItem.objects.create(
+        batch=batch,
+        archive_sha256="a" * 64,
+        archive_relative_path="Opinions/kataloogitud.pdf",
+        original_filename="kataloogitud.pdf",
+        sha256="e" * 64,
+        size_bytes=10,
+        detected_type="application/pdf",
+        binary=None,
+    )
+    candidate = OpinionMatchCandidate.objects.create(
+        item=orphan,
+        batch=batch,
+        match_class=OpinionMatchClass.UNMATCHED,
+        state=OpinionCandidateState.PENDING,
+    )
+
+    candidate.state = OpinionCandidateState.REJECTED
+    candidate.save(update_fields=["state", "updated_at"])
+    candidate.delete()
+
+    assert OpinionArchiveSearchDocument.objects.count() == 2
+    assert _row(first).review_state == ""
+
+
+def test_a_rolled_back_decision_takes_its_projection_change_with_it(held):
+    """One event, both halves. Class A in ADR 0041's terms is what this asserts."""
+    from django.db import transaction
+
+    first, _second = held
+    candidate = a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
+    assert _row(first).review_state == OpinionCandidateState.PENDING
+
+    with transaction.atomic():
+        candidate.state = OpinionCandidateState.REJECTED
+        candidate.save(update_fields=["state", "updated_at"])
+        assert _row(first).review_state == OpinionCandidateState.REJECTED
+        transaction.set_rollback(True)
+
+    candidate.refresh_from_db()
+    assert candidate.state == OpinionCandidateState.PENDING
+    assert _row(first).review_state == OpinionCandidateState.PENDING
+
+
+def test_suspension_holds_candidate_writes_back_and_a_bounded_refresh_pays(held):
+    """The bulk half, for the relation `apply_plan` writes with `update()`."""
+    from app.legacy_import.opinion_search import (
+        refresh_archive_binaries,
+        suspend_archive_indexing,
+    )
+
+    first, second = held
+    candidate = a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
+    assert _row(first).review_state == OpinionCandidateState.PENDING
+
+    with suspend_archive_indexing():
+        candidate.state = OpinionCandidateState.REJECTED
+        candidate.save(update_fields=["state", "updated_at"])
+        # The shape no signal can see at all, suspended or not.
+        OpinionMatchCandidate.objects.filter(pk=candidate.pk).update(
+            match_class=OpinionMatchClass.CONFLICT
+        )
+
+    # Suspended means stale, and `verify` is what notices.
+    assert _row(first).review_state == OpinionCandidateState.PENDING
+    findings = archive_index_findings()
+    assert any("ülevaatuse olek" in finding for finding in findings), findings
+    assert any("sidumise klass" in finding for finding in findings), findings
+
+    assert refresh_archive_binaries([first.pk]) == 1
+    row = _row(first)
+    assert row.review_state == OpinionCandidateState.REJECTED
+    assert row.match_class == OpinionMatchClass.CONFLICT
+    assert archive_index_findings() == []
+
+    # Bounded: the untouched letter was never rewritten.
+    assert refresh_archive_binaries([first.pk, second.pk]) == 0
+
+
+def test_verify_reports_a_row_stuck_on_a_review_state_nobody_holds(held):
+    first, _second = held
+    a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
+    assert archive_index_findings() == []
+
+    # `update()` sends no signals, which is precisely the shape being guarded
+    # against — and both directions matter, so this is the projection claiming a
+    # decision no live candidate justifies.
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(
+        review_state=OpinionCandidateState.APPLIED
+    )
+
+    findings = archive_index_findings()
+    assert any("ülevaatuse olek" in finding for finding in findings), findings
+    # Detected, not repaired.
+    assert _row(first).review_state == OpinionCandidateState.APPLIED
+
+
+def test_verify_reports_a_row_whose_match_class_no_longer_matches(held):
+    first, _second = held
+    a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(
+        match_class=OpinionMatchClass.EXACT_BINARY_MATTER
+    )
+
+    findings = archive_index_findings()
+    assert any("sidumise klass" in finding for finding in findings), findings
+
+
+def test_a_letter_with_no_candidates_at_all_is_not_a_finding(held):
+    """The clean corpus stays clean: absence is a value, not drift."""
+    assert archive_index_findings() == []
+    assert all(row.review_state == "" for row in OpinionArchiveSearchDocument.objects.all())
+
+
+def test_the_candidate_findings_report_counts_and_nothing_else(held):
+    """Operator output, so it may name a number and a class of problem only."""
+    first, _second = held
+    a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED)
+    OpinionArchiveSearchDocument.objects.filter(binary=first).update(
+        review_state=OpinionCandidateState.APPLIED, match_class=OpinionMatchClass.CONFLICT
+    )
+
+    findings = archive_index_findings()
+    assert len(findings) == 2
+    row = _row(first)
+    for finding in findings:
+        assert first.sha256 not in finding
+        assert row.title not in finding
+        assert row.occurrence_paths not in finding
+
+
+def test_a_superseded_candidate_alone_leaves_the_row_empty(held, normal_matter):
+    """The exclusion is the projection's, and the drift check shares it."""
+    from app.legacy_import.opinion_supersede import supersede_candidate
+
+    first, _second = held
+    old = a_candidate(first, klass=OpinionMatchClass.UNMATCHED)
+    replacement = a_candidate(first, klass=OpinionMatchClass.REVIEW_REQUIRED, matter=normal_matter)
+    supersede_candidate(superseded=old, replacement=replacement, reason="Ümber liigitatud.")
+    replacement.delete()
+
+    assert _row(first).review_state == ""
+    assert _row(first).match_class == ""
+    assert archive_index_findings() == []
+
+
+def test_a_candidates_register_reference_reaches_the_row_it_is_searchable_from(held, administrator):
+    """The reason the handler recomputes the row rather than patching two columns.
+
+    `excel_reference` is indexed among the row's `identifiers`, so a refresh
+    narrowed to `review_state` and `match_class` would leave a letter unfindable
+    by the register reference the candidate carries. The drift detector does not
+    check this — subtracting one identifier from a row cannot be told apart from
+    the rest of the column without a full-row comparison — so the freshness path
+    has to be the thing that keeps it true.
+    """
+    first, _second = held
+    item = OpinionArchiveItem.objects.filter(binary=first).order_by("pk").first()
+    assert item is not None
+    OpinionMatchCandidate.objects.create(
+        item=item,
+        batch=item.batch,
+        match_class=OpinionMatchClass.REVIEW_REQUIRED,
+        state=OpinionCandidateState.PENDING,
+        excel_reference="2024_317",
+    )
+
+    assert "2024_317" in _row(first).identifiers
+    rows = search_archive(user=administrator, filters=ArchiveFilters(query="2024_317"))
+    assert [row.binary_id for row in rows] == [first.pk]
