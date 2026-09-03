@@ -146,17 +146,21 @@ tähtajad. A WAIT's expected date and a MONITOR's review date are commitments
 nobody made and belong in Vajab sekkumist above (master specification 18.8).
 
 Five windows, consecutive and open-ended at the far end, so a dated commitment
-is in exactly one of them. Today, tomorrow and next week are shown whole because
-they are what somebody is working in; the rest of the month and everything after
-it show five rows and open the remainder in place.
+is in exactly one of them. Each window is one disclosure: the heading is the
+control, and the dates under it are what opening it reveals.
 
 KAUGEMAL is a real list. It was one summary line, so a deadline in November was
 on no screen anywhere until November.
 
-Each group states its own interval and links to exactly the window it counted,
-so the list behind «kõik N →» holds exactly those Matters — Matters, because the
-register lists files and two deadlines on one file are one file to open
-(`?too=tahtaeg-vahemik`, app/matters/work_items.py).
+«Kõik tähtajad →» in the section head still leaves the page: it is the register,
+narrowed to every open deadline. The per-window control no longer does. It used
+to open `group.url` — the register narrowed to that one window — and a reader who
+wanted to see two dates lost the page they were reading to get them. Now the
+window opens where they are standing, and because what it opens is a list of
+*deadlines* rather than of files, it counts `group.count` and not
+`group.matter_count`: two dates on one Matter are two rows to reveal, and a
+control that promised one of them would be lying about what it does
+(app/matters/work_items.py).
 {% endcomment %}
 <section class="ovsection" aria-label="Eesolev">
   <div class="ovsection__head">
@@ -167,8 +171,20 @@ register lists files and two deadlines on one file are one file to open
 
   {% for group in page.upcoming %}
     {% if group.count %}
-      <div class="uxdl">
-        <div class="uxdl__head">
+      {% comment %}
+        A real `<details>`, so it opens with no script and answers the keyboard
+        on its own. Shut by default — all of them, including the first: a panel
+        that opened one window for the reader would be deciding which window
+        they came for, and on most mornings that is not today's.
+
+        No `<a>` inside the `<summary>`. A link inside a disclosure trigger is
+        two controls in one place: Enter would follow the link on one browser
+        and toggle the disclosure on the next, and the accessible name would
+        read as a destination. The rows keep their own links, which is where a
+        destination belongs.
+      {% endcomment %}
+      <details class="uxdl">
+        <summary class="uxdl__head">
           {% comment %}
             Tomorrow's group is headed by tomorrow's weekday, which is a
             different word every morning. `data-clock` marks it for the visual
@@ -179,26 +195,27 @@ register lists files and two deadlines on one file are one file to open
           {% endcomment %}
           <span class="uxdl__title{% if group.key == 'tana' %} uxdl__title--today{% elif group.is_far %} uxdl__title--far{% endif %}"{% if group.key == 'homme' %} data-clock{% endif %}>{{ group.label|upper }}</span>
           <span class="uxdl__range">{{ group.range_label }}</span>
-          <a class="uxdl__all" href="{{ group.url }}">kõik {{ group.matter_count }} →</a>
-        </div>
-        {% for item in group.preview %}
+          {% comment %}
+            The chevron is a `::after` on this span rather than a character in
+            the markup, so the accessible name reads «REEDE 04.09 kõik 2
+            tähtaega» rather than ending on a glyph. The noun is hidden
+            visually and not from the accessibility tree: on screen the heading
+            beside it already says what the window holds, and read out the name
+            would otherwise stop at a bare number.
+          {% endcomment %}
+          <span class="uxdl__all">kõik {{ group.count }}<span class="visually-hidden"> tähtaega</span></span>
+        </summary>
+        {% comment %}
+          Every row in the window, in the order the read model put them.
+          `group.items` rather than `preview` + `rest`: the two-tier disclosure
+          those slices fed is gone, and re-slicing here only to concatenate the
+          halves back together would be one more place a row could be dropped
+          from or shown twice. «Kõik N» means all N.
+        {% endcomment %}
+        {% for item in group.items %}
           {% include "matters/partials/deadline_row.html" with item=item %}
         {% endfor %}
-        {% if group.remaining %}
-          {% comment %}
-            Opened in place, ten at a time, until the group is exhausted. A
-            manager scanning next month should not have to leave the page to see
-            the eleventh date. The far window says «Näita kõiki N», because what
-            it is holding back is the rest of a population with no end date to
-            reason about rather than the tail of a named month (frame C).
-          {% endcomment %}
-          {% if group.is_far %}
-            {% include "matters/partials/deadline_more.html" with rows=group.rest remaining=group.count scope=group.label all=1 %}
-          {% else %}
-            {% include "matters/partials/deadline_more.html" with rows=group.rest remaining=group.remaining scope=group.label %}
-          {% endif %}
-        {% endif %}
-      </div>
+      </details>
     {% endif %}
   {% endfor %}
   {% if not page.has_upcoming %}

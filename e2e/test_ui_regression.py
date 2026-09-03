@@ -950,8 +950,35 @@ def test_dashboard(page, base_url):
     compare("osakond", capture(page, "osakond"))
 
 
+#: The closed-disclosure shapes on Osakond, and the element whose presence
+#: proves each one is actually holding something back on this run.
+#:
+#: Both keep their content *inside* the shut `<details>`, which is the shape
+#: that yields a box for every hidden child — unlike `tbody.uxextra`, which is
+#: `display: none` and was always harmless. Eesolev joined the list when each
+#: deadline window became a disclosure of its own: every row it hides carries a
+#: `.uxdl__date`, and that selector is in CLOCK_DEPENDENT, so it is now the
+#: largest instance of the case this test exists for rather than a new one.
+CLOSED_DISCLOSURES: tuple[tuple[str, str, str], ...] = (
+    (
+        "details.pw-more:not([open])",
+        ".interrow__reason",
+        "Osakond no longer hides intervention rows behind «Näita veel N ▾». "
+        "Either the section stopped capping its preview, or the seeded world "
+        "dropped below the cap",
+    ),
+    (
+        "details.uxdl:not([open])",
+        ".uxdl__row",
+        "Osakond's Eesolev no longer holds its deadline rows in a shut "
+        "disclosure. Either the windows stopped being `<details>`, or they now "
+        "arrive open, or the seeded world has no upcoming deadline at all",
+    ),
+)
+
+
 def test_a_closed_disclosure_contributes_no_masks(page, base_url):
-    """The rows behind «Näita veel N ▾» must not paint over the page.
+    """What a shut `<details>` is *holding* must not paint over the page.
 
     Not a screenshot: the damage this guards against is invisible to
     `compare()` in the only way that matters, because a mask painted in the
@@ -959,25 +986,42 @@ def test_a_closed_disclosure_contributes_no_masks(page, base_url):
     So it is asserted where it can be read — every mask this suite paints
     resolves to something a reader can see.
 
-    Osakond is the scenario because it is the one that broke, and the first
-    assertion keeps it honest: if the seeded world ever stops overflowing that
-    list, this test is measuring nothing, and it says so rather than passing.
+    Osakond is the scenario because it is the one that broke, and it now
+    carries both shapes: «Näita veel N ▾» over the intervention list, and every
+    *Eesolev* window over its own deadlines. The presence assertion keeps each
+    honest: if the seeded world ever stops filling one, this test would be
+    measuring nothing there, and it says so rather than passing.
+
+    **A shut disclosure's summary is on screen.** Only its body is not, and the
+    distinction is the whole assertion — it is what widening this test to the
+    deadline windows found. `.uxdl__range` is a clock value that renders *in*
+    the summary: it must be masked, and masking it damages nothing, because
+    there is a reader looking at the glyphs it covers. The intervention
+    disclosure gets away with the cruder question only because «Näita veel N ▾»
+    happens to carry no clock value; asking it of a summary that does would have
+    demanded the mask be removed from something visible, which is the opposite
+    of what this file is for.
+
+    So the matches are partitioned rather than counted: everything inside the
+    shut element, minus what sits in its summary, must be nothing.
     """
     signed_in(page, base_url, "/osakond/")
-    hidden = page.locator("details.pw-more:not([open]) .interrow__reason")
-    assert hidden.count(), (
-        "Osakond no longer hides intervention rows behind «Näita veel N ▾», so "
-        "this test no longer exercises the case it exists for. Either the "
-        "section stopped capping its preview, or the seeded world dropped below "
-        "the cap — move the assertion to whichever surface still overflows."
-    )
-    for selector in CLOCK_DEPENDENT:
-        inside = page.locator(f"details.pw-more:not([open]) {visible(selector)}")
-        assert inside.count() == 0, (
-            f"{selector!r} matches {inside.count()} element(s) inside a closed "
-            f"disclosure and Playwright would paint a rectangle for each, in the "
-            f"page's own colour, over whatever happens to be underneath."
+    for disclosure, evidence, complaint in CLOSED_DISCLOSURES:
+        assert page.locator(f"{disclosure} {evidence}").count(), (
+            f"{complaint}, so this test no longer exercises that case — move the "
+            f"assertion to whichever surface still hides rows."
         )
+        for selector in CLOCK_DEPENDENT:
+            # A strict subset of `inside`, so the subtraction is a count of the
+            # matches that are in the body — the part nobody can see.
+            inside = page.locator(f"{disclosure} {visible(selector)}").count()
+            on_summary = page.locator(f"{disclosure} > summary {visible(selector)}").count()
+            assert inside - on_summary == 0, (
+                f"{selector!r} matches {inside - on_summary} element(s) in the "
+                f"body of {disclosure!r} — which nobody can see — and Playwright "
+                f"would paint a rectangle for each, in the page's own colour, "
+                f"over whatever happens to be underneath."
+            )
 
 
 def test_my_work(page, base_url):

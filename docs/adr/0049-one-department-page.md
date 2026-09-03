@@ -130,6 +130,20 @@ first time the two pages' figures stood on one strip.
 | ÜLEJÄÄNUD KUU | from there → that month's end | 5 + «Näita veel N ▾» |
 | KAUGEMAL | the day after → everything later | 5 + «Näita kõiki N ▾» |
 
+> **Amended 2026-09-03 — each window is its own disclosure.** The *Shown* column
+> above no longer describes the panel. A window is one `<details>`: its heading
+> is the `<summary>`, the deadlines are the body, and it arrives shut. The two
+> windows that sliced no longer slice — opening a window shows the whole window
+> — so the nested «Näita veel N ▾» / «Näita kõiki N ▾» control is gone from
+> *Eesolev* and `deadline_more.html` is deleted. The intervals, the partition
+> and what is eligible to be in one are untouched; `UpcomingGroup.shown`,
+> `preview` and `rest` remain in the read model and are no longer rendered.
+>
+> The right-hand control is what changed shape: «kõik N →», a link into the
+> register, became «kõik N ▾», the summary of the window's own disclosure. See
+> the amendment to §6 for what N now counts. The section's own «Kõik tähtajad →»
+> is unchanged and still navigation.
+
 Consecutive by construction and the last open-ended, so an eligible future real
 deadline is in exactly one of them; asserted day by day over a year across six
 awkward calendars. Where next week already runs past the month end, *Ülejäänud
@@ -154,6 +168,17 @@ Matters** («Ava kõik 33 teemat →»), because one file can be late and unowne
 once. Each *Eesolev* group prints «kõik N →» as unique Matters over a row list
 that may be longer. This distinction is preserved through the new aggregator
 rather than collapsed by a convenient `distinct()`.
+
+> **Amended 2026-09-03 — a window counts what it opens.** The distinction stands
+> and both numbers are still computed; which of them *Eesolev* prints changed
+> with the control. «kõik N →» opened the register, which lists files, so it
+> counted `matter_count`. «kõik N ▾» opens the deadline rows underneath it, so
+> it counts `count`: a Matter carrying two dates in one window is two rows to
+> reveal, and a control that opened two and said «kõik 1» would be describing a
+> population it does not produce. `matter_count` is unchanged and still the
+> honest answer for `UpcomingGroup.url`, which is what the partition is asserted
+> through. *Vajab sekkumist* is untouched: it still links Matters, because it
+> still navigates.
 
 ### 7. Tehtud carries the period and a row-kind filter, both in the URL
 

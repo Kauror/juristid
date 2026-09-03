@@ -9,8 +9,8 @@ Three things are being asserted, and they are different in kind:
   pages; the windows the merged page actually cuts are
   `department_dashboard.upcoming_windows`, asserted the same way in
   `tests/test_department_page.py`;
-* **the panel** — Osakond's *Eesolev*: what is shown, what is held back behind
-  «Näita veel», and what the header count promises;
+* **the panel** — Osakond's *Eesolev*: that each window is one shut `<details>`
+  holding every row it counted, and what the count on its summary promises;
 * **what must not change** — a WAIT is not a deadline, a month-precision date
   does not become a day, and a restricted Matter is not visible to a reader who
   may not see it.
@@ -26,6 +26,7 @@ from datetime import date, timedelta
 import pytest
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.html import escape
 
 from app.core.dates import end_of_month
 from app.core.enums import Visibility
@@ -111,6 +112,18 @@ def _panel(client, user) -> str:
     body = response.content.decode()
     assert PANEL in body, "the Eesolev section is not on the page at all"
     return body.split(PANEL)[-1].split("</section>")[0]
+
+
+def _window(panel: str, heading: str) -> str:
+    """One window's `<details>`, from its heading to the end of the element.
+
+    The windows are siblings and each is one `<details>`, so "everything after
+    this heading and before the next `</details>`" is exactly the group — and a
+    row that leaked out of its disclosure into the panel around it fails rather
+    than being found by a substring search over the whole section.
+    """
+    assert heading in panel, f"{heading} is not on the page"
+    return panel.split(heading)[-1].split("</details>")[0]
 
 
 def _upcoming(user, today: date) -> dict[str, dd.UpcomingGroup]:
@@ -312,20 +325,22 @@ def test_no_deadline_lands_in_two_groups_or_in_none(department_head, wednesday) 
 
 
 # ---------------------------------------------------------------------------
-# Näita veel
+# One window, one disclosure
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.django_db
-def test_the_rest_of_the_month_shows_five_and_holds_the_rest_behind_naita_veel(
+def test_a_window_holds_every_one_of_its_rows_in_one_disclosure(
     client, department_head, wednesday
 ) -> None:
-    """Requirements 5, 6 and 7, on the rendered panel.
+    """Requirements 5, 6 and 7, re-read after the window itself became the control.
 
-    Fourteen dates, five rows, «Näita veel 9» — and the nine are in the markup
-    already, inside the same block. The control is a `<details>`, so opening it
-    reveals rows that were served with the page rather than fetching a second
-    one: there is nowhere to navigate to.
+    Fourteen dates and one `<details>` holding all fourteen. The panel used to
+    print five and put the other nine behind a second «Näita veel 9» disclosure
+    *inside* the group; now the group is the disclosure, and a control that says
+    «kõik 14» opens fourteen rows. Two nested disclosures over one list is two
+    things to open to read one window, and the inner one made the outer count a
+    claim about a list nobody could see all of.
     """
     today = wednesday
     # From the Monday after next week ends: on this Wednesday *järgmine nädal*
@@ -337,61 +352,117 @@ def test_the_rest_of_the_month_shows_five_and_holds_the_rest_behind_naita_veel(
 
     group = _upcoming(department_head, today)["kuu"]
     assert group.count == 14
-    assert len(group.preview) == 5
-    assert group.remaining == 9
 
     panel = _panel(client, department_head)
-    assert "Näita veel 9" in panel
-    # The five that are visible without opening anything, and the nine behind
-    # the disclosure — all fourteen in one block.
+    assert "kõik 14" in panel
+    # Every row is in the markup, and every row is inside the group's own
+    # `<details>` rather than half of them above it.
+    window = _window(panel, "ÜLEJÄÄNUD KUU")
     for n in range(14):
-        assert f"Eelnõu {n:02d}" in panel, f"row {n} is on no screen at all"
-    disclosure = panel.split('class="uxdl__more"')[-1]
-    for n in range(5, 14):
-        assert f"Eelnõu {n:02d}" in disclosure, f"row {n} is not inside the disclosure"
+        assert f"Eelnõu {n:02d}" in window, f"row {n} is not inside the window's disclosure"
 
 
 @pytest.mark.django_db
-def test_there_is_no_naita_veel_when_the_month_holds_five_or_fewer(
+def test_the_former_preview_and_the_former_remainder_are_in_the_same_disclosure(
     client, department_head, wednesday
 ) -> None:
-    """Requirement 8. A control that promises nothing is noise."""
-    today = wednesday
-    for n in range(5):
-        _deadline(department_head, on=date(2026, 9, 14) + timedelta(days=n), title=f"Eelnõu {n}")
+    """The two halves the read model still cuts are one list on the page.
 
-    group = _upcoming(department_head, today)["kuu"]
-    assert group.count == 5
-    assert group.remaining == 0
-    assert group.rest == []
-
-    assert "Näita veel" not in _panel(client, department_head)
-
-
-@pytest.mark.django_db
-def test_next_week_never_offers_naita_veel_however_many_it_holds(
-    client, department_head, wednesday
-) -> None:
-    """The week being planned is whole, so the control cannot appear over it.
-
-    Today, tomorrow and next week are shown entire: they are what somebody is
-    working in, and the point of the group is that a manager can see the week
-    without opening anything (design handoff C §3.3).
+    `preview` and `rest` are what the old two-tier panel rendered separately.
+    They are asserted through the read model here rather than by counting rows,
+    so this cannot pass because the template happens to print fourteen titles in
+    some order: the rows that used to be behind the inner control are named, and
+    every one of them is inside the outer one.
     """
     today = wednesday
+    for n in range(14):
+        _deadline(
+            department_head, on=date(2026, 9, 14) + timedelta(days=n), title=f"Eelnõu {n:02d}"
+        )
+
+    group = _upcoming(department_head, today)["kuu"]
+    assert group.preview and group.rest, "the fixture no longer exercises the split"
+
+    window = _window(_panel(client, department_head), "ÜLEJÄÄNUD KUU")
+    for item in [*group.preview, *group.rest]:
+        assert item.matter.title in window, item.matter.title
+
+
+@pytest.mark.django_db
+def test_no_window_offers_naita_veel_however_many_it_holds(
+    client, department_head, wednesday
+) -> None:
+    """Requirement 8, generalised: the nested control is gone from Eesolev.
+
+    It was only ever offered by the two windows that sliced — the rest of the
+    month and the far one — so the fixture fills both, plus next week, which
+    never offered it. `deadline_more.html` is deleted, so this is a guard
+    against it being reintroduced rather than a check on a live branch.
+    """
     for n in range(9):
         # Nine deadlines across the seven days inside next week's window: two of
         # them double up, which is the case a per-day cap would have hidden.
-        on = date(2026, 9, 4) + timedelta(days=n % 7)
-        _deadline(department_head, on=on, title=f"Nädala eelnõu {n}")
+        _deadline(department_head, on=date(2026, 9, 4) + timedelta(days=n % 7), title=f"Nädal {n}")
+    for n in range(8):
+        _deadline(department_head, on=date(2026, 9, 14) + timedelta(days=n), title=f"Kuu {n}")
+    for n in range(7):
+        _deadline(department_head, on=date(2026, 11, 3) + timedelta(days=n), title=f"Kaugel {n}")
 
     panel = _panel(client, department_head)
-    week_block = panel.split("JÄRGMINE NÄDAL")[-1].split('class="uxdl__head"')[0]
+    assert "Näita veel" not in panel
+    assert "Näita kõiki" not in panel
 
-    assert _upcoming(department_head, today)["nadal"].count == 9
-    assert "Näita veel" not in week_block
-    for n in range(9):
-        assert f"Nädala eelnõu {n}" in week_block
+    for heading, prefix, held in (
+        ("JÄRGMINE NÄDAL", "Nädal", 9),
+        ("ÜLEJÄÄNUD KUU", "Kuu", 8),
+        ("KAUGEMAL", "Kaugel", 7),
+    ):
+        window = _window(panel, heading)
+        assert f"kõik {held}" in window, heading
+        for n in range(held):
+            assert f"{prefix} {n}" in window, f"{heading}: row {n}"
+
+
+@pytest.mark.django_db
+def test_every_window_is_a_shut_details_and_the_group_link_is_gone(
+    client, department_head, wednesday
+) -> None:
+    """Native `<details>`, shut, and no `<a>` in the summary.
+
+    Shut is asserted on the tag itself rather than through the rows being
+    missing — the rows are served with the page, which is the whole point — and
+    the tag is matched exactly, so `<details class="uxdl" open>` fails here
+    rather than shipping a panel that opens itself. The `<div>` it replaces
+    fails the same assertion.
+
+    The anchor is asserted twice over: the register URL each window used to
+    carry is not in the panel, and no `<a>` of any kind is inside a `<summary>`.
+    The second is the rule — a link inside a disclosure trigger is two controls
+    in one place — and the first is the specific one this round removed.
+    """
+    today = wednesday
+    _deadline(department_head, on=date(2026, 9, 4), title="Nädala eelnõu")
+    _deadline(department_head, on=date(2026, 11, 3), title="Novembri eelnõu")
+
+    panel = _panel(client, department_head)
+
+    populated = [group for group in _upcoming(department_head, today).values() if group.count]
+    assert {group.key for group in populated} == {"nadal", "kaugemal"}
+
+    assert panel.count('<details class="uxdl">') == 2
+    assert panel.count('<summary class="uxdl__head">') == 2
+    assert '<div class="uxdl">' not in panel
+
+    for group in populated:
+        assert escape(group.url) not in panel, f"{group.key} still links to the register"
+    # `too_alates` is what made a link a *window's* link. The section's own
+    # «Kõik tähtajad →» carries `?too=tahtaeg-vahemik` with no dates on it, so
+    # this cannot pass by the whole panel having lost its links.
+    assert "too_alates" not in panel
+    assert "Kõik tähtajad →" in panel
+
+    for summary in panel.split('<summary class="uxdl__head">')[1:]:
+        assert "<a " not in summary.split("</summary>")[0]
 
 
 # ---------------------------------------------------------------------------
