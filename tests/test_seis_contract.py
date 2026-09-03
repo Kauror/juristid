@@ -50,6 +50,11 @@ STRIPS = [
 FIGURE = re.compile(r'<(a|span)\s+class="seis__figure"(?:\s+href="([^"]*)")?')
 
 
+#: Inside `sections.NEAR_DAYS`, so the seeded upcoming date lands in the window
+#: «30 päeva jooksul» counts and in the section that figure points at.
+NEAR_IN_DAYS = 10
+
+
 def _seeded(owner, today):
     """Enough work that the strips are not empty and the zeros are not dropped.
 
@@ -100,11 +105,6 @@ def _seeded(owner, today):
         actor=owner,
     )
     return matters
-
-
-#: Inside `sections.NEAR_DAYS`, so the seeded upcoming date lands in the window
-#: «30 päeva jooksul» counts and in the section that figure points at.
-NEAR_IN_DAYS = 10
 
 
 @pytest.fixture
