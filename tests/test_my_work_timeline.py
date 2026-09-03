@@ -450,8 +450,12 @@ def test_an_empty_day_says_so_once(client, specialist):
 # *Üle tähtaja* is capped at ten like every other band. It used to render
 # everything it held, and a fortnight of late work then pushed the rest of the
 # timeline off the screen. The approved rule is: oldest first, ten rows on
-# screen, the remainder inline behind «Näita veel N ▾» — nothing leaves the
-# page and the count above the list stays the honest total.
+# screen, the remainder inline behind «Näita veel N ▾».
+#
+# There is a second, larger cap under that one — `BAND_LIMIT`, on how many rows
+# the band materialises at all — and it used to be applied to the list the band
+# then counted, so the heading described the slice rather than the population.
+# The tests at the foot of this section are about that (UX-002).
 #
 # The population is deliberately mixed. A cap proved against thirteen
 # NextActions would also pass if the slice happened to live in the action
@@ -644,3 +648,97 @@ def test_the_bands_render_in_reading_order(client, specialist, today):
         (key for key, _ in positions), key=wi.BAND_ORDER.index
     ), f"the bands are out of chronological order: {[k for k, _ in positions]}"
     assert [where for _, where in positions] == sorted(where for _, where in positions)
+
+
+# --- the render cap, and the heading above it (UX-002) ---------------------
+#
+# `band_items` slices to `BAND_LIMIT` and `WorkBand.count` read `len(items)`, so
+# on a big enough band the heading counted the slice. Production showed it
+# plainly: `64 üle tähtaja` on the strip, `Üle tähtaja 60` in the heading forty
+# pixels below, and four genuinely late rows behind no control on the page —
+# under a comment promising that nothing ever left it.
+#
+# One item per Matter here, which is what makes the strip and the band directly
+# comparable: `work_population_ids` counts Matters and the band counts items, so
+# a fixture with two overdue commitments on one Matter would make them differ
+# for a legitimate reason and prove nothing about the truncation.
+
+
+def _over_the_cap(specialist, today):
+    _overdue_population(specialist, today, wi.BAND_LIMIT + 5)
+    return build_my_work(specialist, today=today)
+
+
+def test_the_heading_counts_the_population_and_not_the_rendered_rows(specialist, today):
+    work = _over_the_cap(specialist, today)
+    band = next(one for one in work.bands if one.key == wi.BAND_OVERDUE)
+
+    assert band.count == wi.BAND_LIMIT + 5
+    assert band.total == wi.BAND_LIMIT + 5
+    # The cap is still a cap.
+    assert len(band.items) == wi.BAND_LIMIT
+    assert band.beyond_cap == 5
+
+
+def test_the_inline_disclosure_is_unchanged_by_the_honest_total(specialist, today):
+    """`Näita veel` still opens the rest of what this page holds, and no more."""
+    work = _over_the_cap(specialist, today)
+    band = next(one for one in work.bands if one.key == wi.BAND_OVERDUE)
+
+    assert len(band.preview) == 10
+    assert band.remaining == wi.BAND_LIMIT - 10
+    assert band.preview + band.rest == band.items
+
+
+def test_the_rows_past_the_cap_have_somewhere_to_be_read(specialist, today):
+    """And it is the strip's own list, not a second one that resembles it."""
+    work = _over_the_cap(specialist, today)
+    band = next(one for one in work.bands if one.key == wi.BAND_OVERDUE)
+    strip = next(figure for figure in work.seis if figure.key == "overdue")
+
+    assert band.more_url
+    assert band.more_url == strip.url
+
+
+def test_the_strip_figure_and_the_band_heading_agree(specialist, today):
+    """The contradiction, gone: one obligation per Matter, one number for both."""
+    work = _over_the_cap(specialist, today)
+    band = next(one for one in work.bands if one.key == wi.BAND_OVERDUE)
+    strip = next(figure for figure in work.seis if figure.key == "overdue")
+
+    assert strip.value == wi.BAND_LIMIT + 5
+    assert band.count == strip.value
+
+
+def test_capped_rows_are_not_reported_as_deadlines_beyond_the_horizon(specialist, today):
+    """`beyond_horizon` counted whatever the bands did not render.
+
+    So every row the cap dropped — late 2025 work, in the first band — was
+    reported as a deadline *further away* than the window, which is the opposite
+    of what it is. It reads the population now.
+    """
+    work = _over_the_cap(specialist, today)
+
+    assert work.beyond_horizon == 0
+
+
+def test_a_band_under_the_cap_offers_no_overflow_link(specialist, today):
+    """Nothing new appears on an ordinary morning."""
+    _overdue_population(specialist, today, 13)
+    work = build_my_work(specialist, today=today)
+    band = next(one for one in work.bands if one.key == wi.BAND_OVERDUE)
+
+    assert band.count == 13
+    assert band.beyond_cap == 0
+    assert len(band.items) == 13
+
+
+def test_the_page_prints_the_honest_total_and_the_way_to_the_rest(client, specialist, today):
+    """The rendered page, because the heading is what a lawyer reads."""
+    _overdue_population(specialist, today, wi.BAND_LIMIT + 5)
+    client.force_login(specialist)
+
+    body = client.get(reverse("matters:my_work")).content.decode()
+
+    assert f"Näita kõiki {wi.BAND_LIMIT + 5} →" in body
+    assert f'<span class="workband__count">{wi.BAND_LIMIT + 5}</span>' in body

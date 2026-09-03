@@ -62,8 +62,8 @@ control on this row: the row itself is the link.
     <summary class="rowmenu__trigger" aria-label="Rea tegevused">⋯</summary>
     <div class="rowmenu__menu">
       {% if item.is_action %}
-        <a class="rowmenu__item" href="{{ item.matter_url }}#jargmiseks">Märgi tehtuks</a>
-        <a class="rowmenu__item" href="{{ item.matter_url }}#jargmiseks">Muuda</a>
+        <a class="rowmenu__item" href="{{ item.matter_url }}#jargmiseks-rida">Märgi tehtuks</a>
+        <a class="rowmenu__item" href="{{ item.matter_url }}#teema-koostaja">Muuda</a>
         {% if item.is_review_ripe %}
           {% comment %}
             "Vaatasin üle" is a real service (app/workflow/services.acknowledge_review)
@@ -71,7 +71,7 @@ control on this row: the row itself is the link.
             default. So the row links to the dated control that already exists
             on the Matter instead of guessing a date here (§7).
           {% endcomment %}
-          <a class="rowmenu__item" href="{{ item.matter_url }}#jargmiseks">Vaatasin üle…</a>
+          <a class="rowmenu__item" href="{{ item.matter_url }}#jargmiseks-rida">Vaatasin üle…</a>
         {% endif %}
       {% endif %}
       <a class="rowmenu__item" href="{{ item.matter_url }}">Ava teema</a>

@@ -112,8 +112,22 @@ localStorage (Stage-2E.1 brief 12).
     register's here and the Arvamused section's under its own box. A control
     that moves between two searches on one page is a control a reader has to
     find twice (02-EKRAANID §C).
+
+    **Closed on arrival, whatever the URL says.** It used to open itself
+    whenever a filter was active, which is the definition of arriving by
+    drill-down — so every count on Minu asjad, Osakond, Ülevaade and Statistika
+    landed the reader on 733 px of select boxes with the first result 200 px
+    below a 900 px fold. They clicked a number to see the rows behind it and
+    were shown the filter form instead (UX-008).
+
+    Nothing is hidden by this. What is filtering the list is stated above the
+    table as removable chips — «Kirje liik: Täielik ×», «Töö seis: Üle tähtaja ×»
+    — with «Tühjenda kõik» beside them, which is both the better affordance and
+    the one already built. The panel stays a plain <details>: the reader opens
+    it when they want it, the browser remembers nothing, and there is no
+    session state deciding it for them.
   {% endcomment %}
-    <details class="filterpanel" id="tapsem-otsing" {% if active_filters %}open{% endif %}>
+    <details class="filterpanel" id="tapsem-otsing">
       <summary class="filterpanel__trigger">Täpsem otsing</summary>
       <div class="filterpanel__body">
       {% comment %}

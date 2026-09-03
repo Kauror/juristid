@@ -282,10 +282,30 @@ def apply_plan(
     Unchanged as an operator contract. It catalogues first — idempotently, so a
     prior `catalogue_plan` run costs it nothing and loses nothing — and then does
     the part only an apply may do.
+
+    **It owns the archive projection for what it wrote.** This is the bulk half
+    of the ADR 0041 contract, and an apply needs it for three separate reasons:
+    it touches the same binary several times over, it marks candidates applied
+    with a queryset `update()` that no signal can see, and `review_state` and
+    `match_class` are projected from exactly those candidates. So the per-row
+    handlers are suspended for the run and one bounded refresh covers the
+    binaries this batch actually catalogued — not a rebuild of the corpus, which
+    would make every apply pay for seven hundred letters it did not touch
+    (app/legacy_import/opinion_search_signals.py).
+
+    Inside the atomic block on purpose: an apply that rolls back must take its
+    projection writes with it.
     """
+    from app.legacy_import.opinion_search import (
+        refresh_archive_binaries,
+        suspend_archive_indexing,
+    )
+
     report = ApplyReport()
-    items = _catalogue(plan, batch, report)
-    _write_submissions(plan, batch, items, report, actor)
+    with suspend_archive_indexing():
+        items = _catalogue(plan, batch, report)
+        _write_submissions(plan, batch, items, report, actor)
+    refresh_archive_binaries({item.binary_id for item in items.values()})
     return report
 
 

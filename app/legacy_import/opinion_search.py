@@ -28,13 +28,15 @@ query time — so widening who may read needs no rebuild and does not move
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+import contextvars
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
 from django.contrib.postgres.search import SearchQuery, SearchVector
 from django.db import transaction
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import Exists, F, OuterRef, Q, QuerySet
 from django.utils import timezone
 
 from app.legacy_import.opinion_archive import (
@@ -111,16 +113,90 @@ def rebuild_archive_index(*, force: bool = False) -> ArchiveIndexReport:
     # same statement, and there is no other way for a row to become orphaned.
     report = ArchiveIndexReport()
     binaries = OpinionArchiveBinary.objects.select_related("text", "search_document").order_by("pk")
+    report.binaries, report.written = _reindex(binaries, force=force)
+    report.unchanged = report.binaries - report.written
+    return report
+
+
+def _reindex(binaries: QuerySet[OpinionArchiveBinary], *, force: bool = False) -> tuple[int, int]:
+    """Recompute these binaries and write the rows that differ.
+
+    Returns ``(seen, written)``. Shared by the full rebuild and the targeted
+    refresh so there is one definition of "what this row should say" and one of
+    "is it already saying it" — two implementations would drift, and the whole
+    point of the projection is that it does not.
+    """
+    seen = written = 0
     for binary in binaries.iterator():
-        report.binaries += 1
+        seen += 1
         values = _row_values(binary)
         existing = getattr(binary, "search_document", None)
         if existing is not None and not force and _matches_row(existing, values):
-            report.unchanged += 1
             continue
         _write_row(binary, values)
-        report.written += 1
-    return report
+        written += 1
+    return seen, written
+
+
+# ---------------------------------------------------------------------------
+# Staying fresh: the bounded half of the ADR 0041 contract
+# ---------------------------------------------------------------------------
+
+_suspended: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "archive_indexing_suspended", default=False
+)
+
+
+def archive_indexing_is_suspended() -> bool:
+    return _suspended.get()
+
+
+@contextmanager
+def suspend_archive_indexing() -> Iterator[None]:
+    """Stop per-row archive reindexing for a bulk operation.
+
+    The caller takes on the obligation to refresh what it touched, with
+    :func:`refresh_archive_binaries`. The same bargain `app.search` strikes for
+    the global projection, and it is a bargain rather than a licence: a bulk
+    writer that suspends and then refreshes nothing is the defect this contract
+    exists to close.
+    """
+    token = _suspended.set(True)
+    try:
+        yield
+    finally:
+        _suspended.reset(token)
+
+
+def refresh_archive_binaries(binary_ids: Iterable[Any]) -> int:
+    """Rewrite the projection rows for exactly these binaries.
+
+    The bounded refresh a bulk caller owes, and what the signal handlers use for
+    a single row. Bounded by the write rather than by the corpus: relinking one
+    letter must not cost a rebuild of the other seven hundred, and the row-level
+    comparison in :func:`_reindex` means a refresh that finds nothing changed
+    writes nothing at all.
+
+    Ignores ``None`` — an archive item need not have a binary yet, and a caller
+    collecting ids from a batch should not have to filter them itself.
+    """
+    wanted = {pk for pk in binary_ids if pk is not None}
+    if not wanted:
+        return 0
+    binaries = (
+        OpinionArchiveBinary.objects.select_related("text", "search_document")
+        .filter(pk__in=wanted)
+        .order_by("pk")
+    )
+    _, written = _reindex(binaries)
+    return written
+
+
+def refresh_archive_binary(binary_id: Any) -> int:
+    """One binary, unless indexing is suspended for a bulk write in progress."""
+    if archive_indexing_is_suspended() or binary_id is None:
+        return 0
+    return refresh_archive_binaries([binary_id])
 
 
 def _matches_row(row: OpinionArchiveSearchDocument, values: dict[str, Any]) -> bool:
@@ -411,5 +487,29 @@ def archive_index_findings() -> list[str]:
     ).count()
     if lagging:
         findings.append(f"{lagging} real on tekst olemas, kuid projektsioon seda ei kajasta")
+
+    # The two columns the archive workspace answers "is this letter attached to
+    # anything?" from. They are computed at index time from relations that
+    # nothing about a binary touches, so before the freshness handlers existed a
+    # whole corpus could be linked while every row still read `Sidumata` — and
+    # this function reported a clean run throughout, which is how 320 links
+    # stayed invisible for a fortnight (UX-006, docs/adr/0041).
+    #
+    # Reported in both directions. A row claiming a link it does not have is
+    # rarer and worse: the list would offer `Teemaga seotud` and the letter's own
+    # page would name no Teema at all.
+    linked = OpinionArchiveMatterLink.objects.filter(binary=OuterRef("binary_id"))
+    imported = OpinionSubmissionImport.objects.filter(item__binary=OuterRef("binary_id"))
+    drift = OpinionArchiveSearchDocument.objects.annotate(
+        really_linked=Exists(linked), really_imported=Exists(imported)
+    )
+
+    link_drift = drift.exclude(is_linked=F("really_linked")).count()
+    if link_drift:
+        findings.append(f"{link_drift} real ei ühti teemaseose olek kanooniliste seostega")
+
+    submission_drift = drift.exclude(has_submission=F("really_imported")).count()
+    if submission_drift:
+        findings.append(f"{submission_drift} real ei ühti arvamuse olek kanooniliste kirjetega")
 
     return findings

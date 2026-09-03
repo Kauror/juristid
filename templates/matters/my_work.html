@@ -148,6 +148,18 @@ The rail holds only what has no honest place on a timeline.
               </div>
             </details>
           {% endif %}
+          {% if band.beyond_cap and band.more_url %}
+            {% comment %}
+              The rows past the render cap. «Näita veel» above opens the rest of
+              what this page holds; this opens the rest of what *exists* — the
+              same register list the strip figure above links to, so the number
+              in the heading and the rows behind this link are one selector
+              rather than two that resemble each other (UX-002).
+            {% endcomment %}
+            <p class="workband__more">
+              <a href="{{ band.more_url }}">Näita kõiki {{ band.count }} →</a>
+            </p>
+          {% endif %}
           {% if band.key == 'hiljem' and work.beyond_horizon %}
             <p class="workband__more">
               <a href="?kuni=koik">Näita kaugemaid tähtaegu ({{ work.beyond_horizon }})</a>
@@ -347,7 +359,7 @@ The rail holds only what has no honest place on a timeline.
             {% endwith %}
             <span class="quietrow__meta">
               {{ row.silence }}
-              <a class="quietrow__cta" href="{% url 'matters:matter_detail' pk=row.matter.pk %}#jargmiseks">Määra</a>
+              <a class="quietrow__cta" href="{% url 'matters:matter_detail' pk=row.matter.pk %}#teema-koostaja">Määra</a>
             </span>
           </div>
         {% empty %}

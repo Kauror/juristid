@@ -324,9 +324,13 @@ def test_an_opinion_restricted_below_its_matter_is_not_named_in_the_rail(
 
 
 def test_a_sent_submissions_final_evidence_is_the_same_row(signed_in, specialist, organisation):
-    """One list, not two. `select_final_evidence` writes a
-    KODA_SUBMISSION_FINAL document, so an opinion bound to a SENT Submission is
-    already in the rail's population and is not stored a second time."""
+    """One list, not two, when the document carries the role already.
+
+    This is the easy half and it always worked: `_opinion_document` creates the
+    file as a `KODA_SUBMISSION_FINAL`, so it is in the rail through the role
+    branch and binding it to a Submission does not store it twice. The half that
+    did *not* work — the same flow on a document that was never classified as an
+    opinion — is the group of tests below (UX-005)."""
     from app.documents.services import evidence_storage  # noqa: F401  (settings guard)
     from app.submissions.services import (
         create_submission,
@@ -382,3 +386,158 @@ def test_the_other_rail_blocks_are_still_there(signed_in, specialist):
     assert "Teema andmed" in body
     assert "Teemaviide" in body
     assert "Sildid" not in body
+
+
+# ---------------------------------------------------------------------------
+# The rail may not deny an opinion the Matter has sent (UX-005)
+# ---------------------------------------------------------------------------
+#
+# `Koja arvamus` used to list `DocumentRole.KODA_SUBMISSION_FINAL` alone, on the
+# documented grounds that every path writes it. Two do not: `select_final_evidence`
+# writes `final_version` and nothing else, and `attach_final_evidence` handed an
+# existing document binds the evidence without touching the classification. So a
+# Matter rendered `Koja arvamused 1 · Saadetud` in its main column and
+# `Arvamust ei ole lisatud` in this rail, in one viewport, and offered to add a
+# second copy of a letter it had already sent.
+#
+# The fix is in the read model: the rail asks which visible documents *represent*
+# a Chamber opinion, which is the role **or** the evidence of a SENT Submission.
+# `Document.role` still classifies a file and is never rewritten to compensate.
+
+
+def _incoming_document(matter, *, name="Ministeeriumi_kiri.pdf"):
+    """A file that arrived, classified as what it is.
+
+    The realistic shape of the defect: a lawyer picks the document already on the
+    Matter as the evidence for the opinion going out. Nothing about that act
+    makes the arriving letter stop being an arriving letter.
+    """
+    from app.documents.services import add_evidence_version, create_document
+
+    document = create_document(
+        matter=matter,
+        title=name,
+        role=DocumentRole.INCOMING_AUTHORITY,
+        created_by=matter.owner,
+    )
+    add_evidence_version(
+        document=document,
+        content=b"%PDF-1.4 test",
+        original_filename=name,
+        mime_type="application/pdf",
+        uploaded_by=matter.owner,
+    )
+    return document
+
+
+def _sent_on(matter, document, actor, organisation, *, send=True):
+    from app.submissions.services import (
+        create_submission,
+        mark_submission_sent,
+        select_final_evidence,
+    )
+
+    submission = create_submission(
+        matter=matter, title=matter.title, actor=actor, recipients=[organisation]
+    )
+    select_final_evidence(submission=submission, version=document.current_version, actor=actor)
+    if send:
+        mark_submission_sent(submission=submission, actor=actor)
+    submission.refresh_from_db()
+    return submission
+
+
+def test_a_sent_opinion_is_listed_even_though_its_document_kept_its_own_role(
+    signed_in, specialist, organisation
+):
+    matter = factories.MatterFactory(owner=specialist)
+    document = _incoming_document(matter)
+    submission = _sent_on(matter, document, specialist, organisation)
+
+    assert submission.status == SubmissionStatus.SENT
+    # The point of the test: the role was not rewritten to make this pass.
+    document.refresh_from_db()
+    assert document.role == DocumentRole.INCOMING_AUTHORITY
+
+    block = _rail_block(_detail(signed_in, matter), "koja-arvamus")
+    assert block.count("Ministeeriumi_kiri.pdf") == 1
+
+
+def test_the_rail_does_not_say_there_is_no_opinion_beside_one_it_sent(
+    signed_in, specialist, organisation
+):
+    """The contradiction itself: both statements were on screen at once."""
+    matter = factories.MatterFactory(owner=specialist)
+    _sent_on(matter, _incoming_document(matter), specialist, organisation)
+
+    block = _rail_block(_detail(signed_in, matter), "koja-arvamus")
+    assert "Arvamust ei ole lisatud." not in block
+
+
+def test_a_draft_submissions_evidence_is_not_promoted_to_an_opinion(
+    signed_in, specialist, organisation
+):
+    """A file somebody is preparing is not a letter the Chamber has sent.
+
+    The union is `SENT` and deliberately not "has a final_version": widening it
+    to drafts would be this defect in the other direction.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    submission = _sent_on(matter, _incoming_document(matter), specialist, organisation, send=False)
+
+    assert submission.status == SubmissionStatus.DRAFT
+    assert submission.final_version_id is not None
+
+    block = _rail_block(_detail(signed_in, matter), "koja-arvamus")
+    assert "Ministeeriumi_kiri.pdf" not in block
+    assert "Arvamust ei ole lisatud." in block
+
+
+def test_a_document_in_both_branches_is_listed_once(signed_in, specialist, organisation):
+    """The ordinary closing flow satisfies the role *and* the Submission."""
+    matter = factories.MatterFactory(owner=specialist)
+    document = _opinion_document(matter, name="Koja_arvamus.pdf")
+    _sent_on(matter, document, specialist, organisation)
+
+    document.refresh_from_db()
+    assert document.role == DocumentRole.KODA_SUBMISSION_FINAL
+
+    block = _rail_block(_detail(signed_in, matter), "koja-arvamus")
+    assert block.count("Koja_arvamus.pdf") == 1
+
+
+def test_visibility_still_gates_the_filename_of_a_sent_opinion(
+    client, reader, specialist, organisation
+):
+    """AUTH-003 §21 applies to the whole union, not just the role branch.
+
+    Restricted after the send, so the domain check that guards *binding* is not
+    what is being tested here — the question is only whether the widened read
+    model still narrows by `visible_to`.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    document = _incoming_document(matter, name="Salajane_saadetud.pdf")
+    _sent_on(matter, document, specialist, organisation)
+
+    document.visibility_override = Visibility.RESTRICTED
+    document.save(update_fields=["visibility_override"])
+
+    client.force_login(reader)
+    block = _rail_block(_detail(client, matter), "koja-arvamus")
+
+    assert "Salajane_saadetud.pdf" not in block
+    assert "Arvamust ei ole lisatud." in block
+
+
+def test_the_union_does_not_reach_across_matters(signed_in, specialist, organisation):
+    """A second Matter's opinion is not this Matter's, whatever is bound where."""
+    mine = factories.MatterFactory(owner=specialist)
+    theirs = factories.MatterFactory(owner=specialist, title="Teine teema")
+    _sent_on(
+        theirs, _incoming_document(theirs, name="Teise_teema_kiri.pdf"), specialist, organisation
+    )
+
+    block = _rail_block(_detail(signed_in, mine), "koja-arvamus")
+
+    assert "Teise_teema_kiri.pdf" not in block
+    assert "Arvamust ei ole lisatud." in block

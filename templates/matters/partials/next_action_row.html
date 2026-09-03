@@ -44,9 +44,16 @@ päev» on a step due 30.09 lands on 01.10 (pilot QA F-04, F-05).
   belongs to the wrapper rather than to each branch — three elements declaring
   `jargmiseks-rida` is a duplicate id on every render, whichever branch happens
   to be taken (tests/test_templates.py).
+
+  It is also where `Märgi tehtuks` and `Vaatasin üle…` land from a work row on
+  another page: the controls those two name — «✓ Tehtud» and «Lükka edasi» —
+  are inside this row, so the row is the destination. `tabindex="-1"` is what
+  lets the arrival focus it without making it a tab stop, the same way
+  `#tulemused` accepts a drill-down on the register (static/js/ux.js,
+  templates/matters/matter_list.html).
 {% endcomment %}
 <div class="uxnext {% if matter.is_open and current_action.is_overdue %}uxnext--overdue{% endif %}"
-     id="jargmiseks-rida">
+     id="jargmiseks-rida" tabindex="-1">
 {% comment %}
   A refused completion comes back inside the row, because the row is what the
   response replaced. Outside the three branches rather than in one of them: the

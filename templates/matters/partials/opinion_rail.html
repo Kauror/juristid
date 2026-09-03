@@ -6,11 +6,17 @@ output on a Matter is the opinion it sent, and an opinion is a file — so this
 block is the file, not a summary of it. The rail block that carried a free-text
 position, its `Seisukohta ei ole` line and its `Lisa seisukoht` link are gone.
 
-The files are `Document`s under `DocumentRole.KODA_SUBMISSION_FINAL`, which is
-already what every existing path writes: the closing flow, `select_final_evidence`
-on a Submission, and the opinion archive import. So an opinion uploaded here and
-one bound to a SENT Submission are the same row in the same list, and nothing is
-stored twice.
+The files are the ones `_opinion_documents` returns: `Document`s under
+`DocumentRole.KODA_SUBMISSION_FINAL`, **plus** the evidence bound to a `SENT`
+Submission on this Matter. Both, because the role alone was not the answer —
+`select_final_evidence` and `attach_final_evidence` handed an existing document
+bind the evidence without touching the classification, so a Matter could sit
+here saying `Arvamust ei ole lisatud` beside its own sent opinion and offer to
+add a second one (UX-005, app/matters/views.py).
+
+So an opinion uploaded here and one bound to a SENT Submission are still the
+same row in the same list, and nothing is stored twice — the union is
+deduplicated by document.
 
 Uploading goes through `documents:upload_evidence` — the one route that captures
 an immutable `DocumentVersion` — with the role fixed rather than chosen. It does

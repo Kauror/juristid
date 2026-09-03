@@ -200,6 +200,10 @@ def attach_final_evidence(
             # restriction rather than relying on the caller to remember.
             visibility_override=locked.visibility_override,
         )
+    # An existing document keeps the role it already had — the same rule
+    # `select_final_evidence` follows, and for the same reason: binding evidence
+    # is not a reclassification. Only the branch above, which creates the file
+    # for this submission, is entitled to name its role.
     elif document.matter_id != locked.matter_id:
         raise DomainError("Tõend peab kuuluma sama teema juurde.")
 
@@ -233,6 +237,16 @@ def select_final_evidence(
     the submission and the evidence document, and the check against what those
     locks protect rather than against whatever the caller was holding
     (app/matters/locks.py).
+
+    **This does not change `Document.role`, and must not.** The file being
+    pointed at already has a classification somebody chose — often
+    `INCOMING_AUTHORITY`, because the thing a lawyer relies on is frequently the
+    document that arrived — and relying on those bytes does not reclassify them.
+    The record that Koda sent something is this `Submission`, not a role on a
+    document. Any surface asking "has an opinion gone out on this Matter?" reads
+    the Submission (`app/matters/views.py::_opinion_documents`); a version of
+    that question answered from the role alone denied a sent opinion in the
+    Matter rail for exactly this reason (UX-005).
     """
     matter = lock_matter_for_evidence_integrity(submission.matter_id)
     locked = lock_submission_for_evidence_integrity(submission.pk)
