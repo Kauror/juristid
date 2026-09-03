@@ -926,3 +926,29 @@ def test_a_superseded_candidate_alone_leaves_the_row_empty(held, normal_matter):
     assert _row(first).review_state == ""
     assert _row(first).match_class == ""
     assert archive_index_findings() == []
+
+
+def test_a_candidates_register_reference_reaches_the_row_it_is_searchable_from(held, administrator):
+    """The reason the handler recomputes the row rather than patching two columns.
+
+    `excel_reference` is indexed among the row's `identifiers`, so a refresh
+    narrowed to `review_state` and `match_class` would leave a letter unfindable
+    by the register reference the candidate carries. The drift detector does not
+    check this — subtracting one identifier from a row cannot be told apart from
+    the rest of the column without a full-row comparison — so the freshness path
+    has to be the thing that keeps it true.
+    """
+    first, _second = held
+    item = OpinionArchiveItem.objects.filter(binary=first).order_by("pk").first()
+    assert item is not None
+    OpinionMatchCandidate.objects.create(
+        item=item,
+        batch=item.batch,
+        match_class=OpinionMatchClass.REVIEW_REQUIRED,
+        state=OpinionCandidateState.PENDING,
+        excel_reference="2024_317",
+    )
+
+    assert "2024_317" in _row(first).identifiers
+    rows = search_archive(user=administrator, filters=ArchiveFilters(query="2024_317"))
+    assert [row.binary_id for row in rows] == [first.pk]
