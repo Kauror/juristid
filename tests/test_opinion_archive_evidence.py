@@ -274,3 +274,76 @@ def test_a_text_row_records_the_parser_that_produced_it(catalogued, settings):
     assert text.parser_version == PARSER_VERSION
     assert text.extracted_at is not None
     assert text.extracted_at.date() >= datetime.date(2020, 1, 1)
+
+
+# ---------------------------------------------------------------------------
+# Materialisation and the archive projection
+# ---------------------------------------------------------------------------
+#
+# `_link_occurrences` points a catalogued occurrence at the bytes it names, and
+# does it with a compare-and-set `update()` — it links only a row still holding
+# no binary — so no `post_save` handler can see the write. That makes it the bulk
+# half of the ADR 0041 contract: the caller owes a refresh bounded by what it
+# touched, which here is one binary per group of identical bytes.
+
+
+def test_materialising_a_letter_leaves_it_findable_without_a_rebuild(catalogued):
+    """Held and searchable are one event, not two.
+
+    Before this, materialisation left every new binary out of the projection and
+    `verify` said so; converging it needed a rebuild an operator remembered.
+    The bytes are the same either way — what changed is that the row describing
+    them arrives with them.
+    """
+    from app.legacy_import.opinion_search import archive_index_findings, rebuild_archive_index
+    from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
+
+    path, digest, _ = catalogued
+    materialize(archive_path=path, expected_archive_sha256=digest)
+
+    assert OpinionArchiveSearchDocument.objects.count() == OpinionArchiveBinary.objects.count() == 2
+    # The duplicate filing is on the row, which is the whole point of one row
+    # per binary rather than one per occurrence.
+    counts = sorted(OpinionArchiveSearchDocument.objects.values_list("occurrence_count", flat=True))
+    assert counts == [1, 2]
+    assert archive_index_findings() == []
+    assert rebuild_archive_index().written == 0
+
+
+def test_a_later_snapshot_refiling_held_bytes_refreshes_that_row(catalogued, tmp_path):
+    """The staling path a signal cannot see, through the command that walks it.
+
+    A second archive holding a letter we already have reuses the existing binary
+    — which by now has an indexed row — and links the new occurrence with a
+    queryset `update()`. Before the bounded refresh below it, that row went on
+    reporting one filing where the archive held two, and `verify` reported a
+    clean run throughout.
+    """
+    from app.legacy_import.opinion_apply import apply_plan, open_batch
+    from app.legacy_import.opinion_plan import build_plan
+    from app.legacy_import.opinion_search import archive_index_findings, rebuild_archive_index
+    from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
+    from tests import synthetic_opinions as syn
+
+    path, digest, letters = catalogued
+    materialize(archive_path=path, expected_archive_sha256=digest)
+    binary = OpinionArchiveBinary.objects.get(sha256=letters[1].sha256)
+    row = OpinionArchiveSearchDocument.objects.get(binary=binary)
+    assert row.occurrence_count == 1
+
+    refiled = syn.SyntheticOpinion(
+        name="Opinions/2025 ymberkorraldus/2024-05-11 - Teine amet - Teine.pdf",
+        data=letters[1].data,
+    )
+    later = syn.write_archive(tmp_path / "Opinions-2025.zip", [refiled])
+    plan = build_plan(archive_path=later)
+    apply_plan(plan, batch=open_batch(plan))
+    materialize(archive_path=later, expected_archive_sha256=plan.archive_sha256)
+
+    # No rebuild_archive_index() here, deliberately.
+    row.refresh_from_db()
+    assert row.occurrence_count == 2
+    assert "Opinions/2025 ymberkorraldus" in row.occurrence_paths
+    assert archive_index_findings() == []
+    # And it landed where a rebuild would have.
+    assert rebuild_archive_index().written == 0

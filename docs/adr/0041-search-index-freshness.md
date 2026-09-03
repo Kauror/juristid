@@ -536,3 +536,108 @@ in both directions, rows whose stored `review_state` or `match_class` disagree
 with the live candidates — computed through the same helpers the row builder
 uses, because a verifier carrying its own priority order would be checking
 itself. Aggregate counts only, like every other finding here.
+
+### Follow-up (2026-09-03) — the occurrences the other three hang off
+
+The two follow-ups above cover the three relations that *point at* a letter. The
+fourth is the one they point through. `OpinionArchiveItem` is one filing — one
+path inside one archive snapshot — and the row builder reads six columns off the
+live set of a binary's filings, not three:
+
+| Column | Computed from |
+| --- | --- |
+| `occurrence_count` | the binary's live `OpinionArchiveItem` rows |
+| `occurrence_paths` | their `archive_relative_path`, de-duplicated, in the model's order |
+| `identifiers` | the binary's own SHA-256, plus their `original_filename`, plus the `external_id` of the `OpinionArchiveMetadata` and the `excel_reference` of the `OpinionMatchCandidate` hanging off them |
+| `title` | the first filing's `filename_title`, falling back to KodaDash's `title` |
+| `recipient` | the first filing's `filename_recipient`, falling back to `recipient_raw` |
+| `document_date` (and `source_year`) | the first filing's `filename_date`, falling back to `document_date` |
+
+"First" is the model's own ordering — `filename_date`, then `original_filename` —
+which is what makes those three well defined for a letter filed at several paths,
+and what the drift check has to share rather than re-derive.
+
+So removing one filing of a letter moves six columns at once, and takes that
+filing's metadata and candidates with it by CASCADE. The reproduction on
+`3d34f0dd`, synthetic data: a binary catalogued at two paths, indexed; delete one
+occurrence; the row goes on reporting two filings, both paths and the removed
+filename among its identifiers, and `archive_index_findings()` reports **no
+findings at all**. Deleting the last one leaves the row still naming a title and
+a date that nothing holds.
+
+The candidate handler from the follow-up above *does* fire during that delete —
+candidates are CASCADE from the item — and it does not help. The collector
+removes children before their parent, so the refresh runs while the occurrence
+row is still there and recomputes a row that still contains it. Being one
+statement early is indistinguishable from not running.
+
+**Same class as the other three.** One filing names at most one binary, so the
+fanout is bounded and the refresh belongs in the business transaction:
+`post_save` and `post_delete` on `OpinionArchiveItem`, recomputing the whole row
+through `_row_values` as the others do, in `opinion_search_signals.py`. A
+rolled-back deletion takes its projection change with it, and is tested that way.
+
+`post_delete` rather than `pre_delete`: the recompute must see the corpus as it
+is afterwards, once the occurrence's metadata and candidates have gone with it.
+
+**No cascade can reach an occurrence, and the schema is what says so.**
+`OpinionArchiveItem.binary` and `.batch` are both `PROTECT` and are the model's
+only foreign keys, so there is no parent whose deletion takes a filing with it:
+every deletion begins at the row or at a queryset of them, and the binary is
+always still held afterwards. The delete handler keeps `_binary_survives` anyway,
+for the reason that guard was written — re-projecting a binary that is itself
+being deleted would insert a row the cascade has already swept past — because the
+consequence of being wrong there is a failed delete rather than a stale row.
+
+**The last filing does not remove the row.** `rebuild_archive_index` writes a row
+for every held binary whether the archive still lists it or not, so a bounded
+refresh must land in the same place: the row stays, reporting nothing catalogued
+and still findable by the hash. The bytes are canonical evidence and the
+catalogue is not what makes them real. Asserted against an actual rebuild rather
+than against a belief about one.
+
+**`pre_save` for a filing that moves.** An occurrence carries its filename, its
+path, its metadata and its candidates with it, so moving one between binaries
+invalidates *two* rows and `post_save` can only see the one it joined. The
+binary it left is captured on `pre_save` — the same shape `app/search/signals.py`
+uses for a rename, believing `update_fields` and testing suspension before the
+lookup — and refreshed alongside. No production path reassigns a filing today;
+this is the shell session and the next writer, and it costs one indexed
+primary-key lookup on a model written once per filing.
+
+**The bulk exception is `materialize`, and it now pays.** `_link_occurrences`
+points a catalogued occurrence at its bytes with a compare-and-set `update()` —
+it links only a row still holding no binary — which no signal can see. It is the
+one production write that changes a projected column without a model save, and
+the case that matters is the reuse case: a later snapshot refiling a letter we
+already hold attaches a second occurrence to a binary that *already has an
+indexed row*, which then reported one filing where the archive held two. It
+refreshes the one binary it linked, inside its own atomic block, exactly as
+`apply_plan` does for the batch it catalogues. `suspend_archive_indexing` and
+`refresh_archive_binaries` are unchanged, and no rebuild is introduced.
+
+One consequence worth stating plainly: materialisation now leaves the letters it
+held *in* the projection rather than out of it. The "not in the search
+projection" finding stops being the normal state after a materialise, which is
+what it should always have meant.
+
+**Drift verification, extended.** `archive_index_findings()` now recomputes
+`occurrence_count`, `occurrence_paths`, `identifiers` and the title/recipient/date
+triple through `_occurrence_values` — the row builder's own function, for the
+reason the candidate check shares `_candidate_values` — and reports the count of
+rows that disagree. Both directions, inherently: a stale extra path, a missing
+one, a count that never moved and an identifier left behind are all a recomputed
+value differing from a stored one. This closes the one gap the candidate
+follow-up named and could not close: subtracting a single identifier from the
+column cannot be told apart from the rest of it by inspection, but recomputing
+the whole column can. Aggregate counts only, like every other finding here — the
+column being checked is a filename, so leaking it would be its own finding.
+
+**Still not covered, and detected rather than fixed.** `OpinionArchiveMetadata`
+and `OpinionArchiveText` have no handlers of their own: a metadata row written
+against an already-indexed binary, or a body extracted after one, moves the
+projection with nothing refreshing it. Both are *reported* — the text case by the
+"text exists, the projection does not reflect it" finding that predates this, the
+metadata case now by the identifier and heading checks above — so neither can go
+stale in silence, which is the contract this ADR states. Closing them is the next
+relation's work, not this one's.
