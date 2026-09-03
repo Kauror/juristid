@@ -492,3 +492,47 @@ the reader set still needs no rebuild), or what counts as evidence for a link
 It also does not run the rebuild that converges the corpus as it stands today.
 The code stops the projection drifting again; the existing drift is an
 operational one-off, authorised and performed separately.
+
+### Follow-up (2026-09-03) — the third relation
+
+The amendment above covered two of the archive projection's derived columns and
+named the third in passing, as a reason `apply_plan` owes a bounded refresh:
+`review_state` and `match_class` are computed at index time from the
+occurrence's live `OpinionMatchCandidate` rows. Nothing outside `apply_plan`
+refreshed them, so the table is completed here:
+
+| Column | Computed from |
+| --- | --- |
+| `review_state` | non-`SUPERSEDED` `OpinionMatchCandidate` on the binary's items |
+| `match_class` | the same rows, in the model's own order |
+
+This was the worse of the three omissions, because candidates are the relation
+the product actually writes. Every decision recorded in
+`/haldus/arvamuste-ulevaatus/` — rejected, duplicate, not an opinion, deferred,
+linked — is a `save()` on one candidate; so is every proposal a rerun retires
+through `supersede_candidate`, and every one a catalogue adds. All of them could
+commit while the archive workspace went on labelling and filtering the letter by
+the state before the decision, with `verify` reporting a clean run throughout.
+
+**Same class, same discharge.** One candidate names one occurrence, which names
+at most one binary, so this is class A like the other two: refreshed inside the
+business transaction, the whole row rather than the two obvious columns — a
+candidate's `excel_reference` is indexed among the row's `identifiers` and would
+otherwise go stale behind them. Suspension and `refresh_archive_binaries` are
+unchanged, and `apply_plan` keeps the bounded discharge it already had; nothing
+here introduces a rebuild.
+
+**Cascades are not the link's lifecycle.** `app/search/signals.py` and the two
+handlers above skip a delete that did not begin at the row itself, because a
+link goes either on its own or with its binary. A candidate is `CASCADE` from
+its `OpinionArchiveItem` *and* from its `Matter`, and the binary outlives both —
+`OpinionArchiveItem.binary` is `PROTECT`, and the TEST-data purge deletes
+Matters while holding `OpinionArchiveBinary` in `NEVER_OWNED` for exactly that
+reason. The candidate handler therefore asks the narrower question, *is the
+binary going too*, and refreshes in every other case.
+
+**Drift verification, extended.** `archive_index_findings()` now also reports,
+in both directions, rows whose stored `review_state` or `match_class` disagree
+with the live candidates — computed through the same helpers the row builder
+uses, because a verifier carrying its own priority order would be checking
+itself. Aggregate counts only, like every other finding here.
