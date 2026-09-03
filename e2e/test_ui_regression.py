@@ -978,7 +978,7 @@ CLOSED_DISCLOSURES: tuple[tuple[str, str, str], ...] = (
 
 
 def test_a_closed_disclosure_contributes_no_masks(page, base_url):
-    """What a shut `<details>` is holding must not paint over the page.
+    """What a shut `<details>` is *holding* must not paint over the page.
 
     Not a screenshot: the damage this guards against is invisible to
     `compare()` in the only way that matters, because a mask painted in the
@@ -991,6 +991,19 @@ def test_a_closed_disclosure_contributes_no_masks(page, base_url):
     *Eesolev* window over its own deadlines. The presence assertion keeps each
     honest: if the seeded world ever stops filling one, this test would be
     measuring nothing there, and it says so rather than passing.
+
+    **A shut disclosure's summary is on screen.** Only its body is not, and the
+    distinction is the whole assertion — it is what widening this test to the
+    deadline windows found. `.uxdl__range` is a clock value that renders *in*
+    the summary: it must be masked, and masking it damages nothing, because
+    there is a reader looking at the glyphs it covers. The intervention
+    disclosure gets away with the cruder question only because «Näita veel N ▾»
+    happens to carry no clock value; asking it of a summary that does would have
+    demanded the mask be removed from something visible, which is the opposite
+    of what this file is for.
+
+    So the matches are partitioned rather than counted: everything inside the
+    shut element, minus what sits in its summary, must be nothing.
     """
     signed_in(page, base_url, "/osakond/")
     for disclosure, evidence, complaint in CLOSED_DISCLOSURES:
@@ -999,12 +1012,15 @@ def test_a_closed_disclosure_contributes_no_masks(page, base_url):
             f"assertion to whichever surface still hides rows."
         )
         for selector in CLOCK_DEPENDENT:
-            inside = page.locator(f"{disclosure} {visible(selector)}")
-            assert inside.count() == 0, (
-                f"{selector!r} matches {inside.count()} element(s) inside "
-                f"{disclosure!r} and Playwright would paint a rectangle for each, "
-                f"in the page's own colour, over whatever happens to be "
-                f"underneath."
+            # A strict subset of `inside`, so the subtraction is a count of the
+            # matches that are in the body — the part nobody can see.
+            inside = page.locator(f"{disclosure} {visible(selector)}").count()
+            on_summary = page.locator(f"{disclosure} > summary {visible(selector)}").count()
+            assert inside - on_summary == 0, (
+                f"{selector!r} matches {inside - on_summary} element(s) in the "
+                f"body of {disclosure!r} — which nobody can see — and Playwright "
+                f"would paint a rectangle for each, in the page's own colour, "
+                f"over whatever happens to be underneath."
             )
 
 
