@@ -6,8 +6,10 @@ change is visible in the text — a draft version and a section, a page of the
 explanatory memorandum, the date of a committee's minutes — and a row with no
 evidence is a claim rather than a win (02-EKRAANID §D).
 
-The state is a labelled chip, never a tint alone: a candidate and a confirmed
-victory are different statements and the row says which it is in words.
+No state chip. Every row on this page is a Töövõit, and «Kinnitatud töövõit»
+beside each one repeated the caption above it in the vocabulary of a review step
+the ordinary product no longer has. It is not replaced by a «Töövõit» chip
+either: a label that is true of every row distinguishes nothing.
 {% endcomment %}
 <tr>
   <td class="table__date">
@@ -22,9 +24,6 @@ victory are different statements and the row says which it is in words.
       <a class="table__titlelink"
          href="{% url 'matters:matter_detail' pk=row.matter.pk %}"
          title="{{ row.title }}">{{ row.title }}</a>
-      <span class="table__flags">
-        <span class="victorystate victorystate--{{ row.status|lower }}">{{ row.get_status_display }}</span>
-      </span>
     </span>
   </td>
   <td class="table__matter">

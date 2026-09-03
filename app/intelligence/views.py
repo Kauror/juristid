@@ -39,7 +39,6 @@ from app.core.authorization import may_review_work_victory
 from app.core.decorators import business_write_required, gate_required, viewer_for
 from app.core.errors import DomainError
 from app.intelligence import filters, sections, selectors, services
-from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.forms import (
     EffectiveDateForm,
     ImportantDateForm,
@@ -356,16 +355,24 @@ def _effective_figures(viewer: Any, today: date) -> list[Figure]:
 
 @gate_required
 def work_victories(request: HttpRequest) -> HttpResponse:
-    """Claimed and confirmed work victories, filterable by period and state.
+    """Töövõidud, a year at a time.
+
+    One concept, not two. *Töövõidu kandidaat* and *kinnitatud töövõit* stopped
+    being a distinction a reader makes when the manual door started recording a
+    work victory as one (:func:`add_work_victory`), so this page offers no
+    state filter and shows the population that is a work victory. ``?staatus=``
+    is read by nothing here: an old link still opens this page, and it opens the
+    same page everyone else sees.
+
+    The internal states are untouched — a machine's or an import's proposal is
+    still a proposal, and still reaches nobody's Töövõidud until a person
+    decides it is one (app/intelligence/selectors.py::VISIBLE_VICTORY_STATUS).
 
     A list, not a scoreboard. There is no win rate, no ministry ranking and no
     per-lawyer productivity figure, because none of them has a defensible
     denominator or an attribution model behind it (Stage-2G brief 40, 41).
     """
     viewer = viewer_for(request)
-    status = request.GET.get("staatus", "")
-    if status not in WorkVictoryStatus.values:
-        status = ""
     year_param = request.GET.get("aasta", "").strip()
     year: str | int | None = None
     if year_param == selectors.UNKNOWN_PERIOD:
@@ -376,13 +383,12 @@ def work_victories(request: HttpRequest) -> HttpResponse:
         # `period_date__year` and raising (CORR-02).
         year = year_from(year_param)
 
-    queryset = selectors.work_victories(user=viewer, status=status, year=year)
+    visible = selectors.VISIBLE_VICTORY_STATUS
+    queryset = selectors.work_victories(user=viewer, status=visible, year=year)
     paginator = Paginator(queryset, PAGE_SIZE)
     page = paginator.get_page(request.GET.get("leht"))
 
-    counts = selectors.work_victory_counts(viewer)
-    base = {"staatus": status, "aasta": year}
-    status_choices: tuple[tuple[str, str], ...] = (("", "Kõik"), *WorkVictoryStatus.choices)
+    base = {"aasta": year}
     context = _shell(request, "toovoidud")
     context.update(
         {
@@ -395,25 +401,15 @@ def work_victories(request: HttpRequest) -> HttpResponse:
             ),
             "seis": _victory_figures(viewer, timezone.localdate()),
             "columns": VICTORY_COLUMNS,
-            "status": status,
-            "status_options": [
-                {**option, "count": counts.get(option["key"])}
-                for option in filters.options(
-                    status_choices, parameter="staatus", current=status, base=base
-                )
-            ],
             "year_options": filters.year_options(
-                selectors.work_victory_years(viewer),
+                selectors.work_victory_years(viewer, status=visible),
                 current=year,
                 base=base,
                 extra=(
                     (selectors.UNKNOWN_PERIOD, "Teadmata periood")
-                    if selectors.has_any_undated_victory(viewer)
+                    if selectors.has_any_undated_victory(viewer, status=visible)
                     else None
                 ),
-            ),
-            "context_label": (
-                dict(WorkVictoryStatus.choices)[status] if status else "Kõik töövõidud"
             ),
         }
     )
@@ -421,26 +417,23 @@ def work_victories(request: HttpRequest) -> HttpResponse:
 
 
 def _victory_figures(viewer: Any, today: date) -> list[Figure]:
-    """Töövõidud: this year and this month, and nothing that ranks anybody.
+    """One figure: this year's work victories, opening this year's list.
 
-    Counts of a stored state, each opening the same list it was counted from.
+    The second figure counted *kandidaate* — a review queue this page no longer
+    has, on a surface where the distinction stopped existing. It is not replaced
+    by another number: a figure invented to keep a strip symmetrical is a metric
+    nobody asked for, and one honest count is worth more than two.
+
     No rate, no ministry league table, no per-lawyer figure — none of them has
     a defensible denominator or an attribution model behind it
     (master specification 3.5, Stage-2G brief 40, 41).
     """
-    confirmed = selectors.work_victories(user=viewer, status=WorkVictoryStatus.CONFIRMED)
-    claimed = selectors.work_victories(user=viewer, status=WorkVictoryStatus.CANDIDATE)
+    victories = selectors.work_victories(user=viewer, status=selectors.VISIBLE_VICTORY_STATUS)
     return [
         Figure(
-            confirmed.filter(period_date__year=today.year).count(),
+            victories.filter(period_date__year=today.year).count(),
             "töövõitu sel aastal",
-            f"?staatus={WorkVictoryStatus.CONFIRMED}&aasta={today.year}",
-        ),
-        Figure(
-            claimed.count(),
-            dict(WorkVictoryStatus.choices)[WorkVictoryStatus.CANDIDATE].lower(),
-            f"?staatus={WorkVictoryStatus.CANDIDATE}",
-            "warning",
+            f"?aasta={today.year}",
         ),
     ]
 
@@ -798,9 +791,7 @@ def add_work_victory(request: HttpRequest, matter_id: Any) -> HttpResponse:
         heading="Lisa töövõit",
         action=action,
         submit="Salvesta töövõit",
-        help_text=(
-            "Kirje salvestub kinnitatud töövõiduna sinu nimel. Eraldi kinnitamist ei ole vaja."
-        ),
+        help_text="Kirje lisatakse töövõiduna sinu nimel.",
     )
 
 

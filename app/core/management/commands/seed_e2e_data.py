@@ -114,6 +114,12 @@ SUBMISSION_FILENAME = "arvamus-2026.asice"
 #: inside the row match the title too.
 MACHINE_CANDIDATE = "Registrist leitud ettepaneku arvestamine"
 
+#: Sandra's own work victory, on the Matter nobody else may read. It is a real
+#: work victory rather than a proposal so that it actually appears on the
+#: Töövõidud page for the two people entitled to see it — which is what makes
+#: its absence from everybody else's page evidence of anything.
+RESTRICTED_VICTORY = "Konfidentsiaalne töövõit"
+
 UNASSIGNED_TITLE = "Vastutajata sünteetiline teema"
 REVIEW_DUE_TITLE = "Ootamise ülevaatuse aeg on käes"
 NO_ACTION_TITLE = "Järgmiseta sünteetiline teema"
@@ -479,6 +485,7 @@ class Command(BaseCommand):
         """
         from app.intelligence.enums import EffectiveDateKind
         from app.intelligence.services import (
+            add_confirmed_work_victory,
             add_effective_date,
             add_important_date,
             add_work_victory_candidate,
@@ -540,9 +547,15 @@ class Command(BaseCommand):
         )
 
         victory_start, victory_end = year_bounds(date.today().year)
-        add_work_victory_candidate(
+        # An actual work victory, through the door a person uses. The Töövõidud
+        # page lists work victories rather than everything anybody proposed, so
+        # a seed of candidates alone would leave that page empty and every
+        # assertion on it vacuously true.
+        add_confirmed_work_victory(
             matter=visible,
             title="Koja ettepanek rakendusaja pikendamiseks võeti arvesse",
+            detail="Seletuskiri lk 14",
+            source_url="https://example.test/eelnou/seletuskiri",
             period_date=victory_start,
             period_end=victory_end,
             date_precision=DatePrecision.YEAR,
@@ -580,9 +593,12 @@ class Command(BaseCommand):
             description="konfidentsiaalne jõustumine",
             actor=sandra,
         )
-        add_work_victory_candidate(
+        # Confirmed, so that it genuinely reaches the Töövõidud page for the
+        # people who may read it — a candidate would be absent from that page
+        # for everybody, and the leak test would prove nothing.
+        add_confirmed_work_victory(
             matter=restricted,
-            title="Konfidentsiaalne töövõidu kandidaat",
+            title=RESTRICTED_VICTORY,
             period_date=victory_start,
             period_end=victory_end,
             date_precision=DatePrecision.YEAR,

@@ -37,7 +37,6 @@ from django.utils import timezone
 
 from app.accounts.enums import UserRole
 from app.core.enums import Visibility
-from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.services import (
     add_important_date,
     add_work_victory_candidate,
@@ -606,13 +605,26 @@ def test_the_reporting_rail_counts_confirmed_work_victories(
         ),
         actor=department_head,
     )
+    # A proposal nobody has decided on, in the same year. It is not a work
+    # victory, so it may not reach this count — the assertion the URL used to
+    # carry, now made against the number itself.
+    add_work_victory_candidate(
+        matter=world["this_week"],
+        title="Otsustamata ettepanek",
+        period_date=date(today.year, 4, 1),
+        period_end=date(today.year, 4, 30),
+        date_precision=DatePrecision.MONTH,
+        actor=specialist,
+    )
     built = page_for(department_head, today=today)
     reporting = {row.label: row for row in built.reporting}
 
     assert reporting["Töövõite kinnitatud"].count == 1
     query = parse_qs(urlparse(reporting["Töövõite kinnitatud"].url).query)
-    assert query["staatus"] == [WorkVictoryStatus.CONFIRMED]
     assert query["aasta"] == [str(today.year)]
+    # And no `?staatus=`: the destination has no state filter, so a link still
+    # carrying one would name a parameter nothing reads.
+    assert "staatus" not in query
 
 
 def test_every_reporting_row_opens_a_list_of_its_own_size(client, department_head, world, today):

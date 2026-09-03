@@ -17,6 +17,8 @@ now carries three lists with the same control names, and an unscoped
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 from playwright.sync_api import expect
 
@@ -200,6 +202,8 @@ def test_a_person_adding_a_victory_gets_a_confirmed_one(page, base_url, screensh
     section(page, "Töövõidud").get_by_role("link", name="+ Lisa töövõit").click()
     page.wait_for_load_state("networkidle")
     expect(page.get_by_role("heading", name="Lisa töövõit")).to_be_visible()
+    # The form talks about a Töövõit, never about confirming or proposing one.
+    expect(page.locator(".cardnote")).to_have_text("Kirje lisatakse töövõiduna sinu nimel.")
 
     page.get_by_label("Töövõit", exact=True).fill("Erisus jäi eelnõusse sisse")
     # `exact=True`, because "Poolaasta täpsusega" contains "Aasta täpsusega".
@@ -213,8 +217,10 @@ def test_a_person_adding_a_victory_gets_a_confirmed_one(page, base_url, screensh
         .get_by_role("listitem")
         .filter(has_text="Erisus jäi eelnõusse sisse")
     )
-    expect(row.get_by_text("Kinnitatud töövõit")).to_be_visible()
     expect(row.get_by_text("2030")).to_be_visible()
+    # No state chip: the section already says Töövõidud, and this row is one.
+    expect(row.get_by_text("Kinnitatud töövõit")).to_have_count(0)
+    expect(row.locator(".victorystate")).to_have_count(0)
     # And no second click was available to make, because there is nothing left
     # to decide about this row.
     expect(row.get_by_role("link", name="Kinnita töövõiduks")).to_have_count(0)
@@ -236,6 +242,12 @@ def test_the_department_head_confirms_a_proposed_candidate(page, base_url, scree
     candidate, so the only honest source of one is a machine or an import.
     """
     sign_in(page, base_url, HEAD)
+
+    # Nobody has decided about it, so it is not on the department's Töövõidud
+    # page. Losing the state filter did not turn every proposal into a win.
+    open_watchlist(page, base_url, "jalgimine/toovoidud")
+    expect(page.get_by_text(MACHINE_CANDIDATE)).to_have_count(0)
+
     open_the_matter(page, base_url, OPEN_TITLE)
 
     row = section(page, "Töövõidud").get_by_role("listitem").filter(has_text=MACHINE_CANDIDATE)
@@ -248,11 +260,18 @@ def test_the_department_head_confirms_a_proposed_candidate(page, base_url, scree
     page.get_by_role("button", name="Kinnita töövõiduks").click()
     page.wait_for_load_state("networkidle")
 
+    # Reviewed, so it stops being a proposal and becomes an ordinary Töövõit:
+    # the chip and the control that acted on it both go.
     confirmed = (
         section(page, "Töövõidud").get_by_role("listitem").filter(has_text=MACHINE_CANDIDATE)
     )
-    expect(confirmed.get_by_text("Kinnitatud töövõit")).to_be_visible()
+    expect(confirmed.locator(".victorystate")).to_have_count(0)
+    expect(confirmed.get_by_role("link", name="Kinnita töövõiduks")).to_have_count(0)
     screenshots(page, "teema-kinnitatud-toovoit")
+
+    # And now — and only now — it is a Töövõit like any other.
+    open_watchlist(page, base_url, "jalgimine/toovoidud")
+    expect(page.get_by_text(MACHINE_CANDIDATE)).to_be_visible()
 
 
 # -- the generated department pages -----------------------------------------
@@ -329,7 +348,12 @@ def test_the_commencement_page_is_grouped_and_the_undated_are_apart(page, base_u
     expect(page.get_by_text("põhiosa")).to_have_count(0)
 
 
-def test_the_work_victory_page_filters_by_state(page, base_url, screenshots):
+def test_the_work_victory_page_lists_work_victories(page, base_url, screenshots):
+    """One concept, one filter, and no vocabulary from the old review step.
+
+    The seed carries a work victory and a machine proposal on the same Matter,
+    so the page showing exactly one of them is a decision this test can see.
+    """
     sign_in(page, base_url, MARTIN)
     open_watchlist(page, base_url, "jalgimine/toovoidud")
 
@@ -339,13 +363,20 @@ def test_the_work_victory_page_filters_by_state(page, base_url, screenshots):
     ).to_be_visible()
     screenshots(page, "jalgimine-toovoidud")
 
-    # Not exact: a status filter link carries its own count, so its accessible
-    # name is the label followed by a number.
-    page.get_by_role("link", name="Ei realiseerunud").click()
+    # No state filter, and none of its words anywhere on the page.
+    expect(page.get_by_role("navigation", name="Staatus")).to_have_count(0)
+    expect(page.get_by_text("Töövõidu kandidaat")).to_have_count(0)
+    expect(page.get_by_text("Kinnitatud töövõit")).to_have_count(0)
+    expect(page.locator(".victorystate")).to_have_count(0)
+
+    # The period filter is the one that stayed, and it still narrows the page.
+    period = page.get_by_role("navigation", name="Periood")
+    expect(period).to_be_visible()
+    period.get_by_role("link", name=str(date.today().year), exact=True).click()
     page.wait_for_load_state("networkidle")
     expect(
         page.get_by_text("Koja ettepanek rakendusaja pikendamiseks võeti arvesse")
-    ).to_have_count(0)
+    ).to_be_visible()
 
 
 # -- authorization ----------------------------------------------------------

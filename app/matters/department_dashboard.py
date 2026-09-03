@@ -1324,10 +1324,10 @@ def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
             MatterWorkVictory.objects.visible_to(user)
             .filter(status=WorkVictoryStatus.CONFIRMED, period_date__year=year)
             .count(),
-            (
-                f"{reverse('intelligence:work_victories')}"
-                f"?staatus={WorkVictoryStatus.CONFIRMED}&aasta={year}"
-            ),
+            # `?aasta=` only. The destination has no state filter any more:
+            # a Töövõit is a Töövõit there, and a `?staatus=` this link still
+            # carried would name a parameter nothing reads.
+            f"{reverse('intelligence:work_victories')}?aasta={year}",
         ),
         RailRow(
             "Suletud teemasid",
