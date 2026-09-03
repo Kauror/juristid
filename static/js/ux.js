@@ -77,7 +77,15 @@
    * absent. Falling back to the row — which every branch renders — is what stops
    * a link from stranding the browser at `scrollY = 0` the way the broken
    * fragment did. This never opens the composer on an ordinary page load: it
-   * runs once, on a hash somebody followed deliberately. */
+   * runs once, on a hash somebody followed deliberately.
+   *
+   * **On `load`, not on `DOMContentLoaded`, and that is not a detail.**
+   * Navigating to a fragment makes the browser run its own focusing steps on
+   * the indicated element, and a `<details>` is not focusable — so the browser
+   * puts focus back on `<body>`. It does that *after* `DOMContentLoaded`, which
+   * silently undid the focus this sets: measured in Chromium, the composer
+   * opened correctly and the caret was on the body. Running last is the only
+   * order in which the focus survives. */
   var NEXT_STEP_TARGETS = ["teema-koostaja", "jargmiseks-rida"];
 
   function focusQuietly(element) {
@@ -451,11 +459,13 @@
 
   document.addEventListener("DOMContentLoaded", function () {
     bindAll(document);
-    /* Once, on the way in — and deliberately not inside `bindAll`, which also
-       runs after every HTMX swap. Re-opening the composer on each swap would
-       reopen a box the reader had just closed. */
-    arriveAtNextStep();
   });
+
+  /* Once, on the way in — and deliberately not inside `bindAll`, which also
+     runs after every HTMX swap. Re-opening the composer on each swap would
+     reopen a box the reader had just closed. See the note above for why this
+     waits for `load` rather than joining the handler above. */
+  window.addEventListener("load", arriveAtNextStep);
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
     bindAll(event.target);

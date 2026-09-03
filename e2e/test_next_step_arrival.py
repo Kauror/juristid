@@ -17,14 +17,42 @@ from __future__ import annotations
 
 import re
 
-from e2e.conftest import SANDRA, create_matter, sign_in
+from e2e.conftest import SANDRA, sign_in
+
+
+def _matter_on_sandras_desk(page, base_url: str, title: str) -> str:
+    """A Matter with an owner and no next step, created through the real form.
+
+    Not `conftest.create_matter`: `owner` is `required=False` on Uus teema and
+    that helper fills only the title, so the Matter it makes belongs to nobody.
+    `Järgmise tegevuseta` is `matters_without_action(user, owner=subject)`, so an
+    ownerless Matter reaches no one's desk — which is the honest place for work
+    nobody has been given, and useless for this test. The owner chip is picked
+    the way the rest of the browser suite picks it (e2e/test_lawyer_workflow.py).
+
+    Nothing fills `#id_next-text`, deliberately: a Matter with a next step is not
+    what this block lists.
+
+    **The titles are namespaced on purpose.** The browser world is one database
+    shared by every file in the shard, so a Matter created here is in the
+    register when the next file runs — and `e2e/test_register_search.py` types
+    `Tavaline` and asserts exactly one row. A Matter called «Tavaline teema»
+    made that two. Anything created here keeps the `UX-003` prefix and avoids
+    the words the neighbouring files search for.
+    """
+    page.goto(f"{base_url}/teemad/uus/")
+    page.wait_for_load_state("networkidle")
+    page.locator("#id_title").fill(title)
+    page.get_by_role("radio", name=SANDRA.short_name, exact=True).check()
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    return page.url
 
 
 def test_maara_opens_the_composer_and_puts_the_caret_in_it(page, base_url):
     sign_in(page, base_url, SANDRA)
 
-    # A Matter with no next step is exactly what `Järgmise tegevuseta` lists.
-    matter_url = create_matter(page, base_url, "Arvamuse tähtaja teema")
+    matter_url = _matter_on_sandras_desk(page, base_url, "UX-003 koostajasse saabumine")
     matter_path = re.sub(r"^https?://[^/]+", "", matter_url)
 
     page.goto(f"{base_url}/minu-asjad/")
@@ -35,14 +63,16 @@ def test_maara_opens_the_composer_and_puts_the_caret_in_it(page, base_url):
     cta.first.click()
     page.wait_for_url(re.compile(re.escape(matter_path)))
 
-    composer = page.locator("details.uxcomp")
-    composer.wait_for(state="attached")
+    # The body is only visible once the disclosure is open, so waiting for it is
+    # what makes this free of a race with `DOMContentLoaded` — the assertion
+    # below then reports the state rather than the timing.
+    page.locator(".composer__body").wait_for(state="visible")
 
-    # Open, because somebody asked for it by following a control that says so —
-    # not because the page opens it for everybody (ADR 0052 §13 and the pass
+    composer = page.locator("details.uxcomp")
+    # Open because somebody asked for it by following a control that says so —
+    # not because the page opens it for everybody (ADR 0052 §13, and the pass
     # that closed it again).
     assert composer.evaluate("node => node.open") is True
-    page.locator(".composer__body").wait_for(state="visible")
 
     # And the caret is in the box, so the next thing typed is the next step.
     assert page.evaluate(
@@ -58,7 +88,7 @@ def test_an_ordinary_matter_visit_leaves_the_composer_shut(page, base_url):
     to, and the box that writes to it folds until somebody asks.
     """
     sign_in(page, base_url, SANDRA)
-    matter_url = create_matter(page, base_url, "Tavaline teema")
+    matter_url = _matter_on_sandras_desk(page, base_url, "UX-003 pärisvaate kontroll")
 
     page.goto(matter_url)
     page.wait_for_load_state("networkidle")
