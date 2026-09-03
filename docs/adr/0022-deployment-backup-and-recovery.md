@@ -72,6 +72,25 @@ it is no longer something a person has to remember.
 `manage.py deployment_readiness` refuses to call a real-data deployment ready
 when the build cannot say what commit it came from.
 
+### The image is built off the host (addendum, 2026-09-03)
+
+The production image is built by `.github/workflows/release-image.yml`, for one
+full commit SHA, on a GitHub runner — never on the Unraid host. The workflow
+saves the image as `juristid-main-web-<sha12>.tar.gz` beside its `.sha256` and a
+`release-manifest-<sha12>.txt`; the operator transfers the three, checks the
+digest, and `docker load`s the archive, and only then does Compose resolve
+`juristid-main-web:<sha12>` from the exported identity. The host's image
+operations are `docker load` and `docker compose up`, and the replacement is
+`up -d --no-build` so that the `build:` stanza CI still checks can never be
+reached from the runbook by accident.
+
+Why: the host's writable Docker storage is parity-backed through a USB
+rotational disk, and BuildKit has died mid-build on it. A build that fails
+halfway on the machine serving real data is not a place to learn anything.
+Until this addendum the README and the preflight's printed plan still said
+`docker compose … build`, contradicting the workflow; both now say the same
+thing, and `tests/test_deployment_scripts.py` fails if either says build again.
+
 ### The migration plan is read before it is applied
 
 `manage.py migration_plan` lists pending migrations and flags the operations

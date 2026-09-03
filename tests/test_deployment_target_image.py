@@ -14,7 +14,8 @@ That gives two commands with two different meanings:
 
 ``run --rm``
     starts a one-off container from the image the Compose file currently
-    resolves — after a build with the identity exported, the **target** image.
+    resolves — with the identity exported and the release image loaded, the
+    **target** image.
 
 Neither is safer than the other. The rule is that the command has to be aimed at
 whichever image the question is about, and the runbook had it backwards in the
@@ -51,8 +52,9 @@ from tests.test_deployment_runbooks import DEPLOY, RUNBOOKS, command_lines
 MAIN = Path(settings.BASE_DIR) / "deploy" / "unraid-main"
 PREFLIGHT = Path(settings.BASE_DIR) / "scripts" / "deploy" / "juristid-deploy-preflight.sh"
 
-#: The deployment's identity: exported once, before anything is built, and read
-#: by every command after it. Together they resolve `juristid-main-web:<sha12>`.
+#: The deployment's identity: exported once, before anything resolves the
+#: release image, and read by every command after it. Together they resolve
+#: `juristid-main-web:<sha12>` — the tag `docker load` restored on the host.
 IDENTITY = ("JURISTID_GIT_SHA", "JURISTID_IMAGE_TAG")
 
 #: What Compose resolves when `JURISTID_IMAGE_TAG` is unset. Named in the
@@ -60,7 +62,7 @@ IDENTITY = ("JURISTID_GIT_SHA", "JURISTID_IMAGE_TAG")
 #: that renaming it in one place fails rather than drifts.
 FALLBACK_IMAGE = "juristid-main-web:local"
 
-DEPLOYMENT_SECTION = ("## Deploying a new build", "## Backup, restore, disaster recovery")
+DEPLOYMENT_SECTION = ("## Deploying a release", "## Backup, restore, disaster recovery")
 FAILED_MIGRATION_SECTION = ("### The migration failed partway", "### A data migration")
 AUDIT_SECTION = ("### 7. Release-specific pre-migration audits", "### 8. Back up")
 SEARCH_SECTION = ("### 11. The search index contract", "### Rolling back")
@@ -147,13 +149,15 @@ def test_the_preflight_does_not_print_a_plan_read_from_the_old_image() -> None:
 # -- the deployment identity -----------------------------------------------
 
 
-def test_the_sequence_names_the_release_before_it_builds_anything(readme: str) -> None:
+def test_the_sequence_names_the_release_before_it_resolves_anything(readme: str) -> None:
     """Both variables, exported once, before the first command that reads them.
 
     The alternative — prefixing individual commands — is what produced the
     second defect: `build` and `up -d` carried the identity and `migrate` did
     not, so a schema change could resolve the fallback image while the release
-    around it resolved the reviewed one.
+    around it resolved the reviewed one. The build has since left the host; the
+    first consumers are now the digest check and `docker load`, which name the
+    archive by the tag.
     """
     lines = command_lines(section(readme, *DEPLOYMENT_SECTION))
 
@@ -168,10 +172,15 @@ def test_the_sequence_names_the_release_before_it_builds_anything(readme: str) -
     )
 
     for what, matches in (
-        ("build", lambda line: "docker compose" in line and line.rstrip().endswith("build")),
+        ("digest check", lambda line: line.startswith("sha256sum -c ")),
+        ("docker load", lambda line: line.startswith("docker load ")),
+        ("identity check", lambda line: line.startswith("docker run") and "/app/GIT_SHA" in line),
         ("migration_plan", lambda line: "manage.py migration_plan" in line),
         ("migrate", lambda line: line.rstrip().endswith("manage.py migrate")),
-        ("up -d", lambda line: "docker compose" in line and line.rstrip().endswith("up -d")),
+        (
+            "up -d --no-build",
+            lambda line: "docker compose" in line and line.rstrip().endswith("up -d --no-build"),
+        ),
     ):
         assert sole(lines, matches, what) > last_export, (
             f"the {what} step runs before the release identity is exported, so it can resolve "
@@ -185,12 +194,14 @@ def test_nothing_in_the_sequence_re_establishes_the_identity_per_command(readme:
     Inline `VAR=value command` prefixes are how build, migrate and up drifted
     apart in the first place: each one is separately correct and separately
     forgettable. Exported once, a command cannot be the one that missed out.
+    The `${JURISTID_IMAGE_TAG}` *reads* in the load step are the opposite shape
+    and are allowed: they consume the export rather than redefining it.
     """
     for line in command_lines(section(readme, *DEPLOYMENT_SECTION)):
         if line.startswith("export "):
             continue
         for variable in IDENTITY:
-            assert f"{variable}=" not in line, (
+            assert f"{variable}=" not in line.replace("${" + variable + "}", ""), (
                 f"the identity is set again on one command rather than exported for all of "
                 f"them, which is the shape that let `migrate` differ\n  {line}"
             )
@@ -200,12 +211,13 @@ def test_nothing_in_the_sequence_re_establishes_the_identity_per_command(readme:
 
 
 def test_the_sequence_stays_in_the_one_safe_order(readme: str) -> None:
-    """build → plan → backup → migrate → up, and each `<` is load-bearing.
+    """verify → load → plan → backup → migrate → up, and each `<` is load-bearing.
 
-    *Build before plan* is the correction: the plan is a question about the
-    target image, so the target image has to exist to be asked. A build writes
-    no business data, mutates no database and replaces nothing, so moving it
-    earlier moved nothing dangerous earlier.
+    *Load before plan* is the correction: the plan is a question about the
+    target image, so the target image has to exist to be asked — and exist
+    *as loaded*, because a `run --rm` against a missing tag would build one on
+    the host. Verifying the digest and loading write no business data, mutate
+    no database and replace nothing, so they are safe ahead of the backup.
 
     *Backup after the plan and immediately before migrate* is what deliberately
     did **not** move. The backup is the copy a failed migration is restored to,
@@ -220,13 +232,15 @@ def test_the_sequence_stays_in_the_one_safe_order(readme: str) -> None:
         assert found, f"the deployment sequence no longer has a {what} step"
         return found[0]
 
-    build = first("compose.yml build", "build")
+    verify = first("sha256sum -c ", "digest check")
+    load = first("docker load ", "docker load")
     plan = first("manage.py migration_plan", "migration plan")
     backup = first("juristid-backup.sh", "backup")
     migrate = first("manage.py migrate", "migrate")
-    replace = first("compose.yml up -d", "replacement")
+    replace = first("compose.yml up -d --no-build", "replacement")
 
-    assert build < plan, "the plan is read from the target image, so the image must exist first"
+    assert verify < load, "the archive is loaded before its digest is checked"
+    assert load < plan, "the plan is read from the target image, so the image must exist first"
     assert plan < backup, "a plan read after the backup cannot inform the decision to take one"
     assert backup < migrate, "the backup is the copy a failed migration is restored to"
     assert migrate < replace, "the schema moves before the process that expects it"
@@ -424,7 +438,7 @@ def test_the_release_sequence_rebuilds_the_index_after_it_replaces_the_stack(
     audit = first("manage.py check_evidence_integrity", "pre-migration audit")
     backup = first("juristid-backup.sh", "backup")
     migrate = first("manage.py migrate", "migrate")
-    replace = first("compose.yml up -d", "replacement")
+    replace = first("compose.yml up -d --no-build", "replacement")
     rebuild = first("manage.py rebuild_search_index", "search rebuild")
     integrity = first("manage.py check_search_integrity", "search integrity check")
 

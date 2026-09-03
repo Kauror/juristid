@@ -243,12 +243,23 @@ deployment_plan "$JURISTID_PROJECT" "$JURISTID_COMPOSE_FILE" "$REPO" "$TARGET"
 
 cat <<'NEXT'
 
-The two `export`s come before the build on purpose, and stay set for everything
-after it: the build, the migration plan, the migration and the replacement all
-resolve one image that way. `migration_plan` and `migrate` use `run --rm web` —
-a one-off container from the image just built — because `exec` would enter the
-container still running the *previous* release, whose migration graph does not
-contain this one's migrations at all.
+Nothing in it builds an image, and nothing on this host may. The release image
+is built off-host by .github/workflows/release-image.yml for exactly this
+commit, transferred as juristid-main-web-<sha12>.tar.gz with its .sha256 and
+manifest, verified against that digest, and docker-loaded here as
+juristid-main-web:<sha12> BEFORE the sequence above is followed. The `docker run
+... /app/GIT_SHA` line proves that the loaded image is this commit; if it prints
+anything else, or no such image exists, stop there.
+
+The two `export`s come before the first command that resolves the release image
+on purpose, and stay set for everything after it: the migration plan, the
+migration and the replacement all resolve that one loaded image.
+`migration_plan` and `migrate` use `run --rm web` — a one-off container from
+the loaded release image — because `exec` would enter the container still
+running the *previous* release, whose migration graph does not contain this
+one's migrations at all. The replacement says `up -d --no-build` because
+compose.yml carries a `build:` stanza for CI, and the command itself is what
+keeps this host from ever using it.
 
 deploy/unraid-main/README.md has the reasoning for each step.
 NEXT

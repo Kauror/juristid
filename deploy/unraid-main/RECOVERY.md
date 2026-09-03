@@ -379,7 +379,11 @@ host's scheduling is an operations decision that has not been taken.
 
 ### Order
 
-1. install the reviewed application version — a checkout at a known commit;
+1. install the reviewed application version — a checkout at a known commit for
+   the Compose file and the scripts, and that commit's release image, built
+   off-host by `release-image.yml`, verified and `docker load`ed as
+   `juristid-main-web:<sha12>` (`README.md`, "Deploying a release"). The host
+   does not build it, on a fresh host least of all;
 2. restore the secrets and the configuration (by hand, from wherever they are
    kept — never from a backup set);
 3. create the appdata directories with the right ownership;
@@ -434,12 +438,14 @@ script again.
 ### Then verify, before anything is published
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d web extractor searchindex
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build web extractor searchindex
 ```
 
 Named rather than unqualified, unlike a redeploy: the tunnel is not behind a
 profile on this stack, and nothing is published until the checks below have
-passed. `searchindex` belongs in the list — a restored database keeps whatever
+passed. `--no-build` for the same reason as a deployment: the image was loaded
+in step 1, and an `up` that found it missing must say so rather than build one
+here. `searchindex` belongs in the list — a restored database keeps whatever
 rebuild obligations it was carrying when the dump was taken, and the worker is
 what discharges them (ADR 0041).
 
