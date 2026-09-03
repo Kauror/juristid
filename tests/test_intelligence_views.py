@@ -19,10 +19,11 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictoryStatus
 from app.intelligence.services import (
+    add_confirmed_work_victory,
     add_effective_date,
     add_important_date,
     add_work_victory_candidate,
-    confirm_work_victory,
+    reject_work_victory,
 )
 from app.workflow.dates import quarter_bounds, year_bounds
 from app.workflow.enums import DatePrecision
@@ -241,46 +242,192 @@ def test_a_source_url_is_offered_beside_the_matter_and_not_instead_of_it(signed_
 # -- Töövõidud --------------------------------------------------------------
 
 
-def test_the_work_victory_filters_agree_with_their_rows(signed_in, specialist, department_head):
-    matter = factories.MatterFactory(owner=specialist)
-    start, end = year_bounds(2026)
-    confirmed = add_work_victory_candidate(
-        matter=matter,
-        title="Kinnitatud võit",
-        period_date=start,
-        period_end=end,
-        date_precision=DatePrecision.YEAR,
-        actor=specialist,
-    )
-    confirm_work_victory(record=confirmed, actor=department_head)
-    add_work_victory_candidate(
-        matter=matter,
-        title="Kandidaat",
-        period_date=start,
-        period_end=end,
-        date_precision=DatePrecision.YEAR,
-        actor=specialist,
-    )
-    add_work_victory_candidate(matter=matter, title="Teadmata ajaga", actor=specialist)
+def _population(matter, specialist, department_head):
+    """One record of each state, so what the page shows is a choice, not luck.
 
-    response = signed_in.get(
-        reverse(WORK_VICTORIES), {"aasta": "2026", "staatus": WorkVictoryStatus.CONFIRMED}
+    Written through the two real doors: a person records a work victory, and a
+    machine or an import proposes one for somebody else to decide on.
+    """
+    start, end = year_bounds(2026)
+    victory = add_confirmed_work_victory(
+        matter=matter,
+        title="Rakendusaeg pikenes",
+        detail="Seletuskiri lk 14",
+        source_url="https://example.test/seletuskiri",
+        period_date=start,
+        period_end=end,
+        date_precision=DatePrecision.YEAR,
+        actor=specialist,
     )
+    candidate = add_work_victory_candidate(
+        matter=matter,
+        title="Masina pakutud ettepanek",
+        period_date=start,
+        period_end=end,
+        date_precision=DatePrecision.YEAR,
+        actor=specialist,
+    )
+    unrealised = add_work_victory_candidate(
+        matter=matter,
+        title="Ei tulnud välja",
+        period_date=start,
+        period_end=end,
+        date_precision=DatePrecision.YEAR,
+        actor=specialist,
+    )
+    reject_work_victory(record=unrealised, actor=department_head, reason="Eelnõu kukkus")
+    return victory, candidate, unrealised
+
+
+def test_the_page_offers_no_state_filter(signed_in, specialist, department_head):
+    """«Töövõidu kandidaat» and «kinnitatud töövõit» are not a reader's choice.
+
+    A lawyer writes down a Töövõit and it is one, so this page carries one
+    concept and one filter — the period. Neither the control nor the vocabulary
+    of the old review step is left on it.
+    """
+    _population(factories.MatterFactory(owner=specialist), specialist, department_head)
+
+    response = signed_in.get(reverse(WORK_VICTORIES))
     body = _text(response)
+
+    assert "Staatus" not in body
+    assert "status_options" not in response.context
+    assert "Töövõidu kandidaat" not in body
+    assert "Kinnitatud töövõit" not in body
+    # The period filter is untouched, and it is the only one left.
+    assert "Periood" in body
+    assert 'class="segmented"' not in body
+
+
+def test_only_actual_work_victories_are_listed(signed_in, specialist, department_head):
+    """The visible population is what *is* a Töövõit, not what was ever claimed.
+
+    Losing the filter must not promote a machine's unreviewed proposal into a
+    business fact by relabelling it, and a claim somebody decided against is
+    not a win either.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    victory, candidate, unrealised = _population(matter, specialist, department_head)
+
+    response = signed_in.get(reverse(WORK_VICTORIES))
+    body = _text(response)
+
     assert response.context["total"] == 1
-    assert "Kinnitatud võit" in body
-    assert "Kandidaat" not in body
-    assert "Teadmata ajaga" not in body
+    assert victory.title in body
+    assert candidate.title not in body
+    assert unrealised.title not in body
+
+
+def test_a_hand_written_status_parameter_surfaces_nothing(signed_in, specialist, department_head):
+    """No back door: `?staatus=` is read by nothing here.
+
+    An old link still resolves, and it opens Töövõidud showing exactly what
+    everybody else sees.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    victory, candidate, unrealised = _population(matter, specialist, department_head)
+
+    for value in ("CANDIDATE", "NOT_REALIZED", "CONFIRMED", "VÕITSIME"):
+        response = signed_in.get(reverse(WORK_VICTORIES), {"staatus": value})
+        body = _text(response)
+        assert response.status_code == 200
+        assert response.context["total"] == 1
+        assert victory.title in body
+        assert candidate.title not in body
+        assert unrealised.title not in body
+
+
+def test_the_row_keeps_the_period_the_change_the_matter_and_the_evidence(
+    signed_in, specialist, department_head
+):
+    """Everything the row is for stays; only the state decoration goes.
+
+    Tõend is the point of the row, so losing it would be a real loss where
+    losing the chip is not.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    victory, _, _ = _population(matter, specialist, department_head)
+
+    body = _text(signed_in.get(reverse(WORK_VICTORIES)))
+
+    assert "2026" in body
+    assert victory.title in body
+    assert matter.title in body
+    assert "Seletuskiri lk 14" in body
+    assert "https://example.test/seletuskiri" in body
+
+
+def test_no_state_chip_is_rendered_on_the_row(signed_in, specialist, department_head):
+    """Not the old chip, and no «Töövõit» chip put in its place.
+
+    Every row on this page is a work victory. A label true of all of them
+    distinguishes none of them.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    _population(matter, specialist, department_head)
+
+    body = _text(signed_in.get(reverse(WORK_VICTORIES)))
+
+    assert "victorystate" not in body
+    assert "table__flags" not in body
+
+
+def test_the_year_filter_still_narrows_the_page(signed_in, specialist, department_head):
+    matter = factories.MatterFactory(owner=specialist)
+    _population(matter, specialist, department_head)
+    older_start, older_end = year_bounds(2025)
+    add_confirmed_work_victory(
+        matter=matter,
+        title="Varasem võit",
+        period_date=older_start,
+        period_end=older_end,
+        date_precision=DatePrecision.YEAR,
+        actor=specialist,
+    )
+    add_confirmed_work_victory(matter=matter, title="Teadmata ajaga", actor=specialist)
+
+    in_2026 = signed_in.get(reverse(WORK_VICTORIES), {"aasta": "2026"})
+    assert in_2026.context["total"] == 1
+    assert "Rakendusaeg pikenes" in _text(in_2026)
+    assert "Varasem võit" not in _text(in_2026)
+
+    in_2025 = signed_in.get(reverse(WORK_VICTORIES), {"aasta": "2025"})
+    assert in_2025.context["total"] == 1
+    assert "Varasem võit" in _text(in_2025)
 
     unknown = signed_in.get(reverse(WORK_VICTORIES), {"aasta": "teadmata"})
     assert unknown.context["total"] == 1
     assert "Teadmata ajaga" in _text(unknown)
 
 
+def test_the_year_options_offer_only_years_the_page_can_show(
+    signed_in, specialist, department_head
+):
+    """A year built from rows this page never lists is a filter that empties it."""
+    matter = factories.MatterFactory(owner=specialist)
+    start, end = year_bounds(2024)
+    add_work_victory_candidate(
+        matter=matter,
+        title="Ainult kandidaat",
+        period_date=start,
+        period_end=end,
+        date_precision=DatePrecision.YEAR,
+        actor=specialist,
+    )
+    _population(matter, specialist, department_head)
+
+    keys = [
+        option["key"] for option in signed_in.get(reverse(WORK_VICTORIES)).context["year_options"]
+    ]
+    assert "2026" in keys
+    assert "2024" not in keys
+
+
 def test_the_unknown_period_option_only_appears_when_there_is_one(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
     start, end = year_bounds(2026)
-    add_work_victory_candidate(
+    add_confirmed_work_victory(
         matter=matter,
         title="Dateeritud",
         period_date=start,
@@ -294,11 +441,76 @@ def test_the_unknown_period_option_only_appears_when_there_is_one(signed_in, spe
     ]
     assert "teadmata" not in keys
 
-    add_work_victory_candidate(matter=matter, title="Teadmata", actor=specialist)
+    # An undated candidate is still not this page's business.
+    add_work_victory_candidate(matter=matter, title="Kandidaadil pole aega", actor=specialist)
+    keys = [
+        option["key"] for option in signed_in.get(reverse(WORK_VICTORIES)).context["year_options"]
+    ]
+    assert "teadmata" not in keys
+
+    add_confirmed_work_victory(matter=matter, title="Teadmata", actor=specialist)
     keys = [
         option["key"] for option in signed_in.get(reverse(WORK_VICTORIES)).context["year_options"]
     ]
     assert "teadmata" in keys
+
+
+def test_the_strip_is_one_honest_figure(signed_in, specialist, department_head):
+    """The candidate count is gone, and nothing was invented to replace it.
+
+    A figure added to keep a strip symmetrical is a metric nobody asked for.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    _population(matter, specialist, department_head)
+
+    response = signed_in.get(reverse(WORK_VICTORIES))
+    captions = [figure.caption for figure in response.context["seis"]]
+
+    assert captions == ["töövõitu sel aastal"]
+    assert "kandidaat" not in _text(response).casefold()
+
+
+def test_the_year_figure_counts_the_population_it_opens(signed_in, specialist, department_head):
+    """The number, the list behind its link and the rows are one population."""
+    today = timezone.localdate()
+    matter = factories.MatterFactory(owner=specialist)
+    start, end = year_bounds(today.year)
+    for index in range(2):
+        add_confirmed_work_victory(
+            matter=matter,
+            title=f"Selle aasta võit {index}",
+            period_date=start,
+            period_end=end,
+            date_precision=DatePrecision.YEAR,
+            actor=specialist,
+        )
+    # Neither of these is a work victory, so neither may reach the figure.
+    add_work_victory_candidate(
+        matter=matter,
+        title="Kandidaat samal aastal",
+        period_date=start,
+        period_end=end,
+        date_precision=DatePrecision.YEAR,
+        actor=specialist,
+    )
+    rejected = add_work_victory_candidate(
+        matter=matter,
+        title="Ei realiseerunud samal aastal",
+        period_date=start,
+        period_end=end,
+        date_precision=DatePrecision.YEAR,
+        actor=specialist,
+    )
+    reject_work_victory(record=rejected, actor=department_head, reason="")
+
+    response = signed_in.get(reverse(WORK_VICTORIES))
+    figure = response.context["seis"][0]
+    assert figure.value == 2
+    assert figure.url == f"?aasta={today.year}"
+    assert "staatus" not in figure.url
+
+    behind_the_link = signed_in.get(reverse(WORK_VICTORIES), {"aasta": str(today.year)})
+    assert behind_the_link.context["total"] == figure.value
 
 
 def test_the_page_publishes_no_rate_or_ranking(signed_in, specialist):
@@ -433,13 +645,23 @@ def test_adding_a_victory_from_the_matter_page_confirms_it(signed_in, specialist
     assert events.get().payload["origin"] == "MANUAL"
 
 
-def test_the_add_form_never_calls_the_saved_row_a_candidate(signed_in, specialist):
+def test_the_add_form_speaks_only_of_a_toovoit(signed_in, specialist):
+    """No candidate, and no confirmation either.
+
+    The note used to promise that the row "salvestub kinnitatud töövõiduna" and
+    that "eraldi kinnitamist ei ole vaja" — two sentences about a review step
+    the writer never meets, in the vocabulary of the state machine underneath.
+    """
     matter = factories.MatterFactory(owner=specialist)
     body = _text(
         signed_in.get(reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk}))
     )
+    folded = body.casefold()
+
     assert "Lisa töövõit" in body
-    assert "kandidaadina" not in body.casefold()
+    assert "Kirje lisatakse töövõiduna sinu nimel." in body
+    assert "kandidaa" not in folded
+    assert "kinnita" not in folded
 
 
 def test_a_reader_still_cannot_add_a_victory(client, specialist):

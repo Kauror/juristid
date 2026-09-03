@@ -2,22 +2,25 @@
 {% block title %}Töövõidud · {{ application_name }}{% endblock %}
 
 {% comment %}
-What the department claims and what it has confirmed, a year at a time.
+What the department achieved, a year at a time.
+
+One concept, not two. A lawyer writes down a Töövõit and it is one, so there is
+no state to choose between here and no *Staatus* filter: the page shows work
+victories. The internal review of a machine's or an import's proposal is
+untouched — it simply is not a reader's filter on this page
+(app/intelligence/selectors.py::VISIBLE_VICTORY_STATUS).
 
 Deliberately not a scoreboard. There is no success rate, no ministry ranking and
 no per-lawyer count, because none of them has a defensible denominator or an
-attribution model behind it — a confirmed work victory means a person judged it
-one, not that the system measured Koda's influence
+attribution model behind it — a work victory means a person judged it one, not
+that the system measured Koda's influence
 (master specification 3.5, Stage-2G brief 40, 41).
 
 A record with no period stays under *Teadmata periood*. It is never counted into
 the selected year (Stage-2G brief 27).
 {% endcomment %}
 
-{% block page_context %}{{ context_label }}{% endblock %}
-
 {% block page_filters %}
-  {% include "intelligence/partials/filter_row.html" with options=status_options label="Staatus" %}
   {% include "intelligence/partials/year_filter.html" with options=year_options label_id="toovoidud-periood" %}
 {% endblock %}
 
@@ -34,10 +37,7 @@ the selected year (Stage-2G brief 27).
   {% for section in sections %}
     {% include "intelligence/partials/tracking_section.html" with section=section columns=columns caption=section.label row_template="intelligence/partials/victory_row.html" %}
   {% empty %}
-    <p class="empty">
-      Valitud filtritega töövõite ega kandidaate ei ole. Kandidaadi saab lisada
-      teema lehel; töövõiduks kinnitab selle osakonnajuht.
-    </p>
+    <p class="empty">Valitud perioodil töövõite ei ole.</p>
   {% endfor %}
 
   {% include "components/pagination.html" with page=page query_string=query_string %}
