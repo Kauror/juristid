@@ -7833,6 +7833,17 @@ button.accordion__action:focus-visible {
   font-size: var(--typography-size-label);
 }
 
+/* A register observation the product could not read, and therefore refused to
+   act on — a VÄLJA cell that is neither a date nor `ei saatnud` (ADR 0059).
+   Marked rather than merely stated, because unlike its siblings it is asking
+   somebody to go and correct the source. Still a factnote and still quiet: the
+   rule carries the signal, so the text keeps the same size and colour as the
+   observations around it rather than becoming an alert on the facts panel. */
+.factnote--warning {
+  border-left: 2px solid var(--status-warning-border);
+  padding-left: var(--spacing-3);
+}
+
 /* -- Arvamused, as the second section of the Teemad page --------------------
  *
  * A full-width section under the register, not a sidebar widget and not a card.

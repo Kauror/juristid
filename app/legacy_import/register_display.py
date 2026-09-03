@@ -186,15 +186,52 @@ class RegisterFacts:
     #: stays plain text rather than becoming a broken link (brief 29).
     continues_under_id: object | None = None
 
+    #: Whether the Matter carries a canonical ``SENT`` Submission.
+    #:
+    #: Only ever *removes* a line. Where Koda can show what it sent, the page
+    #: already says so in `Koja arvamus` with the file attached, and repeating
+    #: the register's date beside it would be a second, weaker sentence about
+    #: the same event — the one an evidence-first model exists to avoid.
+    has_sent_submission: bool = False
+
     @property
     def opinion_not_sent(self) -> bool:
         return self.opinion_sent_state == "NOT_SENT"
+
+    @property
+    def opinion_sent_recorded_date(self) -> object | None:
+        """The date to state as a **register fact**, or ``None``.
+
+        Present only for a ``DATE`` reading with no canonical Submission to
+        speak instead. The wording this feeds must stay *registris märgitud
+        väljasaadetuks* — the register recorded a send date — and must never
+        become *Koja arvamus saadetud*, which claims Koda can produce the
+        document. It cannot: a spreadsheet cell is not evidence, and the whole
+        reason this line exists is to explain a discharged deadline honestly
+        rather than to assert a sent opinion (ADR 0011, ADR 0059).
+        """
+        if self.opinion_sent_state != "DATE" or self.has_sent_submission:
+            return None
+        return self.opinion_sent_date
+
+    @property
+    def opinion_state_unreadable(self) -> bool:
+        """``VÄLJA`` holds something that is neither a date nor *ei saatnud*.
+
+        Shown as a data-quality observation and never as completion. It is the
+        one register reading the product refuses to act on: the cell says
+        something, nobody has established what, and discharging a deadline on
+        it would be acting on an unread sentence (ADR 0059).
+        """
+        return self.opinion_sent_state == "RECORDED_OTHER"
 
     @property
     def has_anything(self) -> bool:
         return bool(
             self.feedback.known
             or self.opinion_not_sent
+            or self.opinion_sent_recorded_date is not None
+            or self.opinion_state_unreadable
             or self.has_multiple_addressees
             or self.continues_under_reference
         )
@@ -203,13 +240,21 @@ class RegisterFacts:
 def register_facts_for(matter: Any) -> RegisterFacts | None:
     """The derived register observations for one Matter, or ``None``.
 
-    At most one extra query, and only for the continuation link — which is
-    asked for at most once per page and only when the register actually named a
-    successor.
+    Two extra queries at most: the continuation link, asked for only when the
+    register actually named a successor, and one ``exists`` for the canonical
+    Submission — which decides whether the register's own send date is worth
+    stating at all, and is an indexed lookup on a column the page reads anyway.
     """
     state = getattr(matter, "current_register_state", None)
     if state is None:
         return None
+
+    from app.submissions.enums import SubmissionStatus
+    from app.submissions.models import Submission
+
+    has_sent_submission = Submission.objects.filter(
+        matter=matter, status=SubmissionStatus.SENT
+    ).exists()
 
     successor_id = None
     if state.continues_under_reference:
@@ -234,6 +279,7 @@ def register_facts_for(matter: Any) -> RegisterFacts | None:
         legal_instrument=state.legal_instrument_raw,
         continues_under_reference=state.continues_under_reference,
         continues_under_id=successor_id,
+        has_sent_submission=has_sent_submission,
     )
 
 

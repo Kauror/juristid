@@ -297,6 +297,18 @@ class ActiveDeadline:
     A rendered answer rather than a model: `label` is what the date *is*,
     `display` is how it reads at the precision it was recorded to, and
     `days_remaining` is how the header prints " · N p". Nothing here is stored.
+
+    **`is_past` and `is_overdue` are different questions, and the header asks
+    the second.** A date behind us is a fact about the calendar; being *late* is
+    a statement about work, and for an `Arvamuse tähtaeg` the product has one
+    definition of it — no SENT Submission, no `VÄLJA` completion mark, no open
+    `Järgmiseks` (ADR 0050, ADR 0059). Printing «N p üle» from `is_past` alone
+    is how a header calls a file late that every work list has already stopped
+    counting (UX-010).
+
+    An `Oluline tähtaeg` keeps its own semantics: it is a milestone the
+    department watches, nothing discharges it, and its last day passing is
+    genuine lateness — the same reading `wi.WorkItem` gives it.
     """
 
     label: str
@@ -304,6 +316,13 @@ class ActiveDeadline:
     display: str
     is_past: bool
     days_remaining: int
+    #: Whether the header may call this late. Never true for a future date.
+    is_overdue: bool = False
+    #: How many days past its **last** day this is, never negative. Measured on
+    #: `period_end` rather than on the anchor, so a milestone recorded as *III
+    #: kvartal* is counted late from the end of the quarter and not from the day
+    #: it happens to sort on (`wi.WorkItem.days_late` reads it the same way).
+    days_late: int = 0
 
     @property
     def is_today(self) -> bool:
@@ -351,7 +370,10 @@ def active_deadline(
     from app.intelligence.models import MatterImportantDate
 
     day = today or timezone.localdate()
-    candidates: list[tuple[date, date, str, str]] = []
+    # The fifth member says which *kind* of deadline the row is, because that
+    # decides what "late" means for it — the response deadline can be
+    # discharged and a milestone cannot (see `ActiveDeadline`).
+    candidates: list[tuple[date, date, str, str, bool]] = []
 
     if matter.response_deadline is not None:
         candidates.append(
@@ -360,6 +382,7 @@ def active_deadline(
                 matter.response_deadline,
                 "Arvamuse tähtaeg",
                 format_estonian_date(matter.response_deadline),
+                True,
             )
         )
 
@@ -372,7 +395,9 @@ def active_deadline(
     for record in milestones:
         if record.status != FactStatus.ACTIVE:
             continue
-        candidates.append((record.date_value, record.period_end, record.title, record.display_date))
+        candidates.append(
+            (record.date_value, record.period_end, record.title, record.display_date, False)
+        )
 
     if not candidates:
         return None
@@ -381,17 +406,35 @@ def active_deadline(
     pool = upcoming or candidates
     # Nearest first among the upcoming; nearest *last* among the past, which is
     # the most recent one — the same "closest to today" rule read backwards.
-    anchor_value, period_end, label, display = (
+    anchor_value, period_end, label, display, is_response = (
         min(pool, key=lambda row: (row[0], row[1]))
         if upcoming
         else max(pool, key=lambda row: (row[1], row[0]))
     )
+    is_past = period_end < day
+    if not is_past:
+        overdue = False
+    elif is_response:
+        # Asked of the canonical work model rather than decided here, so the
+        # header and every work list answer it once (`wi.outstanding_response_
+        # deadlines`). Only reached for a Matter whose own deadline is the one
+        # on screen and is already behind us, so it is one indexed lookup on the
+        # page that needs it and none on the pages that do not.
+        from app.matters.work_items import response_deadline_is_outstanding
+
+        overdue = response_deadline_is_outstanding(matter, user)
+    else:
+        # A milestone nobody discharges. Its last day passing is genuine
+        # lateness, which is the reading `wi.WorkItem` already gives it.
+        overdue = True
     return ActiveDeadline(
         label=label,
         value=anchor_value,
         display=display,
-        is_past=period_end < day,
+        is_past=is_past,
         days_remaining=(anchor_value - day).days,
+        is_overdue=overdue,
+        days_late=(day - period_end).days if is_past else 0,
     )
 
 
