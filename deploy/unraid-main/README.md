@@ -1297,6 +1297,34 @@ rebuilt under this contract, `rebuild_search_index` costs a few seconds and
 `check_search_integrity` confirms it; if it was not, those few seconds are the
 difference between a search that works and one that silently answers nothing.
 
+### 12. The archive projection, when a release moves it
+
+The opinion archive has its own projection and its own check, and
+`opinion_archive_search verify` is already gate 4.5 of
+[`docs/production-readiness.md`](../../docs/production-readiness.md). What
+belongs here is what to do when it reports something after a release.
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py opinion_archive_search verify
+```
+
+A finding here is normally *stale derived state*: the release changed how a
+letter is projected, and the rows still describe it the old way. The remedy is a
+rebuild — and a rebuild is a controlled derived-state operation, not a step a
+deployment performs on its own authority. **Ask for it explicitly, the way any
+other data operation is asked for**, and run it only once that authorisation
+exists. Nothing in a deployment may reach `opinion_archive_search rebuild` by
+itself; a release that needs one has not finished until somebody has said so.
+
+**If a rebuild has just run and `verify` reports the same findings, stop.** That
+is no longer stale data. A rebuild recomputes every row from canonical rows, so
+a finding that survives one means the builder and the check disagree about what
+the row should say, and running the rebuild again cannot change either of their
+minds. It is a defect in the release, it belongs in an issue with the finding
+text, and the projection stays as it is until the code is fixed — the rows are
+derived, the canonical archive is untouched, and there is nothing here to
+restore.
+
 ### Rolling back
 
 Code-only rollback is the same part-B sequence with the previous reviewed SHA.
