@@ -247,9 +247,11 @@ Nothing in it builds an image, and nothing on this host may. The release image
 is built off-host by .github/workflows/release-image.yml for exactly this
 commit, transferred as juristid-main-web-<sha12>.tar.gz with its .sha256 and
 manifest, verified against that digest, and docker-loaded here as
-juristid-main-web:<sha12> BEFORE the sequence above is followed. The `docker run
-... /app/GIT_SHA` line proves that the loaded image is this commit; if it prints
-anything else, or no such image exists, stop there.
+juristid-main-web:<sha12> — after the two `export`s above, which name the
+archive and the tag it is loaded under, and before the first command in the
+printed plan that resolves the release image. That ordering is README step 5.
+The `docker run ... /app/GIT_SHA` line proves that the loaded image is this
+commit; if it prints anything else, or no such image exists, stop there.
 
 The two `export`s come before the first command that resolves the release image
 on purpose, and stay set for everything after it: the migration plan, the
