@@ -603,3 +603,67 @@ def test_the_decision_register_does_not_call_the_stage_vocabulary_empty() -> Non
         "docs/open-decisions.md still calls the stage vocabulary empty, but "
         f"{seed.relative_to(root)} seeds it"
     )
+
+
+# ---------------------------------------------------------------------------
+# The runbook proves; it does not report
+# ---------------------------------------------------------------------------
+
+
+def test_the_readiness_runbook_does_not_record_production_state() -> None:
+    """A dated observation under a present-tense heading outlives its date.
+
+    `docs/production-readiness.md` carried a section called *Where production
+    actually stands* — "facts, not plans", read from the real instance at one
+    revision on 2026-08-23. It was accurate that day and it kept reading as
+    current for the four hundred commits after it, until a findings audit took
+    the list of unfinished work at face value and reopened work that had
+    already shipped.
+
+    The heading is the defect, not the numbers: refreshing them would buy the
+    same problem a newer date. So the runbook states procedure and the dated
+    observations live in `docs/production-snapshots/`, where the location
+    itself says what they are (HAF-03).
+    """
+    root = Path(__file__).resolve().parent.parent
+    runbook = (root / "docs" / "production-readiness.md").read_text(encoding="utf-8")
+
+    assert "## Where production actually stands" not in runbook, (
+        "docs/production-readiness.md has a present-tense production-state section "
+        "again. Dated observations belong in docs/production-snapshots/."
+    )
+    assert "Facts, not plans" not in runbook, (
+        "docs/production-readiness.md claims to hold facts about the running "
+        "instance. It holds the procedure that establishes them."
+    )
+    assert "docs/production-snapshots/" in runbook or "production-snapshots/" in runbook, (
+        "the runbook no longer says where dated observations live, so the next "
+        "one has nowhere to go but back into the runbook"
+    )
+
+
+def test_every_production_snapshot_says_when_and_says_it_is_not_current() -> None:
+    """A snapshot without a date is indistinguishable from a claim.
+
+    Two properties, and both are load-bearing. The date is what makes the file
+    evidence about a moment rather than an assertion about now; the warning is
+    what a reader sees before the first number, rather than after it.
+    """
+    root = Path(__file__).resolve().parent.parent
+    snapshots = sorted((root / "docs" / "production-snapshots").glob("*.md"))
+
+    assert snapshots, "docs/production-snapshots/ is empty; the 2026-08-23 record moved or was lost"
+
+    for snapshot in snapshots:
+        text = snapshot.read_text(encoding="utf-8")
+        head = text[:1200]
+        assert re.search(r"20\d{2}-\d{2}-\d{2}", head), (
+            f"{snapshot.relative_to(root)} does not carry an observation date near the top"
+        )
+        assert "NOT CURRENT STATE" in head, (
+            f"{snapshot.relative_to(root)} does not say it is historical before its first "
+            "number, so it can be read as current production state"
+        )
+        assert re.match(r"^# .*\b20\d{2}-\d{2}-\d{2}\b", text), (
+            f"{snapshot.relative_to(root)} does not date itself in its own title"
+        )

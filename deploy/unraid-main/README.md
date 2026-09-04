@@ -592,10 +592,11 @@ action enrichment in one transaction. There is no flag that omits the second
 half, and there should not be: the report an operator approved is a report about
 both.
 
-`docs/production-readiness.md` records the `JÄRGMISEKS` / NextAction enrichment
-as **blocked, pending a decision by the department head and the lawyers**. The
-plan reports an AUTO set; the real-data audit established that those proposals
-are not all defensible, so the number is not an approval.
+Whether the `JÄRGMISEKS` candidates may be applied at all is an open decision —
+`docs/open-decisions.md` records it as **the department head's and the lawyers'
+to make**, and it has not been made. The plan reports an AUTO set; the real-data
+audit established that those proposals are not all defensible, so the number is
+not an approval.
 
 That gate binds this command. The test is arithmetic on the report you are
 already reading:
