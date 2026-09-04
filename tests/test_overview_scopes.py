@@ -273,6 +273,53 @@ def test_an_area_is_unowned_only_when_nobody_owns_any_of_its_work(
     assert [row.key for row in page.unowned_areas] == [unwatched.key]
 
 
+def test_an_owner_is_named_once_per_area_however_many_files_they_hold(
+    department_head, specialist, other_specialist, today
+):
+    """The Vastutajad column names people, not files.
+
+    `owner_rows` asks the database for a *set* — area, owner, display name — so
+    somebody holding four files in one area must appear once. It inherits
+    `Matter.Meta.ordering`, and Django adds ordering expressions to the SELECT
+    of a DISTINCT query: `reference_number` and `created_at` differ between any
+    two Matters, so four rows survived DISTINCT and the column drew four
+    identical badges (HAF-01).
+
+    The fixture is the production shape rather than a contrived one: one lawyer
+    carrying several files in an area is what the column exists to show, and a
+    second owner is here so a fix that collapsed the projection to one person
+    would fail too.
+    """
+    area = PolicyArea.objects.filter(is_active=True).order_by("sort_order")[0]
+
+    for index in range(4):
+        held = create_matter(
+            title=f"Sama vastutaja {index}",
+            owner=specialist,
+            reference_year=2026,
+            actor=specialist,
+        )
+        held.policy_areas.add(area)
+    single = create_matter(
+        title="Teine vastutaja",
+        owner=other_specialist,
+        reference_year=2026,
+        actor=other_specialist,
+    )
+    single.policy_areas.add(area)
+
+    rows, _ = ov.area_rows(department_head, today, [])
+    row = next(row for row in rows if row.key == area.key)
+
+    assert row.open_count == 5
+    assert row.owner_count == 2
+    assert {entry["pk"] for entry in row.owners} == {specialist.pk, other_specialist.pk}
+    # The rail's own ordering, by display name, is unchanged by this fix.
+    assert [entry["name"] for entry in row.owners] == sorted(
+        [specialist.display_name, other_specialist.display_name]
+    )
+
+
 # --- H: an opinion is a canonical Submission, not an archive file --------
 
 

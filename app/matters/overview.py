@@ -856,6 +856,12 @@ def area_rows(
     owners: dict[str, list[Any]] = {}
     owner_rows = (
         open_matters.filter(owner__isnull=False)
+        # `.order_by()` is load-bearing, not tidying: Django adds a DISTINCT
+        # query's ordering expressions to its SELECT, and `Matter.Meta.ordering`
+        # names `reference_number` and `created_at`, which differ between any two
+        # Matters. Without it the set below is one row per Matter and the rail
+        # draws the same person once per file they hold.
+        .order_by()
         .values("policy_areas__key", "owner_id", "owner__display_name")
         .distinct()
     )
