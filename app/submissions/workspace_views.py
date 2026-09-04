@@ -225,6 +225,12 @@ def _archive_years(viewer: Any) -> list[int]:
     values = (
         visible_archive(viewer)
         .exclude(source_year__isnull=True)
+        # `.order_by()` is load-bearing, not tidying: Django adds a DISTINCT
+        # query's ordering expressions to its SELECT, and the projection orders
+        # by `document_date`, `created_at` and the primary key. Without it every
+        # letter is its own row and one year is offered once per letter. The
+        # output order is this function's own, below.
+        .order_by()
         .values_list("source_year", flat=True)
         .distinct()
     )

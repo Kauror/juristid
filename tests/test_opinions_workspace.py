@@ -62,8 +62,17 @@ def act_as(client, person):
     return client
 
 
-def hold(*, sha: str = "b" * 64, title: str = "Näidiskiri") -> OpinionArchiveBinary:
-    """One held letter. Every string invented; see tests/synthetic_opinions.py."""
+def hold(
+    *,
+    sha: str = "b" * 64,
+    title: str = "Näidiskiri",
+    dated: datetime.date = datetime.date(2024, 4, 10),
+) -> OpinionArchiveBinary:
+    """One held letter. Every string invented; see tests/synthetic_opinions.py.
+
+    ``dated`` is the filename's date, which the projection reads as the letter's
+    ``document_date`` and whose year becomes ``source_year``.
+    """
     batch = OpinionArchiveBatch.objects.create(
         archive_sha256="a" * 64,
         importer_version="test/0",
@@ -80,12 +89,12 @@ def hold(*, sha: str = "b" * 64, title: str = "Näidiskiri") -> OpinionArchiveBi
     OpinionArchiveItem.objects.create(
         batch=batch,
         archive_sha256="a" * 64,
-        archive_relative_path="Opinions/2024/naidis.pdf",
+        archive_relative_path=f"Opinions/{dated.year}/{sha[:8]}-naidis.pdf",
         original_filename="naidis.pdf",
         sha256=sha,
         size_bytes=1024,
         detected_type="application/pdf",
-        filename_date=datetime.date(2024, 4, 10),
+        filename_date=dated,
         filename_recipient="Näidisministeerium",
         filename_title=title,
         binary=binary,
@@ -391,6 +400,48 @@ def test_linked_and_unlinked_are_both_reachable(client, shared, specialist):
     only_unlinked = client.get(ARCHIVE_URL, {"seotud": "ei"}).content.decode()
     assert "Sidumata kiri" in only_unlinked
     assert "Seotud kiri" not in only_unlinked
+
+
+def test_the_year_filter_offers_each_year_once(client, shared):
+    """One option per year the corpus covers, newest first.
+
+    The list is a *set* of years asked of the database with DISTINCT. It
+    inherits the projection's `Meta.ordering`, and Django adds those ordering
+    expressions to the SELECT — `document_date`, `created_at` and the primary
+    key — so two letters from one year survived DISTINCT as two rows. `sorted()`
+    orders integers; it does not deduplicate them, so the control offered one
+    option per letter: 768 options over eight years in production (HAF-01).
+    """
+    head = factories.DepartmentHeadFactory()
+    hold(sha="b" * 64, title="Aprillikiri", dated=datetime.date(2024, 4, 10))
+    hold(sha="c" * 64, title="Novembrikiri", dated=datetime.date(2024, 11, 3))
+    hold(sha="d" * 64, title="Möödunud aasta kiri", dated=datetime.date(2025, 6, 1))
+    rebuild_archive_index()
+    act_as(client, head)
+
+    response = client.get(ARCHIVE_URL)
+
+    assert response.status_code == 200
+    assert response.context["years"] == [2025, 2024]
+
+
+def test_the_year_filter_says_nothing_to_a_reader_who_may_not_open_the_archive(
+    reader, department_head
+):
+    """The set projection still starts from `visible_archive`.
+
+    A refused reader must not learn the corpus's date range from a filter
+    control, which is why `_archive_years` reads through the authorized queryset
+    rather than the manager (ADR 0056). Asserted beside a reader who may, so an
+    empty list cannot pass for the wrong reason.
+    """
+    from app.submissions.workspace_views import _archive_years
+
+    hold(sha="e" * 64, dated=datetime.date(2024, 4, 10))
+    rebuild_archive_index()
+
+    assert _archive_years(department_head) == [2024]
+    assert _archive_years(reader) == []
 
 
 def test_the_archive_tab_offers_no_write_control(client, shared, specialist):
