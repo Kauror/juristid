@@ -13,6 +13,9 @@ make a consequential data operation safe (ADR 0022).
 Nothing here is a new procedure. Every command below already exists and is
 documented where it lives; this sequences them and says what each one proves.
 
+**And it proves rather than reports.** What the real instance currently holds is
+deliberately not written down here — the last section says how to ask it.
+
 ---
 
 ## 0. Before anything
@@ -202,59 +205,35 @@ system owed itself at one instant rather than what the register holds. Without
 that, a restore taken seconds after somebody renamed a Valdkond reported
 canonical divergence for a queue that was about to empty itself (ADR 0041).
 
-## Where production actually stands
+## Current state — read it from the instance, not from here
 
-Facts, not plans — see `docs/open-decisions.md` for the decisions themselves.
-Verified by direct read-only inspection of the real instance at revision
-`53377932f5cba82fdc1193e35f7eca244c9d6809` on 2026-08-23. Earlier versions of
-this section said the register apply and the archive materialisation had not
-been run; both had, and the list below is what the instance answers rather than
-what a development task last remembered.
+**This document is the procedure. It does not know what production holds.**
+Every count, every "converged", every "blocked" is an observation with a date on
+it, and a checked-in observation goes stale where nobody looks — the same reason
+`APPLICATION_STAGE` is a label rather than a gate.
 
-### Done, and converged
+This section used to answer the question itself, under the heading *Where
+production actually stands*. It was true of the instance it described and false
+within weeks, and a later audit read it as present state and reopened work that
+had already shipped. The observations are kept, dated, in
+[`docs/production-snapshots/`](production-snapshots/) — historical evidence, not
+authority.
 
-Converged means the operation's own dry run now reports no work: running it
-again would change nothing.
+So: for any deployment or data decision, current state is the output of the
+relevant read-only check, run against the instance you are about to change, at
+the time you are about to change it. This document already says which check
+proves which property — nothing new is needed:
 
-- **Register import** — 2458 source references from the reviewed snapshot
-  `f38906c2…`. Two snapshots are present and the newest finished `ImportBatch`
-  selects between them, so `select_register_snapshot` is unambiguous.
-- **Current/final register cutover** — ACTIVATE 0, RETIRE 0, review 0; 200
-  current Matters (60 in 2025, 140 in 2026), 15 still drafting.
-- **Historical cutover** — would become historical: 0.
-- **Opinion archive catalogue** — 767 items, 759 metadata rows, 244 archive →
-  Matter links, 523 unlinked.
-- **Opinion archive materialisation** — 767 binaries held.
-- **Reference vocabulary** — 9 PolicyAreas by `taxonomy/0002`, 15 public
-  Organisations and 13 aliases by `reference_data apply` against a reviewed
-  digest. `reference_data verify` reports the baseline complete and
-  `deployment_readiness` is green.
+| Question | Where it is answered |
+| --- | --- |
+| What build is running, and is it healthy | 0.4 — `deployment_readiness` |
+| What a migration would do | 0.3 — `migration_plan`, from the target image |
+| What a data operation would change | 3.x — that operation's own plan / `--dry-run` |
+| What the reference baseline holds | `reference_data verify` |
+| Whether the last operation landed as planned | 4.x, and `recovery_fingerprint --compare` |
 
-### Not done, and each blocked for a stated reason
+A plan phase writes nothing, so running one to find out where you are is always
+safe, and is the answer to "is this still true?" for every row in §3.
 
-- **OneNote → PolicyArea relationships** — the first real-data plan exists
-  (71 relations, 4 of 24 filing locations exact-matched) and **awaits human
-  review**. Nothing is wrong with it; nobody has read it. `Matter.policy_areas`
-  is still 0.
-- **`JÄRGMISEKS` / NextAction enrichment** — blocked on the parser-safety
-  review in PR #49. The plan still reports an AUTO set; the audit established
-  that those proposals are not all defensible, so the number is not an approval.
-- **Canonical historical opinion Submissions** — blocked by **two independent
-  gates, and clearing either one alone is not enough**:
-  1. *Operational.* Canonical filing needs an identified administrator, and
-     `AUTH_MODE=shared_gate` does not honestly provide one.
-  2. *Engineering.* The production canonical-apply path still lacks its P4
-     hardening — exact reviewed-plan digest binding, safe unresolved-recipient
-     provenance, retryable recipient resolution, conflict/existing-Submission
-     parity with the reviewed path, and precise reviewed sent-date provenance.
-     P4 is not implemented.
-
-  The plan proposes 244 Submissions. Changing the authentication mode would not
-  make applying them correct.
-- **Real-archive text extraction** — blocked pending the Secure Pilot Gate
-  scanner, so production archive search is metadata-only by design.
-- **Second-pass archive content proposals** — downstream of extraction: 767
-  examined, 767 without content, 0 proposals. Not a defect.
-- **Off-host disaster recovery** — still no destination, and no agreed RPO/RTO.
-  The local backup set protects against an operator mistake and a bad
-  deployment, and against nothing that happens to the host itself.
+Decisions that remain to be *made* are not state and do not live here either;
+they are in [`docs/open-decisions.md`](open-decisions.md).
