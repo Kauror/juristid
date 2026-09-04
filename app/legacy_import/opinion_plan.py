@@ -323,8 +323,6 @@ def _plan_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]:
     on one Matter each produce their own, which is the whole reason Submission
     hangs off Matter one-to-many (brief 41, 68).
     """
-    from app.submissions.models import Submission
-
     seen: set[tuple[Any, str]] = set()
     planned: list[SubmissionPlan] = []
 
@@ -357,9 +355,8 @@ def _plan_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]:
             )
             continue
 
-        existing = _existing_submission(Submission, proposal.matter_id, proposal.sha256)
-        conflicting = _conflicting_submission(Submission, proposal.matter_id, sent_date, proposal)
-        if existing is None and conflicting is not None:
+        existing, blocking = _submission_collision(proposal.matter_id, proposal.sha256, sent_date)
+        if blocking is not None:
             proposal.match_class = OpinionMatchClass.CONFLICT
             proposal.conflicts.append(OpinionConflict.EXISTING_SUBMISSION_DISAGREES)
             proposal.explanation += (
@@ -538,6 +535,11 @@ def _plan_reviewed_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]
     ``REVIEWED_DECISION`` either way, which is the same confusion in the other
     direction: a person's authority written onto a spreadsheet cell they never
     looked at (brief 19, 63).
+
+    What a reviewer decides and what the database already holds are two
+    different facts, so this route runs the automatic route's collision
+    assessment over the identity it has resolved — and runs the *same* one,
+    from ``_submission_collision``, rather than a second reading of the rule.
     """
     from app.legacy_import.opinion_archive import OpinionMatchCandidate, OpinionSubmissionImport
     from app.legacy_import.opinion_enums import OpinionCandidateState
@@ -588,6 +590,28 @@ def _plan_reviewed_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]
                 "saatmise kuupäeva ei ole ei ülevaatuses ega registris."
             )
             continue
+        # The same collision question the automatic route asks, asked here for
+        # the first time. A reviewer confirming *Kinnita saatmine* is asserting
+        # whose letter this is and when it went out; they are not asserting
+        # that nobody has filed it already, and the queue does not show them
+        # the Matter's existing Submissions. Approval is a fact about the
+        # letter, and it does not become a licence to write a second canonical
+        # record of one dispatch (brief 67; HAF-02).
+        existing, blocking = _submission_collision(candidate.matter_id, sha256, sent_date)
+        if blocking is not None:
+            # Withheld the way this route withholds everything else it cannot
+            # write: a warning an operator reads before approving the apply,
+            # and no write of any kind. The reviewer's decision stays exactly
+            # as they left it — LINKED, approved, with their date and their
+            # note — because a canonical collision is a fact about the
+            # database, not a reason to un-decide a person.
+            plan.warnings.append(
+                f"Ülevaatusel kinnitatud fail {candidate.item.original_filename[:60]}: "
+                "sellel teemal on juba samal kuupäeval saadetud arvamus teise lõpliku "
+                f"tõendiga ({OpinionConflict.EXISTING_SUBMISSION_DISAGREES.label}). "
+                "Käsitsi tehtud kirjet ei asendata."
+            )
+            continue
         recipient_raw, recipient_basis = _recipient_for(
             plan,
             MatchProposal(
@@ -611,6 +635,7 @@ def _plan_reviewed_submissions(plan: OpinionArchivePlan) -> list[SubmissionPlan]
                 recipient_basis=recipient_basis,
                 match_class=candidate.match_class,
                 signals=list(candidate.signals),
+                existing_submission_id=existing,
                 candidate_id=candidate.pk,
             )
         )
@@ -720,16 +745,51 @@ def _existing_submission(model: Any, matter_id: Any, sha256: str) -> Any:
 
 
 def _conflicting_submission(
-    model: Any, matter_id: Any, sent_date: datetime.date, proposal: MatchProposal
+    model: Any, matter_id: Any, sent_date: datetime.date, sha256: str
 ) -> Any:
     """A manual record on the same Matter and day, with different evidence."""
     return (
         model.objects.filter(matter_id=matter_id, sent_at__date=sent_date)
-        .exclude(final_version__sha256=proposal.sha256)
+        .exclude(final_version__sha256=sha256)
         .exclude(final_version__isnull=True)
         .values_list("pk", flat=True)
         .first()
     )
+
+
+def _submission_collision(matter_id: Any, sha256: str, sent_date: datetime.date) -> tuple[Any, Any]:
+    """The one question both planning routes ask before proposing a Submission.
+
+    *Does this canonical record already exist, and would writing it contradict
+    one that does?* Returns ``(existing, blocking)``: the id of the Submission
+    that already carries these exact bytes on this Matter, and the id of the
+    one that stands in the way of creating another.
+
+    Shared rather than copied, and that is the whole point of the seam. The
+    automatic route grew these two checks first and the reviewed route never
+    got them, so a person confirming *Kinnita saatmine* on a letter somebody
+    had already filed produced a second canonical record of one dispatch. Two
+    copies of the rule would have drifted apart again the next time one of them
+    was corrected, so there is one — called from both routes, deciding nothing
+    about *which* route asked.
+
+    Precedence is the automatic route's, unchanged: a Submission already
+    carrying these bytes is recognised, not refused. It is the same sent
+    action, and the plan attaches its provenance to the record that exists
+    instead of creating a rival. Only where there is no such record does a
+    same-day disagreement block.
+
+    Reads only. Planning stays repeatable, and nothing here decides what the
+    caller does with the answer — the automatic route raises a conflict on its
+    proposal, the reviewed route withholds and says so in the plan's warnings,
+    and neither writes.
+    """
+    from app.submissions.models import Submission
+
+    existing = _existing_submission(Submission, matter_id, sha256)
+    if existing is not None:
+        return existing, None
+    return None, _conflicting_submission(Submission, matter_id, sent_date, sha256)
 
 
 # ---------------------------------------------------------------------------

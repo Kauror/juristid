@@ -19,6 +19,10 @@ in a notes field, and the next run stopped before it ever looked again.
 
 **The reviewed route skipped the automatic route's conflict checks.** A person
 asserting whose letter this is is not asserting that nobody else has filed it.
+That was closed on the *cross*-Matter axis first; the two same-Matter checks —
+these bytes already filed here, and a different letter already filed here on
+this day — arrived with HAF-02, and both routes now ask one shared question
+rather than each keeping its own copy of the rule.
 
 All data is synthetic.
 """
@@ -31,8 +35,11 @@ from io import StringIO
 import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.utils import timezone
 
 from app.core.enums import Visibility
+from app.documents.enums import DocumentRole
+from app.documents.services import add_evidence_version, create_document
 from app.legacy_import.opinion_apply import apply_plan, open_batch
 from app.legacy_import.opinion_apply_gate import (
     ApplyConflict,
@@ -45,12 +52,14 @@ from app.legacy_import.opinion_apply_gate import (
 from app.legacy_import.opinion_archive import OpinionMatchCandidate, OpinionSubmissionImport
 from app.legacy_import.opinion_enums import (
     OpinionCandidateState,
+    OpinionConflict,
     RecipientBasis,
     SentDateBasis,
 )
 from app.legacy_import.opinion_plan import build_plan
 from app.legacy_import.parser import SOURCE_SYSTEM
 from app.matters.models import Matter
+from app.submissions.enums import SubmissionKind, SubmissionStatus
 from app.submissions.models import Submission, SubmissionRecipient
 from tests import factories
 from tests import synthetic_opinions as syn
@@ -111,6 +120,47 @@ def archive_path(tmp_path):
 
 def plan_for(archive):
     return build_plan(archive_path=archive, kodadash_path=None)
+
+
+def approved_candidate(archive, matter, *, sha256, sent_date, administrator=None):
+    """The row a reviewer leaves behind after pressing *Kinnita saatmine*.
+
+    Catalogued first, so the candidate exists the way the importer wrote it,
+    and then decided — which is the order the product actually produces and the
+    only one in which the reviewed route has anything to plan.
+    """
+    from app.legacy_import.opinion_apply import catalogue_plan
+
+    catalogue_plan(plan_for(archive), batch=open_batch(plan_for(archive)))
+    candidate = OpinionMatchCandidate.objects.get(item__sha256=sha256)
+    candidate.matter = matter
+    candidate.state = OpinionCandidateState.LINKED
+    candidate.review_approves_submission = True
+    candidate.reviewed_sent_date = sent_date
+    candidate.decided_by = administrator
+    candidate.decided_at = timezone.now()
+    candidate.decision_note = "Kontrollitud käsitsi."
+    candidate.save()
+    return candidate
+
+
+def canonical_submission(matter, *, content, sent_at, title="Käsitsi lisatud"):
+    """A SENT Submission already on the Matter, with these bytes as evidence."""
+    document = create_document(matter=matter, title=title, role=DocumentRole.KODA_SUBMISSION_FINAL)
+    version = add_evidence_version(
+        document=document,
+        content=content,
+        original_filename="kasitsi.pdf",
+        mime_type="application/pdf",
+    )
+    return Submission.objects.create(
+        matter=matter,
+        kind=SubmissionKind.FORMAL_OPINION,
+        title=title,
+        status=SubmissionStatus.SENT,
+        sent_at=sent_at,
+        final_version=version,
+    )
 
 
 def _entry_for(candidate):
@@ -372,6 +422,335 @@ def test_an_approved_letter_with_no_date_anywhere_is_withheld(archive_path):
     plan = plan_for(archive)
 
     assert all(entry.sent_date is not None for entry in plan.submissions)
+
+
+# ---------------------------------------------------------------------------
+# HAF-02 — the reviewed route asks the automatic route's collision questions
+# ---------------------------------------------------------------------------
+
+
+def test_a_reviewed_letter_with_nothing_in_its_way_is_still_planned_and_filed(
+    archive_path, administrator
+):
+    """The case the parity must not disturb: nothing exists, so one is written."""
+    matter, item = strict_pair(number=301, sent=None)
+    archive = archive_path([item])
+    candidate = approved_candidate(
+        archive,
+        matter,
+        sha256=item.sha256,
+        sent_date=datetime.date(2024, 5, 2),
+        administrator=administrator,
+    )
+
+    plan = plan_for(archive)
+    entries = [entry for entry in plan.submissions if entry.sha256 == item.sha256]
+
+    assert len(entries) == 1
+    assert entries[0].existing_submission_id is None
+    assert entries[0].sent_date_basis == SentDateBasis.REVIEWED_DECISION
+
+    report = apply_plan(plan, batch=open_batch(plan))
+
+    assert report.submissions_created == 1
+    assert Submission.objects.filter(matter=matter).count() == 1
+    candidate.refresh_from_db()
+    assert candidate.state == OpinionCandidateState.APPLIED
+
+
+def test_a_reviewed_letter_already_filed_as_these_bytes_reuses_that_record(
+    archive_path, administrator
+):
+    """The defect: *Kinnita saatmine* filed one dispatch a second time.
+
+    The Matter already carries a canonical Submission whose final evidence is
+    this exact binary. The automatic route has recognised that since brief 67
+    and attaches its provenance to the record that exists; the reviewed route
+    went straight to a create and produced a rival copy of the same sent
+    action, differing only in which route happened to notice it.
+    """
+    matter, item = strict_pair(number=302, sent=None)
+    archive = archive_path([item])
+    candidate = approved_candidate(
+        archive,
+        matter,
+        sha256=item.sha256,
+        sent_date=datetime.date(2024, 4, 10),
+        administrator=administrator,
+    )
+    existing = canonical_submission(
+        matter,
+        content=item.data,
+        sent_at=datetime.datetime(2024, 4, 10, 9, 30, tzinfo=datetime.UTC),
+        title="Varem salvestatud",
+    )
+
+    plan = plan_for(archive)
+    entries = [entry for entry in plan.submissions if entry.sha256 == item.sha256]
+
+    assert len(entries) == 1
+    assert entries[0].existing_submission_id == existing.pk
+
+    report = apply_plan(plan, batch=open_batch(plan))
+
+    assert report.submissions_created == 0
+    assert report.submissions_linked == 1
+    assert Submission.objects.filter(matter=matter).count() == 1
+    imported = OpinionSubmissionImport.objects.get(item__sha256=item.sha256)
+    assert imported.submission_id == existing.pk
+    assert imported.created_submission is False
+    # Recognising a record is not editing it. Everything the manual filing said
+    # about this dispatch is still what it says.
+    before = (existing.title, existing.sent_at, existing.final_version_id, existing.created_by_id)
+    existing.refresh_from_db()
+    assert (
+        existing.title,
+        existing.sent_at,
+        existing.final_version_id,
+        existing.created_by_id,
+    ) == before
+    # The reviewer's decision is finished work, not undone work.
+    candidate.refresh_from_db()
+    assert candidate.state == OpinionCandidateState.APPLIED
+    assert candidate.review_approves_submission is True
+    assert candidate.decided_by == administrator
+    assert candidate.decision_note == "Kontrollitud käsitsi."
+
+
+def test_a_reviewed_letter_reusing_a_record_stays_one_record_on_a_rerun(
+    archive_path, administrator
+):
+    """Reuse has to be idempotent, or the second run files the rival copy."""
+    matter, item = strict_pair(number=303, sent=None)
+    archive = archive_path([item])
+    approved_candidate(
+        archive,
+        matter,
+        sha256=item.sha256,
+        sent_date=datetime.date(2024, 4, 10),
+        administrator=administrator,
+    )
+    canonical_submission(
+        matter,
+        content=item.data,
+        sent_at=datetime.datetime(2024, 4, 10, 9, 30, tzinfo=datetime.UTC),
+    )
+
+    first = plan_for(archive)
+    apply_plan(first, batch=open_batch(first))
+    second = plan_for(archive)
+    report = apply_plan(second, batch=open_batch(second))
+
+    assert report.submissions_created == 0
+    assert Submission.objects.filter(matter=matter).count() == 1
+    assert OpinionSubmissionImport.objects.filter(item__sha256=item.sha256).count() == 1
+
+
+def test_a_reviewed_letter_that_disagrees_with_the_days_record_is_withheld(
+    archive_path, administrator
+):
+    """Same Matter, same day, different final evidence — so one of them is wrong.
+
+    Which one is a judgement nobody has made yet, and the automatic route has
+    always refused to make it by writing. The reviewed route wrote anyway,
+    leaving the Matter claiming two different letters as its dispatch of that
+    day.
+    """
+    matter, item = strict_pair(number=304, sent=None)
+    archive = archive_path([item])
+    approved_candidate(
+        archive,
+        matter,
+        sha256=item.sha256,
+        sent_date=datetime.date(2024, 4, 10),
+        administrator=administrator,
+    )
+    existing = canonical_submission(
+        matter,
+        content=syn.pdf_bytes("hoopis-teine-fail-304"),
+        sent_at=datetime.datetime(2024, 4, 10, 9, 30, tzinfo=datetime.UTC),
+    )
+    before = (existing.title, existing.sent_at, existing.final_version_id)
+
+    plan = plan_for(archive)
+
+    assert [entry for entry in plan.submissions if entry.sha256 == item.sha256] == []
+    assert any(
+        OpinionConflict.EXISTING_SUBMISSION_DISAGREES.label in warning for warning in plan.warnings
+    ), plan.warnings
+
+    apply_plan(plan, batch=open_batch(plan))
+
+    assert Submission.objects.filter(matter=matter).count() == 1
+    existing.refresh_from_db()
+    assert (existing.title, existing.sent_at, existing.final_version_id) == before
+    assert not OpinionSubmissionImport.objects.filter(item__sha256=item.sha256).exists()
+
+
+def test_withholding_a_reviewed_letter_leaves_the_review_decision_alone(
+    archive_path, administrator
+):
+    """A collision in the database is not a reason to un-decide a person.
+
+    The reviewer said this file is a sent opinion belonging to this Matter.
+    Refusing to write a second canonical record does not make that untrue, and
+    a route that answered it by resetting the row would throw the decision away
+    and put the work back in the queue as if nobody had looked.
+    """
+    matter, item = strict_pair(number=305, sent=None)
+    archive = archive_path([item])
+    candidate = approved_candidate(
+        archive,
+        matter,
+        sha256=item.sha256,
+        sent_date=datetime.date(2024, 4, 10),
+        administrator=administrator,
+    )
+    canonical_submission(
+        matter,
+        content=syn.pdf_bytes("hoopis-teine-fail-305"),
+        sent_at=datetime.datetime(2024, 4, 10, 9, 30, tzinfo=datetime.UTC),
+    )
+
+    plan = plan_for(archive)
+    apply_plan(plan, batch=open_batch(plan))
+
+    candidate.refresh_from_db()
+    assert candidate.state == OpinionCandidateState.LINKED
+    assert candidate.review_approves_submission is True
+    assert candidate.reviewed_sent_date == datetime.date(2024, 4, 10)
+    assert candidate.decided_by == administrator
+    assert candidate.decision_note == "Kontrollitud käsitsi."
+
+
+def test_a_record_on_another_matter_does_not_block_a_reviewed_letter(archive_path, administrator):
+    """The guard against widening the question to "does any Submission exist"."""
+    matter, item = strict_pair(number=306, sent=None)
+    other = register_matter(
+        year=2024, number=307, title="Muu teema", sent=None, counterparty="Muu asutus"
+    )
+    archive = archive_path([item])
+    approved_candidate(
+        archive,
+        matter,
+        sha256=item.sha256,
+        sent_date=datetime.date(2024, 4, 10),
+        administrator=administrator,
+    )
+    canonical_submission(
+        other,
+        content=syn.pdf_bytes("hoopis-teine-fail-306"),
+        sent_at=datetime.datetime(2024, 4, 10, 9, 30, tzinfo=datetime.UTC),
+    )
+
+    plan = plan_for(archive)
+    report = apply_plan(plan, batch=open_batch(plan))
+
+    assert report.submissions_created == 1
+    assert Submission.objects.filter(matter=matter).count() == 1
+
+
+def test_a_record_on_another_day_does_not_block_a_reviewed_letter(archive_path, administrator):
+    """A Matter genuinely writes twice. Only the same day is the collision."""
+    matter, item = strict_pair(number=308, sent=None)
+    archive = archive_path([item])
+    approved_candidate(
+        archive,
+        matter,
+        sha256=item.sha256,
+        sent_date=datetime.date(2024, 4, 10),
+        administrator=administrator,
+    )
+    canonical_submission(
+        matter,
+        content=syn.pdf_bytes("hoopis-teine-fail-308"),
+        sent_at=datetime.datetime(2024, 2, 1, 9, 30, tzinfo=datetime.UTC),
+    )
+
+    plan = plan_for(archive)
+    report = apply_plan(plan, batch=open_batch(plan))
+
+    assert report.submissions_created == 1
+    assert Submission.objects.filter(matter=matter).count() == 2
+
+
+def test_the_same_bytes_outrank_a_same_day_disagreement(archive_path, administrator):
+    """Precedence, and it is the automatic route's — mirrored, not re-decided.
+
+    The Matter carries both: a Submission holding these exact bytes and another
+    sent the same day holding different evidence. A route that asked the second
+    question first would refuse a dispatch it has already recognised.
+    """
+    matter, item = strict_pair(number=309, sent=None)
+    archive = archive_path([item])
+    approved_candidate(
+        archive,
+        matter,
+        sha256=item.sha256,
+        sent_date=datetime.date(2024, 4, 10),
+        administrator=administrator,
+    )
+    existing = canonical_submission(
+        matter,
+        content=item.data,
+        sent_at=datetime.datetime(2024, 4, 10, 9, 30, tzinfo=datetime.UTC),
+        title="Samad baidid",
+    )
+    canonical_submission(
+        matter,
+        content=syn.pdf_bytes("hoopis-teine-fail-309"),
+        sent_at=datetime.datetime(2024, 4, 10, 11, 0, tzinfo=datetime.UTC),
+        title="Sama päev, muu tõend",
+    )
+
+    plan = plan_for(archive)
+    entries = [entry for entry in plan.submissions if entry.sha256 == item.sha256]
+
+    assert len(entries) == 1
+    assert entries[0].existing_submission_id == existing.pk
+
+    report = apply_plan(plan, batch=open_batch(plan))
+
+    assert report.submissions_created == 0
+    assert Submission.objects.filter(matter=matter).count() == 2
+
+
+def test_both_planning_routes_go_through_one_collision_assessment(
+    archive_path, administrator, monkeypatch
+):
+    """The structural half: parity a later edit cannot quietly undo.
+
+    Two files in one archive — one a reviewer approved, one the register
+    matches on its own — and the seam is asked about both. A copy of the rule
+    grown beside this one would satisfy every behavioural test above on the day
+    it was written and drift the following week, which is exactly how the
+    reviewed route lost these checks the first time.
+    """
+    from app.legacy_import import opinion_plan
+
+    reviewed_matter, reviewed_item = strict_pair(number=310, sent=None)
+    automatic_matter, automatic_item = strict_pair(number=311)
+    archive = archive_path([reviewed_item, automatic_item])
+    approved_candidate(
+        archive,
+        reviewed_matter,
+        sha256=reviewed_item.sha256,
+        sent_date=datetime.date(2024, 4, 10),
+        administrator=administrator,
+    )
+
+    asked: list[tuple] = []
+    real = opinion_plan._submission_collision
+
+    def recording(matter_id, sha256, sent_date):
+        asked.append((matter_id, sha256, sent_date))
+        return real(matter_id, sha256, sent_date)
+
+    monkeypatch.setattr(opinion_plan, "_submission_collision", recording)
+    plan_for(archive)
+
+    assert (reviewed_matter.pk, reviewed_item.sha256, datetime.date(2024, 4, 10)) in asked
+    assert (automatic_matter.pk, automatic_item.sha256, datetime.date(2024, 4, 10)) in asked
 
 
 # ---------------------------------------------------------------------------
