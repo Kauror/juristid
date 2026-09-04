@@ -291,6 +291,18 @@ def _occurrence_rows(*, binary: Any = None) -> list[dict[str, Any]]:
     letter is filed at several paths. Narrowing to one binary leaves the relative
     order of that binary's rows unchanged, so the per-row caller and the
     corpus-wide one see the same sequence for the same letter.
+
+    That last sentence is only true if the order is *total*, which the model's
+    own is not: identity is (archive sha, path, content sha), so one letter filed
+    at two paths under the same name is two rows tying on both ordering keys.
+    PostgreSQL is then free to return them in either order, and it does — the
+    per-binary read and the corpus-wide read are different queries with different
+    plans. `identifiers` and `occurrence_paths` are `"\n".join`ed in the order
+    they arrive, so a tie makes the builder store one sequence and the drift
+    check expect the other, every time, for ever: a rebuild cannot converge on a
+    value the verifier computes differently. The primary key is appended for that
+    reason alone — it decides nothing except which of two otherwise equal rows is
+    read first, and it decides it the same way for both callers.
     """
     rows = (
         OpinionArchiveItem.objects.filter(binary=binary)
@@ -299,7 +311,7 @@ def _occurrence_rows(*, binary: Any = None) -> list[dict[str, Any]]:
     )
     # `values()` is typed as a TypedDict by the stubs, which is narrower than
     # either caller wants; the row shape is settled by `_occurrence_values`.
-    selected: Any = rows.values(
+    selected: Any = rows.order_by("filename_date", "original_filename", "pk").values(
         "binary_id",
         "archive_relative_path",
         "original_filename",
@@ -317,13 +329,25 @@ def _metadata_rows(*, binary: Any = None) -> list[dict[str, Any]]:
     Occurrence-scoped like the candidates: `OpinionArchiveMetadata.item` is
     `CASCADE`, so removing an occurrence removes the reading of it, and the
     fallback title, recipient, date and external id it contributed go with it.
+
+    Ordered explicitly, and totally, for the reason `_occurrence_rows` is. The
+    model's own `("item", "source_system")` is doubly implicit: ordering by a
+    ForeignKey expands to the *related* model's ordering, so this was already
+    sorting by the occurrence's `filename_date` and `original_filename` — the two
+    columns that tie for one letter filed twice — and then by `source_system`.
+    Two readings of two tied occurrences by the same system tie completely, and
+    their `external_id`s reach `identifiers` in whichever order the plan
+    happened to produce. The expansion is written out here so the ordering this
+    depends on is visible, and the primary key closes it.
     """
     rows = (
         OpinionArchiveMetadata.objects.filter(item__binary=binary)
         if binary is not None
         else OpinionArchiveMetadata.objects.filter(item__binary__isnull=False)
     )
-    selected: Any = rows.values(
+    selected: Any = rows.order_by(
+        "item__filename_date", "item__original_filename", "source_system", "pk"
+    ).values(
         "item__binary_id",
         "title",
         "recipient_raw",
@@ -428,6 +452,13 @@ def _candidate_rows(*, binary: Any = None) -> list[dict[str, Any]]:
     `match_class` below well defined. Narrowing to one binary leaves the
     relative order of that binary's rows unchanged, so the per-row caller and
     the corpus-wide one see the same sequence for the same letter.
+
+    Totalised like the other two, and for the same tie: the model's remaining
+    keys are the occurrence's `filename_date` and `original_filename`, which are
+    exactly the pair that ties for one letter filed twice. `match_class` survives
+    a tie on its own — tied rows hold the same class, so `_candidate_values`
+    reads the same one either way — but `excel_reference` reaches `identifiers`
+    in fetch order, and that has to be settled.
     """
     rows = OpinionMatchCandidate.objects.exclude(state=OpinionCandidateState.SUPERSEDED)
     rows = (
@@ -438,7 +469,9 @@ def _candidate_rows(*, binary: Any = None) -> list[dict[str, Any]]:
     # The stubs type `values()` as a TypedDict, which is narrower than either
     # caller wants and not assignable to the plain mapping they share. The row
     # shape is settled by `_candidate_values` reading it, not by this line.
-    selected: Any = rows.values("item__binary_id", "match_class", "state", "excel_reference")
+    selected: Any = rows.order_by(
+        "match_class", "item__filename_date", "item__original_filename", "pk"
+    ).values("item__binary_id", "match_class", "state", "excel_reference")
     return list(selected)
 
 

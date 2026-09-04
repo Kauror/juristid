@@ -110,7 +110,17 @@ class Command(BaseCommand):
             return
         for finding in findings:
             self.stdout.write(f"  leid: {finding}")
+        # The advice is conditional because the unconditional version was wrong
+        # once, in production: a builder and a verifier that disagreed about a
+        # value could not be reconciled by recomputing it, so the rebuild the
+        # message asked for rewrote every row and changed nothing this command
+        # then said. A rebuild is still the remedy for a projection that has
+        # merely gone stale, which is the ordinary case; it is not a remedy for
+        # a projection that was just rebuilt.
         raise CommandError(
             f"Otsinguprojektsioon ei vasta hoitud baitidele ({len(findings)} leidu). "
-            "Paranda `opinion_archive_search rebuild --force`."
+            "Aegunud projektsiooni parandab `opinion_archive_search rebuild --force`. "
+            "Kui see käsk just jooksis ja needsamad leiud püsivad, ei ole tegu aegunud "
+            "andmetega: ehitaja ja kontrollija ei ole ühest meelt selles, mida rida peaks "
+            "ütlema, ning kordamine ei muuda seda. Teata leiust."
         )
