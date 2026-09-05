@@ -74,6 +74,25 @@ Valdkonnad. The count does not grow with the number of fragments, and a test
 holds it there. Per document, the first 400 000 characters are read and a
 document that hits the ceiling is marked as read in part, on the page.
 
+**Every repetition the document can reach is bounded, and that is a rule
+rather than a tuning.** The analyser runs regular expressions over text an
+outsider wrote, inside a web request, so a pattern's worst case is part of
+its meaning. Three shapes were measured to run away before the bounds went
+on: an EIS label filler written as `(?:(?:toimik\w*|numb\w*|…)\s*)*`, whose
+alternatives could each swallow the same run of letters in exponentially many
+ways, so a document containing `numbnumbnumb…` and no digits never returned;
+an address pattern whose domain was one character class containing the dot,
+quadratic over a long dotted run with no top-level domain; and the shared
+register date scanner, which resolves overlapping mentions pairwise — right
+for the one register cell it was written for, and eighteen seconds on a
+single 400 000-character block. The first two are now bounded counts of
+bounded pieces, the third is handed newline-aligned chunks so its pairwise
+term is per chunk, and the register parser itself is untouched. A test holds
+each shape inside a time budget, and another asserts the bounds did not cost
+the references and addresses the patterns exist to find. A future rule added
+to `vocabulary.py` inherits this constraint: no unbounded quantifier inside a
+repeated group.
+
 ### Every proposal is a candidate with confidence, rule and provenance
 
 A `Candidate` carries the field it is for, the canonical value the form
