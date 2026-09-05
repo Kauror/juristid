@@ -891,6 +891,106 @@ def test_no_document_shape_makes_the_scan_run_away(label: str) -> None:
     assert elapsed < SCAN_BUDGET_SECONDS, f"{label}: {elapsed:.1f}s"
 
 
+#: Text that matches something in nearly every sentence: an organisation, a
+#: date, a document reference, an EIS toimik, a deadline cue. The finders were
+#: never slow on this. Building the *evidence* under each finding was, because
+#: it looked for the sentence boundary from character zero every time.
+REFERENCE_DENSE = (
+    "Näidisliit saatis 05.09.2026 kirja nr 1-4/26/9876-2, EIS toimik 26-0321. "
+    "Palume esitada arvamus hiljemalt 18. septembriks 2026. Näidisamet "
+    "kooskõlastas keskkonnatasu ja maksunduse eelnõu 01.01.2027. "
+)
+
+
+def _dense(size: int) -> str:
+    return (REFERENCE_DENSE * (size // len(REFERENCE_DENSE) + 1))[:size]
+
+
+def test_a_full_budget_of_reference_dense_text_still_comes_back() -> None:
+    """A full budget of matching text has to come back inside a web request.
+
+    `test_no_document_shape_makes_the_scan_run_away` above calls the finders,
+    and the finders were never the problem: the cost sat in the excerpt built
+    under each finding, which is work no finder does. A whole `analyse()` is
+    the only shape that reaches it.
+
+    A clock is the weaker half of the guard — the threshold is generous and
+    the catalogue here is four organisations, so this alone would not have
+    failed on the quadratic it was written for. It is kept as the end-to-end
+    bound, and
+    `test_the_excerpt_search_never_looks_further_than_the_excerpt` is the
+    assertion that actually pins the shape.
+    """
+    per = intake_input.MAX_CHARACTERS_PER_DOCUMENT
+    total = intake_input.MAX_TOTAL_ANALYSIS_CHARACTERS
+    documents = [document(_dense(per), f"lisa-{index}.pdf") for index in range(total // per)]
+    if total % per:
+        documents.append(document(_dense(total % per), "lisa-viimane.pdf"))
+    assert sum(len(b.text) for d in documents for b in d.blocks) == total
+
+    started = time.perf_counter()
+    analysis = run(*documents)
+    elapsed = time.perf_counter() - started
+    assert elapsed < SCAN_BUDGET_SECONDS, f"{elapsed:.1f}s"
+    # And it did the work rather than returning early on a shortcut.
+    assert analysis.fields
+
+
+def test_the_excerpt_search_never_looks_further_than_the_excerpt(monkeypatch) -> None:
+    """What one excerpt costs must not depend on where in the document it is.
+
+    Asserted on the search window rather than on a clock, because a threshold
+    in seconds is a threshold on the runner. Scanning from character zero to
+    the span is what made a reference-dense document quadratic: linear work
+    per finding, and a finding in every sentence.
+    """
+    windows: list[tuple[int, int]] = []
+    real = ts._SENTENCE_BREAK
+
+    class Recording:
+        def finditer(self, text, pos, endpos):
+            windows.append((pos, endpos))
+            return real.finditer(text, pos, endpos)
+
+        def search(self, text, pos, endpos):
+            windows.append((pos, endpos))
+            return real.search(text, pos, endpos)
+
+    monkeypatch.setattr(ts, "_SENTENCE_BREAK", Recording())
+    ts.excerpt_around(_dense(500_000), 400_000, 400_010)
+
+    assert windows, "the sentence search did not run at all"
+    assert all(end - pos <= 2 * ts.EXCERPT_LIMIT for pos, end in windows), windows
+
+
+def test_an_excerpt_does_not_change_when_the_document_grows_in_front_of_it() -> None:
+    """Bounding the sentence search bounds the cost and not the meaning.
+
+    The excerpt for a span is the sentence it sits in, whether that sentence
+    is on the first page or the fiftieth.
+    """
+    sentence = "Palume esitada arvamus hiljemalt 18. septembriks 2026."
+    for size in (0, 1_000, 50_000):
+        prefix = f"{_dense(size)}. " if size else ""
+        text = f"{prefix}{sentence} Seadus jõustub 1. jaanuaril 2027."
+        start = len(prefix) + sentence.index("18.")
+        assert ts.excerpt_around(text, start, start + 3) == sentence, size
+
+
+def test_evidence_from_text_with_no_line_breaks_is_still_one_line_of_evidence() -> None:
+    """A «line» is only as short as the extractor made it.
+
+    An unwrapped text layer has no newline for tens of thousands of
+    characters, and this string is shown under a suggestion as its evidence.
+    """
+    # `REFERENCE_DENSE` carries no newline, so this is one 60 000-character line.
+    text = _dense(60_000)
+    line = ts.line_of(text, 40_000)
+    assert len(line) <= ts.EXCERPT_LIMIT + 2, len(line)
+    assert line.startswith("…") and line.endswith("…")
+    assert text[40_000 : 40_000 + 12].strip() in line
+
+
 def test_bounding_the_patterns_did_not_cost_what_they_are_for() -> None:
     """The bounds are on repetition, not on what counts as a reference."""
     for text, expected in (

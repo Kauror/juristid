@@ -51,18 +51,42 @@ def collapse(text: str) -> str:
     return _WHITESPACE.sub(" ", text or "").strip()
 
 
+#: How far past ``limit`` the forward sentence search may look, so a break
+#: sitting on the boundary can still match its own lookahead («… 2026. Seadus
+#: …» needs the space and the capital after the dot to be inside the window).
+_BREAK_MARGIN = 64
+
+
 def excerpt_around(text: str, start: int, end: int, *, limit: int = EXCERPT_LIMIT) -> str:
     """The sentence around ``[start, end)``, collapsed and bounded.
 
     The span itself is always inside the excerpt. Where the sentence is longer
     than the limit, the excerpt is centred on the span and marked with an
     ellipsis at whichever ends were cut.
+
+    **Both boundary searches are bounded by ``limit``, and the string this
+    returns is the one an unbounded search returns.** It used to scan from
+    character zero up to the span on every call — linear in the offset, and so
+    quadratic over a document once it holds many matches. A reference-dense
+    100 000-character text spent most of one analysis in this function.
+
+    Looking further back cannot change the answer. If a sentence break lies
+    inside the window it is the last one before the span, so ``left`` is
+    exact. If none does, the excerpt is necessarily longer than ``limit``, so
+    it is centred on the span with an ellipsis on each side — which is exactly
+    what the true, more distant sentence start produces, character for
+    character, because the centring is relative to the span and never reaches
+    more than ``limit // 2`` away from it. The forward search is the same
+    argument mirrored, with ``_BREAK_MARGIN`` of slack so a break on the
+    boundary is not lost to a truncated lookahead.
     """
-    left = 0
-    for match in _SENTENCE_BREAK.finditer(text, 0, start):
+    window_start = max(0, start - limit)
+    left = window_start
+    for match in _SENTENCE_BREAK.finditer(text, window_start, start):
         left = match.end()
-    right_match = _SENTENCE_BREAK.search(text, end)
-    right = right_match.end() if right_match else len(text)
+    ceiling = min(len(text), end + limit)
+    right_match = _SENTENCE_BREAK.search(text, end, min(len(text), ceiling + _BREAK_MARGIN))
+    right = min(right_match.end(), ceiling) if right_match else ceiling
     sentence = text[left:right]
     span_start, span_end = start - left, end - left
     if len(sentence) > limit:
@@ -77,13 +101,27 @@ def excerpt_around(text: str, start: int, end: int, *, limit: int = EXCERPT_LIMI
     return collapse(sentence)
 
 
-def line_of(text: str, position: int) -> str:
-    """The line ``position`` sits on, trimmed."""
+def line_of(text: str, position: int, *, limit: int = EXCERPT_LIMIT) -> str:
+    """The line ``position`` sits on, trimmed and bounded like an excerpt.
+
+    A «line» is only as short as the extractor made it. A .txt filed as one
+    paragraph, or a PDF whose text layer arrives unwrapped, has no newline for
+    tens of thousands of characters — and this string is shown to the reader
+    as the evidence under a suggestion. Unbounded it was both a page of prose
+    in a panel meant for one sentence and, collapsed once per match, the
+    second quadratic in a reference-dense document.
+    """
     left = text.rfind("\n", 0, position) + 1
     right = text.find("\n", position)
     if right < 0:
         right = len(text)
-    return collapse(text[left:right])
+    if right - left <= limit:
+        return collapse(text[left:right])
+    cut_start = max(left, position - limit // 2)
+    cut_end = min(right, cut_start + limit)
+    prefix = "…" if cut_start > left else ""
+    suffix = "…" if cut_end < right else ""
+    return f"{prefix}{collapse(text[cut_start:cut_end])}{suffix}"
 
 
 def _window(text: str, start: int, end: int, before: int, after: int) -> tuple[str, int]:

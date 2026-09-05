@@ -85,13 +85,41 @@ number of documents or fragments, and a test holds it there.
 
 **The work one GET may do is bounded per Matter, not only per document.** The
 rule vocabulary is 227 signals and a signal that does not match reads every
-character it is given, so one pass costs roughly fifteen to twenty-five
-seconds per megabyte. A per-document ceiling alone bounds nothing when intake
-accepts twenty files at once, so there are three deterministic limits:
-`MAX_CHARACTERS_PER_DOCUMENT` (80 000), `MAX_TOTAL_ANALYSIS_CHARACTERS`
-(200 000) and `MAX_TEXT_DOCUMENTS_ANALYSED` (20, one intake envelope). The
-worst case that fits measures about two seconds; the same Matter unbounded
-would have been minutes.
+character it is given, so one pass costs roughly ten to fifteen seconds per
+megabyte of matching text and about two on ordinary prose. A per-document
+ceiling alone bounds nothing when intake accepts twenty files at once, so
+there are three deterministic limits: `MAX_CHARACTERS_PER_DOCUMENT` (80 000),
+`MAX_TOTAL_ANALYSIS_CHARACTERS` (200 000) and `MAX_TEXT_DOCUMENTS_ANALYSED`
+(20, one intake envelope). A full budget of reference-dense text measures
+about two seconds; the same Matter unbounded would have been minutes.
+
+**A character budget is a bound on work only while the work per character is
+constant, and once it was not.** The evidence excerpt under each finding is
+the sentence around the match, and `excerpt_around` found that sentence by
+scanning from character zero to the match on every call — linear in the
+offset, with a finding in every sentence, so quadratic in the length of the
+document. `line_of`, which is the evidence for a reference or a contact, had
+the second half of the same problem: it collapsed the whole line, and a text
+layer that arrives unwrapped has no newline for tens of thousands of
+characters. A full 200 000-character budget of reference-dense text cost 29.8
+seconds; both searches are now bounded by the excerpt limit and it costs 2.0.
+
+The bound does not change what either function returns. The excerpt is
+centred on its span and never reaches more than half the excerpt limit away
+from it, so a sentence boundary further back than the limit cannot change the
+string: when one is inside the window it is the last one before the span, and
+when none is, the excerpt is already over the limit and gets the same
+ellipsis the true, more distant boundary would have produced. `line_of` does
+change for a line longer than the limit, and should: that string is shown to
+a reader as the evidence for a suggestion, and a page of prose in a panel
+meant for one sentence was a defect of its own.
+
+This is worth recording because the existing runaway-shape test did not catch
+it. That test calls the finders, and the finders were never the slow part —
+the cost was in the evidence built around what they found. What pins it now
+is an assertion about the search window rather than a clock
+(`test_the_excerpt_search_never_looks_further_than_the_excerpt`), because a
+threshold in seconds is a threshold on the runner.
 
 They are counts and not a clock, deliberately. A limit in seconds would make
 the same Matter produce different suggestions on a loaded runner than on an
