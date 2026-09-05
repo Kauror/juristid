@@ -1,0 +1,59 @@
+{% comment %}
+One candidate opinion or archive letter. The label says which — «Varasem
+arvamus» only for a canonical Submission, «Arhiivimaterjal» for a held letter,
+never the stronger word for the weaker thing. The title opens the material
+through its own protected route; an archive letter opens on the archive detail
+page, never through a storage address (docs/adr/0061 §3, §5).
+{% endcomment %}
+<li class="relatedcard {% if item.is_dismissed %}relatedcard--hidden{% endif %}"
+    data-related-candidate="{{ item.form_kind }}:{{ item.key }}">
+  <div class="relatedcard__main">
+    <span class="relatedcard__label">{{ item.label }}</span>
+    <a class="relatedcard__title" href="{{ item.open_url }}">{{ item.title }}</a>
+    <span class="relatedcard__meta">
+      {% if item.date %}{{ item.date|date:"j.n.Y" }}{% endif %}
+      {% if item.source_reference %}{% if item.date %} · {% endif %}{{ item.source_reference }}{% endif %}
+      {% if item.source_title %} · {{ item.source_title|truncatechars:60 }}{% endif %}
+      {% if item.recipient %} · {{ item.recipient|truncatechars:60 }}{% endif %}
+    </span>
+    {% if item.reasons %}
+      <ul class="relatedcard__reasons" aria-label="Miks seda näidatakse">
+        {% for reason in item.reasons %}<li>{{ reason }}</li>{% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+  {% if can_write %}
+    <div class="relatedcard__actions">
+      {% if item.is_dismissed %}
+        <form method="post" action="{% url 'related_materials:restore' pk=matter.pk %}"
+              hx-post="{% url 'related_materials:restore' pk=matter.pk %}"
+              hx-target="#seotud-materjalid" hx-swap="outerHTML">
+          {% csrf_token %}
+          {% include "related_materials/partials/state_fields.html" %}
+          <input type="hidden" name="liik" value="{{ item.form_kind }}">
+          <input type="hidden" name="kandidaat" value="{{ item.key }}">
+          <button class="button button--quiet button--tiny" type="submit">Taasta soovitus</button>
+        </form>
+      {% else %}
+        <form method="post" action="{% url 'related_materials:add_background' pk=matter.pk %}"
+              hx-post="{% url 'related_materials:add_background' pk=matter.pk %}"
+              hx-target="#seotud-materjalid" hx-swap="outerHTML">
+          {% csrf_token %}
+          {% include "related_materials/partials/state_fields.html" %}
+          <input type="hidden" name="liik" value="{{ item.form_kind }}">
+          <input type="hidden" name="kandidaat" value="{{ item.key }}">
+          <button class="button button--tiny" type="submit">Lisa taustmaterjaliks</button>
+        </form>
+        <form method="post" action="{% url 'related_materials:dismiss' pk=matter.pk %}"
+              hx-post="{% url 'related_materials:dismiss' pk=matter.pk %}"
+              hx-target="#seotud-materjalid" hx-swap="outerHTML">
+          {% csrf_token %}
+          {% include "related_materials/partials/state_fields.html" %}
+          <input type="hidden" name="liik" value="{{ item.form_kind }}">
+          <input type="hidden" name="kandidaat" value="{{ item.key }}">
+          <button class="button button--quiet button--tiny" type="submit">Ei ole seotud</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
+</li>

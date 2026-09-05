@@ -41,10 +41,16 @@ import pytest
 from django.urls import get_resolver, reverse
 from django.utils import timezone
 
+from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.matters.models import Matter
+from app.related_materials.models import (
+    MatterBackgroundMaterial,
+    MatterRelation,
+    RelatedSuggestionDismissal,
+)
 from app.submissions.enums import SubmissionStatus
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from tests import factories
@@ -382,6 +388,59 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: (
             w["organisation"].__class__.objects.filter(name="Loata Ministeerium").count()
         ),
+    ),
+    # Seotud materjalid (docs/adr/0061). Six decisions, one gate.
+    WriteRoute(
+        name="related_materials:link",
+        label="Seotud teema lisamine",
+        request=lambda w: ({"pk": w["matter"].pk}, {"teema": str(w["monitored"].pk)}),
+        probe=lambda w: MatterRelation.objects.count(),
+        events=(ChangeEventType.MATTER_RELATION_ADDED,),
+    ),
+    WriteRoute(
+        name="related_materials:unlink",
+        label="Seotud teema eemaldamine",
+        request=lambda w: ({"pk": w["matter"].pk}, {"teema": str(w["monitored"].pk)}),
+        probe=lambda w: MatterRelation.objects.count(),
+        events=(ChangeEventType.MATTER_RELATION_REMOVED,),
+    ),
+    WriteRoute(
+        name="related_materials:add_background",
+        label="Taustmaterjali lisamine",
+        request=lambda w: (
+            {"pk": w["monitored"].pk},
+            {"liik": "arvamus", "kandidaat": str(w["sent_submission"].pk)},
+        ),
+        probe=lambda w: MatterBackgroundMaterial.objects.count(),
+        events=(ChangeEventType.BACKGROUND_MATERIAL_ADDED,),
+    ),
+    WriteRoute(
+        name="related_materials:remove_background",
+        label="Taustmaterjali eemaldamine",
+        request=lambda w: (
+            {"pk": w["monitored"].pk},
+            {"liik": "arvamus", "kandidaat": str(w["sent_submission"].pk)},
+        ),
+        probe=lambda w: MatterBackgroundMaterial.objects.count(),
+        events=(ChangeEventType.BACKGROUND_MATERIAL_REMOVED,),
+    ),
+    WriteRoute(
+        name="related_materials:dismiss",
+        label="Soovituse peitmine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {"liik": "teema", "kandidaat": str(w["monitored"].pk)},
+        ),
+        probe=lambda w: RelatedSuggestionDismissal.objects.count(),
+    ),
+    WriteRoute(
+        name="related_materials:restore",
+        label="Soovituse taastamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk},
+            {"liik": "teema", "kandidaat": str(w["monitored"].pk)},
+        ),
+        probe=lambda w: RelatedSuggestionDismissal.objects.count(),
     ),
 )
 

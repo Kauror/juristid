@@ -20,6 +20,14 @@ urlpatterns = [
     # the Matter-scoped write routes inside it are exact paths and cannot
     # shadow anything app.matters already claims.
     path("", include(("app.intelligence.urls", "intelligence"), namespace="intelligence")),
+    # Seotud materjalid. Also at the root: every route in it is an exact
+    # Matter-scoped path under `teemad/<uuid>/seotud/`, which app.matters does
+    # not claim, and keeping the app's routes with the app keeps the feature
+    # out of the Matter views it decorates (docs/adr/0061).
+    path(
+        "",
+        include(("app.related_materials.urls", "related_materials"), namespace="related_materials"),
+    ),
     path("konto/", include(("app.accounts.urls", "accounts"), namespace="accounts")),
     path(
         "organisatsioonid/",

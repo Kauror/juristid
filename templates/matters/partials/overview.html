@@ -63,6 +63,14 @@ next step, no engagement and no opinion renders as a short, deliberate page
       </section>
     {% endif %}
 
+    {% comment %}
+      Seotud materjalid: confirmed related Matters and chosen background
+      material render here from two queries; the machine's suggestions stay
+      behind «Võimalikud seosed» and are computed only when it is opened
+      (app/related_materials, docs/adr/0061).
+    {% endcomment %}
+    {% include "related_materials/partials/section.html" %}
+
     {% include "matters/partials/timeline.html" %}
   </div>
 

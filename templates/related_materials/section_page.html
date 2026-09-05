@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Seotud materjalid · {{ matter.title|truncatechars:40 }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+The section on a page of its own. This is what a browser without scripting
+reaches from «Võimalikud seosed» and from the picker's «Otsi» — the same
+fragment the Matter page swaps in, with a way back to the file above it.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Seotud materjalid</h1>
+    <span class="pagehead__context">
+      <a href="{% url 'matters:matter_detail' pk=matter.pk %}#seotud-materjalid">{{ matter.title }}</a>
+    </span>
+  </div>
+  {% include "related_materials/partials/section.html" %}
+</div>
+{% endblock %}
