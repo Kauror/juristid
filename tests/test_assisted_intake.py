@@ -49,6 +49,7 @@ from app.matters.intake_suggestions import (
     build_analysis_input,
     prefill_initial,
 )
+from app.matters.intake_suggestions import input as intake_input
 from app.matters.intake_suggestions import textscan as ts
 from app.matters.intake_suggestions import vocabulary as vocab
 from app.matters.intake_suggestions.input import AnalysisInput, SourceDocument, TextBlock
@@ -322,7 +323,7 @@ AGENCY = (3, "Näidisamet", OrganisationType.AUTHORITY, ())
 UNION = (4, "Näidisliit", OrganisationType.ASSOCIATION, ())
 CATALOGUE = catalogue(MINISTRY, CHAMBER, AGENCY, UNION)
 
-EMPTY = CurrentValues(title="kiri", title_is_mechanical=True)
+EMPTY = CurrentValues(title="kiri")
 
 
 def run(*documents: SourceDocument, current: CurrentValues = EMPTY, organisations=CATALOGUE):
@@ -509,7 +510,7 @@ def test_two_documents_with_different_formal_headings_are_a_conflict() -> None:
 
 
 def test_a_typed_title_is_never_replaced_but_the_heading_is_still_offered() -> None:
-    typed = CurrentValues(title="Minu enda pealkiri", title_is_mechanical=False)
+    typed = CurrentValues(title="Minu enda pealkiri")
     analysis = run(document(COVERING_LETTER), current=typed)
     initial, annotated = prefill_initial(
         analysis, base={"title": "Minu enda pealkiri"}, current=typed
@@ -518,12 +519,24 @@ def test_a_typed_title_is_never_replaced_but_the_heading_is_still_offered() -> N
     assert annotated.fields[SuggestedField.TITLE].candidates[0].prefilled is False
 
 
-def test_the_mechanical_filename_title_is_replaced_by_a_strong_heading() -> None:
-    initial, annotated = prefill_initial(
-        run(document(COVERING_LETTER)), base={"title": "kiri"}, current=EMPTY
-    )
-    assert initial["title"] == "Pakendiseaduse muutmise seaduse eelnõu"
-    assert annotated.fields[SuggestedField.TITLE].candidates[0].prefilled
+def test_no_title_is_ever_pre_filled_however_strong_the_heading() -> None:
+    """The conservative half of the title rule, stated on its own.
+
+    Nothing in the record separates a title a person typed from the one
+    intake derived from a filename, so the classification is not attempted
+    and the box is never written into. The heading is still offered, which
+    is what «Kasuta» is for (docs/adr/0060).
+    """
+    fallback = CurrentValues(title="kiri")
+    analysis = run(document(COVERING_LETTER), current=fallback)
+    strongest = analysis.fields[SuggestedField.TITLE].candidates[0]
+    assert strongest.confidence == Confidence.HIGH
+    assert strongest.display == "Pakendiseaduse muutmise seaduse eelnõu"
+
+    initial, annotated = prefill_initial(analysis, base={"title": "kiri"}, current=fallback)
+    assert initial["title"] == "kiri"
+    assert SuggestedField.TITLE not in annotated.prefilled
+    assert all(not c.prefilled for c in annotated.fields[SuggestedField.TITLE].candidates)
 
 
 # ---------------------------------------------------------------------------
@@ -1102,8 +1115,10 @@ def test_high_confidence_suggestions_prefill_the_empty_unsaved_form(
     signed_in, intake_matter, ministry
 ) -> None:
     body = signed_in.get(_assisted(intake_matter)).content.decode()
-    assert 'value="Pakendiseaduse muutmise seaduse eelnõu"' in body
-    assert 'value="18.9.2026"' in body
+    # The title is offered rather than filled in; every other empty field
+    # takes its strong suggestion (see the title-provenance tests below).
+    assert 'data-suggest-value="Pakendiseaduse muutmise seaduse eelnõu"' in body
+    assert _control_value(body, "id_response_deadline") == "18.9.2026"
     assert _checked(body, "track", Track.DOMESTIC)
     keskkond = PolicyArea.objects.get(key="keskkond")
     assert _checked(body, "policy_areas", str(keskkond.pk))
@@ -1370,3 +1385,303 @@ def test_the_catalogue_is_read_from_names_and_recorded_aliases_only(ministry) ->
         for pattern in loaded.patterns
         if pattern.organisation_id == ministry.pk
     )
+
+
+# ---------------------------------------------------------------------------
+# Title provenance: a human title is never mistaken for intake's fallback
+# ---------------------------------------------------------------------------
+
+
+@pytestmark_db
+def test_a_human_title_is_not_overwritten_when_a_later_file_matches_it(
+    signed_in, specialist, ministry, capture_evidence, extract
+) -> None:
+    """The defect this pass exists to close.
+
+    A lawyer names the Matter, somebody attaches a file whose normalised name
+    is the same string, and the old rule read that coincidence as «the title
+    is intake's fallback». A different heading could then be pre-filled over
+    a title a person had written.
+    """
+    from app.matters.services import create_matter
+
+    human = "Pakendiseaduse muutmise seaduse eelnõu"
+    matter = create_matter(
+        title=human, actor=specialist, owner=specialist, reference_year=2099, reference_number=911
+    )
+    version = capture_evidence(
+        matter, corpus.text_pdf([DOCX_STYLE]), "Pakendiseaduse_muutmise_seaduse_eelnõu.pdf", PDF
+    )
+    extract(version)
+    # The coincidence the old rule tripped over really is present.
+    assert title_from_filename("Pakendiseaduse_muutmise_seaduse_eelnõu.pdf") == human
+
+    body = signed_in.get(_assisted(matter)).content.decode()
+    assert _control_value(body, "id_title") == human
+    # The document's own heading differs from the human title and is offered.
+    assert 'data-suggest-for="title"' in body
+    assert "Elektrituruseaduse muutmise seaduse eelnõu" in body
+    matter.refresh_from_db()
+    assert matter.title == human
+
+
+@pytestmark_db
+def test_the_human_title_decision_does_not_depend_on_what_the_viewer_can_see(
+    client, specialist, reader, department_head, ministry, capture_evidence, extract
+) -> None:
+    """Two colleagues, one restricted attachment, one answer.
+
+    Whether somebody else's title is protected must not be a function of which
+    child documents the reader happens to be authorised to open (hardening
+    §2.4). Visibility still decides which documents contribute suggestions.
+    """
+    from app.matters.services import create_matter
+
+    human = "Pakendiseaduse muutmise seaduse eelnõu"
+    matter = create_matter(
+        title=human, actor=specialist, owner=specialist, reference_year=2099, reference_number=912
+    )
+    hidden = capture_evidence(
+        matter,
+        corpus.text_pdf([DOCX_STYLE]),
+        "Pakendiseaduse_muutmise_seaduse_eelnõu.pdf",
+        PDF,
+        visibility_override=Visibility.RESTRICTED,
+    )
+    extract(hidden)
+
+    for viewer in (specialist, department_head):
+        client.force_login(viewer)
+        body = client.get(_assisted(matter)).content.decode()
+        assert _control_value(body, "id_title") == human, viewer
+    # The reader may not reach the surface at all, so nothing about the
+    # decision can differ for them either.
+    client.force_login(reader)
+    assert client.get(_assisted(matter)).status_code == 404
+
+
+@pytestmark_db
+def test_an_untouched_intake_fallback_title_is_offered_rather_than_filled(
+    signed_in, intake_matter
+) -> None:
+    """The conservative half, against a genuine intake Matter.
+
+    `intake_matter` is filed exactly as `register_incoming` files one and its
+    title is still the mechanical filename. Even here the heading is offered
+    and not written in, because no record distinguishes this title from one a
+    person typed into the same box (docs/adr/0060).
+    """
+    assert intake_matter.title == title_from_filename("kaaskiri.pdf")
+    response = signed_in.get(_assisted(intake_matter))
+    body = response.content.decode()
+
+    assert _control_value(body, "id_title") == "kaaskiri"
+    assert SuggestedField.TITLE not in response.context["assisted"].prefilled
+    assert 'data-suggest-value="Pakendiseaduse muutmise seaduse eelnõu"' in body
+    # The other fields still pre-fill: only the title lacks provenance.
+    assert _checked(body, "track", Track.DOMESTIC)
+    assert _control_value(body, "id_response_deadline") == "18.9.2026"
+
+
+# ---------------------------------------------------------------------------
+# The Matter-level analysis budget
+# ---------------------------------------------------------------------------
+
+
+def _bulky(marker: str, size: int) -> str:
+    """Realistic prose of a given size, carrying one findable marker."""
+    filler = (
+        "Eelnõuga täpsustatakse aruandluskohustuse ulatust ja korrastatakse "
+        "rakendussätteid vastavalt seaduse üldisele korrale. "
+    )
+    return (marker + "\n" + filler * (size // len(filler) + 1))[:size]
+
+
+@pytestmark_db
+def test_the_matter_budget_bounds_the_text_read_however_many_documents_there_are(
+    specialist, ministry, capture_evidence
+) -> None:
+    matter = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=921)
+    per = 30_000
+    for index in range(12):
+        version = capture_evidence(
+            matter, corpus.text_pdf(["placeholder"]), f"annex-{index:02d}.pdf", PDF
+        )
+        _publish_text(version, [(_bulky(f"Lisa {index}", per), TextSource.NATIVE)])
+
+    analysis_input = build_analysis_input(matter, specialist)
+    read = sum(len(block.text) for doc in analysis_input.documents for block in doc.blocks)
+
+    assert 12 * per > intake_input.MAX_TOTAL_ANALYSIS_CHARACTERS, "the world must exceed the cap"
+    assert read <= intake_input.MAX_TOTAL_ANALYSIS_CHARACTERS
+    assert analysis_input.skipped_for_budget, "documents left out are recorded as left out"
+    assert analysis_input.partial
+    # Everything is still represented; the skipped ones simply have no text.
+    assert len(analysis_input.documents) == 12
+    assert all(not doc.blocks for doc in analysis_input.skipped_for_budget)
+
+
+@pytestmark_db
+def test_the_bounded_population_is_the_same_on_every_read(
+    specialist, ministry, capture_evidence
+) -> None:
+    matter = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=922)
+    for index in range(10):
+        version = capture_evidence(
+            matter, corpus.text_pdf(["placeholder"]), f"annex-{index:02d}.pdf", PDF
+        )
+        _publish_text(version, [(_bulky(f"Lisa {index}", 40_000), TextSource.NATIVE)])
+
+    first = build_analysis_input(matter, specialist)
+    second = build_analysis_input(matter, specialist)
+    assert [(d.filename, len(d.blocks)) for d in first.documents] == [
+        (d.filename, len(d.blocks)) for d in second.documents
+    ]
+    assert analyse_matter(matter, specialist) == analyse_matter(matter, specialist)
+
+
+@pytestmark_db
+def test_the_covering_material_is_read_before_the_annexes(
+    specialist, ministry, capture_evidence, extract
+) -> None:
+    """The letter that states the deadline must not lose to a pile of annexes."""
+    matter = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=923)
+    # Annexes captured first, so only the priority rule can save the letter.
+    for index in range(8):
+        version = capture_evidence(
+            matter,
+            corpus.text_pdf(["placeholder"]),
+            f"lisa-{index:02d}.pdf",
+            PDF,
+            role=DocumentRole.OTHER,
+        )
+        _publish_text(version, [(_bulky(f"Lisa {index}", 60_000), TextSource.NATIVE)])
+    letter = capture_evidence(matter, corpus.text_pdf([COVERING_LETTER]), "kaaskiri.pdf", PDF)
+    extract(letter)
+
+    analysis = analyse_matter(matter, specialist)
+    assert [c.display for c in analysis.fields[SuggestedField.RESPONSE_DEADLINE].candidates] == [
+        "18.9.2026"
+    ]
+    assert (
+        analysis.fields[SuggestedField.SOURCE_ORGANISATIONS].candidates[0].display
+        == "Näidisministeerium"
+    )
+    assert any(c.value == "26-0123" for c in analysis.findings)
+    assert analysis.is_partial
+
+
+@pytestmark_db
+def test_email_headers_survive_when_the_text_budget_is_gone(
+    specialist, ministry, capture_evidence, extract
+) -> None:
+    """Structured headers cost no text budget, so they are never crowded out."""
+    matter = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=924)
+    for index in range(10):
+        version = capture_evidence(
+            matter,
+            corpus.text_pdf(["placeholder"]),
+            f"lisa-{index:02d}.pdf",
+            PDF,
+            role=DocumentRole.OTHER,
+        )
+        _publish_text(version, [(_bulky(f"Lisa {index}", 60_000), TextSource.NATIVE)])
+    message = capture_evidence(
+        matter,
+        corpus.consultation_eml(attachments=False, inline_logo=False),
+        "kiri.eml",
+        EML,
+        role=DocumentRole.ORIGINAL_EMAIL,
+    )
+    extract(message)
+
+    analysis = analyse_matter(matter, specialist)
+    sender = next(c for c in analysis.findings if c.field == SuggestedField.SENDER_CONTACT)
+    assert sender.display == "Kadri Näidis"
+    assert sender.provenance.filename == "kiri.eml"
+    assert any(c.field == SuggestedField.EMAIL_SENT_AT for c in analysis.findings)
+
+
+@pytestmark_db
+def test_a_partial_analysis_says_so_on_the_page(signed_in, specialist, capture_evidence) -> None:
+    matter = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=925)
+    for index in range(9):
+        version = capture_evidence(
+            matter, corpus.text_pdf(["placeholder"]), f"lisa-{index:02d}.pdf", PDF
+        )
+        _publish_text(version, [(_bulky(f"Lisa {index}", 40_000), TextSource.NATIVE)])
+
+    response = signed_in.get(_assisted(matter))
+    body = response.content.decode()
+    assert response.context["assisted"].is_partial
+    assert "Analüüsiti" in body
+    assert "automaatkontrollist" in body
+
+
+@pytestmark_db
+def test_an_over_budget_page_still_writes_nothing(signed_in, specialist, capture_evidence) -> None:
+    matter = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=926)
+    for index in range(9):
+        version = capture_evidence(
+            matter, corpus.text_pdf(["placeholder"]), f"lisa-{index:02d}.pdf", PDF
+        )
+        _publish_text(version, [(_bulky(f"Lisa {index}", 40_000), TextSource.NATIVE)])
+    before = (matter.title, matter.track, ChangeEvent.objects.count(), Organisation.objects.count())
+
+    assert signed_in.get(_assisted(matter)).status_code == 200
+
+    matter.refresh_from_db()
+    assert (
+        matter.title,
+        matter.track,
+        ChangeEvent.objects.count(),
+        Organisation.objects.count(),
+    ) == before
+
+
+@pytestmark_db
+def test_a_hidden_document_spends_no_budget_and_changes_no_suggestion(
+    specialist, ministry, capture_evidence, extract
+) -> None:
+    """Authorisation runs before budgeting, so a hidden file costs nothing."""
+    matter = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=927)
+    letter = capture_evidence(matter, corpus.text_pdf([COVERING_LETTER]), "kaaskiri.pdf", PDF)
+    extract(letter)
+    open_view = build_analysis_input(matter, specialist)
+    open_read = sum(len(b.text) for d in open_view.documents for b in d.blocks)
+
+    hidden = capture_evidence(
+        matter,
+        corpus.text_pdf(["placeholder"]),
+        "salajane.pdf",
+        PDF,
+        visibility_override=Visibility.RESTRICTED,
+    )
+    _publish_text(hidden, [(_bulky("Salajane", 150_000), TextSource.NATIVE)])
+
+    after = build_analysis_input(matter, specialist)
+    assert sum(len(b.text) for d in after.documents for b in d.blocks) == open_read
+    assert [d.filename for d in after.documents] == ["kaaskiri.pdf"]
+    assert not after.skipped_for_budget
+    assert not after.partial
+
+
+@pytestmark_db
+def test_many_documents_do_not_become_many_queries(specialist, ministry, capture_evidence) -> None:
+    small = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=928)
+    version = capture_evidence(small, corpus.text_pdf(["placeholder"]), "a.pdf", PDF)
+    _publish_text(version, [(_bulky("Üks", 20_000), TextSource.NATIVE)])
+
+    large = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=929)
+    for index in range(15):
+        version = capture_evidence(
+            large, corpus.text_pdf(["placeholder"]), f"lisa-{index:02d}.pdf", PDF
+        )
+        _publish_text(version, [(_bulky(f"Lisa {index}", 20_000), TextSource.NATIVE)])
+
+    with CaptureQueriesContext(connection) as few:
+        build_analysis_input(small, specialist)
+    with CaptureQueriesContext(connection) as many:
+        build_analysis_input(large, specialist)
+    assert len(many.captured_queries) == len(few.captured_queries)
+    assert len(few.captured_queries) <= 3

@@ -44,6 +44,22 @@
     {% endfor %}
   </ul>
 
+  {% comment %}
+    Said plainly when the Matter held more readable text than one analysis
+    reads. An empty or short suggestion list beside unread material would
+    otherwise read as «there was nothing useful in there», which is a
+    different claim from «not all of it was looked at» (docs/adr/0060).
+    A sentence, not an error: nothing is blocked and there is nothing to
+    clear.
+  {% endcomment %}
+  {% if assisted.is_partial %}
+    <p class="suggpanel__state">
+      Analüüsiti {{ assisted.analysed_documents|length }} dokumenti
+      {{ assisted.readable_documents|length }}-st. Mahukas sisu jäi
+      automaatkontrollist osaliselt välja; dokumendid ise on tervikuna alles ja avatavad.
+    </p>
+  {% endif %}
+
   {% if assisted.is_waiting %}
     <p class="suggpanel__state">
       Teksti eraldamine on ootel — dokumendi sisu ei ole veel analüüsiks valmis.

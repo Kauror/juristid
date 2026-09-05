@@ -2388,7 +2388,7 @@ def matter_edit_assisted(request: HttpRequest, pk: Any) -> HttpResponse:
     """
     matter = get_visible_matter(request, pk)
     analysis = analyse_matter(matter, request.user)
-    current = CurrentValues.of(matter, (document.filename for document in analysis.documents))
+    current = CurrentValues.of(matter)
     initial, analysis = prefill_initial(analysis, base=edit_initial(matter), current=current)
     suggested = analysis.fields.get(SuggestedField.SOURCE_ORGANISATIONS)
     suggested_senders = (

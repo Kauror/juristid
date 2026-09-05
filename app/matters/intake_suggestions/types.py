@@ -265,7 +265,12 @@ class DocumentReadiness:
     state_tone: str
     analysed: bool
     from_ocr: bool = False
+    #: Read in part: this document's own text ran past the ceiling.
     truncated: bool = False
+    #: Not read at all: the Matter's analysis budget was spent before this
+    #: document's turn. Kept apart from ``truncated`` because they are
+    #: different facts and the panel says which one happened.
+    skipped_for_budget: bool = False
     note: str = ""
 
 
@@ -301,6 +306,31 @@ class IntakeAnalysis:
     @property
     def waiting_documents(self) -> tuple[DocumentReadiness, ...]:
         return tuple(d for d in self.documents if d.extraction_state in ("PENDING", "PROCESSING"))
+
+    @property
+    def skipped_documents(self) -> tuple[DocumentReadiness, ...]:
+        """Documents whose text the budget left unread."""
+        return tuple(d for d in self.documents if d.skipped_for_budget)
+
+    @property
+    def truncated_documents(self) -> tuple[DocumentReadiness, ...]:
+        """Documents read only in part."""
+        return tuple(d for d in self.documents if d.truncated)
+
+    @property
+    def readable_documents(self) -> tuple[DocumentReadiness, ...]:
+        """Documents that had text to read, whether or not the budget reached them."""
+        return tuple(d for d in self.documents if d.analysed or d.skipped_for_budget)
+
+    @property
+    def is_partial(self) -> bool:
+        """Whether readable material was left unread, wholly or in part.
+
+        The panel says so when this is true. An empty suggestion list next to
+        unread material must never read as «there was nothing useful in there»
+        (assisted-intake hardening §5).
+        """
+        return bool(self.skipped_documents or self.truncated_documents)
 
     @property
     def failed_documents(self) -> tuple[DocumentReadiness, ...]:

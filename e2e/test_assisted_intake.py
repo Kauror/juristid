@@ -109,15 +109,21 @@ def test_the_review_pre_fills_what_it_is_sure_of_and_saves_what_the_person_confi
     ).to_be_visible()
     expect(page.get_by_text("kirja päis").first).to_be_visible()
     expect(page.locator("#id_response_deadline")).to_have_value("18.9.2026")
-    expect(page.locator("#id_title")).to_have_value("Pakendiseaduse muutmise seaduse eelnõu")
     expect(page.locator('input[name="track"][value="DOMESTIC"]')).to_be_checked()
     expect(page.get_by_text("vormil eeltäidetud").first).to_be_visible()
+    # The title is never written into the box, even here, where the Matter
+    # still carries intake's mechanical filename: nothing in the record
+    # separates that from a title a person typed (docs/adr/0060).
+    expect(page.locator("#id_title")).to_have_value(MECHANICAL_TITLE_STEM.replace("-", " "))
+    expect(page.locator('button[data-suggest-for="title"]').first).to_be_visible()
     # The message's sender, straight from its headers, with the address.
     expect(page.get_by_text("Saatja kontakt").first).to_be_visible()
     expect(page.get_by_text("kadri@naidisministeerium.invalid").first).to_be_visible()
     screenshots(page, "31-dokumendist-leitud")
 
-    # -- the person changes a pre-filled value and saves --------------------
+    # -- the person takes the title, edits a pre-filled value, and saves ----
+    page.locator('button[data-suggest-for="title"]').first.click()
+    expect(page.locator("#id_title")).to_have_value("Pakendiseaduse muutmise seaduse eelnõu")
     page.fill("#id_response_deadline", "19.9.2026")
     page.get_by_role("button", name="Salvesta").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))

@@ -68,11 +68,49 @@ another Matter. Given the same text, catalogue and rules it returns the same
 result. There is no model, no embedding, no network call and no dependency
 added; a test asserts the package's import graph says so.
 
-Two queries list the documents and their live derivatives with fragments
-prefetched; two load the organisation catalogue; one loads the offered
-Valdkonnad. The count does not grow with the number of fragments, and a test
-holds it there. Per document, the first 400 000 characters are read and a
-document that hits the ceiling is marked as read in part, on the page.
+Three queries list the documents, their live derivatives' own rows, and the
+fragments of the documents the budget admits; two load the organisation
+catalogue; one loads the offered Valdkonnad. The count does not grow with the
+number of documents or fragments, and a test holds it there.
+
+**The work one GET may do is bounded per Matter, not only per document.** The
+rule vocabulary is 227 signals and a signal that does not match reads every
+character it is given, so one pass costs roughly fifteen to twenty-five
+seconds per megabyte. A per-document ceiling alone bounds nothing when intake
+accepts twenty files at once, so there are three deterministic limits:
+`MAX_CHARACTERS_PER_DOCUMENT` (80 000), `MAX_TOTAL_ANALYSIS_CHARACTERS`
+(200 000) and `MAX_TEXT_DOCUMENTS_ANALYSED` (20, one intake envelope). The
+worst case that fits measures about two seconds; the same Matter unbounded
+would have been minutes.
+
+They are counts and not a clock, deliberately. A limit in seconds would make
+the same Matter produce different suggestions on a loaded runner than on an
+idle one, and this analysis has to be reproducible before it is fast. The
+earlier 400 000-character document ceiling came down for the same measurement
+and for one more reason: at that size a single draft consumed the whole
+Matter budget and starved the covering letter beside it, which is where a
+ministry actually states its deadline. Nothing the rules look for lives that
+far into a file — a title is read from the first 2 500 characters, a
+letterhead from the first 900.
+
+**What is read first is a stable, explainable order**, not a judgement about
+importance: the message (its headers are the most valuable thing here and its
+body is short), then the documents intake captured, then attachments, then
+everything else, and within a rank the order the documents were captured. The
+same Matter therefore always admits the same documents.
+
+**The budget bounds the loading, not only the reading.** What to read is
+decided from the `character_count` the extraction worker already stores on
+each derivative, so the text of a document the budget does not admit stays in
+the database instead of being loaded and then ignored. Authorisation runs
+first, so a document a viewer may not see spends none of their budget and
+changes none of their suggestions.
+
+**Partial analysis is disclosed.** A document read in part and a document not
+read at all are different facts and the panel keeps them apart; where either
+happened it says how many documents were analysed out of how many were
+readable. An empty suggestion list beside unread material must never read as
+«there was nothing useful in there».
 
 **Every repetition the document can reach is bounded, and that is a rule
 rather than a tuning.** The analyser runs regular expressions over text an
@@ -186,10 +224,32 @@ gate as the edit page, offered from `Muuda teemat` and from the Teema page's
 with a panel above the form. A `HIGH` candidate for an empty control appears
 already filled and is marked *vormil eeltäidetud*; a `MEDIUM` one carries
 «Kasuta», which writes the value into the real control and nothing else; a
-value the record already holds is marked *juba valitud*. The person's own
-title is never replaced — a content title pre-fills only where the stored
-title is the mechanical filename fallback `intake.title_from_filename`
-wrote, and is otherwise offered beside it.
+value the record already holds is marked *juba valitud*.
+
+**The title is never pre-filled**, and that is a correction to what this
+record first described. The rule was that a content title could fill the box
+where the stored title equalled `intake.title_from_filename` of a document
+the Matter held, on the theory that such a title was intake's fallback. It is
+not a sound theory: a lawyer may write «Pakendiseaduse muutmise seaduse
+eelnõu» and somebody may later attach
+`Pakendiseaduse_muutmise_seaduse_eelnõu.pdf`, and the two strings then match
+though the title is a person's.
+
+Nothing in the record separates the two cases. `register_incoming` chooses
+between the typed title and the fallback and stores only the result;
+`MATTER_CREATED` carries the reference, the record mode, the origin and the
+data class, and nothing about where the title came from. The absence of a
+`MATTER_TITLE_CHANGED` event proves the title has not been *edited* since
+creation — `set_matter_title` is the only writer and always records one — but
+not that creation invented it.
+
+So the classification is not attempted. A heading is offered with «Kasuta»
+and the person's title stays until they choose otherwise. That costs one
+click on the ordinary intake path and buys an unconditional rule: a title a
+person wrote can never be replaced by a machine, because no title is. An
+explicit title-origin column would let the fallback pre-fill again; it is not
+worth a migration for one click, and it can be considered separately if the
+click is ever measured to matter.
 
 The form posts to `matters:matter_edit` exactly as it does from the plain
 page. What is stored is what the person submitted, through

@@ -25,7 +25,6 @@ same inputs. `analyse_matter` is the thin database-facing wrapper.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any
@@ -33,7 +32,6 @@ from typing import Any
 from app.core.dates import format_estonian_date
 from app.documents.enums import DocumentRole
 from app.documents.preview import STATE_LABELS, STATE_TONES
-from app.matters.intake import title_from_filename
 from app.matters.intake_suggestions import textscan
 from app.matters.intake_suggestions import vocabulary as vocab
 from app.matters.intake_suggestions.input import (
@@ -75,24 +73,16 @@ class CurrentValues:
     """What the Matter already says, so nothing of it is ever overwritten."""
 
     title: str = ""
-    #: True when the stored title is the mechanical filename fallback intake
-    #: wrote, which a content title may be offered to replace (brief §19).
-    title_is_mechanical: bool = False
     source_organisation_ids: frozenset[Any] = frozenset()
     response_deadline: date | None = None
     track: str = ""
     policy_area_ids: frozenset[Any] = frozenset()
 
     @classmethod
-    def of(cls, matter: Any, filenames: Iterable[str]) -> CurrentValues:
-        """Read the Matter once. ``filenames`` are its documents' original names."""
-        names = list(filenames)
-        mechanical = any(
-            matter.title == title_from_filename(filename) for filename in names
-        ) or matter.title == title_from_filename("")
+    def of(cls, matter: Any) -> CurrentValues:
+        """Read the Matter once."""
         return cls(
             title=matter.title,
-            title_is_mechanical=mechanical,
             source_organisation_ids=frozenset(matter.source_organisation_ids),
             response_deadline=matter.response_deadline,
             track=matter.track or "",
@@ -121,9 +111,7 @@ def analyse_matter(matter: Any, viewer: Any) -> IntakeAnalysis:
         analysis_input,
         organisations=load_organisation_catalogue(),
         policy_areas=load_policy_areas(),
-        current=CurrentValues.of(
-            matter, (document.filename for document in analysis_input.documents)
-        ),
+        current=CurrentValues.of(matter),
     )
 
 
@@ -190,7 +178,9 @@ def _finding_order(candidate: Candidate) -> tuple[int, int]:
 def _readiness(document: SourceDocument) -> DocumentReadiness:
     state = document.extraction_state
     note = ""
-    if document.truncated:
+    if document.skipped_for_budget:
+        note = "Jäi automaatkontrollist välja; tekst on olemas ja avatav."
+    elif document.truncated:
         note = "Analüüsiti dokumendi algusosa; ülejäänu jäi mahupiirangu taha."
     elif state == "FAILED" and document.extraction_note:
         note = document.extraction_note
@@ -209,6 +199,7 @@ def _readiness(document: SourceDocument) -> DocumentReadiness:
         analysed=document.analysed,
         from_ocr=document.from_ocr,
         truncated=document.truncated,
+        skipped_for_budget=document.skipped_for_budget,
         note=note,
     )
 

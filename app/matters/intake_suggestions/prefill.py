@@ -12,10 +12,26 @@ may be pre-filled, and each rule has the same shape (brief §18):
   multi-valued field, HIGH candidates and no conflict;
 * the candidate is not already the Matter's value.
 
-The title is the one exception with a second condition: it is pre-filled
-only when the stored title is the mechanical filename fallback intake wrote
-(`app.matters.intake.title_from_filename`). A title a person typed stays,
-and the content title is offered beside it (brief §19).
+**The title is never pre-filled at all**, and that is a deliberate retreat
+from what this module first did. It used to fill the box when the stored
+title equalled ``title_from_filename`` of some document the Matter held, on
+the theory that such a title was intake's mechanical fallback. It is not a
+sound theory. A lawyer may write «Pakendiseaduse muutmise seaduse eelnõu»
+and somebody may later attach ``Pakendiseaduse_muutmise_seaduse_eelnõu.pdf``,
+and the two strings then match though the title is a person's.
+
+Nothing in the record separates the two cases. ``register_incoming`` chooses
+between the typed title and the fallback and stores only the result;
+``MATTER_CREATED`` carries the reference, the record mode, the origin and the
+data class, and nothing about where the title came from. The absence of a
+``MATTER_TITLE_CHANGED`` event proves the title has not been *edited* since
+creation, but not that creation invented it.
+
+So the classification is not made. A document heading is offered with
+«Kasuta» and the person's title stays until they choose otherwise, which
+costs one click on the ordinary intake path and makes the product's rule
+unconditional: a title a person wrote can never be replaced by a machine,
+because no title is (docs/adr/0060, hardening §2.2).
 
 A bound form — a submit that failed validation — never reaches this module.
 What the person typed is what is re-rendered.
@@ -43,12 +59,9 @@ def prefill_initial(
     initial = dict(base)
     prefilled: dict[str, tuple[str, ...]] = {}
 
-    title = analysis.fields.get(SuggestedField.TITLE)
-    if title is not None and current.title_is_mechanical:
-        chosen = title.prefill_candidate
-        if chosen is not None:
-            initial["title"] = chosen.value
-            prefilled[SuggestedField.TITLE] = (chosen.value,)
+    # No title branch, on purpose. See this module's opening note: the record
+    # cannot separate a title a person typed from the one intake derived, so
+    # the strongest heading is offered rather than filled in.
 
     senders = analysis.fields.get(SuggestedField.SOURCE_ORGANISATIONS)
     if senders is not None and not current.source_organisation_ids:
