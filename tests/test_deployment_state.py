@@ -549,7 +549,10 @@ DEPLOYMENT_STATE_STEP = "And forwards again from the state a deployment is in"
 #: of them is silent, and it is the one that is now impossible.
 SETTLED_LEAVES = {
     "accounts": "0003_sharedgatethrottle",
-    "audit": "0015_matter_title_event",
+    # `audit` is not here any more: 0016 widens the `event_type` choices for
+    # Seotud materjalid, and the next release carries that into a database
+    # that already has 0015, so CI steps the app back and applies it forwards
+    # from exactly that state (docs/adr/0061).
     "core": "0001_initial",
     "documents": "0006_legacy_material_role",
     "intelligence": "0001_initial",
@@ -558,6 +561,13 @@ SETTLED_LEAVES = {
     # steps the app back and applies it forwards from exactly that state.
     "organisations": "0001_initial",
     "reporting": "0001_initial",
+    # A brand-new app's initial migration has no earlier state to step back
+    # to: `migrate related_materials <the one before it>` names nothing, and
+    # the step's own grammar cannot say `zero`. A deployment applies it from
+    # nothing, which is exactly what the plain `migrate` at the end of that
+    # step does — so there is nothing this app could add to it. Recorded here
+    # for the same reason `intelligence` above is (docs/adr/0061).
+    "related_materials": "0001_initial",
 }
 
 

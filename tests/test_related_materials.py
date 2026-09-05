@@ -187,6 +187,23 @@ def _hold_letter(
     return binary, item, batch
 
 
+def _restrict(submission: Submission) -> None:
+    """Restrict a sent opinion, evidence and all.
+
+    A trigger refuses a RESTRICTED submission standing on NORMAL final evidence
+    (`app/submissions/migrations/0002_final_evidence_integrity.py`), so the
+    document goes first. Doing it the other way round is how a test discovers
+    an integrity rule it was not written to be about.
+    """
+    version = submission.final_version
+    if version is not None:
+        document = version.document
+        document.visibility_override = Visibility.RESTRICTED
+        document.save(update_fields=["visibility_override"])
+    submission.visibility_override = Visibility.RESTRICTED
+    submission.save(update_fields=["visibility_override"])
+
+
 def _suggested_matters(matter: Matter, viewer: Any, **kwargs: Any) -> list[Matter]:
     return [item.matter for item in engine.suggestions_for(matter, viewer, **kwargs).matters]
 
@@ -423,17 +440,43 @@ def test_the_same_named_act_is_a_strong_candidate(specialist):
 
 
 def test_the_same_policy_area_alone_is_not_enough(specialist, keskkond):
-    """Brief §26: only the candidate that also shares the act is suggested."""
-    current = _matter(
-        specialist, "Pakendijäätmete ringmajanduse eelnõu", number=922, areas=[keskkond]
-    )
-    unrelated = _matter(specialist, "Metsanduse arengukava 2030", number=923, areas=[keskkond])
-    related = _matter(specialist, "Pakendijäätmete käitlemise nõuded", number=924, areas=[keskkond])
+    """Brief §26, as it words it: A shares only the area, B shares the act.
+
+    Both candidates are Keskkond and so is the current Matter, so the area does
+    no discriminating work at all — which is the point. Only the named act
+    separates them, and only the act's candidate is suggested.
+    """
+    current = _matter(specialist, "Pakendiseaduse muutmise eelnõu", number=922, areas=[keskkond])
+    only_the_area = _matter(specialist, "Metsanduse arengukava 2030", number=923, areas=[keskkond])
+    same_act = _matter(specialist, "Pakendiseaduse rakendamise kord", number=924, areas=[keskkond])
 
     suggested = _suggested_matters(current, specialist)
 
-    assert related in suggested
-    assert unrelated not in suggested
+    assert suggested == [same_act]
+    assert only_the_area not in suggested
+    assert "Sama õigusakt: pakendiseadus" in _reasons_for(current, specialist, same_act)
+
+
+def test_one_shared_subject_word_and_an_area_is_below_the_line(specialist, keskkond):
+    """The other side of the same rule, and what decides the weights.
+
+    Two environmental Matters repeating *one* word between them — «Sama
+    valdkond» plus «Pealkirjas kordub» — is the shape a lawyer would call a
+    coincidence, and 1.0 + 1.5 keeps it under the threshold. A second shared
+    word is what makes it a similar title rather than a shared noun.
+    """
+    current = _matter(
+        specialist, "Pakendijäätmete ringmajanduse eelnõu", number=1600, areas=[keskkond]
+    )
+    one_word = _matter(specialist, "Pakendijäätmete arvestuse kord", number=1601, areas=[keskkond])
+    two_words = _matter(
+        specialist, "Ringmajanduse ja pakendijäätmete nõuded", number=1602, areas=[keskkond]
+    )
+
+    suggested = _suggested_matters(current, specialist)
+
+    assert two_words in suggested
+    assert one_word not in suggested
 
 
 def test_the_same_ministry_alone_is_not_enough(specialist, ministry):
@@ -506,7 +549,42 @@ def test_a_tag_plus_an_area_is_not_enough_but_a_tag_plus_a_ministry_is(
 
     suggested = _suggested_matters(current, specialist)
     assert tag_and_ministry in suggested
+    # 2.0 + 1.0 = 3.0, under the line — and the shared Track, which every Matter
+    # here carries, must not be able to make up the remaining 0.5.
     assert tag_and_area not in suggested
+
+
+def test_the_track_orders_candidates_and_never_qualifies_one(specialist, keskkond):
+    """Same subject, one candidate on the same Track: order moves, membership does not."""
+    tag = factories.TagFactory(name_et="energia")
+    current = _matter(
+        specialist,
+        "Elektrituruseaduse muutmine",
+        number=1610,
+        areas=[keskkond],
+        tags=[tag],
+        track=Track.EU_INITIATIVE,
+    )
+    same_track = _matter(
+        specialist, "Elektrituruseaduse kord", number=1611, track=Track.EU_INITIATIVE
+    )
+    other_track = _matter(
+        specialist, "Elektrituruseaduse nõuded", number=1612, track=Track.DOMESTIC
+    )
+    below_the_line = _matter(
+        specialist, "Miski muu", number=1613, areas=[keskkond], track=Track.EU_INITIATIVE
+    )
+
+    suggested = _suggested_matters(current, specialist)
+
+    assert suggested[0] == same_track
+    assert other_track in suggested
+    assert below_the_line not in suggested
+    assert not any(
+        "menetlusliik" in reason.casefold()
+        for item in engine.suggestions_for(current, specialist).matters
+        for reason in item.reasons
+    )
 
 
 def test_a_different_subject_is_not_suggested(specialist):
@@ -653,8 +731,7 @@ def test_a_restricted_opinion_is_invisible_to_a_reader(specialist, reader):
     source = _matter(specialist, "Pakendiseaduse muutmine 2024", number=957, year=2024)
     current = _matter(specialist, "Pakendiseaduse muutmine 2026", number=958)
     opinion = _sent_opinion(source, "Koja arvamus pakendiseaduse muutmise kohta")
-    opinion.visibility_override = Visibility.RESTRICTED
-    opinion.save(update_fields=["visibility_override"])
+    _restrict(opinion)
 
     assert _suggested_materials(current, reader) == []
     assert _suggested_materials(current, specialist) == [
@@ -750,8 +827,7 @@ def test_a_hidden_submission_does_not_silence_a_visible_letter(specialist, admin
     source = _matter(specialist, "Pakendiseaduse muutmine 2024", number=966, year=2024)
     current = _matter(specialist, "Pakendiseaduse muutmine 2026", number=967)
     opinion = _sent_opinion(source, "Koja arvamus pakendiseaduse muutmise kohta")
-    opinion.visibility_override = Visibility.RESTRICTED
-    opinion.save(update_fields=["visibility_override"])
+    _restrict(opinion)
     binary, item, batch = _hold_letter(seed="letter-966", title="Pakendiseaduse muutmise arvamus")
     OpinionSubmissionImport.objects.create(
         item=item,

@@ -124,8 +124,13 @@ W_AREA_FIRST = 1.0
 W_AREA_SECOND = 0.5
 #: The same sender or addressee body, counted once however many roles match.
 W_ORGANISATION = 1.5
-#: The same track. Weak support only, never a reason on the card, and never
-#: counted on its own.
+#: The same track. A tie-break between candidates that already qualified,
+#: and nothing else: it is added *after* the threshold has been cleared, so
+#: it can order two suggestions and can never turn a non-suggestion into
+#: one. The measured reason is `Kord B` in the corpus — a shared tag and a
+#: shared area come to 3.0, and letting the track carry the remaining 0.5
+#: would make «same area, same tag, same track» a recommendation when the
+#: product rule says a tag plus an area is not enough. Never shown.
 W_TRACK = 0.5
 #: A subject word found in the candidate's text but not its title.
 W_BODY_TERM = 0.75
@@ -595,8 +600,9 @@ def _matter_signals(
         score += W_AREA_FIRST + W_AREA_SECOND
         reasons.append(f"Samad valdkonnad: {text.format_list(shared_areas, 2)}")
 
-    # Track supports a candidate that already has a reason; it never starts one.
-    if score > 0 and profile.track and candidate.track == profile.track:
+    # Applied only above the line, so the track orders qualifying candidates
+    # and can never lift one over it (see `W_TRACK`).
+    if score >= THRESHOLD and profile.track and candidate.track == profile.track:
         score += W_TRACK
 
     return score, reasons
