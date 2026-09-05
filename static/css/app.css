@@ -8523,3 +8523,158 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- Seotud materjalid ----------------------------------------------------
+ * Confirmed relations and background reuse `.factsection`/`.factrow`; the
+ * candidate cards are their own small shape so a reason line reads as an
+ * explanation rather than as another fact row (docs/adr/0061 §7).
+ */
+.relatedmaterials {
+  scroll-margin-top: var(--spacing-8);
+}
+.relatedmaterials--compact {
+  padding-bottom: var(--spacing-2);
+}
+.relatedmaterials__suggestions {
+  margin-top: var(--spacing-25);
+  padding-top: var(--spacing-25);
+  border-top: 1px dashed var(--border-subtle);
+}
+.relatedmaterials__head .sectionlabel {
+  flex: none;
+}
+.relatedmaterials__hint {
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.relatedmaterials__spacer {
+  flex: 1;
+}
+.relatedmaterials__notice {
+  margin: var(--spacing-2) var(--spacing-3) 0;
+}
+.relatedmaterials__sub {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  margin: var(--spacing-3) 0 0;
+  padding: 0 var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-chip);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.relatedmaterials__group {
+  margin: var(--spacing-25) 0 0;
+  padding: 0 var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+.relatedmaterials__cards {
+  list-style: none;
+  margin: var(--spacing-2) 0 0;
+  padding: 0 var(--spacing-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+.relatedcard {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--surface-raised);
+}
+.relatedcard__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.relatedcard__label {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-chip);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.relatedcard__title {
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+  text-decoration: none;
+}
+.relatedcard__title:hover {
+  text-decoration: underline;
+}
+.relatedcard--hidden .relatedcard__title {
+  color: var(--text-muted);
+  font-weight: var(--typography-weight-regular);
+}
+.relatedcard__meta {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+.relatedcard__reasons {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+.relatedcard__reasons li + li::before {
+  content: "·";
+  margin-right: var(--spacing-1);
+  color: var(--text-muted);
+}
+.relatedcard__actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--spacing-15);
+}
+.relatedcard__actions form,
+.factrow__actions form {
+  display: inline;
+}
+.relatedmaterials__empty {
+  margin: var(--spacing-2) var(--spacing-3) 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+.relatedmaterials__more {
+  display: flex;
+  gap: var(--spacing-3);
+  margin: var(--spacing-2) var(--spacing-3) 0;
+  font-size: var(--typography-size-meta);
+}
+.relatedmaterials__more:empty {
+  display: none;
+}
+.relatedmaterials__more .quietlink {
+  margin-left: 0;
+}
+.relatedmaterials__picker {
+  margin: var(--spacing-3) var(--spacing-3) 0;
+}
+.relatedmaterials__search {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-2);
+}
+.relatedmaterials__search .field__input {
+  flex: 1 1 auto;
+  max-width: 420px;
+}
+.relatedmaterials__nohit {
+  font-size: var(--typography-size-meta);
+}

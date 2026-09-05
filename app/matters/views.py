@@ -124,6 +124,7 @@ from app.matters.timeline import (
     matter_timeline,
 )
 from app.organisations.models import Organisation
+from app.related_materials.selectors import related_materials_for
 from app.search import services as search_services
 from app.submissions import embedded as opinions
 from app.submissions.enums import RecipientRole, SubmissionStatus
@@ -1520,6 +1521,10 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # Stage 2G's structured facts. Read through their own selector, which
         # scopes them like every other child record.
         "intelligence": matter_intelligence(matter, request.user),
+        # Seotud materjalid: the confirmed relations and chosen background,
+        # scoped to this reader. Two queries; the suggestions are not read
+        # here at all (app/related_materials/selectors.py).
+        "related_materials": related_materials_for(matter, request.user),
         # `Kaasamine`. Read here for the same reason as everything else on this
         # dict: the template must not be able to start querying.
         "engagements": engagements,

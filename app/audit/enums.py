@@ -150,6 +150,14 @@ class ChangeEventType(models.TextChoices):
     # (Agent-F brief 20, 22).
     ENGAGEMENT_ADDED = "ENGAGEMENT_ADDED", "Kaasamine lisatud"
     ENGAGEMENT_CHANGED = "ENGAGEMENT_CHANGED", "Kaasamist muudetud"
+    # Seotud materjalid: the four human decisions the section records. A
+    # dismissal («Ei ole seotud») keeps its actor and time on its own row and
+    # writes no event, because it is a preference about what to suggest rather
+    # than a fact about the file (docs/adr/0061).
+    MATTER_RELATION_ADDED = "MATTER_RELATION_ADDED", "Teema seotud teise teemaga"
+    MATTER_RELATION_REMOVED = "MATTER_RELATION_REMOVED", "Teemade seos eemaldatud"
+    BACKGROUND_MATERIAL_ADDED = "BACKGROUND_MATERIAL_ADDED", "Taustmaterjal lisatud"
+    BACKGROUND_MATERIAL_REMOVED = "BACKGROUND_MATERIAL_REMOVED", "Taustmaterjal eemaldatud"
 
 
 class SecurityEventType(models.TextChoices):
