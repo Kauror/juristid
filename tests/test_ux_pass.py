@@ -22,11 +22,10 @@ from django.conf import settings
 from django.urls import reverse
 from django.utils import timezone
 
-from app.core.dates import format_estonian_date
+from app.core.dates import end_of_month, format_estonian_date
 from app.core.enums import Visibility
 from app.matters import department as dep
 from app.matters import department_dashboard as dd
-from app.matters import overview as ov
 from app.matters.services import (
     add_entry,
     assign_matter,
@@ -163,18 +162,23 @@ def test_the_deadline_windows_are_consecutive_and_exhaustive() -> None:
     move with the weekday *and* with the length of the month, and an off-by-one
     that only shows on a Sunday in February is exactly the kind that reaches
     production. Every day of the year is walked, not every seventh: the month
-    end is what the middle window is cut by, and it lands on a different
+    end is what the fourth window is cut by, and it lands on a different
     weekday every month.
+
+    The panel is Osakond's *Eesolev*, which cuts five windows
+    (`dd.upcoming_windows`, ADR 0049 §5). This walked a three-window read model
+    until that model was retired; the windows changed and the property did not,
+    because it belongs to whatever partition the panel cuts rather than to any
+    one shape of it. `tests/test_department_page.py` asserts the same partition
+    from the other side — a year of *dates* out of a handful of chosen days,
+    where this is a year of *days*.
     """
     for offset in range(0, 366):
         day = date(2026, 1, 1) + timedelta(days=offset)
-        windows = ov.deadline_windows(day)
-        assert [key for key, *_ in windows] == ["sel_nadalal", "ulejaanud_kuu", "kaugemal"]
-        assert windows[0][2] == day - timedelta(days=day.weekday()), (
-            "the first window starts on Monday of this week, not today"
-        )
-        assert windows[0][3] == day + timedelta(days=6 - day.weekday()), (
-            "the first window ends on Sunday of this week"
+        windows = dd.upcoming_windows(day)
+        assert [key for key, *_ in windows] == list(dd.UPCOMING_WINDOWS)
+        assert windows[0][2] == windows[0][3] == day, (
+            f"{day}: the first window is not today and today alone"
         )
         assert windows[-1][3] is None, "the last window is open-ended"
         for (*_, ends), (_, _, starts, _) in pairwise(windows):
@@ -184,25 +188,37 @@ def test_the_deadline_windows_are_consecutive_and_exhaustive() -> None:
             )
 
 
-def test_the_rest_of_the_month_never_reads_backwards() -> None:
-    """The week that runs past the month end leaves no days behind it.
+def test_the_rest_of_the_month_ends_on_a_real_month_end() -> None:
+    """*Ülejäänud kuu* stops where a month stops, not thirty days out.
 
-    The middle window would then start on Monday and have ended on Sunday. It
-    is allowed to be that empty interval — it holds nothing by construction —
-    but it must not print a heading over a range read backwards, and the far
-    window must start after the *week* rather than after the month, or the days
-    between them would be on no screen at all.
+    The window's two ends need different assertions. Its **start** is the
+    previous window's end plus a day — a relative claim, already covered by the
+    partition above and satisfied by any horizon that runs N days from wherever
+    next week ended.
+
+    Its **end** is the claim the heading itself makes, and nothing else in the
+    suite asserts it. A `month_end` rewritten to `next_week_end + 30` keeps all
+    five windows touching, keeps every deadline in exactly one of them, passes
+    the partition assertions on both sides — and leaves *Ülejäänud kuu* heading
+    an interval that stops in the middle of a week nobody chose, which is the
+    reason a calendar month was picked over a rolling horizon in the first
+    place.
+
+    Walked over a year of days because the distance from the end of next week to
+    that month's end differs in every month, and is shortest exactly where an
+    off-by-one would show: February, and a next week that runs into the month
+    after the one it started in.
     """
     for offset in range(0, 366):
         day = date(2026, 1, 1) + timedelta(days=offset)
-        _, (_, _, rest_start, rest_end), (_, _, far_start, _) = ov.deadline_windows(day)
-        week_end = day + timedelta(days=6 - day.weekday())
-        assert rest_end is not None
-        assert far_start > week_end, f"the far window reopens this week at {day}"
-        if rest_start > rest_end:
-            group = ov.DeadlineGroup("ulejaanud_kuu", "Ülejäänud kuu", [], 5, rest_start, rest_end)
-            assert group.is_empty_window
-            assert group.range_label == "", f"a backwards range printed at {day}"
+        windows = {key: (starts, ends) for key, _label, starts, ends in dd.upcoming_windows(day)}
+        month_start, month_end = windows["kuu"]
+        assert month_end is not None
+        assert month_end == end_of_month(month_start), (
+            f"{day}: Ülejäänud kuu runs {month_start}–{month_end}, "
+            f"not to its own month's end {end_of_month(month_start)}"
+        )
+        assert month_start <= month_end, f"{day}: the window reads backwards"
 
 
 @pytest.mark.django_db

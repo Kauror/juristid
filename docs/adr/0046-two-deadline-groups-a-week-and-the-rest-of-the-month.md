@@ -1,10 +1,20 @@
 # ADR 0046 — Tähtajad in two groups: the calendar week whole, the rest of the month behind «Näita veel», and one line past it
 
-- Status: accepted; **superseded in part by ADR 0049**, which merged Ülevaade's
+- Status: accepted; **superseded by ADR 0049**, which merged Ülevaade's
   *Tähtajad* and Osakond's *Eesolev* into one panel of five windows. The two
   boundary cases this record works out are unchanged and are why that panel
   partitions; what no longer holds is *Kaugemal* as a one-line summary — it is
   a real list there.
+- **The implementation described here has been removed** (DS-26). The three
+  windows kept their read model — `overview.deadline_windows`,
+  `deadline_groups`, `DeadlineGroup`, `DEADLINE_PREVIEW` — after ADR 0049 took
+  their renderer away, so that their tests could be compared against the live
+  panel's before anything was deleted. That comparison is done: the general
+  invariants were retargeted to `department_dashboard.upcoming_windows` and the
+  dead code is gone. The reasoning below is left as written, because it is why
+  the live panel cuts where it does; read it as history, not as a description
+  of code that exists. `real_deadlines` was never part of the removal — it
+  lives in `work_items` and the live panel reads it.
 - Date: 2026-08-29
 - Stage: pre-QA (shared-gate development phase)
 - Related: ADR 0033 (`?too=` makes the dated-work populations addressable),
