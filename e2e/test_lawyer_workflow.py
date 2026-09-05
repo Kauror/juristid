@@ -75,6 +75,19 @@ def register_row(page, title: str):
     return page.locator("#teemad-tulemused").get_by_role("link", name=title)
 
 
+def open_opinions(page):
+    """The `Arvamused` block on Dokumendid, open.
+
+    It opens itself only while a draft is waiting for somebody — which is the
+    point of it — so a test that uses it twice has to say so the second time
+    (templates/matters/partials/opinion_block.html).
+    """
+    block = page.locator("#arvamuste-haldus")
+    if block.get_attribute("open") is None:
+        block.locator(".accordion__head").click()
+    return block
+
+
 def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     """Scenario A, B, C and D in one pass, in the order the work happens."""
     sign_in(page, base_url, SANDRA)
@@ -269,8 +282,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     expect(page.locator("#koja-arvamus").get_by_role("link", name="Arvamused")).to_have_count(0)
 
     page.locator(".tabs__tab", has_text="Dokumendid").click()
-    opinions = page.locator("#arvamuste-haldus")
-    opinions.locator(".accordion__head").click()
+    opinions = open_opinions(page)
     opinions.locator("summary", has_text="Uus arvamus").click()
     # Prefixed ids: Dokumendid renders three forms carrying a `title`, and one
     # `#id_title` for all of them was a strict-mode violation here and an
@@ -317,6 +329,9 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     row.locator(".opinionmenu__trigger").click()
 
     # A second submission under the same Matter is ordinary, not a workaround.
+    # Reopened, because the block folds itself once nothing is waiting: the
+    # first opinion has been sent, so there is no draft to hold it open.
+    opinions = open_opinions(page)
     opinions.locator("summary", has_text="Uus arvamus").click()
     page.locator("#id_arvamus-title").fill("Täiendav arvamus komisjonile")
     page.locator("#id_arvamus-kind").select_option("SUPPLEMENTARY_OPINION")
