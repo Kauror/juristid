@@ -17,13 +17,13 @@ archive importer's match reasoning. All four are stored, all four remain on the
 document's own evidence page and in the integrity tooling, and none of them is
 what somebody managing an opinion is asking about (§12, §28, §29).
 {% endcomment %}
-<details class="rowmenu">
-  <summary class="rowmenu__trigger"
+<details class="opinionmenu">
+  <summary class="opinionmenu__trigger"
            aria-label="Halda arvamust {% if document.current_version %}{{ document.current_version.original_filename }}{% else %}{{ document.title }}{% endif %}">⋯</summary>
-  <div class="rowmenu__body">
+  <div class="opinionmenu__body">
     {% if document.opinion_send %}
-      <p class="rowmenu__label">Saatmise andmed</p>
-      <dl class="rowmenu__meta">
+      <p class="opinionmenu__label">Saatmise andmed</p>
+      <dl class="opinionmenu__meta">
         <div><dt>Liik</dt><dd>{{ document.opinion_send.get_kind_display }}</dd></div>
         <div>
           <dt>Saadetud</dt>
@@ -69,7 +69,7 @@ what somebody managing an opinion is asking about (§12, §28, §29).
           never a link: a withdrawal that a prefetcher or a crawler could
           perform is not a withdrawal anybody decided on.
         {% endcomment %}
-        <form class="rowmenu__form" method="post"
+        <form class="opinionmenu__form" method="post"
               action="{% url 'submissions:withdraw' pk=document.opinion_send.pk %}">
           {% csrf_token %}
           <button class="button button--quiet button--tiny" type="submit">Võta tagasi</button>
@@ -82,9 +82,9 @@ what somebody managing an opinion is asking about (§12, §28, §29).
         is the useful fact: uploading a letter records that Koda holds it and
         never that Koda sent it, and only a person can close that gap (§18).
       {% endcomment %}
-      <p class="rowmenu__label">Saatmist ei ole registreeritud.</p>
+      <p class="opinionmenu__label">Saatmist ei ole registreeritud.</p>
       {% if can_write %}
-        <p class="rowmenu__hint">
+        <p class="opinionmenu__hint">
           Registreeri saatmine <a class="quietlink" href="#arvamuste-haldus">Arvamused</a> plokis.
         </p>
       {% endif %}

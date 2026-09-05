@@ -6138,14 +6138,20 @@ button.accordion__action:focus-visible {
   color: var(--text-muted);
 }
 
-/* The per-row `...` disclosure. A menu, so it has to sit above the rows under
-   it and it must not stretch the cell it is anchored in. */
-.rowmenu {
-  position: relative;
+/* The per-row `...` disclosure.
+
+   In flow, not a floating popup, and that is not a style preference: every
+   `.tablewrap` in this application sets `overflow-x: auto`, which makes the
+   other axis compute to `auto` as well — so an absolutely positioned panel
+   inside one is clipped at the table's edge and pushes a scrollbar in front of
+   whatever it clipped. `.versions` two columns to the left solved this years
+   ago by growing its row, and one table with two disclosure mechanics is one
+   too many. */
+.opinionmenu {
   display: inline-block;
 }
 
-.rowmenu__trigger {
+.opinionmenu__trigger {
   cursor: pointer;
   color: var(--text-muted);
   font-weight: var(--typography-weight-semibold);
@@ -6153,33 +6159,30 @@ button.accordion__action:focus-visible {
   padding: 0 var(--spacing-1);
 }
 
-.rowmenu__trigger::-webkit-details-marker {
+.opinionmenu__trigger::-webkit-details-marker {
   display: none;
 }
 
-.rowmenu__trigger:hover,
-.rowmenu[open] .rowmenu__trigger {
+.opinionmenu__trigger:hover,
+.opinionmenu[open] .opinionmenu__trigger {
   color: var(--accent-link);
 }
 
-.rowmenu__body {
-  position: absolute;
-  right: 0;
-  z-index: 20;
-  min-width: 260px;
+.opinionmenu__body {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
+  width: 260px;
+  margin-top: var(--spacing-2);
   padding: var(--spacing-3);
   text-align: left;
   white-space: normal;
   background: var(--surface-elevated);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-md);
-  box-shadow: var(--shadow-menu);
 }
 
-.rowmenu__label {
+.opinionmenu__label {
   margin: 0;
   font-size: var(--typography-size-label);
   font-weight: var(--typography-weight-semibold);
@@ -6188,30 +6191,38 @@ button.accordion__action:focus-visible {
   color: var(--text-muted);
 }
 
-.rowmenu__hint,
-.rowmenu__meta {
+.opinionmenu__hint,
+.opinionmenu__meta {
   margin: 0;
   font-size: var(--typography-size-meta);
   color: var(--text-secondary);
 }
 
-.rowmenu__meta > div {
+.opinionmenu__meta > div {
   display: flex;
   gap: var(--spacing-2);
   padding: 2px 0;
 }
 
-.rowmenu__meta dt {
+.opinionmenu__meta dt {
   flex: 0 0 84px;
   color: var(--text-muted);
 }
 
-.rowmenu__meta dd {
+/* The value wraps rather than clipping. `.table tbody td` clips every cell on
+   purpose — one wrapped owner name re-rhythms the whole table — and a panel
+   that inherited that rule would hide the second half of a ministry's name. */
+.opinionmenu__meta dd,
+.opinionmenu__hint {
+  overflow-wrap: anywhere;
+}
+
+.opinionmenu__meta dd {
   margin: 0;
   color: var(--text-primary);
 }
 
-.rowmenu__form {
+.opinionmenu__form {
   margin: 0;
 }
 
@@ -6270,10 +6281,10 @@ button.accordion__action:focus-visible {
   opacity: 1;
 }
 
-/* An open row menu keeps its row's controls visible. Without this the panel
-   stays in the DOM while everything around it fades the moment the pointer
-   leaves the row — including the button the reader is reaching for. */
-.doctable__actions:has(.rowmenu[open]) {
+/* An open opinion menu keeps its row's controls visible. Without this the
+   panel stays in the DOM while everything around it fades the moment the
+   pointer leaves the row — including the button the reader is reaching for. */
+.doctable__actions:has(.opinionmenu[open]) {
   opacity: 1;
 }
 

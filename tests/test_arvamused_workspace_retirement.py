@@ -329,13 +329,25 @@ def test_a_reader_who_may_not_open_the_archive_sees_no_letters(client, specialis
     assert "Seotud arhiivikirjad" not in _page(client, matter)
 
 
-def test_the_rail_still_travels_with_the_page(signed_in, specialist):
+def test_the_rail_is_where_it_always_was_and_dokumendid_still_has_none(signed_in, specialist):
+    """Dokumendid is full width and always was (Teema redesign §23).
+
+    Browsing forty files is the task that tab exists for, and a 300px column of
+    lookup facts beside it would take width from the thing somebody came here
+    to read. Retiring the Arvamused page moved the opinion *workflow* here; it
+    did not move the rail, which stays on the Teema page where it is read.
+    """
     matter = factories.MatterFactory(owner=specialist)
 
-    body = _page(signed_in, matter)
+    documents = _page(signed_in, matter)
+    assert 'id="teema-andmed"' not in documents
+    assert 'id="koja-arvamus"' not in documents
 
-    assert 'id="teema-andmed"' in body
-    assert 'id="koja-arvamus"' in body
+    teema = signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    ).content.decode()
+    assert 'id="teema-andmed"' in teema
+    assert 'id="koja-arvamus"' in teema
 
 
 # ---------------------------------------------------------------------------
@@ -350,8 +362,9 @@ def test_a_reader_reads_the_page_and_is_offered_no_writes(client, reader, specia
 
     body = _page(client, matter)
 
-    assert "Koja arvamused" in body
+    assert "Arvamused" in body
     assert "Koostamisel arvamus" in body
+    assert "ootab faili" in body
     assert "+ Uus arvamus" not in body
     assert reverse("submissions:create", kwargs={"matter_id": matter.pk}) not in body
 

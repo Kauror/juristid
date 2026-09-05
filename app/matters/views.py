@@ -126,7 +126,12 @@ from app.matters.timeline import (
 from app.organisations.models import Organisation
 from app.search import services as search_services
 from app.submissions import embedded as opinions
-from app.submissions.forms import RegisterSentOpinionForm, SubmissionCreateForm
+from app.submissions.forms import (
+    CREATE_PREFIX,
+    REGISTER_PREFIX,
+    RegisterSentOpinionForm,
+    SubmissionCreateForm,
+)
 from app.submissions.opinions import (
     OPINION_ROLE_FILTER,
     open_drafts,
@@ -1622,23 +1627,28 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
     return redirect(opinions_url(matter))
 
 
-def opinions_url(matter: Any, *, document: Any = None) -> str:
+def opinions_url(matter: Any, *, anchor: str = "") -> str:
     """Dokumendid, showing this Matter's opinions — the one place they live now.
 
-    Every route that used to end on the retired surface ends here: the two
-    compatibility redirects, the four Submission write actions, and a Submission
+    Every route that used to end on the retired surface ends here: the
+    compatibility redirect, the four Submission write actions, and a Submission
     search result. Built in one function so `?roll=` and the anchor cannot drift
     apart across six call sites.
 
-    ``document`` adds the row anchor where the caller already holds the identity
-    — after marking an opinion sent, the reader lands on the row they just
-    changed rather than at the top of a ninety-file table. It is only ever
-    passed for a document the caller has already resolved under the reader's own
-    scope, so the anchor cannot name a file the page will not render.
+    ``anchor`` is the id of the thing the caller changed, and the caller decides
+    which one: `dokument-<uuid>` for a sent opinion, whose file row this filter
+    renders, and `arvamus-<uuid>` for a draft, whose row is in the `Arvamused`
+    block and is *not* in the filtered table. Passing the wrong one is how a
+    redirect lands on an anchor that is not on the page
+    (`app/submissions/views.py`).
+
+    Anchors are only ever built from identities the caller resolved under the
+    reader's own scope, so one can never name something the page will not
+    render.
     """
     page = reverse("matters:matter_documents", kwargs={"pk": matter.pk})
     url = f"{page}?roll={OPINION_ROLE_FILTER}"
-    return f"{url}#dokument-{document}" if document else url
+    return f"{url}#{anchor}" if anchor else url
 
 
 def _historical_context(matter: Any, user: Any) -> dict:
@@ -1816,8 +1826,10 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             # of the sent opinions already in the table above it.
             "opinion_drafts": drafts,
             "unregistered_opinions": unregistered,
-            "submission_form": SubmissionCreateForm(),
-            "register_form": RegisterSentOpinionForm(documents=unregistered),
+            "submission_form": SubmissionCreateForm(prefix=CREATE_PREFIX),
+            "register_form": RegisterSentOpinionForm(
+                prefix=REGISTER_PREFIX, documents=unregistered
+            ),
             # Two different kinds of record, and the weaker one is kept visually
             # apart from the file table. A canonical Submission says Koda sent an
             # opinion; an archive letter says we hold a file somebody judged to

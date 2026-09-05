@@ -30,8 +30,10 @@ from app.core.errors import DomainError
 from app.documents.models import Document, DocumentVersion
 from app.documents.uploads import UploadRejected, read_upload
 from app.matters.views import get_visible_matter, opinions_url
-from app.submissions.enums import SentAtPrecision
+from app.submissions.enums import SentAtPrecision, SubmissionStatus
 from app.submissions.forms import (
+    CREATE_PREFIX,
+    REGISTER_PREFIX,
     FinalEvidenceForm,
     MarkSentForm,
     RegisterSentOpinionForm,
@@ -56,15 +58,26 @@ def _visible_submission(request: HttpRequest, pk: Any) -> Submission:
 
 
 def _back(submission: Submission) -> HttpResponse:
-    """Dokumendid, on the row this submission's evidence is — where there is one.
+    """Dokumendid, on whichever row this submission is actually on.
 
-    A draft with no evidence yet has no row to return to and lands on the
-    opinion-filtered list, which is where the block that owns it renders.
+    Two rows, because a submission has two shapes. A **sent** one is its file,
+    so it is a row in the table and the anchor is that document — the whole
+    point being that somebody who has just pressed send lands on the row they
+    changed rather than at the top of a ninety-file list.
+
+    Anything else — a draft, one that was just withdrawn, one whose send was
+    refused — is *not* in the opinion-filtered table, and anchoring on its
+    evidence would point at a row the filter has removed. A draft has its own id
+    in the `Arvamused` block; a withdrawal lands on the list, because whether
+    its file is still an opinion depends on a role this view has no business
+    asking about (docs/adr/0060).
     """
     version = submission.final_version
-    return redirect(
-        opinions_url(submission.matter, document=version.document_id if version else None)
-    )
+    if submission.status == SubmissionStatus.SENT and version is not None:
+        return redirect(opinions_url(submission.matter, anchor=f"dokument-{version.document_id}"))
+    if submission.status == SubmissionStatus.DRAFT:
+        return redirect(opinions_url(submission.matter, anchor=f"arvamus-{submission.pk}"))
+    return redirect(opinions_url(submission.matter))
 
 
 @login_required
@@ -72,7 +85,7 @@ def _back(submission: Submission) -> HttpResponse:
 @require_http_methods(["POST"])
 def create(request: HttpRequest, matter_id: Any) -> HttpResponse:
     matter = get_visible_matter(request, matter_id)
-    form = SubmissionCreateForm(request.POST)
+    form = SubmissionCreateForm(request.POST, prefix=CREATE_PREFIX)
 
     if not form.is_valid():
         messages.error(request, "Arvamuse loomine ebaõnnestus. Kontrolli välju.")
@@ -89,7 +102,7 @@ def create(request: HttpRequest, matter_id: Any) -> HttpResponse:
         channel=form.cleaned_data["channel"],
     )
     messages.success(request, f"Arvamus „{submission.title}“ on loodud.")
-    return redirect(opinions_url(matter))
+    return _back(submission)
 
 
 @login_required
@@ -196,7 +209,9 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
         for document in opinion_documents(matter, viewer=request.user)
         if document.current_version_id and document.pk not in sends
     }
-    form = RegisterSentOpinionForm(request.POST, documents=candidates.values())
+    form = RegisterSentOpinionForm(
+        request.POST, prefix=REGISTER_PREFIX, documents=candidates.values()
+    )
 
     if not form.is_valid():
         messages.error(request, "Saatmise registreerimine ebaõnnestus. Kontrolli välju.")
@@ -235,7 +250,7 @@ def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
         messages.error(request, str(error))
         return redirect(opinions_url(matter))
 
-    return redirect(opinions_url(matter, document=document.pk))
+    return redirect(opinions_url(matter, anchor=f"dokument-{document.pk}"))
 
 
 def _as_midnight(value: Any) -> Any:

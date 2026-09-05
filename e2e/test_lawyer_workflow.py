@@ -272,9 +272,12 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     opinions = page.locator("#arvamuste-haldus")
     opinions.locator(".accordion__head").click()
     opinions.locator("summary", has_text="Uus arvamus").click()
-    page.locator("#id_title").fill("Koja arvamus pakendiseaduse eelnõule")
-    page.locator("#id_kind").select_option("FORMAL_OPINION")
-    page.locator("#id_recipients").select_option(label="Näidisministeerium")
+    # Prefixed ids: Dokumendid renders three forms carrying a `title`, and one
+    # `#id_title` for all of them was a strict-mode violation here and an
+    # ambiguous `<label for>` for a screen reader (app/submissions/forms.py).
+    page.locator("#id_arvamus-title").fill("Koja arvamus pakendiseaduse eelnõule")
+    page.locator("#id_arvamus-kind").select_option("FORMAL_OPINION")
+    page.locator("#id_arvamus-recipients").select_option(label="Näidisministeerium")
     page.get_by_role("button", name="Loo arvamus").click()
 
     # A draft is an action somebody owes, so the block opens on it by itself.
@@ -308,15 +311,15 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     screenshots(page, "06-arvamus-ja-kaasamine")
 
     # The send's own details, and the withdrawal, are behind the row's `⋯`.
-    row.locator(".rowmenu__trigger").click()
+    row.locator(".opinionmenu__trigger").click()
     expect(row.get_by_text("Saatmise andmed")).to_be_visible()
     expect(row.get_by_role("button", name="Võta tagasi")).to_be_visible()
-    row.locator(".rowmenu__trigger").click()
+    row.locator(".opinionmenu__trigger").click()
 
     # A second submission under the same Matter is ordinary, not a workaround.
     opinions.locator("summary", has_text="Uus arvamus").click()
-    page.locator("#id_title").fill("Täiendav arvamus komisjonile")
-    page.locator("#id_kind").select_option("SUPPLEMENTARY_OPINION")
+    page.locator("#id_arvamus-title").fill("Täiendav arvamus komisjonile")
+    page.locator("#id_arvamus-kind").select_option("SUPPLEMENTARY_OPINION")
     page.get_by_role("button", name="Loo arvamus").click()
     expect(page.locator(".draftrow", has_text="Täiendav arvamus komisjonile")).to_be_visible()
 

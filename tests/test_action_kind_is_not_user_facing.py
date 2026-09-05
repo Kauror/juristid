@@ -60,12 +60,24 @@ def today():
 
 @pytest.fixture
 def three_steps(specialist, today):
-    """One of each kind, each on a date that keeps it in a predictable band."""
+    """One of each kind, each on a date that keeps it in a predictable band.
+
+    «Sel nädalal» is the *calendar* week, cut by the calendar and ending on
+    Sunday (`end_of_iso_week`, ADR 0046). So «two days from today» is inside it
+    from Monday to Friday and outside it at the weekend, and this fixture's
+    review steps silently moved into `Järgmised 30 päeva` on a Saturday — a
+    failure with no bug behind it, on a test whose subject is which band a
+    *kind* lands in rather than which day CI runs.
+
+    Clamped to the end of the week instead. The date still means what the test
+    says it means — a review later this week — on every day of the week.
+    """
+    later_this_week = min(today + timedelta(days=2), wi.end_of_iso_week(today))
     steps = {}
-    for kind, semantics, text, offset in (
-        (ActionKind.DO, DateSemantics.DEADLINE, DO_TEXT, -3),
-        (ActionKind.WAIT, DateSemantics.REVIEW_ON, WAIT_TEXT, 2),
-        (ActionKind.MONITOR, DateSemantics.REVIEW_ON, MONITOR_TEXT, 2),
+    for kind, semantics, text, target in (
+        (ActionKind.DO, DateSemantics.DEADLINE, DO_TEXT, today - timedelta(days=3)),
+        (ActionKind.WAIT, DateSemantics.REVIEW_ON, WAIT_TEXT, later_this_week),
+        (ActionKind.MONITOR, DateSemantics.REVIEW_ON, MONITOR_TEXT, later_this_week),
     ):
         matter = create_matter(
             title=f"Teema {kind.value}",
@@ -77,7 +89,7 @@ def three_steps(specialist, today):
             text=text,
             kind=kind,
             date_semantics=semantics,
-            target_date=today + timedelta(days=offset),
+            target_date=target,
             date_precision=DatePrecision.EXACT,
             actor=specialist,
         )

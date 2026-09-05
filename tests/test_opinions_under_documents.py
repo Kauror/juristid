@@ -287,6 +287,13 @@ def test_an_old_role_filter_link_still_finds_the_opinions(signed_in, specialist)
 
 
 def test_an_unrelated_role_filter_is_unaffected(signed_in, specialist):
+    """Asked of the file table, which is the thing the filter filters.
+
+    The `Arvamused` block under it is not filtered and must not be: it lists
+    what somebody owes work on and what may be registered as sent, and hiding
+    those because the table above is showing incoming mail would make the block
+    disagree with itself.
+    """
     matter = factories.MatterFactory(owner=specialist)
     _file(matter, name="Koja_arvamus.pdf", actor=specialist)
     incoming = _file(
@@ -294,9 +301,11 @@ def test_an_unrelated_role_filter_is_unaffected(signed_in, specialist):
     )
 
     body = _page(signed_in, matter, roll=DocumentRole.INCOMING_AUTHORITY)
+    table = body.split('id="failid-heading"', 1)[1].split('id="arvamuste-haldus"', 1)[0]
 
-    assert incoming.current_version.original_filename in body
-    assert "Koja_arvamus.pdf" not in body
+    assert incoming.current_version.original_filename in table
+    assert "Koja_arvamus.pdf" not in table
+    assert "badge--opinion" not in table
 
 
 # ---------------------------------------------------------------------------
@@ -381,7 +390,7 @@ def test_withdrawal_is_behind_the_rows_management_disclosure(signed_in, speciali
     body = _page(signed_in, matter)
     menu = body.split('id="dokument-', 1)[1]
 
-    assert "rowmenu" in menu
+    assert "opinionmenu" in menu
     assert "Saatmise andmed" in menu
     assert "Võta tagasi" in menu
     # A POST with its own form, never a link: a withdrawal a prefetcher could
@@ -462,13 +471,13 @@ def test_registering_a_send_creates_one_canonical_submission(signed_in, speciali
     response = signed_in.post(
         reverse("submissions:register_sent", kwargs={"matter_id": matter.pk}),
         {
-            "document": str(document.pk),
-            "title": "Koja arvamus pakendiseadusele",
-            "kind": SubmissionKind.FORMAL_OPINION,
-            "recipients": [str(organisation.pk)],
-            "channel": "EIS",
-            "reference": "1-2/26-9",
-            "sent_on": "2026-06-01",
+            "saadetud-document": str(document.pk),
+            "saadetud-title": "Koja arvamus pakendiseadusele",
+            "saadetud-kind": SubmissionKind.FORMAL_OPINION,
+            "saadetud-recipients": [str(organisation.pk)],
+            "saadetud-channel": "EIS",
+            "saadetud-reference": "1-2/26-9",
+            "saadetud-sent_on": "2026-06-01",
         },
     )
 
@@ -480,7 +489,10 @@ def test_registering_a_send_creates_one_canonical_submission(signed_in, speciali
     assert submission.status == SubmissionStatus.SENT
     assert submission.final_version_id == document.current_version_id
     assert submission.sent_at_precision == SentAtPrecision.DATE
-    assert submission.sent_at.date() == datetime.date(2026, 6, 1)
+    # `localdate`, because the stored moment is aware midnight in the
+    # department's timezone and reading `.date()` off the UTC value it comes
+    # back as would report the day before (app/matters/forms.py `_as_datetime`).
+    assert timezone.localdate(submission.sent_at) == datetime.date(2026, 6, 1)
     assert submission.channel == "EIS"
     assert submission.reference == "1-2/26-9"
     assert [row.organisation for row in submission.recipient_rows.all()] == [organisation]
@@ -499,10 +511,10 @@ def test_registering_a_send_writes_the_audit_events_the_services_own(
     signed_in.post(
         reverse("submissions:register_sent", kwargs={"matter_id": matter.pk}),
         {
-            "document": str(document.pk),
-            "title": "Koja arvamus",
-            "kind": SubmissionKind.FORMAL_OPINION,
-            "recipients": [str(organisation.pk)],
+            "saadetud-document": str(document.pk),
+            "saadetud-title": "Koja arvamus",
+            "saadetud-kind": SubmissionKind.FORMAL_OPINION,
+            "saadetud-recipients": [str(organisation.pk)],
         },
     )
 
@@ -520,9 +532,9 @@ def test_registering_a_send_refuses_a_document_from_another_matter(signed_in, sp
     response = signed_in.post(
         reverse("submissions:register_sent", kwargs={"matter_id": matter.pk}),
         {
-            "document": str(elsewhere.pk),
-            "title": "Koja arvamus",
-            "kind": SubmissionKind.FORMAL_OPINION,
+            "saadetud-document": str(elsewhere.pk),
+            "saadetud-title": "Koja arvamus",
+            "saadetud-kind": SubmissionKind.FORMAL_OPINION,
         },
     )
 
@@ -539,9 +551,9 @@ def test_a_reader_may_not_register_a_send_by_posting(client, reader, specialist)
     response = client.post(
         reverse("submissions:register_sent", kwargs={"matter_id": matter.pk}),
         {
-            "document": str(document.pk),
-            "title": "Koja arvamus",
-            "kind": SubmissionKind.FORMAL_OPINION,
+            "saadetud-document": str(document.pk),
+            "saadetud-title": "Koja arvamus",
+            "saadetud-kind": SubmissionKind.FORMAL_OPINION,
         },
     )
 
@@ -565,6 +577,23 @@ def test_a_registered_opinion_leaves_the_unregistered_list(signed_in, specialist
 # ---------------------------------------------------------------------------
 
 
+def test_the_two_opinion_forms_do_not_share_element_ids(signed_in, specialist):
+    """Three forms on this page carry a `title`; one id each.
+
+    Duplicate ids make every `<label for>` ambiguous for a screen reader, and
+    they made `#id_title` a strict-mode violation for the browser suite — which
+    is how this was found (app/submissions/forms.py).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    _file(matter, name="Koja_arvamus.pdf", actor=specialist)
+
+    body = _page(signed_in, matter)
+
+    assert body.count('id="id_title"') == 1
+    assert 'id="id_arvamus-title"' in body
+    assert 'id="id_saadetud-title"' in body
+
+
 def test_the_full_opinion_lifecycle_runs_from_documents(signed_in, specialist, organisation):
     """Draft, evidence, recipients, send, read back, withdraw — all on one page."""
     from django.core.files.uploadedfile import SimpleUploadedFile
@@ -577,10 +606,10 @@ def test_the_full_opinion_lifecycle_runs_from_documents(signed_in, specialist, o
     signed_in.post(
         reverse("submissions:create", kwargs={"matter_id": matter.pk}),
         {
-            "title": "Koja arvamus eelnõule",
-            "kind": SubmissionKind.FORMAL_OPINION,
-            "recipients": [str(organisation.pk)],
-            "channel": "EIS",
+            "arvamus-title": "Koja arvamus eelnõule",
+            "arvamus-kind": SubmissionKind.FORMAL_OPINION,
+            "arvamus-recipients": [str(organisation.pk)],
+            "arvamus-channel": "EIS",
         },
     )
     submission = Submission.objects.get(matter=matter)

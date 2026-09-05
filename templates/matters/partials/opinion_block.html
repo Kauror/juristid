@@ -21,9 +21,14 @@ they may take:
 
 Both forms are `<details>` rather than script-revealed panels: they work with the
 keyboard and without JavaScript, and they are closed until asked for.
+
+The block itself opens when a draft is waiting and is shut otherwise. Both forms
+are unbound — a refused write redirects with a message rather than re-rendering,
+which is how every full-page post in this application answers — so there is no
+error state here to open for.
 {% endcomment %}
 <details class="accordion accordion--opinions" id="arvamuste-haldus"
-         {% if opinion_drafts or register_form.errors or submission_form.errors %}open{% endif %}>
+         {% if opinion_drafts %}open{% endif %}>
   <summary class="accordion__head">
     <span class="accordion__caret" aria-hidden="true"></span>
     <h2 class="accordion__title">Arvamused</h2>
@@ -82,7 +87,7 @@ keyboard and without JavaScript, and they are closed until asked for.
 
     {% if can_write %}
       {% if unregistered_opinions %}
-        <details class="disclosure" {% if register_form.errors %}open{% endif %}>
+        <details class="disclosure">
           <summary class="disclosure__summary">+ Registreeri saatmine</summary>
           <form class="form" method="post"
                 action="{% url 'submissions:register_sent' matter_id=matter.pk %}">
@@ -108,7 +113,7 @@ keyboard and without JavaScript, and they are closed until asked for.
         </details>
       {% endif %}
 
-      <details class="disclosure" {% if submission_form.errors %}open{% endif %}>
+      <details class="disclosure">
         <summary class="disclosure__summary">+ Uus arvamus</summary>
         <form class="form" method="post"
               action="{% url 'submissions:create' matter_id=matter.pk %}">

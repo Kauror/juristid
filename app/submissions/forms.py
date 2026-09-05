@@ -6,11 +6,25 @@ from typing import Any, cast
 from django import forms
 from django.utils import timezone
 
+from app.core.widgets import EstonianDateField, EstonianDateInput
 from app.matters.forms import set_choices
 from app.organisations.models import Organisation
 from app.submissions.enums import SubmissionKind
 
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input"})
+
+#: Form prefixes for the two opinion forms on Dokumendid.
+#:
+#: That page renders three forms carrying a `title` — the SharePoint working
+#: reference, a new opinion, and registering a send — and three `id="id_title"`
+#: on one page make every `<label for>` ambiguous, for a screen reader and for a
+#: browser test alike. The same reason `app/matters/views.py` prefixes the
+#: private note: the composer's own field is called `body` too.
+#:
+#: The working-document form keeps the bare names, because it was there first
+#: and its field names are what its route already accepts.
+CREATE_PREFIX = "arvamus"
+REGISTER_PREFIX = "saadetud"
 
 
 class SubmissionCreateForm(forms.Form):
@@ -123,10 +137,16 @@ class RegisterSentOpinionForm(SubmissionCreateForm):
         required=False,
         widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "Kirja number…"}),
     )
-    sent_on = forms.DateField(
+    #: `EstonianDateField`, never a native `type="date"`. A native control takes
+    #: its format from the *browser's* locale rather than the page's, so a
+    #: US-English Chrome shows `mm/dd/yyyy` on an Estonian form and reads
+    #: `7.9.2026` as the 9th of July — on the one field in this form whose value
+    #: becomes the date Koda claims to have written to a ministry
+    #: (app/core/widgets.py).
+    sent_on = EstonianDateField(
         label="Saadetud",
         required=False,
-        widget=forms.DateInput(attrs={"class": "field__input", "type": "date"}),
+        widget=EstonianDateInput(),
         help_text="Jäta tühjaks, kui arvamus läheb välja praegu.",
     )
 
