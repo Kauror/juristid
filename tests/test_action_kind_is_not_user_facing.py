@@ -55,7 +55,15 @@ MONITOR_TEXT = "vaata rakendusaktide koostamine üle"
 
 @pytest.fixture
 def today():
-    return timezone.localdate()
+    """The Monday of the current ISO week, not the calendar day.
+
+    The fixture below dates two steps at ``today + 2`` and asserts they land in
+    *Sel nädalal*. On a Saturday or a Sunday ``today + 2`` is next week, the
+    band is structurally absent, and the assertion raised ``KeyError`` — the
+    same weekend trap `seed_e2e_data` documents. Anchoring on the Monday keeps
+    every offset inside the week it was written for, on every day of the week.
+    """
+    return wi.start_of_iso_week(timezone.localdate())
 
 
 @pytest.fixture
