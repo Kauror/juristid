@@ -83,6 +83,12 @@ from app.matters.forms import (
     edit_initial,
 )
 from app.matters.intake import register_incoming, validate_uploads
+from app.matters.intake_suggestions import (
+    CurrentValues,
+    SuggestedField,
+    analyse_matter,
+    prefill_initial,
+)
 from app.matters.models import Matter, MatterAssignmentNotice, MatterEngagement
 from app.matters.my_work import (
     HORIZON_PARAM,
@@ -2355,6 +2361,53 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
     return redirect("matters:matter_detail", pk=matter.pk)
 
 
+@login_required
+@business_write_required
+@require_http_methods(["GET"])
+def matter_edit_assisted(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Kontrolli dokumendist leitud andmeid` — the edit page, with suggestions.
+
+    The same form as `matter_edit`, rendered once more with what the
+    extraction system already read off this Matter's documents beside it: a
+    proposed title, sender, deadline, Menetlusliik and Valdkonnad, each with
+    the excerpt it came from, and the facts that have no field of their own —
+    who wrote, from which address, under which reference.
+
+    **A read.** This view accepts only GET and writes nothing: no Matter
+    field, no Organisation, no taxonomy row, no audit event. A high-confidence
+    suggestion may appear already filled into an *empty* control; it stays
+    unsaved. The form posts to `matter_edit` exactly as it does from the plain
+    edit page, so saving is the existing write path with the existing audit
+    trail, and a refused save re-renders what the person typed without
+    re-running the analysis over it (docs/adr/0060).
+
+    **The same authorization, twice.** The Matter through `get_visible_matter`,
+    and the documents — inside the analyser — through
+    ``Document.objects.visible_to``, so a restricted annex on a normal Matter
+    contributes no evidence to a reader who may not open it.
+    """
+    matter = get_visible_matter(request, pk)
+    analysis = analyse_matter(matter, request.user)
+    current = CurrentValues.of(matter, (document.filename for document in analysis.documents))
+    initial, analysis = prefill_initial(analysis, base=edit_initial(matter), current=current)
+    suggested = analysis.fields.get(SuggestedField.SOURCE_ORGANISATIONS)
+    suggested_senders = (
+        list(
+            Organisation.objects.filter(
+                pk__in=[candidate.value for candidate in suggested.offered]
+            ).order_by("name")
+        )
+        if suggested is not None and suggested.offered
+        else []
+    )
+    form = MatterEditForm(
+        initial=initial, matter=matter, viewer=request.user, suggested_senders=suggested_senders
+    )
+    context = _edit_context(request, matter, form)
+    context["assisted"] = analysis
+    return render(request, "matters/matter_edit.html", context)
+
+
 def _edit_context(request: HttpRequest, matter: Matter, form: Any) -> dict[str, Any]:
     return {
         "matter": matter,
@@ -2364,6 +2417,10 @@ def _edit_context(request: HttpRequest, matter: Matter, form: Any) -> dict[str, 
         # so their absence reads as a decision rather than as an omission
         # (Teema QA §2.2).
         "immutable_facts": _immutable_facts(matter),
+        # Whether the page may offer the assisted review at all: only a Matter
+        # with material to read has anything to be read. The count is the
+        # same scoped read the header makes for the Dokumendid tab.
+        "has_documents": Document.objects.filter(matter=matter).visible_to(request.user).exists(),
     }
 
 
