@@ -18,6 +18,8 @@ import datetime
 from typing import Any
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
@@ -42,6 +44,9 @@ from app.legacy_import.opinion_enums import (
 from app.legacy_import.opinion_search import (
     ArchiveFilters,
     ArchiveQueryRefused,
+    _candidate_rows,
+    _metadata_rows,
+    _occurrence_rows,
     archive_counts,
     archive_index_findings,
     rebuild_archive_index,
@@ -2476,3 +2481,298 @@ def _signal_source() -> str:
     from app.legacy_import import opinion_search_signals
 
     return inspect.getsource(opinion_search_signals)
+
+
+# ---------------------------------------------------------------------------
+# The builder and the verifier have to agree
+# ---------------------------------------------------------------------------
+#
+# Production deployed a release whose `opinion_archive_search verify` reported
+# two drifting rows, and a full `rebuild --force` — every row recomputed and
+# rewritten — left the same two rows reported by the same finding. That is not
+# stale data. A rebuild that cannot converge means the row builder and the drift
+# check disagree about what the row should say, and they disagreed because the
+# order they read canonical rows in was not defined.
+#
+# Identity for an occurrence is (archive sha, path, content sha), so one letter
+# filed at two paths under the same name is two rows tying on `filename_date`
+# and `original_filename` — both of the keys the projection ordered by. The
+# builder reads one binary (`WHERE binary_id = %s`), the drift check reads the
+# corpus (`WHERE binary_id IS NOT NULL`) and groups it back; two queries, two
+# plans, and PostgreSQL owes neither of them a particular order among tied rows.
+# `identifiers` and `occurrence_paths` are joined in the order the rows arrive,
+# so the two paths can disagree for ever about a value neither is wrong about.
+
+
+def tied_letter(
+    *,
+    sha: str,
+    paths: list[str],
+    filename: str = "sama-nimi.pdf",
+    date: datetime.date | None = None,
+    external_ids: list[str] | None = None,
+    excel_references: list[str] | None = None,
+) -> tuple[OpinionArchiveBinary, list[OpinionArchiveItem]]:
+    """One letter filed at several paths under one name.
+
+    Deliberately ambiguous where the projection used to order: every occurrence
+    carries the same `original_filename` and the same `filename_date`, and
+    differs only in the path — which is exactly what the uniqueness constraint
+    allows and what the corpus actually holds. The optional readings and
+    proposals hang off separate occurrences so their `external_id` and
+    `excel_reference` reach `identifiers` through the tie.
+    """
+    batch = OpinionArchiveBatch.objects.create(
+        archive_sha256="a" * 64,
+        importer_version="test/0",
+        started_at=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+    )
+    binary = OpinionArchiveBinary.objects.create(
+        sha256=sha,
+        size_bytes=1024,
+        mime_type="application/pdf",
+        storage_key=f"opinion-archive/{sha[:2]}/{sha[2:4]}/{sha}",
+        source_archive_sha256="a" * 64,
+        materialized_at=timezone.now(),
+    )
+    items = [
+        OpinionArchiveItem.objects.create(
+            batch=batch,
+            archive_sha256="a" * 64,
+            archive_relative_path=path,
+            original_filename=filename,
+            sha256=sha,
+            size_bytes=1024,
+            detected_type="application/pdf",
+            filename_date=date or datetime.date(2024, 4, 10),
+            filename_recipient="Naidisministeerium",
+            filename_title="Sama pealkiri",
+            binary=binary,
+        )
+        for path in paths
+    ]
+    for item, external_id in zip(items, external_ids or [], strict=False):
+        OpinionArchiveMetadata.objects.create(
+            item=item,
+            source_system=OpinionMetadataSystem.KODADASH,
+            source_artifact_name="kd.xlsx",
+            source_artifact_sha256="d" * 64,
+            external_id=external_id,
+            captured_at=timezone.now(),
+            title="Sama pealkiri",
+            recipient_raw="Naidisministeerium",
+            document_date=date or datetime.date(2024, 4, 10),
+        )
+    for item, reference in zip(items, excel_references or [], strict=False):
+        OpinionMatchCandidate.objects.create(
+            item=item,
+            batch=item.batch,
+            match_class=OpinionMatchClass.REVIEW_REQUIRED,
+            state=OpinionCandidateState.PENDING,
+            excel_reference=reference,
+        )
+    return binary, items
+
+
+def ambiguous_corpus() -> list[OpinionArchiveBinary]:
+    """Several letters, each of them ambiguous in the old ordering keys."""
+    return [
+        tied_letter(
+            sha="d" * 64,
+            paths=["Opinions/2024/uks.pdf", "Opinions/koopia/uks.pdf", "Opinions/arh/uks.pdf"],
+            external_ids=["KD-3", "KD-1", "KD-2"],
+            excel_references=["XL-9", "XL-7", "XL-8"],
+        )[0],
+        tied_letter(
+            sha="e" * 64,
+            paths=["Opinions/2023/kaks.pdf", "Opinions/vana/kaks.pdf"],
+            filename="teine-nimi.pdf",
+            date=datetime.date(2023, 9, 1),
+            external_ids=["KD-22", "KD-11"],
+            excel_references=["XL-22", "XL-11"],
+        )[0],
+    ]
+
+
+def _order_by_clause(sql: str) -> str:
+    marker = " ORDER BY "
+    index = sql.upper().rfind(marker)
+    return "" if index == -1 else sql[index + len(marker) :]
+
+
+@pytest.mark.parametrize("scoped", [True, False], ids=["per-binary", "corpus-wide"])
+def test_the_shared_row_fetches_order_by_something_unique(db, scoped):
+    """No tie may be left for the query plan to break.
+
+    The root cause, pinned at the only place it can be pinned deterministically:
+    a small test corpus will not reliably reproduce a plan difference, but an
+    ordering that ends in a unique column cannot *have* one. Every shared fetch
+    ends with its own primary key, so narrowing to one binary provably leaves
+    the relative order of that binary's rows unchanged — which is what both
+    callers' docstrings already claimed.
+    """
+    binary, _ = tied_letter(
+        sha="d" * 64,
+        paths=["Opinions/2024/uks.pdf", "Opinions/koopia/uks.pdf"],
+        external_ids=["KD-2", "KD-1"],
+        excel_references=["XL-2", "XL-1"],
+    )
+    for fetch, model in (
+        (_occurrence_rows, OpinionArchiveItem),
+        (_metadata_rows, OpinionArchiveMetadata),
+        (_candidate_rows, OpinionMatchCandidate),
+    ):
+        with CaptureQueriesContext(connection) as captured:
+            fetch(binary=binary) if scoped else fetch()
+        ordering = _order_by_clause(captured.captured_queries[-1]["sql"])
+        unique = f'"{model._meta.db_table}"."{model._meta.pk.column}"'
+        assert unique in ordering, (
+            f"{fetch.__name__} orders by {ordering or '(nothing)'}, which is not total: "
+            f"two {model.__name__} rows tying on those keys may be returned in either "
+            "order, and the builder and the drift check would then disagree for ever"
+        )
+
+
+def test_the_per_binary_and_corpus_wide_fetches_agree(db):
+    """The invariant the whole shared-helper arrangement exists to provide.
+
+    The builder asks for one binary; the drift check asks for the corpus and
+    groups it back. If those two sequences differ for the same letter, every
+    value joined out of them differs, and no amount of rebuilding will reconcile
+    them.
+    """
+    binaries = ambiguous_corpus()
+    for fetch, key in (
+        (_occurrence_rows, "binary_id"),
+        (_metadata_rows, "item__binary_id"),
+        (_candidate_rows, "item__binary_id"),
+    ):
+        corpus = fetch()
+        for binary in binaries:
+            grouped = [row for row in corpus if row[key] == binary.id]
+            assert fetch(binary=binary) == grouped, (
+                f"{fetch.__name__} returns a different sequence for {binary.sha256[:8]} "
+                "when narrowed to one binary than when the corpus is grouped back"
+            )
+
+
+def test_the_two_fetches_agree_under_either_query_plan(db):
+    """The same invariant, with the planner's freedom taken away from it.
+
+    The production divergence was two queries reaching two plans at a scale a
+    test corpus does not have. Asking PostgreSQL for the corpus-wide read both
+    ways is the closest a small fixture gets to that, and it is the honest
+    version of the question: the answer must not depend on how the rows were
+    reached.
+    """
+    binaries = ambiguous_corpus()
+    with connection.cursor() as cursor:
+        for setting in ("SET LOCAL enable_seqscan = off", "SET LOCAL enable_seqscan = on"):
+            cursor.execute(setting)
+            for fetch, key in (
+                (_occurrence_rows, "binary_id"),
+                (_metadata_rows, "item__binary_id"),
+                (_candidate_rows, "item__binary_id"),
+            ):
+                corpus = fetch()
+                for binary in binaries:
+                    grouped = [row for row in corpus if row[key] == binary.id]
+                    assert fetch(binary=binary) == grouped, (
+                        f"{fetch.__name__} disagrees with itself under {setting}"
+                    )
+
+
+@pytest.mark.parametrize(
+    "paths",
+    [
+        ["Opinions/2024/uks.pdf", "Opinions/koopia/uks.pdf", "Opinions/arh/uks.pdf"],
+        ["Opinions/arh/uks.pdf", "Opinions/2024/uks.pdf", "Opinions/koopia/uks.pdf"],
+        ["Opinions/koopia/uks.pdf", "Opinions/arh/uks.pdf", "Opinions/2024/uks.pdf"],
+    ],
+    ids=["insertion-a", "insertion-b", "insertion-c"],
+)
+def test_a_forced_rebuild_is_immediately_clean_however_the_rows_were_inserted(db, paths):
+    """The production invariant: rebuild, then verify, and find nothing.
+
+    Insertion order is varied because it is what decides physical row order, and
+    physical row order is what an ordering with a tie in it falls back on.
+    """
+    tied_letter(
+        sha="d" * 64,
+        paths=paths,
+        external_ids=["KD-3", "KD-1", "KD-2"],
+        excel_references=["XL-9", "XL-7", "XL-8"],
+    )
+    rebuild_archive_index(force=True)
+
+    assert archive_index_findings() == []
+
+
+def test_a_rebuild_converges_rather_than_rewriting_the_same_rows_for_ever(db):
+    """A second rebuild writes nothing, which is what convergence means.
+
+    The production symptom was the opposite: every rebuild rewrote every row and
+    the verifier rejected the same two afterwards, so repeating the remedy was
+    not progress. A projection whose builder and verifier agree reaches a fixed
+    point on the first pass and stays there.
+    """
+    ambiguous_corpus()
+    rebuild_archive_index(force=True)
+    assert archive_index_findings() == []
+
+    again = rebuild_archive_index()
+
+    assert again.written == 0
+    assert again.unchanged == again.binaries
+    assert archive_index_findings() == []
+
+
+def test_the_paths_a_letter_is_filed_under_are_stored_in_a_settled_order(db):
+    """`occurrence_paths` is the sibling `identifiers` happened not to be.
+
+    Both are `"\\n".join`ed in fetch order, and the tie that reordered one
+    reorders the other — with the difference that two occurrences tying on the
+    ordering keys are *guaranteed* to differ in their path, because the path is
+    part of what makes them two rows rather than one. Whatever order it is
+    stored in, the drift check has to compute the same one.
+    """
+    binary, items = tied_letter(
+        sha="d" * 64,
+        paths=["Opinions/2024/uks.pdf", "Opinions/koopia/uks.pdf", "Opinions/arh/uks.pdf"],
+    )
+    rebuild_archive_index(force=True)
+
+    stored = OpinionArchiveSearchDocument.objects.get(binary=binary)
+    assert sorted(stored.occurrence_paths.split("\n")) == sorted(
+        item.archive_relative_path for item in items
+    )
+    expected = [row["archive_relative_path"] for row in _occurrence_rows(binary=binary)]
+    assert stored.occurrence_paths.split("\n") == expected
+    assert archive_index_findings() == []
+
+
+def test_every_identifier_a_letter_carries_survives_the_tie(db):
+    """The column production reported, held to the same contract.
+
+    The SHA, the filename, KodaDash's ids and the register references, each
+    contributed through a different tied relation, and all of them compared
+    against what the drift check independently computes.
+    """
+    binary, _ = tied_letter(
+        sha="d" * 64,
+        paths=["Opinions/2024/uks.pdf", "Opinions/koopia/uks.pdf"],
+        external_ids=["KD-2", "KD-1"],
+        excel_references=["XL-2", "XL-1"],
+    )
+    rebuild_archive_index(force=True)
+
+    stored = OpinionArchiveSearchDocument.objects.get(binary=binary)
+    assert set(stored.identifiers.split("\n")) == {
+        "d" * 64,
+        "sama-nimi.pdf",
+        "KD-1",
+        "KD-2",
+        "XL-1",
+        "XL-2",
+    }
+    assert archive_index_findings() == []
