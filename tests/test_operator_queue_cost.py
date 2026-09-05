@@ -44,7 +44,12 @@ ROWS = 12
 #: Page furniture: session, user, the candidate list, its total, the grouped
 #: pending counts, and the messages framework. Comfortably above what either
 #: view needs and far below one-query-per-row.
-QUERY_BUDGET = 12
+#:
+#: Was 12; measured at 6 for the opinion queue and 5 for the historical one on
+#: PostgreSQL 18. 8 is the worst of the two plus room for one more figure, and
+#: still nowhere near ROWS — which is the only number that matters here, because
+#: what this guards is that neither queue grows with its backlog.
+QUERY_BUDGET = 8
 
 
 def _decided_rows(count, make):

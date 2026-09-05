@@ -343,11 +343,17 @@ def test_the_team_table_does_not_query_once_per_lawyer(
     department is small enough that the naive shape would work and still be
     wrong — a query count that grows when somebody is hired is a page that
     degrades exactly when it matters (Stage-2F brief 47).
+
+    Was 30, measured at 10. The nine grouped counts and the read of the people
+    are still there; what left is the scope lookup the docstring counted as "a
+    few", which PERF-01 stopped asking once per read. 14 keeps the ceiling well
+    under the shape it exists to catch: seven lawyers here, so a per-lawyer
+    implementation lands far above it whatever the constant part costs.
     """
     for index in range(6):
         factories.UserFactory(display_name=f"Lisajurist {index}")
 
-    with django_assert_max_num_queries(30):
+    with django_assert_max_num_queries(14):
         list(team_rows(portfolio.people.head))
 
 

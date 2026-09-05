@@ -263,8 +263,19 @@ def test_the_page_requires_signing_in(world, client) -> None:
 def test_the_dashboard_is_a_bounded_number_of_queries(
     world, specialist, django_assert_max_num_queries
 ) -> None:
-    """It is the landing page; it must not scale its query count with the data."""
+    """It is the landing page; it must not scale its query count with the data.
+
+    Was 40, measured at 19 on PostgreSQL 18. The gap is mostly PERF-01: this
+    builds the dashboard by calling it rather than through a request, so it pays
+    no memoised grant lookup, but `sees_all_restricted` short-circuits on a
+    specialist's role wherever it is called from, and that alone took a query
+    off every `visible_to` on the page.
+
+    24 rather than 19: a ceiling this page could not grow one intentional query
+    under is a ceiling somebody edits without reading, and the regression this
+    is here for adds a query per Matter rather than one.
+    """
     for index in range(10):
         create_matter(title=f"Lisateema {index}", owner=specialist, reference_year=2026)
-    with django_assert_max_num_queries(40):
+    with django_assert_max_num_queries(24):
         dashboard.build_dashboard(specialist)

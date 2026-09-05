@@ -919,14 +919,21 @@ def test_osakond_costs_the_same_whatever_the_department_holds(
     list and area rail as well as its own strip, team table, Eesolev and Tehtud
     (docs/adr/0049).
 
-    What this test actually holds is unchanged and is not the number: measured
-    at 91 and identical at 3, 12, 30 and 60, which an N+1 could not be. It would
-    have moved four times.
+    It has now moved down, which is the first time. PERF-01 stopped
+    `scope_for_user` asking the database who the reader is on every `visible_to`
+    — a lawyer's role answers it outright, and a reader is asked once per
+    request — and this page resolves more populations than any other in the
+    product. Re-measured at **37**, so the ceiling comes down from 95 to 45.
+
+    What this test actually holds is unchanged and is not the number: 37 is
+    identical at 3, 12, 30 and 60, which an N+1 could not be. The `.only()`
+    defect that prompted this test turned one query into sixty; 45 has no room
+    for it, and 95 had.
     """
     _department_world(department_head, people=people, matters=matters)
     client.force_login(department_head)
 
-    with django_assert_max_num_queries(95):
+    with django_assert_max_num_queries(45):
         response = client.get(reverse("matters:department"))
     assert response.status_code == 200
 
