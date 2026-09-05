@@ -2385,6 +2385,16 @@ def matter_edit_assisted(request: HttpRequest, pk: Any) -> HttpResponse:
     and the documents — inside the analyser — through
     ``Document.objects.visible_to``, so a restricted annex on a normal Matter
     contributes no evidence to a reader who may not open it.
+
+    That second gate changes nothing on *this* surface today, and the honest
+    reading of it is worth writing down: the page is behind
+    `business_write_required`, and the two roles that hold business write —
+    SPECIALIST and DEPARTMENT_HEAD — are exactly the two in
+    `ROLES_WITH_RESTRICTED_ACCESS`, so everybody who can open this page already
+    reads every restricted document on the Matter. The gate is what keeps the
+    surface correct the day a role may edit without reading restricted
+    material, and `build_analysis_input` is tested through a READER, who is the
+    only viewer the visible set actually differs for.
     """
     matter = get_visible_matter(request, pk)
     analysis = analyse_matter(matter, request.user)

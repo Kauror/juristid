@@ -68,6 +68,16 @@ another Matter. Given the same text, catalogue and rules it returns the same
 result. There is no model, no embedding, no network call and no dependency
 added; a test asserts the package's import graph says so.
 
+One limitation of that sentence is worth stating rather than leaving for a
+reader to discover. The review page is behind `business_write_required`, and
+the two roles that hold business write — SPECIALIST and DEPARTMENT_HEAD — are
+exactly the two in `ROLES_WITH_RESTRICTED_ACCESS`. So on this surface, as the
+roles stand today, every viewer who can open the page already reads every
+restricted document on the Matter, and `visible_to` is a gate nothing is
+currently stopped by. It is kept, and tested through a READER at the
+`build_analysis_input` level, because it is what keeps the page correct the
+day a role may edit a Matter without reading its restricted material.
+
 Three queries list the documents, their live derivatives' own rows, and the
 fragments of the documents the budget admits; two load the organisation
 catalogue; one loads the offered Valdkonnad. The count does not grow with the

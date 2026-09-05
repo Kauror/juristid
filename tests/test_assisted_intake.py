@@ -1406,9 +1406,7 @@ def test_a_human_title_is_not_overwritten_when_a_later_file_matches_it(
     from app.matters.services import create_matter
 
     human = "Pakendiseaduse muutmise seaduse eelnõu"
-    matter = create_matter(
-        title=human, actor=specialist, owner=specialist, reference_year=2099, reference_number=911
-    )
+    matter = create_matter(title=human, actor=specialist, owner=specialist, reference_year=2099)
     version = capture_evidence(
         matter, corpus.text_pdf([DOCX_STYLE]), "Pakendiseaduse_muutmise_seaduse_eelnõu.pdf", PDF
     )
@@ -1427,20 +1425,26 @@ def test_a_human_title_is_not_overwritten_when_a_later_file_matches_it(
 
 @pytestmark_db
 def test_the_human_title_decision_does_not_depend_on_what_the_viewer_can_see(
-    client, specialist, reader, department_head, ministry, capture_evidence, extract
+    client, specialist, reader, ministry, capture_evidence, extract
 ) -> None:
-    """Two colleagues, one restricted attachment, one answer.
+    """Two viewers, two different sets of documents, one answer.
 
     Whether somebody else's title is protected must not be a function of which
     child documents the reader happens to be authorised to open (hardening
-    §2.4). Visibility still decides which documents contribute suggestions.
+    §2.4). With no title branch left the property holds by construction; this
+    is the test that will notice if one is ever reintroduced over a per-viewer
+    input.
+
+    `reader` is the viewer the visible set genuinely differs for. RESTRICTED
+    content is unlocked by *role* for SPECIALIST and DEPARTMENT_HEAD alike
+    (`app.core.authorization.ROLES_WITH_RESTRICTED_ACCESS`), so a second
+    specialist or a head of department reads exactly what the owner reads and
+    would prove nothing here.
     """
     from app.matters.services import create_matter
 
     human = "Pakendiseaduse muutmise seaduse eelnõu"
-    matter = create_matter(
-        title=human, actor=specialist, owner=specialist, reference_year=2099, reference_number=912
-    )
+    matter = create_matter(title=human, actor=specialist, owner=specialist, reference_year=2099)
     hidden = capture_evidence(
         matter,
         corpus.text_pdf([DOCX_STYLE]),
@@ -1450,12 +1454,27 @@ def test_the_human_title_decision_does_not_depend_on_what_the_viewer_can_see(
     )
     extract(hidden)
 
-    for viewer in (specialist, department_head):
-        client.force_login(viewer)
-        body = client.get(_assisted(matter)).content.decode()
-        assert _control_value(body, "id_title") == human, viewer
-    # The reader may not reach the surface at all, so nothing about the
-    # decision can differ for them either.
+    # The two viewers really do read different material — otherwise the rest
+    # of this test would be asserting the same case twice.
+    assert [d.filename for d in build_analysis_input(matter, specialist).documents] == [
+        "Pakendiseaduse_muutmise_seaduse_eelnõu.pdf"
+    ]
+    assert build_analysis_input(matter, reader).documents == ()
+
+    # And the title decision is the same one for both of them.
+    current = CurrentValues.of(matter)
+    for viewer in (specialist, reader):
+        initial, annotated = prefill_initial(
+            analyse_matter(matter, viewer), base={"title": matter.title}, current=current
+        )
+        assert initial["title"] == human, viewer
+        assert SuggestedField.TITLE not in annotated.prefilled, viewer
+
+    # On the surface itself: the owner sees their own title, and the reader
+    # never reaches the page at all — it is a business-write surface and
+    # READER is outside `ROLES_WITH_BUSINESS_WRITE` (docs/adr/0037).
+    client.force_login(specialist)
+    assert _control_value(client.get(_assisted(matter)).content.decode(), "id_title") == human
     client.force_login(reader)
     assert client.get(_assisted(matter)).status_code == 404
 
@@ -1665,14 +1684,22 @@ def test_an_over_budget_page_still_writes_nothing(signed_in, specialist, capture
 
 @pytestmark_db
 def test_a_hidden_document_spends_no_budget_and_changes_no_suggestion(
-    specialist, ministry, capture_evidence, extract
+    specialist, reader, ministry, capture_evidence, extract
 ) -> None:
-    """Authorisation runs before budgeting, so a hidden file costs nothing."""
+    """Authorisation runs before budgeting, so a hidden file costs nothing.
+
+    The viewer this is proved with is `reader`, not the owner. RESTRICTED
+    content is unlocked by role for SPECIALIST and DEPARTMENT_HEAD
+    (`app.core.authorization.ROLES_WITH_RESTRICTED_ACCESS`), so the owner is
+    *meant* to read the bulky file — and the second half checks that when they
+    do, it is bounded like anything else rather than exempt for being secret.
+    """
     matter = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=927)
     letter = capture_evidence(matter, corpus.text_pdf([COVERING_LETTER]), "kaaskiri.pdf", PDF)
     extract(letter)
-    open_view = build_analysis_input(matter, specialist)
-    open_read = sum(len(b.text) for d in open_view.documents for b in d.blocks)
+    before = build_analysis_input(matter, reader)
+    open_read = sum(len(b.text) for d in before.documents for b in d.blocks)
+    assert open_read > 0
 
     hidden = capture_evidence(
         matter,
@@ -1683,11 +1710,18 @@ def test_a_hidden_document_spends_no_budget_and_changes_no_suggestion(
     )
     _publish_text(hidden, [(_bulky("Salajane", 150_000), TextSource.NATIVE)])
 
-    after = build_analysis_input(matter, specialist)
+    after = build_analysis_input(matter, reader)
     assert sum(len(b.text) for d in after.documents for b in d.blocks) == open_read
     assert [d.filename for d in after.documents] == ["kaaskiri.pdf"]
     assert not after.skipped_for_budget
     assert not after.partial
+
+    # For somebody who may read it, the same file is read — and truncated at
+    # the per-document ceiling, not admitted whole because it is restricted.
+    for_owner = build_analysis_input(matter, specialist)
+    secret = next(d for d in for_owner.documents if d.filename == "salajane.pdf")
+    assert sum(len(b.text) for b in secret.blocks) == intake_input.MAX_CHARACTERS_PER_DOCUMENT
+    assert secret.truncated
 
 
 @pytestmark_db
