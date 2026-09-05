@@ -550,15 +550,25 @@ ITEMS: tuple[StatusItem, ...] = (
             "tehtud kattuvusotsus on just see, mis vaikselt ühe invariandi "
             "kaotab. Sama põhjus, mis hoiab alles `activity_feed`-i (DS-25)."
         ),
-        state=OPEN,
+        state=DECIDED,
         next_step=(
-            "Võrrelda kolme akna testide invariandid ükshaaval "
-            "`tests/test_department_page.py` Eesoleva testidega; katmata osa "
-            "tõsta ümber, seejärel mudel koos testidega eemaldada."
+            "Tehtud. Ükski marsruuditud leht ei lugenud mudelit: "
+            "`deadline_windows`, `deadline_groups` ja `DeadlineGroup` olid "
+            "ainult testide kutsuda. `real_deadlines` ei olnud osa surnud "
+            "mudelist — definitsioon elab `work_items`-is ja elav paneel loeb "
+            "seda, nii et kadus ainult `overview`-i taasekspordi nimi. "
+            "Invariandid võrreldi ükshaaval ja kolm üldist tõsteti viie akna "
+            "mudeli peale: akende järjestikkusus üle aasta päevade ja "
+            "*Ülejäänud kuu* lõpp päris kuu lõpus (viimast ei katnud ükski "
+            "elav test), ning akna ridade järjekord ja selle püsivus kahe "
+            "lugemise vahel. Ülejäänu oli kolme akna oma geomeetria — "
+            "kalendrinädala aken, tühi keskmine aken, üherealine *Kaugemal* — "
+            "mis on elavas mudelis teadlikult teisiti. Mudel koos oma "
+            "testidega on eemaldatud."
         ),
         sources=(
             "docs/adr/0049-one-department-page.md",
-            "app/matters/overview.py, `deadline_groups`",
+            "app/matters/department_dashboard.py, `upcoming_groups`",
             "tests/test_deadline_grouping.py",
         ),
     ),

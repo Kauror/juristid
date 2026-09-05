@@ -182,7 +182,7 @@ def test_the_deadline_list_holds_deadlines_and_not_review_dates(department_head,
     )
 
     items = wi.work_items(department_head, today=today)
-    deadlines = {item.text for item in ov.real_deadlines(items)}
+    deadlines = {item.text for item in wi.real_deadlines(items)}
 
     assert "TEEN tähtajaks" in deadlines
     assert "OLULINE tähtaeg" in deadlines
