@@ -477,19 +477,23 @@ def test_a_linked_letter_is_visible_from_the_matter_it_concerns(client, shared):
     rebuild_archive_index()
     act_as(client, head)
 
-    body = client.get(reverse("matters:matter_position", kwargs={"pk": matter.pk})).content.decode()
+    # Dokumendid, since the per-Matter Arvamused page was retired. Retiring a
+    # surface could not be allowed to take access to these with it, so the
+    # section moved rather than going away (docs/adr/0061 §22).
+    body = client.get(
+        reverse("matters:matter_documents", kwargs={"pk": matter.pk})
+    ).content.decode()
 
     assert "Seotud arhiivikirjad" in body
     assert "Varasem kiri" in body
     # Evidence, never a dispatch record — and said by the structure rather than
-    # by a sentence under it: two sections with two headings, and the archive
-    # row links to the archive rather than to a Submission. The explanatory
-    # `cardnote` was one of the four the v2 design removed from the Teema
-    # sub-pages, and the sentence itself survives on the Arhiivikirjad tab, where the
-    # archive is the whole subject (02-EKRAANID §C, and the test above).
+    # by a sentence under it: a collapsed section of its own, apart from the file
+    # table, whose rows link to the archive rather than to a Submission. The
+    # explanatory `cardnote` was one of the four the v2 design removed from the
+    # Teema sub-pages, and the sentence itself survives on the Arhiivikirjad tab,
+    # where the archive is the whole subject (02-EKRAANID §C, and the test above).
     assert "Koja varasemad kirjad" not in body
-    letters = body.split('id="arhiivikirjad-heading"', 1)[1]
-    assert "Koja arvamused" not in letters
+    letters = body.split('id="seotud-arhiivikirjad"', 1)[1]
     assert "/haldus/arvamuste-arhiiv/" in letters
 
 
@@ -509,8 +513,13 @@ def test_a_reader_who_may_not_open_the_archive_sees_no_letters_on_the_matter(cli
     assert archive_letters_for_matter(matter, reader=reader) == []
 
     client.force_login(reader)
-    body = client.get(reverse("matters:matter_position", kwargs={"pk": matter.pk})).content.decode()
+    body = client.get(
+        reverse("matters:matter_documents", kwargs={"pk": matter.pk})
+    ).content.decode()
+    # No rows, no count, and no hint that there are any: the section simply does
+    # not render (docs/adr/0028, docs/adr/0061 §22).
     assert "Seotud arhiivikirjad" not in body
+    assert "seotud-arhiivikirjad" not in body
 
 
 def test_a_linked_letter_never_reveals_a_matter_its_reader_may_not_open(client):

@@ -53,7 +53,7 @@ from app.core.decorators import business_write_required
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents.enums import DocumentRole
-from app.documents.models import Document, DocumentVersion
+from app.documents.models import Document
 from app.documents.services import link_working_document
 from app.documents.uploads import UploadRejected
 from app.intelligence.selectors import matter_intelligence
@@ -132,9 +132,19 @@ from app.matters.timeline import (
 from app.organisations.models import Organisation
 from app.search import services as search_services
 from app.submissions import embedded as opinions
-from app.submissions.enums import RecipientRole, SubmissionStatus
-from app.submissions.forms import SubmissionCreateForm
-from app.submissions.models import Submission
+from app.submissions.forms import (
+    CREATE_PREFIX,
+    REGISTER_PREFIX,
+    RegisterSentOpinionForm,
+    SubmissionCreateForm,
+)
+from app.submissions.opinions import (
+    OPINION_ROLE_FILTER,
+    open_drafts,
+    opinion_document_ids,
+    opinion_documents,
+    sent_submission_by_document,
+)
 from app.taxonomy.models import PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow.enums import REVIEW_KINDS, ActionKind, Disposition, Track
@@ -1412,69 +1422,6 @@ def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _opinion_documents(request: HttpRequest, matter: Matter) -> list[Document]:
-    """`Koja arvamus` — the Chamber's opinion on this Matter, as files.
-
-    A Koja arvamus is a document, not a sentence somebody types. There is no
-    separate free-text `Koja seisukoht` concept in the product any more, and the
-    rail block that carried one is gone with it; what a lawyer reaches for in
-    this column is the letter itself.
-
-    **Two ways a file becomes the Chamber's opinion, and the role is only one of
-    them.** This block used to list `DocumentRole.KODA_SUBMISSION_FINAL` alone,
-    on the stated grounds that every path writes it. Two do not, and the page
-    said so out loud: a Matter whose opinion had been sent rendered
-    `Koja arvamused 1 · Saadetud` in the main column and
-    `Arvamust ei ole lisatud` in this rail, in one viewport, offering
-    `+ Lisa arvamus` for a letter the Chamber had already posted (UX-005).
-
-    * `attach_final_evidence` sets the role when it *creates* the document, and
-      only then — handed an existing one it binds the evidence and leaves the
-      classification alone;
-    * `select_final_evidence`, the path a lawyer takes when the file is already
-      on the Matter, writes `final_version` and nothing else.
-
-    So the question this asks is the business one rather than the storage one:
-    **which visible documents on this Matter represent a Chamber opinion?** —
-    the union of the role and the evidence bound to a `SENT` Submission. The
-    role branch is what keeps a directly uploaded opinion here without asserting
-    that anything was sent; the Submission branch is the record of the send
-    itself, which is the fact `Document.role` was never the register of.
-
-    `Document.role` is deliberately **not** rewritten to compensate. It
-    classifies a file — a letter that arrived from a ministry is a
-    `Saabunud ametlik dokument` whether or not somebody later relied on those
-    bytes — and promoting it would falsify one true fact to answer a question
-    asked in the wrong place. `Submission` remains the canonical outbound record.
-
-    **`SENT` only.** A DRAFT's `final_version` is a file somebody is preparing,
-    and listing it in a block headed `Koja arvamus` would be this defect in the
-    other direction.
-
-    `visible_to` and nothing else, applied to the whole union. A Document
-    carries its own visibility override and may be more restricted than its
-    Matter, and the filename is the disclosure whether or not the bytes are
-    refused (AUTH-003 §21).
-    """
-    # Scoped to this Matter on both sides: `attach_final_evidence` already
-    # refuses evidence from another Matter, and saying so here as well makes a
-    # cross-Matter document structurally unreachable rather than merely
-    # unwritten.
-    sent_opinion_documents = Submission.objects.filter(
-        matter=matter,
-        status=SubmissionStatus.SENT,
-        final_version__isnull=False,
-    ).values_list("final_version__document_id", flat=True)
-
-    return list(
-        Document.objects.filter(matter=matter)
-        .filter(Q(role=DocumentRole.KODA_SUBMISSION_FINAL) | Q(pk__in=sent_opinion_documents))
-        .visible_to(request.user)
-        .select_related("current_version")
-        .order_by("-created_at")
-    )
-
-
 def _timeline_filter(request: HttpRequest) -> str:
     """Which slice of the chronology the reader asked for.
 
@@ -1645,93 +1592,69 @@ def _header_context(
         "can_write": may_write_business_content(request.user),
         # The rail renders on every Matter surface, so what the rail reads is
         # read here rather than three times over.
-        "opinion_documents": _opinion_documents(request, matter),
+        "opinion_documents": opinion_documents(matter, viewer=request.user),
         "today": timezone.localdate(),
     }
 
 
 @login_required
 def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
-    """`Arvamused` on one Matter.
+    """The retired per-Matter `Arvamused` address, kept so bookmarks still work.
 
-    No longer a tab: the Matter has exactly two, and both the position and the
-    engagement moved into the main Teema view where they are read. What stays
-    here is the formal Submission workflow — drafting, giving an opinion its
-    exact evidence, marking it sent, withdrawing it — reached from the position
-    block and the sent-opinion strip (Teema redesign §3, §17).
+    What this page was is now two things that already existed. An opinion is a
+    file, so it is a row on **Dokumendid** — badged `Arvamus`, carrying the date
+    it went out and who it went to, with the send's own details and
+    `Võta tagasi` behind the row's `⋯`. Finding an opinion *across* the
+    department is still the Arvamused workspace at `/arvamused/`, which this
+    change does not touch (docs/adr/0047, docs/adr/0061).
+
+    What it was in between those two was a third copy of the same letter, under
+    a heading that repeated the rail above it, with the file's checksum, its
+    byte size and the archive importer's match reasoning printed under every
+    row — and `Võta tagasi` as the most prominent control on a reading surface.
+
+    **A redirect and not a 404**, because the contract this route owes is that
+    an old link still reaches the Matter's opinion material — not that a page
+    keeps existing. It lands on Dokumendid filtered to `Arvamus`, so a reader
+    who saved this address to see one Matter's opinions still opens exactly
+    that; the drafts block and `Seotud arhiivikirjad` render there regardless of
+    the filter, so nothing the old page listed is missing from where it lands.
+
+    **Authorization first.** `get_visible_matter` runs before anything is
+    reversed, so an unauthorized caller gets the same 404 they always did rather
+    than a redirect that confirms the Matter exists — the whole reason that
+    helper answers 404 instead of 403.
+
+    Temporary rather than permanent, deliberately: a 301 is cached by the
+    browser until it is cleared, and this address should keep passing through a
+    view that checks who is asking.
     """
     matter = get_visible_matter(request, pk)
-    submissions = list(
-        Submission.objects.filter(matter=matter)
-        .visible_to(request.user)
-        .select_related("final_version", "sent_by")
-        .prefetch_related(
-            "recipient_rows__organisation",
-            "joint_submitter_rows__organisation",
-            # Why a reconstructed submission says what it says. Prefetched
-            # rather than fetched per card: a historical Matter can carry
-            # several, and a query per card is a query per card.
-            "archive_imports",
-        )
-        .order_by("-sent_at", "-created_at")
-    )
-    # Split the recipients by role in Python off the prefetch, rather than
-    # issuing two more queries per card.
-    # Which final-evidence versions this reader may actually be told about.
-    #
-    # The download route already refuses the bytes, but the card was printing
-    # the filename, the size and the first half of the SHA-256 beside a link —
-    # and a Submission a reader may see can point at a Document restricted
-    # below it, because a Document carries its own override. Metadata is
-    # disclosure: a filename is frequently the most telling thing about a file
-    # (AUTH-003 §21). One query for the page rather than one per card.
-    readable_versions = set(
-        DocumentVersion.objects.filter(
-            pk__in=[s.final_version_id for s in submissions if s.final_version_id],
-            document__in=Document.objects.visible_to(request.user).values("pk"),
-        ).values_list("pk", flat=True)
-    )
+    return redirect(opinions_url(matter))
 
-    for submission in submissions:
-        submission.final_version_readable = submission.final_version_id in readable_versions
-        rows = list(submission.recipient_rows.all())
-        submission.addressee_list = [
-            row.organisation for row in rows if row.role == RecipientRole.ADDRESSEE
-        ]
-        submission.information_list = [
-            row.organisation for row in rows if row.role == RecipientRole.FOR_INFORMATION
-        ]
-        submission.joint_rows = list(submission.joint_submitter_rows.all())
-        submission.archive_import_rows = list(submission.archive_imports.all())
-    # Historical letters already filed onto this Matter. Imported lazily for the
-    # same reason `_historical_context` is: `app.legacy_import` imports the
-    # matters app, and a module-level import here would close the circle.
-    from app.legacy_import.opinion_links import archive_letters_for_matter
 
-    context = _header_context(request, matter)
-    context.update(
-        {
-            # No tab is current here. The two tab links still render, and
-            # neither is highlighted, because this page is not one of them.
-            "tab": "arvamused",
-            "nav_active": "teemad",
-            # No `position_form`. The panel that rendered it is retired — there
-            # is no separate free-text `Koja seisukoht` in this product — and a
-            # bound form nothing renders is two model reads per request for
-            # markup that does not exist. `PositionForm` itself stays: it is
-            # what `update_position` validates with, and that route is still
-            # live and still covered by the business-write boundary.
-            "submissions": submissions,
-            "submission_form": SubmissionCreateForm(),
-            # Two different kinds of record, listed apart on the page. A
-            # canonical Submission says Koda sent an opinion; an archive letter
-            # says we hold a file that concerns this Matter. Merging them into
-            # one list would make the second look like the first, which is the
-            # one confusion the opinion domain cannot afford.
-            "archive_letters": archive_letters_for_matter(matter, reader=request.user),
-        }
-    )
-    return render(request, "matters/matter_position.html", context)
+def opinions_url(matter: Any, *, anchor: str = "") -> str:
+    """Dokumendid, showing this Matter's opinions — the one place they live now.
+
+    Every route that used to end on the retired surface ends here: the
+    compatibility redirect, the four Submission write actions, and a Submission
+    search result. Built in one function so `?roll=` and the anchor cannot drift
+    apart across six call sites.
+
+    ``anchor`` is the id of the thing the caller changed, and the caller decides
+    which one: `dokument-<uuid>` for a sent opinion, whose file row this filter
+    renders, and `arvamus-<uuid>` for a draft, whose row is in the `Arvamused`
+    block and is *not* in the filtered table. Passing the wrong one is how a
+    redirect lands on an anchor that is not on the page
+    (`app/submissions/views.py`).
+
+    Anchors are only ever built from identities the caller resolved under the
+    reader's own scope, so one can never name something the page will not
+    render.
+    """
+    page = reverse("matters:matter_documents", kwargs={"pk": matter.pk})
+    url = f"{page}?roll={OPINION_ROLE_FILTER}"
+    return f"{url}#{anchor}" if anchor else url
 
 
 def _historical_context(matter: Any, user: Any) -> dict:
@@ -1753,6 +1676,43 @@ def _historical_context(matter: Any, user: Any) -> dict:
 DOCUMENT_PAGE_SIZE = 12
 
 
+def _role_filter_choices() -> list[tuple[str, str]]:
+    """The Roll filter's vocabulary, with `Arvamus` where the stored role was.
+
+    `KODA_SUBMISSION_FINAL` is substituted rather than added beside, for two
+    reasons. It is an implementation label and a lawyer should never read one;
+    and it is the *narrower* of the two questions — it cannot express "…or the
+    exact file of a sent opinion", which is the other half of what an opinion is
+    (`app/submissions/opinions.py`). Offering both would put two options on the
+    menu that look like synonyms and are not.
+
+    Substituted in place rather than moved to the front: the rest of the list
+    keeps the order it has always had, and reordering a menu is how somebody's
+    muscle memory picks the wrong filter.
+    """
+    return [
+        (OPINION_ROLE_FILTER, "Arvamus")
+        if value == DocumentRole.KODA_SUBMISSION_FINAL
+        else (value, label)
+        for value, label in DocumentRole.choices
+    ]
+
+
+def _upload_role_choices() -> list[tuple[str, str]]:
+    """The same relabelling for the upload panel, over the *stored* vocabulary.
+
+    The filter may invent a value because it only has to survive a round trip
+    through the query string. This select posts a `Document.role`, so every
+    value here is a real one and only the words change — which is the whole of
+    what this change does to the role: the user reads `Arvamus`, the database
+    keeps `KODA_SUBMISSION_FINAL`, and no migration is involved (docs/adr/0061).
+    """
+    return [
+        (value, "Arvamus" if value == DocumentRole.KODA_SUBMISSION_FINAL else label)
+        for value, label in DocumentRole.choices
+    ]
+
+
 @login_required
 def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     """The file workspace: immutable evidence, then living working references.
@@ -1764,6 +1724,15 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
 
     Filename search, role and year are ordinary query-string filters, like the
     register's: a filtered view is a link somebody can send.
+
+    **This is also where a Matter's opinions live** since the separate
+    per-Matter Arvamused page was retired. An opinion is a file, so it is a row
+    in this table with an `Arvamus` badge, the date it went out and who it went
+    to; the send's own details and every write action sit behind that row's `...`
+    and in the collapsed `Arvamused` block under the table. What the page does
+    *not* do is print the evidence mechanics again — the checksum, the importer's
+    match reasoning, the version and the size a second time — which is what made
+    the retired surface a third copy of the same letter (docs/adr/0061).
     """
     matter = get_visible_matter(request, pk)
     documents = (
@@ -1777,11 +1746,29 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     term = (request.GET.get("otsi") or "").strip()
     role = (request.GET.get("roll") or "").strip()
     year = (request.GET.get("aasta") or "").strip()
+
+    # Which documents are the Chamber's opinion, asked once for the whole page.
+    # The badge, the filter and the per-row send all read this one answer, so no
+    # arrangement of them can disagree about what an opinion is.
+    opinion_ids = opinion_document_ids(matter, viewer=request.user)
+    sends = sent_submission_by_document(matter, viewer=request.user)
+
+    # A saved `?roll=KODA_SUBMISSION_FINAL` link keeps working and is read as
+    # the union rather than as the bare role. It returns a strict superset of
+    # what it used to — everything the role matched, plus the sent opinions
+    # whose file was never reclassified — which is what somebody who saved that
+    # link was looking for, and it leaves the menu below agreeing with the URL
+    # instead of showing «Roll — kõik» over an active filter.
+    if role == DocumentRole.KODA_SUBMISSION_FINAL:
+        role = OPINION_ROLE_FILTER
+
     if term:
         documents = documents.filter(
             Q(title__icontains=term) | Q(current_version__original_filename__icontains=term)
         )
-    if role in DocumentRole.values:
+    if role == OPINION_ROLE_FILTER:
+        documents = documents.filter(pk__in=opinion_ids)
+    elif role in DocumentRole.values:
         documents = documents.filter(role=role)
     if year.isdigit():
         documents = documents.filter(created_at__year=int(year))
@@ -1792,6 +1779,33 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     show_all = request.GET.get("koik") == "1"
     visible_evidence = evidence if show_all else evidence[:DOCUMENT_PAGE_SIZE]
 
+    for document in visible_evidence:
+        # Resolved per row here rather than in the template, so the page cannot
+        # start asking the database a question of its own inside a loop.
+        document.is_opinion = document.pk in opinion_ids
+        document.opinion_send = sends.get(document.pk)
+        document.role_label = (
+            "Arvamus"
+            if document.role == DocumentRole.KODA_SUBMISSION_FINAL
+            else document.get_role_display()
+        )
+
+    # Opinion files this Matter holds that no canonical Submission accounts for.
+    # They are the candidates for «Registreeri saatmine», and the reason that
+    # control exists at all: uploading a file as `Arvamus` records that Koda has
+    # it, never that Koda sent it, and only a person can close that gap (§18).
+    unregistered = [
+        document
+        for document in opinion_documents(matter, viewer=request.user)
+        if document.current_version_id and document.pk not in sends
+    ]
+    drafts = open_drafts(matter, viewer=request.user)
+
+    # Historical letters already filed onto this Matter. Imported lazily for the
+    # same reason `_historical_context` is: `app.legacy_import` imports the
+    # matters app, and a module-level import here would close the circle.
+    from app.legacy_import.opinion_links import archive_letters_for_matter
+
     context = _header_context(request, matter)
     context.update(
         {
@@ -1801,7 +1815,9 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             "evidence_total": len(evidence),
             "evidence_hidden": max(len(evidence) - len(visible_evidence), 0),
             "working_documents": working,
-            "document_roles": DocumentRole.choices,
+            "document_roles": _role_filter_choices(),
+            "upload_roles": _upload_role_choices(),
+            "opinion_role_filter": OPINION_ROLE_FILTER,
             # Only the years this Matter actually has files from. A dropdown
             # offering ten empty years is a dropdown that teaches people the
             # filter does not work.
@@ -1811,6 +1827,24 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             "working_document_form": WorkingDocumentForm(),
             "can_write": may_write_business_content(request.user),
             "historical": _historical_context(matter, request.user),
+            # The opinion management block under the table. Compact, collapsed
+            # unless a draft is waiting for somebody, and never a second listing
+            # of the sent opinions already in the table above it.
+            "opinion_drafts": drafts,
+            "unregistered_opinions": unregistered,
+            "submission_form": SubmissionCreateForm(prefix=CREATE_PREFIX),
+            "register_form": RegisterSentOpinionForm(
+                prefix=REGISTER_PREFIX, documents=unregistered
+            ),
+            # Two different kinds of record, and the weaker one is kept visually
+            # apart from the file table. A canonical Submission says Koda sent an
+            # opinion; an archive letter says we hold a file somebody judged to
+            # concern this Matter, with no date or recipient promoted to a
+            # canonical fact. `archive_letters_for_matter` asks `may_read_archive`
+            # itself and answers with an empty list where it must, so a reader
+            # without the corpus gets no rows, no count and no hint there are any
+            # (docs/adr/0028, docs/adr/0056).
+            "archive_letters": archive_letters_for_matter(matter, reader=request.user),
         }
     )
     return render(request, "matters/matter_documents.html", context)
@@ -2613,7 +2647,12 @@ def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
             actor=request.user,
         )
         messages.success(request, "Seisukoht on salvestatud.")
-    return redirect("matters:matter_position", pk=matter.pk)
+    # The surface this used to return to is retired. Nothing links here any more
+    # — the route stays inside the business-write boundary rather than being
+    # deleted, because dropping the only writer for live indexed columns is a
+    # data decision and this was a UI one — so it lands where the Matter's
+    # opinion material now is (docs/adr/0061).
+    return redirect(opinions_url(matter))
 
 
 @login_required

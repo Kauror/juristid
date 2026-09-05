@@ -75,6 +75,19 @@ def register_row(page, title: str):
     return page.locator("#teemad-tulemused").get_by_role("link", name=title)
 
 
+def open_opinions(page):
+    """The `Arvamused` block on Dokumendid, open.
+
+    It opens itself only while a draft is waiting for somebody — which is the
+    point of it — so a test that uses it twice has to say so the second time
+    (templates/matters/partials/opinion_block.html).
+    """
+    block = page.locator("#arvamuste-haldus")
+    if block.get_attribute("open") is None:
+        block.locator(".accordion__head").click()
+    return block
+
+
 def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     """Scenario A, B, C and D in one pass, in the order the work happens."""
     sign_in(page, base_url, SANDRA)
@@ -260,21 +273,28 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
 
     # -- Scenario C: a formal opinion with its exact evidence ------------
     #
-    # The formal Submission workflow is a quiet link in the rail, never a tab.
-    # It is `Koja arvamus` that carries it now: there is no separate free-text
-    # `Koja seisukoht` in this product, and what the Chamber produced on a
-    # Matter is the letter it sent.
+    # On Dokumendid, which is where a Matter's opinions live since
+    # docs/adr/0061. The rail names the letter and links to it and does nothing
+    # else — there is no separate free-text `Koja seisukoht` in this product,
+    # and there is no longer a third page showing the same file again.
     page.goto(matter_url)
     expect(page.locator("#koja-seisukoht")).to_have_count(0)
-    page.locator("#koja-arvamus").get_by_role("link", name="Arvamused").click()
-    page.locator("summary", has_text="Uus arvamus").click()
-    page.locator("#id_title").fill("Koja arvamus pakendiseaduse eelnõule")
-    page.locator("#id_kind").select_option("FORMAL_OPINION")
-    page.locator("#id_recipients").select_option(label="Näidisministeerium")
+    expect(page.locator("#koja-arvamus").get_by_role("link", name="Arvamused")).to_have_count(0)
+
+    page.locator(".tabs__tab", has_text="Dokumendid").click()
+    opinions = open_opinions(page)
+    opinions.locator("summary", has_text="Uus arvamus").click()
+    # Prefixed ids: Dokumendid renders three forms carrying a `title`, and one
+    # `#id_title` for all of them was a strict-mode violation here and an
+    # ambiguous `<label for>` for a screen reader (app/submissions/forms.py).
+    page.locator("#id_arvamus-title").fill("Koja arvamus pakendiseaduse eelnõule")
+    page.locator("#id_arvamus-kind").select_option("FORMAL_OPINION")
+    page.locator("#id_arvamus-recipients").select_option(label="Näidisministeerium")
     page.get_by_role("button", name="Loo arvamus").click()
 
-    expect(page.locator(".submission__title")).to_have_text("Koja arvamus pakendiseaduse eelnõule")
-    expect(page.locator(".badge--draft")).to_be_visible()
+    # A draft is an action somebody owes, so the block opens on it by itself.
+    draft = page.locator(".draftrow", has_text="Koja arvamus pakendiseaduse eelnõule")
+    expect(draft).to_be_visible()
 
     # Sending without evidence is not offered: the control is the upload.
     expect(page.get_by_role("button", name="Märgi saadetuks")).to_have_count(0)
@@ -288,25 +308,35 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
             }
         ]
     )
-    page.get_by_role("button", name="Lisa lõplik tõend").click()
-    expect(page.get_by_text("koja-arvamus.pdf").first).to_be_visible()
-
+    page.get_by_role("button", name="Lisa fail").click()
     page.get_by_role("button", name="Märgi saadetuks").click()
-    expect(page.locator(".badge--sent")).to_be_visible()
-    expect(page.locator(".submission__meta").get_by_text("Saadetud")).to_be_visible()
-    expect(page.get_by_text("koja-arvamus.pdf").first).to_be_visible()
+
+    # The send lands on the row it changed, and that row is an ordinary file row
+    # badged `Arvamus` — not a card repeating the file underneath the table.
+    row = page.locator("tr", has_text="koja-arvamus.pdf")
+    expect(row.locator(".badge--opinion")).to_have_text("Arvamus")
+    expect(row.locator(".doctable__sent")).to_contain_text("Saadetud")
+    expect(row.locator(".doctable__sent")).to_contain_text("Näidisministeerium")
+    # And the mechanics are not printed beside it.
+    expect(page.locator(".evidenceblock")).to_have_count(0)
+    expect(page.get_by_text("SHA-256")).to_have_count(0)
     screenshots(page, "06-arvamus-ja-kaasamine")
 
+    # The send's own details, and the withdrawal, are behind the row's `⋯`.
+    row.locator(".opinionmenu__trigger").click()
+    expect(row.get_by_text("Saatmise andmed")).to_be_visible()
+    expect(row.get_by_role("button", name="Võta tagasi")).to_be_visible()
+    row.locator(".opinionmenu__trigger").click()
+
     # A second submission under the same Matter is ordinary, not a workaround.
-    page.locator("summary", has_text="Uus arvamus").click()
-    page.locator("#id_title").fill("Täiendav arvamus komisjonile")
-    page.locator("#id_kind").select_option("SUPPLEMENTARY_OPINION")
+    # Reopened, because the block folds itself once nothing is waiting: the
+    # first opinion has been sent, so there is no draft to hold it open.
+    opinions = open_opinions(page)
+    opinions.locator("summary", has_text="Uus arvamus").click()
+    page.locator("#id_arvamus-title").fill("Täiendav arvamus komisjonile")
+    page.locator("#id_arvamus-kind").select_option("SUPPLEMENTARY_OPINION")
     page.get_by_role("button", name="Loo arvamus").click()
-    expect(
-        page.locator(".submission__title", has_text="Täiendav arvamus komisjonile")
-    ).to_be_visible()
-    # Two submissions under one Matter is the ordinary case, not a workaround.
-    expect(page.locator(".submission")).to_have_count(2)
+    expect(page.locator(".draftrow", has_text="Täiendav arvamus komisjonile")).to_be_visible()
 
     # -- The sent opinion reaches the main view --------------------------
     #

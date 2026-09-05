@@ -875,6 +875,15 @@ MVP contains:
 
 List all outbound Submissions for the Matter with kind, recipient(s), status, sent time and immutable final evidence version where sent.
 
+Since ADR 0061 this list is not a surface of its own. A sent opinion is a file the
+Matter holds, so it is a row on `Dokumendid` badged `Arvamus`, carrying the date
+it went out and its addressee; the kind, channel, reference, joint submitters and
+`Võta tagasi` are behind that row's `⋯`, and an opinion still being drafted is a
+compact row in the `Arvamused` block under the table. Every fact named above is
+still stored on `Submission`, which remains canonical for what Koda sent — what
+changed is where a lawyer reads it. Cross-Matter opinion search is still the
+Arvamused workspace (ADR 0047).
+
 Phase 2 adds Proposal/outcome review and structured Response without making them prerequisites for daily work.
 
 ## 8.6 Dokumendid

@@ -794,7 +794,7 @@ def test_reading_a_matter_page_takes_no_row_locks(client, specialist):
 
     client.force_login(specialist)
     with CaptureQueriesContext(connection) as captured:
-        response = client.get(reverse("matters:matter_position", kwargs={"pk": matter.pk}))
+        response = client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk}))
     assert response.status_code == 200
     locking = [query["sql"] for query in captured.captured_queries if "FOR UPDATE" in query["sql"]]
     locking += [

@@ -1,0 +1,96 @@
+{% comment %}
+The `⋯` behind one opinion row: what the send says, and how to undo it.
+
+Secondary by construction. `Võta tagasi` used to be the most prominent control
+on the retired Arvamused page — a button under every sent opinion, on a surface
+people opened to *read* — which is a destructive act sitting in a reading
+position. It is still one POST away, still through the same service, still
+audited; it is just no longer the first thing a lawyer's eye lands on
+(docs/adr/0061 §13).
+
+A `<details>`, so it works with the keyboard and without scripting, and so the
+row itself never becomes a control: the whole row must not be clickable when one
+of the things inside it withdraws a formal submission.
+
+What is deliberately not here: the checksum, the version, the byte size and the
+archive importer's match reasoning. All four are stored, all four remain on the
+document's own evidence page and in the integrity tooling, and none of them is
+what somebody managing an opinion is asking about (§12, §28, §29).
+{% endcomment %}
+<details class="opinionmenu">
+  <summary class="opinionmenu__trigger"
+           aria-label="Halda arvamust {% if document.current_version %}{{ document.current_version.original_filename }}{% else %}{{ document.title }}{% endif %}">⋯</summary>
+  <div class="opinionmenu__body">
+    {% if document.opinion_send %}
+      <p class="opinionmenu__label">Saatmise andmed</p>
+      <dl class="opinionmenu__meta">
+        <div><dt>Liik</dt><dd>{{ document.opinion_send.get_kind_display }}</dd></div>
+        <div>
+          <dt>Saadetud</dt>
+          <dd>{% include "matters/partials/sent_at.html" with submission=document.opinion_send %}</dd>
+        </div>
+        {% if document.opinion_send.addressee_list %}
+          <div>
+            <dt>Adressaat</dt>
+            <dd>{% for organisation in document.opinion_send.addressee_list %}{{ organisation.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</dd>
+          </div>
+        {% endif %}
+        {% if document.opinion_send.information_list %}
+          <div>
+            <dt>Teadmiseks</dt>
+            <dd>{% for organisation in document.opinion_send.information_list %}{{ organisation.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</dd>
+          </div>
+        {% endif %}
+        {% if document.opinion_send.channel %}
+          <div><dt>Kanal</dt><dd>{{ document.opinion_send.channel }}</dd></div>
+        {% endif %}
+        {% if document.opinion_send.reference %}
+          <div><dt>Viide</dt><dd>{{ document.opinion_send.reference }}</dd></div>
+        {% endif %}
+        {% if document.opinion_send.joint_rows %}
+          {% comment %}
+            A joint letter is only joint once the co-signatory agrees, so the
+            two states are named rather than merged into one list.
+          {% endcomment %}
+          <div>
+            <dt>Kaasesitajad</dt>
+            <dd>
+              {% for row in document.opinion_send.joint_rows %}
+                {{ row.organisation.name }}
+                <span class="muted">({% if row.confirmed %}kinnitatud{% else %}kinnitamata{% endif %})</span>{% if not forloop.last %}, {% endif %}
+              {% endfor %}
+            </dd>
+          </div>
+        {% endif %}
+      </dl>
+      {% if can_write %}
+        {% comment %}
+          A POST with its own form and its own explicit label. Never a GET and
+          never a link: a withdrawal that a prefetcher or a crawler could
+          perform is not a withdrawal anybody decided on.
+        {% endcomment %}
+        <form class="opinionmenu__form" method="post"
+              action="{% url 'submissions:withdraw' pk=document.opinion_send.pk %}">
+          {% csrf_token %}
+          <button class="button button--quiet button--tiny" type="submit">Võta tagasi</button>
+        </form>
+      {% endif %}
+    {% else %}
+      {% comment %}
+        A file classified as the Chamber's opinion that no canonical Submission
+        accounts for. Stated plainly rather than left blank, because the absence
+        is the useful fact: uploading a letter records that Koda holds it and
+        never that Koda sent it, and only a person can close that gap (§18).
+      {% endcomment %}
+      <p class="opinionmenu__label">Saatmist ei ole registreeritud.</p>
+      {% if can_write %}
+        <p class="opinionmenu__hint">
+          Registreeri saatmine <a class="quietlink" href="#arvamuste-haldus">Arvamused</a> plokis.
+        </p>
+      {% endif %}
+    {% endif %}
+    <a class="quietlink" href="{% url 'documents:document_detail' pk=document.pk %}">
+      Dokumendi andmed
+    </a>
+  </div>
+</details>

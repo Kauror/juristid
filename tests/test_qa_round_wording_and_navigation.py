@@ -185,43 +185,58 @@ def drafted_opinion(normal_matter, specialist):
     )
 
 
-def test_a_draft_appears_under_a_heading_that_does_not_say_it_was_sent(
+def test_a_draft_appears_where_it_is_waiting_and_is_not_called_sent(
     client, specialist, normal_matter, drafted_opinion
 ):
+    """The heading that made this test is retired; the statement it made is not.
+
+    `Väljasaadetud arvamused` described a colleague's unfinished draft as
+    something that had already left the building. The page carrying it is gone
+    (docs/adr/0061) and a draft is now a row in the `Arvamused` block on
+    Dokumendid — a block that says «koostamisel» and names no send at all.
+    """
     from app.submissions.enums import SubmissionStatus
 
     assert drafted_opinion.status == SubmissionStatus.DRAFT
 
     client.force_login(specialist)
-    page = client.get(reverse("matters:matter_position", kwargs={"pk": normal_matter.pk}))
+    page = client.get(reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk}))
     body = page.content.decode()
 
     assert page.status_code == 200
-    assert "Koja arvamused" in body
     assert "Väljasaadetud arvamused" not in body
-    # The draft is there, which is what makes the old heading a false statement
-    # rather than a merely clumsy one.
+    assert "koostamisel" in body
     assert "Koostamisel arvamus" in body
 
 
-def test_the_heading_still_counts_exactly_what_it_renders(
+def test_the_block_counts_exactly_the_drafts_it_renders(
     client, specialist, normal_matter, drafted_opinion
 ):
     """The population did not move, so the number must not have either."""
+    from app.submissions.enums import SubmissionStatus
     from app.submissions.models import Submission
 
     client.force_login(specialist)
-    page = client.get(reverse("matters:matter_position", kwargs={"pk": normal_matter.pk}))
+    page = client.get(reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk}))
 
-    rendered = page.context["submissions"]
+    rendered = page.context["opinion_drafts"]
     assert list(rendered) == [drafted_opinion]
-    assert len(rendered) == Submission.objects.filter(matter=normal_matter).count()
+    assert (
+        len(rendered)
+        == Submission.objects.filter(matter=normal_matter, status=SubmissionStatus.DRAFT).count()
+    )
 
 
-def test_a_sent_opinion_is_listed_in_the_same_place(
+def test_a_sent_opinion_becomes_a_file_row_and_leaves_the_draft_block(
     client, specialist, normal_matter, drafted_opinion
 ):
-    """Both statuses under one heading is the reason the heading had to change."""
+    """Sent and unsent are now two different shapes, which is the whole point.
+
+    A draft is an action somebody owes and lives in the `Arvamused` block. Once
+    it has been sent it is a file the Matter holds, so it is a row in the table
+    badged `Arvamus` — and it stops being listed twice, which is exactly the
+    duplication the retired page created (docs/adr/0061 §15, §16).
+    """
     from app.submissions.services import (
         attach_final_evidence,
         create_submission,
@@ -239,9 +254,11 @@ def test_a_sent_opinion_is_listed_in_the_same_place(
     mark_submission_sent(submission=sent, actor=specialist)
 
     client.force_login(specialist)
-    page = client.get(reverse("matters:matter_position", kwargs={"pk": normal_matter.pk}))
+    page = client.get(reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk}))
     body = page.content.decode()
 
     assert "Koostamisel arvamus" in body
-    assert "Saadetud arvamus" in body
-    assert len(page.context["submissions"]) == 2
+    assert "arvamus.pdf" in body
+    assert "Arvamus" in body
+    # The sent one is a file row; only the draft is in the draft block.
+    assert list(page.context["opinion_drafts"]) == [drafted_opinion]

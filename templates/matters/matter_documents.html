@@ -3,14 +3,28 @@
 {% block title %}Dokumendid · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
 {% comment %}
-The file workspace — the only second tab a Matter has.
+The file workspace — the only second tab a Matter has, and where a Matter's
+opinions live.
 
 Two groups, and they look like opposites on purpose. `Failid` are immutable
 evidence: solid rows, a version number, a size, the person who captured them,
-and the sent opinion marked ★ LÕPLIK. `Töödokumendid` are living SharePoint
-links: dashed, arrowed, captioned with when SharePoint last saw them, and
-explicitly not proof of anything (master specification 8.6, 15.3;
+and the Chamber's own letters badged ARVAMUS. `Töödokumendid` are living
+SharePoint links: dashed, arrowed, captioned with when SharePoint last saw them,
+and explicitly not proof of anything (master specification 8.6, 15.3;
 Teema redesign §23).
+
+**`ARVAMUS`, not `★ LÕPLIK`.** «Lõplik» named an internal lifecycle property
+of a piece of evidence; `Arvamus` names what the file is, which is what a lawyer
+scanning forty rows is looking for. The stored role is untouched — the badge is
+presentation over the union in `app/submissions/opinions.py`, so a sent opinion
+whose document was never reclassified is badged too (docs/adr/0061).
+
+An opinion row carries the two facts a reader wants beside it — when it went out
+and who to — and nothing else. The send's own details, and `Võta tagasi`, are
+behind the row's `⋯`. The checksum, the archive importer's match reasoning and a
+second printing of the version and size are on none of them: they are stored,
+they are on the document's own evidence page, and they were what made the
+retired Arvamused surface a third copy of the same letter (§11, §12, §28).
 
 Upload asks for the role *with* the file, before anything is committed. A
 document filed as "Muu" because the form asked afterwards is a document nobody
@@ -97,8 +111,20 @@ finds again (§23.5).
               </label>
               <label class="field">
                 <span class="field__label">Roll</span>
+                {% comment %}
+                  `upload_roles`, not `document_roles`. This select posts a
+                  stored `Document.role`, so every value in it is a real one and
+                  only the words change — `Arvamus` where the database keeps
+                  `KODA_SUBMISSION_FINAL`. The filter above may invent a value
+                  because it only has to survive a round trip through the query
+                  string; this one may not (app/matters/views.py).
+
+                  Uploading a file as `Arvamus` records that Koda holds it. It
+                  does not claim Koda sent it — that is «Registreeri saatmine»
+                  in the Arvamused block, and it needs a person (docs/adr/0061).
+                {% endcomment %}
                 <select class="field__input" name="role" required>
-                  {% for value, label in document_roles %}
+                  {% for value, label in upload_roles %}
                     <option value="{{ value }}">{{ label }}</option>
                   {% endfor %}
                 </select>
@@ -157,6 +183,12 @@ finds again (§23.5).
             {% endif %}
           {% endif %}
         </div>
+        {% comment %}
+          Also under the empty card. A Matter with no files at all can still
+          carry a draft opinion, and that is exactly the state where somebody
+          owes it the next step.
+        {% endcomment %}
+        {% include "matters/partials/opinion_block.html" %}
       {% else %}
         {% if evidence_documents %}
           <section class="docsection" aria-labelledby="failid-heading">
@@ -187,10 +219,23 @@ finds again (§23.5).
                       not the size, not a placeholder row admitting it exists
                       (Teema redesign §23.2, §34).
                     {% endcomment %}
-                    <tr class="{% if document.role == 'KODA_SUBMISSION_FINAL' %}doctable__row--final{% endif %}">
+                    {% comment %}
+                      A stable anchor per row, built from the document's own id
+                      and never from its title. It is what a redirect after
+                      marking an opinion sent returns to, so the lawyer lands on
+                      the row they changed rather than at the top of a ninety-file
+                      table. Only rows that render get one, so no anchor can name
+                      a document this reader may not see (docs/adr/0061 §27).
+                    {% endcomment %}
+                    <tr id="dokument-{{ document.pk }}">
                       <td class="table__title">
-                        {% if document.role == "KODA_SUBMISSION_FINAL" %}
-                          <span class="badge badge--final">★ Lõplik</span>
+                        {% if document.is_opinion %}
+                          {% comment %}
+                            Text, not a colour and not a star. `Arvamus` has to
+                            be readable by somebody who cannot see the tint, and
+                            a star said «special» without saying what.
+                          {% endcomment %}
+                          <span class="badge badge--opinion">Arvamus</span>
                         {% endif %}
                         {% if document.is_restricted %}
                           <span class="badge badge--restricted">Piiratud</span>
@@ -200,6 +245,23 @@ finds again (§23.5).
                             {{ document.current_version.original_filename }}
                           {% else %}{{ document.title }}{% endif %}
                         </a>
+                        {% if document.opinion_send %}
+                          {% comment %}
+                            Two facts and no more: when it went out and who to.
+                            Both are ordinary human metadata a reader of a file
+                            list wants. The kind, channel, reference and
+                            co-signatories are real too and are one disclosure
+                            away, in the row's own `⋯` (§11, §30).
+                          {% endcomment %}
+                          <span class="doctable__sent">
+                            Saadetud
+                            {% include "matters/partials/sent_at.html" with submission=document.opinion_send %}
+                            {% if document.opinion_send.addressee_list %}
+                              ·
+                              {% for organisation in document.opinion_send.addressee_list %}{{ organisation.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                            {% endif %}
+                          </span>
+                        {% endif %}
                         {% comment %}
                           Whether this file's text has been extracted, under the
                           name rather than in a column of its own. The design's
@@ -220,7 +282,15 @@ finds again (§23.5).
                           </span>
                         {% endif %}
                       </td>
-                      <td>{{ document.get_role_display }}</td>
+                      {% comment %}
+                        `role_label`, which is `get_role_display` for every role
+                        but one: `KODA_SUBMISSION_FINAL` reads `Arvamus`. The
+                        stored value is unchanged and no migration is involved —
+                        this is the same relabelling the filter and the upload
+                        select make, so one word means one thing across the page
+                        (docs/adr/0061 §26).
+                      {% endcomment %}
+                      <td>{{ document.role_label }}</td>
                       <td class="table__date">
                         {% comment %}
                           A <time>, because that is the element the visual
@@ -281,7 +351,9 @@ finds again (§23.5).
                                href="{% url 'documents:download' pk=document.current_version.pk %}"
                                aria-label="Laadi alla {{ document.title }}">↓</a>
                           {% endif %}
-                          {% if can_write %}
+                          {% if document.is_opinion %}
+                            {% include "matters/partials/opinion_manage.html" with document=document %}
+                          {% elif can_write %}
                             <a class="quietlink"
                                href="{% url 'documents:document_detail' pk=document.pk %}"
                                aria-label="Halda dokumenti {{ document.title }}">⋯</a>
@@ -301,6 +373,8 @@ finds again (§23.5).
             {% endif %}
           </section>
         {% endif %}
+
+        {% include "matters/partials/opinion_block.html" %}
 
         {% comment %}
           Working documents are an accordion, closed by default. They are living
@@ -361,6 +435,53 @@ finds again (§23.5).
                 + SharePointi viide
               </button>
             {% endif %}
+          </div>
+        </details>
+      {% endif %}
+
+      {% if archive_letters %}
+        {% comment %}
+          Historical letters somebody has filed onto this Matter, kept reachable
+          when the page that used to list them was retired. Access to them could
+          not be allowed to disappear with a surface (docs/adr/0061 §22).
+
+          Visually secondary and deliberately worded apart from everything above.
+          None of these is a record that an opinion was formally submitted; they
+          are files the Chamber holds that somebody judged to concern this teema,
+          and no date or recipient here has been promoted to a canonical fact.
+          Listing them beside the file table would make the weaker claim look
+          like the stronger one — the one confusion the opinion domain cannot
+          afford.
+
+          Three facts per row and no fourth. The archive's own match reasoning
+          belongs to reconciliation, not to a lawyer reading a Matter (§22).
+
+          Rendered only where `may_read_archive` admits the reader: the view
+          returns an empty list otherwise, so a reader without the corpus gets no
+          rows, no count and no hint that any exist (docs/adr/0028, 0056).
+        {% endcomment %}
+        <details class="accordion accordion--archive" id="seotud-arhiivikirjad">
+          <summary class="accordion__head">
+            <span class="accordion__caret" aria-hidden="true"></span>
+            <h2 class="accordion__title">Seotud arhiivikirjad</h2>
+            <span class="accordion__summary">{{ archive_letters|length }}</span>
+          </summary>
+          <div class="accordion__body">
+            <ul class="linklist">
+              {% for letter in archive_letters %}
+                <li class="linklist__item">
+                  <a href="{% url 'legacy_import:opinion_archive_detail' pk=letter.pk %}">
+                    {{ letter.search_document.title|default:"Pealkirjata kiri"|truncatechars:110 }}
+                  </a>
+                  {% if letter.search_document.document_date %}
+                    <span class="muted">· {{ letter.search_document.document_date|date:"j.n.Y" }}</span>
+                  {% endif %}
+                  {% if letter.search_document.recipient %}
+                    <span class="muted">· {{ letter.search_document.recipient|truncatechars:50 }}</span>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
           </div>
         </details>
       {% endif %}

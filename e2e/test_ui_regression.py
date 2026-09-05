@@ -185,6 +185,11 @@ CLOCK_DEPENDENT = [
     # that stopped matching would not fail — it would silently unmask a value
     # that changes daily, and every baseline would go red the next morning.
     ".createform .dateinput",
+    # The sent date on a Dokumendid opinion row. Covered by the bare `time`
+    # below as well; named explicitly because it is normalised by this exact
+    # selector, and a selector that appears in one list and not the other is how
+    # the two drift apart (docs/adr/0061).
+    ".doctable__sent time",
     "time",
     # ---- Three values the list above missed, each found by rendering the page
     # and asking which selector covered it rather than by reading class names.
@@ -360,6 +365,18 @@ OSAKOND_WEEK_COUNTS = (
 OPINION_SENT = ('.submission__meta div:has(dt:text-is("Saadetud")) dd',)
 PORTFOLIO_WHEN = (".pw-matter__when",)
 
+#: The Dokumendid row's «Saadetud <date> · <ministeerium>».
+#:
+#: New with docs/adr/0061, and normalised rather than merely masked for the
+#: reason the module docstring gives: the recipient sits on the same line, after
+#: the date, so the mask's *width* is that name's position. `29.8.2026 19:35` is
+#: 15 characters whatever the seed stamped, and the ministry stops moving.
+#:
+#: Required on both scenarios that render it, because the seeded world sends an
+#: opinion on `OPEN_TITLE` before any test runs — so an absence here means the
+#: markup moved, not that the world happened to be quiet.
+OPINION_ROW_SENT = (".doctable__sent time",)
+
 #: Minu asjad's horizon control — «Kuni oktoober ▾», «Kuni november ▾».
 #:
 #: Scoped to the band, because `.rangepicker__trigger` is also the department
@@ -481,6 +498,7 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
     (MONTH_VIEW_CHIP[0], "Tähtaeg sel kuul · 1"),
     (CLOSED_ON[0], "(29.8.2026)"),
     (TIMELINE_PREVIEW_ON[0], "29.8"),
+    (OPINION_ROW_SENT[0], "29.8.2026 19:35"),
 )
 
 #: What each scenario's capture may not silently stop *normalising*.
@@ -511,6 +529,10 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     # and requiring an element that can legitimately be absent turns a quiet
     # week into a visual failure.
     "teema-suletud": (*CLOSED_ON, *TIMELINE_PREVIEW_ON),
+    # The seeded world sends one opinion on `OPEN_TITLE`, so both of these
+    # render a `Saadetud <date>` under a filename on every run.
+    "teema-dokumendid": OPINION_ROW_SENT,
+    "teema-arvamused": OPINION_ROW_SENT,
 }
 
 assert not {
@@ -551,6 +573,8 @@ REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     # selector has to follow it.
     "osakond": OSAKOND_WEEK_COUNTS,
     "osakond-3440": OSAKOND_WEEK_COUNTS,
+    "teema-dokumendid": OPINION_ROW_SENT,
+    "teema-arvamused": OPINION_ROW_SENT,
 }
 
 assert not {selector for selectors in REQUIRED_MASKS.values() for selector in selectors} - set(
@@ -785,17 +809,21 @@ def test_matter_in_a_special_state(page, base_url):
 
 
 def test_matter_opinions(page, base_url):
-    """`Arvamused` on one Matter — reached from the facts rail, not a tab.
+    """A Matter's opinions, which are its files filtered to `Arvamus`.
 
-    The link is in `Koja arvamus` now. The rail block it used to hang off is
-    retired: there is no separate free-text `Koja seisukoht` in this product,
-    and the surface behind this link is where the formal Submission workflow
-    lives (templates/matters/partials/opinion_rail.html).
+    The separate per-Matter Arvamused page is retired: an opinion is a document,
+    the rail links straight to the letter, and the management that is not a file
+    row lives in the `Arvamused` block under the table (docs/adr/0061).
+
+    Reached through the retired address on purpose. It is the one scenario in
+    this suite that is *also* a route assertion — the baseline is worthless if
+    the redirect stops working — and what it captures is the state a saved
+    bookmark opens onto.
     """
     signed_in_matter(page, base_url, OPEN_TITLE)
-    page.locator("#koja-arvamus .railcard__more").click()
+    page.goto(f"{page.url.rstrip('/')}/seisukoht/")
     page.wait_for_load_state("networkidle")
-    compare("teema-seisukoht", capture(page, "teema-seisukoht"))
+    compare("teema-arvamused", capture(page, "teema-arvamused"))
 
 
 def test_matter_composer_expanded(page, base_url):
