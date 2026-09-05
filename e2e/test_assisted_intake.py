@@ -105,7 +105,7 @@ def test_the_review_pre_fills_what_it_is_sure_of_and_saves_what_the_person_confi
     # -- after extraction: suggestion, evidence, pre-filled blank fields ----
     page.goto(review_url(matter_url))
     expect(
-        page.get_by_text("Palume esitada arvamus hiljemalt 18. septembriks 2026")
+        page.get_by_text("Palume esitada arvamus hiljemalt 18. septembriks 2026").first
     ).to_be_visible()
     expect(page.get_by_text("kirja päis").first).to_be_visible()
     expect(page.locator("#id_response_deadline")).to_have_value("18.9.2026")
@@ -113,8 +113,8 @@ def test_the_review_pre_fills_what_it_is_sure_of_and_saves_what_the_person_confi
     expect(page.locator('input[name="track"][value="DOMESTIC"]')).to_be_checked()
     expect(page.get_by_text("vormil eeltäidetud").first).to_be_visible()
     # The message's sender, straight from its headers, with the address.
-    expect(page.get_by_text("Saatja kontakt")).to_be_visible()
-    expect(page.get_by_text("kadri@naidisministeerium.invalid")).to_be_visible()
+    expect(page.get_by_text("Saatja kontakt").first).to_be_visible()
+    expect(page.get_by_text("kadri@naidisministeerium.invalid").first).to_be_visible()
     screenshots(page, "31-dokumendist-leitud")
 
     # -- the person changes a pre-filled value and saves --------------------

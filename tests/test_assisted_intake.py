@@ -17,6 +17,7 @@ from __future__ import annotations
 import ast
 import inspect
 import pathlib
+import re
 from datetime import date
 
 import pytest
@@ -24,6 +25,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
+from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
 from app.documents.enums import (
@@ -987,6 +989,20 @@ def _assisted(matter):
     return reverse("matters:matter_edit_assisted", kwargs={"pk": matter.pk})
 
 
+def _checked(body: str, name: str, value: str) -> bool:
+    """Whether the rendered control ``name`` has ``value`` ticked."""
+    pattern = rf'<input[^>]*name="{re.escape(name)}"[^>]*value="{re.escape(value)}"[^>]*checked'
+    return re.search(pattern, body) is not None
+
+
+def _control_value(body: str, control_id: str) -> str:
+    """The ``value`` the rendered text input ``control_id`` carries."""
+    match = re.search(rf'<input[^>]*id="{re.escape(control_id)}"[^>]*>', body)
+    assert match is not None, control_id
+    value = re.search(r'value="([^"]*)"', match.group(0))
+    return value.group(1) if value else ""
+
+
 @pytestmark_db
 def test_the_review_get_writes_nothing(signed_in, specialist, intake_matter) -> None:
     before = (
@@ -1026,12 +1042,10 @@ def test_high_confidence_suggestions_prefill_the_empty_unsaved_form(
     body = signed_in.get(_assisted(intake_matter)).content.decode()
     assert 'value="Pakendiseaduse muutmise seaduse eelnõu"' in body
     assert 'value="18.9.2026"' in body
-    assert f'value="{Track.DOMESTIC}" required id="id_track_1" checked' in body or (
-        'value="DOMESTIC"' in body and "checked" in body
-    )
+    assert _checked(body, "track", Track.DOMESTIC)
     keskkond = PolicyArea.objects.get(key="keskkond")
-    assert f'name="policy_areas" value="{keskkond.pk}"' in body and body.count("checked") >= 3
-    assert f'name="source_organisations" value="{ministry.pk}"' in body
+    assert _checked(body, "policy_areas", str(keskkond.pk))
+    assert _checked(body, "source_organisations", str(ministry.pk))
     assert "vormil eeltäidetud" in body
     assert "Dokumendist leitud" in body
     assert "Palume esitada arvamus hiljemalt 18. septembriks 2026" in body
@@ -1054,10 +1068,13 @@ def test_an_existing_canonical_value_is_never_overwritten_by_a_suggestion(
     intake_matter.save()
     intake_matter.source_organisations.set([other])
     body = signed_in.get(_assisted(intake_matter)).content.decode()
-    assert 'value="Minu enda pealkiri"' in body
-    assert 'value="1.12.2026"' in body
-    assert 'value="18.9.2026"' not in body
-    assert "Pakendiseaduse muutmise seaduse eelnõu" in body  # offered beside the typed title
+    assert _control_value(body, "id_title") == "Minu enda pealkiri"
+    assert _control_value(body, "id_response_deadline") == "1.12.2026"
+    assert _checked(body, "track", Track.STRATEGY)
+    assert not _checked(body, "track", Track.DOMESTIC)
+    # The document's answers are still on the page — as «Kasuta» offers.
+    assert "Pakendiseaduse muutmise seaduse eelnõu" in body
+    assert 'data-suggest-value="18.9.2026"' in body
     assert body.count("Kasuta") >= 2
     assert "vormil eeltäidetud" not in body
 
@@ -1086,9 +1103,19 @@ def test_the_posted_value_wins_over_every_suggestion(
     # The medium sender suggestion was not chosen, so it was not saved; the
     # audit trail names the person, not a classifier.
     assert not intake_matter.source_organisations.exists()
-    events = ChangeEvent.objects.filter(matter=intake_matter)
-    assert events.exists()
-    assert all(event.actor_id == specialist.pk for event in events)
+    saved = ChangeEvent.objects.filter(
+        matter=intake_matter,
+        event_type__in=(
+            ChangeEventType.MATTER_TITLE_CHANGED,
+            ChangeEventType.MATTER_DATE_CHANGED,
+            ChangeEventType.MATTER_TRACK_CHANGED,
+        ),
+    )
+    assert saved.count() == 3
+    assert all(event.actor_id == specialist.pk for event in saved)
+    assert not ChangeEvent.objects.filter(
+        matter=intake_matter, event_type=ChangeEventType.MATTER_POLICY_AREAS_CHANGED
+    ).exists()
 
 
 @pytestmark_db
@@ -1257,7 +1284,9 @@ def test_the_analysis_query_count_does_not_grow_with_the_number_of_fragments(
     with CaptureQueriesContext(connection) as many:
         analyse_matter(large, specialist)
     assert len(many.captured_queries) == len(few.captured_queries)
-    assert len(few.captured_queries) <= 8, [q["sql"][:80] for q in few.captured_queries]
+    # Documents, derivatives, fragments, organisations, aliases, areas, and the
+    # Matter's own relations: a handful, and the same handful whatever the size.
+    assert len(few.captured_queries) <= 10, [q["sql"][:80] for q in few.captured_queries]
 
 
 @pytestmark_db
