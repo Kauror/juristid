@@ -265,19 +265,25 @@ def build_analysis_input(
         ).order_by("derivative_id", "ordinal"):
             fragments.setdefault(fragment.derivative_id, []).append(fragment)
 
-    sources: list[SourceDocument] = []
+    # Spend the budget in the order the plan admitted, not in the order the
+    # documents were captured. Assembling in capture order would let the
+    # annexes at the front of a Matter exhaust the allowance before the
+    # covering letter behind them was reached, which is the priority the plan
+    # exists to express. The documents are returned in capture order below.
+    read: dict[Any, tuple[tuple[TextBlock, ...], bool]] = {}
     used = 0
+    for document_id, derivative_id in admitted.items():
+        allowance = min(character_limit, max(total_limit - used, 0))
+        blocks, truncated = _blocks_of(fragments.get(derivative_id, []), allowance)
+        used += sum(len(block.text) for block in blocks)
+        read[document_id] = (blocks, truncated)
+
+    sources: list[SourceDocument] = []
     for document in documents:
         version = document.current_version
         found = headers.get(version.pk, {})
         email_derivative = found.get(DerivativeKind.EMAIL_METADATA)
-        derivative_id = admitted.get(document.pk)
-        blocks: tuple[TextBlock, ...] = ()
-        truncated = False
-        if derivative_id is not None:
-            allowance = min(character_limit, max(total_limit - used, 0))
-            blocks, truncated = _blocks_of(fragments.get(derivative_id, []), allowance)
-            used += sum(len(block.text) for block in blocks)
+        blocks, truncated = read.get(document.pk, ((), False))
         sources.append(
             SourceDocument(
                 document_id=document.pk,
