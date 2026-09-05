@@ -763,7 +763,10 @@ def test_a_reader_can_still_read_everything_they_could_before(client, world):
         ("intelligence:important_dates", {}),
         ("reporting:overview", {}),
     ):
-        response = client.get(reverse(name, kwargs=kwargs))
+        # Followed: `matters:matter_position` is a compatibility redirect onto
+        # Dokumendid since the per-Matter Arvamused page was retired, and what
+        # this asserts is that a READER still arrives (docs/adr/0060).
+        response = client.get(reverse(name, kwargs=kwargs), follow=True)
         assert response.status_code == 200, f"{name} refused a reader: {response.status_code}"
 
 

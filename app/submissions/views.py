@@ -1,31 +1,49 @@
 """Submission actions.
 
-All of these are full-page posts that redirect back to the position tab.
-Sending an opinion is a deliberate act with legal weight; it does not belong
-behind an inline control that could be triggered by a mis-click.
+All of these are full-page posts that return to the Matter's Dokumendid page,
+which is where a Matter's opinions live since the separate per-Matter Arvamused
+surface was retired (docs/adr/0060). Sending an opinion is a deliberate act with
+legal weight; it does not belong behind an inline control that could be
+triggered by a mis-click, and withdrawing one is a POST behind a secondary
+disclosure rather than a button under every row somebody is reading.
+
+Every one of them lands on the opinion-filtered file list, and the two that know
+which file they changed land on that row. A redirect that went to the retired
+address would only be redirected again, which is a hop the reader pays for and
+nobody needs.
 """
 
 from __future__ import annotations
 
+from datetime import datetime, time
 from typing import Any
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
+from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
 from app.core.decorators import business_write_required
 from app.core.errors import DomainError
 from app.documents.models import Document, DocumentVersion
 from app.documents.uploads import UploadRejected, read_upload
-from app.matters.views import get_visible_matter
-from app.submissions.forms import FinalEvidenceForm, MarkSentForm, SubmissionCreateForm
+from app.matters.views import get_visible_matter, opinions_url
+from app.submissions.enums import SentAtPrecision
+from app.submissions.forms import (
+    FinalEvidenceForm,
+    MarkSentForm,
+    RegisterSentOpinionForm,
+    SubmissionCreateForm,
+)
 from app.submissions.models import Submission
+from app.submissions.opinions import opinion_documents, sent_submission_by_document
 from app.submissions.services import (
     attach_final_evidence,
     create_submission,
     mark_submission_sent,
+    register_sent_opinion,
     select_final_evidence,
     withdraw_submission,
 )
@@ -34,6 +52,18 @@ from app.submissions.services import (
 def _visible_submission(request: HttpRequest, pk: Any) -> Submission:
     return get_object_or_404(
         Submission.objects.visible_to(request.user).select_related("matter"), pk=pk
+    )
+
+
+def _back(submission: Submission) -> HttpResponse:
+    """Dokumendid, on the row this submission's evidence is — where there is one.
+
+    A draft with no evidence yet has no row to return to and lands on the
+    opinion-filtered list, which is where the block that owns it renders.
+    """
+    version = submission.final_version
+    return redirect(
+        opinions_url(submission.matter, document=version.document_id if version else None)
     )
 
 
@@ -46,7 +76,7 @@ def create(request: HttpRequest, matter_id: Any) -> HttpResponse:
 
     if not form.is_valid():
         messages.error(request, "Arvamuse loomine ebaõnnestus. Kontrolli välju.")
-        return redirect("matters:matter_position", pk=matter.pk)
+        return redirect(opinions_url(matter))
 
     submission = create_submission(
         matter=matter,
@@ -59,7 +89,7 @@ def create(request: HttpRequest, matter_id: Any) -> HttpResponse:
         channel=form.cleaned_data["channel"],
     )
     messages.success(request, f"Arvamus „{submission.title}“ on loodud.")
-    return redirect("matters:matter_position", pk=matter.pk)
+    return redirect(opinions_url(matter))
 
 
 @login_required
@@ -72,7 +102,7 @@ def attach_evidence(request: HttpRequest, pk: Any) -> HttpResponse:
 
     if not form.is_valid():
         messages.error(request, "Vali fail või olemasolev tõend.")
-        return redirect("matters:matter_position", pk=submission.matter_id)
+        return _back(submission)
 
     try:
         if version_id := form.cleaned_data.get("existing_version"):
@@ -108,7 +138,8 @@ def attach_evidence(request: HttpRequest, pk: Any) -> HttpResponse:
     except (DomainError, UploadRejected) as error:
         messages.error(request, str(error))
 
-    return redirect("matters:matter_position", pk=submission.matter_id)
+    submission.refresh_from_db()
+    return _back(submission)
 
 
 @login_required
@@ -130,7 +161,93 @@ def mark_sent(request: HttpRequest, pk: Any) -> HttpResponse:
     except DomainError as error:
         messages.error(request, str(error))
 
-    return redirect("matters:matter_position", pk=submission.matter_id)
+    submission.refresh_from_db()
+    return _back(submission)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def register_sent(request: HttpRequest, matter_id: Any) -> HttpResponse:
+    """One opinion file on this Matter, recorded as having been sent.
+
+    The act the retired page made a four-step errand: create an empty draft,
+    find it again, bind it to a file that is already on the record, send it. It
+    is one form and one transaction now, and every rule it touches is still
+    decided in the service that owns it (`register_sent_opinion`).
+
+    **The document is resolved twice on purpose.** The form's `document` choices
+    come from the same selector as this — opinion files on this Matter, visible
+    to this reader, with no canonical send yet — but a browser submits whatever
+    it likes, so the identifier is looked up again in a set built here rather
+    than trusted because it validated against a list the response happened to
+    render. A crafted post naming a document on another Matter, one this reader
+    may not see, or one that is already accounted for, finds nothing and is
+    refused (AUTH-003 §21).
+
+    It never reads `Document.current_version` off a document the caller passed:
+    the version is taken from the row this view resolved, which is the exact
+    binary the page offered.
+    """
+    matter = get_visible_matter(request, matter_id)
+    sends = sent_submission_by_document(matter, viewer=request.user)
+    candidates = {
+        str(document.pk): document
+        for document in opinion_documents(matter, viewer=request.user)
+        if document.current_version_id and document.pk not in sends
+    }
+    form = RegisterSentOpinionForm(request.POST, documents=candidates.values())
+
+    if not form.is_valid():
+        messages.error(request, "Saatmise registreerimine ebaõnnestus. Kontrolli välju.")
+        return redirect(opinions_url(matter))
+
+    document = candidates[form.cleaned_data["document"]]
+    # Present by construction — `candidates` only holds documents carrying a
+    # `current_version_id` — and refused rather than assumed, because the thing
+    # on the other side of this line asserts that Koda sent a specific file.
+    version = document.current_version
+    if version is None:
+        messages.error(request, "Sellel arvamusel ei ole faili, mida saadetuks märkida.")
+        return redirect(opinions_url(matter))
+
+    sent_on = form.cleaned_data.get("sent_on")
+    try:
+        register_sent_opinion(
+            document=document,
+            version=version,
+            title=form.cleaned_data["title"],
+            kind=form.cleaned_data["kind"],
+            actor=request.user,
+            recipients=list(form.cleaned_data["recipients"]),
+            for_information=list(form.cleaned_data["for_information"]),
+            joint_submitters=list(form.cleaned_data["joint_submitters"]),
+            channel=form.cleaned_data["channel"],
+            reference=form.cleaned_data["reference"],
+            # A day the sender typed is a day, and midnight in the department's
+            # timezone is the honest reading of it. Empty means now, which is a
+            # real moment and is stored as one (app/submissions/enums.py).
+            sent_at=_as_midnight(sent_on),
+            sent_at_precision=SentAtPrecision.DATE if sent_on else SentAtPrecision.TIMESTAMP,
+        )
+        messages.success(request, "Arvamus on märgitud saadetuks.")
+    except DomainError as error:
+        messages.error(request, str(error))
+        return redirect(opinions_url(matter))
+
+    return redirect(opinions_url(matter, document=document.pk))
+
+
+def _as_midnight(value: Any) -> Any:
+    """A chosen day, as the aware midnight a submission stores.
+
+    The same reading `app/matters/forms.py` gives the closing composer's
+    `Saatmise kuupäev`, and for the same reason: `timezone.now()` would stamp
+    today onto a letter that went out last month.
+    """
+    if value is None:
+        return None
+    return timezone.make_aware(datetime.combine(value, time.min))
 
 
 @login_required
@@ -145,4 +262,4 @@ def withdraw(request: HttpRequest, pk: Any) -> HttpResponse:
         messages.success(request, "Arvamus on tagasi võetud.")
     except DomainError as error:
         messages.error(request, str(error))
-    return redirect("matters:matter_position", pk=submission.matter_id)
+    return _back(submission)

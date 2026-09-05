@@ -19,9 +19,13 @@ Teema page:
 * There is no separate free-text `Koja seisukoht` in this product. What the
   Chamber produced on a Matter is the opinion it sent, and that is a file.
 
-`Matter.position_summary` is deliberately still stored, still edited on the
-Arvamused surface and still indexed for search. Retiring a rail block is not a
-reason to drop a column, and nothing here asserts that it is gone.
+`Matter.position_summary` is deliberately still stored, still written by
+`matters:update_position` and still indexed for search. Retiring a rail block is
+not a reason to drop a column, and nothing here asserts that it is gone.
+
+Since docs/adr/0060 the rail is **read-only**: filenames and nothing else. The
+upload it used to carry is on Dokumendid, where the Matter's files are, and the
+`Arvamused →` link went with the per-Matter page it pointed at.
 """
 
 from __future__ import annotations
@@ -167,7 +171,9 @@ def test_the_retired_block_is_gone_from_every_surface_the_rail_reaches(signed_in
     set_position(matter=matter, position_summary="Koda toetab.", actor=specialist)
 
     for name in ("matters:matter_detail", "matters:matter_position", "matters:matter_documents"):
-        body = _body(signed_in.get(reverse(name, kwargs={"pk": matter.pk})))
+        # Followed: `matter_position` is a compatibility redirect since the
+        # per-Matter Arvamused page was retired (docs/adr/0060).
+        body = _body(signed_in.get(reverse(name, kwargs={"pk": matter.pk}), follow=True))
         assert "railposition" not in body, name
         assert 'id="koja-seisukoht"' not in body, name
 
@@ -192,6 +198,7 @@ def test_the_position_column_is_untouched(signed_in, specialist):
 
 
 def test_the_rail_offers_koja_arvamus_and_says_when_there_is_none(signed_in, specialist):
+    """A quiet empty state, and nothing asking for work that has not come up."""
     matter = factories.MatterFactory(owner=specialist)
 
     body = _detail(signed_in, matter)
@@ -199,7 +206,68 @@ def test_the_rail_offers_koja_arvamus_and_says_when_there_is_none(signed_in, spe
     assert 'id="koja-arvamus"' in body
     assert "Koja arvamus" in body
     assert "Arvamust ei ole lisatud." in body
-    assert "+ Lisa arvamus" in body
+    assert "+ Lisa arvamus" not in body
+
+
+def test_the_rail_is_read_only(signed_in, specialist):
+    """Quick reference, not a workspace (docs/adr/0060 §6).
+
+    Uploading an opinion is on Dokumendid, where the Matter's files and their
+    upload panel already are; a form in 300px beside a file list that has one is
+    the same control twice. And `Arvamused →` led to a page that showed this
+    same file a third time — it is retired, and nothing replaces it here.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    _opinion_document(matter)
+
+    block = _rail_block(_detail(signed_in, matter), "koja-arvamus")
+
+    assert "Koja_arvamus.pdf" in block
+    assert "+ Lisa arvamus" not in block
+    assert "Arvamused" not in block
+    assert reverse("documents:upload_evidence", kwargs={"matter_id": matter.pk}) not in block
+
+
+def test_the_rail_states_no_evidence_mechanics(signed_in, specialist):
+    """No version, no size, no checksum and no badge (docs/adr/0060 §6, §28).
+
+    Every one of those is a fact about the evidence rather than about the
+    opinion, they are all stated where evidence is stated, and none of them
+    helps somebody who came here to open the letter.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    document = _opinion_document(matter)
+    document.refresh_from_db()
+    version = document.current_version
+
+    block = _rail_block(_detail(signed_in, matter), "koja-arvamus")
+
+    assert version.sha256[:16] not in block
+    assert "Lõplik" not in block
+    assert "Tõend" not in block
+    # The old rendering was `v1 · 13 bytes` under a `★` badge. Asserted with the
+    # separator so the guard cannot be satisfied by an unrelated `v1` elsewhere.
+    assert f"v{version.version_number} ·" not in block
+    assert "badge--evidence" not in block
+    assert "★" not in block
+
+
+def test_several_opinions_all_appear_in_the_rail(signed_in, specialist):
+    """A Matter may hold an initial opinion, a supplement and a joint letter.
+
+    There is no `Matter.final_opinion` and there is not going to be one: a
+    single-valued shortcut could only ever name one of the three
+    (docs/adr/0060 §10).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    for name in ("Esimene.pdf", "Taiendav.pdf", "Uhispoordumine.pdf"):
+        _opinion_document(matter, name=name)
+
+    block = _rail_block(_detail(signed_in, matter), "koja-arvamus")
+
+    for name in ("Esimene.pdf", "Taiendav.pdf", "Uhispoordumine.pdf"):
+        assert block.count(name) == 1, name
+    assert "Arvamust ei ole lisatud." not in block
 
 
 def test_an_uploaded_opinion_appears_in_the_rail(signed_in, specialist):
@@ -215,20 +283,14 @@ def test_an_uploaded_opinion_appears_in_the_rail(signed_in, specialist):
     assert download in body
 
 
-def test_the_upload_posts_to_the_one_evidence_route(signed_in, specialist):
-    """No second file-storage path. The rail uses the route that already exists,
-    with the role fixed rather than offered."""
-    matter = factories.MatterFactory(owner=specialist)
+def test_uploading_an_opinion_stores_one_document_and_asserts_no_send(signed_in, specialist):
+    """The `tagasi=teema` path still works; nothing in the rail posts to it now.
 
-    body = _detail(signed_in, matter)
-
-    assert reverse("documents:upload_evidence", kwargs={"matter_id": matter.pk}) in body
-    assert 'name="role" value="KODA_SUBMISSION_FINAL"' in body
-
-
-def test_uploading_from_the_rail_stores_one_document_and_returns_to_the_teema(
-    signed_in, specialist
-):
+    Kept because the route's closed return vocabulary is what stops it becoming
+    an open redirect, and because the invariant under it is the one this whole
+    change rests on: a file uploaded as `Arvamus` records that Koda holds it and
+    never that Koda sent it (docs/adr/0060 §18).
+    """
     matter = factories.MatterFactory(owner=specialist)
 
     response = signed_in.post(
@@ -287,7 +349,6 @@ def test_a_reader_sees_the_opinion_but_is_offered_no_upload(client, reader, spec
 
     assert "Koja arvamus" in body
     assert "Koja_arvamus.pdf" in body
-    assert "+ Lisa arvamus" not in body
     assert reverse("documents:upload_evidence", kwargs={"matter_id": matter.pk}) not in body
 
 
@@ -355,13 +416,18 @@ def test_a_sent_submissions_final_evidence_is_the_same_row(signed_in, specialist
     assert block.count("Saadetud_arvamus.pdf") == 1
 
 
-def test_the_rail_keeps_the_way_to_the_formal_arvamused_surface(signed_in, specialist):
-    """The retired block carried the only link to it from a Matter."""
+def test_no_matter_surface_links_to_the_retired_arvamused_page(signed_in, specialist):
+    """It is a compatibility redirect, not a destination (docs/adr/0060 §19).
+
+    Nothing in the product may send a reader through a hop they do not need. The
+    route stays so old bookmarks still work; the navigation to it is gone.
+    """
     matter = factories.MatterFactory(owner=specialist)
+    retired = reverse("matters:matter_position", kwargs={"pk": matter.pk})
 
-    body = _detail(signed_in, matter)
-
-    assert reverse("matters:matter_position", kwargs={"pk": matter.pk}) in body
+    for name in ("matters:matter_detail", "matters:matter_documents"):
+        body = _body(signed_in.get(reverse(name, kwargs={"pk": matter.pk})))
+        assert f'href="{retired}"' not in body, name
 
 
 # ---------------------------------------------------------------------------

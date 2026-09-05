@@ -6116,17 +6116,136 @@ button.accordion__action:focus-visible {
   color: var(--text-muted);
 }
 
-/* The sent opinion is tinted and badged, because "which of these forty files
-   is the one Koda actually sent" is the question this table exists to answer
-   instantly. */
-.doctable__row--final {
-  background: var(--status-success-soft);
-}
-
-.badge--final {
+/* An opinion is badged and not tinted. "Which of these forty files is a Koja
+   arvamus" is the question this table exists to answer instantly, and one word
+   answers it — including for a reader who cannot see the tint, which a row
+   colour on its own never did. The row keeps the table's own background: a
+   Matter may hold several opinions, and three tinted bands in forty rows read
+   as an alert rather than as a classification (docs/adr/0060 §43, §45). */
+.badge--opinion {
   color: var(--status-success);
   border: 1px solid var(--status-success-border);
   background: transparent;
+}
+
+/* When it went out and who to, under the filename. Ordinary human metadata, in
+   the meta size the rest of the cell's second line uses — deliberately not a
+   panel, and deliberately not the evidence mechanics that used to sit here. */
+.doctable__sent {
+  display: block;
+  margin-top: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* The per-row `...` disclosure. A menu, so it has to sit above the rows under
+   it and it must not stretch the cell it is anchored in. */
+.rowmenu {
+  position: relative;
+  display: inline-block;
+}
+
+.rowmenu__trigger {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: var(--typography-weight-semibold);
+  list-style: none;
+  padding: 0 var(--spacing-1);
+}
+
+.rowmenu__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.rowmenu__trigger:hover,
+.rowmenu[open] .rowmenu__trigger {
+  color: var(--accent-link);
+}
+
+.rowmenu__body {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3);
+  text-align: left;
+  white-space: normal;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+}
+
+.rowmenu__label {
+  margin: 0;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.rowmenu__hint,
+.rowmenu__meta {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.rowmenu__meta > div {
+  display: flex;
+  gap: var(--spacing-2);
+  padding: 2px 0;
+}
+
+.rowmenu__meta dt {
+  flex: 0 0 84px;
+  color: var(--text-muted);
+}
+
+.rowmenu__meta dd {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.rowmenu__form {
+  margin: 0;
+}
+
+/* The opinion management block: the same quiet head Töödokumendid has, because
+   it is the same kind of thing — secondary to the file table above it, and open
+   only when somebody owes it work. */
+.accordion--opinions .accordion__title {
+  color: var(--text-secondary);
+}
+
+.accordion--archive .accordion__title {
+  color: var(--text-secondary);
+}
+
+/* One draft, and the single next step it is waiting for. */
+.draftrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.draftrow__title {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.draftrow__form {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: 0 0 0 auto;
 }
 
 /* A working reference looks like the opposite of evidence: dashed, arrowed,
@@ -6148,6 +6267,13 @@ button.accordion__action:focus-visible {
 
 .doctable tbody tr:hover .doctable__actions,
 .doctable tbody tr:focus-within .doctable__actions {
+  opacity: 1;
+}
+
+/* An open row menu keeps its row's controls visible. Without this the panel
+   stays in the DOM while everything around it fades the moment the pointer
+   leaves the row — including the button the reader is reaching for. */
+.doctable__actions:has(.rowmenu[open]) {
   opacity: 1;
 }
 

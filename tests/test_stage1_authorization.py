@@ -72,20 +72,27 @@ def _urls(world):
 def test_the_owner_reaches_everything(client, specialist, restricted_world):
     client.force_login(specialist)
     for url in _urls(restricted_world):
-        assert client.get(url).status_code == 200, url
+        assert client.get(url, follow=True).status_code == 200, url
 
 
 def test_an_uninvolved_specialist_reaches_nothing(client, reader, restricted_world):
-    """404 rather than 403: a 403 would confirm the record exists."""
+    """404 rather than 403: a 403 would confirm the record exists.
+
+    Followed, because one of these addresses is now a compatibility redirect
+    (`matters:matter_position`, docs/adr/0060) and the whole point of this
+    assertion is the *final* answer. It is 404 at the first hop — the retired
+    route resolves the Matter before it reverses anything — and following proves
+    the redirect did not hand an unauthorized caller a working URL.
+    """
     client.force_login(reader)
     for url in _urls(restricted_world):
-        assert client.get(url).status_code == 404, url
+        assert client.get(url, follow=True).status_code == 404, url
 
 
 def test_the_department_head_reaches_it(client, department_head, restricted_world):
     client.force_login(department_head)
     for url in _urls(restricted_world):
-        assert client.get(url).status_code == 200, url
+        assert client.get(url, follow=True).status_code == 200, url
 
 
 def test_a_technical_administrator_does_not(client, administrator, restricted_world):

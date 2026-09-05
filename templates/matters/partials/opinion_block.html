@@ -1,0 +1,139 @@
+{% comment %}
+`Arvamused` on Dokumendid — the management that does not belong in a file row.
+
+Secondary, and shaped like `Töödokumendid` beside it rather than like a new
+system: an accordion under the table, closed unless somebody owes work on a
+draft. What it is emphatically **not** is the retired per-Matter Arvamused page
+moved to the bottom of this one. The sent opinions are rows in the table above;
+listing them here as well would restore the duplication this change exists to
+remove (docs/adr/0060 §15).
+
+Three things live here, and each is either an action somebody owes or an action
+they may take:
+
+* **Koostamisel** — drafts. Only ever the ones that exist, and each shows the
+  one step it is waiting for: a file, or the confirmation that it went out.
+* **Registreeri saatmine** — an opinion file on the record went out. Offered
+  only where there is such a file with no canonical Submission, because
+  otherwise there is nothing to register.
+* **Uus arvamus** — start a draft with no file yet. The Osakond figure
+  «arvamust koostamisel» counts exactly these, so the way to make one is kept.
+
+Both forms are `<details>` rather than script-revealed panels: they work with the
+keyboard and without JavaScript, and they are closed until asked for.
+{% endcomment %}
+<details class="accordion accordion--opinions" id="arvamuste-haldus"
+         {% if opinion_drafts or register_form.errors or submission_form.errors %}open{% endif %}>
+  <summary class="accordion__head">
+    <span class="accordion__caret" aria-hidden="true"></span>
+    <h2 class="accordion__title">Arvamused</h2>
+    <span class="accordion__summary">
+      {% if opinion_drafts %}
+        {{ opinion_drafts|length }} koostamisel
+      {% else %}
+        Saatmise registreerimine ja koostatavad arvamused
+      {% endif %}
+    </span>
+  </summary>
+  <div class="accordion__body">
+    {% for draft in opinion_drafts %}
+      {% comment %}
+        One draft, and the single next step it is waiting for. No status badge:
+        everything in this list is a draft by construction and the heading says
+        so, and a word repeated on every row is a word a reader steps over N
+        times.
+      {% endcomment %}
+      <div class="draftrow" id="arvamus-{{ draft.pk }}">
+        <span class="draftrow__title">{{ draft.title }}</span>
+        <span class="muted">· {{ draft.get_kind_display }}</span>
+        {% if can_write %}
+          {% if draft.final_version_id %}
+            <form class="draftrow__form" method="post"
+                  action="{% url 'submissions:mark_sent' pk=draft.pk %}">
+              {% csrf_token %}
+              <label class="field field--inline">
+                <span class="field__label">Kanal</span>
+                <input class="field__input field__input--compact" type="text" name="channel"
+                       value="{{ draft.channel }}" placeholder="EIS, e-post…">
+              </label>
+              <button class="button button--primary button--tiny" type="submit">
+                Märgi saadetuks
+              </button>
+            </form>
+          {% else %}
+            <form class="draftrow__form" method="post" enctype="multipart/form-data"
+                  action="{% url 'submissions:attach_evidence' pk=draft.pk %}">
+              {% csrf_token %}
+              <label class="field field--inline">
+                <span class="visually-hidden">Lõplik saadetud fail</span>
+                <input class="field__input field__input--compact" type="file" name="upload"
+                       required aria-label="Lõplik saadetud fail – {{ draft.title }}">
+              </label>
+              <button class="button button--tiny" type="submit">Lisa fail</button>
+            </form>
+          {% endif %}
+        {% else %}
+          <span class="muted">
+            {% if draft.final_version_id %}ootab saatmist{% else %}ootab faili{% endif %}
+          </span>
+        {% endif %}
+      </div>
+    {% endfor %}
+
+    {% if can_write %}
+      {% if unregistered_opinions %}
+        <details class="disclosure" {% if register_form.errors %}open{% endif %}>
+          <summary class="disclosure__summary">+ Registreeri saatmine</summary>
+          <form class="form" method="post"
+                action="{% url 'submissions:register_sent' matter_id=matter.pk %}">
+            {% csrf_token %}
+            <p class="field__help">
+              Kinnitab, et see fail on Kojast välja saadetud. Faili üleslaadimine
+              üksi seda ei tähenda.
+            </p>
+            <div class="formgrid">
+              {% for field in register_form %}
+                <label class="field">
+                  <span class="field__label">{{ field.label }}</span>
+                  {{ field }}
+                  {% if field.help_text %}<span class="field__help">{{ field.help_text }}</span>{% endif %}
+                  {% if field.errors %}<span class="field__error">{{ field.errors|first }}</span>{% endif %}
+                </label>
+              {% endfor %}
+            </div>
+            <div class="form__actions">
+              <button class="button button--primary" type="submit">Registreeri saatmine</button>
+            </div>
+          </form>
+        </details>
+      {% endif %}
+
+      <details class="disclosure" {% if submission_form.errors %}open{% endif %}>
+        <summary class="disclosure__summary">+ Uus arvamus</summary>
+        <form class="form" method="post"
+              action="{% url 'submissions:create' matter_id=matter.pk %}">
+          {% csrf_token %}
+          <p class="field__help">
+            Loob koostatava arvamuse. Saadetuks märkimine on eraldi samm ja vajab
+            täpset saadetud faili.
+          </p>
+          <div class="formgrid">
+            {% for field in submission_form %}
+              <label class="field">
+                <span class="field__label">{{ field.label }}</span>
+                {{ field }}
+                {% if field.help_text %}<span class="field__help">{{ field.help_text }}</span>{% endif %}
+                {% if field.errors %}<span class="field__error">{{ field.errors|first }}</span>{% endif %}
+              </label>
+            {% endfor %}
+          </div>
+          <div class="form__actions">
+            <button class="button" type="submit">Loo arvamus</button>
+          </div>
+        </form>
+      </details>
+    {% elif not opinion_drafts %}
+      <p class="empty">Koostatavaid arvamusi ei ole.</p>
+    {% endif %}
+  </div>
+</details>

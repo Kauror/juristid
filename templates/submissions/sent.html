@@ -134,7 +134,16 @@
                 {% endif %}
               </td>
               <td class="table__title">
-                <a href="{% url 'matters:matter_position' pk=submission.matter_id %}">{{ submission.title }}</a>
+                {% comment %}
+                  The Matter's own opinion material — Dokumendid filtered to
+                  `Arvamus` — since the per-Matter Arvamused page was retired.
+                  The workspace itself is untouched by that change: it answers
+                  «find an opinion across our work», which is a different
+                  question from «show this teema's material» and still has its
+                  own address, its own filters and its own pager
+                  (docs/adr/0047, docs/adr/0060).
+                {% endcomment %}
+                <a href="{% url 'matters:matter_documents' pk=submission.matter_id %}?roll=arvamus">{{ submission.title }}</a>
                 <span class="muted">· {{ submission.get_kind_display }}</span>
                 {% if submission.status != "SENT" %}
                   <span class="badge">{{ submission.get_status_display }}</span>
@@ -162,7 +171,14 @@
               </td>
               <td>
                 {% if submission.final_version_id %}
-                  <a href="{% url 'documents:open' pk=submission.final_version.document_id %}">Ava</a>
+                  {% comment %}
+                    The version, not the document. `documents:open` is keyed on
+                    the exact bytes — that is what makes a link to evidence a
+                    link to evidence — and a document id in that slot resolved
+                    to nothing, so this column's only control 404'd on every
+                    row it rendered (app/documents/urls.py).
+                  {% endcomment %}
+                  <a href="{% url 'documents:open' pk=submission.final_version_id %}">Ava</a>
                 {% else %}
                   <span class="table__missing">—</span>
                 {% endif %}

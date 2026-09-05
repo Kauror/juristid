@@ -664,11 +664,18 @@ def test_a_restricted_final_evidence_file_is_not_named_on_the_opinion_card(clien
     document.save(update_fields=["visibility_override"])
     client.force_login(stranger)
 
-    body = client.get(reverse("matters:matter_position", kwargs={"pk": matter.pk})).content.decode()
+    body = client.get(
+        reverse("matters:matter_documents", kwargs={"pk": matter.pk})
+    ).content.decode()
 
-    assert "Koja arvamus" in body, "the Submission itself is visible and should show"
+    # Nothing about the restricted file: not its name, not its checksum, and not
+    # an `Arvamus` badge or an anchor admitting a row was suppressed. An opinion
+    # is a document row here, so a document this reader may not see produces no
+    # row at all — a visible Submission is not authority to name its evidence
+    # (AUTH-003 §21, docs/adr/0060 §25).
     assert HIDDEN_FILE not in body
     assert version.sha256[:16] not in body
+    assert f"dokument-{document.pk}" not in body
 
 
 def test_the_owner_still_sees_the_evidence_card(client, specialist):
@@ -698,7 +705,9 @@ def test_the_owner_still_sees_the_evidence_card(client, specialist):
     )
     client.force_login(specialist)
 
-    body = client.get(reverse("matters:matter_position", kwargs={"pk": matter.pk})).content.decode()
+    body = client.get(
+        reverse("matters:matter_documents", kwargs={"pk": matter.pk})
+    ).content.decode()
 
     assert HIDDEN_FILE in body
 

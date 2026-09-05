@@ -426,21 +426,26 @@ def test_the_koja_seisukoht_block_is_absent(page, base_url):
     expect(page.get_by_role("link", name="Lisa seisukoht")).to_have_count(0)
 
 
-def test_the_arvamused_surface_carries_no_seisukoht_either(page, base_url):
-    """The last user-facing one, followed from the rail the way a person would.
+def test_the_retired_arvamused_address_lands_on_dokumendid(page, base_url):
+    """The old per-Matter address still gets somebody to the opinion material.
 
-    `Koja arvamus` is the only route to this page from a Matter, so this walks
-    it: if the link stops working the test fails here rather than on a URL
-    somebody typed. The page is the Submission workflow and nothing else.
+    Typed rather than clicked, because nothing links to it any more — that is
+    the point of retiring it. What it owes is that a bookmark still works, not
+    that a page still exists, so this follows the redirect and checks where it
+    lands: Dokumendid, filtered to `Arvamus`, with the opinion workflow on it
+    and no trace of the free-text position the surface used to carry
+    (docs/adr/0060 §4, §36).
     """
     sign_in(page, base_url, MARTIN)
-    open_matter(page, base_url, MULTI_SENDER_TITLE)
-    page.locator("#koja-arvamus .railcard__more").click()
+    url = open_matter(page, base_url, MULTI_SENDER_TITLE)
+    page.goto(f"{url.rstrip('/')}/seisukoht/")
     page.wait_for_load_state("networkidle")
 
+    assert "/dokumendid/" in page.url, page.url
+    assert "roll=arvamus" in page.url, page.url
+
     main = page.locator(".teemamain")
-    expect(main.get_by_role("heading", name="Koja arvamused")).to_be_visible()
-    expect(main.get_by_text("+ Uus arvamus")).to_be_visible()
+    expect(main.get_by_role("heading", name="Arvamused")).to_be_visible()
 
     for phrase in (
         "Koja seisukoht",
@@ -460,6 +465,24 @@ def test_the_arvamused_surface_carries_no_seisukoht_either(page, base_url):
 # ---------------------------------------------------------------------------
 
 
+def upload_an_opinion(page, url: str) -> None:
+    """Capture one `Arvamus` through the Dokumendid panel, which is the only one.
+
+    The rail used to carry an upload of its own. It does not: a form in 300px
+    beside a file list that already has one is the same control twice, and the
+    role is chosen from the same select as every other document's — reading
+    `Arvamus`, storing `KODA_SUBMISSION_FINAL` (docs/adr/0060 §7, §18).
+    """
+    page.goto(f"{url.rstrip('/')}/dokumendid/")
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("button", name=re.compile("Lae dokument")).first.click()
+    panel = page.locator("#lae-dokument")
+    panel.locator("input[type=file]").set_input_files(OPINION_PDF)
+    panel.locator("select[name=role]").select_option(label="Arvamus")
+    panel.get_by_role("button", name="Salvesta dokument").click()
+    page.wait_for_load_state("networkidle")
+
+
 def test_a_writer_can_add_the_chambers_opinion_as_a_file(page, base_url):
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, "Koja arvamuse lisamine")
@@ -467,38 +490,35 @@ def test_a_writer_can_add_the_chambers_opinion_as_a_file(page, base_url):
     block = page.locator("#koja-arvamus")
     expect(block).to_be_visible()
     expect(block.get_by_text("Arvamust ei ole lisatud.")).to_be_visible()
+    # Read-only: no upload, and no way out of the block at all.
+    expect(block.locator("input[type=file]")).to_have_count(0)
+    expect(block.get_by_text("+ Lisa arvamus")).to_have_count(0)
 
-    block.locator("summary.disclosure__summary").click()
-    block.locator("input[type=file]").set_input_files(OPINION_PDF)
-    block.get_by_role("button", name="Lisa arvamus").click()
+    upload_an_opinion(page, url)
+
+    # In the file table, badged for what it is. Scoped to the row rather than
+    # asked of the page, because `Arvamus` is also an <option> in the upload
+    # panel's role picker and a hidden option is not evidence of anything.
+    row = page.locator("table tr").filter(has_text="Koja_arvamus.pdf").first
+    expect(row).to_be_visible()
+    expect(row.locator(".badge--opinion")).to_have_text("Arvamus")
+    expect(row).to_contain_text("Arvamus")
+    expect(row.get_by_text("Lõplik")).to_have_count(0)
+    # A file on the record is not a claim that anything was sent.
+    expect(row.locator(".doctable__sent")).to_have_count(0)
+
+    # And the same one document reaches the rail on the Teema page.
+    page.goto(url)
     page.wait_for_load_state("networkidle")
-
-    # Back where the upload started, not on the file list.
-    assert page.url.rstrip("/") == url.rstrip("/"), page.url
-
     block = page.locator("#koja-arvamus")
     expect(block.get_by_role("link", name=re.compile("Koja_arvamus.pdf"))).to_be_visible()
     expect(block.get_by_text("Arvamust ei ole lisatud.")).to_have_count(0)
-
-    # And it is the same file on the Dokumendid tab, under the canonical role —
-    # one document, not a second copy in a rail-only store.
-    page.get_by_role("link", name=re.compile("^Dokumendid")).click()
-    page.wait_for_load_state("networkidle")
-    # In the file table, not in the upload panel's role picker — the same words
-    # are an <option> there, and a hidden option is not evidence of anything.
-    row = page.locator("table tr").filter(has_text="Koja_arvamus.pdf").first
-    expect(row).to_be_visible()
-    expect(row).to_contain_text("Koja väljasaadetud arvamus")
 
 
 def test_a_reader_sees_the_opinion_but_no_way_to_add_one(page, base_url):
     sign_in(page, base_url, MARTIN)
     url = create_matter(page, base_url, "Lugeja näeb arvamust")
-    block = page.locator("#koja-arvamus")
-    block.locator("summary.disclosure__summary").click()
-    block.locator("input[type=file]").set_input_files(OPINION_PDF)
-    block.get_by_role("button", name="Lisa arvamus").click()
-    page.wait_for_load_state("networkidle")
+    upload_an_opinion(page, url)
     sign_out(page, base_url)
 
     sign_in(page, base_url, READER)
@@ -508,5 +528,9 @@ def test_a_reader_sees_the_opinion_but_no_way_to_add_one(page, base_url):
     block = page.locator("#koja-arvamus")
     expect(block).to_be_visible()
     expect(block.get_by_role("link", name=re.compile("Koja_arvamus.pdf"))).to_be_visible()
-    expect(block.get_by_text("+ Lisa arvamus")).to_have_count(0)
     expect(block.locator("input[type=file]")).to_have_count(0)
+
+    page.goto(f"{url.rstrip('/')}/dokumendid/")
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_role("button", name=re.compile("Lae dokument"))).to_have_count(0)
+    expect(page.get_by_text("+ Uus arvamus")).to_have_count(0)

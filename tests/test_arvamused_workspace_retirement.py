@@ -1,15 +1,18 @@
-"""`Koja seisukoht` leaves the Arvamused surface, and nothing else does.
+"""`Koja seisukoht` is gone from the product, and nothing it stood in front of is.
 
-The facts rail lost its position block in the first half of this round
-(tests/test_teema_rail.py). `templates/matters/matter_position.html` was the
-last user-facing surface for the concept: a panel reading `position_summary`
-above a disclosure that wrote it and its `Põhjendus`. It is gone, and the page
-is the Submission workflow it was always mostly made of.
+Two retirements, one round apart, and this file holds the line under both.
 
-Two things this file is careful to separate, because they are easy to conflate
-and only one of them happened:
+The facts rail lost its position block first (tests/test_teema_rail.py), and
+`templates/matters/matter_position.html` — a panel reading `position_summary`
+above a disclosure that wrote it and its `Põhjendus` — was the last user-facing
+surface for the concept. That page has since been retired in its entirety
+(docs/adr/0060): what it was actually for is on **Dokumendid** now, where the
+Matter's files are, so every assertion below reads that page.
 
-**The surface is retired. The data is not.** `position_summary` and
+Three things this file is careful to separate, because they are easy to conflate
+and only one of them is a data change — none of them:
+
+**The surfaces are retired. The data is not.** `position_summary` and
 `rationale_summary` still hold everything the register cutover and the opinion
 archive put in them, and `app/search/indexing.py` still reads both. A Matter
 carrying a position renders a page that never mentions it and stores exactly
@@ -21,6 +24,11 @@ because dropping the only writer for live indexed columns is a data decision
 and this was a UI one. `tests/test_business_write_boundary.py` keeps firing
 every forbidden actor at it, and the test at the bottom of this file is what
 would notice a link to it reappearing.
+
+**Everything the retired page was for still works.** Drafting an opinion,
+sending it, and reaching the historical letters filed onto a Matter — all of it
+moved rather than going away, which is the difference between consolidating an
+information architecture and deleting a feature.
 """
 
 from __future__ import annotations
@@ -65,7 +73,8 @@ RETIRED_COPY = (
 
 
 def _page(client, matter) -> str:
-    response = client.get(reverse("matters:matter_position", kwargs={"pk": matter.pk}))
+    """Dokumendid — the Matter's opinion home since docs/adr/0060."""
+    response = client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk}))
     assert response.status_code == 200
     return response.content.decode()
 
@@ -106,14 +115,14 @@ def _archive_letter(*, sha: str = "b" * 64, title: str = "Varasem kiri") -> Opin
 # ---------------------------------------------------------------------------
 
 
-def test_the_arvamused_page_says_nothing_about_a_seisukoht(signed_in, specialist):
+def test_the_opinion_surface_says_nothing_about_a_seisukoht(signed_in, specialist):
     """Removed, not renamed, and not replaced by another prose field."""
     matter = factories.MatterFactory(owner=specialist)
 
     body = _page(signed_in, matter)
 
     for phrase in RETIRED_COPY:
-        assert phrase not in body, f"{phrase!r} still renders from the Arvamused surface"
+        assert phrase not in body, f"{phrase!r} still renders on the opinion surface"
 
 
 def test_the_page_does_not_post_to_update_position(signed_in, specialist):
@@ -147,13 +156,19 @@ def test_a_matter_that_has_a_position_still_renders_none_of_it(signed_in, specia
         assert phrase not in body, phrase
 
 
-def test_the_view_no_longer_carries_a_position_form(signed_in, specialist):
-    """A bound form nothing renders is two model reads for absent markup."""
+def test_no_view_carries_a_position_form(signed_in, specialist):
+    """A bound form nothing renders is two model reads for absent markup.
+
+    Asked through the retired address as well as the live one, followed to where
+    it lands: a compatibility redirect that resurrected the form would be a
+    surface nobody was looking at (docs/adr/0060).
+    """
     matter = factories.MatterFactory(owner=specialist)
 
-    response = signed_in.get(reverse("matters:matter_position", kwargs={"pk": matter.pk}))
-
-    assert "position_form" not in response.context
+    for name in ("matters:matter_documents", "matters:matter_position"):
+        response = signed_in.get(reverse(name, kwargs={"pk": matter.pk}), follow=True)
+        assert response.status_code == 200, name
+        assert "position_form" not in response.context, name
 
 
 # ---------------------------------------------------------------------------
@@ -215,18 +230,25 @@ def test_both_columns_still_reach_the_search_index(specialist):
 
 
 def test_the_submission_workflow_is_untouched(signed_in, specialist):
+    """Drafting an opinion moved surface; it did not lose a step.
+
+    The `Arvamused` block on Dokumendid is where a draft lives and where a new
+    one is started. `Osakond` counts exactly these drafts, so the way to make
+    one had to keep a native home (docs/adr/0060 §14, §16).
+    """
     matter = factories.MatterFactory(owner=specialist)
     create_submission(matter=matter, title="Koostamisel arvamus", actor=specialist)
 
     body = _page(signed_in, matter)
 
-    assert "Koja arvamused" in body
+    assert "Arvamused" in body
     assert "Koostamisel arvamus" in body
     assert "+ Uus arvamus" in body
     assert reverse("submissions:create", kwargs={"matter_id": matter.pk}) in body
 
 
 def test_a_sent_opinion_still_lists_with_its_evidence(signed_in, specialist):
+    """As a file row badged `Arvamus`, which is what it now is."""
     matter = factories.MatterFactory(owner=specialist)
     sent = create_submission(matter=matter, title="Saadetud arvamus", actor=specialist)
     attach_final_evidence(
@@ -240,17 +262,25 @@ def test_a_sent_opinion_still_lists_with_its_evidence(signed_in, specialist):
 
     body = _page(signed_in, matter)
 
-    assert "Saadetud arvamus" in body
     assert "arvamus.pdf" in body
+    assert "Arvamus" in body
 
 
-def test_the_empty_state_is_the_submission_one(signed_in, specialist):
-    """The page with nothing on it says so once, about opinions."""
+def test_a_matter_with_no_opinions_says_so_once(signed_in, specialist):
+    """One statement about opinions, and it is not an alarm.
+
+    The retired page opened with «Ühtegi arvamust ei ole veel loodud.» over an
+    empty list. Most of the register is in that state, so Dokumendid states the
+    absence where a reader would look for the presence — the rail — and the
+    `Arvamused` block simply has nothing in it (docs/adr/0060 §6).
+    """
     matter = factories.MatterFactory(owner=specialist)
 
     body = _page(signed_in, matter)
 
-    assert "Ühtegi arvamust ei ole veel loodud." in body
+    assert "Ühtegi arvamust ei ole veel loodud." not in body
+    assert "Koostatavaid arvamusi ei ole." not in body
+    assert body.count("Sellel teemal ei ole veel dokumente.") == 1
 
 
 def test_archive_letters_still_render_where_they_are_allowed(client, specialist):

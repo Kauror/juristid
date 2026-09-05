@@ -93,26 +93,33 @@ def test_what_koda_produced_is_in_the_rail_and_only_there(signed_in, specialist)
     assert "sentstrip" not in body
 
 
-def test_the_rail_links_to_the_formal_opinion_surface(signed_in, specialist):
-    """A 300px column names what Koda sent; it does not hold two textareas."""
+def test_the_rail_names_the_opinion_and_holds_no_workflow(signed_in, specialist):
+    """A 300px column names what Koda sent; it holds neither form nor menu.
+
+    It used to carry an upload disclosure and a link out to a per-Matter
+    Arvamused page. Both are gone: the file list has the upload panel, and the
+    page the link pointed at is retired (docs/adr/0060 §6).
+    """
     matter = factories.MatterFactory(owner=specialist)
     body = _detail(signed_in, matter)
 
-    assert reverse("matters:matter_position", kwargs={"pk": matter.pk}) in body
-    # No editor in the rail: the position fields belong on the Arvamused surface.
+    assert 'id="koja-arvamus"' in body
+    assert reverse("matters:matter_position", kwargs={"pk": matter.pk}) not in body
+    # No editor in the rail either: there is no free-text position in this
+    # product, and `update_position` has no native UI anywhere.
     assert "id_position_summary" not in body
 
 
-def test_the_rail_travels_to_every_matter_surface(signed_in, specialist):
-    """The rail is on all three Matter surfaces, so the block is too."""
+def test_the_rail_travels_to_the_matter_surface_that_carries_it(signed_in, specialist):
+    """One surface now. Dokumendid is deliberately full-width with no rail at
+    all — browsing forty files is the task that tab exists for — and the third
+    surface the rail used to reach is retired
+    (templates/matters/matter_documents.html, docs/adr/0060)."""
     matter = factories.MatterFactory(owner=specialist)
 
-    # The two surfaces that carry the rail. Dokumendid is deliberately
-    # full-width with no rail at all — browsing forty files is the task that tab
-    # exists for (templates/matters/matter_documents.html).
-    for name in ("matters:matter_detail", "matters:matter_position"):
-        body = _body(signed_in.get(reverse(name, kwargs={"pk": matter.pk})))
-        assert 'id="koja-arvamus"' in body, name
+    body = _body(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+
+    assert 'id="koja-arvamus"' in body
 
 
 # ---------------------------------------------------------------------------

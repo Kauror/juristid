@@ -408,16 +408,19 @@ ITEMS: tuple[StatusItem, ...] = (
     StatusItem(
         key="DS-20",
         area="Teema · Koja seisukoht",
-        issue=("«Põhjendus» plokki enam ei kuvata ei rail-kaardil ega seisukoha kaardil."),
+        issue=(
+            "«Koja seisukohta» ega «Põhjendust» ei kuvata enam üheski vaates. "
+            "Teema väljund on saadetud arvamus ja see on fail."
+        ),
         why=(
-            "Väli on alles, seda muudetakse ja salvestatakse sama vormiga. "
-            "Kadus ainult selle kuvamine."
+            "Mõlemad väljad on alles, neid salvestab endiselt `matters:update_position` "
+            "ja mõlemad lähevad otsinguindeksisse. Kadus ainult nende kuvamine."
         ),
         state=DEVIATION,
         next_step=(
             "Kui põhjendust on vaja lugeda ilma vormi avamata, tuleb sellele anda oma koht."
         ),
-        sources=("02-EKRAANID §C", "templates/matters/matter_position.html"),
+        sources=("02-EKRAANID §C", "docs/adr/0060"),
     ),
     StatusItem(
         key="DS-22",
