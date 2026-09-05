@@ -29,6 +29,17 @@
   <div class="pagehead">
     <h1 class="pagehead__title">Muuda teemat</h1>
     <span class="pagehead__context">{{ matter.title }}</span>
+    {% comment %}
+      The assisted review, offered only where there is material to read. The
+      same page with a panel above the form; the form itself, and what it
+      posts to, do not change (app/matters/intake_suggestions).
+    {% endcomment %}
+    {% if has_documents and not assisted %}
+      <div class="pagehead__actions">
+        <a class="button button--quiet button--tiny"
+           href="{% url 'matters:matter_edit_assisted' pk=matter.pk %}">Kontrolli dokumendist leitud andmeid</a>
+      </div>
+    {% endif %}
   </div>
 
   <form class="form createform" method="post"
@@ -37,6 +48,12 @@
 
     {% if form.non_field_errors %}
       <p class="formerror" role="alert">{{ form.non_field_errors|first }}</p>
+    {% endif %}
+
+    {% if assisted %}
+      <div class="createform__row createform__row--panel">
+        {% include "matters/partials/intake_suggestions.html" %}
+      </div>
     {% endif %}
 
     {# 1 — Pealkiri. #}
