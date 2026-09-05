@@ -1067,16 +1067,25 @@ def test_an_existing_canonical_value_is_never_overwritten_by_a_suggestion(
     intake_matter.track = Track.STRATEGY
     intake_matter.save()
     intake_matter.source_organisations.set([other])
-    body = signed_in.get(_assisted(intake_matter)).content.decode()
+    response = signed_in.get(_assisted(intake_matter))
+    body = response.content.decode()
     assert _control_value(body, "id_title") == "Minu enda pealkiri"
     assert _control_value(body, "id_response_deadline") == "1.12.2026"
     assert _checked(body, "track", Track.STRATEGY)
     assert not _checked(body, "track", Track.DOMESTIC)
+    assert _checked(body, "source_organisations", str(other.pk))
+    assert not _checked(body, "source_organisations", str(ministry.pk))
     # The document's answers are still on the page — as «Kasuta» offers.
     assert "Pakendiseaduse muutmise seaduse eelnõu" in body
     assert 'data-suggest-value="18.9.2026"' in body
-    assert body.count("Kasuta") >= 2
-    assert "vormil eeltäidetud" not in body
+    assert body.count("Kasuta") >= 3
+    # Only the field this Matter left empty may be pre-filled. Valdkonnad was
+    # never set here, so that is the one field the GET filled — the same rule
+    # stated from the other side.
+    keskkond = PolicyArea.objects.get(key="keskkond")
+    assert _checked(body, "policy_areas", str(keskkond.pk))
+    assert set(response.context["assisted"].prefilled) == {SuggestedField.POLICY_AREAS}
+    assert "vormil eeltäidetud" in body
 
 
 @pytestmark_db
