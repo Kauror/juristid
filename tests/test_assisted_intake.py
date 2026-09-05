@@ -1522,6 +1522,30 @@ def test_the_matter_budget_bounds_the_text_read_however_many_documents_there_are
 
 
 @pytestmark_db
+def test_a_derivative_with_no_recorded_size_is_planned_at_the_ceiling(
+    specialist, ministry, capture_evidence
+) -> None:
+    """A missing size must shrink the plan, never open it up.
+
+    The orchestrator always records `character_count`, so this is the
+    defensive reading of a row that somehow lacks one: planning it as free
+    would let any number of documents into a single fragment load.
+    """
+    matter = factories.MatterFactory(owner=specialist, reference_year=2099, reference_number=930)
+    for index in range(10):
+        version = capture_evidence(
+            matter, corpus.text_pdf(["placeholder"]), f"lisa-{index:02d}.pdf", PDF
+        )
+        derivative = _publish_text(version, [(_bulky(f"Lisa {index}", 50_000), TextSource.NATIVE)])
+        DocumentDerivative.objects.filter(pk=derivative.pk).update(character_count=0)
+
+    analysis_input = build_analysis_input(matter, specialist)
+    read = sum(len(block.text) for doc in analysis_input.documents for block in doc.blocks)
+    assert read <= intake_input.MAX_TOTAL_ANALYSIS_CHARACTERS
+    assert analysis_input.skipped_for_budget
+
+
+@pytestmark_db
 def test_the_bounded_population_is_the_same_on_every_read(
     specialist, ministry, capture_evidence
 ) -> None:

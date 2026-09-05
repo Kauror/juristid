@@ -339,7 +339,12 @@ def _plan(
             skipped.add(document.pk)
             continue
         admitted[document.pk] = text_derivative.pk
-        planned += min(text_derivative.character_count or 0, character_limit)
+        # A derivative whose recorded size is missing or zero is planned at the
+        # per-document ceiling rather than as free. The orchestrator always
+        # writes `character_count`, so this is the defensive reading: a stale
+        # or absent number must make the plan smaller, never larger, or the
+        # count it is standing in for could admit an unbounded fragment load.
+        planned += min(text_derivative.character_count or character_limit, character_limit)
     return admitted, skipped
 
 
