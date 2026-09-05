@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from app.legacy_import.register_next_actions import DateMention, _scan_dates
@@ -144,15 +144,52 @@ def find_deadline_dates(text: str, *, opens_document: bool = False) -> list[Date
     Periods — *septembris 2026*, *II kvartal 2027* — are read by the scanner
     and deliberately dropped here: ``Matter.response_deadline`` is a day, and
     a period offered as one would invent a precision the source never stated.
+
+    **Scanned in chunks.** The shared scanner resolves overlapping mentions by
+    comparing every mention with every other, which is exactly right for the
+    register cell it was written for and quadratic on a document: one 400 000
+    character block holding thousands of dates took eighteen seconds, inside a
+    web request. Chunking makes that term per chunk instead of per block. The
+    chunks end on line breaks and every date keeps its position in the whole
+    text, so what a clause is read against is unchanged — a chunk boundary is
+    the same kind of boundary a page already is.
     """
     findings: list[DateFinding] = []
-    scan = _scan_dates(text)
-    for mention in scan.mentions:
-        if mention.precision != DatePrecision.EXACT.value:
-            continue
-        findings.append(_classify_date(text, mention, opens_document=opens_document))
+    for chunk, offset in _chunks(text):
+        for mention in _scan_dates(chunk).mentions:
+            if mention.precision != DatePrecision.EXACT.value:
+                continue
+            moved = replace(mention, start=mention.start + offset, end=mention.end + offset)
+            findings.append(_classify_date(text, moved, opens_document=opens_document))
     findings.sort(key=lambda finding: finding.start)
     return findings
+
+
+#: How much text goes to the date scanner at once. Large enough that a page,
+#: a paragraph group or an ordinary message body is one chunk; small enough
+#: that the scanner's pairwise overlap resolution stays cheap.
+SCAN_CHUNK = 20_000
+
+
+def _chunks(text: str) -> list[tuple[str, int]]:
+    """``text`` in scanner-sized pieces, each with its offset in the original.
+
+    Split on line breaks so a chunk never ends mid-sentence; a line longer
+    than the target simply becomes its own chunk rather than being cut.
+    """
+    if len(text) <= SCAN_CHUNK:
+        return [(text, 0)]
+    pieces: list[tuple[str, int]] = []
+    start = 0
+    while start < len(text):
+        if len(text) - start <= SCAN_CHUNK:
+            pieces.append((text[start:], start))
+            break
+        cut = text.rfind("\n", start, start + SCAN_CHUNK)
+        end = cut + 1 if cut > start else start + SCAN_CHUNK
+        pieces.append((text[start:end], start))
+        start = end
+    return pieces
 
 
 def _classify_date(text: str, mention: DateMention, *, opens_document: bool) -> DateFinding:

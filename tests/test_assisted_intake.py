@@ -18,6 +18,7 @@ import ast
 import inspect
 import pathlib
 import re
+import time
 from datetime import date
 
 import pytest
@@ -842,6 +843,67 @@ def test_each_file_contributes_its_own_provenance() -> None:
     assert "kiri.eml" in by_field[SuggestedField.TITLE]
     sender = next(c for c in analysis.findings if c.field == SuggestedField.SENDER_CONTACT)
     assert sender.provenance.filename == "kiri.eml"
+
+
+#: What the whole scan of one oversized block may cost. Generous — CI runners
+#: are shared and this is not a benchmark — but far below the minutes a
+#: backtracking pattern took before the bounds below were put on it.
+SCAN_BUDGET_SECONDS = 20.0
+
+
+#: Shapes that hung or crawled before the patterns were bounded. Each is
+#: something a document can genuinely contain — a table of codes, a run of
+#: dotted tokens, a schedule of dates — and document text is not ours to
+#: trust for shape. Built by name so a failure reads as the name.
+RUNAWAY_SHAPES: dict[str, str] = {
+    "eis filler run": "EIS " + "numb" * 4000,
+    "eis word run": "EIS " + "dokument" * 3000,
+    "dotted run": "a@" + "a." * 20000,
+    "long token": "x@" + "a" * 60000,
+    "many dates": ("Palume esitada arvamus hiljemalt 18.09.2026. " * 9000)[:400_000],
+}
+
+
+@pytest.mark.parametrize("label", sorted(RUNAWAY_SHAPES))
+def test_no_document_shape_makes_the_scan_run_away(label: str) -> None:
+    """A page of suggestions is a web request. It has to come back."""
+    text = RUNAWAY_SHAPES[label]
+    source = document(text, "suur.pdf")
+    started = time.perf_counter()
+    ts.find_deadline_dates(text)
+    ts.find_references(source)
+    ts.find_contacts(source)
+    ts.find_heading_titles(source)
+    elapsed = time.perf_counter() - started
+    assert elapsed < SCAN_BUDGET_SECONDS, f"{label}: {elapsed:.1f}s"
+
+
+def test_bounding_the_patterns_did_not_cost_what_they_are_for() -> None:
+    """The bounds are on repetition, not on what counts as a reference."""
+    for text, expected in (
+        ("Eelnõu on EISis registreeritud numbriga 26-0456/01.", "26-0456/01"),
+        ("EIS toimik nr 24-1234 on avatud.", "24-1234"),
+        ("EIS 26-0123 registreeritud.", "26-0123"),
+        ("eelnõude infosüsteemis EIS toimik 26-0123.", "26-0123"),
+    ):
+        match = vocab.EIS_REFERENCE.search(text)
+        assert match is not None and match.group("ref") == expected, text
+    for address in (
+        "mari.naidis@naidisministeerium.invalid",
+        "kadri@nam.invalid",
+        "a.b+c%d@x-y.co.uk",
+    ):
+        assert vocab.EMAIL_ADDRESS.findall(address) == [address]
+
+
+def test_a_long_block_is_scanned_in_chunks_and_finds_every_date() -> None:
+    """Chunking is an implementation detail; the findings are not."""
+    filler = "Näidisministeerium saatis materjali.\n" * 900
+    text = f"{filler}Palume esitada arvamus hiljemalt 18.09.2026.\n{filler}"
+    assert len(text) > ts.SCAN_CHUNK
+    found = ts.find_deadline_dates(text)
+    assert [(f.value, f.strength) for f in found] == [(date(2026, 9, 18), Confidence.HIGH)]
+    assert text[found[0].start : found[0].end] == "18.09.2026"
 
 
 def test_the_same_input_always_gives_the_same_output() -> None:

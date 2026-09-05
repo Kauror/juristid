@@ -591,7 +591,14 @@ TITLE_PURPOSE_SUFFIX = re.compile(
 # Contacts
 # ---------------------------------------------------------------------------
 
-EMAIL_ADDRESS = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
+#: An e-mail address, with every part bounded.
+#:
+#: The domain is written as *labels separated by dots* rather than as one
+#: character class containing the dot: the second form lets the engine split a
+#: long run like `a.a.a.a…` in many ways when no top-level domain follows, and
+#: a document with such a run costs time quadratic in its length. The bounds
+#: are the real ones — 63 characters per DNS label, 64 for the local part.
+EMAIL_ADDRESS = re.compile(r"[A-Za-z0-9._%+\-]{1,64}@(?:[A-Za-z0-9\-]{1,63}\.){1,8}[A-Za-z]{2,24}")
 
 #: Two capitalised words, letters only, Estonian letters included. A person's
 #: name in a signature block; deliberately not a general NER.
@@ -676,13 +683,29 @@ LABELLED_REFERENCE = re.compile(
     re.IGNORECASE,
 )
 
+#: The words that may stand between an EIS label and the number it introduces:
+#: «EIS toimik nr», «EISis registreeritud numbriga». A closed list of stems,
+#: each with a bounded Estonian ending.
+_EIS_FILLER = (
+    r"(?:toimik|dokumend|dokument|number|numbri|nr\.?|viide|viite|viita|"
+    r"registreeri|kood|kande)\w{0,6}"
+)
+
 #: An explicitly EIS-labelled reference. The grammar of an EIS number is not
 #: asserted — the repository holds no verified example of one — so what is
 #: captured is «the token after an EIS label», and a date-shaped token is
 #: refused by the caller (brief §11).
+#:
+#: **Every repetition here is bounded, and that is load-bearing.** The filler
+#: was once an unbounded `(?:…\w*\s*)*`, whose alternatives could each swallow
+#: the same run of letters in exponentially many ways: a document containing
+#: `numbnumbnumb…` and no digits made the engine explore every split and the
+#: request never returned. Document text is not ours to trust for shape, so the
+#: filler is a bounded number of bounded words (`tests/test_assisted_intake.py`
+#: holds the whole scan inside a time budget).
 EIS_REFERENCE = re.compile(
-    r"\b(?:EIS(?:-?i[a-z]{0,3})?|eelnõude infosüsteem\w*)\b\s*"
-    r"(?:(?:toimik\w*|dokument\w*|nr\.?|numb\w*|viide\w*|viitega|registreeritud|kood\w*)\s*)*"
+    r"\b(?:EIS(?:-?i[a-z]{0,3})?|eelnõude infosüsteem\w{0,8})\b\s*"
+    r"(?:" + _EIS_FILLER + r"\s+){0,4}"
     r"[:.]?\s*" + REFERENCE_NUMBER,
     re.IGNORECASE,
 )
