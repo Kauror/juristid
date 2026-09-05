@@ -23,7 +23,7 @@ Teema page:
 `matters:update_position` and still indexed for search. Retiring a rail block is
 not a reason to drop a column, and nothing here asserts that it is gone.
 
-Since docs/adr/0060 the rail is **read-only**: filenames and nothing else. The
+Since docs/adr/0061 the rail is **read-only**: filenames and nothing else. The
 upload it used to carry is on Dokumendid, where the Matter's files are, and the
 `Arvamused →` link went with the per-Matter page it pointed at.
 """
@@ -172,7 +172,7 @@ def test_the_retired_block_is_gone_from_every_surface_the_rail_reaches(signed_in
 
     for name in ("matters:matter_detail", "matters:matter_position", "matters:matter_documents"):
         # Followed: `matter_position` is a compatibility redirect since the
-        # per-Matter Arvamused page was retired (docs/adr/0060).
+        # per-Matter Arvamused page was retired (docs/adr/0061).
         body = _body(signed_in.get(reverse(name, kwargs={"pk": matter.pk}), follow=True))
         assert "railposition" not in body, name
         assert 'id="koja-seisukoht"' not in body, name
@@ -210,7 +210,7 @@ def test_the_rail_offers_koja_arvamus_and_says_when_there_is_none(signed_in, spe
 
 
 def test_the_rail_is_read_only(signed_in, specialist):
-    """Quick reference, not a workspace (docs/adr/0060 §6).
+    """Quick reference, not a workspace (docs/adr/0061 §6).
 
     Uploading an opinion is on Dokumendid, where the Matter's files and their
     upload panel already are; a form in 300px beside a file list that has one is
@@ -229,7 +229,7 @@ def test_the_rail_is_read_only(signed_in, specialist):
 
 
 def test_the_rail_states_no_evidence_mechanics(signed_in, specialist):
-    """No version, no size, no checksum and no badge (docs/adr/0060 §6, §28).
+    """No version, no size, no checksum and no badge (docs/adr/0061 §6, §28).
 
     Every one of those is a fact about the evidence rather than about the
     opinion, they are all stated where evidence is stated, and none of them
@@ -257,7 +257,7 @@ def test_several_opinions_all_appear_in_the_rail(signed_in, specialist):
 
     There is no `Matter.final_opinion` and there is not going to be one: a
     single-valued shortcut could only ever name one of the three
-    (docs/adr/0060 §10).
+    (docs/adr/0061 §10).
     """
     matter = factories.MatterFactory(owner=specialist)
     for name in ("Esimene.pdf", "Taiendav.pdf", "Uhispoordumine.pdf"):
@@ -289,7 +289,7 @@ def test_uploading_an_opinion_stores_one_document_and_asserts_no_send(signed_in,
     Kept because the route's closed return vocabulary is what stops it becoming
     an open redirect, and because the invariant under it is the one this whole
     change rests on: a file uploaded as `Arvamus` records that Koda holds it and
-    never that Koda sent it (docs/adr/0060 §18).
+    never that Koda sent it (docs/adr/0061 §18).
     """
     matter = factories.MatterFactory(owner=specialist)
 
@@ -417,7 +417,7 @@ def test_a_sent_submissions_final_evidence_is_the_same_row(signed_in, specialist
 
 
 def test_no_matter_surface_links_to_the_retired_arvamused_page(signed_in, specialist):
-    """It is a compatibility redirect, not a destination (docs/adr/0060 §19).
+    """It is a compatibility redirect, not a destination (docs/adr/0061 §19).
 
     Nothing in the product may send a reader through a hop they do not need. The
     route stays so old bookmarks still work; the navigation to it is gone.

@@ -55,29 +55,25 @@ MONITOR_TEXT = "vaata rakendusaktide koostamine üle"
 
 @pytest.fixture
 def today():
-    return timezone.localdate()
+    """The Monday of the current ISO week, not the calendar day.
+
+    The fixture below dates two steps at ``today + 2`` and asserts they land in
+    *Sel nädalal*. On a Saturday or a Sunday ``today + 2`` is next week, the
+    band is structurally absent, and the assertion raised ``KeyError`` — the
+    same weekend trap `seed_e2e_data` documents. Anchoring on the Monday keeps
+    every offset inside the week it was written for, on every day of the week.
+    """
+    return wi.start_of_iso_week(timezone.localdate())
 
 
 @pytest.fixture
 def three_steps(specialist, today):
-    """One of each kind, each on a date that keeps it in a predictable band.
-
-    «Sel nädalal» is the *calendar* week, cut by the calendar and ending on
-    Sunday (`end_of_iso_week`, ADR 0046). So «two days from today» is inside it
-    from Monday to Friday and outside it at the weekend, and this fixture's
-    review steps silently moved into `Järgmised 30 päeva` on a Saturday — a
-    failure with no bug behind it, on a test whose subject is which band a
-    *kind* lands in rather than which day CI runs.
-
-    Clamped to the end of the week instead. The date still means what the test
-    says it means — a review later this week — on every day of the week.
-    """
-    later_this_week = min(today + timedelta(days=2), wi.end_of_iso_week(today))
+    """One of each kind, each on a date that keeps it in a predictable band."""
     steps = {}
-    for kind, semantics, text, target in (
-        (ActionKind.DO, DateSemantics.DEADLINE, DO_TEXT, today - timedelta(days=3)),
-        (ActionKind.WAIT, DateSemantics.REVIEW_ON, WAIT_TEXT, later_this_week),
-        (ActionKind.MONITOR, DateSemantics.REVIEW_ON, MONITOR_TEXT, later_this_week),
+    for kind, semantics, text, offset in (
+        (ActionKind.DO, DateSemantics.DEADLINE, DO_TEXT, -3),
+        (ActionKind.WAIT, DateSemantics.REVIEW_ON, WAIT_TEXT, 2),
+        (ActionKind.MONITOR, DateSemantics.REVIEW_ON, MONITOR_TEXT, 2),
     ):
         matter = create_matter(
             title=f"Teema {kind.value}",
@@ -89,7 +85,7 @@ def three_steps(specialist, today):
             text=text,
             kind=kind,
             date_semantics=semantics,
-            target_date=target,
+            target_date=today + timedelta(days=offset),
             date_precision=DatePrecision.EXACT,
             actor=specialist,
         )

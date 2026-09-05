@@ -274,7 +274,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # -- Scenario C: a formal opinion with its exact evidence ------------
     #
     # On Dokumendid, which is where a Matter's opinions live since
-    # docs/adr/0060. The rail names the letter and links to it and does nothing
+    # docs/adr/0061. The rail names the letter and links to it and does nothing
     # else — there is no separate free-text `Koja seisukoht` in this product,
     # and there is no longer a third page showing the same file again.
     page.goto(matter_url)

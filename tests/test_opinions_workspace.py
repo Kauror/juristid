@@ -479,7 +479,7 @@ def test_a_linked_letter_is_visible_from_the_matter_it_concerns(client, shared):
 
     # Dokumendid, since the per-Matter Arvamused page was retired. Retiring a
     # surface could not be allowed to take access to these with it, so the
-    # section moved rather than going away (docs/adr/0060 §22).
+    # section moved rather than going away (docs/adr/0061 §22).
     body = client.get(
         reverse("matters:matter_documents", kwargs={"pk": matter.pk})
     ).content.decode()
@@ -517,7 +517,7 @@ def test_a_reader_who_may_not_open_the_archive_sees_no_letters_on_the_matter(cli
         reverse("matters:matter_documents", kwargs={"pk": matter.pk})
     ).content.decode()
     # No rows, no count, and no hint that there are any: the section simply does
-    # not render (docs/adr/0028, docs/adr/0060 §22).
+    # not render (docs/adr/0028, docs/adr/0061 §22).
     assert "Seotud arhiivikirjad" not in body
     assert "seotud-arhiivikirjad" not in body
 

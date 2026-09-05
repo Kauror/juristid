@@ -98,7 +98,7 @@ def test_the_rail_names_the_opinion_and_holds_no_workflow(signed_in, specialist)
 
     It used to carry an upload disclosure and a link out to a per-Matter
     Arvamused page. Both are gone: the file list has the upload panel, and the
-    page the link pointed at is retired (docs/adr/0060 §6).
+    page the link pointed at is retired (docs/adr/0061 §6).
     """
     matter = factories.MatterFactory(owner=specialist)
     body = _detail(signed_in, matter)
@@ -114,7 +114,7 @@ def test_the_rail_travels_to_the_matter_surface_that_carries_it(signed_in, speci
     """One surface now. Dokumendid is deliberately full-width with no rail at
     all — browsing forty files is the task that tab exists for — and the third
     surface the rail used to reach is retired
-    (templates/matters/matter_documents.html, docs/adr/0060)."""
+    (templates/matters/matter_documents.html, docs/adr/0061)."""
     matter = factories.MatterFactory(owner=specialist)
 
     body = _body(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))

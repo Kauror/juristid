@@ -1202,7 +1202,7 @@ def test_the_opinion_row_is_marked_for_what_it_is(signed_in, specialist):
     «Lõplik» named an internal lifecycle property of a piece of evidence.
     `Arvamus` names what the file is, which is the question a lawyer scanning
     forty rows is actually asking — and it is a word rather than a colour, so a
-    reader who cannot see the tint gets the same answer (docs/adr/0060 §7, §45).
+    reader who cannot see the tint gets the same answer (docs/adr/0061 §7, §45).
     """
     matter = factories.MatterFactory(owner=specialist)
     _evidence(matter, specialist)

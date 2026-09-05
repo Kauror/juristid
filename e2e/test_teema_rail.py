@@ -434,7 +434,7 @@ def test_the_retired_arvamused_address_lands_on_dokumendid(page, base_url):
     that a page still exists, so this follows the redirect and checks where it
     lands: Dokumendid, filtered to `Arvamus`, with the opinion workflow on it
     and no trace of the free-text position the surface used to carry
-    (docs/adr/0060 §4, §36).
+    (docs/adr/0061 §4, §36).
     """
     sign_in(page, base_url, MARTIN)
     url = open_matter(page, base_url, MULTI_SENDER_TITLE)
@@ -471,7 +471,7 @@ def upload_an_opinion(page, url: str) -> None:
     The rail used to carry an upload of its own. It does not: a form in 300px
     beside a file list that already has one is the same control twice, and the
     role is chosen from the same select as every other document's — reading
-    `Arvamus`, storing `KODA_SUBMISSION_FINAL` (docs/adr/0060 §7, §18).
+    `Arvamus`, storing `KODA_SUBMISSION_FINAL` (docs/adr/0061 §7, §18).
     """
     page.goto(f"{url.rstrip('/')}/dokumendid/")
     page.wait_for_load_state("networkidle")

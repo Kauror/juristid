@@ -1,6 +1,6 @@
 """A Matter's opinions are documents, and `Dokumendid` is where they live.
 
-The contract docs/adr/0060 decided, asserted from the four directions it can go
+The contract docs/adr/0061 decided, asserted from the four directions it can go
 wrong in:
 
 **What counts as an opinion.** The union of the `KODA_SUBMISSION_FINAL` role and
@@ -120,7 +120,7 @@ def test_a_role_classified_opinion_is_badged_arvamus(signed_in, specialist):
 
 
 def test_the_stored_role_is_not_rewritten_to_produce_the_label(signed_in, specialist):
-    """Presentation, not storage. No migration, no backfill (docs/adr/0060 §26)."""
+    """Presentation, not storage. No migration, no backfill (docs/adr/0061 §26)."""
     matter = factories.MatterFactory(owner=specialist)
     document = _file(matter, name="Koja_arvamus.pdf", actor=specialist)
 
@@ -217,7 +217,7 @@ def test_every_opinion_on_a_matter_appears(signed_in, specialist):
     """An initial opinion, a supplement and a joint letter are three rows.
 
     There is no `Matter.final_opinion` and there is not going to be one: a
-    single-valued shortcut could only ever name one of them (docs/adr/0060 §10).
+    single-valued shortcut could only ever name one of them (docs/adr/0061 §10).
     """
     matter = factories.MatterFactory(owner=specialist)
     names = ("Esimene.pdf", "Taiendav.pdf", "Uhispoordumine.pdf")
@@ -271,7 +271,7 @@ def test_an_old_role_filter_link_still_finds_the_opinions(signed_in, specialist)
 
     Everything the role matched, plus the sent opinions whose file was never
     reclassified — which is what somebody who saved that link was looking for
-    (docs/adr/0060 §9).
+    (docs/adr/0061 §9).
     """
     matter = factories.MatterFactory(owner=specialist)
     by_role = _file(matter, name="Rollijargi.pdf", actor=specialist)
@@ -801,7 +801,7 @@ def test_a_submission_result_targets_the_matters_opinions_and_not_the_retired_pa
     # No anchor built from the submission: a Submission a reader may find can
     # point at a Document restricted below it, and an anchor made from the
     # submission alone would name a file the page then refuses to render
-    # (docs/adr/0060, AUTH-003 §21).
+    # (docs/adr/0061, AUTH-003 §21).
     assert "#" not in target
 
 
@@ -901,7 +901,7 @@ def test_archive_reconstruction_diagnostics_are_not_user_facing(signed_in, speci
 
     They belong to reconciliation and to the operator investigating a match, not
     to a lawyer reading a Matter — and none of the rows behind them is touched
-    (docs/adr/0060 §29).
+    (docs/adr/0061 §29).
     """
     from app.legacy_import.opinion_archive import OpinionSubmissionImport
     from app.legacy_import.opinion_enums import (
@@ -962,7 +962,7 @@ def test_the_exact_evidence_and_its_checksum_are_untouched(signed_in, specialist
 
 
 def test_no_document_role_was_rewritten_anywhere_on_the_page(signed_in, specialist):
-    """No data migration, and no quiet one either (docs/adr/0060 §40)."""
+    """No data migration, and no quiet one either (docs/adr/0061 §40)."""
     matter = factories.MatterFactory(owner=specialist)
     incoming = _file(
         matter, name="Ministeeriumist.pdf", role=DocumentRole.INCOMING_AUTHORITY, actor=specialist

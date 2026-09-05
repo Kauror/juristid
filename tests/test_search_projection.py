@@ -147,10 +147,16 @@ def test_a_refreshed_matter_becomes_findable_under_its_new_title(corpus, special
 def test_indexing_does_not_explode_into_a_query_per_matter(
     corpus, specialist, django_assert_max_num_queries
 ) -> None:
-    """2,500 matters must not mean 2,500 round trips per related table."""
+    """2,500 matters must not mean 2,500 round trips per related table.
+
+    Was 30, measured at 13 over the corpus plus twenty synthetic Matters. 17
+    leaves room for one more prefetched relation and stays an order of magnitude
+    below the shape it exists to catch: the failure is a query per Matter, and
+    there are more than twenty of them here.
+    """
     for index in range(20):
         create_matter(title=f"Sünteetiline teema {index}", owner=specialist, reference_year=2026)
-    with django_assert_max_num_queries(30):
+    with django_assert_max_num_queries(17):
         refresh_matters(indexable_matters())
 
 

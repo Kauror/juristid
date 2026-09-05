@@ -122,7 +122,7 @@ def _target_url(result: object) -> str:
         # The Matter's own opinion material, which is Dokumendid filtered to
         # `Arvamus` since the per-Matter Arvamused page was retired — an address
         # this used to point at and which would now only redirect here anyway
-        # (docs/adr/0060).
+        # (docs/adr/0061).
         #
         # Filtered rather than anchored on the opinion file itself. The
         # projection carries `submission_id` and no document identity, and

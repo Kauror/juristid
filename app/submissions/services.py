@@ -518,7 +518,7 @@ def register_sent_opinion(
     and `mark_submission_sent` re-runs the evidence check, stamps the time and
     writes the send event. Copying any of that here would be a second opinion
     about when Koda may claim to have sent something, and the two would drift
-    (docs/adr/0060 §17).
+    (docs/adr/0061 §17).
 
     It exists because the Dokumendid surface asks a question the three separate
     services cannot answer on their own: *this file was sent — say so*. Doing

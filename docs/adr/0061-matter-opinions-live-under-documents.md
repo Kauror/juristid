@@ -1,4 +1,4 @@
-# 0060 — A Matter's opinions are documents, and the per-Matter Arvamused page is retired
+# 0061 — A Matter's opinions are documents, and the per-Matter Arvamused page is retired
 
 **Status:** accepted
 **Date:** 2026-09-05

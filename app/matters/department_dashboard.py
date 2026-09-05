@@ -788,8 +788,8 @@ class UpcomingGroup:
 #: Where `preview` cuts a group, for the two windows that carry a cut at all.
 #: *Eesolev* does not render the cut any more — every window is one disclosure
 #: and opening it shows the whole window — so this now describes the read model
-#: alone. Five, matching `overview.DEADLINE_PREVIEW`, which does still slice
-#: (docs/adr/0046).
+#: alone. Five is what the three-window panel of docs/adr/0046 also showed; that
+#: panel and its own constant are gone, and this is the only one left.
 UPCOMING_PREVIEW = 5
 
 #: The windows are cut here rather than where they are rendered, because two of

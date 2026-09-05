@@ -83,6 +83,12 @@ from app.matters.forms import (
     edit_initial,
 )
 from app.matters.intake import register_incoming, validate_uploads
+from app.matters.intake_suggestions import (
+    CurrentValues,
+    SuggestedField,
+    analyse_matter,
+    prefill_initial,
+)
 from app.matters.models import Matter, MatterAssignmentNotice, MatterEngagement
 from app.matters.my_work import (
     HORIZON_PARAM,
@@ -1600,7 +1606,7 @@ def matter_position(request: HttpRequest, pk: Any) -> HttpResponse:
     it went out and who it went to, with the send's own details and
     `Võta tagasi` behind the row's `⋯`. Finding an opinion *across* the
     department is still the Arvamused workspace at `/arvamused/`, which this
-    change does not touch (docs/adr/0047, docs/adr/0060).
+    change does not touch (docs/adr/0047, docs/adr/0061).
 
     What it was in between those two was a third copy of the same letter, under
     a heading that repeated the rail above it, with the file's checksum, its
@@ -1699,7 +1705,7 @@ def _upload_role_choices() -> list[tuple[str, str]]:
     through the query string. This select posts a `Document.role`, so every
     value here is a real one and only the words change — which is the whole of
     what this change does to the role: the user reads `Arvamus`, the database
-    keeps `KODA_SUBMISSION_FINAL`, and no migration is involved (docs/adr/0060).
+    keeps `KODA_SUBMISSION_FINAL`, and no migration is involved (docs/adr/0061).
     """
     return [
         (value, "Arvamus" if value == DocumentRole.KODA_SUBMISSION_FINAL else label)
@@ -1726,7 +1732,7 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     and in the collapsed `Arvamused` block under the table. What the page does
     *not* do is print the evidence mechanics again — the checksum, the importer's
     match reasoning, the version and the size a second time — which is what made
-    the retired surface a third copy of the same letter (docs/adr/0060).
+    the retired surface a third copy of the same letter (docs/adr/0061).
     """
     matter = get_visible_matter(request, pk)
     documents = (
@@ -2389,6 +2395,63 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
     return redirect("matters:matter_detail", pk=matter.pk)
 
 
+@login_required
+@business_write_required
+@require_http_methods(["GET"])
+def matter_edit_assisted(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Kontrolli dokumendist leitud andmeid` — the edit page, with suggestions.
+
+    The same form as `matter_edit`, rendered once more with what the
+    extraction system already read off this Matter's documents beside it: a
+    proposed title, sender, deadline, Menetlusliik and Valdkonnad, each with
+    the excerpt it came from, and the facts that have no field of their own —
+    who wrote, from which address, under which reference.
+
+    **A read.** This view accepts only GET and writes nothing: no Matter
+    field, no Organisation, no taxonomy row, no audit event. A high-confidence
+    suggestion may appear already filled into an *empty* control; it stays
+    unsaved. The form posts to `matter_edit` exactly as it does from the plain
+    edit page, so saving is the existing write path with the existing audit
+    trail, and a refused save re-renders what the person typed without
+    re-running the analysis over it (docs/adr/0060).
+
+    **The same authorization, twice.** The Matter through `get_visible_matter`,
+    and the documents — inside the analyser — through
+    ``Document.objects.visible_to``, so a restricted annex on a normal Matter
+    contributes no evidence to a reader who may not open it.
+
+    That second gate changes nothing on *this* surface today, and the honest
+    reading of it is worth writing down: the page is behind
+    `business_write_required`, and the two roles that hold business write —
+    SPECIALIST and DEPARTMENT_HEAD — are exactly the two in
+    `ROLES_WITH_RESTRICTED_ACCESS`, so everybody who can open this page already
+    reads every restricted document on the Matter. The gate is what keeps the
+    surface correct the day a role may edit without reading restricted
+    material, and `build_analysis_input` is tested through a READER, who is the
+    only viewer the visible set actually differs for.
+    """
+    matter = get_visible_matter(request, pk)
+    analysis = analyse_matter(matter, request.user)
+    current = CurrentValues.of(matter)
+    initial, analysis = prefill_initial(analysis, base=edit_initial(matter), current=current)
+    suggested = analysis.fields.get(SuggestedField.SOURCE_ORGANISATIONS)
+    suggested_senders = (
+        list(
+            Organisation.objects.filter(
+                pk__in=[candidate.value for candidate in suggested.offered]
+            ).order_by("name")
+        )
+        if suggested is not None and suggested.offered
+        else []
+    )
+    form = MatterEditForm(
+        initial=initial, matter=matter, viewer=request.user, suggested_senders=suggested_senders
+    )
+    context = _edit_context(request, matter, form)
+    context["assisted"] = analysis
+    return render(request, "matters/matter_edit.html", context)
+
+
 def _edit_context(request: HttpRequest, matter: Matter, form: Any) -> dict[str, Any]:
     return {
         "matter": matter,
@@ -2398,6 +2461,10 @@ def _edit_context(request: HttpRequest, matter: Matter, form: Any) -> dict[str, 
         # so their absence reads as a decision rather than as an omission
         # (Teema QA §2.2).
         "immutable_facts": _immutable_facts(matter),
+        # Whether the page may offer the assisted review at all: only a Matter
+        # with material to read has anything to be read. The count is the
+        # same scoped read the header makes for the Dokumendid tab.
+        "has_documents": Document.objects.filter(matter=matter).visible_to(request.user).exists(),
     }
 
 
@@ -2584,7 +2651,7 @@ def update_position(request: HttpRequest, pk: Any) -> HttpResponse:
     # — the route stays inside the business-write boundary rather than being
     # deleted, because dropping the only writer for live indexed columns is a
     # data decision and this was a UI one — so it lands where the Matter's
-    # opinion material now is (docs/adr/0060).
+    # opinion material now is (docs/adr/0061).
     return redirect(opinions_url(matter))
 
 

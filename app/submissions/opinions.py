@@ -30,7 +30,7 @@ is right: the withdrawal is a fact about the act, not about the file.
 a ministry is a `Saabunud ametlik dokument` whether or not somebody later relied
 on those bytes, and promoting it would falsify one true fact to answer a
 question asked in the wrong place. `Submission` stays the canonical record of
-what went out (docs/adr/0060, `app/submissions/services.py`).
+what went out (docs/adr/0061, `app/submissions/services.py`).
 
 Everything here goes through `visible_to` on **both** sides. A `Document`
 carries its own visibility override and may be more restricted than the Matter
@@ -141,7 +141,7 @@ def sent_submission_by_document(matter: Any, *, viewer: Any) -> dict[Any, Submis
         # `Teadmiseks` and the co-signatories are not on the row — they are in
         # the send's own details behind it. They are real facts about the letter
         # and this is where they stayed reachable when the page that printed
-        # them was retired (docs/adr/0060 §14).
+        # them was retired (docs/adr/0061 §14).
         submission.information_list = [
             row.organisation for row in recipient_rows if row.role == RecipientRole.FOR_INFORMATION
         ]
@@ -157,7 +157,7 @@ def open_drafts(matter: Any, *, viewer: Any) -> list[Submission]:
     is an action somebody owes rather than a file the Matter holds. Once a draft
     is sent its evidence becomes an ordinary `Arvamus` row and this block stops
     mentioning it: one opinion must not appear twice on one page, which is the
-    duplication the retired surface existed to create (docs/adr/0060 §5).
+    duplication the retired surface existed to create (docs/adr/0061 §5).
     """
     return list(
         Submission.objects.filter(matter=matter, status=SubmissionStatus.DRAFT)

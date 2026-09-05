@@ -672,7 +672,7 @@ def test_a_restricted_final_evidence_file_is_not_named_on_the_opinion_card(clien
     # an `Arvamus` badge or an anchor admitting a row was suppressed. An opinion
     # is a document row here, so a document this reader may not see produces no
     # row at all — a visible Submission is not authority to name its evidence
-    # (AUTH-003 §21, docs/adr/0060 §25).
+    # (AUTH-003 §21, docs/adr/0061 §25).
     assert HIDDEN_FILE not in body
     assert version.sha256[:16] not in body
     assert f"dokument-{document.pk}" not in body

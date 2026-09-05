@@ -105,7 +105,7 @@ coming back either.
 
 | | |
 | --- | --- |
-| **Existing** | `matter_detail.html`, `matter_documents.html`, `partials/rail.html`, `position_rail.html`, timeline partials. `matter_position.html` is gone: the per-Matter Arvamused page was retired and its work moved onto `matter_documents.html`, where an opinion is a file row badged `Arvamus` (docs/adr/0060). The route survives as a compatibility redirect. |
+| **Existing** | `matter_detail.html`, `matter_documents.html`, `partials/rail.html`, `position_rail.html`, timeline partials. `matter_position.html` is gone: the per-Matter Arvamused page was retired and its work moved onto `matter_documents.html`, where an opinion is a file row badged `Arvamus` (docs/adr/0061). The route survives as a compatibility redirect. |
 | **Design** | Compact «Teema andmed» rail everywhere; the reference back in the rail; no «Aruandlusaasta»; hetkeseis badge beside the H1; timeline open by default; no «Põhjendus» block on the position card; the four `cardnote` sentences removed. |
 | **Approach** | CSS density on `railcard` plus template edits. No selector or service changes. |
 | **Conflict** | None. |

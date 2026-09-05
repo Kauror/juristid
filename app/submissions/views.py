@@ -2,7 +2,7 @@
 
 All of these are full-page posts that return to the Matter's Dokumendid page,
 which is where a Matter's opinions live since the separate per-Matter Arvamused
-surface was retired (docs/adr/0060). Sending an opinion is a deliberate act with
+surface was retired (docs/adr/0061). Sending an opinion is a deliberate act with
 legal weight; it does not belong behind an inline control that could be
 triggered by a mis-click, and withdrawing one is a POST behind a secondary
 disclosure rather than a button under every row somebody is reading.
@@ -70,7 +70,7 @@ def _back(submission: Submission) -> HttpResponse:
     evidence would point at a row the filter has removed. A draft has its own id
     in the `Arvamused` block; a withdrawal lands on the list, because whether
     its file is still an opinion depends on a role this view has no business
-    asking about (docs/adr/0060).
+    asking about (docs/adr/0061).
     """
     version = submission.final_version
     if submission.status == SubmissionStatus.SENT and version is not None:

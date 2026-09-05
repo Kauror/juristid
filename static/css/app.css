@@ -6121,7 +6121,7 @@ button.accordion__action:focus-visible {
    answers it — including for a reader who cannot see the tint, which a row
    colour on its own never did. The row keeps the table's own background: a
    Matter may hold several opinions, and three tinted bands in forty rows read
-   as an alert rather than as a classification (docs/adr/0060 §43, §45). */
+   as an alert rather than as a classification (docs/adr/0061 §43, §45). */
 .badge--opinion {
   color: var(--status-success);
   border: 1px solid var(--status-success-border);
@@ -8659,4 +8659,226 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-weight: var(--typography-weight-semibold);
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+}
+
+/* ====================================================================
+ * Dokumendist leitud — the assisted-review panel on Muuda teemat
+ *
+ * A panel above the form, in the capture surface the create form's
+ * «Järgmiseks» panel uses, so it reads as part of filling the form rather
+ * than as a dashboard beside it. Every state is a word: «vormil
+ * eeltäidetud», «juba valitud», «Vastuolu», «OCR» — never a tint alone
+ * (docs/adr/0009, docs/adr/0060).
+ * ==================================================================== */
+
+.suggpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-25);
+  padding: var(--spacing-3) var(--spacing-4);
+  background: var(--surface-capture);
+  border: 1px solid var(--accent-border);
+  border-left: 2px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+}
+
+.suggpanel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-3);
+}
+
+.suggpanel__title {
+  margin: 0;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.suggpanel__meta,
+.suggpanel__state,
+.suggpanel__diagnostic {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.suggpanel__state {
+  color: var(--text-secondary);
+}
+
+.suggpanel__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.suggfile {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.suggfile__name {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.suggfile__note {
+  color: var(--text-muted);
+}
+
+.suggrows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin: 0;
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Findings sit under the form suggestions with one hairline between the
+   two groups, not two. */
+.suggrows--findings {
+  padding-top: var(--spacing-15);
+}
+
+.suggrow {
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) 1fr;
+  gap: var(--spacing-1) var(--spacing-3);
+  align-items: start;
+}
+
+.suggrow__key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding-top: 2px;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.suggrow--conflict .suggrow__key {
+  color: var(--status-warning);
+}
+
+.suggrow__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-15);
+  margin: 0;
+  min-width: 0;
+}
+
+.suggnote {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--status-warning);
+}
+
+.suggcand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.suggcand--current {
+  color: var(--text-muted);
+}
+
+.suggcand__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-15);
+}
+
+.suggcand__value {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.suggcand--current .suggcand__value {
+  color: var(--text-secondary);
+}
+
+.suggcand__extra {
+  font-family: var(--typography-font-mono);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.suggcand__grade {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+.suggcand__use.is-selected {
+  background: var(--accent-soft);
+  color: var(--accent-link);
+  border-color: var(--accent-border);
+}
+
+.suggcand__evidence {
+  font-size: var(--typography-size-meta);
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+.suggcand__source {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.suggpanel__more {
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.suggpanel__moresummary {
+  cursor: pointer;
+  font-size: var(--typography-size-meta);
+  color: var(--accent-link);
+}
+
+.suggpanel__more[open] .suggpanel__moresummary {
+  margin-bottom: var(--spacing-2);
+}
+
+.suggpanel__more .suggrows {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* The second way into the review, from the Teema page's ⋯ menu. */
+.headmenu__link {
+  display: block;
+  margin-top: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--accent-link);
+}
+
+@media (max-width: 720px) {
+  .suggrow {
+    grid-template-columns: 1fr;
+  }
 }

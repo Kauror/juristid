@@ -188,7 +188,7 @@ CLOCK_DEPENDENT = [
     # The sent date on a Dokumendid opinion row. Covered by the bare `time`
     # below as well; named explicitly because it is normalised by this exact
     # selector, and a selector that appears in one list and not the other is how
-    # the two drift apart (docs/adr/0060).
+    # the two drift apart (docs/adr/0061).
     ".doctable__sent time",
     "time",
     # ---- Three values the list above missed, each found by rendering the page
@@ -367,7 +367,7 @@ PORTFOLIO_WHEN = (".pw-matter__when",)
 
 #: The Dokumendid row's «Saadetud <date> · <ministeerium>».
 #:
-#: New with docs/adr/0060, and normalised rather than merely masked for the
+#: New with docs/adr/0061, and normalised rather than merely masked for the
 #: reason the module docstring gives: the recipient sits on the same line, after
 #: the date, so the mask's *width* is that name's position. `29.8.2026 19:35` is
 #: 15 characters whatever the seed stamped, and the ministry stops moving.
@@ -813,7 +813,7 @@ def test_matter_opinions(page, base_url):
 
     The separate per-Matter Arvamused page is retired: an opinion is a document,
     the rail links straight to the letter, and the management that is not a file
-    row lives in the `Arvamused` block under the table (docs/adr/0060).
+    row lives in the `Arvamused` block under the table (docs/adr/0061).
 
     Reached through the retired address on purpose. It is the one scenario in
     this suite that is *also* a route assertion — the baseline is worthless if

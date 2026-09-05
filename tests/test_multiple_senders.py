@@ -701,12 +701,16 @@ def test_rendering_many_senders_costs_no_query_per_row(
     # so the section pays the sixth query ADR 0047 already wrote down for a
     # reader who may — `visible_archive(viewer).count()`, the Arhiivikirjad tab's
     # figure. Constant like the other five, and it is the whole difference.
+    # 32 rather than 37 since PERF-01 stopped asking who the reader is once per
+    # `visible_to`. Measured at 26 at both sizes below — the constancy is the
+    # claim, and it survived: twenty more Matters with two senders each moved
+    # the count by nothing at all.
     add(20)
-    with django_assert_max_num_queries(37):
+    with django_assert_max_num_queries(32):
         signed_in.get(REGISTER, {"olek": "koik"}).content.decode()
 
     add(20)
-    with django_assert_max_num_queries(37):
+    with django_assert_max_num_queries(32):
         signed_in.get(REGISTER, {"olek": "koik"}).content.decode()
 
 
@@ -740,13 +744,16 @@ def test_the_department_overview_prefetches_its_senders(
     And `Arvamuse tähtaeg` became a work source, taking the shared read model
     from two bounded queries to three (ADR 0031 §5).
 
-    Measured at 61 — about half of it `visible_to` resolving the reader's scope,
-    which is what every population on every page in this product costs and is
-    not something either change introduced. The one duplication the merge *did*
-    create was a second read of the whole work model for *Eesolev*, and that is
-    composed away (`upcoming_groups(items=…)`). What this test guards is
-    untouched: the cost is flat in the number of rows, and fifteen Matters with
-    two senders each would add fifteen queries the moment the prefetch is lost.
+    It measured 61 then, and the docstring above noted that about half of that
+    was `visible_to` resolving the reader's scope. PERF-01 removed almost all of
+    that half: `sees_all_restricted` short-circuits on a specialist's role, and
+    what a READER still pays is asked once per request rather than once per
+    read. Re-measured at **24**, so the ceiling comes down from 65 to 30.
+
+    What this test guards is untouched by any of it: the cost is flat in the
+    number of rows, and fifteen Matters with two senders each would add fifteen
+    queries the moment the prefetch is lost — which 30 no longer has room for
+    and 65 comfortably did.
     """
     for index in range(15):
         factories.MatterFactory(
@@ -758,7 +765,7 @@ def test_the_department_overview_prefetches_its_senders(
             ],
         )
 
-    with django_assert_max_num_queries(65):
+    with django_assert_max_num_queries(30):
         response = signed_in.get(reverse("matters:department"))
         response.content.decode()
 

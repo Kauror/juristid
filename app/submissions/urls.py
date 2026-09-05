@@ -37,7 +37,7 @@ urlpatterns = [
     # Matter-scoped like `create` rather than keyed on a submission, because
     # the whole point is that no submission exists yet: this is the act that
     # creates one, binds the exact file and marks it sent, in one transaction
-    # over the existing services (docs/adr/0060).
+    # over the existing services (docs/adr/0061).
     path("teema/<uuid:matter_id>/saadetud/", views.register_sent, name="register_sent"),
     path("<uuid:pk>/toend/", views.attach_evidence, name="attach_evidence"),
     path("<uuid:pk>/saada/", views.mark_sent, name="mark_sent"),

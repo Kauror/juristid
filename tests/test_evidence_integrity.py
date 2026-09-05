@@ -300,7 +300,7 @@ def test_a_restricted_submissions_evidence_does_not_leak(client, normal_matter, 
     assert detail.status_code == 200
 
     # Neither the submission nor its evidence is listed on Dokumendid, which is
-    # where both now live (docs/adr/0060). One page, one assertion: an opinion
+    # where both now live (docs/adr/0061). One page, one assertion: an opinion
     # is a file here, so a submission whose file this reader may not see has no
     # row at all — not a masked one, and not a placeholder admitting it exists.
     documents = client.get(reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk}))

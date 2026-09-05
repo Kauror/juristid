@@ -875,7 +875,7 @@ MVP contains:
 
 List all outbound Submissions for the Matter with kind, recipient(s), status, sent time and immutable final evidence version where sent.
 
-Since ADR 0060 this list is not a surface of its own. A sent opinion is a file the
+Since ADR 0061 this list is not a surface of its own. A sent opinion is a file the
 Matter holds, so it is a row on `Dokumendid` badged `Arvamus`, carrying the date
 it went out and its addressee; the kind, channel, reference, joint submitters and
 `Võta tagasi` are behind that row's `⋯`, and an opinion still being drafted is a

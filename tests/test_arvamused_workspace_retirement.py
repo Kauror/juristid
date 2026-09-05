@@ -6,7 +6,7 @@ The facts rail lost its position block first (tests/test_teema_rail.py), and
 `templates/matters/matter_position.html` — a panel reading `position_summary`
 above a disclosure that wrote it and its `Põhjendus` — was the last user-facing
 surface for the concept. That page has since been retired in its entirety
-(docs/adr/0060): what it was actually for is on **Dokumendid** now, where the
+(docs/adr/0061): what it was actually for is on **Dokumendid** now, where the
 Matter's files are, so every assertion below reads that page.
 
 Three things this file is careful to separate, because they are easy to conflate
@@ -73,7 +73,7 @@ RETIRED_COPY = (
 
 
 def _page(client, matter) -> str:
-    """Dokumendid — the Matter's opinion home since docs/adr/0060."""
+    """Dokumendid — the Matter's opinion home since docs/adr/0061."""
     response = client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk}))
     assert response.status_code == 200
     return response.content.decode()
@@ -161,7 +161,7 @@ def test_no_view_carries_a_position_form(signed_in, specialist):
 
     Asked through the retired address as well as the live one, followed to where
     it lands: a compatibility redirect that resurrected the form would be a
-    surface nobody was looking at (docs/adr/0060).
+    surface nobody was looking at (docs/adr/0061).
     """
     matter = factories.MatterFactory(owner=specialist)
 
@@ -234,7 +234,7 @@ def test_the_submission_workflow_is_untouched(signed_in, specialist):
 
     The `Arvamused` block on Dokumendid is where a draft lives and where a new
     one is started. `Osakond` counts exactly these drafts, so the way to make
-    one had to keep a native home (docs/adr/0060 §14, §16).
+    one had to keep a native home (docs/adr/0061 §14, §16).
     """
     matter = factories.MatterFactory(owner=specialist)
     create_submission(matter=matter, title="Koostamisel arvamus", actor=specialist)
@@ -272,7 +272,7 @@ def test_a_matter_with_no_opinions_says_so_once(signed_in, specialist):
     The retired page opened with «Ühtegi arvamust ei ole veel loodud.» over an
     empty list. Most of the register is in that state, so Dokumendid states the
     absence where a reader would look for the presence — the rail — and the
-    `Arvamused` block simply has nothing in it (docs/adr/0060 §6).
+    `Arvamused` block simply has nothing in it (docs/adr/0061 §6).
     """
     matter = factories.MatterFactory(owner=specialist)
 

@@ -192,7 +192,7 @@ def test_a_draft_appears_where_it_is_waiting_and_is_not_called_sent(
 
     `Väljasaadetud arvamused` described a colleague's unfinished draft as
     something that had already left the building. The page carrying it is gone
-    (docs/adr/0060) and a draft is now a row in the `Arvamused` block on
+    (docs/adr/0061) and a draft is now a row in the `Arvamused` block on
     Dokumendid — a block that says «koostamisel» and names no send at all.
     """
     from app.submissions.enums import SubmissionStatus
@@ -235,7 +235,7 @@ def test_a_sent_opinion_becomes_a_file_row_and_leaves_the_draft_block(
     A draft is an action somebody owes and lives in the `Arvamused` block. Once
     it has been sent it is a file the Matter holds, so it is a row in the table
     badged `Arvamus` — and it stops being listed twice, which is exactly the
-    duplication the retired page created (docs/adr/0060 §15, §16).
+    duplication the retired page created (docs/adr/0061 §15, §16).
     """
     from app.submissions.services import (
         attach_final_evidence,
