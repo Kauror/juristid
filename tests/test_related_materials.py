@@ -604,22 +604,30 @@ def test_a_closed_historical_matter_is_suggested_and_says_so(specialist):
     assert item.state_label == "suletud"
 
 
-def test_recency_never_outranks_substance(specialist, keskkond):
-    current = _matter(specialist, "Elektrituruseaduse muutmine", number=941)
-    strong_old = _matter(specialist, "Elektrituruseaduse muutmine 2015", number=942, year=2015)
-    weak_new = _matter(
+def test_recency_never_outranks_substance(specialist, keskkond, ministry):
+    """A 2015 file that shares the act outranks this year's weaker candidate.
+
+    Both qualify: the old one on the named act, the new one on a tag plus the
+    same ministry. Recency is at most a tie-break, so the order is substance
+    first — which is the whole reason a lawyer would open the older file.
+    """
+    tag = factories.TagFactory(name_et="energia")
+    current = _matter(
         specialist,
-        "Elektrituru arengud",
-        number=943,
+        "Elektrituruseaduse muutmine",
+        number=941,
         areas=[keskkond],
-        tags=[factories.TagFactory(name_et="energia")],
+        tags=[tag],
+        senders=[ministry],
     )
-    current.policy_areas.add(keskkond)
-    current.tags.add(weak_new.tags.first())
+    strong_old = _matter(specialist, "Elektrituruseaduse muutmine 2015", number=942, year=2015)
+    weaker_new = _matter(
+        specialist, "Elektrituru arengud", number=943, tags=[tag], senders=[ministry]
+    )
 
     suggested = _suggested_matters(current, specialist)
-    assert suggested[0] == strong_old
-    assert weak_new in suggested
+
+    assert suggested == [strong_old, weaker_new]
 
 
 def test_the_continuation_chain_is_not_offered_again(specialist):
