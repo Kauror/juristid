@@ -30,18 +30,17 @@ register and is resolved on the detail page instead (docs/adr/0028).
       `polite`, so a keystroke's answer is heard without the focus leaving the
       box, and without interrupting on every letter.
 
-      The bound is stated beside the total rather than implied. "12 of 240" is
-      the honest description of a section that shows twelve; "240 vastet" over
-      twelve rows would be a page lying about its own list.
+      The total, and only the total. «· kuvatud 12» was true and was a second
+      number on a line whose job is to carry one — a reader counting rows to
+      check it against was reading the qualification rather than the answer.
+      What the bound is remains visible where it always mattered: the rows
+      stop, and «Vaata kõiki arvamusi» is under them.
     {% endcomment %}
     <p class="opinionblock__count" role="status" aria-live="polite">
       {% if opinion_query %}
         <strong>{{ opinion_total }}</strong> vastet otsingule „{{ opinion_query }}”
       {% else %}
         <strong>{{ opinion_total }}</strong> vastet
-      {% endif %}
-      {% if opinion_total > opinion_bound %}
-        <span class="opinionblock__note">· kuvatud {{ opinion_bound }}</span>
       {% endif %}
     </p>
   {% endif %}
@@ -107,17 +106,22 @@ register and is resolved on the detail page instead (docs/adr/0028).
           different lengths, and a table gave the shortest of them a fifth of
           the width (02-EKRAANID §C).
 
-          Four things per row and no fifth: the Teema as the heading, when it
-          went, who it went to, and the file. No «Saadetud» badge and no kind
-          chip — everything in this tab is sent by construction, the tab strip
-          above says so, and a badge repeating the tab on every row is a word a
-          reader steps over N times. No version number and no byte size either;
-          they are facts about the evidence, and the Teema's own page is where
-          evidence is stated.
+          Four things per row and no fifth: the Teema as the heading, the file
+          under it, when it went and who it went to. No «Saadetud» badge and no
+          kind chip — everything in this tab is sent by construction, the tab
+          strip above says so, and a badge repeating the tab on every row is a
+          word a reader steps over N times. No version number and no byte size
+          either; they are facts about the evidence, and the Teema's own page is
+          where evidence is stated.
 
-          The file sits at the end of the meta line, and only for a reader who
-          may open it: the download route already refuses the bytes, but naming
-          the file is itself a disclosure (AUTH-003 §21).
+          The file is a line of its own directly under the heading, against the
+          same left edge. It used to sit at the far end of the meta line, which
+          put the filename and the Teema it belongs to at opposite ends of the
+          row and left the reader pairing them across the gap.
+
+          Named only for a reader who may open it: the download route already
+          refuses the bytes, but naming the file is itself a disclosure
+          (AUTH-003 §21).
         {% endcomment %}
         {% for submission in opinion_rows %}
           <article class="submission">
@@ -136,6 +140,22 @@ register and is resolved on the detail page instead (docs/adr/0028).
                 <a href="{% url 'matters:matter_detail' pk=submission.matter_id %}">{{ submission.matter.title }}</a>
               </h3>
             </div>
+            <p class="submission__file">
+              <span class="visually-hidden">Fail</span>
+              {% if submission.final_version and submission.final_version_readable %}
+                {% comment %}
+                  The filename and nothing after it. The version number and the
+                  byte size were true and neither answered a question a reader
+                  of this list asks: there is one final file per sent arvamus,
+                  and «v1 · 224,8 kB» is two facts about it that only matter on
+                  the Teema's own page, where the evidence block states them
+                  properly.
+                {% endcomment %}
+                <a href="{% url 'documents:download' pk=submission.final_version.pk %}">{{ submission.final_version.original_filename }}</a>
+              {% else %}
+                <span class="muted">Fail puudub</span>
+              {% endif %}
+            </p>
             <dl class="submission__meta">
               <div>
                 <dt>Saadetud</dt>
@@ -160,24 +180,6 @@ register and is resolved on the detail page instead (docs/adr/0028).
                 <dt>Adressaat</dt>
                 <dd>
                   {% for organisation in submission.addressee_list %}{{ organisation.name }}{% if not forloop.last %}, {% endif %}{% empty %}—{% endfor %}
-                </dd>
-              </div>
-              <div class="submission__meta__file">
-                <dt class="visually-hidden">Fail</dt>
-                <dd>
-                  {% if submission.final_version and submission.final_version_readable %}
-                    {% comment %}
-                      The filename and nothing after it. The version number and
-                      the byte size were true and neither answered a question a
-                      reader of this list asks: there is one final file per sent
-                      arvamus, and «v1 · 224,8 kB» is two facts about it that
-                      only matter on the Teema's own page, where the evidence
-                      block states them properly.
-                    {% endcomment %}
-                    <a href="{% url 'documents:download' pk=submission.final_version.pk %}">{{ submission.final_version.original_filename }}</a>
-                  {% else %}
-                    <span class="muted">Fail puudub</span>
-                  {% endif %}
                 </dd>
               </div>
             </dl>

@@ -13,6 +13,7 @@ reaches them and does not weaken them.
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 import pytest
@@ -23,8 +24,9 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
-from app.documents.enums import DocumentRole
+from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.models import Document
+from app.documents.preview import STATE_LABELS
 from app.documents.services import add_evidence_version, create_document, link_working_document
 from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.models import MatterImportantDate, MatterWorkVictory
@@ -1214,6 +1216,189 @@ def test_the_opinion_row_is_marked_for_what_it_is(signed_in, specialist):
     assert "Lõplik" not in body
     assert "★" not in body
     assert "doctable__row--final" not in body
+
+
+# -- the four columns, and the three things that used to be beside them ------
+#
+# The table was `Fail | Roll | Kuupäev | Versioon | Maht | Lisas`, and every row
+# also carried an extraction-state chip under the filename. All three of the
+# removed things were true; none of them was a question a reader browsing a
+# Matter's files was asking. `Versioon` reads `v1` on almost every row, a byte
+# size is not how anybody tells two letters apart, and «Teksti töötlemine
+# ootel» is a machine reporting its own progress forty times over.
+#
+# What is removed is the *presentation*, and the tests below are written to
+# prove that and only that: versioning still exists and is still immutable, the
+# size is still stored, extraction still runs, and each is still stated where a
+# reader goes when it is genuinely the question.
+
+
+def _documents(client, matter) -> str:
+    return _body(client.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk})))
+
+
+def _table_of(body: str) -> str:
+    """The evidence table, so an assertion cannot match the page around it.
+
+    «Maht» is a heading on the statistics surface and `Versioon` is a column on
+    the document's own page; neither is reachable from here, but a bare `in
+    body` is the kind of assertion that starts passing for the wrong reason the
+    first time a shared partial grows.
+    """
+    start = body.index('<table class="table doctable">')
+    return body[start : body.index("</table>", start)]
+
+
+def test_the_documents_table_has_four_columns(signed_in, specialist):
+    """`Fail | Roll | Kuupäev | Lisas`, asserted as the whole ordered list.
+
+    A list rather than four `in` checks and two `not in` checks: what changed
+    here is the set of columns, and only the complete set can say that nothing
+    was left behind, reordered, or quietly added back.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    _evidence(matter, specialist)
+
+    table = _table_of(_documents(signed_in, matter))
+    headings = re.findall(r'<th scope="col">(.*?)</th>', table, re.S)
+
+    assert [heading.strip() for heading in headings] == ["Fail", "Roll", "Kuupäev", "Lisas"]
+
+
+def test_the_documents_table_prints_no_version_and_no_size(signed_in, specialist):
+    """The cells go with the headings, rather than being hidden by CSS.
+
+    Matched inside the table and against the values this document really has,
+    so neither assertion can pass because the string happens to be spelled
+    differently: `filesizeformat` is what the cell used to render, and `v1` is
+    what the version cell used to say.
+    """
+    from django.template.defaultfilters import filesizeformat
+
+    matter = factories.MatterFactory(owner=specialist)
+    version = _evidence(matter, specialist)
+
+    table = _table_of(_documents(signed_in, matter))
+
+    assert f"v{version.version_number}" not in table
+    assert filesizeformat(version.size_bytes) not in table
+    # The disclosure the `Versioon` cell opened is gone with the cell, and it is
+    # gone rather than emptied: `<details>` left behind would be a control that
+    # opens onto nothing.
+    assert "versions__trigger" not in table
+    assert "Versioonid — vanemad jäävad alles" not in table
+
+
+def test_versioning_itself_is_untouched_by_the_column_going(signed_in, specialist):
+    """The column was presentation. The model is the product, and it stays.
+
+    A second version is captured and the older one is still there, still
+    numbered, still downloadable — which is the property the removed cell was
+    displaying and is not the same thing as displaying it.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    first = _evidence(matter, specialist, filename="Koja_arvamus.pdf")
+    second = add_evidence_version(
+        document=first.document,
+        content=b"%PDF-1.4 parandatud",
+        original_filename="Koja_arvamus_v2.pdf",
+        mime_type="application/pdf",
+        uploaded_by=specialist,
+    )
+
+    assert second.version_number == first.version_number + 1
+    assert first.document.versions.count() == 2
+    first.refresh_from_db()
+    assert first.sha256 and first.size_bytes
+
+    # And the history is on the document's own page, which is where the column
+    # said it was going.
+    detail = _body(
+        signed_in.get(reverse("documents:document_detail", kwargs={"pk": first.document.pk}))
+    )
+    assert "Versioonid" in detail
+    assert "Koja_arvamus.pdf" in detail
+
+
+def test_no_extraction_state_chip_reaches_an_ordinary_file_row(signed_in, specialist):
+    """Neither the pending chip nor the not-applicable one, nor any other.
+
+    Asserted by the label a reader would see *and* by the chip's own class, so
+    a change that kept the element and merely restyled it would not pass. The
+    version here is `PENDING`, which is the state every freshly captured file
+    is in and the one that used to shout loudest.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    version = _evidence(matter, specialist)
+
+    assert version.extraction_state == ExtractionState.PENDING
+    table = _table_of(_documents(signed_in, matter))
+
+    assert "statechip" not in table
+    for label in STATE_LABELS.values():
+        assert label not in table
+
+
+def test_extraction_state_still_reaches_the_readers_who_need_it(signed_in, specialist):
+    """Removed from a file list, not from the system.
+
+    The document's own page is the diagnostic surface and still says
+    `Töötlemine`; the labels themselves are still exported from
+    `app.documents.preview`, which is what Assisted Intake reads to say it has
+    nothing to work from yet.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    version = _evidence(matter, specialist)
+
+    detail = _body(
+        signed_in.get(reverse("documents:document_detail", kwargs={"pk": version.document.pk}))
+    )
+
+    assert "Töötlemine" in detail
+    assert STATE_LABELS[ExtractionState.PENDING] in detail
+    assert STATE_LABELS[ExtractionState.NOT_APPLICABLE] == "Teksti eraldamine ei kohaldu"
+
+
+def test_vaata_sisu_survives_the_chip_it_stood_beside(signed_in, specialist):
+    """The link was inside the state element and is the half worth keeping.
+
+    It is the only route from this table to the text a search matched, and it
+    is offered on exactly the documents that have text: present once the
+    extraction is `DONE`, absent while it is not.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    version = _evidence(matter, specialist)
+
+    assert "Vaata sisu" not in _table_of(_documents(signed_in, matter))
+
+    version.extraction_state = ExtractionState.DONE
+    version.save(update_fields=["extraction_state"])
+
+    table = _table_of(_documents(signed_in, matter))
+    assert "Vaata sisu" in table
+    assert reverse("documents:document_detail", kwargs={"pk": version.document.pk}) in table
+    # And still no chip beside it.
+    assert "statechip" not in table
+
+
+def test_the_row_keeps_everything_the_simplification_was_not_about(signed_in, specialist):
+    """`Lisas`, the filename, the Arvamus badge and the role, all still there.
+
+    The one assertion that would notice an over-enthusiastic removal. The badge
+    especially: it is the whole of docs/adr/0061 on this surface, and it sits in
+    the same cell as the filename the extraction chip used to hang under.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    _evidence(matter, specialist, filename="Koja_arvamus.pdf")
+
+    body = _documents(signed_in, matter)
+    table = _table_of(body)
+
+    assert '<th scope="col">Lisas</th>' in table
+    assert "Koja_arvamus.pdf" in table
+    assert "badge--opinion" in table
+    assert ">Arvamus<" in table
+    assert specialist.get_short_name() in table
 
 
 def test_a_working_reference_is_not_evidence(signed_in, specialist):

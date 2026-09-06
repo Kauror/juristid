@@ -1703,6 +1703,22 @@ def _role_filter_choices() -> list[tuple[str, str]]:
     ]
 
 
+#: Roles a person may not file a *new* upload as, however many the model holds.
+#:
+#: `OUTCOME_EVIDENCE` — «Tulemuse tõend» — is a claim about what happened to a
+#: proposal after Koda wrote about it, and a file is almost never that at the
+#: moment somebody is uploading it. On the menu it read as a plausible tenth
+#: option beside nine descriptions of what a file *is*, and picking it filed a
+#: document under an assertion nobody had made.
+#:
+#: An exclusion from a menu and nothing else. The value stays in
+#: :class:`~app.documents.enums.DocumentRole`, documents already carrying it
+#: stay valid and render their stored label everywhere they always did, the
+#: `Roll` filter above still offers it so those documents remain findable, and
+#: no migration is involved.
+UPLOAD_ROLES_NOT_OFFERED: frozenset[str] = frozenset({DocumentRole.OUTCOME_EVIDENCE})
+
+
 def _upload_role_choices() -> list[tuple[str, str]]:
     """The same relabelling for the upload panel, over the *stored* vocabulary.
 
@@ -1711,10 +1727,15 @@ def _upload_role_choices() -> list[tuple[str, str]]:
     value here is a real one and only the words change — which is the whole of
     what this change does to the role: the user reads `Arvamus`, the database
     keeps `KODA_SUBMISSION_FINAL`, and no migration is involved (docs/adr/0061).
+
+    Narrower than the filter in one respect: `UPLOAD_ROLES_NOT_OFFERED` is
+    dropped here and nowhere else, so a role that is no longer a sensible thing
+    to *choose* is still a role a stored document may *have*.
     """
     return [
         (value, "Arvamus" if value == DocumentRole.KODA_SUBMISSION_FINAL else label)
         for value, label in DocumentRole.choices
+        if value not in UPLOAD_ROLES_NOT_OFFERED
     ]
 
 
@@ -1738,13 +1759,19 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     *not* do is print the evidence mechanics again — the checksum, the importer's
     match reasoning, the version and the size a second time — which is what made
     the retired surface a third copy of the same letter (docs/adr/0061).
+
+    The table is four columns: `Fail`, `Roll`, `Kuupäev`, `Lisas`. `Versioon`
+    and `Maht` went the same way as the mechanics above, and the per-version
+    prefetch went with them: nothing on this page reads a document's history any
+    more, so asking for every version of every row was a query bought for a cell
+    that is not rendered. The history is on the document's own page, which loads
+    it for the one document a reader is looking at.
     """
     matter = get_visible_matter(request, pk)
     documents = (
         Document.objects.filter(matter=matter)
         .visible_to(request.user)
         .select_related("current_version", "created_by")
-        .prefetch_related("versions")
         .order_by("-created_at")
     )
 

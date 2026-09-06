@@ -22,9 +22,12 @@ exactly as it decides it in the workspace, and it decides it before anything is
 counted. A specialist may not reach archive rows, an archive count, or the
 corpus's date range by hand-editing the section's parameter.
 
-**The section is bounded.** It shows twelve rows under a fifty-row register and
-says so. A page that rendered the whole corpus under the whole register would
-have consolidated two surfaces into one unusable one.
+**The section is bounded.** It shows twelve rows under a fifty-row register. A
+page that rendered the whole corpus under the whole register would have
+consolidated two surfaces into one unusable one. The bound is no longer
+*announced* — «313 vastet · kuvatud 12» was a second number on a line that
+answers one question — and the tests below hold both halves of that: the note
+is gone, and the number of rows it used to describe is not.
 """
 
 from __future__ import annotations
@@ -203,9 +206,16 @@ def meta_labels_of(row: str) -> list[str]:
 
 
 def file_cell_of(row: str) -> str:
-    """The row's file cell — the last thing on the meta line."""
-    start = row.index('<div class="submission__meta__file">')
-    return row[start : row.index("</dl>", start)]
+    """The row's file line — under the heading, above the meta line.
+
+    It used to be the last `<div>` of the meta line, pushed to the right edge
+    with `margin-left: auto`, which put a filename and the Teema heading it
+    belongs to at opposite ends of the row. It is its own element now, and this
+    helper is scoped to it for the same reason it always was: what most of the
+    assertions below check about the file is a *negative*.
+    """
+    start = row.index('<p class="submission__file">')
+    return row[start : row.index("</p>", start)]
 
 
 # ---------------------------------------------------------------------------
@@ -668,11 +678,52 @@ def test_the_section_shows_at_most_the_bound(signed_in, specialist, capture_evid
     assert len(submission_rows_of(section)) == EMBEDDED_ROWS
     # And the real total is stated rather than implied by the rows shown.
     assert f"<strong>{EMBEDDED_ROWS + 4}</strong> vastet" in section
-    assert f"kuvatud {EMBEDDED_ROWS}" in section
 
 
-def test_the_bound_is_not_announced_when_everything_fits(signed_in, opinion_on_a_matter) -> None:
-    """ "kuvatud 12" beside a single row would be a page qualifying nothing."""
+def test_the_bound_is_never_announced_beside_the_total(
+    signed_in, specialist, capture_evidence
+) -> None:
+    """«· kuvatud 12» is gone, and the bound it described is not.
+
+    Asserted in the state that used to print it — more opinions than the
+    section shows — because that is the only state where its absence means
+    anything. Both halves are checked in one place on purpose: a change that
+    removed the note by removing the bound would pass either assertion alone.
+    """
+    matter = factories.MatterFactory(owner=specialist, title="Üks teema, palju arvamusi")
+    for index in range(EMBEDDED_ROWS + 4):
+        evidence = capture_evidence(matter, b"%PDF-1.4 s", f"{index}.pdf", "application/pdf")
+        sent_submission(matter, evidence=evidence, title=f"Arvamus number {index:02d}")
+
+    section = opinion_section_of(body_of(signed_in.get(TEEMAD_URL)))
+
+    assert "kuvatud" not in section
+    assert f"<strong>{EMBEDDED_ROWS + 4}</strong> vastet" in section
+    assert len(submission_rows_of(section)) == EMBEDDED_ROWS
+    # And the way out is still under them, which is what makes a bounded list
+    # honest now that it no longer says how bounded it is.
+    assert "Vaata kõiki arvamusi" in section
+
+
+def test_a_search_keeps_its_own_wording_and_gains_no_note(
+    signed_in, specialist, capture_evidence
+) -> None:
+    """`7 vastet otsingule „…”` is the useful form and is kept, unqualified."""
+    matter = factories.MatterFactory(owner=specialist, title="Otsitav teema")
+    for index in range(EMBEDDED_ROWS + 4):
+        evidence = capture_evidence(matter, b"%PDF-1.4 s", f"{index}.pdf", "application/pdf")
+        sent_submission(matter, evidence=evidence, title=f"Pakendiarvamus {index:02d}")
+
+    section = opinion_section_of(
+        body_of(signed_in.get(TEEMAD_URL, {"arvamus_q": "Pakendiarvamus"}))
+    )
+
+    assert "vastet otsingule „Pakendiarvamus”" in section
+    assert "kuvatud" not in section
+
+
+def test_the_count_is_bare_when_everything_fits(signed_in, opinion_on_a_matter) -> None:
+    """The single-row case, unchanged by the note going: one number, no tail."""
     section = opinion_section_of(body_of(signed_in.get(TEEMAD_URL)))
 
     assert "<strong>1</strong> vastet" in section
@@ -721,7 +772,7 @@ def test_each_opinion_row_links_to_its_teema(signed_in, opinion_on_a_matter) -> 
 
 
 # ---------------------------------------------------------------------------
-# What a sent row says: the Teema, when, to whom, and the file
+# What a sent row says: the Teema, the file, when, and to whom
 # ---------------------------------------------------------------------------
 #
 # The row printed its own title as a heading and the Teema underneath it as a
@@ -729,7 +780,14 @@ def test_each_opinion_row_links_to_its_teema(signed_in, opinion_on_a_matter) -> 
 # is usually named after the teema it came out of — so every row asked the
 # reader to read two headings to learn one thing, and the tail of the line
 # carried «v1 · 224,8 kB», which is two facts about a file nobody was choosing
-# between. The row is the Teema, when it went, who it went to, and the file.
+# between. The row is the Teema, the file, when it went and who it went to.
+#
+# The file moved with the same reasoning one step further. It was the last item
+# on the meta line, held at the right edge by `margin-left: auto`, so a filename
+# and the heading it belongs to sat at opposite ends of a wide row and the
+# reader paired them across the gap. It is a line of its own under the heading
+# now, against the same left edge — which is what the assertions here mean by
+# "before the meta line" rather than "after the addressee".
 #
 # Every test below uses `opinion_on_a_matter`, whose two titles are deliberately
 # different: that is what makes "the Matter title is rendered" a claim about
@@ -786,14 +844,56 @@ def test_the_submissions_own_title_is_not_printed_in_the_row(
     assert submission.title not in one_row(signed_in)
 
 
-def test_the_row_carries_exactly_three_facts(signed_in, opinion_on_a_matter) -> None:
-    """Saadetud, Adressaat, and the file. No «Teema» label, and no fourth.
+def test_the_meta_line_carries_exactly_two_facts(signed_in, opinion_on_a_matter) -> None:
+    """Saadetud and Adressaat. No «Teema» label, no «Fail», and no third.
 
-    Asserted as the whole ordered list rather than as three separate `in`
-    checks: what this change removed is a *field*, and only the complete list
-    can say that nothing was left behind or quietly added back.
+    Asserted as the whole ordered list rather than as separate `in` checks:
+    what this row has twice lost is a *field*, and only the complete list can
+    say that nothing was left behind or quietly added back. `Fail` left this
+    list by moving up the row rather than by being deleted — the file is
+    asserted below, on its own line.
     """
-    assert meta_labels_of(one_row(signed_in)) == ["Saadetud", "Adressaat", "Fail"]
+    assert meta_labels_of(one_row(signed_in)) == ["Saadetud", "Adressaat"]
+
+
+def test_the_file_is_left_aligned_under_its_teema(signed_in, opinion_on_a_matter) -> None:
+    """The point of the move: filename beside its Matter, not at the far edge.
+
+    Three claims, and each is one way the old contract could survive a
+    superficial edit. The file's own element comes *before* the meta line in
+    source order, so it reads under the heading rather than after the
+    addressee. It is not inside the meta line at all, so no flex rule on that
+    line can push it anywhere. And nothing on the row asks to be floated right.
+    """
+    row = one_row(signed_in)
+
+    assert row.index('<p class="submission__file">') < row.index('<dl class="submission__meta">')
+    assert row.index('<h3 class="submission__title">') < row.index('<p class="submission__file">')
+    assert "submission__meta__file" not in row
+    assert "margin-left" not in row
+
+
+def test_no_stylesheet_pushes_the_file_to_the_right_edge() -> None:
+    """The CSS half, because the template alone cannot prove this.
+
+    `margin-left: auto` on the file's own rule would put it back at the right
+    edge with the markup unchanged, and every assertion above would still pass.
+    Read from the stylesheet rather than from a rendered page: this is a rule
+    that exists or does not, and no fixture makes it more true.
+    """
+    from pathlib import Path
+
+    from django.conf import settings
+
+    css = (Path(settings.BASE_DIR) / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    start = css.index(".submission__file {")
+    rule = css[start : css.index("}", start)]
+
+    assert "margin-left" not in rule
+    assert "float" not in rule
+    # And the class it replaced is gone rather than left behind as dead weight
+    # that a later edit could reattach.
+    assert ".submission__meta__file" not in css
 
 
 def test_the_row_still_says_when_it_was_sent(signed_in, opinion_on_a_matter) -> None:
@@ -864,12 +964,16 @@ def test_the_file_is_named_and_downloadable(signed_in, opinion_on_a_matter) -> N
 
 
 def test_the_file_carries_no_version_and_no_size(signed_in, opinion_on_a_matter) -> None:
-    """«v1 · 224,8 kB» is gone, and the cell is the link and nothing else.
+    """«v1 · 224,8 kB» is gone, and the line is the link and nothing else.
 
-    Matched as the whole rendered `<dd>` rather than as `"v1" not in html`: the
+    Matched as the whole rendered line rather than as `"v1" not in html`: the
     page around it is full of ones and of «kB»-shaped strings, and a global
     substring would either pass by accident or fail by accident. The one
-    assertion that cannot do either is "this cell is exactly an anchor".
+    assertion that cannot do either is "this line is exactly an anchor".
+
+    The visually-hidden `Fail` is dropped before matching. It is the label the
+    `<dt>` used to carry — a screen reader still hears which of the row's
+    values this is — and it is not something the eye reads on the line.
     """
     from django.template.defaultfilters import filesizeformat
 
@@ -877,12 +981,10 @@ def test_the_file_carries_no_version_and_no_size(signed_in, opinion_on_a_matter)
     version = submission.final_version
 
     cell = file_cell_of(one_row(signed_in))
-    rendered = re.search(r"<dd>(.*?)</dd>", cell, re.S)
+    rendered = cell.replace('<p class="submission__file">', "")
+    rendered = re.sub(r'<span class="visually-hidden">Fail</span>', "", rendered)
 
-    assert rendered
-    assert re.fullmatch(r'<a href="[^"]+">arvamus\.pdf</a>', rendered.group(1).strip()), (
-        rendered.group(1)
-    )
+    assert re.fullmatch(r'<a href="[^"]+">arvamus\.pdf</a>', rendered.strip()), rendered
     assert f"v{version.version_number}" not in cell
     assert filesizeformat(version.size_bytes) not in cell
 

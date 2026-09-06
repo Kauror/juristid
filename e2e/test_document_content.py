@@ -108,14 +108,32 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     screenshots(page, "20-saabunud-lisatud")
 
     # -- the lawyer is not made to wait for extraction --------------------
-    page.goto(f"{page.url.rstrip('/')}/dokumendid/")
-    expect(page.get_by_text(re.compile("Teksti töötlemine ootel|Töötlemisel"))).to_be_visible()
+    #
+    # The file list says nothing about extraction any more: a state chip beside
+    # every filename was a machine reporting its own progress to somebody who
+    # came here to find a document. What it shows before the worker has run is
+    # the file itself, complete and openable — which is the actual claim this
+    # step has always been making.
+    documents_url = f"{page.url.rstrip('/')}/dokumendid/"
+    page.goto(documents_url)
+    row = page.locator(".doctable tbody tr", has_text="katse-eelnou.pdf")
+    expect(row).to_have_count(1)
+    expect(row.locator(".statechip")).to_have_count(0)
+    expect(row.get_by_role("link", name="Vaata sisu")).to_have_count(0)
     screenshots(page, "21-tootlemine-ootel")
+
+    # The state is still recorded and still reported, on the surface that
+    # exists to answer questions about one file.
+    detail_url = row.locator(".table__title a").first.get_attribute("href")
+    page.goto(f"{base_url}{detail_url}")
+    expect(page.get_by_text(re.compile("Teksti töötlemine ootel|Töötlemisel"))).to_be_visible()
 
     run_worker()
 
-    page.reload()
-    expect(page.get_by_text("Tekst olemas")).to_be_visible()
+    # Back to the list, where the only thing extraction changes is that the way
+    # into the text appears. That is asserted by the block below, which follows
+    # «Vaata sisu» — a link that was absent a moment ago.
+    page.goto(documents_url)
 
     # -- the immutable original, and the way to its bytes -----------------
     # Followed by href rather than clicked. The table header is sticky, so a

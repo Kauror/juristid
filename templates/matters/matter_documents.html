@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% load document_state %}
 {% block title %}Dokumendid · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -7,11 +6,19 @@ The file workspace — the only second tab a Matter has, and where a Matter's
 opinions live.
 
 Two groups, and they look like opposites on purpose. `Failid` are immutable
-evidence: solid rows, a version number, a size, the person who captured them,
-and the Chamber's own letters badged ARVAMUS. `Töödokumendid` are living
-SharePoint links: dashed, arrowed, captioned with when SharePoint last saw them,
-and explicitly not proof of anything (master specification 8.6, 15.3;
-Teema redesign §23).
+evidence: solid rows, the person who captured them, and the Chamber's own
+letters badged ARVAMUS. `Töödokumendid` are living SharePoint links: dashed,
+arrowed, captioned with when SharePoint last saw them, and explicitly not proof
+of anything (master specification 8.6, 15.3; Teema redesign §23).
+
+**Four columns: Fail, Roll, Kuupäev, Lisas.** `Versioon`, `Maht` and the
+extraction-state chip were all true and all technical: a version number that
+reads `v1` on nearly every row, a byte size nobody chooses a file by, and a
+machine's progress reported beside forty filenames. None of the three is
+deleted from the product — versioning is immutable and untouched, the size is
+still stored, extraction still runs and still reports itself — they are stated
+on the document's own page, which is where a reader goes when one of them is
+actually the question.
 
 **`ARVAMUS`, not `★ LÕPLIK`.** «Lõplik» named an internal lifecycle property
 of a piece of evidence; `Arvamus` names what the file is, which is what a lawyer
@@ -203,8 +210,6 @@ finds again (§23.5).
                     <th scope="col">Fail</th>
                     <th scope="col">Roll</th>
                     <th scope="col">Kuupäev</th>
-                    <th scope="col">Versioon</th>
-                    <th scope="col">Maht</th>
                     <th scope="col">Lisas</th>
                   </tr>
                 </thead>
@@ -263,22 +268,22 @@ finds again (§23.5).
                           </span>
                         {% endif %}
                         {% comment %}
-                          Whether this file's text has been extracted, under the
-                          name rather than in a column of its own. The design's
-                          six columns are the six a lawyer scans; this is a
-                          state they consult about one row, and "Vaata sisu" is
-                          the only way from here to the text a search matched
-                          (Stage-2B brief 35).
+                          The way from here to the text a search matched, and
+                          nothing about how it got there. The extraction state
+                          used to be a chip beside every filename, which meant
+                          «Teksti töötlemine ootel» and «Teksti eraldamine ei
+                          kohaldu» on rows whose reader was looking for a file —
+                          a machine's progress reported forty times over to
+                          somebody who never asked. The state is not gone: it is
+                          on the document's own page under `Töötlemine`, where a
+                          reader consults it about one file, and Assisted Intake
+                          still says when it has nothing to read yet
+                          (Stage-2B brief 35, app/documents/preview.py).
                         {% endcomment %}
-                        {% if document.current_version %}
+                        {% if document.current_version.extraction_state == "DONE" %}
                           <span class="doctable__state">
-                            <span class="statechip statechip--{{ document.current_version.extraction_state|extraction_tone }}">
-                              {{ document.current_version.extraction_state|extraction_label }}
-                            </span>
-                            {% if document.current_version.extraction_state == "DONE" %}
-                              <a class="quietlink"
-                                 href="{% url 'documents:document_detail' pk=document.pk %}">Vaata sisu</a>
-                            {% endif %}
+                            <a class="quietlink"
+                               href="{% url 'documents:document_detail' pk=document.pk %}">Vaata sisu</a>
                           </span>
                         {% endif %}
                       </td>
@@ -301,45 +306,18 @@ finds again (§23.5).
                           {{ document.created_at|date:"j.n.Y" }}
                         </time>
                       </td>
-                      <td>
-                        {% if document.versions.all|length > 1 %}
-                          <details class="versions">
-                            <summary class="versions__trigger">
-                              v{{ document.current_version.version_number }} ▾
-                            </summary>
-                            <div class="versions__body">
-                              <p class="versions__note">
-                                Versioonid — vanemad jäävad alles, midagi ei kirjutata üle
-                              </p>
-                              {% for version in document.versions.all|dictsortreversed:"version_number" %}
-                                <p class="versions__row">
-                                  <span>v{{ version.version_number }}</span>
-                                  <span class="table__date">
-                                    <time datetime="{{ version.acquired_at|date:'c' }}">
-                                      {{ version.acquired_at|date:"j.n.Y" }}
-                                    </time>
-                                  </span>
-                                  <span class="table__date">{{ version.size_bytes|filesizeformat }}</span>
-                                  {% if version.pk == document.current_version_id %}
-                                    <span class="versions__current">praegune</span>
-                                  {% else %}
-                                    <a href="{% url 'documents:download' pk=version.pk %}">Ava</a>
-                                  {% endif %}
-                                </p>
-                              {% endfor %}
-                            </div>
-                          </details>
-                        {% elif document.current_version %}
-                          v{{ document.current_version.version_number }}
-                        {% else %}
-                          <span class="table__missing">—</span>
-                        {% endif %}
-                      </td>
-                      <td class="table__date">
-                        {% if document.current_version %}
-                          {{ document.current_version.size_bytes|filesizeformat }}
-                        {% else %}<span class="table__missing">—</span>{% endif %}
-                      </td>
+                      {% comment %}
+                        No `Versioon` and no `Maht` column. Both were true and
+                        both were technical facts about the evidence printed on
+                        every row of a list somebody scans for a file: «v1» is
+                        the answer for almost every document here, and a byte
+                        size is not how a lawyer tells two letters apart.
+                        Neither is deleted from the product — versioning is
+                        untouched and immutable, the size is still stored, and
+                        both are stated on the document's own page, which is
+                        where a reader goes when the version is the question
+                        (templates/documents/document_detail.html).
+                      {% endcomment %}
                       <td>
                         {% if document.created_by %}{{ document.created_by.get_short_name }}
                         {% else %}<span class="muted">—</span>{% endif %}
