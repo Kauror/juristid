@@ -885,6 +885,39 @@ def test_without_a_search_row_the_page_still_works_and_suggestions_degrade(speci
     assert SearchDocument.objects.count() == 0, "nothing rebuilt anything"
 
 
+def test_the_matter_page_never_runs_the_recommendation_engine(monkeypatch, signed_in, specialist):
+    """Confirmed material is immediate; the machine's guesses are not.
+
+    The section renders `Seotud teemad` and `Taustmaterjal` from two queries on
+    every Matter page, because those are decisions somebody already made. What
+    must not happen is the page ranking candidates nobody asked for: the engine
+    reads the search projections, the archive and every other Matter, and it is
+    behind `Võimalikud seosed` for that reason (docs/adr/0062 §7).
+
+    Asserted by making the engine fail loudly rather than by counting queries.
+    A budget can absorb a new call by being generous; this cannot. It also
+    covers the count — asking "how many suggestions are there" eagerly would be
+    the same ranking work wearing a smaller number.
+    """
+
+    def explode(*args, **kwargs):  # pragma: no cover - the point is not calling it
+        raise AssertionError("the Matter page ran the recommendation engine")
+
+    for name in ("suggestions_for", "hidden_count", "hidden_candidates"):
+        monkeypatch.setattr(engine, name, explode)
+
+    current = _matter(specialist, "Jäätmeseaduse muutmine", number=991)
+    _matter(specialist, "Jäätmeseaduse rakendamine", number=992)
+
+    response = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": current.pk}))
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    # The section is there, and its lazy control is the way in.
+    assert "Seotud materjalid" in body
+    assert "Võimalikud seosed" in body
+
+
 def test_the_order_is_the_same_every_time(specialist):
     current = _matter(specialist, "Jäätmeseaduse muutmine", number=973)
     for number, title in enumerate(

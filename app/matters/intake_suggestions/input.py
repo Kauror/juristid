@@ -16,9 +16,30 @@ Document that queryset returned. A restricted annex on a normal Matter is
 therefore absent from the analysis for anybody who may not open it — not
 present-but-hidden, absent.
 
-**Bounded.** One query lists the documents, one fetches their live
-derivatives with the fragments prefetched. Neither grows with the number of
-fragments, and nothing here loads another Matter.
+**Bounded, and bounded at the loading rather than at the reading.** The
+visible documents are listed first. Their live derivative *rows* are read
+next — kind, status and the ``character_count`` the extraction worker already
+stored, plus the ``metadata`` column a message's headers live in, which is a
+small JSON object rather than a text load. That count is what `_plan` admits
+material on, so the budget is spent before any text is fetched, and the
+fragments of exactly the admitted derivatives are the last thing read.
+
+Deciding admission from a stored count is the whole point: text the budget
+excludes stays in the database instead of being loaded and then discarded.
+Prefetching every fragment and reading the first few would bound the rule work
+and nothing else.
+
+So the shape is at most three queries, and it is flat — it does not grow with
+the number of fragments, the number of documents, or how much material a
+Matter has collected, and nothing here loads another Matter. Fewer than three
+when there is nothing to ask for: a Matter with no visible document never
+reaches the derivative query, and one whose documents admit no text never
+reaches the fragment query.
+
+What the budget left out is not silently dropped. A document read in part is
+``truncated`` and one not read at all is ``skipped_for_budget`` — kept apart
+because they are different facts — and the panel says so rather than letting a
+short answer read as «there was nothing in there».
 """
 
 from __future__ import annotations

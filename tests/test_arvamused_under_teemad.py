@@ -1016,6 +1016,14 @@ def test_the_section_costs_a_fixed_number_of_queries(
     a specialist is now one. The arithmetic moved by exactly that one query —
     `visible_archive(viewer).count()` — and not by anything that scales with
     rows, which is the property this test exists to hold.
+
+    Re-measured on PostgreSQL 18 once the parallel branches had landed: **6**,
+    and 6 again with the population doubled to six pairs. The ceiling comes
+    down from 9 to 8 — two spare for one intentional future query, and still
+    far below anything that scales with rows. The union ADR 0061 introduced is
+    what is being counted: `KODA_SUBMISSION_FINAL` documents together with the
+    visible final evidence of visible SENT Submissions, which is why the rows
+    are forced below rather than left lazy.
     """
     from django.test import RequestFactory
 
@@ -1024,7 +1032,7 @@ def test_the_section_costs_a_fixed_number_of_queries(
     request = RequestFactory().get(TEEMAD_URL)
     request.user = specialist
 
-    with django_assert_max_num_queries(9):
+    with django_assert_max_num_queries(8):
         context = embedded_context(request)
         # Force the lazy queryset, or the rows are never fetched at all.
         assert len(list(context["opinion_rows"])) == 3
