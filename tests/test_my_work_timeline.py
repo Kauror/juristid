@@ -615,11 +615,22 @@ def test_the_bands_render_in_reading_order(client, specialist, today):
     """
     # One dated obligation in each band, so every band actually renders and the
     # order is observable rather than vacuously true of a one-band page.
-    for offset, title in (
-        (-4, "Hilinenud"),
-        (1, "Sel nädalal"),
-        (20, "Kuu jooksul"),
-        (45, "Hiljem"),
+    #
+    # *Sel nädalal* is clamped into the week rather than dated at `today + 1`.
+    # This test renders the page, so the bands are cut by the view's own clock
+    # and not by this fixture: on a Sunday `today + 1` is next Monday, the band
+    # is empty, it does not render, and an assertion about four bands sees
+    # three. Anchoring the fixture to Monday instead would be the wrong repair
+    # here for the same reason -- the view would read the real Sunday and the
+    # date would land in `Üle tähtaja`. A deadline falling today is *this week*
+    # and is not late, so the clamp keeps the band non-empty on every day of
+    # the week (`end_of_iso_week`, ADR 0046).
+    this_week = min(today + timedelta(days=1), wi.end_of_iso_week(today))
+    for target, title in (
+        (today - timedelta(days=4), "Hilinenud"),
+        (this_week, "Sel nädalal"),
+        (today + timedelta(days=20), "Kuu jooksul"),
+        (today + timedelta(days=45), "Hiljem"),
     ):
         matter = _matter(specialist, title=f"{title} teema")
         set_next_action(
@@ -627,7 +638,7 @@ def test_the_bands_render_in_reading_order(client, specialist, today):
             text=f"Tegevus — {title}",
             kind=ActionKind.DO,
             date_semantics=DateSemantics.DEADLINE,
-            target_date=today + timedelta(days=offset),
+            target_date=target,
             actor=specialist,
         )
 

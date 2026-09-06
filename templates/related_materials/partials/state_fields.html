@@ -1,0 +1,8 @@
+{% comment %}
+What a decision form carries back so the re-rendered section keeps the view the
+person was looking at: whether the hidden candidates were shown, and how many
+suggestions were open. The suggestions themselves are always re-opened after a
+decision — the person is in the middle of reading them.
+{% endcomment %}
+<input type="hidden" name="peidetud" value="{% if hidden_shown %}1{% else %}0{% endif %}">
+<input type="hidden" name="piir" value="{{ suggestion_limit|default:5 }}">

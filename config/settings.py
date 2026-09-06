@@ -63,6 +63,7 @@ LOCAL_APPS = [
     "app.legacy_import",
     "app.reporting",
     "app.intelligence",
+    "app.related_materials",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
