@@ -1372,7 +1372,10 @@ def test_vaata_sisu_survives_the_chip_it_stood_beside(signed_in, specialist):
     assert "Vaata sisu" not in _table_of(_documents(signed_in, matter))
 
     version.extraction_state = ExtractionState.DONE
-    version.save(update_fields=["extraction_state"])
+    # `updated_at` with it, the way the worker's own finish does: a row whose
+    # state moved without its timestamp moving is a row that lies to every
+    # operator query (app/documents/extraction/orchestrator.py).
+    version.save(update_fields=["extraction_state", "updated_at"])
 
     table = _table_of(_documents(signed_in, matter))
     assert "Vaata sisu" in table
