@@ -1347,7 +1347,22 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
 def test_the_matter_page_does_not_explode_into_queries(
     signed_in, django_assert_max_num_queries, specialist, organisation
 ):
-    """A page that answers "what is this" must not cost a query per fact."""
+    """A page that answers "what is this" must not cost a query per fact.
+
+    Measured at **30** on PostgreSQL 18 against current main, and 30 again with
+    the population doubled to 24 updates and 10 engagements: flat, which is the
+    property this test exists to hold. The ceiling was 60 while the three
+    parallel branches were editing this page; that is now roughly twice the
+    behaviour it protects, so a regression could add twenty-five queries with
+    CI still green.
+
+    Two of the thirty are `Seotud materjalid` reading the confirmed relations
+    and the chosen background (docs/adr/0062). They are the approved shape and
+    are not to be optimised away to reach an older number: what stays out of
+    the page is the recommendation engine, which is behind
+    `Võimalikud seosed` and is asserted separately in
+    `tests/test_related_materials.py`.
+    """
     matter = factories.MatterFactory(owner=specialist, source_organisations=[organisation])
     for index in range(12):
         compose_update(matter=matter, author=specialist, body=f"<p>Kirje {index}</p>")
@@ -1359,5 +1374,5 @@ def test_the_matter_page_does_not_explode_into_queries(
             actor=specialist,
         )
 
-    with django_assert_max_num_queries(60):
+    with django_assert_max_num_queries(38):
         signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

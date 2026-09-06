@@ -992,6 +992,12 @@ def test_the_detail_page_asks_about_visibility_once(
     A letter can concern several Matters — that is why the link table is plural
     — so the natural per-row `visible_to(...).exists()` would scale the page
     with the thing the page exists to show.
+
+    Measured at **9** on PostgreSQL 18, and 9 again with twelve linked Matters
+    instead of six: flat. The ceiling was 20 while the opinion and Related
+    Materials branches were in flight; 12 leaves room for one more legitimate
+    branch without leaving eleven spare. The reader still pays for archive
+    authorization here — that is not what is being shaved.
     """
     owner = factories.UserFactory()
     matters = [factories.MatterFactory(owner=owner, title=f"Näidisteema {n}") for n in range(6)]
@@ -1000,17 +1006,22 @@ def test_the_detail_page_asks_about_visibility_once(
         propose(binary, matter)
     act_as(behind_the_gate, reader)
 
-    with django_assert_max_num_queries(20):
+    with django_assert_max_num_queries(12):
         assert behind_the_gate.get(detail_url(binary)).status_code == 200
 
 
 def test_the_browse_page_does_not_grow_a_query_per_row(
     behind_the_gate, reader, django_assert_max_num_queries
 ):
+    """Measured at **11** on PostgreSQL 18, and 11 again at twenty-four rows.
+
+    Flat, which is the claim; the ceiling comes down from 20 to 14 now that the
+    branches that were editing this surface have landed.
+    """
     for index in range(12):
         hold(sha=f"{index:02d}" + "d" * 62, title=f"Näidiskiri {index}")
     rebuild_archive_index()
     act_as(behind_the_gate, reader)
 
-    with django_assert_max_num_queries(20):
+    with django_assert_max_num_queries(14):
         assert behind_the_gate.get(browse_url()).status_code == 200
