@@ -30,24 +30,7 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def today():
-    """The Monday of the current ISO week, not the calendar day.
-
-    The same weekend trap `tests/test_action_kind_is_not_user_facing.py`
-    documents, in a suite that dates its fixtures the same way.
-    `test_the_bands_render_in_reading_order` puts one obligation in each band,
-    and it dates the *Sel nädalal* one at ``today + 1``. On a Sunday that is
-    next Monday: the band has nothing in it, does not render, and an assertion
-    about the order of four bands sees three. It first went red on Sunday
-    2026-09-06, on the first run this repository happened to make on one.
-
-    Anchoring on the Monday keeps every offset inside the week it was written
-    for, on every day of the week. Nothing here reads the real clock instead:
-    every test passes this value into `build_my_work(..., today=today)` or
-    `wi.work_items(..., today=today)`, which derive the week end, `is_overdue`
-    and `is_review_ripe` from it and from nothing else, so the fixture and the
-    assertions cannot disagree.
-    """
-    return wi.start_of_iso_week(timezone.localdate())
+    return timezone.localdate()
 
 
 def _matter(owner, title="Näidisteema", **kwargs):
@@ -632,11 +615,22 @@ def test_the_bands_render_in_reading_order(client, specialist, today):
     """
     # One dated obligation in each band, so every band actually renders and the
     # order is observable rather than vacuously true of a one-band page.
-    for offset, title in (
-        (-4, "Hilinenud"),
-        (1, "Sel nädalal"),
-        (20, "Kuu jooksul"),
-        (45, "Hiljem"),
+    #
+    # *Sel nädalal* is clamped into the week rather than dated at `today + 1`.
+    # This test renders the page, so the bands are cut by the view's own clock
+    # and not by this fixture: on a Sunday `today + 1` is next Monday, the band
+    # is empty, it does not render, and an assertion about four bands sees
+    # three. Anchoring the fixture to Monday instead would be the wrong repair
+    # here for the same reason -- the view would read the real Sunday and the
+    # date would land in `Üle tähtaja`. A deadline falling today is *this week*
+    # and is not late, so the clamp keeps the band non-empty on every day of
+    # the week (`end_of_iso_week`, ADR 0046).
+    this_week = min(today + timedelta(days=1), wi.end_of_iso_week(today))
+    for target, title in (
+        (today - timedelta(days=4), "Hilinenud"),
+        (this_week, "Sel nädalal"),
+        (today + timedelta(days=20), "Kuu jooksul"),
+        (today + timedelta(days=45), "Hiljem"),
     ):
         matter = _matter(specialist, title=f"{title} teema")
         set_next_action(
@@ -644,7 +638,7 @@ def test_the_bands_render_in_reading_order(client, specialist, today):
             text=f"Tegevus — {title}",
             kind=ActionKind.DO,
             date_semantics=DateSemantics.DEADLINE,
-            target_date=today + timedelta(days=offset),
+            target_date=target,
             actor=specialist,
         )
 
