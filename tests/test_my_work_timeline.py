@@ -30,7 +30,24 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def today():
-    return timezone.localdate()
+    """The Monday of the current ISO week, not the calendar day.
+
+    The same weekend trap `tests/test_action_kind_is_not_user_facing.py`
+    documents, in a suite that dates its fixtures the same way.
+    `test_the_bands_render_in_reading_order` puts one obligation in each band,
+    and it dates the *Sel nädalal* one at ``today + 1``. On a Sunday that is
+    next Monday: the band has nothing in it, does not render, and an assertion
+    about the order of four bands sees three. It first went red on Sunday
+    2026-09-06, on the first run this repository happened to make on one.
+
+    Anchoring on the Monday keeps every offset inside the week it was written
+    for, on every day of the week. Nothing here reads the real clock instead:
+    every test passes this value into `build_my_work(..., today=today)` or
+    `wi.work_items(..., today=today)`, which derive the week end, `is_overdue`
+    and `is_review_ripe` from it and from nothing else, so the fixture and the
+    assertions cannot disagree.
+    """
+    return wi.start_of_iso_week(timezone.localdate())
 
 
 def _matter(owner, title="Näidisteema", **kwargs):
