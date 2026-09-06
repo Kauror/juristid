@@ -1,39 +1,39 @@
 {% comment %}
-`Koja arvamus`, in the facts rail.
+`Koja arvamus`, in the facts rail — quick reference and nothing else.
 
 There is no separate `Koja seisukoht` concept in this product. The Chamber's
-output on a Matter is the opinion it sent, and an opinion is a file — so this
-block is the file, not a summary of it. The rail block that carried a free-text
-position, its `Seisukohta ei ole` line and its `Lisa seisukoht` link are gone.
+output on a Matter is the opinion it sent, and an opinion is a file, so this
+block is the file. Each line is a direct authorized link to the exact current
+bytes; there is nothing else in it.
 
-The files are the ones `_opinion_documents` returns: `Document`s under
+**What used to be here and is not.** `+ Lisa arvamus` put an upload form in a
+300px column beside the file list that already has one, and `Arvamused →` led to
+a per-Matter page that showed the same file a third time. Both are gone:
+opinions are managed on Dokumendid, where the Matter's files are, and this block
+is what a lawyer reaches for mid-sentence — the letter itself (docs/adr/0061).
+
+No version, no size, no checksum and no badge. Every one of those is a fact
+about the evidence rather than about the opinion, they all appear where evidence
+is stated, and none of them helps somebody who came here to open the letter.
+
+The files are the ones `app/submissions/opinions.py` returns: documents under
 `DocumentRole.KODA_SUBMISSION_FINAL`, **plus** the evidence bound to a `SENT`
-Submission on this Matter. Both, because the role alone was not the answer —
-`select_final_evidence` and `attach_final_evidence` handed an existing document
-bind the evidence without touching the classification, so a Matter could sit
-here saying `Arvamust ei ole lisatud` beside its own sent opinion and offer to
-add a second one (UX-005, app/matters/views.py).
+Submission on this Matter, deduplicated by document. Both, because the role
+alone was not the answer — `select_final_evidence` and `attach_final_evidence`
+handed an existing document bind the evidence without touching the
+classification, so a Matter could sit here saying `Arvamust ei ole lisatud`
+beside its own sent opinion (UX-005).
 
-So an opinion uploaded here and one bound to a SENT Submission are still the
-same row in the same list, and nothing is stored twice — the union is
-deduplicated by document.
-
-Uploading goes through `documents:upload_evidence` — the one route that captures
-an immutable `DocumentVersion` — with the role fixed rather than chosen. It does
-not create a Submission: a file on the record is not a claim that anything was
-formally sent, and `mark_submission_sent` still owns that assertion together
-with its exact final evidence.
-
-`Arvamused` at the foot is the formal Submission workflow — recipients, channel,
-marking an opinion sent, withdrawing it. It is the link the retired position
-block used to carry, and it is the only way to that surface from a Matter.
+A Matter may have several opinions and all of them are listed. There is no
+`Matter.final_opinion` and there is not going to be one: an initial opinion, a
+supplementary letter and a later joint submission are three files, and a
+single-valued shortcut could only ever name one of them.
 {% endcomment %}
 <div class="railcard" id="koja-arvamus">
   <span class="railcard__label">Koja arvamus</span>
 
   {% for document in opinion_documents %}
     <div class="railcard__row railcard__row--file">
-      <span class="badge badge--evidence">★</span>
       {% comment %}
         The version, not the document: `documents:download` is keyed on the
         exact bytes, which is what makes a link to evidence a link to evidence.
@@ -50,38 +50,11 @@ block used to carry, and it is the only way to that surface from a Matter.
       {% endif %}
     </div>
   {% empty %}
+    {% comment %}
+      Quiet, and deliberately not a call to action. A Matter with no opinion yet
+      is the ordinary state of most of the register, and a rail asking for one
+      on every file would be nagging about work that has not come up.
+    {% endcomment %}
     <span class="railcard__none">Arvamust ei ole lisatud.</span>
   {% endfor %}
-
-  {% if can_write %}
-    <details class="disclosure disclosure--inline">
-      <summary class="disclosure__summary">+ Lisa arvamus</summary>
-      <form class="inlineform inlineform--stacked disclosure__body" method="post"
-            enctype="multipart/form-data"
-            action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
-        {% csrf_token %}
-        {% comment %}
-          The role is fixed, not offered. This block is `Koja arvamus`; a select
-          here would be the Dokumendid upload panel in 300px.
-
-          `tagasi` is a fixed word, never a URL. `upload_evidence` lands on
-          Dokumendid by default, which is right when the upload started there
-          and wrong from the rail — and a `next` the browser supplies is an open
-          redirect waiting to be validated. One literal value cannot be one.
-        {% endcomment %}
-        <input type="hidden" name="role" value="KODA_SUBMISSION_FINAL">
-        <input type="hidden" name="tagasi" value="teema">
-        <label class="field">
-          <span class="visually-hidden">Koja arvamuse fail</span>
-          <input class="field__input field__input--compact" type="file"
-                 name="upload" required aria-label="Koja arvamuse fail">
-        </label>
-        <button class="button button--quiet button--tiny" type="submit">Lisa arvamus</button>
-      </form>
-    </details>
-  {% endif %}
-
-  <a class="railcard__more" href="{% url 'matters:matter_position' pk=matter.pk %}">
-    Arvamused →
-  </a>
 </div>

@@ -75,6 +75,16 @@ rather than read.
             <button class="button button--quiet button--tiny" type="submit">Salvesta</button>
           </form>
           <p class="field__help">{% restricted_visibility_help %}</p>
+          {% comment %}
+            The assisted review, for a Matter that has files. In the menu
+            rather than beside «Muuda teemat»: the edit page itself offers it
+            prominently, and this is the second way in for somebody already on
+            the Teema page (app/matters/intake_suggestions).
+          {% endcomment %}
+          {% if document_count %}
+            <a class="headmenu__link"
+               href="{% url 'matters:matter_edit_assisted' pk=matter.pk %}">Kontrolli dokumendist leitud andmeid</a>
+          {% endif %}
         </div>
       </details>
     {% endif %}

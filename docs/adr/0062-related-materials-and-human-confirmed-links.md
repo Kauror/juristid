@@ -1,4 +1,4 @@
-# ADR 0061 — Seotud materjalid: derived suggestions, human-confirmed links
+# ADR 0062 — Seotud materjalid: derived suggestions, human-confirmed links
 
 - Status: accepted
 - Date: 2026-09-05
@@ -10,7 +10,7 @@
   business-write boundary), ADR 0038 (child visibility in projections and the
   index-version gate), ADR 0041 (search freshness), ADR 0055 (what an archive
   link asserts), ADR 0056 (who reads the archive)
-- Number: 0061. PR #143 (deterministic document-assisted intake) holds 0060.
+- Number: 0062. The integration order settled the numbering: PR #143 (deterministic document-assisted intake) holds 0060 and PR #145 (a Matter's opinions live under Documents) holds 0061, so this record moved from 0061 to 0062 when it was integrated last.
 
 ## Context
 

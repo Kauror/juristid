@@ -3,7 +3,7 @@
 Nothing else in the application writes a relation, a background selection or a
 dismissal. The recommendation engine computes and forgets; the views resolve
 who may see what and hand the resolved objects here; these functions decide
-what a click *means* and record it (docs/adr/0061).
+what a click *means* and record it (docs/adr/0062).
 
 Every function is idempotent and atomic. Two colleagues pressing «Seo teemaga»
 at the same moment produce one row, because the pair is canonicalised before
@@ -209,7 +209,7 @@ def add_background_archive_material(
     Not an `OpinionArchiveMatterLink`. That table says a letter *concerns* a
     Matter and is written by the reconciliation and its reviewers; this says
     somebody found the letter useful here, which is a weaker and different
-    thing. Zero rows of the other table are touched (docs/adr/0061 §3).
+    thing. Zero rows of the other table are touched (docs/adr/0062 §3).
     """
     person = _require_person(actor)
     row, created = MatterBackgroundMaterial.objects.get_or_create(

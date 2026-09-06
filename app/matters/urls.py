@@ -100,6 +100,15 @@ urlpatterns = [
     # record in one transaction, so a partial swap would be describing something
     # the save does not do (app/matters/views.py, `matter_edit`).
     path("teemad/<uuid:pk>/muuda/", views.matter_edit, name="matter_edit"),
+    # The same edit page with what the documents say beside it. Its own route
+    # and GET-only: it computes and shows, and the form on it posts to
+    # `matter_edit` like the plain one, so there is one write path
+    # (app/matters/intake_suggestions, docs/adr/0060).
+    path(
+        "teemad/<uuid:pk>/muuda/dokumendist/",
+        views.matter_edit_assisted,
+        name="matter_edit_assisted",
+    ),
     # HTMX surfaces
     path("teemad/<uuid:pk>/sissekanne/", views.compose, name="compose"),
     path("teemad/<uuid:pk>/jargmiseks/", views.set_action, name="set_action"),

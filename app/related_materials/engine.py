@@ -4,7 +4,7 @@ A deterministic, read-only recommendation. Given the same Matter, the same
 search projection, the same archive projection and the same catalogues, the
 same ranked candidates come back with the same reasons. No model, no
 embedding, no external call, no click history — and nothing here writes a row
-(docs/adr/0061 §2, §6).
+(docs/adr/0062 §2, §6).
 
 The work is split the way the data is.
 
@@ -705,9 +705,27 @@ def _submission_suggestion(
         ),
         score=score,
         reasons=tuple(reasons[:MAX_REASONS]),
-        open_url=reverse("matters:matter_position", kwargs={"pk": matter.pk}),
+        # Dokumendid, filtered to this Matter's opinions. The per-Matter
+        # Arvamused page it used to open is a compatibility redirect now
+        # (docs/adr/0061), and linking it would cost a redirect to arrive
+        # in the same place. Imported here rather than at module scope:
+        # `app.matters.views` imports this package's selectors.
+        open_url=_opinions_url(matter),
         is_dismissed=dismissed,
     )
+
+
+def _opinions_url(matter: Any) -> str:
+    """`matters.views.opinions_url`, imported late to keep the cycle open.
+
+    `app.matters.views` imports `app.related_materials.selectors`, so this
+    package cannot name that module at import time. The URL is not rebuilt
+    here: one function owns `?roll=` so the filter cannot drift between the
+    six places that link to a Matter's opinions (docs/adr/0061).
+    """
+    from app.matters.views import opinions_url
+
+    return opinions_url(matter)
 
 
 def opinion_candidates(
@@ -874,7 +892,7 @@ def _archive_rows(profile: SubjectProfile, viewer: Any) -> QuerySet[OpinionArchi
       Submission is offered instead, through its own channel. A Submission the
       reader may *not* see does not suppress the letter: the archive is
       legitimately theirs to read, and a hidden row must not become an oracle
-      by silencing a visible one (docs/adr/0061 §5).
+      by silencing a visible one (docs/adr/0062 §5).
 
     `REJECTED`, `DUPLICATE` and `DEFERRED` are decisions about one proposed
     Matter match, not about the letter's worth as background, and are not

@@ -50,7 +50,6 @@ from app.matters.enums import MatterOrigin, RecordMode
 from app.matters.forms import MatterCreateForm
 from app.matters.models import Matter
 from app.matters.my_work import build_my_work
-from app.matters.overview import deadline_groups
 from app.matters.register_filters import register_population
 from app.matters.services import assign_matter, close_matter, create_matter, set_matter_dates
 from app.submissions.services import (
@@ -483,26 +482,32 @@ def test_a_draft_submission_does_not_discharge_the_deadline(specialist, today):
 
 
 # ---------------------------------------------------------------------------
-# Ülevaade → Tähtajad
+# Osakond → Eesolev, by window
 # ---------------------------------------------------------------------------
+#
+# These read the five windows the page actually cuts. They were written against
+# the three-window read model that preceded it; that model had no routed
+# consumer and has been removed, and the claim they make — a response deadline
+# is a real deadline, so it reaches the panel, is counted there and drills
+# through to the same rows — is a property of whichever partition is live.
+# `anchor + 1` is *Homme* in these windows rather than *Sel nädalal*.
 
 
 def _groups(user, today):
-    items = wi.work_items(user, today=today)
-    return {group.key: group for group in deadline_groups(items, today)}
+    return {group.key: group for group in upcoming_groups(user, today)}
 
 
-def test_it_joins_the_ulevaade_calendar_groups(specialist):
-    """This week, from one date and nothing else."""
+def test_it_joins_the_eesolev_calendar_groups(specialist):
+    """Tomorrow's window, from one date and nothing else."""
     anchor = _wednesday()
     matter = _matter(specialist, deadline=anchor + timedelta(days=1))
 
     groups = _groups(specialist, anchor)
 
-    assert matter.pk in {item.matter_id for item in groups["sel_nadalal"].items}
+    assert matter.pk in {item.matter_id for item in groups["homme"].items}
 
 
-def test_the_ulevaade_far_group_holds_a_distant_response_deadline(specialist):
+def test_the_eesolev_far_group_holds_a_distant_response_deadline(specialist):
     anchor = _wednesday()
     matter = _matter(specialist, deadline=anchor + timedelta(days=200), title="Kauge tähtaeg")
 
@@ -511,16 +516,16 @@ def test_the_ulevaade_far_group_holds_a_distant_response_deadline(specialist):
     assert matter.pk in {item.matter_id for item in groups["kaugemal"].items}
 
 
-def test_the_ulevaade_count_and_its_drill_through_hold_the_same_matter(specialist):
+def test_the_eesolev_count_and_its_drill_through_hold_the_same_matter(specialist):
     """The count moves and the list behind it holds the Matter that moved it.
 
-    Not rendered text — the population the group's own ``?too=`` link resolves
-    to, asserted equal to the rows the group counted.
+    Not rendered text — the population the window's own ``?too=`` link resolves
+    to, asserted equal to the rows the window counted.
     """
     anchor = _wednesday()
-    before = _groups(specialist, anchor)["sel_nadalal"]
+    before = _groups(specialist, anchor)["homme"]
     matter = _matter(specialist, deadline=anchor + timedelta(days=1), title="Uus tähtaeg")
-    after = _groups(specialist, anchor)["sel_nadalal"]
+    after = _groups(specialist, anchor)["homme"]
 
     assert after.count == before.count + 1
 

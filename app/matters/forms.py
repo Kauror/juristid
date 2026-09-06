@@ -8,6 +8,7 @@ by adding another view (master specification 12.4, 23.4).
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date, datetime, time
 from typing import Any, cast
 
@@ -814,7 +815,12 @@ class MatterEditForm(forms.Form):
     )
 
     def __init__(
-        self, *args: Any, matter: Matter | None = None, viewer: Any = None, **kwargs: Any
+        self,
+        *args: Any,
+        matter: Matter | None = None,
+        viewer: Any = None,
+        suggested_senders: Sequence[Organisation] = (),
+        **kwargs: Any,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.matter = matter
@@ -855,7 +861,12 @@ class MatterEditForm(forms.Form):
         current_senders = list(matter.source_organisations.all()) if matter else []
         frequent = list(organisations_by_usage(viewer)) if viewer is not None else []
         known = {organisation.pk for organisation in frequent}
-        for organisation in current_senders:
+        # And whatever the document analysis proposes as a sender, so the
+        # assisted review can show it as a chip beside the frequent ones rather
+        # than leaving it inside the long tail where a pre-filled tick would be
+        # invisible (app/matters/intake_suggestions). Offered, not chosen:
+        # this list decides which chips render, never which are ticked.
+        for organisation in (*current_senders, *suggested_senders):
             if organisation.pk not in known:
                 frequent.append(organisation)
                 known.add(organisation.pk)

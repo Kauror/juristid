@@ -552,7 +552,7 @@ SETTLED_LEAVES = {
     # `audit` is not here any more: 0016 widens the `event_type` choices for
     # Seotud materjalid, and the next release carries that into a database
     # that already has 0015, so CI steps the app back and applies it forwards
-    # from exactly that state (docs/adr/0061).
+    # from exactly that state (docs/adr/0062).
     "core": "0001_initial",
     "documents": "0006_legacy_material_role",
     "intelligence": "0001_initial",
@@ -566,7 +566,7 @@ SETTLED_LEAVES = {
     # the step's own grammar cannot say `zero`. A deployment applies it from
     # nothing, which is exactly what the plain `migrate` at the end of that
     # step does — so there is nothing this app could add to it. Recorded here
-    # for the same reason `intelligence` above is (docs/adr/0061).
+    # for the same reason `intelligence` above is (docs/adr/0062).
     "related_materials": "0001_initial",
 }
 

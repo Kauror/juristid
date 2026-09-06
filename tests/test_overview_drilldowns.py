@@ -174,7 +174,7 @@ def world(db, department_head, specialist, other_specialist, today):
     # A deadline in this calendar week, and one past the Sunday it ends on. The
     # second lands in *Ülejäänud kuu* or, in the week that runs past the month
     # end, in *Kaugemal* — which window is not the point, and the assertion
-    # below finds it rather than naming it (`ov.deadline_windows`).
+    # below finds it rather than naming it (`dd.upcoming_windows`).
     week_end = wi.end_of_iso_week(today)
     this_week = create_matter(
         title="Selle nädala tähtaeg", owner=specialist, reference_year=2026, actor=specialist

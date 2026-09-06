@@ -6116,17 +6116,147 @@ button.accordion__action:focus-visible {
   color: var(--text-muted);
 }
 
-/* The sent opinion is tinted and badged, because "which of these forty files
-   is the one Koda actually sent" is the question this table exists to answer
-   instantly. */
-.doctable__row--final {
-  background: var(--status-success-soft);
-}
-
-.badge--final {
+/* An opinion is badged and not tinted. "Which of these forty files is a Koja
+   arvamus" is the question this table exists to answer instantly, and one word
+   answers it — including for a reader who cannot see the tint, which a row
+   colour on its own never did. The row keeps the table's own background: a
+   Matter may hold several opinions, and three tinted bands in forty rows read
+   as an alert rather than as a classification (docs/adr/0061 §43, §45). */
+.badge--opinion {
   color: var(--status-success);
   border: 1px solid var(--status-success-border);
   background: transparent;
+}
+
+/* When it went out and who to, under the filename. Ordinary human metadata, in
+   the meta size the rest of the cell's second line uses — deliberately not a
+   panel, and deliberately not the evidence mechanics that used to sit here. */
+.doctable__sent {
+  display: block;
+  margin-top: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* The per-row `...` disclosure.
+
+   In flow, not a floating popup, and that is not a style preference: every
+   `.tablewrap` in this application sets `overflow-x: auto`, which makes the
+   other axis compute to `auto` as well — so an absolutely positioned panel
+   inside one is clipped at the table's edge and pushes a scrollbar in front of
+   whatever it clipped. `.versions` two columns to the left solved this years
+   ago by growing its row, and one table with two disclosure mechanics is one
+   too many. */
+.opinionmenu {
+  display: inline-block;
+}
+
+.opinionmenu__trigger {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-weight: var(--typography-weight-semibold);
+  list-style: none;
+  padding: 0 var(--spacing-1);
+}
+
+.opinionmenu__trigger::-webkit-details-marker {
+  display: none;
+}
+
+.opinionmenu__trigger:hover,
+.opinionmenu[open] .opinionmenu__trigger {
+  color: var(--accent-link);
+}
+
+.opinionmenu__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  width: 260px;
+  margin-top: var(--spacing-2);
+  padding: var(--spacing-3);
+  text-align: left;
+  white-space: normal;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+}
+
+.opinionmenu__label {
+  margin: 0;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.opinionmenu__hint,
+.opinionmenu__meta {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.opinionmenu__meta > div {
+  display: flex;
+  gap: var(--spacing-2);
+  padding: 2px 0;
+}
+
+.opinionmenu__meta dt {
+  flex: 0 0 84px;
+  color: var(--text-muted);
+}
+
+/* The value wraps rather than clipping. `.table tbody td` clips every cell on
+   purpose — one wrapped owner name re-rhythms the whole table — and a panel
+   that inherited that rule would hide the second half of a ministry's name. */
+.opinionmenu__meta dd,
+.opinionmenu__hint {
+  overflow-wrap: anywhere;
+}
+
+.opinionmenu__meta dd {
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.opinionmenu__form {
+  margin: 0;
+}
+
+/* The opinion management block: the same quiet head Töödokumendid has, because
+   it is the same kind of thing — secondary to the file table above it, and open
+   only when somebody owes it work. */
+.accordion--opinions .accordion__title {
+  color: var(--text-secondary);
+}
+
+.accordion--archive .accordion__title {
+  color: var(--text-secondary);
+}
+
+/* One draft, and the single next step it is waiting for. */
+.draftrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.draftrow__title {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.draftrow__form {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: 0 0 0 auto;
 }
 
 /* A working reference looks like the opposite of evidence: dashed, arrowed,
@@ -6148,6 +6278,13 @@ button.accordion__action:focus-visible {
 
 .doctable tbody tr:hover .doctable__actions,
 .doctable tbody tr:focus-within .doctable__actions {
+  opacity: 1;
+}
+
+/* An open opinion menu keeps its row's controls visible. Without this the
+   panel stays in the DOM while everything around it fades the moment the
+   pointer leaves the row — including the button the reader is reaching for. */
+.doctable__actions:has(.opinionmenu[open]) {
   opacity: 1;
 }
 
@@ -8524,10 +8661,232 @@ section:has(.pw-more[open]) tbody.uxextra {
   font-variant-numeric: tabular-nums;
 }
 
+/* ====================================================================
+ * Dokumendist leitud — the assisted-review panel on Muuda teemat
+ *
+ * A panel above the form, in the capture surface the create form's
+ * «Järgmiseks» panel uses, so it reads as part of filling the form rather
+ * than as a dashboard beside it. Every state is a word: «vormil
+ * eeltäidetud», «juba valitud», «Vastuolu», «OCR» — never a tint alone
+ * (docs/adr/0009, docs/adr/0060).
+ * ==================================================================== */
+
+.suggpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-25);
+  padding: var(--spacing-3) var(--spacing-4);
+  background: var(--surface-capture);
+  border: 1px solid var(--accent-border);
+  border-left: 2px solid var(--accent-primary);
+  border-radius: var(--radius-md);
+}
+
+.suggpanel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-3);
+}
+
+.suggpanel__title {
+  margin: 0;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.suggpanel__meta,
+.suggpanel__state,
+.suggpanel__diagnostic {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.suggpanel__state {
+  color: var(--text-secondary);
+}
+
+.suggpanel__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.suggfile {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.suggfile__name {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.suggfile__note {
+  color: var(--text-muted);
+}
+
+.suggrows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  margin: 0;
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* Findings sit under the form suggestions with one hairline between the
+   two groups, not two. */
+.suggrows--findings {
+  padding-top: var(--spacing-15);
+}
+
+.suggrow {
+  display: grid;
+  grid-template-columns: minmax(120px, 160px) 1fr;
+  gap: var(--spacing-1) var(--spacing-3);
+  align-items: start;
+}
+
+.suggrow__key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding-top: 2px;
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.suggrow--conflict .suggrow__key {
+  color: var(--status-warning);
+}
+
+.suggrow__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-15);
+  margin: 0;
+  min-width: 0;
+}
+
+.suggnote {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--status-warning);
+}
+
+.suggcand {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.suggcand--current {
+  color: var(--text-muted);
+}
+
+.suggcand__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-15);
+}
+
+.suggcand__value {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.suggcand--current .suggcand__value {
+  color: var(--text-secondary);
+}
+
+.suggcand__extra {
+  font-family: var(--typography-font-mono);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.suggcand__grade {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+.suggcand__use.is-selected {
+  background: var(--accent-soft);
+  color: var(--accent-link);
+  border-color: var(--accent-border);
+}
+
+.suggcand__evidence {
+  font-size: var(--typography-size-meta);
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+.suggcand__source {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.suggpanel__more {
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.suggpanel__moresummary {
+  cursor: pointer;
+  font-size: var(--typography-size-meta);
+  color: var(--accent-link);
+}
+
+.suggpanel__more[open] .suggpanel__moresummary {
+  margin-bottom: var(--spacing-2);
+}
+
+.suggpanel__more .suggrows {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* The second way into the review, from the Teema page's ⋯ menu. */
+.headmenu__link {
+  display: block;
+  margin-top: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--accent-link);
+}
+
+@media (max-width: 720px) {
+  .suggrow {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---- Seotud materjalid ----------------------------------------------------
  * Confirmed relations and background reuse `.factsection`/`.factrow`; the
  * candidate cards are their own small shape so a reason line reads as an
- * explanation rather than as another fact row (docs/adr/0061 §7).
+ * explanation rather than as another fact row (docs/adr/0062 §7).
  */
 .relatedmaterials {
   scroll-margin-top: var(--spacing-8);

@@ -3,7 +3,7 @@
 Confirmed relations and chosen background material are canonical rows and
 cheap to read, so they render with the page. Suggestions are not read here at
 all — they cost queries a lawyer who never opens «Võimalikud seosed» should not
-pay, and the fragment view computes them on request (docs/adr/0061 §7).
+pay, and the fragment view computes them on request (docs/adr/0062 §7).
 
 Both readers apply the viewer's own visibility to the far side of every row.
 A relation to a Matter this reader may not open is not shown, not counted and
@@ -130,7 +130,9 @@ def _background_item(row: MatterBackgroundMaterial) -> BackgroundItem:
             recipient=", ".join(
                 sorted(organisation.name for organisation in submission.recipients.all())
             ),
-            open_url=reverse("matters:matter_position", kwargs={"pk": source.pk}),
+            # Dokumendid filtered to opinions, not the retired per-Matter
+            # Arvamused page, which is only a redirect now (docs/adr/0061).
+            open_url=_opinions_url(source),
         )
     binary = row.archive_binary
     if binary is None:  # pragma: no cover - the database constraint forbids it
@@ -162,6 +164,18 @@ class RelatedMaterials:
     @property
     def is_empty(self) -> bool:
         return not self.relations and not self.background
+
+
+def _opinions_url(matter: Any) -> str:
+    """`matters.views.opinions_url`, imported late.
+
+    `app.matters.views` imports this module, so the name cannot be bound at
+    import time. The URL is not rebuilt here: one function owns `?roll=`
+    (docs/adr/0061).
+    """
+    from app.matters.views import opinions_url
+
+    return opinions_url(matter)
 
 
 def related_materials_for(matter: Matter, viewer: Any) -> RelatedMaterials:

@@ -3,13 +3,13 @@
 Three tables, three human statements, and the recommendation engine writes to
 none of them. A suggestion is computed when the section is opened and forgotten
 when the page is closed; only a click turns it into one of these rows
-(docs/adr/0061).
+(docs/adr/0062).
 
 **`MatterRelation`** — *these two Matters are related.* One symmetric statement
 with no type. The master specification describes a typed `MatterRelationship`
 with `SUCCESSOR_OF`, `RELATED_TO`, `IMPLEMENTS_OR_TRANSPOSES` and
 `DUPLICATE_OF`; this table is the `RELATED_TO` slice of it and deliberately
-nothing else — an approved scope reduction recorded in ADR 0061, not an
+nothing else — an approved scope reduction recorded in ADR 0062, not an
 oversight. `SUCCESSOR_OF` already exists as `Matter.superseded_by` and stays
 there. The other two are *directional*, and a directional relation cannot live
 in a table whose whole design is that A↔B is one row, so a future typed model is

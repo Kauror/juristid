@@ -557,7 +557,14 @@ def test_a_page_of_results_does_not_cost_a_query_per_row(signed_in, django_asser
     # 38 rather than 37 since ADR 0056: a specialist may now read the archive,
     # so the section pays the sixth query ADR 0047 already wrote down for a
     # reader who may — the Arhiivikirjad tab's figure. Constant like the other five.
-    with django_assert_max_num_queries(38):
+    #
+    # 32 rather than 38 since PERF-01. Every number above was measured while
+    # `visible_to` asked who the reader was on every read; it now asks once per
+    # request, and a page that resolves several populations stopped paying for
+    # each of them. Re-measured at 26, and the constancy this test is actually
+    # about is unchanged — it is still the same count whatever the register
+    # holds.
+    with django_assert_max_num_queries(32):
         response = signed_in.get(REGISTER, {"q": "pakendiseaduse", "olek": "koik"})
     assert total_of(response) == 25
 

@@ -424,3 +424,98 @@ def unparseable_boolean_variables(environ: dict[str, str] | None = None) -> dict
             continue
         unparseable[name] = raw
     return unparseable
+
+
+# --------------------------------------------------------------------------
+# Readiness, as a value
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ReadinessReport:
+    """Everything ``deployment_readiness`` asks, separated from how it prints.
+
+    Extracted so that a second caller can have the verdict without the prose:
+    ``production_status`` rolls this up beside the other current-state checks,
+    and parsing a command's stdout to get there would make the roll-up depend on
+    wording nobody thinks of as an interface (`app/core/production_status.py`).
+
+    The command keeps its own output and its own exit behaviour. This holds the
+    facts it prints and the problems it fails on, and nothing about either is
+    decided here.
+    """
+
+    identity: RuntimeIdentity
+    postgresql: tuple[int, int]
+    migrations: MigrationState
+    storage: tuple[StorageRoot, ...]
+    reference: Any
+    problems: tuple[str, ...]
+    warnings: tuple[str, ...]
+
+    @property
+    def ok(self) -> bool:
+        """Warnings are not failures. Only `problems` decide readiness."""
+        return not self.problems
+
+
+def readiness_report() -> ReadinessReport:
+    """Ask this build about itself. Reads; never migrates and never writes.
+
+    Raises :class:`django.db.DatabaseError` when the database cannot be reached
+    at all, which is the one condition that cannot be reported as a finding
+    because every other finding needs the database to be established. Both
+    callers turn it into their own message.
+    """
+    from app.core import reference_data
+
+    problems: list[str] = []
+
+    identity = runtime_identity()
+    if settings.REAL_DATA_ALLOWED and not identity.revision_is_known:
+        problems.append(
+            "The running build does not know which commit it came from. "
+            "Build with --build-arg GIT_SHA=<sha>, or set APPLICATION_REVISION."
+        )
+
+    major, minor = postgresql_version()
+    if (major, 0) < settings.MINIMUM_POSTGRESQL_VERSION:
+        required = ".".join(str(part) for part in settings.MINIMUM_POSTGRESQL_VERSION)
+        problems.append(f"PostgreSQL {major} is older than the required {required}.")
+
+    state = migration_state()
+    if state.pending:
+        problems.append(
+            f"{len(state.pending)} migration(s) are not applied: "
+            f"{', '.join(migration.label for migration in state.pending[:5])}"
+            f"{' …' if len(state.pending) > 5 else ''}. "
+            "This build is running against an older schema."
+        )
+    if state.unknown:
+        problems.append(
+            f"The database has applied {len(state.unknown)} migration(s) this build "
+            f"does not have: {', '.join(state.unknown[:5])}"
+            f"{' …' if len(state.unknown) > 5 else ''}. "
+            "This build is older than its database."
+        )
+
+    roots = storage_roots()
+    problems.extend(root.problem for root in roots if root.problem)
+
+    baseline = reference_data.verify_reference_data()
+    problems.extend(reference_data.readiness_problems(baseline))
+
+    warnings = [
+        f"{name}={value!r} is neither true nor false and is being read as false."
+        for name, value in sorted(unparseable_boolean_variables().items())
+    ]
+
+    return ReadinessReport(
+        identity=identity,
+        postgresql=(major, minor),
+        migrations=state,
+        storage=roots,
+        reference=baseline,
+        problems=tuple(problems),
+        warnings=tuple(warnings),
+    )

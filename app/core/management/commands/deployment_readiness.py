@@ -30,7 +30,7 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DatabaseError
 
-from app.core import deployment, reference_data
+from app.core import deployment
 
 
 class Command(BaseCommand):
@@ -45,10 +45,19 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         quiet: bool = options["quiet"]
-        problems: list[str] = []
-        warnings: list[str] = []
 
-        identity = deployment.runtime_identity()
+        # The facts and the verdict come from `deployment.readiness_report`, so
+        # that `production_status` can roll the same verdict up without reading
+        # this command's prose. What is printed, and the exit behaviour, stay
+        # here: they are this command's contract and not the report's.
+        try:
+            report = deployment.readiness_report()
+        except DatabaseError as error:
+            raise CommandError(
+                f"The database is not reachable: {error.__class__.__name__}"
+            ) from error
+
+        identity = report.identity
         if not quiet:
             self.stdout.write("Build")
             self.stdout.write(f"  revision     {identity.revision}")
@@ -56,81 +65,25 @@ class Command(BaseCommand):
             self.stdout.write(f"  environment  {identity.environment}")
             self.stdout.write(f"  stage        {identity.stage}")
 
-        if settings.REAL_DATA_ALLOWED and not identity.revision_is_known:
-            problems.append(
-                "The running build does not know which commit it came from. "
-                "Build with --build-arg GIT_SHA=<sha>, or set APPLICATION_REVISION."
-            )
-
-        # -- database ------------------------------------------------------
-        try:
-            major, minor = deployment.postgresql_version()
-        except DatabaseError as error:
-            raise CommandError(
-                f"The database is not reachable: {error.__class__.__name__}"
-            ) from error
-
-        if not quiet:
+            major, minor = report.postgresql
             self.stdout.write("")
             self.stdout.write("Database")
             self.stdout.write(f"  PostgreSQL   {major}.{minor}")
+            self.stdout.write(f"  migrations   {len(report.migrations.leaves)} app leaves")
 
-        if (major, 0) < settings.MINIMUM_POSTGRESQL_VERSION:
-            required = ".".join(str(part) for part in settings.MINIMUM_POSTGRESQL_VERSION)
-            problems.append(f"PostgreSQL {major} is older than the required {required}.")
-
-        state = deployment.migration_state()
-        if not quiet:
-            self.stdout.write(f"  migrations   {len(state.leaves)} app leaves")
-        if state.pending:
-            problems.append(
-                f"{len(state.pending)} migration(s) are not applied: "
-                f"{', '.join(migration.label for migration in state.pending[:5])}"
-                f"{' …' if len(state.pending) > 5 else ''}. "
-                "This build is running against an older schema."
-            )
-        if state.unknown:
-            problems.append(
-                f"The database has applied {len(state.unknown)} migration(s) this build "
-                f"does not have: {', '.join(state.unknown[:5])}"
-                f"{' …' if len(state.unknown) > 5 else ''}. "
-                "This build is older than its database."
-            )
-
-        # -- storage -------------------------------------------------------
-        if not quiet:
             self.stdout.write("")
             self.stdout.write("Storage")
-        for root in deployment.storage_roots():
-            if not quiet:
+            for root in report.storage:
                 mount = "read-only" if not root.must_be_writable else "writable"
                 self.stdout.write(f"  {root.name:<24} {root.path}  [{root.kind}, {mount}]")
-            if root.problem:
-                problems.append(root.problem)
 
-        # -- configuration -------------------------------------------------
-        if not quiet:
             self.stdout.write("")
             self.stdout.write("Configuration")
             self.stdout.write(f"  auth mode    {settings.AUTH_MODE}")
             self.stdout.write(f"  real data    {'yes' if settings.REAL_DATA_ALLOWED else 'no'}")
             self.stdout.write(f"  debug        {'ON' if settings.DEBUG else 'off'}")
 
-        # -- reference data ------------------------------------------------
-        #
-        # Production reported itself ready while holding zero Organisations and
-        # zero PolicyAreas, which made several shipped features structurally
-        # present and practically unusable: nothing to file under, nobody to
-        # address, and an OneNote enrichment that could map nothing. A build is
-        # not ready for real data until the vocabulary it depends on is there.
-        #
-        # Checked only where REAL_DATA_ALLOWED, and deliberately not as a Django
-        # system check: `manage.py check` runs in every isolated unit test and in
-        # every developer's shell, where a hard requirement for production
-        # reference data would fail thousands of tests that have no business
-        # caring.
-        baseline = reference_data.verify_reference_data()
-        if not quiet:
+            baseline = report.reference
             self.stdout.write("")
             self.stdout.write("Reference data")
             self.stdout.write(
@@ -141,22 +94,15 @@ class Command(BaseCommand):
                 f"/{baseline.organisations_expected}"
             )
             self.stdout.write("  tags          not managed by the reviewed baseline")
-        problems.extend(reference_data.readiness_problems(baseline))
-
-        unparseable = deployment.unparseable_boolean_variables()
-        for name, value in sorted(unparseable.items()):
-            warnings.append(
-                f"{name}={value!r} is neither true nor false and is being read as false."
-            )
 
         # -- verdict -------------------------------------------------------
-        for warning in warnings:
+        for warning in report.warnings:
             self.stdout.write(self.style.WARNING(f"WARNING: {warning}"))
 
-        if problems:
+        if report.problems:
             raise CommandError(
                 "This deployment is not ready:\n"
-                + "\n".join(f"  - {problem}" for problem in problems)
+                + "\n".join(f"  - {problem}" for problem in report.problems)
             )
 
         if not quiet:

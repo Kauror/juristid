@@ -11,7 +11,7 @@ Two ideas carry the module.
 eelnõu» has one word that says what the file is about. `eelnõu`, `muutmise`,
 `seaduse`, `seletuskiri` and `kooskõlastamine` appear on hundreds of register
 rows and mean nothing about the subject, so they never count as shared content
-(`GENERIC_WORDS`) and a bare `seadus` is never an act (docs/adr/0061 §4).
+(`GENERIC_WORDS`) and a bare `seadus` is never an act (docs/adr/0062 §4).
 
 **A named act is the strongest thing two titles can share.** Estonian writes
 most acts as one compound — `pakendiseadus`, `äriseadustik` — and some as a

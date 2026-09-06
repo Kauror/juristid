@@ -1,14 +1,30 @@
 from __future__ import annotations
 
-from typing import Any
+from datetime import date
+from typing import Any, cast
 
 from django import forms
+from django.utils import timezone
 
+from app.core.widgets import EstonianDateField, EstonianDateInput
 from app.matters.forms import set_choices
 from app.organisations.models import Organisation
 from app.submissions.enums import SubmissionKind
 
 SELECT_WIDGET = forms.Select(attrs={"class": "field__input"})
+
+#: Form prefixes for the two opinion forms on Dokumendid.
+#:
+#: That page renders three forms carrying a `title` — the SharePoint working
+#: reference, a new opinion, and registering a send — and three `id="id_title"`
+#: on one page make every `<label for>` ambiguous, for a screen reader and for a
+#: browser test alike. The same reason `app/matters/views.py` prefixes the
+#: private note: the composer's own field is called `body` too.
+#:
+#: The working-document form keeps the bare names, because it was there first
+#: and its field names are what its route already accepts.
+CREATE_PREFIX = "arvamus"
+REGISTER_PREFIX = "saadetud"
 
 
 class SubmissionCreateForm(forms.Form):
@@ -84,3 +100,96 @@ class MarkSentForm(forms.Form):
     reference = forms.CharField(
         label="Viide", max_length=200, required=False, widget=forms.TextInput()
     )
+
+
+class RegisterSentOpinionForm(SubmissionCreateForm):
+    """«Registreeri saatmine» — a file already on the Matter went out.
+
+    The same questions `SubmissionCreateForm` asks, plus the two facts that only
+    exist once something has actually been sent: **which file** and **when**.
+    Subclassed rather than copied so a field added to opinion creation is asked
+    for here too, instead of being silently missing from the path most opinions
+    will now take.
+
+    `document` is a plain `ChoiceField` over identifiers the *view* resolved
+    under the reader's own visibility scope, and the view resolves them again
+    before anything is written. The choices are a usability gate, never the
+    authorization one — a form's own vocabulary is submitted by the browser, and
+    treating it as a permission check is how a crafted post binds a document
+    somebody may not see (`app/submissions/views.py`).
+
+    `sent_on` is optional and is a **day**. A person recording that an opinion
+    went out on the 12th knows the day and not the hour, so a supplied date is
+    stored as aware midnight with `SentAtPrecision.DATE` and the UI never reads
+    that anchor back as «00:00». Left empty means *now*, which is a real moment
+    and is stored as one (`app/submissions/enums.py`).
+    """
+
+    document = forms.ChoiceField(
+        label="Saadetud fail",
+        choices=(),
+        widget=SELECT_WIDGET,
+        help_text="Teema arvamused, millel ei ole veel kanoonilist saatmiskirjet.",
+    )
+    reference = forms.CharField(
+        label="Viide",
+        max_length=200,
+        required=False,
+        widget=forms.TextInput(attrs={"class": "field__input", "placeholder": "Kirja number…"}),
+    )
+    #: `EstonianDateField`, never a native `type="date"`. A native control takes
+    #: its format from the *browser's* locale rather than the page's, so a
+    #: US-English Chrome shows `mm/dd/yyyy` on an Estonian form and reads
+    #: `7.9.2026` as the 9th of July — on the one field in this form whose value
+    #: becomes the date Koda claims to have written to a ministry
+    #: (app/core/widgets.py).
+    sent_on = EstonianDateField(
+        label="Saadetud",
+        required=False,
+        widget=EstonianDateInput(),
+        help_text="Jäta tühjaks, kui arvamus läheb välja praegu.",
+    )
+
+    #: The order the panel renders in: what went out, what it was, who got it,
+    #: then the two bookkeeping fields. `title` and `kind` come from the parent
+    #: and keep their own labels.
+    field_order = (
+        "document",
+        "title",
+        "kind",
+        "recipients",
+        "for_information",
+        "joint_submitters",
+        "channel",
+        "reference",
+        "sent_on",
+    )
+
+    def __init__(self, *args: Any, documents: Any = None, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # `cast` rather than a runtime check: the field is declared on this class
+        # three lines up, and a `TypedChoiceField` it demonstrably is.
+        cast(forms.ChoiceField, self.fields["document"]).choices = [
+            (str(document.pk), _document_label(document)) for document in documents or []
+        ]
+        self.order_fields(self.field_order)
+
+    def clean_sent_on(self) -> date | None:
+        """A send is never in the future. The record says what happened."""
+        value = self.cleaned_data.get("sent_on")
+        if value is not None and value > timezone.localdate():
+            raise forms.ValidationError("Saatmise kuupäev ei saa olla tulevikus.")
+        return value
+
+
+def _document_label(document: Any) -> str:
+    """How one opinion file names itself in the select.
+
+    The filename, because that is what a lawyer recognises — the stored title is
+    frequently the submission's own wording and reads as a near-copy of the
+    Teema. Falls back to the title for a document whose first version failed to
+    save, which cannot be registered as sent anyway and is filtered out before
+    it reaches here.
+    """
+    version = document.current_version
+    return version.original_filename if version is not None else document.title

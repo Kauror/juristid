@@ -336,7 +336,7 @@ def test_the_era_note_names_the_real_coverage_rather_than_denying_measurement(
 def test_a_date_only_submission_never_renders_an_invented_time(client, specialist, normal_matter):
     submission = sent_submission(normal_matter, sent=datetime.date(2024, 4, 10))
     client.force_login(specialist)
-    response = client.get(reverse("matters:matter_position", args=[normal_matter.pk]))
+    response = client.get(reverse("matters:matter_documents", args=[normal_matter.pk]))
     body = response.content.decode()
 
     assert "10.4.2024" in body

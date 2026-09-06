@@ -333,6 +333,22 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: w["matter"].work_victories.count(),
     ),
     WriteRoute(
+        name="submissions:register_sent",
+        label="Saatmise registreerimine",
+        request=lambda w: (
+            {"matter_id": w["matter"].pk},
+            {
+                # Prefixed, because Dokumendid renders three forms carrying a
+                # `title` and one `id_title` for all of them is an ambiguous
+                # label (app/submissions/forms.py).
+                "saadetud-document": str(w["sent_submission"].final_version.document_id),
+                "saadetud-title": "Loata registreeritud arvamus",
+                "saadetud-kind": "FORMAL_OPINION",
+            },
+        ),
+        probe=lambda w: w["matter"].submissions.count(),
+    ),
+    WriteRoute(
         name="submissions:create",
         label="Arvamuse loomine",
         request=lambda w: (
@@ -389,7 +405,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             w["organisation"].__class__.objects.filter(name="Loata Ministeerium").count()
         ),
     ),
-    # Seotud materjalid (docs/adr/0061). Six decisions, one gate.
+    # Seotud materjalid (docs/adr/0062). Six decisions, one gate.
     WriteRoute(
         name="related_materials:link",
         label="Seotud teema lisamine",
@@ -822,7 +838,10 @@ def test_a_reader_can_still_read_everything_they_could_before(client, world):
         ("intelligence:important_dates", {}),
         ("reporting:overview", {}),
     ):
-        response = client.get(reverse(name, kwargs=kwargs))
+        # Followed: `matters:matter_position` is a compatibility redirect onto
+        # Dokumendid since the per-Matter Arvamused page was retired, and what
+        # this asserts is that a READER still arrives (docs/adr/0061).
+        response = client.get(reverse(name, kwargs=kwargs), follow=True)
         assert response.status_code == 200, f"{name} refused a reader: {response.status_code}"
 
 

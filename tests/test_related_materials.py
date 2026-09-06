@@ -5,7 +5,7 @@ Matter, an earlier opinion or an archive letter is worth a look, and must say
 why; only a person may turn that into a relation or a background selection;
 saying «Ei ole seotud» is remembered for the Matter; and nothing a reader may
 not open can shape what they are shown — not a count, not a rank, not a reason
-(docs/adr/0061).
+(docs/adr/0062).
 
 Three families of test:
 
@@ -66,6 +66,7 @@ from app.matters.enums import MatterDataClass
 from app.matters.models import Matter
 from app.matters.services import close_matter, create_matter
 from app.matters.timeline import TIMELINE_EVENT_TYPES
+from app.matters.views import opinions_url
 from app.related_materials import engine, services
 from app.related_materials.models import (
     MatterBackgroundMaterial,
@@ -339,7 +340,7 @@ def test_background_selection_leaves_the_submission_exactly_as_it_was(specialist
     items = related_materials_for(current, specialist).background
     assert [item.title for item in items] == ["Koja arvamus pakendiseaduse muutmise kohta"]
     assert items[0].source_reference == "2024_912"
-    assert items[0].open_url == reverse("matters:matter_position", kwargs={"pk": source.pk})
+    assert items[0].open_url == opinions_url(source)
 
 
 def test_a_matters_own_opinion_is_not_its_background(specialist):
@@ -732,7 +733,7 @@ def test_a_sent_opinion_on_another_matter_is_offered_as_background(specialist):
     assert item.label == "Varasem arvamus"
     assert item.source_reference == "2024_955"
     assert "Sama õigusakt: pakendiseadus" in item.reasons
-    assert item.open_url == reverse("matters:matter_position", kwargs={"pk": source.pk})
+    assert item.open_url == opinions_url(source)
 
 
 def test_a_restricted_opinion_is_invisible_to_a_reader(specialist, reader):

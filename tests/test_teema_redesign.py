@@ -1196,14 +1196,24 @@ def test_the_documents_tab_is_empty_and_says_so_once(signed_in, specialist):
     assert body.count("Sellel teemal ei ole veel dokumente.") == 1
 
 
-def test_the_final_opinion_row_is_marked(signed_in, specialist):
+def test_the_opinion_row_is_marked_for_what_it_is(signed_in, specialist):
+    """`ARVAMUS`, in text, replacing `★ LÕPLIK` and its tinted row.
+
+    «Lõplik» named an internal lifecycle property of a piece of evidence.
+    `Arvamus` names what the file is, which is the question a lawyer scanning
+    forty rows is actually asking — and it is a word rather than a colour, so a
+    reader who cannot see the tint gets the same answer (docs/adr/0061 §7, §45).
+    """
     matter = factories.MatterFactory(owner=specialist)
     _evidence(matter, specialist)
 
     body = _body(signed_in.get(reverse("matters:matter_documents", kwargs={"pk": matter.pk})))
 
-    assert "★ Lõplik" in body
-    assert "doctable__row--final" in body
+    assert "badge--opinion" in body
+    assert "Arvamus" in body
+    assert "Lõplik" not in body
+    assert "★" not in body
+    assert "doctable__row--final" not in body
 
 
 def test_a_working_reference_is_not_evidence(signed_in, specialist):

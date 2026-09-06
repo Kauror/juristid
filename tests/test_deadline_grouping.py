@@ -1,19 +1,24 @@
 """Which window a future deadline lands in, and what the panel shows.
 
-Three things are being asserted, and they are different in kind:
+The panel is Osakond's *Eesolev* and it cuts five windows
+(`department_dashboard.upcoming_windows`, ADR 0049 §5). This module was written
+against the three-window read model that preceded it (`overview.deadline_groups`
+and friends); that model outlived its renderer, was compared window by window
+against this one, and has been removed. What is left here is what the live panel
+still has to be true about:
 
-* **arithmetic** — `overview.deadline_windows` cuts three touching intervals out
-  of any day of the year, month ends and week-crossings included. Pure, so it
-  runs without a database and over every day rather than a sample. It is a read
-  model rather than a rendered panel since ADR 0049 merged the two department
-  pages; the windows the merged page actually cuts are
-  `department_dashboard.upcoming_windows`, asserted the same way in
-  `tests/test_department_page.py`;
-* **the panel** — Osakond's *Eesolev*: that each window is one shut `<details>`
-  holding every row it counted, and what the count on its summary promises;
+* **the panel** — that each window is one shut `<details>` holding every row it
+  counted, and what the count on its summary promises;
 * **what must not change** — a WAIT is not a deadline, a month-precision date
-  does not become a day, and a restricted Matter is not visible to a reader who
-  may not see it.
+  does not become a day, a restricted Matter is not visible to a reader who may
+  not see it, and the rows of a window run earliest first;
+* **the arithmetic underneath it** — `end_of_month`, which is what cuts the
+  fourth window.
+
+The partition itself — five touching intervals, nothing between them or across
+them — is asserted in `tests/test_department_page.py` (a year of dates out of
+chosen days) and in `tests/test_ux_pass.py` (a year of days, and that *Ülejäänud
+kuu* ends where its month does).
 
 The pixels are the browser suite's job (`e2e/test_ui_shell.py`). This file
 checks structure: the groups, the counts, the rows and the links.
@@ -30,9 +35,7 @@ from django.utils.html import escape
 
 from app.core.dates import end_of_month
 from app.core.enums import Visibility
-from app.intelligence.services import add_important_date
 from app.matters import department_dashboard as dd
-from app.matters import overview as ov
 from app.matters import work_items as wi
 from app.matters.services import create_matter
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
@@ -80,21 +83,6 @@ def _deadline(
     return matter
 
 
-def _deadline_groups(user, today: date) -> list[ov.DeadlineGroup]:
-    """The three-window read model, read directly.
-
-    It used to be reached through `build_overview`'s department scope. That
-    branch is gone with the page it fed, and the read model is fenced until its
-    coverage against the live five-window panel is settled — so these tests call
-    it the way `activity_feed`'s tests already call theirs: by name.
-    """
-    return ov.deadline_groups(wi.work_items(user, today=today), today)
-
-
-def _groups(user, today: date) -> dict[str, ov.DeadlineGroup]:
-    return {group.key: group for group in _deadline_groups(user, today)}
-
-
 def _titles(group) -> set[str]:
     return {item.matter.title for item in group.items}
 
@@ -129,9 +117,10 @@ def _window(panel: str, heading: str) -> str:
 def _upcoming(user, today: date) -> dict[str, dd.UpcomingGroup]:
     """The five windows the page renders, by key.
 
-    Deliberately not `_groups`, which reads the three-window model above: on the
-    Wednesday this module freezes, *sel nädalal* has already half gone by while
-    the panel's own first window is *today* (`dd.upcoming_windows`).
+    The panel's first window is *today*, which is why this module's frozen
+    Wednesday matters: a deadline earlier in the same week is behind the panel
+    rather than in its first window, and *Üle tähtaja* is what counts it
+    (`dd.upcoming_windows`).
     """
     return {group.key: group for group in dd.upcoming_groups(user, today)}
 
@@ -162,82 +151,8 @@ def wednesday(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# The arithmetic, over every day of a year
+# The arithmetic the fourth window is cut by
 # ---------------------------------------------------------------------------
-
-
-def test_this_week_is_the_calendar_week_and_not_the_next_seven_days() -> None:
-    """Monday to Sunday, whatever day it is read on.
-
-    A rolling seven days would move under the reader every morning: a date on
-    the list on Tuesday is off it on Wednesday, and the group stops meaning the
-    thing the department says out loud to each other.
-    """
-    for offset in range(366):
-        day = date(2026, 1, 1) + timedelta(days=offset)
-        _, _, starts, ends = ov.deadline_windows(day)[0]
-        assert starts.weekday() == 0, f"{day}: the week does not start on Monday"
-        assert ends is not None and ends.weekday() == 6, f"{day}: the week does not end on Sunday"
-        assert ends - starts == timedelta(days=6)
-        assert starts <= day <= ends
-
-
-def test_the_rest_of_the_month_starts_after_sunday_and_stops_at_the_month_end() -> None:
-    """The middle window's two ends, over every day of a year.
-
-    Two separate claims, and the second is the one a `today + 30` horizon got
-    wrong: a window that ends thirty days out ends in the middle of a week
-    nobody chose, and "the rest of the month" is then a heading over something
-    else.
-    """
-    for offset in range(366):
-        day = date(2026, 1, 1) + timedelta(days=offset)
-        (_, _, _, week_end), (_, _, starts, ends) = ov.deadline_windows(day)[:2]
-        assert week_end is not None
-        assert starts == week_end + timedelta(days=1), f"{day}: a gap after Sunday"
-        if starts <= (ends or starts):
-            assert ends == end_of_month(day), f"{day}: the window does not stop at the month end"
-
-
-def test_a_week_that_crosses_the_month_end_leaves_the_middle_window_empty() -> None:
-    """The boundary case the handoff named: no duplicates, no backwards range.
-
-    Monday 28.09.2026, Sunday 04.10.2026 — one week, read from either side of
-    the month end, and the answer is different on purpose:
-
-    * read on the 28th, 29th or 30th there is no "rest of September" left after
-      that Sunday, so the middle window holds no days at all and the panel omits
-      it. *Kaugemal* then starts on the 5th and not on the 1st, which would put
-      the first four days of October in two windows at once;
-    * read on the 1st, the month the reader is in is October, so the middle
-      window is 05.10–31.10 — the rest of the month they are actually standing
-      in, which is the question the group's heading asks.
-
-    The week itself is the same seven days either way, which is the property
-    that makes the panel stop moving under somebody halfway through a week.
-    """
-    week = (date(2026, 9, 28), date(2026, 10, 4))
-
-    for day in (date(2026, 9, 28), date(2026, 9, 29), date(2026, 9, 30)):
-        (_, _, *span), rest, (_, _, far_start, far_end) = ov.deadline_windows(day)
-        _, _, rest_start, rest_end = rest
-
-        assert tuple(span) == week
-        assert rest_end is not None and rest_start > rest_end, "the middle window is not empty"
-        assert far_start == date(2026, 10, 5), "the far window reopens days already shown"
-        assert far_end is None
-
-        group = ov.DeadlineGroup("ulejaanud_kuu", "Ülejäänud kuu", [], 5, rest_start, rest_end)
-        assert group.is_empty_window
-        assert group.range_label == ""
-
-    for day in (date(2026, 10, 1), date(2026, 10, 4)):
-        (_, _, *span), rest, (_, _, far_start, _) = ov.deadline_windows(day)
-        _, _, rest_start, rest_end = rest
-
-        assert tuple(span) == week, "the week moved when the month turned over"
-        assert (rest_start, rest_end) == (date(2026, 10, 5), date(2026, 10, 31))
-        assert far_start == date(2026, 11, 1)
 
 
 def test_december_does_not_produce_a_thirteenth_month() -> None:
@@ -245,83 +160,6 @@ def test_december_does_not_produce_a_thirteenth_month() -> None:
     assert end_of_month(date(2026, 12, 3)) == date(2026, 12, 31)
     assert end_of_month(date(2028, 2, 1)) == date(2028, 2, 29), "leap year"
     assert end_of_month(date(2026, 2, 1)) == date(2026, 2, 28)
-
-
-# ---------------------------------------------------------------------------
-# The two groups, on the page
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_this_week_holds_monday_to_sunday_and_is_never_cut_short(
-    department_head, wednesday
-) -> None:
-    """Requirement 1 and 2: the whole week, however many that is.
-
-    Nine deadlines in a week print nine rows. The group exists so somebody can
-    see their week without opening anything, and a group that stops at five has
-    stopped doing that.
-    """
-    today = wednesday
-    for day in range(7):
-        on = date(2026, 8, 31) + timedelta(days=day)
-        _deadline(department_head, on=on, title=f"Nädala eelnõu {day}")
-    _deadline(department_head, on=date(2026, 8, 30), title="Eelmine pühapäev")
-    _deadline(department_head, on=date(2026, 9, 7), title="Järgmine esmaspäev")
-
-    week = _groups(department_head, today)["sel_nadalal"]
-
-    assert week.count == 7
-    assert week.shown == 7, "the week is truncated"
-    assert week.remaining == 0, "the week hides rows behind Näita veel"
-    assert len(week.preview) == 7
-    assert "Eelmine pühapäev" not in _titles(week)
-    assert "Järgmine esmaspäev" not in _titles(week)
-
-
-@pytest.mark.django_db
-def test_the_rest_of_the_month_holds_the_days_after_sunday_up_to_the_month_end(
-    department_head, wednesday
-) -> None:
-    """Requirement 3 and 4, with a near-miss on each end."""
-    today = wednesday
-    _deadline(department_head, on=date(2026, 9, 6), title="Pühapäev — veel see nädal")
-    _deadline(department_head, on=date(2026, 9, 7), title="Esmaspäev — esimene kuu päev")
-    _deadline(department_head, on=date(2026, 9, 30), title="Kuu viimane päev")
-    _deadline(department_head, on=date(2026, 10, 1), title="Järgmine kuu")
-
-    groups = _groups(department_head, today)
-    rest = groups["ulejaanud_kuu"]
-
-    assert rest.starts == date(2026, 9, 7)
-    assert rest.ends == date(2026, 9, 30)
-    assert _titles(rest) == {"Esmaspäev — esimene kuu päev", "Kuu viimane päev"}
-    assert "Pühapäev — veel see nädal" in _titles(groups["sel_nadalal"])
-    assert "Järgmine kuu" in _titles(groups["kaugemal"])
-
-
-@pytest.mark.django_db
-def test_no_deadline_lands_in_two_groups_or_in_none(department_head, wednesday) -> None:
-    """Requirement 9, asserted over a run of consecutive days.
-
-    The windows are built to touch, but "built to" is not "does": this walks
-    every day from the Monday before today to a month past the month end and
-    checks each one is in exactly one group.
-    """
-    today = wednesday
-    days = [date(2026, 8, 31) + timedelta(days=n) for n in range(70)]
-    for day in days:
-        _deadline(department_head, on=day, title=f"Eelnõu {day.isoformat()}")
-
-    groups = _groups(department_head, today)
-    seen: dict[str, list[str]] = {}
-    for key, group in groups.items():
-        for title in _titles(group):
-            seen.setdefault(title, []).append(key)
-
-    assert len(seen) == len(days), "a dated deadline is in no group at all"
-    doubled = {title: keys for title, keys in seen.items() if len(keys) > 1}
-    assert not doubled, f"counted twice: {doubled}"
 
 
 # ---------------------------------------------------------------------------
@@ -501,86 +339,8 @@ def test_a_panel_with_nothing_ahead_keeps_its_one_line_empty_state(
 
 
 # ---------------------------------------------------------------------------
-# kõik N →
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_the_group_link_opens_exactly_the_matters_the_header_counted(
-    department_head, wednesday
-) -> None:
-    """Requirement 13, and requirement 3 of the brief: «kõik N →» is not «Näita veel».
-
-    One expands rows where the reader stands; the other opens the register. The
-    register is asked for the group's own URL rather than for a condition
-    rebuilt here, so this cannot pass by two similar queries agreeing with each
-    other (app/matters/register_filters.py, `register_population`).
-    """
-    from urllib.parse import parse_qsl, urlparse
-
-    from app.matters.register_filters import register_population
-
-    today = wednesday
-    # Two deadlines on one Matter, and the second is an Oluline tähtaeg — the
-    # other half of what the department may honestly call a deadline. The header
-    # counts Matters, because that is what the list behind it holds.
-    twice = _deadline(department_head, on=date(2026, 9, 10), title="Kaks tähtaega")
-    add_important_date(
-        matter=twice,
-        title="Jõustumine",
-        date_value=date(2026, 9, 20),
-        period_end=date(2026, 9, 20),
-        actor=department_head,
-    )
-    _deadline(department_head, on=date(2026, 9, 3), title="Sel nädalal")
-    _deadline(department_head, on=date(2026, 9, 25), title="Kuu lõpus")
-    _deadline(department_head, on=date(2026, 11, 5), title="Novembris")
-
-    for group in _deadline_groups(department_head, today):
-        query = dict(parse_qsl(urlparse(group.url).query))
-        listed = register_population(department_head, query, today=today)
-        assert listed.count() == group.matter_count, f"{group.key} promises what it cannot show"
-
-    rest = _groups(department_head, today)["ulejaanud_kuu"]
-    assert rest.count == 3, "two dates on one Matter are two rows"
-    assert rest.matter_count == 2, "two dates on one Matter are one file to open"
-
-
-# ---------------------------------------------------------------------------
 # What must not change
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.django_db
-def test_a_wait_and_a_monitor_are_still_not_deadlines(department_head, wednesday) -> None:
-    """Requirement 12. A commitment nobody made is not a commitment.
-
-    A WAIT's expected date and a MONITOR's review date belong in the
-    intervention list, where they read as "look at this again" (master
-    specification 18.8). Both windows are checked, because a regrouping that
-    widened the predicate would show it in whichever one the date fell in.
-    """
-    today = wednesday
-    _deadline(
-        department_head,
-        on=date(2026, 9, 3),
-        title="Ootan ministeeriumi vastust",
-        kind=ActionKind.WAIT,
-        semantics=DateSemantics.EXPECTED_AROUND,
-    )
-    _deadline(
-        department_head,
-        on=date(2026, 9, 15),
-        title="Vaatan üle",
-        kind=ActionKind.MONITOR,
-        semantics=DateSemantics.REVIEW_ON,
-    )
-    _deadline(department_head, on=date(2026, 9, 4), title="Päris tähtaeg")
-
-    groups = _groups(department_head, today)
-
-    assert _titles(groups["sel_nadalal"]) == {"Päris tähtaeg"}
-    assert groups["ulejaanud_kuu"].count == 0
 
 
 @pytest.mark.django_db
@@ -654,55 +414,64 @@ def test_the_groups_are_still_read_through_visible_to(
 
 
 @pytest.mark.django_db
-def test_the_rows_of_a_group_run_earliest_first(department_head, wednesday) -> None:
-    """Requirement 4 of the brief, in both groups.
+def test_the_rows_of_a_window_run_earliest_first(department_head, wednesday) -> None:
+    """Requirement 4 of the brief, on the windows that replaced the ones it named.
 
-    The existing tie-break is preserved: two items on one day order by the
-    Matter's reference and then by the step's own text, so the list is stable
-    between two reads of the same data (`wi.sort_items`).
+    The panel renders `group.items` in whatever order the read model put them,
+    and `tests/test_department_page.py` asserts exactly that — the rendering
+    preserves the read model's order — while deliberately *not* restating what
+    that order is, so a branch that changed the sort could not go green on a
+    test which had copied it. That leaves the order itself asserted nowhere.
+    This is the other half of the pair: that the order is chronological, and
+    that two reads of the same data produce the same one (`wi.sort_items`).
+
+    Two windows, because a sort applied per window and a sort applied to the
+    population before it is cut are different mistakes, and only one of them
+    shows in a single window.
     """
     today = wednesday
-    for day in (25, 7, 30, 12):
-        _deadline(department_head, on=date(2026, 9, day), title=f"Eelnõu {day}")
-    for day in (5, 1, 6):
+    # Out of order on purpose, and interleaved across the two windows so that a
+    # sort that happened to follow insertion order would have to be lucky twice.
+    for day in (12, 4, 8):
         _deadline(department_head, on=date(2026, 9, day), title=f"Nädala eelnõu {day}")
+    for day in (25, 14, 30, 18):
+        _deadline(department_head, on=date(2026, 9, day), title=f"Kuu eelnõu {day}")
 
-    groups = _groups(department_head, today)
+    groups = _upcoming(department_head, today)
 
-    assert [item.when for item in groups["sel_nadalal"].items] == [
-        date(2026, 9, 1),
-        date(2026, 9, 5),
-        date(2026, 9, 6),
-    ]
-    assert [item.when for item in groups["ulejaanud_kuu"].items] == [
-        date(2026, 9, 7),
+    assert [item.when for item in groups["nadal"].items] == [
+        date(2026, 9, 4),
+        date(2026, 9, 8),
         date(2026, 9, 12),
+    ]
+    assert [item.when for item in groups["kuu"].items] == [
+        date(2026, 9, 14),
+        date(2026, 9, 18),
         date(2026, 9, 25),
         date(2026, 9, 30),
     ]
 
 
 @pytest.mark.django_db
-def test_the_week_group_holds_a_date_that_has_already_passed_this_week(
-    department_head, wednesday
-) -> None:
-    """Monday's deadline is still this week's business on Wednesday.
+def test_two_deadlines_on_one_day_keep_one_order_between_reads(department_head, wednesday) -> None:
+    """The tie-break, asserted as stability rather than as its own rule.
 
-    The deliberate consequence of cutting by the calendar week rather than from
-    today: a date between Monday and yesterday is in *Sel nädalal* as well as in
-    *Üle tähtaja*, and that is the point — the week group is what somebody looks
-    at to see their week, missed days included. `Üle tähtaja` remains the count
-    of what is actually late, and it is unchanged by this.
+    Two obligations falling on the same day cannot be ordered by date, and the
+    list still has to be the same list on the next request — a window whose two
+    rows swap between two reads of unchanged data is a page that looks like it
+    changed when nothing did. What the tie-break *is* belongs to `wi.sort_items`;
+    what this window needs from it is only that there is one.
     """
     today = wednesday
-    _deadline(department_head, on=date(2026, 8, 31), title="Esmaspäevane tähtaeg")
+    for index in range(3):
+        _deadline(department_head, on=date(2026, 9, 8), title=f"Sama päev {index}")
 
-    week = _groups(department_head, today)["sel_nadalal"]
-    assert _titles(week) == {"Esmaspäevane tähtaeg"}
+    first = _upcoming(department_head, today)["nadal"]
+    second = _upcoming(department_head, today)["nadal"]
 
-    items = wi.work_items(department_head, today=today)
-    overdue = {item.matter.title for item in wi.overdue_items(items)}
-    assert overdue == {"Esmaspäevane tähtaeg"}, "the overdue population changed"
+    assert first.count == 3
+    assert [item.when for item in first.items] == [date(2026, 9, 8)] * 3
+    assert [item.matter_id for item in first.items] == [item.matter_id for item in second.items]
 
 
 @pytest.mark.django_db
@@ -724,26 +493,3 @@ def test_the_department_wide_this_week_figure_is_untouched(department_head, wedn
 
     assert {item.matter.title for item in ahead} == {"Reedene tähtaeg"}
     assert wi.deadline_window(wi.WORK_DEADLINE_THIS_WEEK, today) == (today, date(2026, 9, 6))
-
-
-@pytest.mark.django_db
-def test_the_far_line_names_the_nearest_date_and_counts_the_rest(
-    department_head, wednesday
-) -> None:
-    """The one-line pointer past the month, unchanged by the regrouping.
-
-    It prints the next date and how many more sit behind it: a list a month out
-    is a plan nobody can act on today, and a number with nothing to open is a
-    figure nobody can check (design handoff 1a).
-    """
-    today = wednesday
-    _deadline(department_head, on=date(2026, 11, 3), title="Novembri eelnõu")
-    _deadline(department_head, on=date(2026, 12, 1), title="Detsembri eelnõu")
-
-    far = _groups(department_head, today)["kaugemal"]
-
-    assert far.is_far
-    assert far.first is not None
-    assert far.first.matter.title == "Novembri eelnõu", "the far line names the nearest date"
-    assert far.beyond_first == 1
-    assert far.shown == 1

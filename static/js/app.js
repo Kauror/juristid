@@ -1245,6 +1245,90 @@
     });
   }
 
+  /* ---- «Kasuta» on Dokumendist leitud --------------------------------------
+   * A suggestion the person chooses is written into the real form control
+   * beside it — the title box, the deadline box, the Menetlusliik radio, a
+   * Valdkond or Kellelt checkbox — and nothing else. The control is what is
+   * submitted and validated, exactly as it is when typed; the button stores
+   * nothing of its own.
+   *
+   * Progressive enhancement: with scripting off the suggestion and its
+   * evidence are still on the page and the value is still typed by hand.
+   * A checkbox group may be rendered in two places (the frequent chips and
+   * the long tail behind «Vali nimekirjast»), so a value is looked up by name
+   * and by the `_other` twin (app/matters/forms.py).
+   */
+  function bindSuggestionUse(scope) {
+    (scope || document).querySelectorAll("[data-suggest-for]").forEach(function (button) {
+      if (!once(button, "SuggestionUse")) {
+        return;
+      }
+      var form = button.closest("form");
+      if (!form) {
+        return;
+      }
+      var name = button.getAttribute("data-suggest-for");
+      var value = button.getAttribute("data-suggest-value") || "";
+      var controls = Array.prototype.slice.call(
+        form.querySelectorAll('[name="' + name + '"], [name="' + name + '_other"]')
+      );
+      var boxes = controls.filter(function (control) {
+        return control.type === "checkbox" || control.type === "radio";
+      });
+      var text = controls.filter(function (control) {
+        return control.type !== "checkbox" && control.type !== "radio";
+      })[0];
+      var chosen = function () {
+        if (boxes.length) {
+          return boxes.some(function (box) {
+            return box.value === value && box.checked;
+          });
+        }
+        return !!text && text.value.trim() === value;
+      };
+      var sync = function () {
+        var on = chosen();
+        button.classList.toggle("is-selected", on);
+        button.setAttribute("aria-pressed", on ? "true" : "false");
+      };
+      button.addEventListener("click", function () {
+        var target = null;
+        if (boxes.length) {
+          boxes.forEach(function (box) {
+            if (box.value !== value) {
+              return;
+            }
+            target = box;
+            if (!box.checked) {
+              box.checked = true;
+              box.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+            /* A long-tail chip sits behind a closed disclosure; open it so
+               the tick is visible where it was made. */
+            var details = box.closest("details");
+            if (details) {
+              details.open = true;
+            }
+          });
+        } else if (text) {
+          target = text;
+          text.value = value;
+          text.dispatchEvent(new Event("input", { bubbles: true }));
+          text.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+        sync();
+        if (target && target.focus) {
+          target.focus({ preventScroll: false });
+        }
+      });
+      controls.forEach(function (control) {
+        control.addEventListener("change", sync);
+        control.addEventListener("input", sync);
+      });
+      sync();
+    });
+  }
+
   /* ---- The persona popover -----------------------------------------------
    * The pill on the bar opens the same list the full page shows, so somebody
    * comparing two colleagues' queues stays on the queue instead of making a
@@ -1711,6 +1795,7 @@
     bindChipCounts(document);
     bindStageHelp(document);
     bindRequiredAction(document);
+    bindSuggestionUse(document);
     bindPersonaMenu(document);
     focusFragmentTarget();
   });
@@ -1737,6 +1822,7 @@
     bindChipCounts(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);
     bindRequiredAction(event.target.querySelector ? event.target : document);
+    bindSuggestionUse(event.target.querySelector ? event.target : document);
     bindPersonaMenu(event.target.querySelector ? event.target : document);
   });
 })();

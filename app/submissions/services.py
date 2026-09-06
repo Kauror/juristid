@@ -491,3 +491,77 @@ def addressees_of(submission: Submission) -> list[Any]:
             "organisation"
         )
     ]
+
+
+@transaction.atomic
+def register_sent_opinion(
+    *,
+    document: Document,
+    version: DocumentVersion,
+    title: str,
+    kind: str = SubmissionKind.FORMAL_OPINION,
+    actor: Any = None,
+    recipients: list[Any] | None = None,
+    for_information: list[Any] | None = None,
+    joint_submitters: list[Any] | None = None,
+    channel: str = "",
+    reference: str = "",
+    sent_at: datetime | None = None,
+    sent_at_precision: str = SentAtPrecision.TIMESTAMP,
+) -> Submission:
+    """Record that a file already on the Matter went out, in one act.
+
+    Composition, not a fourth implementation. Every rule this touches is still
+    decided where it was: `create_submission` validates the kind and writes the
+    creation event, `select_final_evidence` takes the Matter and submission
+    locks and runs `check_evidence_is_usable` against what those locks protect,
+    and `mark_submission_sent` re-runs the evidence check, stamps the time and
+    writes the send event. Copying any of that here would be a second opinion
+    about when Koda may claim to have sent something, and the two would drift
+    (docs/adr/0061 §17).
+
+    It exists because the Dokumendid surface asks a question the three separate
+    services cannot answer on their own: *this file was sent — say so*. Doing
+    that through the individual routes means creating an empty draft, finding it
+    again, binding it to a file that is already there and then sending it: four
+    round trips, three of which describe a state nobody was ever in. One
+    transaction, so a failure at any step leaves no half-registered opinion.
+
+    **It asserts nothing on its own.** Uploading a file as `Arvamus` does not
+    reach this; a person fills in who it went to and presses the button. That
+    separation is the whole reason `Document.role` and `Submission` are two
+    different records (§18).
+
+    ``version`` is passed rather than read off ``document.current_version``,
+    because the exact bytes that were sent are the point and a document's
+    current version moves. The caller resolves it under the reader's own
+    visibility scope before it gets here.
+    """
+    if version.document_id != document.pk:
+        raise DomainError("Tõend peab kuuluma valitud dokumendi juurde.")
+
+    submission = create_submission(
+        matter=document.matter,
+        title=title,
+        kind=kind,
+        actor=actor,
+        recipients=recipients,
+        for_information=for_information,
+        joint_submitters=joint_submitters,
+        channel=channel,
+        reference=reference,
+        # The evidence is a document that already exists and already carries a
+        # visibility of its own. `check_evidence_is_usable` refuses evidence
+        # less restricted than its submission, so a restriction is inherited
+        # from the file rather than guessed at here.
+        visibility_override=document.visibility_override,
+    )
+    select_final_evidence(submission=submission, version=version, actor=actor)
+    return mark_submission_sent(
+        submission=submission,
+        actor=actor,
+        sent_at=sent_at,
+        sent_at_precision=sent_at_precision,
+        channel=channel,
+        reference=reference,
+    )

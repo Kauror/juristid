@@ -1,0 +1,172 @@
+{% comment %}
+  «Dokumendist leitud» — what the analyser read off this Matter's documents,
+  with the evidence for every line.
+
+  A panel above the edit form, not a second form. Nothing in it posts: a
+  value reaches the record only by sitting in the form control below and
+  being saved with the rest. Three treatments, and each is a word on the
+  page rather than a colour:
+
+    «vormil eeltäidetud»  the GET put a HIGH-confidence value into an empty
+                          control; it is unsaved until Salvesta
+    «Kasuta»              a suggestion the person chooses; the button writes
+                          the value into the control (static/js/app.js)
+    «juba valitud»        the record already carries this value; the document
+                          agrees, and there is nothing to do
+
+  Every line answers «kust see tuli?»: the file, the place in it (lk 1,
+  kirja päis), OCR where the text was recognised rather than read, and a
+  short excerpt. Excerpts are text and are escaped like any other text; no
+  document content becomes markup here (docs/adr/0014, docs/adr/0060).
+{% endcomment %}
+<section class="suggpanel" id="dokumendist-leitud" aria-labelledby="dokumendist-leitud-pealkiri">
+  <div class="suggpanel__head">
+    <h2 class="suggpanel__title" id="dokumendist-leitud-pealkiri">Dokumendist leitud</h2>
+    <span class="suggpanel__meta">Kontrolli enne salvestamist — midagi ei salvestata enne, kui vajutad Salvesta.</span>
+  </div>
+
+  {% comment %}
+    Every document, with its extraction state. The panel's honesty about a
+    document that has not been read is worth more than a tidy empty state: an
+    empty list under «Dokumendist leitud» would read as «nothing useful in
+    there», and the true reason is usually «not extracted yet».
+  {% endcomment %}
+  <ul class="suggpanel__files">
+    {% for document in assisted.documents %}
+      <li class="suggfile">
+        <span class="suggfile__name">{{ document.filename }}</span>
+        <span class="statechip statechip--{{ document.state_tone }}">{{ document.state_label }}</span>
+        {% if document.from_ocr %}<span class="badge badge--source">OCR</span>{% endif %}
+        {% if document.note %}<span class="suggfile__note">{{ document.note }}</span>{% endif %}
+      </li>
+    {% empty %}
+      <li class="suggfile"><span class="suggfile__note">Teemal ei ole dokumente, mida analüüsida.</span></li>
+    {% endfor %}
+  </ul>
+
+  {% comment %}
+    Said plainly when the Matter held more readable text than one analysis
+    reads. An empty or short suggestion list beside unread material would
+    otherwise read as «there was nothing useful in there», which is a
+    different claim from «not all of it was looked at» (docs/adr/0060).
+    A sentence, not an error: nothing is blocked and there is nothing to
+    clear.
+  {% endcomment %}
+  {% if assisted.is_partial %}
+    <p class="suggpanel__state">
+      Analüüsiti {{ assisted.analysed_documents|length }} dokumenti
+      {{ assisted.readable_documents|length }}-st. Mahukas sisu jäi
+      automaatkontrollist osaliselt välja; dokumendid ise on tervikuna alles ja avatavad.
+    </p>
+  {% endif %}
+
+  {% if assisted.is_waiting %}
+    <p class="suggpanel__state">
+      Teksti eraldamine on ootel — dokumendi sisu ei ole veel analüüsiks valmis.
+      <a class="quietlink" href="{% url 'matters:matter_edit_assisted' pk=matter.pk %}">Kontrolli uuesti</a>
+    </p>
+  {% endif %}
+  {% if assisted.failed_documents and not assisted.has_text %}
+    <p class="suggpanel__state">Teksti eraldamine ebaõnnestus, seega dokumendist ei saanud midagi lugeda.</p>
+  {% endif %}
+  {% if assisted.has_text and not assisted.has_anything %}
+    <p class="suggpanel__state">Dokumendi tekst on loetud, kuid reeglid ei leidnud sellest midagi, mida pakkuda.</p>
+  {% endif %}
+
+  {% if assisted.form_suggestions %}
+    <dl class="suggrows">
+      {% for suggestion in assisted.form_suggestions %}
+        <div class="suggrow{% if suggestion.conflict %} suggrow--conflict{% endif %}">
+          <dt class="suggrow__key">
+            {{ suggestion.label }}
+            {% if suggestion.conflict %}<span class="badge badge--warning">Vastuolu</span>{% endif %}
+          </dt>
+          <dd class="suggrow__body">
+            {% if suggestion.note %}<p class="suggnote">{{ suggestion.note }}</p>{% endif %}
+            {% for candidate in suggestion.offered %}
+              <div class="suggcand{% if candidate.already_current %} suggcand--current{% endif %}">
+                <div class="suggcand__line">
+                  <span class="suggcand__value">{{ candidate.display }}</span>
+                  {% if candidate.already_current %}
+                    <span class="badge badge--quiet">juba valitud</span>
+                  {% elif candidate.prefilled %}
+                    <span class="badge badge--success">vormil eeltäidetud</span>
+                  {% else %}
+                    <button type="button" class="uxchip suggcand__use"
+                            data-suggest-for="{{ suggestion.field }}"
+                            data-suggest-value="{{ candidate.control_value }}"
+                            aria-pressed="false">Kasuta</button>
+                    <span class="suggcand__grade">{{ candidate.confidence_label }}</span>
+                  {% endif %}
+                </div>
+                {% if candidate.evidence %}
+                  <span class="suggcand__evidence">„{{ candidate.evidence }}”</span>
+                {% endif %}
+                <span class="suggcand__source">
+                  {{ candidate.provenance.source_label }}{% if candidate.detail %} · {{ candidate.detail }}{% endif %}
+                </span>
+              </div>
+            {% endfor %}
+          </dd>
+        </div>
+      {% endfor %}
+    </dl>
+  {% endif %}
+
+  {% if assisted.findings %}
+    <dl class="suggrows suggrows--findings">
+      {% for finding in assisted.findings %}
+        <div class="suggrow">
+          <dt class="suggrow__key">{{ finding.label }}</dt>
+          <dd class="suggrow__body">
+            <div class="suggcand">
+              <div class="suggcand__line">
+                <span class="suggcand__value">{{ finding.display }}</span>
+                {% if finding.detail and finding.detail_is_address %}
+                  <span class="suggcand__extra">{{ finding.detail }}</span>
+                {% endif %}
+              </div>
+              {% if finding.evidence %}
+                <span class="suggcand__evidence">„{{ finding.evidence }}”</span>
+              {% endif %}
+              <span class="suggcand__source">
+                {{ finding.provenance.source_label }}{% if finding.detail and not finding.detail_is_address %} · {{ finding.detail }}{% endif %}
+              </span>
+            </div>
+          </dd>
+        </div>
+      {% endfor %}
+    </dl>
+  {% endif %}
+
+  {% if assisted.other_findings %}
+    <details class="suggpanel__more">
+      <summary class="suggpanel__moresummary">Muud leiud ({{ assisted.other_findings|length }})</summary>
+      <dl class="suggrows suggrows--findings">
+        {% for finding in assisted.other_findings %}
+          <div class="suggrow">
+            <dt class="suggrow__key">{{ finding.label }}</dt>
+            <dd class="suggrow__body">
+              <div class="suggcand">
+                <div class="suggcand__line">
+                  <span class="suggcand__value">{{ finding.display }}</span>
+                  {% if finding.detail and finding.detail_is_address %}
+                    <span class="suggcand__extra">{{ finding.detail }}</span>
+                  {% endif %}
+                </div>
+                {% if finding.evidence %}
+                  <span class="suggcand__evidence">„{{ finding.evidence }}”</span>
+                {% endif %}
+                <span class="suggcand__source">{{ finding.provenance.source_label }}</span>
+              </div>
+            </dd>
+          </div>
+        {% endfor %}
+      </dl>
+    </details>
+  {% endif %}
+
+  {% if assisted.diagnostics %}
+    <p class="suggpanel__diagnostic">{% for line in assisted.diagnostics %}{{ line }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+  {% endif %}
+</section>

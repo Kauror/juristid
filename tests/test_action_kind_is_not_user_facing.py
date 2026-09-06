@@ -55,29 +55,15 @@ MONITOR_TEXT = "vaata rakendusaktide koostamine üle"
 
 @pytest.fixture
 def today():
-    """The Monday of the current ISO week, not the actual day.
+    """The Monday of the current ISO week, not the calendar day.
 
-    Every date in this file is written relative to this one, and every
-    assertion about a *band* is an assertion about where that date falls in the
-    ISO week — which is a different question on a Saturday than on a Tuesday.
-    `three_steps` puts the two review steps two days out, and on a Saturday two
-    days out is next Monday: `Järgmised 30 päeva`, not `Sel nädalal`, so
-    `test_all_three_steps_are_still_in_the_bands_they_were_in` held from Monday
-    to Friday and failed at the weekend. It first went red on Saturday
-    2026-09-05, on the first CI run this repository happened to make on one.
-
-    Anchoring to Monday fixes it for all seven days rather than for six: +2 is
-    Wednesday and -3 is the previous Friday whatever day the job runs, and the
-    work model reads the date it is *given* — `build_my_work(..., today=today)`
-    derives the week end, `is_overdue` and `is_review_ripe` from this value and
-    from nothing else — so the fixture and the assertions cannot disagree.
-
-    This is `seed_e2e_data`'s lesson about the visual baselines, arriving in a
-    suite that can do better than it could: those screenshots have to use the
-    real clock, and these tests do not.
+    The fixture below dates two steps at ``today + 2`` and asserts they land in
+    *Sel nädalal*. On a Saturday or a Sunday ``today + 2`` is next week, the
+    band is structurally absent, and the assertion raised ``KeyError`` — the
+    same weekend trap `seed_e2e_data` documents. Anchoring on the Monday keeps
+    every offset inside the week it was written for, on every day of the week.
     """
-    real_today = timezone.localdate()
-    return real_today - timedelta(days=real_today.weekday())
+    return wi.start_of_iso_week(timezone.localdate())
 
 
 @pytest.fixture

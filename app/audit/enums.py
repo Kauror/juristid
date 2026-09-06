@@ -153,7 +153,7 @@ class ChangeEventType(models.TextChoices):
     # Seotud materjalid: the four human decisions the section records. A
     # dismissal («Ei ole seotud») keeps its actor and time on its own row and
     # writes no event, because it is a preference about what to suggest rather
-    # than a fact about the file (docs/adr/0061).
+    # than a fact about the file (docs/adr/0062).
     MATTER_RELATION_ADDED = "MATTER_RELATION_ADDED", "Teema seotud teise teemaga"
     MATTER_RELATION_REMOVED = "MATTER_RELATION_REMOVED", "Teemade seos eemaldatud"
     BACKGROUND_MATERIAL_ADDED = "BACKGROUND_MATERIAL_ADDED", "Taustmaterjal lisatud"

@@ -1,0 +1,20 @@
+{% comment %}
+When a submission went out, rendered at the precision its source actually gave.
+
+A submission captured in this system carries a real timestamp; one reconstructed
+from the historical register carries a date, and the time in the column is an
+anchor nobody supplied. Printing that anchor as "00:00" would tell a lawyer the
+letter went out at midnight — a fact no source ever stated — so the field is
+asked before a format is picked (Stage-2H brief 20, app/submissions/enums.py).
+
+One partial rather than the same four lines in every surface that shows a send.
+{% endcomment %}
+{% if submission.sent_at %}
+  {% if submission.sent_at_precision == "DATE" %}
+    <time datetime="{{ submission.sent_at|date:'Y-m-d' }}">{{ submission.sent_at|date:"j.n.Y" }}</time>
+  {% else %}
+    <time datetime="{{ submission.sent_at|date:'c' }}">{{ submission.sent_at|date:"j.n.Y H:i" }}</time>
+  {% endif %}
+{% else %}
+  <span class="table__missing">—</span>
+{% endif %}

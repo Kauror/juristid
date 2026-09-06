@@ -33,6 +33,12 @@ urlpatterns = [
     # (docs/adr/0047).
     path("plokk/", workspace_views.embedded_block, name="embedded_block"),
     path("teema/<uuid:matter_id>/uus/", views.create, name="create"),
+    # «Registreeri saatmine» — an opinion file already on the Matter went out.
+    # Matter-scoped like `create` rather than keyed on a submission, because
+    # the whole point is that no submission exists yet: this is the act that
+    # creates one, binds the exact file and marks it sent, in one transaction
+    # over the existing services (docs/adr/0061).
+    path("teema/<uuid:matter_id>/saadetud/", views.register_sent, name="register_sent"),
     path("<uuid:pk>/toend/", views.attach_evidence, name="attach_evidence"),
     path("<uuid:pk>/saada/", views.mark_sent, name="mark_sent"),
     path("<uuid:pk>/tagasi/", views.withdraw, name="withdraw"),

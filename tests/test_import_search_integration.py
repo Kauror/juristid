@@ -179,15 +179,22 @@ def test_importing_a_matter_gives_it_no_second_route_past_authorization(imported
 def test_a_search_is_a_bounded_number_of_queries(
     imported, specialist, django_assert_max_num_queries
 ) -> None:
-    """The tiers are one statement, so result count must not grow with them."""
-    with django_assert_max_num_queries(4):
+    """The tiers are one statement, so result count must not grow with them.
+
+    Was 4; measured at 1, and at 1 with the queryset evaluated rather than
+    merely built. 2 is the tightest honest ceiling: it still permits one more
+    statement, and it fails the moment the tiers stop being one.
+    """
+    with django_assert_max_num_queries(2):
         search_matters(query="Sünteetiline", user=specialist)
 
 
 def test_counting_results_is_a_bounded_number_of_queries(
     imported, specialist, django_assert_max_num_queries
 ) -> None:
-    with django_assert_max_num_queries(3):
+    # Was 3, measured at 1. Counting results is one statement and has to stay
+    # one; 2 leaves room for a second without leaving room for a per-tier query.
+    with django_assert_max_num_queries(2):
         result_count(query="Sünteetiline", user=specialist)
 
 
@@ -214,5 +221,12 @@ def test_planning_an_import_does_not_query_once_per_row(
     # existing matter. This asserts the shape rather than a target — if it ever
     # needs to be faster, the fix is batching, and this test is what would
     # notice a regression into something worse.
-    with django_assert_max_num_queries(len(rows) * 5):
+    #
+    # Measured at 121 for these forty rows, a little over three per row, so the
+    # multiplier comes down from five to four. Deliberately still a multiple of
+    # `len(rows)` and not a constant: what this guards is the *slope*, and a
+    # fixed ceiling would pass or fail on the fixture size instead. A fifth
+    # lookup per row is what it is here to catch, and four no longer leaves room
+    # for one.
+    with django_assert_max_num_queries(len(rows) * 4):
         build_plan(path)

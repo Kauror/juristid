@@ -23,7 +23,7 @@ urlpatterns = [
     # Seotud materjalid. Also at the root: every route in it is an exact
     # Matter-scoped path under `teemad/<uuid>/seotud/`, which app.matters does
     # not claim, and keeping the app's routes with the app keeps the feature
-    # out of the Matter views it decorates (docs/adr/0061).
+    # out of the Matter views it decorates (docs/adr/0062).
     path(
         "",
         include(("app.related_materials.urls", "related_materials"), namespace="related_materials"),

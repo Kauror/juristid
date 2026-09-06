@@ -180,6 +180,54 @@ it. If the debt is old, the first thing to check is whether
 `run_search_refresh_worker` is running; `rebuild_search_index` remains the
 manual answer and is always safe.
 
+### An optional roll-up: `production_status`
+
+Several checks above are read-only questions about the **currently running**
+application and database, and the procedure asks for them one after another.
+`manage.py production_status` asks five of them in one go and prints one row
+each:
+
+```
+PRODUCTION STATUS
+
+Deployment readiness      PASS
+Search integrity          PASS
+Search freshness          PASS
+Era contracts             PASS
+Archive projection        PASS
+
+Overall                   PASS
+```
+
+Non-zero exit on any `FAIL`, and zero only when every included check passed.
+`--detail` adds each failing row's aggregate count; `--json` emits the same
+verdicts structured. It calls the same report functions the individual commands
+call, rather than running them and reading their output.
+
+**It reports and never repairs.** A failing row points at that check's own
+command and that check's own documented remedy; nothing is migrated, rebuilt,
+refreshed, retried or reconciled on the way, and the search-rebuild debt it
+reports is never consumed (`app/core/production_status.py`).
+
+**It is a convenience, not a gate.** The rows in §0–§4 remain authoritative, and
+each of those commands says more than a single PASS can. `production_status`
+does not replace any of them, and in particular not these:
+
+| Not covered by `production_status` | Still its own gate |
+| --- | --- |
+| What the **target image** would do to this database | 0.3 — `migration_plan`, run from the image being deployed |
+| The release artifact itself | §1 |
+| The pre-deploy backup | §2 |
+| `/healthz`, container and compose state | `deploy/unraid-main/README.md` |
+| The post-deploy browser pass | 4.8 |
+| Evidence bytes | 4.2 — `check_evidence_integrity`, deliberately excluded: even its structural pass probes the filesystem once per version |
+| Any repair, rebuild or data operation | §3 and §5, each a separately authorized decision |
+
+The first row is the one to keep hold of. `production_status` runs *inside the
+image that is already deployed*, so it can only see the migrations that image
+was built with — it describes the current application and database, and it is
+not permission to skip the target-image preflight at 0.3.
+
 ## 5. Rollback
 
 | | Situation | Answer |

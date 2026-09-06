@@ -7,7 +7,7 @@ suggestions and into `Seotud teemad` on *both* Matters, that «Ei ole seotud»
 survives a reload and comes back through «Näita peidetud», that an earlier
 opinion and an archive letter become background without anything else
 changing, and that a reader sees no controls and no restricted relation
-(docs/adr/0061).
+(docs/adr/0062).
 
 Every Matter these tests create carries its own suffix so a suggestion
 asserted here is the one this test made, whatever else the seeded world holds
@@ -137,7 +137,9 @@ def test_an_earlier_opinion_becomes_background_and_stays_where_it_was(page, base
     expect(card.locator(".relatedcard__label")).to_have_text("Varasem arvamus")
     expect(card.locator(".relatedcard__reasons")).to_contain_text("Sama õigusakt: pakendiseadus")
     source_href = card.locator(".relatedcard__title").get_attribute("href") or ""
-    assert re.search(r"/teemad/[0-9a-f-]{36}/seisukoht/$", source_href), source_href
+    # Dokumendid filtered to opinions, not the retired per-Matter Arvamused
+    # page, which is only a compatibility redirect now (docs/adr/0061).
+    assert re.search(r"/teemad/[0-9a-f-]{36}/dokumendid/\?roll=arvamus$", source_href), source_href
 
     card.get_by_role("button", name="Lisa taustmaterjaliks").click()
 
