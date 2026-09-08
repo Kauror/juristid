@@ -251,17 +251,29 @@ def test_the_month_keeps_its_anchor_period_band_and_overdue_reading(specialist):
     assert wi.band_of(item, TODAY, WEEK_END, None) == wi.BAND_LATER
 
 
-def test_a_month_is_late_only_once_its_last_day_has_passed(specialist):
-    """The period, not the anchor. 30 September is still inside September."""
+def test_the_cell_counts_days_from_the_last_day_of_the_month(specialist):
+    """The period, not the anchor. 30 September is still inside September.
+
+    `days_late` is what the cell prints and it reads `period_end`, so the month
+    is still spelled `09.26` on its last day and becomes «1 p üle» the morning
+    after. That is unchanged; only the string it falls back to is new.
+
+    Not asserted here: `NextAction.is_overdue`, which compares the *anchor* and
+    so calls a September DO late from the 2nd. It is read for the row's colour
+    and for the «Üle tähtaja» count, it disagrees with the count of days beside
+    it, and it disagreed before this change — untouched on purpose.
+    """
     _action(specialist, on=date(2026, 9, 1), precision=DatePrecision.MONTH, title="Kuu täpsusega")
 
     last_day = _items(specialist, today=date(2026, 9, 30))["Kuu täpsusega"]
+    assert last_day.period_end == date(2026, 9, 30)
+    assert last_day.days_late == 0
     assert last_day.short_date == "09.26"
-    assert not last_day.is_overdue
 
     after = _items(specialist, today=date(2026, 10, 1))["Kuu täpsusega"]
-    assert after.is_overdue
+    assert after.days_late == 1
     assert after.short_date == "1 p üle"
+    assert after.meaning_line == "TÄHTAEG 09.26"
 
 
 def test_the_page_builder_puts_the_month_where_it_always_was(specialist):
