@@ -73,6 +73,7 @@ consequences and reversibility.
 | [0061](0061-matter-opinions-live-under-documents.md) | A Matter's opinions are documents, and the per-Matter Arvamused page is retired | Accepted |
 | [0062](0062-related-materials-and-human-confirmed-links.md) | Seotud materjalid: derived suggestions, human-confirmed links | Accepted |
 | [0063](0063-one-organisation-catalogue-behind-saatja-and-adressaat.md) | One Organisation catalogue behind Saatja and Adressaat, and a sender may be named where it is used | Accepted |
+| [0064](0064-assisted-intake-happens-while-the-teema-is-being-created.md) | Assisted intake happens while the Teema is being created | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 

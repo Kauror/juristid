@@ -399,8 +399,7 @@
       /* One answer, two places. The staging routes render both halves and this
          puts each where it belongs by id — the file rows inside the dropzone,
          the suggestions above the fields they are about. */
-      var applyFragment = function (html) {
-        var parsed = new DOMParser().parseFromString(html, "text/html");
+      var applyFragment = function (parsed) {
         ["intake-failid", "intake-panel"].forEach(function (id) {
           var incoming = parsed.getElementById(id);
           var existing = document.getElementById(id);
@@ -474,8 +473,19 @@
          comes back, because from then on it is the only true account of what
          `Loo teema` will receive. */
       var stagingWorks = true;
+      var inFlight = 0;
       var hideChosenList = function () {
         if (!stagingWorks) {
+          return;
+        }
+        /* Only while there is something to suppress it *for*. A batch the
+           server refused outright stages nothing and clears nothing, so the
+           browser's own preview is the only true account of what `Loo teema`
+           will receive — and hiding it would show an empty file area over an
+           input that still holds a file, which is the defect the held-upload
+           work was about, inverted. */
+        var staged = document.getElementById("intake-failid");
+        if (!inFlight && !(staged && staged.querySelectorAll(".dropzone__file").length)) {
           return;
         }
         fileList.textContent = "";
@@ -496,7 +506,6 @@
         if (current) {
           data.append("intake", current);
         }
-        uploading(true);
         return fetch(stageUrl, { method: "POST", body: data, credentials: "same-origin" })
           .then(function (response) {
             /* A 400 carries the same fragment with the refusal on it, so it is
@@ -508,13 +517,20 @@
             return response.text();
           })
           .then(function (html) {
-            /* Emptied only once the server has them. A file input cannot be
-               refilled by any page, so clearing it before the answer arrived
-               would be the one way to actually lose somebody's file. */
-            fileInput.value = "";
+            inFlight -= 1;
+            var parsed = new DOMParser().parseFromString(html, "text/html");
+            var staged = parsed.getElementById("intake-failid");
+            var kept = staged ? staged.querySelectorAll(".dropzone__file").length : 0;
+            /* Emptied only once the server actually has something. A file input
+               cannot be refilled by any page, so clearing it before the answer
+               arrived — or when the answer was that nothing was taken — would
+               be the one way to actually lose somebody's file. */
+            if (kept) {
+              fileInput.value = "";
+            }
             polls = 0;
             abandoned = false;
-            applyFragment(html);
+            applyFragment(parsed);
             schedule();
           })
           .catch(function () {
@@ -523,6 +539,7 @@
                lost is the reading, which is help rather than data — and the
                browser's own preview comes back, because from here on it is
                what the save will actually receive. */
+            inFlight -= 1;
             stagingWorks = false;
             uploading(false);
             fileInput.dispatchEvent(new Event("change"));
@@ -551,6 +568,15 @@
         fresh.forEach(function (file) {
           sent.add(file);
         });
+        /* Counted here rather than when the request starts, and that is the
+           whole of what makes the two lists safe. The queue runs `send` a
+           microtask later at the earliest, so between the pick and the request
+           there would otherwise be a window in which the browser's list is
+           still showing rows whose × belongs to a list that is about to be
+           replaced — long enough for somebody to press one, and long enough
+           for a browser driver to. */
+        inFlight += 1;
+        uploading(true);
         hideChosenList();
         queue = queue.then(function () {
           return send(fresh);

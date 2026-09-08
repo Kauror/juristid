@@ -261,24 +261,29 @@ def test_a_suggestion_never_overwrites_what_the_person_typed_first(
     choose(page, [letter_pdf])
     wait_for_reading(page)
 
-    # Typed while the file is still being read.
+    # Typed and ticked while the file is still being read: two text controls
+    # and one checkbox group, because a group is filled by a different code
+    # path from a box and both have to refuse.
     page.locator("#id_title").fill(TYPED_TITLE)
     page.locator("#id_response_deadline").fill("30.9.2026")
-    page.locator("label.chip", has_text="Näidisamet").locator("input").first.check()
+    areas = page.locator("fieldset", has=page.locator("#id_policy_areas_0")).first
+    areas.locator("label.chip", has_text="Ehitus").locator("input").first.check()
 
     read_staged_files()
     wait_for_suggestions(page)
 
-    # The letter says 18.9.2026 and names the ministry. Neither is written over.
+    # The letter says 18.9.2026, and it is a strong unopposed answer — which is
+    # exactly what makes this the assertion worth having.
     expect(page.locator("#id_title")).to_have_value(TYPED_TITLE)
     expect(page.locator("#id_response_deadline")).to_have_value("30.9.2026")
-    expect(
-        page.locator("label.chip", has_text="Näidisministeerium").locator("input").first
-    ).not_to_be_checked()
-    expect(page.locator("label.chip", has_text="Näidisamet").locator("input").first).to_be_checked()
+    # The one area chosen by hand is still the only one chosen: a touched group
+    # is left alone entirely rather than added to.
+    checked = areas.locator("input:checked")
+    expect(checked).to_have_count(1)
+    expect(areas.locator("label.chip", has_text="Ehitus").locator("input").first).to_be_checked()
 
-    # And both candidates are still offered beside what was typed, so nothing
-    # is hidden — the person can still choose them.
+    # And the candidate is still offered beside what was typed, so nothing is
+    # hidden — the person can still choose it.
     expect(page.locator('button[data-suggest-for="response_deadline"]').first).to_be_visible()
 
 

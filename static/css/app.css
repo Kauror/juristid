@@ -4464,6 +4464,12 @@ a.barchart__row:hover {
  * docs/adr/0064).
  */
 
+/* The staged list is the ordinary chosen-file list with one more column, so it
+   inherits everything and names itself only so a rule can reach it. */
+.dropzone__list--staged {
+  margin-top: var(--spacing-1);
+}
+
 .dropzone__read {
   flex: none;
   font-size: var(--typography-size-label);
@@ -4511,6 +4517,13 @@ a.barchart__row:hover {
 
 .intakepanel__state--warn {
   color: var(--status-warning);
+}
+
+/* Shown by script for as long as the bytes are going up, and replaced by the
+   server's own answer the moment one arrives. It is `hidden` in the template
+   rather than absent, so the words live with every other string on the page. */
+.intakepanel__uploading {
+  color: var(--text-muted);
 }
 
 /* Reading is never a gate: `Loo teema` is pressable throughout and the file is

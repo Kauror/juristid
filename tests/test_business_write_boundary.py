@@ -46,6 +46,7 @@ from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.matters.models import Matter
+from app.matters.staging import MatterIntakeFile
 from app.related_materials.models import (
     MatterBackgroundMaterial,
     MatterRelation,
@@ -376,6 +377,23 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .__class__.objects.values_list("status", flat=True)
             .get(pk=w["sent_submission"].pk)
         ),
+    ),
+    WriteRoute(
+        name="matters:intake_stage",
+        label="Uus teema: faili ettevalmistamine",
+        request=lambda w: ({}, {}),
+        files=lambda: {"files": _pdf("loata-ettevalmistatud.pdf")},
+        probe=lambda w: MatterIntakeFile.objects.count(),
+    ),
+    WriteRoute(
+        name="matters:intake_remove",
+        label="Uus teema: ettevalmistatud faili eemaldamine",
+        # Fired blind, with identifiers that name nothing. The point of the row
+        # is that a forbidden actor is refused *before* the view looks anything
+        # up — the decorator runs first, so a caller who may not write business
+        # content cannot even learn whether an identifier exists (§33).
+        request=lambda w: ({}, {"intake": str(w["matter"].pk), "fail": str(w["matter"].pk)}),
+        probe=lambda w: MatterIntakeFile.objects.filter(removed_at__isnull=False).count(),
     ),
     WriteRoute(
         name="documents:upload_evidence",
