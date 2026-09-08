@@ -185,7 +185,7 @@ def test_a_held_file_becomes_ordinary_evidence(signed_in, specialist, evidence_r
 
     assert document.role == DocumentRole.INCOMING_AUTHORITY
     assert version is not None
-    assert version.checksum_sha256
+    assert version.sha256
     assert version.malware_scan_state == MalwareScanState.PENDING
 
 

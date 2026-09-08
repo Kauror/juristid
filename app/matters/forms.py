@@ -246,9 +246,9 @@ def addressee_name_field() -> forms.CharField:
     filter, or name a body that is not here — is what makes the difference
     between them decidable on the server (§10).
 
-    Nothing is created here. `clean_typed_organisation_name` trims and length-caps the
-    text; `app.matters.services.resolve_addressee` decides what it means, and
-    does so inside the save's own transaction (§5, §6).
+    Nothing is created here. `clean_typed_organisation_name` trims and
+    length-caps the text; `app.matters.services.resolve_addressee` decides what
+    it means, and does so inside the save's own transaction (§5, §6).
     """
     return _typed_organisation_field("Uus adressaat")
 

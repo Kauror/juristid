@@ -35,10 +35,24 @@ def file_row(page, name: str):
     return page.get_by_role("link", name=name, exact=True)
 
 
+def name_a_next_step(page) -> None:
+    """Say what happens next, as a lawyer filing a real Teema would.
+
+    Not decoration. A Teema this suite leaves behind with no next action joins
+    the department's «järgmise tegevuseta» population permanently, and
+    `e2e/test_kpi_navigation.py` reads the first twelve rows of that list
+    expecting the seeded unassigned Teema to be on it. This file files several
+    Matters, so it owes each of them a next step (e2e/conftest.py).
+    """
+    page.fill("#id_next-text", "Kontrollida, mida fail nõuab")
+    page.locator("#jargmine-tegevus").get_by_role("button", name="+1 nädal").click()
+
+
 def create_with_files(page, base_url: str, title: str, paths: list[str]) -> str:
     open_create(page, base_url)
     page.locator("#id_title").fill(title)
     page.locator("#id_files").set_input_files(paths)
+    name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("domcontentloaded")
 
@@ -117,6 +131,7 @@ def test_a_file_taken_back_off_does_not_arrive(page, base_url, tmp_path):
     page.get_by_role("button", name="Eemalda fail eemaldatud.pdf").click()
     expect(page.locator(".dropzone__file")).to_have_count(1)
 
+    name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     open_documents(page)
@@ -164,6 +179,7 @@ def test_a_refused_save_does_not_throw_the_chosen_file_away(page, base_url, tmp_
 
     # Fix what was complained about and save. The file has to arrive.
     page.locator("#id_policy_area_other").fill("Ehitus ja kinnisvara")
+    name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     open_documents(page)
@@ -254,6 +270,7 @@ def test_a_dropped_file_reaches_dokumendid(page, base_url, tmp_path):
     expect(page.locator(".dropzone__file")).to_contain_text("lohistatud.pdf")
 
     page.locator("#id_title").fill("Lohistatud failiga teema")
+    name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     open_documents(page)

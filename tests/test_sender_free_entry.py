@@ -347,19 +347,30 @@ def test_a_restricted_matter_moves_no_chip(specialist, reader):
     assert for_specialist[0] == "Zulu salajane"
 
 
-def test_a_selected_sender_outside_the_shortlist_stays_visible(signed_in, specialist):
-    """A Matter's own senders are chips on the edit form even when nothing about
-    this reader's history would have offered them."""
+def test_a_selected_sender_outside_the_shortlist_stays_visible(specialist):
+    """A Matter's own senders are chips on the edit form even when this reader's
+    history would not have offered them.
+
+    Eight bodies with three Matters each fill the shortlist ahead of the one
+    this Matter actually names, which has a single Matter — its own. So the
+    shortlist genuinely excludes it, and the edit form has to put it back: a
+    page that hid the value the record already carries would look like it had
+    cleared it.
+    """
     from app.matters.forms import MatterEditForm
 
+    for index in range(8):
+        busy = factories.OrganisationFactory(name=f"Sage {index:02d}")
+        for _ in range(3):
+            factories.MatterFactory(owner=specialist, source_organisations=[busy])
+
     unusual = factories.OrganisationFactory(name="Zulu harv asutus")
-    for index in range(10):
-        factories.OrganisationFactory(name=f"Asutus {index:02d}")
     matter = factories.MatterFactory(owner=specialist, source_organisations=[unusual])
 
-    form = MatterEditForm(matter=matter, viewer=specialist)
-
-    assert unusual in form.frequent_senders
+    assert unusual not in organisations_by_usage(specialist), (
+        "the shortlist was expected to exclude this body, so the test proves nothing"
+    )
+    assert unusual in MatterEditForm(matter=matter, viewer=specialist).frequent_senders
 
 
 # ---------------------------------------------------------------------------
