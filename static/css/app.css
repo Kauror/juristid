@@ -6456,6 +6456,39 @@ button.accordion__action:focus-visible {
   }
 }
 
+/* An add form open inside the Teema page, under the section its record joins.
+
+   Indented and ruled on the left so the form reads as belonging to the section
+   above it rather than as a new section of its own — the same relationship the
+   composer's own disclosures have to the composer (docs/adr/0063). */
+.factslot {
+  margin-top: var(--spacing-3);
+  padding-left: var(--spacing-3);
+  border-left: 2px solid var(--border-subtle);
+}
+
+.factslot__heading {
+  margin: 0 0 var(--spacing-2);
+  padding-left: 0;
+}
+
+/* `.form` is the full-width page form; inside a fact section it is one column
+   of labelled controls beside a list, at the width `.stackform` already
+   established for the row forms next to it. */
+.factslot__form {
+  max-width: 34rem;
+}
+
+/* The empty state has no section for the form to sit inside — it opens under
+   the row of chips — so there it is a page row of its own and takes the gutter
+   every other row on Teema takes. */
+.factsections > .factslot {
+  margin-top: 0;
+  padding: var(--spacing-3) var(--spacing-8) var(--spacing-35);
+  border-left: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 /* The empty case for the structured facts: one quiet row of add affordances,
    in place of three headings each announcing that nothing exists. */
 .addrow {
@@ -6468,8 +6501,16 @@ button.accordion__action:focus-visible {
 }
 
 /* The fact sections are rows on the Teema page like everything else, not cards
-   floating in a gutter. */
-.teemamain > .factsection {
+   floating in a gutter.
+
+   Two selectors for one rule: `app.intelligence` wraps its three sections in
+   `.factsections` so it has something to swap when an inline add form opens or
+   closes, and a direct-child selector stopped reaching them the day that
+   wrapper appeared (docs/adr/0063). Named rather than loosened to a descendant
+   selector, which would also claim `Seotud materjalid`' own `.factsection`
+   wherever it happened to be nested. */
+.teemamain > .factsection,
+.teemamain > .factsections > .factsection {
   padding: var(--spacing-35) var(--spacing-8);
   border-bottom: 1px solid var(--border-subtle);
   gap: var(--spacing-2);

@@ -797,6 +797,231 @@ def test_a_work_victory_may_be_saved_with_no_period(signed_in, specialist):
     assert record.period_date is None
 
 
+# -- the inline add forms on the Matter page --------------------------------
+#
+# `+ Jõustumine` and `+ Töövõit` open under the section their record lands in
+# rather than on a page of their own. One route answers both shapes: an ordinary
+# request gets the standalone page it always got, an HTMX request gets the fact
+# block (docs/adr/0063).
+
+
+#: What htmx sends, and the only thing that switches these views into the
+#: fragment branch. A query parameter would let a pasted link produce a bare
+#: fragment with no shell around it.
+HTMX = {"hx-request": "true"}
+
+EFFECTIVE_FORM = "faktivorm-joustumine"
+VICTORY_FORM = "faktivorm-toovoit"
+
+
+def _add_effective(matter):
+    return reverse("intelligence:add_effective_date", kwargs={"matter_id": matter.pk})
+
+
+def _add_victory(matter):
+    return reverse("intelligence:add_work_victory", kwargs={"matter_id": matter.pk})
+
+
+def test_the_matter_page_offers_both_add_controls_as_inline_triggers(signed_in, specialist):
+    """The empty state's two chips open in place, and there is a target to open
+    into. The `href` stays, so the control is still a link a browser without
+    scripting can follow to the standalone form."""
+    matter = factories.MatterFactory(owner=specialist)
+    body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+
+    assert 'id="teema-faktid"' in body
+    for url in (_add_effective(matter), _add_victory(matter)):
+        assert f'href="{url}"' in body
+        assert f'hx-get="{url}"' in body
+    assert 'hx-target="#teema-faktid"' in body
+
+
+def test_the_populated_section_control_opens_in_place_too(signed_in, specialist):
+    """Not only the empty state. A Matter that already carries a commencement
+    offers `+ Lisa jõustumine` beside the list, and that one inlines as well."""
+    matter = factories.MatterFactory(owner=specialist)
+    add_effective_date(matter=matter, kind=EffectiveDateKind.GENERAL_ORDER, actor=specialist)
+    add_work_victory_candidate(matter=matter, title="Kandidaat", actor=specialist)
+
+    body = _text(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    commencements = body.split('id="joustumine"')[1].split("</section>")[0]
+
+    assert "+ Lisa jõustumine" in commencements
+    assert f'hx-get="{_add_effective(matter)}"' in commencements
+    assert f'hx-get="{_add_victory(matter)}"' in body.split('id="toovoidud"')[1]
+
+
+def test_opening_the_commencement_form_answers_with_the_fact_block(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    response = signed_in.get(_add_effective(matter), headers=HTMX)
+    body = _text(response)
+
+    assert response.status_code == 200
+    assert 'id="teema-faktid"' in body
+    assert EFFECTIVE_FORM in body
+    assert "Lisa jõustumine" in body
+    # A fragment, not a page: no shell, no navigation, nothing to leave.
+    assert "<html" not in body
+
+
+def test_opening_one_form_closes_the_other(signed_in, specialist):
+    """The accordion, and it is the whole of it.
+
+    The block renders with at most one open form, so asking for Töövõit *is*
+    closing Jõustumine. Nothing is stored to remember which was open, and
+    opening one writes nothing at all.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+
+    opened = _text(signed_in.get(_add_victory(matter), headers=HTMX))
+    assert VICTORY_FORM in opened
+    assert EFFECTIVE_FORM not in opened
+
+    assert matter.effective_dates.count() == 0
+    assert matter.work_victories.count() == 0
+
+
+def test_closing_the_form_leaves_the_block_and_writes_nothing(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    body = _text(signed_in.get(f"{_add_effective(matter)}?vorm=sulge", headers=HTMX))
+
+    assert 'id="teema-faktid"' in body
+    assert EFFECTIVE_FORM not in body
+    assert matter.effective_dates.count() == 0
+
+
+def test_a_refused_commencement_stays_inline_with_what_was_typed(signed_in, specialist):
+    """The property this whole interaction is for.
+
+    A refused save must come back where the person was, with their words still
+    in the boxes and the reason beside them — not on another screen they then
+    have to leave again.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    response = signed_in.post(
+        _add_effective(matter),
+        {
+            "kind": EffectiveDateKind.GENERAL_ORDER,
+            "precision": "EXACT",
+            "exact_date": "2026-01-01",
+            "description": "rakendusmäärus",
+        },
+        headers=HTMX,
+    )
+    body = _text(response)
+
+    assert response.status_code == 400
+    assert matter.effective_dates.count() == 0
+    assert EFFECTIVE_FORM in body
+    assert "ainult teadaoleva jõustumise" in body
+    assert "rakendusmäärus" in body
+
+
+def test_a_saved_commencement_comes_back_as_the_section_it_joined(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    response = signed_in.post(
+        _add_effective(matter),
+        {"kind": EffectiveDateKind.GENERAL_ORDER, "description": "hilisemad sätted"},
+        headers=HTMX,
+    )
+    body = _text(response)
+
+    assert response.status_code == 200
+    record = matter.effective_dates.get()
+    assert record.date_value is None
+    # The record is on the screen, and the form that wrote it has closed.
+    assert 'id="joustumine"' in body
+    assert "hilisemad sätted" in body
+    assert EFFECTIVE_FORM not in body
+
+
+def test_a_refused_work_victory_stays_inline_with_what_was_typed(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+    response = signed_in.post(
+        _add_victory(matter),
+        {"title": "Erisus jäi sisse", "precision": "QUARTER", "quarter": "2"},
+        headers=HTMX,
+    )
+    body = _text(response)
+
+    assert response.status_code == 400
+    assert matter.work_victories.count() == 0
+    assert VICTORY_FORM in body
+    assert "Erisus jäi sisse" in body
+
+
+def test_a_saved_work_victory_is_confirmed_and_comes_back_on_the_matter(signed_in, specialist):
+    """Same service, same meaning. Inlining the form did not redefine what a
+    Töövõit is, or who gets to say one happened."""
+    matter = factories.MatterFactory(owner=specialist)
+    response = signed_in.post(
+        _add_victory(matter),
+        {"title": "Ettepanek arvestati", "precision": "YEAR", "year": "2026"},
+        headers=HTMX,
+    )
+    body = _text(response)
+
+    assert response.status_code == 200
+    record = matter.work_victories.get()
+    assert record.status == WorkVictoryStatus.CONFIRMED
+    assert record.display_period == "2026"
+    assert 'id="toovoidud"' in body
+    assert "Ettepanek arvestati" in body
+    assert VICTORY_FORM not in body
+
+
+def test_the_standalone_form_still_answers_an_ordinary_request(signed_in, specialist):
+    """The deep link, the bookmark and the browser with scripting off.
+
+    Nothing about the old path was removed: the address still resolves to a
+    page, and posting to it still redirects back to the Matter's section anchor.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    page = _text(signed_in.get(_add_effective(matter)))
+
+    assert "<html" in page
+    assert "Lisa jõustumine" in page
+
+    response = signed_in.post(
+        _add_effective(matter),
+        {"kind": EffectiveDateKind.GENERAL_ORDER, "description": "vanas korras"},
+    )
+    assert response.status_code == 302
+    assert response["Location"].endswith("#joustumine")
+    assert matter.effective_dates.count() == 1
+
+
+def test_a_reader_gets_no_inline_form_and_no_new_route(client, specialist, reader):
+    """The write gate is the same gate, asked before anything else happens.
+
+    404 rather than 403, like every other refusal here: somebody who may not
+    write is not told which surfaces exist for those who may.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    client.force_login(reader)
+
+    for url in (_add_effective(matter), _add_victory(matter)):
+        assert client.get(url, headers=HTMX).status_code == 404
+        assert client.post(url, {"title": "Loata"}, headers=HTMX).status_code == 404
+
+    body = _text(client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
+    assert "+ Jõustumine" not in body
+    assert "+ Töövõit" not in body
+    assert matter.effective_dates.count() == 0
+    assert matter.work_victories.count() == 0
+
+
+def test_the_inline_fragment_tells_a_stranger_nothing_about_a_restricted_matter(client, specialist):
+    """The same 404 the standalone route gives, for the same reason."""
+    from app.core.enums import Visibility
+
+    matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
+    outsider = factories.ReaderFactory()
+    client.force_login(outsider)
+
+    assert client.get(_add_effective(matter), headers=HTMX).status_code == 404
+
+
 def test_the_edit_form_reopens_a_quarter_as_a_quarter(signed_in, specialist):
     matter = factories.MatterFactory(owner=specialist)
     start, end = quarter_bounds(2027, 3)

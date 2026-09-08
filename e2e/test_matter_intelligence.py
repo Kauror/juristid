@@ -27,7 +27,16 @@ from app.core.management.commands.seed_e2e_data import (
     OPEN_TITLE,
     RESTRICTED_TITLE,
 )
-from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, go_to, sign_in
+from e2e.conftest import (
+    ADMIN,
+    HEAD,
+    MARTIN,
+    READER,
+    SANDRA,
+    create_matter,
+    go_to,
+    sign_in,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -45,6 +54,30 @@ def open_the_matter(page, base_url: str, title: str) -> None:
 def section(page, name: str):
     """One of the three fact sections, by its heading."""
     return page.get_by_role("region", name=name)
+
+
+def add_form(page):
+    """The add form the Matter page opens under the section it writes into.
+
+    Every interaction with it is scoped through here, and that is not tidiness.
+    The Matter page carries a composer with a period control of its own — its
+    own «Kuupäev», «Kvartal», «Aasta» and «Täpsus» — so an unscoped
+    `get_by_label("Kuupäev")` matches two controls and Playwright refuses to
+    act on either (docs/adr/0063).
+    """
+    return page.locator(".factslot")
+
+
+def open_add_form(page, label: str):
+    """Click one of the four add controls and wait for its form to arrive.
+
+    No `wait_for_load_state`: nothing navigates. The assertion that the form is
+    on screen is both the wait and half of what these tests are checking.
+    """
+    page.get_by_role("link", name=label, exact=True).click()
+    form = add_form(page)
+    expect(form).to_be_visible()
+    return form
 
 
 def open_watchlist(page, base_url: str, path: str = "jalgimine/tahtajad", query: str = "") -> None:
@@ -144,22 +177,29 @@ def test_a_milestone_can_be_corrected(page, base_url):
 
 
 def test_a_second_commencement_can_be_added_to_the_same_matter(page, base_url, screenshots):
-    """One law, several dates. This is the model's reason to exist."""
+    """One law, several dates. This is the model's reason to exist.
+
+    Added without leaving the Matter: `+ Lisa jõustumine` on a populated
+    section opens the form under the list it joins, and the save comes back as
+    that same list with the new row in it (docs/adr/0063).
+    """
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
+    where = page.url
 
-    section(page, "Jõustumine").get_by_role("link", name="+ Lisa jõustumine").click()
-    page.wait_for_load_state("networkidle")
-    page.get_by_label("Mis jõustub").fill("hilisemad sätted")
-    page.get_by_label("Teadaolev kuupäev").check()
-    page.get_by_label("Kuupäev", exact=True).fill("2032-01-01")
-    page.get_by_role("button", name="Salvesta").click()
-    page.wait_for_load_state("networkidle")
+    form = open_add_form(page, "+ Lisa jõustumine")
+    form.get_by_label("Mis jõustub").fill("hilisemad sätted")
+    form.get_by_label("Teadaolev kuupäev").check()
+    form.get_by_label("Kuupäev", exact=True).fill("2032-01-01")
+    form.get_by_role("button", name="Salvesta").click()
 
     commencements = section(page, "Jõustumine")
     expect(commencements.get_by_text("hilisemad sätted")).to_be_visible()
     expect(commencements.get_by_text("põhiosa")).to_be_visible()
     expect(commencements.get_by_text("osad sätted")).to_be_visible()
+    # Never left, and the form closed behind the save.
+    assert page.url == where
+    expect(add_form(page)).to_have_count(0)
     screenshots(page, "teema-mitu-joustumist")
 
 
@@ -171,18 +211,23 @@ def test_an_unknown_commencement_reads_as_a_statement_not_a_gap(page, base_url):
 
 
 def test_a_general_order_form_hides_the_date_control(page, base_url):
+    """The conditional behaviour still runs on markup HTMX put on the page.
+
+    `bindPeriodFields` is re-run on `htmx:afterSwap`, so the control narrows
+    inside the accordion exactly as it did on the standalone form — and it
+    narrows *this* form's fields rather than the composer's, which shares the
+    class and sits a few hundred pixels above it (static/js/app.js).
+    """
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
 
-    section(page, "Jõustumine").get_by_role("link", name="+ Lisa jõustumine").click()
-    page.wait_for_load_state("networkidle")
-    page.get_by_label("Jõustub üldises korras").check()
+    form = open_add_form(page, "+ Lisa jõustumine")
+    form.get_by_label("Jõustub üldises korras").check()
 
-    expect(page.get_by_label("Kuupäev", exact=True)).to_be_hidden()
+    expect(form.get_by_label("Kuupäev", exact=True)).to_be_hidden()
 
-    page.get_by_label("Mis jõustub").fill("teine rakendusmäärus")
-    page.get_by_role("button", name="Salvesta").click()
-    page.wait_for_load_state("networkidle")
+    form.get_by_label("Mis jõustub").fill("teine rakendusmäärus")
+    form.get_by_role("button", name="Salvesta").click()
     expect(section(page, "Jõustumine").get_by_text("teine rakendusmäärus")).to_be_visible()
 
 
@@ -199,18 +244,16 @@ def test_a_person_adding_a_victory_gets_a_confirmed_one(page, base_url, screensh
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
 
-    section(page, "Töövõidud").get_by_role("link", name="+ Lisa töövõit").click()
-    page.wait_for_load_state("networkidle")
-    expect(page.get_by_role("heading", name="Lisa töövõit")).to_be_visible()
+    form = open_add_form(page, "+ Lisa töövõit")
+    expect(form.get_by_role("heading", name="Lisa töövõit")).to_be_visible()
     # The form talks about a Töövõit, never about confirming or proposing one.
-    expect(page.locator(".cardnote")).to_have_text("Kirje lisatakse töövõiduna sinu nimel.")
+    expect(form.locator(".cardnote")).to_have_text("Kirje lisatakse töövõiduna sinu nimel.")
 
-    page.get_by_label("Töövõit", exact=True).fill("Erisus jäi eelnõusse sisse")
+    form.get_by_label("Töövõit", exact=True).fill("Erisus jäi eelnõusse sisse")
     # `exact=True`, because "Poolaasta täpsusega" contains "Aasta täpsusega".
-    page.get_by_label("Aasta täpsusega", exact=True).check()
-    page.get_by_label("Aasta", exact=True).fill("2030")
-    page.get_by_role("button", name="Salvesta töövõit").click()
-    page.wait_for_load_state("networkidle")
+    form.get_by_label("Aasta täpsusega", exact=True).check()
+    form.get_by_label("Aasta", exact=True).fill("2030")
+    form.get_by_role("button", name="Salvesta töövõit").click()
 
     row = (
         section(page, "Töövõidud")
@@ -272,6 +315,165 @@ def test_the_department_head_confirms_a_proposed_candidate(page, base_url, scree
     # And now — and only now — it is a Töövõit like any other.
     open_watchlist(page, base_url, "jalgimine/toovoidud")
     expect(page.get_by_text(MACHINE_CANDIDATE)).to_be_visible()
+
+
+# -- adding a fact without leaving the Matter -------------------------------
+#
+# `+ Jõustumine` and `+ Töövõit` are two or three fields about something the
+# reader is already looking at, and they used to cost a trip to a page of their
+# own and a trip back. They open in place now; the route, the form and the
+# service behind them did not change (docs/adr/0063).
+
+
+EMPTY_MATTER = "Jõustumiseta ja töövõiduta sünteetiline teema"
+
+
+def test_the_empty_state_opens_the_commencement_form_in_place(page, base_url, screenshots):
+    """A Matter with nothing recorded offers two chips, and one of them opens.
+
+    Its own Matter, created through the real form: the seeded one already
+    carries commencements and work victories, and the empty state is a
+    different affordance in a different place.
+    """
+    sign_in(page, base_url, MARTIN)
+    where = create_matter(page, base_url, EMPTY_MATTER)
+
+    expect(page.get_by_role("link", name="+ Jõustumine", exact=True)).to_be_visible()
+    form = open_add_form(page, "+ Jõustumine")
+
+    expect(form.get_by_role("heading", name="Lisa jõustumine")).to_be_visible()
+    expect(form.get_by_label("Mis jõustub")).to_be_visible()
+    assert page.url == where, "the add form must not be a page of its own"
+    screenshots(page, "teema-joustumine-kohapeal")
+
+
+def test_a_refused_commencement_stays_open_with_what_was_typed(page, base_url):
+    """The failure this interaction exists for.
+
+    A commencement that happens «üldises korras» may not carry a date. Refusing
+    it on a page of its own put the person somewhere they then had to leave
+    again; refused in place, the words are still in the boxes and the reason is
+    beside them.
+    """
+    sign_in(page, base_url, MARTIN)
+    where = create_matter(page, base_url, "Tagasi lükatud jõustumisega teema")
+
+    form = open_add_form(page, "+ Jõustumine")
+    form.get_by_label("Mis jõustub").fill("vastuoluline säte")
+    form.get_by_label("Teadaolev kuupäev").check()
+    form.get_by_label("Kuupäev", exact=True).fill("1.1.2032")
+    form.get_by_label("Jõustub üldises korras").check()
+    form.get_by_role("button", name="Salvesta").click()
+
+    expect(form.get_by_text("ainult teadaoleva jõustumise")).to_be_visible()
+    expect(form.get_by_label("Mis jõustub")).to_have_value("vastuoluline säte")
+    assert page.url == where
+    # And nothing was written.
+    expect(page.get_by_role("region", name="Jõustumine")).to_have_count(0)
+
+
+def test_closing_the_form_writes_nothing_and_leaves_the_matter_as_it_was(page, base_url):
+    sign_in(page, base_url, MARTIN)
+    where = create_matter(page, base_url, "Loobutud jõustumisega teema")
+
+    form = open_add_form(page, "+ Jõustumine")
+    form.get_by_label("Mis jõustub").fill("ei salvestata")
+    form.get_by_role("link", name="Sulge").click()
+
+    expect(add_form(page)).to_have_count(0)
+    expect(page.get_by_role("region", name="Jõustumine")).to_have_count(0)
+    expect(page.get_by_role("link", name="+ Jõustumine", exact=True)).to_be_visible()
+    assert page.url == where
+
+
+def test_a_commencement_saved_in_place_appears_on_the_matter(page, base_url):
+    sign_in(page, base_url, MARTIN)
+    where = create_matter(page, base_url, "Kohapeal salvestatud jõustumisega teema")
+
+    form = open_add_form(page, "+ Jõustumine")
+    form.get_by_label("Mis jõustub").fill("põhiosa jõustub")
+    form.get_by_label("Teadaolev kuupäev").check()
+    form.get_by_label("Kuupäev", exact=True).fill("1.1.2032")
+    form.get_by_role("button", name="Salvesta").click()
+
+    commencements = section(page, "Jõustumine")
+    expect(commencements.get_by_text("põhiosa jõustub")).to_be_visible()
+    expect(commencements.get_by_role("listitem")).to_have_count(1)
+    expect(add_form(page)).to_have_count(0)
+    assert page.url == where
+
+
+def test_the_work_victory_form_opens_in_place_and_its_period_control_narrows(page, base_url):
+    """The empty state's second chip, and the conditional fields inside it."""
+    sign_in(page, base_url, MARTIN)
+    where = create_matter(page, base_url, "Kohapeal lisatud töövõiduga teema")
+
+    form = open_add_form(page, "+ Töövõit")
+    expect(form.get_by_role("heading", name="Lisa töövõit")).to_be_visible()
+
+    form.get_by_label("Kvartali täpsusega").check()
+    expect(form.get_by_label("Kuupäev", exact=True)).to_be_hidden()
+    expect(form.get_by_label("Kvartal", exact=True)).to_be_visible()
+
+    form.get_by_label("Töövõit", exact=True).fill("Erisus jäi sisse")
+    form.get_by_label("Kvartal", exact=True).select_option("2")
+    form.get_by_label("Aasta", exact=True).fill("2031")
+    form.get_by_role("button", name="Salvesta töövõit").click()
+
+    victories = section(page, "Töövõidud")
+    expect(victories.get_by_text("Erisus jäi sisse")).to_be_visible()
+    expect(victories.get_by_text("II kvartal 2031")).to_be_visible()
+    expect(add_form(page)).to_have_count(0)
+    assert page.url == where
+
+
+def test_a_refused_work_victory_stays_open_with_what_was_typed(page, base_url):
+    sign_in(page, base_url, MARTIN)
+    where = create_matter(page, base_url, "Tagasi lükatud töövõiduga teema")
+
+    form = open_add_form(page, "+ Töövõit")
+    form.get_by_label("Töövõit", exact=True).fill("Poolik töövõit")
+    form.get_by_label("Kvartali täpsusega").check()
+    form.get_by_label("Kvartal", exact=True).select_option("2")
+    # No year beside the quarter, which is the one thing a quarter needs.
+    form.get_by_role("button", name="Salvesta töövõit").click()
+
+    expect(form.get_by_label("Töövõit", exact=True)).to_have_value("Poolik töövõit")
+    expect(page.get_by_role("region", name="Töövõidud")).to_have_count(0)
+    assert page.url == where
+
+
+def test_only_one_add_form_is_open_at_a_time(page, base_url, screenshots):
+    """The accordion, both ways round.
+
+    Nothing is stored to remember which was open: the block renders with at
+    most one form in it, so opening either one is what closes the other.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_matter(page, base_url, "Kahe lisamisvormiga teema")
+
+    open_add_form(page, "+ Jõustumine")
+    expect(page.locator("#faktivorm-joustumine")).to_be_visible()
+    expect(page.locator("#faktivorm-toovoit")).to_have_count(0)
+
+    open_add_form(page, "+ Töövõit")
+    expect(page.locator("#faktivorm-toovoit")).to_be_visible()
+    expect(page.locator("#faktivorm-joustumine")).to_have_count(0)
+    screenshots(page, "teema-toovoit-kohapeal")
+
+    open_add_form(page, "+ Jõustumine")
+    expect(page.locator("#faktivorm-joustumine")).to_be_visible()
+    expect(page.locator("#faktivorm-toovoit")).to_have_count(0)
+
+
+def test_a_reader_is_offered_no_inline_add_control(page, base_url):
+    """Adding is a business write, and inlining the form did not widen it."""
+    sign_in(page, base_url, READER)
+    open_the_matter(page, base_url, OPEN_TITLE)
+
+    for label in ("+ Jõustumine", "+ Lisa jõustumine", "+ Töövõit", "+ Lisa töövõit"):
+        expect(page.get_by_role("link", name=label, exact=True)).to_have_count(0)
+    expect(add_form(page)).to_have_count(0)
 
 
 # -- the generated department pages -----------------------------------------

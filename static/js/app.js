@@ -718,8 +718,15 @@
   function bindOnePeriodControl(scope, fields, chooser) {
     /* Jõustumine asks a question before the precision one: a commencement that
      * happens "üldises korras" has no date to be precise about, so the whole
-     * control goes away rather than sitting there inviting a fabricated day. */
-    var kindChooser = scope.querySelector("#joustumise-liik");
+     * control goes away rather than sitting there inviting a fabricated day.
+     *
+     * Looked for inside this control's own form rather than anywhere in the
+     * scope. The Jõustumine form opens inline on the Matter page now, a few
+     * hundred pixels below a composer carrying a period control of its own —
+     * and a scope-wide lookup would hand the commencement form's kind radios
+     * the power to hide the composer's «Oluline tähtaeg» fields. */
+    var owner = (fields.closest && fields.closest("form")) || scope;
+    var kindChooser = owner.querySelector("#joustumise-liik");
     var groups = Array.prototype.slice.call(
       fields.querySelectorAll(".periodfields__group")
     );

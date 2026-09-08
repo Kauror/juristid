@@ -1,0 +1,22 @@
+{% comment %}
+The Matter's structured facts, as one swappable block.
+
+The wrapper exists so `app.intelligence` can answer an add with the section the
+record landed in, rather than with a redirect: `#teema-faktid` is what the
+inline forms target, and re-rendering it closes whichever form was open, shows
+the new row, and leaves the reader where they were.
+
+This app renders its own block from its own selector and its own authorization
+helpers. It does not reach into `app.matters`' context builders, which is the
+coupling ADR 0018 refused and this still refuses — what ADR 0063 changed is
+that a fact section may re-render *itself* (docs/adr/0063).
+
+`inline_fact` is deliberately absent from the Matter view's context. Rendered
+from there the variable resolves to nothing, every `{% if %}` below is false and
+the block is the closed state — which is what the Matter page always wants, and
+is one intelligence-specific key that does not have to travel through
+`app.matters.views` to say so.
+{% endcomment %}
+<div class="factsections" id="teema-faktid">
+  {% include "intelligence/partials/matter_sections.html" %}
+</div>

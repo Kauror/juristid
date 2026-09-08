@@ -1,0 +1,53 @@
+{% comment %}
+The add form for one structured fact, open inside the Matter.
+
+`+ Jõustumine` and `+ Töövõit` used to leave the page. The record they write is
+two or three fields long and the reason for writing it is on the screen the
+lawyer was just reading, so the trip to a form of its own — and back — was the
+expensive part of the interaction (docs/adr/0063, superseding ADR 0018's
+«HTMX fragment swapping for the capture forms»).
+
+Nothing about the write moved. The `action` is the same canonical
+`intelligence:add_*` route, behind the same `business_write_required`, posting
+to the same service; the fields are `fact_fields.html`, which the standalone
+page renders too. What changed is that the answer is this fragment rather than
+a redirect, so a refusal comes back with the values still in the boxes and the
+errors beside them instead of on another screen.
+
+`hx-target` is the whole fact block, which is how one of these is ever open at a
+time: the server renders the block with at most one `inline_fact`, so opening
+Töövõit *is* closing Jõustumine. No second state machine, and no state written
+anywhere to hold it (Teema redesign §D).
+
+`method`/`action` are real, so the form still posts without HTMX — it lands on
+the standalone page's own POST branch, which redirects back to the section
+anchor exactly as it always did.
+{% endcomment %}
+<div class="factslot" id="faktivorm-{{ inline_fact }}">
+  <h3 class="sectionlabel factslot__heading">{{ inline_heading }}</h3>
+  {% if inline_help %}<p class="cardnote">{{ inline_help }}</p>{% endif %}
+
+  <form class="form factslot__form" method="post" action="{{ inline_action }}"
+        hx-post="{{ inline_action }}"
+        hx-target="#teema-faktid"
+        hx-swap="outerHTML">
+    {% csrf_token %}
+
+    {% include "intelligence/partials/fact_fields.html" with form=inline_form %}
+
+    <div class="form__actions">
+      <button class="button button--primary" type="submit">{{ inline_submit }}</button>
+      {% comment %}
+        Closing writes nothing. It asks the same route for the block with no
+        form in it, which is the one shape of "closed" there is — and its
+        `href` is the Matter itself, so without scripting it is a link back to
+        the page the form is already on.
+      {% endcomment %}
+      <a class="button button--quiet"
+         href="{% url 'matters:matter_detail' pk=matter.pk %}"
+         hx-get="{{ inline_action }}?vorm=sulge"
+         hx-target="#teema-faktid"
+         hx-swap="outerHTML">Sulge</a>
+    </div>
+  </form>
+</div>

@@ -3,6 +3,10 @@
 - **Status:** Accepted — implemented on the `stage-2g-matter-intelligence` branch, pending integration
 - **Date:** 2026-08-21
 - **Supersedes nothing.** Sits beside ADR 0011, which separated `Hetkeseis`, `Järgmiseks` and closure.
+- **Amended 2026-09-08 by ADR 0063**, which reverses one alternative below —
+  *«HTMX fragment swapping for the capture forms»* — for the `Jõustumine` and
+  `Töövõit` **add** flows. Everything else here stands, including the models,
+  the precision vocabulary, the write gate and the standalone pages themselves.
 
 ## Context
 
@@ -138,6 +142,17 @@ remove; the calendar is a presentation problem, not a storage one.
 rendered by `app.matters.views` from its own context builders, and swapping part
 of it from another app would couple the two. The forms are small server-rendered
 pages that POST and redirect back to the section anchor.
+
+> **Superseded for the two add flows by ADR 0063 (2026-09-08).** The reasoning
+> above is still the reason `app.intelligence` may not swap a fragment of the
+> Matter *view*, and it still does not. What it did not weigh is the size of the
+> record: a commencement is a kind, a date and a sentence, and the trip to a
+> page and back was most of the interaction — worse on a refusal, which arrived
+> on the separate page the person then had to leave again. `+ Jõustumine` and
+> `+ Töövõit` now open an accordion under the section the record lands in, and
+> the fragment they swap is *this app's own* block from *this app's own*
+> selector. The routes, the forms and the services are unchanged, and an
+> ordinary request still gets the page described here.
 
 **Indexing the structured text in `SearchDocument`.** Deferred, not rejected.
 A structured fact deserves its own `SearchSourceKind` row so a result can say

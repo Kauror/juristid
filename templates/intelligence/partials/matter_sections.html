@@ -13,10 +13,24 @@ case is now one quiet row of add affordances at the bottom, and `Oluline
 tähtaeg` is not even there because the composer offers it beside the note it
 belongs to (Teema redesign §3, §24).
 
-Every write leaves this page: the forms are their own small server-rendered
-pages under `app.intelligence`, which POST and come back to the anchor they came
-from. That keeps this app out of the Matter view's rendering entirely
-(Stage-2G brief 74).
+Adding a `Jõustumine` or a `Töövõit` happens here, in an accordion under the
+section the record lands in. It used to leave the page — the sentence that stood
+here said so, and said it was to keep this app out of the Matter view's
+rendering — and the trip was most of the cost of writing down two fields about
+something the reader was already looking at (Stage-2G brief 74, superseded by
+docs/adr/0063).
+
+The coupling that sentence was protecting is still refused. The form posts to
+the same `intelligence:add_*` route behind the same write gate, and what comes
+back is *this app's own* block re-rendered from *this app's own* selector — not
+a fragment of the Matter view. `#teema-faktid` in `matter_facts.html` is the
+target, and rendering it with at most one form open is the whole of the
+accordion.
+
+Correcting and cancelling an existing record still open their own page. This
+round is the add flow, deliberately: `Muuda`, `Tühista`, `Kinnita töövõiduks`
+and `Ei realiseerunud` are decisions about a record that already exists, and
+they can be inlined later without redefining anything.
 
 Nothing here is deleted. A cancelled expectation stays visible and marked,
 because a plan that changed is part of the file's history.
@@ -51,7 +65,10 @@ because a plan that changed is part of the file's history.
     <h2 class="sectionlabel" id="teema-joustumine-heading">Jõustumine</h2>
     {% if can_write %}
       <a class="button button--quiet button--tiny"
-         href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}">+ Lisa jõustumine</a>
+         href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}"
+         hx-get="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}"
+         hx-target="#teema-faktid"
+         hx-swap="outerHTML">+ Lisa jõustumine</a>
     {% endif %}
   </div>
 
@@ -88,6 +105,15 @@ because a plan that changed is part of the file's history.
       {% endfor %}
     </ul>
   {% endif %}
+
+  {% comment %}
+    The add form, directly under the records it joins. One `{% if %}` per
+    place the control appears, and the block is rendered with at most one
+    `inline_fact`, so opening either one closes the other.
+  {% endcomment %}
+  {% if inline_fact == "joustumine" %}
+    {% include "intelligence/partials/inline_form.html" %}
+  {% endif %}
 </section>
 {% endif %}
 
@@ -108,7 +134,10 @@ because a plan that changed is part of the file's history.
         asserting something nobody has decided.
       {% endcomment %}
       <a class="button button--quiet button--tiny"
-         href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}">+ Lisa töövõit</a>
+         href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}"
+         hx-get="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}"
+         hx-target="#teema-faktid"
+         hx-swap="outerHTML">+ Lisa töövõit</a>
     {% endif %}
   </div>
 
@@ -158,6 +187,10 @@ because a plan that changed is part of the file's history.
       {% endfor %}
     </ul>
   {% endif %}
+
+  {% if inline_fact == "toovoit" %}
+    {% include "intelligence/partials/inline_form.html" %}
+  {% endif %}
 </section>
 {% endif %}
 
@@ -172,12 +205,34 @@ somebody learns about a milestone in the first place (Teema redesign §3, §13).
     <div class="addrow">
       {% if not intelligence.has_effective_dates %}
         <a class="disclosure-chip"
-           href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}">+ Jõustumine</a>
+           href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}"
+           hx-get="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}"
+           hx-target="#teema-faktid"
+           hx-swap="outerHTML">+ Jõustumine</a>
       {% endif %}
       {% if not intelligence.has_work_victories %}
         <a class="disclosure-chip"
-           href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}">+ Töövõit</a>
+           href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}"
+           hx-get="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}"
+           hx-target="#teema-faktid"
+           hx-swap="outerHTML">+ Töövõit</a>
       {% endif %}
     </div>
+
+    {% comment %}
+      The same two forms, under the row that offered them. A Matter with no
+      records has no section for the form to sit inside, and the row of chips
+      is the area it belongs under.
+    {% endcomment %}
+    {% if not intelligence.has_effective_dates %}
+      {% if inline_fact == "joustumine" %}
+        {% include "intelligence/partials/inline_form.html" %}
+      {% endif %}
+    {% endif %}
+    {% if not intelligence.has_work_victories %}
+      {% if inline_fact == "toovoit" %}
+        {% include "intelligence/partials/inline_form.html" %}
+      {% endif %}
+    {% endif %}
   {% endif %}
 {% endif %}
