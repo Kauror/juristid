@@ -399,7 +399,17 @@
       /* One answer, two places. The staging routes render both halves and this
          puts each where it belongs by id — the file rows inside the dropzone,
          the suggestions above the fields they are about. */
-      var applyFragment = function (parsed) {
+      var applyFragment = function (source) {
+        /* Either the answer's text or a document already parsed from it. The
+           upload path parses first, because it has to look at what the server
+           kept before deciding whether to empty the file input; the poll and
+           the remove path have no such question and hand the text straight in.
+           One function, so the two can never diverge about which element goes
+           where. */
+        var parsed =
+          typeof source === "string"
+            ? new DOMParser().parseFromString(source, "text/html")
+            : source;
         ["intake-failid", "intake-panel"].forEach(function (id) {
           var incoming = parsed.getElementById(id);
           var existing = document.getElementById(id);

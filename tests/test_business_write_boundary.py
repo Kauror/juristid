@@ -386,16 +386,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: MatterIntakeFile.objects.count(),
     ),
     WriteRoute(
-        name="matters:intake_remove",
-        label="Uus teema: ettevalmistatud faili eemaldamine",
-        # Fired blind, with identifiers that name nothing. The point of the row
-        # is that a forbidden actor is refused *before* the view looks anything
-        # up — the decorator runs first, so a caller who may not write business
-        # content cannot even learn whether an identifier exists (§33).
-        request=lambda w: ({}, {"intake": str(w["matter"].pk), "fail": str(w["matter"].pk)}),
-        probe=lambda w: MatterIntakeFile.objects.filter(removed_at__isnull=False).count(),
-    ),
-    WriteRoute(
         name="documents:upload_evidence",
         label="Tõendi üleslaadimine",
         request=lambda w: (
@@ -764,6 +754,15 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # same guard, and awkward to fire blind (they need a specific child object
     # or an upload bound to one).
     "matters:matter_edit": "A: gated; exercised by tests/test_matters.py",
+    # A — same guard and same view module as `matters:intake_stage`, which is
+    # in the matrix above and is fired at by every forbidden actor. This one
+    # cannot be fired blind: it needs a staging session and a file inside it
+    # that belong to the caller, and with anything else it answers 404 to
+    # *everybody* — which is the fail-closed behaviour, and is why an authorized
+    # actor would fail the "not refused by the gate" half of the matrix. Its
+    # cross-user refusal is proved directly, with a real session and a real
+    # file, in tests/test_intake_staging.py.
+    "matters:intake_remove": "A: gated; sibling of matters:intake_stage",
     "matters:update_engagement": "A: gated; sibling of matters:add_engagement",
     "intelligence:edit_important_date": "A: gated; sibling of add_important_date",
     "intelligence:cancel_important_date": "A: gated; sibling of add_important_date",
