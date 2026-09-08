@@ -58,6 +58,7 @@ from app.documents.enums import (
 )
 from app.documents.models import Document, DocumentDerivative, DocumentTextFragment
 from app.matters.intake_suggestions.types import SourceKind
+from app.matters.staging import MatterIntakeFile, MatterIntakeSession
 
 #: How much of one document the rules read, in characters of extracted text.
 #:
@@ -350,9 +351,7 @@ def _plan(
             str(document.pk),
         ),
     )
-    admitted: dict[Any, Any] = {}
-    skipped: set[Any] = set()
-    planned = 0
+    offered: list[tuple[Any, Any, int]] = []
     for document in ranked:
         found = headers.get(document.current_version_id, {})
         text_derivative = found.get(DerivativeKind.EXTRACTED_TEXT) or found.get(
@@ -362,22 +361,56 @@ def _plan(
             # Nothing to read. Not a budget decision, so not reported as one:
             # the document's extraction state already says why.
             continue
+        offered.append((document.pk, text_derivative.pk, text_derivative.character_count or 0))
+    return _admit(
+        offered,
+        character_limit=character_limit,
+        total_limit=total_limit,
+        document_limit=document_limit,
+    )
+
+
+def _admit(
+    offered: list[tuple[Any, Any, int]],
+    *,
+    character_limit: int,
+    total_limit: int,
+    document_limit: int,
+) -> tuple[dict[Any, Any], set[Any]]:
+    """Spend the budget over material already in rank order. Loads nothing.
+
+    ``offered`` is ``(key, payload, recorded character count)`` for everything
+    that has text to read, most valuable first. The arithmetic is here rather
+    than in each caller because it is the whole of what "bounded" means on this
+    surface, and two copies of it would be two answers to how much work one
+    request may do (docs/adr/0060, docs/adr/0064).
+    """
+    admitted: dict[Any, Any] = {}
+    skipped: set[Any] = set()
+    planned = 0
+    for key, payload, character_count in offered:
         if len(admitted) >= document_limit or planned >= total_limit:
-            skipped.add(document.pk)
+            skipped.add(key)
             continue
-        admitted[document.pk] = text_derivative.pk
-        # A derivative whose recorded size is missing or zero is planned at the
-        # per-document ceiling rather than as free. The orchestrator always
-        # writes `character_count`, so this is the defensive reading: a stale
-        # or absent number must make the plan smaller, never larger, or the
-        # count it is standing in for could admit an unbounded fragment load.
-        planned += min(text_derivative.character_count or character_limit, character_limit)
+        admitted[key] = payload
+        # A source whose recorded size is missing or zero is planned at the
+        # per-document ceiling rather than as free. Both writers always record
+        # the count, so this is the defensive reading: a stale or absent number
+        # must make the plan smaller, never larger, or the count it is standing
+        # in for could admit an unbounded fragment load.
+        planned += min(character_count or character_limit, character_limit)
     return admitted, skipped
 
 
-def _blocks_of(
-    rows: list[DocumentTextFragment], character_limit: int
-) -> tuple[tuple[TextBlock, ...], bool]:
+def _blocks_of(rows: list[Any], character_limit: int) -> tuple[tuple[TextBlock, ...], bool]:
+    """Fragments into blocks, truncated at ``character_limit``.
+
+    Takes ``DocumentTextFragment`` rows from the Matter surface and
+    :class:`_StoredFragment` from the staged one. Deliberately one function:
+    where a document is cut, how a locator becomes a label and what marks a
+    message's header summary must not differ by which surface asked
+    (docs/adr/0064).
+    """
     if not rows or character_limit <= 0:
         return (), bool(rows)
     blocks: list[TextBlock] = []
@@ -411,6 +444,138 @@ def _blocks_of(
         if truncated:
             break
     return tuple(blocks), truncated
+
+
+@dataclass(frozen=True)
+class _StoredFragment:
+    """A staged file's fragment, in the shape :func:`_blocks_of` reads.
+
+    The canonical path hands that function ``DocumentTextFragment`` rows; a
+    staged file has JSON on its own row instead, because a derivative table
+    hangs off a ``DocumentVersion`` that does not exist yet. The truncation,
+    the locator and the OCR flag must behave identically either way, so the
+    JSON is put into this shape and the same function reads it.
+    """
+
+    ordinal: int
+    text: str
+    locator_kind: str
+    locator: dict[str, Any]
+    locator_label: str
+    text_source: str
+
+
+def build_intake_analysis_input(
+    session: MatterIntakeSession,
+    *,
+    character_limit: int = MAX_CHARACTERS_PER_DOCUMENT,
+    total_limit: int = MAX_TOTAL_ANALYSIS_CHARACTERS,
+    document_limit: int = MAX_TEXT_DOCUMENTS_ANALYSED,
+) -> AnalysisInput:
+    """The same input, read from files staged on `Uus teema` instead.
+
+    Everything after this function is shared with the existing Matter surface:
+    the same budget, the same priority order, the same ``AnalysisInput``, the
+    same ``analyse``. What differs is only where the text was found — a staged
+    file carries its own, because the derivative tables belong to a
+    ``DocumentVersion`` and there is no Matter yet to hang one on
+    (docs/adr/0064).
+
+    **Authorisation is the session, and it is the caller's.** A staged file
+    has no visibility of its own: it is not a record about anything, it is one
+    person's unfinished form, and ``MatterIntakeSession.objects.owned_by`` is
+    what decides who may reach it. The ``visible_to`` gate on the Matter
+    surface has no counterpart here because there is no parent to inherit from
+    (`app.matters.intake_staging.get_session`).
+
+    **Two queries, and the budget still bounds the loading.** The rows are read
+    first with their text deferred — the plan needs only the recorded character
+    count — and the text of exactly the admitted files is the second query.
+    Files the budget does not reach stay in the database rather than being
+    loaded and then ignored, which is the property the Matter surface has and
+    the reason ``text_character_count`` is a column.
+    """
+    staged = list(session.files.live().in_order().defer("text"))
+
+    ranked = sorted(
+        staged,
+        key=lambda file: (
+            DOCUMENT_PRIORITY.get(file.role, DEFAULT_PRIORITY),
+            file.ordinal,
+            str(file.pk),
+        ),
+    )
+    admitted, skipped = _admit(
+        [
+            (file.pk, file.pk, file.text_character_count)
+            for file in ranked
+            if file.text_character_count
+        ],
+        character_limit=character_limit,
+        total_limit=total_limit,
+        document_limit=document_limit,
+    )
+
+    stored: dict[Any, list[Any]] = {}
+    if admitted:
+        for pk, rows in MatterIntakeFile.objects.filter(pk__in=list(admitted)).values_list(
+            "pk", "text"
+        ):
+            stored[pk] = rows if isinstance(rows, list) else []
+
+    # Spend the allowance in the order the plan admitted, not in the order the
+    # files were chosen: an annex picked first must not exhaust the budget
+    # before the covering letter behind it is reached.
+    read: dict[Any, tuple[tuple[TextBlock, ...], bool]] = {}
+    used = 0
+    for file_pk in admitted:
+        allowance = min(character_limit, max(total_limit - used, 0))
+        blocks, truncated = _blocks_of(_stored_fragments(stored.get(file_pk, [])), allowance)
+        used += sum(len(block.text) for block in blocks)
+        read[file_pk] = (blocks, truncated)
+
+    sources: list[SourceDocument] = []
+    for file in staged:
+        blocks, truncated = read.get(file.pk, ((), False))
+        sources.append(
+            SourceDocument(
+                # A staged file has no version of its own, and inventing an
+                # identifier for one would be inventing a fact. Both provenance
+                # fields carry the staged row, which is exactly what the excerpt
+                # under a suggestion came from.
+                document_id=file.pk,
+                version_id=file.pk,
+                filename=file.original_filename,
+                role=file.role,
+                extraction_state=file.extraction_state,
+                extraction_note=file.extraction_note,
+                blocks=blocks,
+                email=dict(file.email_metadata) if file.email_metadata else None,
+                truncated=truncated,
+                skipped_for_budget=file.pk in skipped,
+            )
+        )
+    return AnalysisInput(documents=tuple(sources))
+
+
+def _stored_fragments(rows: list[Any]) -> list[Any]:
+    """A staged file's JSON, in the shape the shared block reader takes."""
+    fragments: list[Any] = []
+    for ordinal, row in enumerate(rows, start=1):
+        if not isinstance(row, dict):  # pragma: no cover - defensive
+            continue
+        locator = row.get("locator")
+        fragments.append(
+            _StoredFragment(
+                ordinal=ordinal,
+                text=str(row.get("text") or ""),
+                locator_kind=str(row.get("locator_kind") or LocatorKind.NONE),
+                locator=locator if isinstance(locator, dict) else {},
+                locator_label=str(row.get("locator_label") or ""),
+                text_source=str(row.get("text_source") or TextSource.NATIVE),
+            )
+        )
+    return fragments
 
 
 def is_done(document: SourceDocument) -> bool:

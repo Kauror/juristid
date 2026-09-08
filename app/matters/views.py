@@ -53,8 +53,9 @@ from app.core.decorators import business_write_required
 from app.core.enums import Visibility
 from app.core.errors import DomainError
 from app.documents import pending as pending_uploads
-from app.documents.enums import DocumentRole
+from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.models import Document
+from app.documents.pending import human_size
 from app.documents.services import link_working_document
 from app.documents.uploads import UploadRejected
 from app.intelligence.selectors import matter_intelligence
@@ -64,7 +65,13 @@ from app.legacy_import.register_display import (
     source_instruction_for,
     source_instructions_for,
 )
-from app.matters import department_dashboard, register_filters, selectors, work_items
+from app.matters import (
+    department_dashboard,
+    intake_staging,
+    register_filters,
+    selectors,
+    work_items,
+)
 from app.matters import person_work as person_workspace
 from app.matters.department_dashboard import SeisFigure
 from app.matters.enums import MatterOrigin, RecordMode
@@ -87,7 +94,9 @@ from app.matters.intake import register_incoming, validate_uploads
 from app.matters.intake_suggestions import (
     CurrentValues,
     SuggestedField,
+    analyse_intake,
     analyse_matter,
+    prefill_controls,
     prefill_initial,
 )
 from app.matters.models import Matter, MatterAssignmentNotice, MatterEngagement
@@ -1231,6 +1240,20 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     them. They are unioned with anything chosen again, in the order they were
     first offered, and they go through `_attach_incoming_file` exactly as they
     would have the first time (app/documents/pending.py).
+
+    **And the files are read before the Teema exists.** Where the browser can
+    upload, choosing a file stages it (`intake_stage`), the worker reads it
+    behind the same scan gate as every other file, and what the rules find
+    appears on this form while it is still being filled in. What arrives here
+    is then a session identifier rather than bytes: `promote_intake_files`
+    turns each staged file into one Document with one immutable version, inside
+    this transaction, from the exact bytes the browser sent
+    (app/matters/intake_staging.py, docs/adr/0064).
+
+    Three paths into the same place, and they compose. Staged files first, then
+    what a refusal is holding, then anything chosen again — the order somebody
+    offered them in. With scripting off the first is simply empty and the page
+    behaves exactly as it did before.
     """
     form = MatterCreateForm(request.POST or None, viewer=request.user)
     # Bound only when somebody actually asked for a next action. Bound
@@ -1262,6 +1285,14 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     # somebody can otherwise complete (app/documents/pending.py).
     held_keys: list[str] = []
     chosen: list[Any] = []
+    # The staging this attempt names, if it is this person's and still open.
+    # Somebody else's, an expired one and one a Matter has already consumed all
+    # read as absent, and absent is simply "no staged files" rather than a
+    # refusal: the person can still file the Teema, which is the point
+    # (app/matters/intake_staging.py, task §23).
+    intake_session = (
+        _requested_intake_session(request, request.POST) if request.method == "POST" else None
+    )
     if request.method == "POST":
         asked = [key for key in request.POST.getlist("pending") if key]
         # Described first, so the keys carried forward are the ones this session
@@ -1291,12 +1322,19 @@ def matter_create(request: HttpRequest) -> HttpResponse:
             return render(
                 request,
                 "matters/matter_create.html",
-                _create_context(request, form, action_form, held_keys=held_keys),
+                _create_context(
+                    request,
+                    form,
+                    action_form,
+                    held_keys=held_keys,
+                    intake_session=intake_session,
+                ),
                 status=400,
             )
 
     if request.method == "POST" and form.is_valid():
         data = form.cleaned_data
+        promoted: list[Any] = []
         try:
             with transaction.atomic():
                 # Resolved *inside* the transaction, and before the Matter, so a
@@ -1344,6 +1382,15 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     # anything not created here (Agent-C brief 15, 16, 17).
                     data_class=form.data_class,
                 )
+                # Staged first, because they were chosen first. Each becomes
+                # one Document with one immutable version from the bytes the
+                # browser sent, verified against the checksum recorded when
+                # they arrived — nothing is re-uploaded and nothing is rebuilt
+                # from extracted text (`promote_intake_files`).
+                if intake_session is not None:
+                    promoted = intake_staging.promote_intake_files(
+                        session=intake_session, matter=matter, actor=request.user
+                    )
                 for upload in uploads:
                     _attach_incoming_file(matter, upload, actor=request.user)
 
@@ -1388,6 +1435,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     form,
                     action_form,
                     held_keys=[*held_keys, *(item.key for item in newly_held)],
+                    intake_session=intake_session,
                 ),
                 status=400,
             )
@@ -1397,11 +1445,18 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         # business operation, and a delete that failed must not take a written
         # Matter with it.
         pending_uploads.release(request.session, held_keys)
+        # And the staging is over. After the commit for the same reason: the
+        # Teema is written, its evidence is written, and a storage backend
+        # having a bad minute must not take either with it. Anything left
+        # behind is the sweeper's (`consume_session`).
+        if intake_session is not None:
+            intake_staging.consume_session(intake_session)
 
-        if uploads:
+        filed = len(uploads) + len(promoted)
+        if filed:
             messages.success(
                 request,
-                f"Teema „{matter.title}” on loodud koos {len(uploads)} failiga.",
+                f"Teema „{matter.title}” on loodud koos {filed} failiga.",
             )
         else:
             messages.success(request, f"Teema „{matter.title}” on loodud.")
@@ -1421,9 +1476,15 @@ def matter_create(request: HttpRequest) -> HttpResponse:
 
 
 def _create_context(
-    request: HttpRequest, form: Any, action_form: Any, *, held_keys: list[str] | None = None
+    request: HttpRequest,
+    form: Any,
+    action_form: Any,
+    *,
+    held_keys: list[str] | None = None,
+    intake_session: Any = None,
 ) -> dict[str, Any]:
     return {
+        **_intake_context(intake_session),
         "form": form,
         # The files a refusal is holding, described for the page: the same
         # filename and size the browser's own preview shows, plus the key the
@@ -1449,6 +1510,187 @@ def _create_context(
         "quick_dates": quick_date_choices(timezone.localdate()),
         "nav_active": "teemad",
     }
+
+
+# ---------------------------------------------------------------------------
+# Uus teema: reading the files while the form is still open
+# ---------------------------------------------------------------------------
+#
+# Three small routes and one fragment. Selecting a file on `Uus teema` uploads
+# it before the Teema exists, the extraction worker reads it through exactly the
+# parsers and the scan gate every other file goes through, and what the rules
+# find appears on the form the person is still filling in (docs/adr/0064).
+#
+# What none of them do is create business data. No Matter, no Document, no
+# version, no audit event, no search row, no Organisation. The only thing that
+# exists after any of them is one person's staging session, which expires.
+
+
+#: How each staged file's reading state reads on the page, and which tone it
+#: takes. Words a person filing a Teema can act on, never the stored state:
+#: PENDING, PROCESSING and «Teksti eraldamine ei kohaldu» are how the extraction
+#: system talks to an operator, and on this surface they are noise at best
+#: (task §5, `app.documents.preview` is the operator-facing vocabulary).
+INTAKE_STATE_LABELS: dict[str, tuple[str, str]] = {
+    ExtractionState.PENDING: ("Loen faili…", "waiting"),
+    ExtractionState.PROCESSING: ("Loen faili…", "waiting"),
+    ExtractionState.DONE: ("Loetud", "ok"),
+    ExtractionState.FAILED: ("Ei saanud lugeda", "warn"),
+    ExtractionState.NOT_APPLICABLE: ("Sisu ei loeta", "quiet"),
+}
+
+
+def _intake_context(session: Any, *, error: str = "") -> dict[str, Any]:
+    """Everything the intake fragment renders, decided here rather than there.
+
+    One read of the staged files answers all three questions the page asks —
+    what is on the form, whether anything is still being read, and what the
+    rules found — so the template judges nothing and a poll costs one pass.
+
+    **The analysis runs only once something has been read.** While every file is
+    still PENDING there is provably nothing to suggest, and running the analyser
+    anyway would load the organisation catalogue and the policy vocabulary on
+    every poll to produce an empty answer.
+    """
+    files = intake_staging.live_files(session) if session is not None else []
+    rows = []
+    for staged in files:
+        label, tone = INTAKE_STATE_LABELS.get(staged.extraction_state, ("Loen faili…", "waiting"))
+        rows.append(
+            {
+                "id": staged.pk,
+                "filename": staged.original_filename,
+                "size": human_size(staged.size_bytes),
+                "label": label,
+                "tone": tone,
+            }
+        )
+
+    if not files:
+        state = "empty"
+    elif any(staged.is_reading for staged in files):
+        state = "reading"
+    else:
+        state = "ready"
+
+    assisted = None
+    prefill: list[tuple[str, str]] = []
+    if any(staged.extraction_state == ExtractionState.DONE for staged in files):
+        assisted = analyse_intake(session)
+        # The same pre-fill decision `Muuda teemat` makes, asked here so that
+        # the two surfaces cannot drift apart about which confidence may fill a
+        # control. What differs is only who applies it: there the GET renders it
+        # into an unbound form, here the browser writes it into a live one and
+        # only where the person has not (task §10, §11).
+        _initial, assisted = prefill_initial(assisted, base={}, current=CurrentValues())
+        prefill = prefill_controls(assisted)
+
+    unreadable = ""
+    if files and not any(staged.is_reading for staged in files) and assisted is None:
+        # Every file finished and none of them produced text. Said as one calm
+        # sentence rather than as a per-file error: what a person needs to know
+        # is that the automatic help is not coming and that nothing is lost
+        # (task §21).
+        unreadable = "Faili sisu ei õnnestunud automaatselt lugeda."
+
+    return {
+        "intake_session": session,
+        "intake_files": rows,
+        "intake_state": state,
+        "intake_prefill": prefill,
+        "intake_error": error,
+        "intake_unreadable": unreadable,
+        "assisted": assisted,
+    }
+
+
+def _intake_fragment(
+    request: HttpRequest, session: Any, *, error: str = "", status: int = 200
+) -> HttpResponse:
+    return render(
+        request,
+        "matters/partials/intake_region.html",
+        _intake_context(session, error=error),
+        status=status,
+    )
+
+
+def _requested_intake_session(request: HttpRequest, source: Any) -> Any:
+    """The staging session this request names, if it is this person's and open.
+
+    Fail-closed in one place. Somebody else's session, an expired one and one a
+    Matter has already consumed all read as absent, and the caller answers 404 —
+    the refusal this application gives for a record somebody may not touch, so
+    that a guessed identifier learns nothing, not even whether it named a row
+    (`app.core.decorators`, task §23).
+    """
+    return intake_staging.get_session(
+        owner=request.user, session_id=(source.get("intake") or "").strip()
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def intake_stage(request: HttpRequest) -> HttpResponse:
+    """Keep the files somebody just chose, so the extractor may read them.
+
+    The same validator the save path uses, on the same bytes: `read_upload`
+    checks the size, the extension allowlist and the content signature, and a
+    file that fails it is refused here exactly as it would be at `Loo teema`.
+    Nothing is parsed in this request — the worker does that, behind the scan
+    gate, in its own process (docs/adr/0014, docs/adr/0064).
+    """
+    session = _requested_intake_session(request, request.POST)
+    accepted, refusal = _read_new_matter_files(request)
+    if not accepted and session is None:
+        # Nothing to keep and nothing to keep it in. Answered rather than
+        # refused, so the page can show why the file was not taken.
+        return _intake_fragment(request, None, error=refusal, status=400 if refusal else 200)
+
+    result = intake_staging.stage_uploads(owner=request.user, uploads=accepted, session=session)
+    return _intake_fragment(
+        request,
+        result.session,
+        error=refusal or result.refusal,
+        status=400 if refusal else 200,
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET"])
+def intake_status(request: HttpRequest) -> HttpResponse:
+    """Where the reading has got to, and what has been found so far.
+
+    A read, and small: the staged rows and whatever the rules have to say. It
+    carries no file bytes and re-reads none — the point of polling this rather
+    than anything else is that it costs a couple of indexed queries whatever
+    the files weigh (task §22, §37).
+    """
+    session = _requested_intake_session(request, request.GET)
+    if session is None:
+        raise Http404
+    return _intake_fragment(request, session)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def intake_remove(request: HttpRequest) -> HttpResponse:
+    """Take one staged file back off the form.
+
+    Answered with the same fragment as everything else here, so the list, the
+    suggestions and what `Loo teema` would promote are recomputed together and
+    cannot disagree. A file removed while it was being read stops contributing
+    immediately: the analysis reads the live set (task §17).
+    """
+    session = _requested_intake_session(request, request.POST)
+    if session is None:
+        raise Http404
+    if not intake_staging.remove_file(session=session, file_id=(request.POST.get("fail") or "")):
+        raise Http404
+    return _intake_fragment(request, session)
 
 
 def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], str]:

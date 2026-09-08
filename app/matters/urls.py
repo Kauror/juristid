@@ -78,6 +78,16 @@ urlpatterns = [
     path("saabunud/lisa/", views.intake, name="intake"),
     path("teemad/", views.matter_list, name="matter_list"),
     path("teemad/uus/", views.matter_create, name="matter_create"),
+    # Reading the files a Teema is being created from, before it exists.
+    #
+    # Under `teemad/uus/` because that is the only surface they belong to and
+    # the only one that may reach them. Each is behind `business_write_required`
+    # and scoped to the session's owner, so a staged file is unreachable by
+    # anybody but the person who chose it (app/matters/intake_staging.py,
+    # docs/adr/0064).
+    path("teemad/uus/failid/", views.intake_stage, name="intake_stage"),
+    path("teemad/uus/failid/olek/", views.intake_status, name="intake_status"),
+    path("teemad/uus/failid/eemalda/", views.intake_remove, name="intake_remove"),
     # The searchable institution control on Tapsem otsing. A fragment route
     # because it swaps one field; the register itself deliberately does not
     # have one (app/matters/views.py, `_wants_fragment`).

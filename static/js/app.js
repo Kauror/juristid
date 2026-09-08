@@ -209,6 +209,365 @@
         fileInput.dispatchEvent(new Event("change"));
       });
     }
+
+    /* ---- Uus teema: read the files while the form is still open ----------
+     * Choosing a file uploads it before the Teema exists, the extraction
+     * worker reads it behind the same scan gate as every other file, and what
+     * the rules find appears on this form while somebody is still filling it
+     * in (app/matters/intake_staging.py, docs/adr/0064).
+     *
+     * An enhancement, and it fails safely in both directions. With no
+     * `fetch`, no `FormData` or no URLs on the dropzone there is no island at
+     * all, and the input posts its files to `Loo teema` exactly as it always
+     * did. When an upload fails the bytes stay in the input, so that ordinary
+     * path still carries them — the island going wrong costs the suggestions,
+     * never the file.
+     *
+     * The one rule that governs everything below: **a suggestion never
+     * overwrites a person.** Extraction is asynchronous, so an answer can
+     * arrive seconds after somebody has typed a title or ticked a sender, and
+     * a control that is not empty — or that has been touched at all — is left
+     * exactly as it is. The server says what it *would* fill; this decides
+     * whether it still may (task §10).
+     */
+    var dropzone = fileInput.closest(".dropzone");
+    var stageUrl = dropzone && dropzone.getAttribute("data-intake-url");
+    var statusUrl = dropzone && dropzone.getAttribute("data-intake-status-url");
+    var removeUrl = dropzone && dropzone.getAttribute("data-intake-remove-url");
+    var createForm = fileInput.closest("form");
+    if (stageUrl && statusUrl && removeUrl && createForm && window.FormData && window.fetch) {
+      /* Slow enough to be a poll rather than a load, and bounded: after this
+         many the page stops asking. Nothing is blocked while it waits — the
+         file is already safe and `Loo teema` is already pressable — so the
+         cost of stopping early is a suggestion, not a workflow (task §22). */
+      var POLL_MS = 1200;
+      var MAX_POLLS = 60;
+      var polls = 0;
+      var pollTimer = null;
+      var abandoned = false;
+
+      /* The four controls a suggestion may fill. Pealkiri is deliberately not
+         among them: no title is ever pre-filled anywhere in this application,
+         because nothing separates one a person wrote from one a machine
+         proposed (app/matters/intake_suggestions/prefill.py). */
+      var FILLABLE = ["source_organisations", "response_deadline", "track", "policy_areas"];
+      /* Which of them the person has been near, and what we last wrote into
+         each. The second is what lets a later answer replace an *earlier
+         answer* while never replacing a person: a control still holding
+         exactly what we put in it is still empty as far as they are
+         concerned. */
+      var touched = {};
+      var autofilled = {};
+      /* Files already sent. A `change` event is dispatched by the × control,
+         by the held-file list and by our own clearing of the input, so
+         "something changed" is not the question — "which of these has the
+         server not got" is. */
+      var sent = new WeakSet();
+
+      var token = function () {
+        var field = createForm.querySelector('input[name="intake"]');
+        return field ? field.value : "";
+      };
+      var csrf = function () {
+        var field = createForm.querySelector('input[name="csrfmiddlewaretoken"]');
+        return field ? field.value : "";
+      };
+      var controlsFor = function (name) {
+        return Array.prototype.slice.call(
+          createForm.querySelectorAll('[name="' + name + '"], [name="' + name + '_other"]')
+        );
+      };
+      var sameSet = function (left, right) {
+        return (
+          left.length === right.length &&
+          left.every(function (value) {
+            return right.indexOf(value) !== -1;
+          })
+        );
+      };
+
+      /* Touched, generously. Any real interaction anywhere inside the field a
+         control lives in counts — a chip, its label, the date picker's own
+         button — because the cost of being wrong in that direction is one
+         suggestion nobody was offered, and the cost of being wrong in the
+         other is somebody's typing disappearing. */
+      var markTouched = function (event) {
+        if (!event.isTrusted || !event.target.closest) {
+          return;
+        }
+        var within = event.target.closest(".field, fieldset");
+        if (!within) {
+          return;
+        }
+        FILLABLE.forEach(function (name) {
+          if (within.querySelector('[name="' + name + '"], [name="' + name + '_other"]')) {
+            touched[name] = true;
+          }
+        });
+      };
+      ["input", "change", "click"].forEach(function (type) {
+        createForm.addEventListener(type, markTouched, true);
+      });
+
+      /* «Kasuta» is a choice, and it is made outside the field it writes into,
+         so the listener above cannot see it. Pressing it settles that field:
+         a later answer must not take back what somebody has just accepted. */
+      createForm.addEventListener(
+        "click",
+        function (event) {
+          var use = event.target.closest ? event.target.closest("[data-suggest-for]") : null;
+          if (use) {
+            touched[use.getAttribute("data-suggest-for")] = true;
+          }
+        },
+        true
+      );
+
+      var fill = function (name, values) {
+        if (touched[name]) {
+          return;
+        }
+        var controls = controlsFor(name);
+        if (!controls.length) {
+          return;
+        }
+        var boxes = controls.filter(function (control) {
+          return control.type === "checkbox" || control.type === "radio";
+        });
+        var text = controls.filter(function (control) {
+          return control.type !== "checkbox" && control.type !== "radio";
+        })[0];
+        var previous = autofilled[name] || [];
+
+        if (boxes.length) {
+          var checked = boxes
+            .filter(function (box) {
+              return box.checked && box.value !== "";
+            })
+            .map(function (box) {
+              return box.value;
+            });
+          /* Empty, or holding exactly what this put there last time. Anything
+             else is somebody's choice. */
+          if (checked.length && !sameSet(checked, previous)) {
+            return;
+          }
+          boxes.forEach(function (box) {
+            var wanted = values.indexOf(box.value) !== -1;
+            if (box.checked === wanted) {
+              return;
+            }
+            /* Only ever tick what is proposed, or untick what this ticked. A
+               box somebody else's answer left behind is not ours to clear. */
+            if (wanted || previous.indexOf(box.value) !== -1) {
+              box.checked = wanted;
+              box.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          });
+          autofilled[name] = values.slice();
+          return;
+        }
+
+        if (!text) {
+          return;
+        }
+        var current = (text.value || "").trim();
+        if (current && current !== (previous[0] || "")) {
+          return;
+        }
+        text.value = values[0] || "";
+        text.dispatchEvent(new Event("input", { bubbles: true }));
+        text.dispatchEvent(new Event("change", { bubbles: true }));
+        autofilled[name] = values.slice();
+      };
+
+      var applyPrefill = function (scope) {
+        var wanted = {};
+        (scope || document).querySelectorAll("[data-prefill-for]").forEach(function (marker) {
+          var name = marker.getAttribute("data-prefill-for");
+          wanted[name] = wanted[name] || [];
+          wanted[name].push(marker.getAttribute("data-prefill-value") || "");
+        });
+        /* Per field, not per value: Valdkonnad may propose three, and asking
+           "is this control still empty" once per value would answer no after
+           the first of them. */
+        Object.keys(wanted).forEach(function (name) {
+          fill(name, wanted[name]);
+        });
+      };
+
+      /* One answer, two places. The staging routes render both halves and this
+         puts each where it belongs by id — the file rows inside the dropzone,
+         the suggestions above the fields they are about. */
+      var applyFragment = function (html) {
+        var parsed = new DOMParser().parseFromString(html, "text/html");
+        ["intake-failid", "intake-panel"].forEach(function (id) {
+          var incoming = parsed.getElementById(id);
+          var existing = document.getElementById(id);
+          if (incoming && existing) {
+            existing.replaceWith(document.importNode(incoming, true));
+          }
+        });
+        var panel = document.getElementById("intake-panel");
+        if (panel) {
+          bindSuggestionUse(panel);
+          applyPrefill(panel);
+        }
+        /* The browser's own list and the chosen count are rebuilt from the
+           input, which staging has just emptied, and from the staged rows that
+           have taken its place. */
+        fileInput.dispatchEvent(new Event("change"));
+      };
+
+      var uploading = function (on) {
+        var notice = document.querySelector(".intakepanel__uploading");
+        if (notice) {
+          notice.hidden = !on;
+        }
+      };
+
+      var schedule = function () {
+        window.clearTimeout(pollTimer);
+        var panel = document.getElementById("intake-panel");
+        if (abandoned || !panel || panel.getAttribute("data-intake-state") !== "reading") {
+          return;
+        }
+        if (polls >= MAX_POLLS) {
+          return;
+        }
+        pollTimer = window.setTimeout(function () {
+          var current = token();
+          if (!current) {
+            return;
+          }
+          polls += 1;
+          fetch(statusUrl + "?intake=" + encodeURIComponent(current), {
+            credentials: "same-origin",
+          })
+            .then(function (response) {
+              if (!response.ok) {
+                throw new Error("status");
+              }
+              return response.text();
+            })
+            .then(function (html) {
+              applyFragment(html);
+              schedule();
+            })
+            .catch(function () {
+              /* Quietly. The file is staged, the form is complete, and a page
+                 that shouted about a failed poll would be alarming about
+                 something nobody has to act on. */
+            });
+        }, POLL_MS);
+      };
+
+      var stage = function () {
+        var fresh = Array.prototype.slice.call(fileInput.files || []).filter(function (file) {
+          return !sent.has(file);
+        });
+        if (!fresh.length) {
+          return;
+        }
+        var data = new FormData();
+        fresh.forEach(function (file) {
+          data.append("files", file);
+          sent.add(file);
+        });
+        data.append("csrfmiddlewaretoken", csrf());
+        var current = token();
+        if (current) {
+          data.append("intake", current);
+        }
+        uploading(true);
+        fetch(stageUrl, { method: "POST", body: data, credentials: "same-origin" })
+          .then(function (response) {
+            /* A 400 carries the same fragment with the refusal on it, so it is
+               read rather than thrown: the page has to be able to say which
+               file was not taken and why. */
+            if (!response.ok && response.status !== 400) {
+              throw new Error("stage");
+            }
+            return response.text();
+          })
+          .then(function (html) {
+            /* Emptied only once the server has them. A file input cannot be
+               refilled by any page, so clearing it before the answer arrived
+               would be the one way to actually lose somebody's file. */
+            fileInput.value = "";
+            polls = 0;
+            abandoned = false;
+            applyFragment(html);
+            schedule();
+          })
+          .catch(function () {
+            /* The bytes are still in the input, so `Loo teema` still carries
+               them and every one of them still becomes a Document. What is
+               lost is the reading, which is help rather than data. */
+            uploading(false);
+          });
+      };
+
+      fileInput.addEventListener("change", function () {
+        stage();
+      });
+
+      dropzone.addEventListener("click", function (event) {
+        var button = event.target.closest ? event.target.closest("[data-intake-remove]") : null;
+        if (!button) {
+          return;
+        }
+        var current = token();
+        if (!current) {
+          return;
+        }
+        var data = new FormData();
+        data.append("csrfmiddlewaretoken", csrf());
+        data.append("intake", current);
+        data.append("fail", button.getAttribute("data-intake-remove"));
+        fetch(removeUrl, { method: "POST", body: data, credentials: "same-origin" })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error("remove");
+            }
+            return response.text();
+          })
+          .then(function (html) {
+            /* The server decides what is left, what it now suggests and what
+               `Loo teema` would file, all from one read — so the list and the
+               suggestions cannot end up disagreeing about a file that is half
+               gone (task §17). */
+            applyFragment(html);
+            schedule();
+          })
+          .catch(function () {});
+      });
+
+      createForm.addEventListener("click", function (event) {
+        var skip = event.target.closest ? event.target.closest("[data-intake-skip]") : null;
+        if (!skip) {
+          return;
+        }
+        /* Not a cancellation: the file stays staged and still becomes evidence.
+           This is for the person who can see the answer is not coming and would
+           like the page to stop saying that it is (task §21). */
+        abandoned = true;
+        window.clearTimeout(pollTimer);
+        var panel = document.getElementById("intake-panel");
+        if (panel) {
+          panel.setAttribute("data-intake-state", "abandoned");
+        }
+      });
+
+      /* A refused save re-renders the page with its staged files and whatever
+         had been found by then, so the island picks up where it left off
+         rather than starting again. */
+      var initial = document.getElementById("intake-panel");
+      if (initial) {
+        applyPrefill(initial);
+        schedule();
+      }
+    }
   }
 
   /* ---- Composer: Ctrl/Cmd+Enter submits, Esc closes optional fields ------ */
@@ -1233,19 +1592,28 @@
       if (!sources.length) {
         return;
       }
-      /* Files a refused save is holding count as chosen, because they are: the
+      /* Files the server is holding count as chosen, because they are: the
          next save files them. Counting only `input.files` would have said
-         "1 valitud" over a list of two rows. */
-      var held = key === "id_files" ? document.getElementById("hoitud-failid") : null;
+         "1 valitud" over a list of two rows — and once `Uus teema` began
+         uploading a chosen file straight away, `input.files` is empty on the
+         ordinary path and the count would have read nothing at all.
+
+         Two lists, looked up per sync rather than once: both are replaced
+         wholesale, the staged one on every answer from the staging routes
+         (static/js/app.js above, app/documents/pending.py). */
+      var lists = key === "id_files" ? ["hoitud-failid", "intake-failid"] : [];
       var sync = function () {
         var count = single && sources[0] === single
           ? (single.files || []).length
           : sources.filter(function (input) {
               return input.checked && input.value !== "";
             }).length;
-        if (held) {
-          count += held.querySelectorAll(".dropzone__file").length;
-        }
+        lists.forEach(function (id) {
+          var list = document.getElementById(id);
+          if (list) {
+            count += list.querySelectorAll(".dropzone__file").length;
+          }
+        });
         badge.textContent = count ? count + " valitud" : "";
       };
       sources.forEach(function (input) {

@@ -36,6 +36,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -100,6 +101,21 @@ def derivative_storage() -> Any:
     return storages[settings.DERIVATIVE_STORAGE_ALIAS]
 
 
+def is_scan_state_extractable(scan_state: str) -> bool:
+    """:func:`is_eligible_for_extraction`, asked of a scan state rather than a row.
+
+    The rule is about one field, and saying so is what lets a file that is not a
+    ``DocumentVersion`` yet be held to it. A staged intake file carries the same
+    ``MalwareScanState`` and is refused on exactly these terms
+    (`app.matters.intake_extraction`, docs/adr/0064).
+    """
+    if scan_state == MalwareScanState.CLEAN:
+        return True
+    if settings.REAL_DATA_ALLOWED:
+        return False
+    return scan_state == MalwareScanState.PENDING
+
+
 def is_eligible_for_extraction(version: DocumentVersion) -> bool:
     """Whether this binary may be opened by a parser at all.
 
@@ -118,11 +134,7 @@ def is_eligible_for_extraction(version: DocumentVersion) -> bool:
     CLEAN to unblock extraction would replace a missing control with a lie about
     one (Stage-2B brief 32).
     """
-    if version.malware_scan_state == MalwareScanState.CLEAN:
-        return True
-    if settings.REAL_DATA_ALLOWED:
-        return False
-    return version.malware_scan_state == MalwareScanState.PENDING
+    return is_scan_state_extractable(version.malware_scan_state)
 
 
 def claim_version(version_id: Any, *, force: bool = False) -> DocumentVersion | None:
@@ -262,76 +274,135 @@ def extract_document_version(version: DocumentVersion) -> ExtractionReport:
         )
 
 
-def _run(version: DocumentVersion, *, fence: Any, started: float) -> ExtractionReport:
-    if not is_eligible_for_extraction(version):
-        return _finish_without_derivatives(
-            version,
-            state=ExtractionState.PENDING,
-            note="Ootab pahavarakontrolli tulemust.",
-            started=started,
-            fence=fence,
-        )
+@dataclass(frozen=True)
+class ParseOutcome:
+    """What one pass over a file’s bytes decided, before anything is written.
 
-    parser = registry.for_mime_type(version.mime_type)
+    The pure half of extraction: the scan gate, the parser lookup, the parse
+    itself, and the name every failure is given. It carries a terminal
+    ``ExtractionState`` and the parser’s own output, and it commits nothing.
+
+    That separation is what lets one parser stack serve two publication
+    targets. A canonical ``DocumentVersion`` publishes derivative rows, text
+    fragments, attachment Documents and a search projection; a file staged on
+    ``Uus teema`` before the Matter exists publishes a little JSON on its own
+    temporary row and none of that (docs/adr/0064). What must never differ is
+    the gate the bytes passed to get here, so it is written once.
+    """
+
+    state: str
+    note: str = ""
+    error_code: str = ""
+    parser: Any | None = None
+    result: ParseResult | None = None
+
+    @property
+    def failed(self) -> bool:
+        return self.state == ExtractionState.FAILED
+
+
+def parse_source(
+    *,
+    filename: str,
+    mime_type: str,
+    scan_state: str,
+    load: Callable[[], bytes],
+    reference: str = "",
+) -> ParseOutcome:
+    """Read one file and say what came out of it. Writes nothing, anywhere.
+
+    ``load`` is a callable rather than the bytes themselves, and deliberately:
+    a file waiting on a scanner and a format no parser claims are both decided
+    before a single byte is fetched, so an ineligible file costs no storage
+    read it would never have used. ``FileNotFoundError`` from it is the one
+    storage failure with a name of its own — the row says where the bytes are
+    and they are not there — and it is reported as a verdict on the file
+    rather than raised at the caller.
+
+    ``reference`` names the row in the one log line that mentions one. No
+    document content is ever logged (Stage-2B brief 67).
+    """
+    if not is_scan_state_extractable(scan_state):
+        return ParseOutcome(state=ExtractionState.PENDING, note="Ootab pahavarakontrolli tulemust.")
+
+    parser = registry.for_mime_type(mime_type)
     if parser is None:
-        return _finish_without_derivatives(
-            version,
-            state=ExtractionState.NOT_APPLICABLE,
-            note=_unsupported_note(version.mime_type),
-            started=started,
-            fence=fence,
-        )
+        return ParseOutcome(state=ExtractionState.NOT_APPLICABLE, note=_unsupported_note(mime_type))
 
     try:
-        content = _read_evidence(version)
+        content = load()
     except FileNotFoundError:
-        return _record_failure(
-            version,
-            code="evidence_missing",
-            detail="Tõendi baite ei leitud hoidlast.",
-            started=started,
-            fence=fence,
+        # Deliberately without ``parser``: it never ran, and recording its name
+        # as the generator of this failure would say that it had.
+        return ParseOutcome(
+            state=ExtractionState.FAILED,
+            note="Tõendi baite ei leitud hoidlast.",
+            error_code="evidence_missing",
         )
 
-    source = SourceFile(
-        content=content, filename=version.original_filename, mime_type=version.mime_type
-    )
+    source = SourceFile(content=content, filename=filename, mime_type=mime_type)
     try:
         result = parser.parse(source)
     except ExtractionNotApplicable as error:
-        return _finish_without_derivatives(
-            version,
-            state=ExtractionState.NOT_APPLICABLE,
-            note=error.detail,
-            started=started,
-            fence=fence,
-        )
+        return ParseOutcome(state=ExtractionState.NOT_APPLICABLE, note=error.detail, parser=parser)
     except ExtractionFailed as error:
-        return _record_failure(
-            version,
-            code=error.code,
-            detail=error.detail,
+        return ParseOutcome(
+            state=ExtractionState.FAILED,
+            note=error.detail,
+            error_code=error.code,
             parser=parser,
-            started=started,
-            fence=fence,
         )
     except Exception as error:
         # A parser that raises something unforeseen is a bug, not a valid file
-        # verdict. It is logged with the version id and *no content*, the
-        # version is marked failed, and the loop continues: one malformed file
+        # verdict. It is logged with the row reference and *no content*, the
+        # file is marked failed, and the loop continues: one malformed file
         # must never stop the queue (Stage-2B brief 67).
-        logger.exception("Parser %s crashed on version %s", parser.name, version.pk)
+        logger.exception("Parser %s crashed on %s", parser.name, reference or filename)
+        return ParseOutcome(
+            state=ExtractionState.FAILED,
+            note=f"Parser {parser.name} andis ootamatu vea ({type(error).__name__}).",
+            error_code="parser_error",
+            parser=parser,
+        )
+
+    return ParseOutcome(state=ExtractionState.DONE, note=result.note, parser=parser, result=result)
+
+
+def _run(version: DocumentVersion, *, fence: Any, started: float) -> ExtractionReport:
+    outcome = parse_source(
+        filename=version.original_filename,
+        mime_type=version.mime_type,
+        scan_state=version.malware_scan_state,
+        load=lambda: _read_evidence(version),
+        reference=f"version {version.pk}",
+    )
+
+    if outcome.failed:
         return _record_failure(
             version,
-            code="parser_error",
-            detail=f"Parser {parser.name} andis ootamatu vea ({type(error).__name__}).",
-            parser=parser,
+            code=outcome.error_code,
+            detail=outcome.note,
+            parser=outcome.parser,
+            started=started,
+            fence=fence,
+        )
+
+    if outcome.result is None:
+        # PENDING, because the file is waiting on a scanner, or NOT_APPLICABLE,
+        # because no parser claims the format or the one that does declined it.
+        # Neither writes a derivative.
+        return _finish_without_derivatives(
+            version,
+            state=outcome.state,
+            note=outcome.note,
             started=started,
             fence=fence,
         )
 
     try:
-        return _publish(version, parser=parser, result=result, started=started, fence=fence)
+        return _publish(
+            version, parser=outcome.parser, result=outcome.result, started=started, fence=fence
+        )
     except ClaimLost:
         # Not a failure of this file. Somebody else owns the row and will write
         # its outcome; the publish transaction has already rolled back, so this
@@ -352,7 +423,7 @@ def _run(version: DocumentVersion, *, fence: Any, started: float) -> ExtractionR
             version,
             code="publish_failed",
             detail=f"Tulemuse salvestamine ebaõnnestus ({type(error).__name__}).",
-            parser=parser,
+            parser=outcome.parser,
             started=started,
             fence=fence,
         )

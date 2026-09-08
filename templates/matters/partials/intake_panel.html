@@ -1,0 +1,98 @@
+{% comment %}
+  What the rules found in the files somebody has just chosen, and how far the
+  reading has got.
+
+  A panel above the fields it is about, not a second form. The only thing it
+  posts is `intake`, which names the staging session so that `Loo teema` knows
+  which files to promote; every suggestion in it is a proposal until somebody
+  presses that button (docs/adr/0064).
+
+  The candidate rows are `intake_suggestion_rows.html`, shared with
+  `Muuda teemat`: a suggestion must read the same wherever it is met, and only
+  the framing around it legitimately differs.
+{% endcomment %}
+<div class="intakepanel" id="intake-panel" data-intake-state="{{ intake_state }}">
+  {% if intake_session %}
+    {% comment %}
+      The one field this fragment posts. Without it a refused save would lose
+      the staged files exactly as it once lost the chosen ones — the defect the
+      held-upload work was about, one layer further forward
+      (app/documents/pending.py, `matter_create`).
+    {% endcomment %}
+    <input type="hidden" name="intake" value="{{ intake_session.pk }}">
+  {% endif %}
+
+  {% comment %}
+    While the bytes are still going up. Present and hidden rather than created
+    by script, so the words are in the template with every other string on this
+    page — and it is replaced by the server’s own answer the moment one
+    arrives, which is why nothing ever has to hide it again (static/js/app.js).
+  {% endcomment %}
+  <p class="intakepanel__state intakepanel__uploading" hidden>
+    <span class="intakepanel__spinner" aria-hidden="true"></span>
+    Laen faili üles…
+  </p>
+
+  {% if intake_error %}
+    <p class="intakepanel__state intakepanel__state--warn" role="alert">{{ intake_error }}</p>
+  {% endif %}
+
+  {% comment %}
+    What the browser may write into an empty, untouched control, as data rather
+    than as a value already in the box.
+
+    It cannot be rendered into the controls the way `Muuda teemat` does, because
+    by the time this arrives the form is on screen with somebody typing into it
+    — and a suggestion that overwrote what they had written would be the one
+    thing this feature may never do. So the server says what it would fill and
+    the browser decides whether it still may (task §10, static/js/app.js).
+  {% endcomment %}
+  {% for name, value in intake_prefill %}
+    <span class="visually-hidden" data-prefill-for="{{ name }}" data-prefill-value="{{ value }}"></span>
+  {% endfor %}
+
+  {% if intake_state == "reading" %}
+    <p class="intakepanel__state intakepanel__reading">
+      <span class="intakepanel__spinner" aria-hidden="true"></span>
+      Loen faili…
+      {% comment %}
+        Reading is never a gate. The file is already safe, `Loo teema` is
+        already pressable, and this button exists for the person who can see
+        that the answer is not coming and would like the page to stop saying it
+        is (task §21).
+      {% endcomment %}
+      <button type="button" class="quietlink intakepanel__skip" data-intake-skip>
+        Jätka ilma automaatse lugemiseta
+      </button>
+    </p>
+  {% endif %}
+
+  {% if intake_unreadable %}
+    <p class="intakepanel__state">
+      {{ intake_unreadable }}
+      Fail ise on alles ja salvestub teemale — täida ülejäänu käsitsi.
+    </p>
+  {% endif %}
+
+  {% if assisted %}
+    <section class="suggpanel suggpanel--intake" aria-labelledby="uus-dokumendist-leitud">
+      <div class="suggpanel__head">
+        <h2 class="suggpanel__title" id="uus-dokumendist-leitud">Failist leitud</h2>
+        <span class="suggpanel__meta">Ettepanekud. Midagi ei salvestata enne, kui vajutad Loo teema.</span>
+      </div>
+
+      {% if assisted.is_partial %}
+        <p class="suggpanel__state">
+          Analüüsiti {{ assisted.analysed_documents|length }} faili
+          {{ assisted.readable_documents|length }}-st. Mahukas sisu jäi automaatkontrollist
+          osaliselt välja; failid ise on tervikuna alles.
+        </p>
+      {% endif %}
+      {% if assisted.has_text and not assisted.has_anything %}
+        <p class="suggpanel__state">Faili tekst on loetud, kuid midagi pakkuda ei leitud.</p>
+      {% endif %}
+
+      {% include "matters/partials/intake_suggestion_rows.html" %}
+    </section>
+  {% endif %}
+</div>
