@@ -392,7 +392,13 @@ def test_the_date_meanings_are_the_agreed_words(specialist, today):
 
 
 def test_a_fuzzy_date_is_not_coerced_to_a_day(specialist, today):
-    """A month-precision expectation renders as a month, not as its first day."""
+    """A month-precision expectation renders as a month, not as its first day.
+
+    The compact cell shortened the month to `09.26` (tests/test_work_list_compact_dates.py);
+    what it may never do is grow a third number. Both spellings are asserted
+    here, because the rule is about the two of them agreeing on the precision
+    rather than about either one's characters.
+    """
     matter = _matter(specialist)
     anchor = (today.replace(day=1) + timedelta(days=62)).replace(day=1)
     set_next_action(
@@ -409,7 +415,8 @@ def test_a_fuzzy_date_is_not_coerced_to_a_day(specialist, today):
 
     assert "." not in item.display_date
     assert str(anchor.year) in item.display_date
-    assert item.short_date == item.display_date
+    assert item.short_date == f"{anchor.month:02d}.{anchor.year % 100:02d}"
+    assert item.short_date.count(".") == 1, "a month grew a third number"
 
 
 # --- the page itself ------------------------------------------------------
