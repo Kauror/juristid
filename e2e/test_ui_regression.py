@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 
 import pytest
 
@@ -433,6 +434,36 @@ TIMELINE_PREVIEW_ON = (".uxtl__preview time",)
 #: the run lasted.
 TIMELINE_RUN_SPAN = (".uxtl__sysrow > span:nth-child(2)",)
 
+#: The folded run's own sentence, «Teema loodud 08.09, tegevusi 5».
+#:
+#: New in the 2026-09-08 pass, and it brought a second clock value onto the same
+#: line: `TimelineRow.summary` names the day the Matter was created, and the
+#: seeded world creates its Matters when the job runs. `short_day_month`
+#: zero-pads, so the glyphs change and the character count does not — but Barlow
+#: sets figures proportionally, so `08.09` and `11.09` are not the same width
+#: and everything to their right on the line moves with them, the masked span
+#: included.
+#:
+#: Normalised rather than masked. Masking would paint over the whole sentence,
+#: and the sentence is the change this pass made: a baseline that stopped
+#: showing it would stop showing that the row says when the file started and how
+#: much is folded into it, which is content (ADR 0057's rule, and the reason
+#: `:nth-child(2)` is scoped to the date beside it).
+#:
+#: **The canonical carries a count**, which is the one thing to know before
+#: adding a scenario. Exactly two captures render a folded run today —
+#: `teema-ulevaade` and `teema-1024`, both of them this same Matter — so
+#: `tegevusi 5` is that Matter's own number and is written into no other
+#: baseline. A third scenario that grew a run of a different length would have
+#: this string painted into it, so
+#: `test_the_folded_run_summary_is_the_sentence_the_page_really_renders` asserts
+#: the live text against the canonical before any capture is taken.
+TIMELINE_RUN_SUMMARY = (".uxtl__sysrow > span:nth-child(1)",)
+
+#: What that sentence is held still as. A real shape the product produces: a
+#: zero-padded `short_day_month` and the seeded Matter's own five events.
+RUN_SUMMARY = "Teema loodud 25.08, tegevusi 5"
+
 #: Values that have to be held still, not merely covered.
 #:
 #: A mask hides glyphs. It does not stop the element being as wide as whatever
@@ -499,6 +530,7 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
     (CLOSED_ON[0], "(29.8.2026)"),
     (TIMELINE_PREVIEW_ON[0], "29.8"),
     (OPINION_ROW_SENT[0], "29.8.2026 19:35"),
+    (TIMELINE_RUN_SUMMARY[0], RUN_SUMMARY),
 )
 
 #: What each scenario's capture may not silently stop *normalising*.
@@ -533,6 +565,13 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     # render a `Saadetud <date>` under a filename on every run.
     "teema-dokumendid": OPINION_ROW_SENT,
     "teema-arvamused": OPINION_ROW_SENT,
+    # The two captures that render a folded system run, and they are the same
+    # Matter twice. Required for the reason `TIMELINE_RUN_SPAN` is required
+    # beside it: whether the run exists is decided by the seed's own call order
+    # rather than by the day, so an absence here is the markup or the seed
+    # having moved.
+    "teema-ulevaade": TIMELINE_RUN_SUMMARY,
+    "teema-1024": TIMELINE_RUN_SUMMARY,
 }
 
 assert not {
@@ -794,6 +833,34 @@ def test_register_with_the_narrowing_panel_open(page, base_url):
 def test_matter_overview(page, base_url):
     signed_in_matter(page, base_url, OPEN_TITLE)
     compare("teema-ulevaade", capture(page, "teema-ulevaade"))
+
+
+def test_the_folded_run_summary_is_the_sentence_the_page_really_renders(page, base_url):
+    """What `RUN_SUMMARY` claims, checked against the page before anything
+    rewrites it.
+
+    The normalisation for this element replaces the whole sentence, and the
+    sentence carries a count. Everything but the date therefore has to be a
+    thing the product actually says on this page, or `teema-ulevaade` and
+    `teema-1024` hold a number nobody rendered — the one failure a normalisation
+    can cause that a screenshot cannot show.
+
+    Read before `capture`, on its own page load, so it sees the live value.
+    """
+    signed_in_matter(page, base_url, OPEN_TITLE)
+    live = page.locator(visible(TIMELINE_RUN_SUMMARY[0])).first.inner_text().strip()
+
+    assert re.fullmatch(r"Teema loodud \d{2}\.\d{2}, tegevusi \d+", live), (
+        f"the folded run reads {live!r}, which is not the shape "
+        f"`TimelineRow.summary` produces for a run holding the creation — and "
+        f"the normalisation would write {RUN_SUMMARY!r} over it"
+    )
+    assert live.split(", ", 1)[1] == RUN_SUMMARY.split(", ", 1)[1], (
+        f"the folded run reads {live!r} and the baselines are normalised to "
+        f"{RUN_SUMMARY!r}. Only the date may differ: the count is the seeded "
+        f"world's own, and holding it still at the wrong number paints a "
+        f"figure into two baselines that this page never rendered."
+    )
 
 
 def test_matter_header_only(page, base_url):
@@ -1419,13 +1486,6 @@ def _box_holds_still(page, build, variants, selector: str) -> None:
     )
 
 
-#: What `TimelineRow.summary` writes into the first span of a folded run that
-#: holds the Matter's own creation. The longest of the two shapes it produces,
-#: so the geometry these tests measure is the one with something after the date
-#: rather than the bare `Tegevusi 3` a later run gets.
-RUN_SUMMARY = "Teema loodud 25.08, tegevusi 3"
-
-
 def _system_run_summary(span: str) -> str:
     """The folded system-run summary, as `timeline_items.html` writes it.
 
@@ -1439,6 +1499,39 @@ def _system_run_summary(span: str) -> str:
         '<span class="uxtl__sysshow">näita ▸</span>'
         "</summary></details>"
     )
+
+
+#: The same sentence on four different mornings. Zero-padded by
+#: `short_day_month`, so the character count never changes — and Barlow's
+#: figures are proportional, so the width does until the normalisation holds it.
+RUN_SUMMARY_VARIANTS = (
+    "Teema loodud 25.08, tegevusi 5",
+    "Teema loodud 08.09, tegevusi 5",
+    "Teema loodud 31.12, tegevusi 5",
+    "Teema loodud 01.01, tegevusi 5",
+)
+
+
+def _system_run_line(summary: str) -> str:
+    """The same three spans, with the *first* one varying."""
+    return (
+        '<details class="uxtl__sys" open><summary class="uxtl__sysrow">'
+        f"<span>{summary}</span>"
+        "<span>31.08</span>"
+        '<span class="uxtl__sysshow">näita ▸</span>'
+        "</summary></details>"
+    )
+
+
+def test_the_run_summary_is_the_same_width_on_any_day(page):
+    """Normalised, not masked, so the *text* has to come out identical too.
+
+    The sentence is the content this pass put on the row; painting over it
+    would leave a baseline that no longer shows the row says anything. So it is
+    held still instead, and this is the assertion that it really is held —
+    across the month and year boundaries where the digits change most.
+    """
+    _holds_still(page, _system_run_line, RUN_SUMMARY_VARIANTS, TIMELINE_RUN_SUMMARY[0])
 
 
 def test_the_system_run_span_keeps_its_box_on_any_day(page):

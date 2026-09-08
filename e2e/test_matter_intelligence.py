@@ -387,17 +387,25 @@ def test_closing_the_form_writes_nothing_and_leaves_the_matter_as_it_was(page, b
 
 
 def test_a_commencement_saved_in_place_appears_on_the_matter(page, base_url):
+    """The wording is deliberately unlike the seeded commencements.
+
+    A record written here is a real record, and it reaches the department-wide
+    `Jõustuvad aktid` page beside every other one. `põhiosa` is how the seeded
+    commencement is described and how another test in this file addresses it,
+    so a second row containing that word makes *that* test a strict-mode
+    violation rather than this one a failure.
+    """
     sign_in(page, base_url, MARTIN)
     where = create_matter(page, base_url, "Kohapeal salvestatud jõustumisega teema")
 
     form = open_add_form(page, "+ Jõustumine")
-    form.get_by_label("Mis jõustub").fill("põhiosa jõustub")
+    form.get_by_label("Mis jõustub").fill("kohapealt kirja pandud rakendussäte")
     form.get_by_label("Teadaolev kuupäev").check()
     form.get_by_label("Kuupäev", exact=True).fill("1.1.2032")
     form.get_by_role("button", name="Salvesta").click()
 
     commencements = section(page, "Jõustumine")
-    expect(commencements.get_by_text("põhiosa jõustub")).to_be_visible()
+    expect(commencements.get_by_text("kohapealt kirja pandud rakendussäte")).to_be_visible()
     expect(commencements.get_by_role("listitem")).to_have_count(1)
     expect(add_form(page)).to_have_count(0)
     assert page.url == where
