@@ -73,14 +73,22 @@ still page properly. Every bookmark, internal link and historical archive link
 still works, and «Vaata kõiki arvamusi →» is how a reader gets there from the
 section, carrying whatever they had typed.
 
-**The section is bounded at twelve rows and says so.** It sits under a register
-page that is already fifty rows long; a second fifty-row table would have
-consolidated two usable surfaces into one unusable one. Twelve is enough to
-recognise recent work in and to make a search feel like it answered. The real
-total is printed beside them — `240 vastet · kuvatud 12` — because a page that
-showed twelve rows over a bare "240" would be describing a list it is not
-showing. There is no second pager: one page must not have two "next page"
-controls meaning different things.
+**The section is bounded at twelve rows.** It sits under a register page that is
+already fifty rows long; a second fifty-row table would have consolidated two
+usable surfaces into one unusable one. Twelve is enough to recognise recent work
+in and to make a search feel like it answered. The real total is printed above
+them — `240 vastet` — because a page that showed twelve rows and no number at
+all would be describing a list it is not showing. There is no second pager: one
+page must not have two "next page" controls meaning different things.
+
+> **Amended 2026-09-06.** This paragraph originally read "bounded at twelve rows
+> *and says so*", and the count line was `240 vastet · kuvatud 12`. The note is
+> withdrawn on the department's own reading: `· kuvatud 12` is a second number
+> on a line whose job is to carry one, and it qualifies a bound the reader
+> cannot change and did not ask about. The bound itself is unchanged, and so is
+> everything else in this paragraph — twelve rows, no pager, the real total
+> stated, and «Vaata kõiki arvamusi» under them. Presentation only: no query,
+> no selector and no route moved with it.
 
 **A fragment route of its own, and the page's address pushed from it.**
 `/arvamused/plokk/` exists because the register already answers *any* HTMX

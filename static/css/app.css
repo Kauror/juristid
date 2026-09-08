@@ -1755,9 +1755,21 @@ p.formnote {
   color: var(--text-muted);
 }
 
-/* One line, not a grid of cards. Four facts of very different lengths, each
-   label beside its value rather than above it, and the file pushed to the far
-   end where the eye already goes for it. */
+/* The file, on its own line under the Teema it belongs to and against the same
+   left edge. It used to be the last item on the meta line, pushed there with
+   `margin-left: auto`, which put a filename and its own heading at opposite
+   ends of the row. */
+.submission__file {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One line, not a grid of cards. Two facts of very different lengths, each
+   label beside its value rather than above it. */
 .submission__meta {
   display: flex;
   flex-wrap: wrap;
@@ -1788,12 +1800,6 @@ p.formnote {
   color: var(--text-body);
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.submission__meta__file {
-  margin-left: auto;
-  flex: 0 0 auto;
   white-space: nowrap;
 }
 
@@ -6288,42 +6294,10 @@ button.accordion__action:focus-visible {
   opacity: 1;
 }
 
-.versions__trigger {
-  cursor: pointer;
-  color: var(--accent-link);
-  font-weight: var(--typography-weight-semibold);
-  font-size: var(--typography-size-meta);
-  list-style: none;
-}
-
-.versions__trigger::-webkit-details-marker {
-  display: none;
-}
-
-.versions__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-  padding-top: var(--spacing-1);
-}
-
-.versions__note {
-  margin: 0;
-  font-size: var(--typography-size-label);
-  color: var(--text-muted);
-}
-
-.versions__row {
-  margin: 0;
-  display: flex;
-  gap: var(--spacing-2);
-  font-size: var(--typography-size-meta);
-  color: var(--text-secondary);
-}
-
-.versions__current {
-  color: var(--status-success);
-}
+/* The `.versions*` disclosure that used to live in this table's `Versioon`
+   cell is gone with the column. Versioning itself is untouched — the history
+   is on the document's own page, which styles it with the ordinary `.table`
+   rules rather than with a per-row disclosure. */
 
 .docempty {
   border: 1px solid var(--border-default);
@@ -8050,16 +8024,10 @@ button.accordion__action:focus-visible {
   font-size: var(--typography-size-meta);
 }
 
-/* "kuvatud 12" beside the real total. Quieter than the count, because it
-   qualifies the number rather than competing with it. */
-.opinionblock__note {
-  color: var(--text-muted);
-}
-
-/* The register's own «kuvatud N · näita korraga» line. Its own class rather
-   than the opinion section's, because the register's results fragment is
-   swapped on every keystroke and a test asserts that nothing belonging to the
-   Arvamused section is inside it (tests/test_arvamused_under_teemad.py). */
+/* The register's own «kuvatud N · näita korraga» line, and the only one left:
+   the Arvamused section under it used to qualify its total the same way and no
+   longer does. The register keeps it because «näita korraga» is a control a
+   reader acts on, not a footnote about a fixed bound. */
 .registercount__note {
   color: var(--text-muted);
 }

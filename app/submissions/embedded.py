@@ -27,10 +27,13 @@ rows, an archive count, or the corpus's date range by hand-editing
 a query is built. It does not raise: a crafted opinion parameter must not take
 the register down with it.
 
-**It is bounded, and says so.** :data:`EMBEDDED_ROWS` rows, no pager. The full
-count is printed beside them and «Vaata kõiki arvamusi» opens the standalone
-workspace carrying the same search — the section is a way in, not a replacement
-for the destination it links to.
+**It is bounded.** :data:`EMBEDDED_ROWS` rows, no pager. The full count is
+printed above them and «Vaata kõiki arvamusi» opens the standalone workspace
+carrying the same search — the section is a way in, not a replacement for the
+destination it links to. The bound itself is no longer written out beside the
+total: «313 vastet · kuvatud 12» put two numbers on a line that answers one
+question, and the rows stopping with a link under them says the same thing
+without a reader having to hold both.
 """
 
 from __future__ import annotations
@@ -200,7 +203,6 @@ def embedded_context(request: HttpRequest) -> dict[str, Any]:
         "opinion_rows": rows,
         "opinion_total": total,
         "opinion_refusal": refusal,
-        "opinion_bound": EMBEDDED_ROWS,
         "opinion_sent_count": sent_count,
         "opinion_archive_total": archive_total,
         "opinion_can_read_archive": can_read_archive,

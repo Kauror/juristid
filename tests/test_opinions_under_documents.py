@@ -30,6 +30,7 @@ a bookmark still works and a stranger still learns nothing.
 from __future__ import annotations
 
 import datetime
+import re
 
 import pytest
 from django.urls import reverse
@@ -148,6 +149,102 @@ def test_the_upload_panel_offers_arvamus_and_still_posts_the_stored_role(signed_
     body = _page(signed_in, matter)
 
     assert '<option value="KODA_SUBMISSION_FINAL">Arvamus</option>' in " ".join(body.split())
+
+
+# ---------------------------------------------------------------------------
+# 1b. What a person may file a *new* upload as
+# ---------------------------------------------------------------------------
+#
+# «Tulemuse tõend» is a claim about what happened to a proposal after Koda wrote
+# about it. At the moment somebody is uploading a file it is almost never the
+# answer, and on a menu of nine descriptions of what a file *is* it read as a
+# plausible tenth — so picking it filed a document under an assertion nobody had
+# made.
+#
+# It is dropped from the menu and from nowhere else. `OUTCOME_EVIDENCE` is still
+# a member of `DocumentRole`, still a value the column accepts, still what
+# existing rows hold and still what the `Roll` filter offers so those rows stay
+# findable. No migration, no backfill, and nothing rewritten — the same shape as
+# the `Arvamus` relabelling beside it (docs/adr/0061 §26).
+
+
+def _upload_select_of(body: str) -> str:
+    """The upload panel's `Roll` select and nothing else.
+
+    Scoped, because the same words are `<option>`s in the *filter* select at the
+    top of the page — which deliberately still offers every stored role — and an
+    assertion over the whole body would be answered by the wrong control.
+    """
+    panel = body[body.index('<div class="uploadpanel" id="lae-dokument"') :]
+    start = panel.index('<select class="field__input" name="role" required>')
+    return panel[start : panel.index("</select>", start)]
+
+
+def test_tulemuse_toend_is_not_on_the_upload_menu(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist)
+
+    select = _upload_select_of(_page(signed_in, matter))
+
+    assert "Tulemuse tõend" not in select
+    assert "OUTCOME_EVIDENCE" not in select
+
+
+def test_the_upload_menu_keeps_every_other_role(signed_in, specialist):
+    """One role left, and only one.
+
+    Asserted as the whole ordered list against the enum rather than by naming
+    nine strings: the failure this guards against is an exclusion that grows,
+    and a test that names what it expects to survive stops noticing when the
+    tenth removal happens.
+    """
+    from app.matters.views import UPLOAD_ROLES_NOT_OFFERED
+
+    matter = factories.MatterFactory(owner=specialist)
+
+    select = _upload_select_of(_page(signed_in, matter))
+    offered = re.findall(r'<option value="([^"]+)">', select)
+
+    assert UPLOAD_ROLES_NOT_OFFERED == {DocumentRole.OUTCOME_EVIDENCE}
+    assert offered == [
+        value for value in DocumentRole.values if value != DocumentRole.OUTCOME_EVIDENCE
+    ]
+    assert DocumentRole.KODA_SUBMISSION_FINAL in offered
+    assert "Arvamus" in select
+
+
+def test_outcome_evidence_is_still_a_valid_role(specialist):
+    """The enum and the column, untouched by a menu losing an option."""
+    matter = factories.MatterFactory(owner=specialist)
+
+    document = _file(
+        matter, name="Tulemus.pdf", role=DocumentRole.OUTCOME_EVIDENCE, actor=specialist
+    )
+
+    assert DocumentRole.OUTCOME_EVIDENCE in DocumentRole.values
+    assert DocumentRole.OUTCOME_EVIDENCE.label == "Tulemuse tõend"
+    document.refresh_from_db()
+    assert document.role == DocumentRole.OUTCOME_EVIDENCE
+
+
+def test_an_existing_outcome_evidence_document_still_renders(signed_in, specialist):
+    """A row already carrying the role is readable, named and correctly labelled.
+
+    This is the half that makes the change a menu edit rather than a data one. A
+    historical document keeps its stored label on the surface a reader browses,
+    and the filter still offers the value that finds it.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    _file(matter, name="Tulemus.pdf", role=DocumentRole.OUTCOME_EVIDENCE, actor=specialist)
+
+    body = _page(signed_in, matter)
+    table = body[body.index('<table class="table doctable">') :]
+    table = table[: table.index("</table>")]
+
+    assert "Tulemus.pdf" in table
+    assert "Tulemuse tõend" in table
+    # And it is still reachable by the filter, which is a different vocabulary
+    # from the upload menu on purpose.
+    assert "Tulemus.pdf" in _page(signed_in, matter, roll=DocumentRole.OUTCOME_EVIDENCE)
 
 
 # ---------------------------------------------------------------------------
