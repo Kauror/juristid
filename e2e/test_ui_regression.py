@@ -410,17 +410,17 @@ CLOSED_ON = (".banner--closed .banner__text .muted",)
 #: in this application and only this one has content beside it on its line.
 TIMELINE_PREVIEW_ON = (".uxtl__preview time",)
 
-#: The folded system-run summary's date span — «3 süsteemimuudatust — … 31.08
-#: näita ▸». `TimelineRow.span` over the run's own days, so it moves every
-#: morning: it read `31.08` when these baselines were taken and `01.09` the next
-#: day, for 304 of the 308 pixels each Teema capture was drifting by.
+#: The folded system-run summary's date span — «Teema loodud 25.08, tegevusi 3
+#: … 31.08 näita ▸». `TimelineRow.span` over the run's own days, so it moves
+#: every morning: it read `31.08` when these baselines were taken and `01.09`
+#: the next day, for 304 of the 308 pixels each Teema capture was drifting by.
 #:
 #: The selector is positional because the element has no class of its own, and
 #: adding one for a test would put a Playwright concern into product markup. It
 #: is stable rather than incidental: `.uxtl__sysrow` is one `<summary>` with
-#: exactly three unconditional `<span>` children in a fixed order — the count
-#: and kinds sentence, this span, and `.uxtl__sysshow`. Nothing here is inside
-#: an `{% if %}`, so `:nth-child(2)` can only ever be `row.span`
+#: exactly three unconditional `<span>` children in a fixed order —
+#: `row.summary`, this span, and `.uxtl__sysshow`. Nothing here is inside an
+#: `{% if %}`, so `:nth-child(2)` can only ever be `row.span`
 #: (templates/matters/partials/timeline_items.html).
 #:
 #: Masked rather than normalised, and measured rather than assumed.
@@ -1419,6 +1419,13 @@ def _box_holds_still(page, build, variants, selector: str) -> None:
     )
 
 
+#: What `TimelineRow.summary` writes into the first span of a folded run that
+#: holds the Matter's own creation. The longest of the two shapes it produces,
+#: so the geometry these tests measure is the one with something after the date
+#: rather than the bare `Tegevusi 3` a later run gets.
+RUN_SUMMARY = "Teema loodud 25.08, tegevusi 3"
+
+
 def _system_run_summary(span: str) -> str:
     """The folded system-run summary, as `timeline_items.html` writes it.
 
@@ -1427,7 +1434,7 @@ def _system_run_summary(span: str) -> str:
     """
     return (
         '<details class="uxtl__sys" open><summary class="uxtl__sysrow">'
-        "<span>3 süsteemimuudatust — seisund, vastutaja</span>"
+        f"<span>{RUN_SUMMARY}</span>"
         f"<span>{span}</span>"
         '<span class="uxtl__sysshow">näita ▸</span>'
         "</summary></details>"
@@ -1465,14 +1472,15 @@ def test_the_system_run_span_selector_takes_the_date_and_nothing_else(page):
     """`:nth-child(2)` is positional, so what it selects is worth asserting.
 
     A mask paints over everything it matches. If this selector reached the
-    count sentence or «näita ▸», the baseline would stop showing that the
-    summary says how many changes there are — and that is content, not a clock
-    value (the failure `CLOCK_DEPENDENT` documents for `<td>`/`<th>`).
+    summary sentence or «näita ▸», the baseline would stop showing that the
+    row says when the file started and how much is folded into it — and that is
+    content, not a clock value (the failure `CLOCK_DEPENDENT` documents for
+    `<td>`/`<th>`).
     """
     _fixture(page, _system_run_summary("31.08"))
 
     assert page.locator(TIMELINE_RUN_SPAN[0]).count() == 1
     assert page.locator(TIMELINE_RUN_SPAN[0]).inner_text().strip() == "31.08"
     # The two it must not take.
-    assert "süsteemimuudatust" in page.locator(".uxtl__sysrow > span:nth-child(1)").inner_text()
+    assert page.locator(".uxtl__sysrow > span:nth-child(1)").inner_text().strip() == RUN_SUMMARY
     assert page.locator(".uxtl__sysshow").inner_text().strip().startswith("näita")

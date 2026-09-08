@@ -21,9 +21,10 @@ Two things the spine changed, and neither is cosmetic:
   TÄHTAEG 21.08» — instead of as a separate line saying "Järgmiseks määratud".
   The date is the action's own, at the precision it was recorded to.
 * **Adjacent system events fold.** Three field changes in a row become one line
-  that says how many there are and what kinds, and opens to show all of them.
-  Nothing is hidden: it is a `<details>`, and everything inside renders exactly
-  as it did.
+  that says when the file started and how many actions it holds, and opens to
+  show all of them. Nothing is hidden: it is a `<details>`, and everything
+  inside renders exactly as it did — including each event's own type, which the
+  closed line deliberately no longer recites.
 
 Security audit events never appear here: who downloaded what is a compliance
 record, not professional chronology (master specification 16.5).
@@ -37,9 +38,16 @@ record, not professional chronology (master specification 16.5).
 {% for row in timeline_rows %}
     {% if row.is_run %}
       {% comment %}
-        A run of adjacent system events. The summary says how many and of what
-        kinds over which days, because a reader deciding whether to open it
-        needs all three — a bare "3 muudatust" is a counter, not information.
+        A run of adjacent system events. The closed line says when the file
+        started and how many actions are folded in, over which days — and not
+        what the application called each of them. «3 süsteemimuudatust —
+        Järgmiseks määratud, Tõendiversioon lisatud, Teema loodud» was the
+        chronology reading its own event vocabulary out to a lawyer who has no
+        reason to know it, at the top of nearly every Matter.
+
+        The classifications are still here, one per line, inside the
+        disclosure — the summary stopped naming them, and nothing stopped
+        recording them (app/matters/timeline.py, `TimelineRow.summary`).
       {% endcomment %}
       <article class="uxtl__item">
         <span class="uxtl__rail" aria-hidden="true">
@@ -49,7 +57,7 @@ record, not professional chronology (master specification 16.5).
         <div class="uxtl__body">
           <details class="uxtl__sys">
             <summary class="uxtl__sysrow">
-              <span>{{ row.count }} süsteemimuudatust — {{ row.kinds }}</span>
+              <span>{{ row.summary }}</span>
               <span>{{ row.span }}</span>
               <span class="uxtl__sysshow">näita ▸</span>
             </summary>
