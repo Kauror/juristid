@@ -211,6 +211,15 @@ def test_the_letter_is_read_on_the_create_form_and_the_teema_keeps_what_was_conf
     # The title is offered and never written, on any surface.
     expect(page.locator("#id_title")).to_have_value("")
     expect(page.locator('button[data-suggest-for="title"]').first).to_be_visible()
+    # And «Kasuta» says what actually happened rather than what the server
+    # would have done: it is bound to the live control, so the deadline the
+    # browser filled reads as chosen and the title it did not touch does not.
+    expect(page.locator('button[data-suggest-for="response_deadline"]').first).to_have_attribute(
+        "aria-pressed", "true"
+    )
+    expect(page.locator('button[data-suggest-for="title"]').first).to_have_attribute(
+        "aria-pressed", "false"
+    )
     screenshots(page, "41-uus-teema-failist-leitud")
 
     # Still nothing in the register: a suggestion is a proposal, and reading a
@@ -283,8 +292,14 @@ def test_a_suggestion_never_overwrites_what_the_person_typed_first(
     expect(areas.locator("label.chip", has_text="Ehitus").locator("input").first).to_be_checked()
 
     # And the candidate is still offered beside what was typed, so nothing is
-    # hidden — the person can still choose it.
-    expect(page.locator('button[data-suggest-for="response_deadline"]').first).to_be_visible()
+    # hidden — the person can still change their mind. It reads as *not* chosen,
+    # which is the truth: the browser declined to fill a box somebody had
+    # already typed in, and the page must not claim otherwise.
+    use = page.locator('button[data-suggest-for="response_deadline"]').first
+    expect(use).to_be_visible()
+    expect(use).to_have_attribute("aria-pressed", "false")
+    use.click()
+    expect(page.locator("#id_response_deadline")).to_have_value("18.9.2026")
 
 
 def test_a_file_taken_back_off_stops_suggesting_and_is_not_filed(

@@ -241,6 +241,35 @@ def test_a_title_is_offered_and_never_pre_filled(signed_in, evidence_root, minis
     assert all(name != SuggestedField.TITLE for name, _ in prefill_controls(annotated))
 
 
+def test_the_panel_claims_no_pre_fill_it_cannot_know_about(signed_in, evidence_root, ministry):
+    """The server proposes; the browser decides. So the server does not say it
+    decided.
+
+    On `Muuda teemat` a HIGH candidate that filled an empty control is marked
+    «vormil eeltäidetud», and that is true there because the GET filled it. Here
+    the control may already hold something somebody typed a second ago, which no
+    GET can see — so nothing is marked, every candidate keeps its «Kasuta», and
+    the button says what happened because it reads the live control
+    (docs/adr/0064).
+    """
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    answer = signed_in.get(f"{STATUS}?intake={session.pk}")
+    analysis = answer.context["assisted"]
+
+    assert analysis.prefilled == {}
+    assert not any(
+        candidate.prefilled
+        for suggestions in analysis.fields.values()
+        for candidate in suggestions.candidates
+    )
+    body = answer.content.decode()
+    assert "vormil eeltäidetud" not in body
+    # The decision itself is still made, and is still what the browser is told.
+    assert dict(answer.context["intake_prefill"])["response_deadline"] == "18.9.2026"
+
+
 def test_a_file_the_scanner_has_not_cleared_is_not_offered_to_a_parser(
     signed_in, evidence_root, settings
 ):

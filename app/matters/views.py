@@ -1582,8 +1582,23 @@ def _intake_context(session: Any, *, error: str = "") -> dict[str, Any]:
         # control. What differs is only who applies it: there the GET renders it
         # into an unbound form, here the browser writes it into a live one and
         # only where the person has not (task §10, §11).
-        _initial, assisted = prefill_initial(assisted, base={}, current=CurrentValues())
-        prefill = prefill_controls(assisted)
+        #
+        # **And the analysis the panel renders is the unannotated one.** That is
+        # the whole of the difference and it is deliberate. `prefill_initial`
+        # marks the candidates it chose so the edit page can print «vormil
+        # eeltäidetud» beside exactly those — true there, because that page
+        # filled the control itself. Here the server proposes and the *browser*
+        # decides, and it declines wherever somebody has already typed. Printing
+        # «vormil eeltäidetud» over a box holding a person's own value would be
+        # the page stating something it cannot know, and it would take away the
+        # «Kasuta» they would need to change their mind.
+        #
+        # So every candidate is offered, and the button says what happened: it
+        # is bound to the live control, so one the browser filled reads as
+        # chosen and one it declined reads as available (static/js/app.js,
+        # `bindSuggestionUse`).
+        _initial, decided = prefill_initial(assisted, base={}, current=CurrentValues())
+        prefill = prefill_controls(decided)
 
     unreadable = ""
     if files and not any(staged.is_reading for staged in files) and assisted is None:

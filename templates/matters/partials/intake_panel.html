@@ -10,6 +10,14 @@
   The candidate rows are `intake_suggestion_rows.html`, shared with
   `Muuda teemat`: a suggestion must read the same wherever it is met, and only
   the framing around it legitimately differs.
+
+  One thing that partial can render never appears here, and deliberately:
+  «vormil eeltäidetud». On the edit page the GET fills the control itself and
+  can say so. Here the browser decides, and declines wherever somebody has
+  already typed — so the badge would be the page claiming something it cannot
+  know. Every candidate is offered instead, and «Kasuta» says what happened,
+  because it is bound to the live control (app/matters/views.py
+  `_intake_context`, static/js/app.js `bindSuggestionUse`).
 {% endcomment %}
 <div class="intakepanel" id="intake-panel" data-intake-state="{{ intake_state }}">
   {% if intake_session %}

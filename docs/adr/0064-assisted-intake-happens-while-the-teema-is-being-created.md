@@ -180,6 +180,17 @@ outright. Being wrong in that direction costs one suggestion nobody was
 offered. Being wrong in the other direction costs somebody's typing, which is
 the failure this whole feature must not have.
 
+**And the panel renders the *unannotated* analysis**, which is the visible half
+of the same distinction. `prefill_initial` marks the candidates it chose so the
+edit page can print «vormil eeltäidetud» beside exactly those — true there,
+because that page filled the control itself. Here the server proposes and the
+browser decides, and it declines wherever somebody has already typed. Printing
+«vormil eeltäidetud» over a box holding a person's own value would be the page
+stating something it cannot know, and it would take away the «Kasuta» they need
+to change their mind. So every candidate is offered, and the button itself says
+what happened: it is bound to the live control, so one the browser filled reads
+as chosen and one it declined reads as available.
+
 `CurrentValues()` is therefore empty on this surface, and that is honest rather
 than lazy: on an existing Matter the record is the thing a suggestion must not
 overwrite and the analyser is told what it holds; here the thing that must not
