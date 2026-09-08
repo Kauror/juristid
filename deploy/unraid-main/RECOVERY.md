@@ -32,7 +32,7 @@ backing up the wrong subset is worse.
 | Evidence | `…/juristid-main/evidence` | **canonical — must be backed up** |
 | OneNote page XML | `…/juristid-main/legacy-source` | **canonical — must be backed up** |
 | Derivatives | `…/juristid-main/derivatives` | rebuildable — needs no backup |
-| Held uploads | inside the container, `/app/pending-uploads` | ephemeral — needs no backup and no mount |
+| Held uploads and `Uus teema` staging | inside the container, `/app/pending-uploads` | ephemeral — needs no backup and no mount |
 | Search projection | inside PostgreSQL | rebuildable — comes back empty and is rebuilt |
 | Historical corpus | `/mnt/user/juristid-main/source` | source — read-only input, own recovery path |
 | Secrets | `…/juristid-main/config/juristid.env` | secret — never in a set; **where it is backed up is not recorded** (DR1-C) |
@@ -57,6 +57,25 @@ and the oldest of them is minutes old; losing every one of them to a container
 restart costs somebody one re-pick. So there is no volume, nothing to back up,
 and nothing to restore. They are swept by age on the next hold
 (`app/documents/pending.py`).
+
+**And the same directory now holds `Uus teema` staging, under `intake/`.** A
+file chosen while a Teema is being created is uploaded straight away so the
+extraction worker can read it and offer the deadline, the sender and the
+Menetlusliik back on the form; it becomes evidence only when `Loo teema`
+succeeds, through the ordinary services, from those exact bytes. Until then it
+is the same kind of thing as a held upload — one person's unfinished form,
+described by no register row, worth one re-pick if it is lost — so it shares
+the storage class and the same "no mount, no backup" answer (docs/adr/0064).
+
+Two operational differences from held uploads are worth knowing. Staged files
+*do* have rows describing them, in `matters_matterintakesession` and
+`matters_matterintakefile`, which are inside PostgreSQL and therefore inside the
+backup — restoring a set can leave rows whose bytes are gone, which is harmless:
+the session has expired by then and the sweeper removes it. And they are **not**
+swept by the held-upload path, which only looks at the root of the directory; a
+staging session is removed from its own row by `manage.py prune_intake_staging`,
+which an operator runs. Nothing schedules it, and it cannot touch evidence — it
+reads neither the evidence store nor `DocumentVersion`.
 
 ## Backing up
 

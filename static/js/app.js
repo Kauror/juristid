@@ -462,25 +462,42 @@
         }, POLL_MS);
       };
 
-      var stage = function () {
-        var fresh = Array.prototype.slice.call(fileInput.files || []).filter(function (file) {
-          return !sent.has(file);
-        });
-        if (!fresh.length) {
+      /* One list at a time. The browser's own preview is rebuilt from
+         `input.files` on every change and the staged list is rebuilt from the
+         server's answer, so while staging is working there must be exactly one
+         of them or the two disagree for as long as an upload takes — long
+         enough for somebody to press a × belonging to the list that is about
+         to be replaced. The browser's is the one that goes, because the
+         server's can say something it cannot: whether the file has been read.
+
+         If staging ever fails, this stops suppressing and the browser's list
+         comes back, because from then on it is the only true account of what
+         `Loo teema` will receive. */
+      var stagingWorks = true;
+      var hideChosenList = function () {
+        if (!stagingWorks) {
           return;
         }
+        fileList.textContent = "";
+        fileList.hidden = true;
+      };
+
+      var send = function (files) {
         var data = new FormData();
-        fresh.forEach(function (file) {
+        files.forEach(function (file) {
           data.append("files", file);
-          sent.add(file);
         });
         data.append("csrfmiddlewaretoken", csrf());
+        /* Read here rather than when the files were chosen. A second pick
+           while the first upload is still in flight must join the session the
+           first one created, not open a second — two sessions would mean the
+           form carrying one identifier and half the files being filed. */
         var current = token();
         if (current) {
           data.append("intake", current);
         }
         uploading(true);
-        fetch(stageUrl, { method: "POST", body: data, credentials: "same-origin" })
+        return fetch(stageUrl, { method: "POST", body: data, credentials: "same-origin" })
           .then(function (response) {
             /* A 400 carries the same fragment with the refusal on it, so it is
                read rather than thrown: the page has to be able to say which
@@ -503,13 +520,41 @@
           .catch(function () {
             /* The bytes are still in the input, so `Loo teema` still carries
                them and every one of them still becomes a Document. What is
-               lost is the reading, which is help rather than data. */
+               lost is the reading, which is help rather than data — and the
+               browser's own preview comes back, because from here on it is
+               what the save will actually receive. */
+            stagingWorks = false;
             uploading(false);
+            fileInput.dispatchEvent(new Event("change"));
           });
       };
 
+      /* Uploads run one at a time. Dropping a covering letter and then its
+         annex a moment later is two gestures somebody makes without waiting,
+         and in parallel the second would be sent before the first had created
+         the session for it to join. */
+      var queue = Promise.resolve();
+
       fileInput.addEventListener("change", function () {
-        stage();
+        /* Captured now, not when the turn comes: by then the input may have
+           been emptied by the upload in front of this one. A `change` is also
+           dispatched by the × control, by the held-file list and by this
+           module itself, so "what has the server not got" is the question
+           rather than "did something change". */
+        var fresh = Array.prototype.slice.call(fileInput.files || []).filter(function (file) {
+          return !sent.has(file);
+        });
+        if (!fresh.length) {
+          hideChosenList();
+          return;
+        }
+        fresh.forEach(function (file) {
+          sent.add(file);
+        });
+        hideChosenList();
+        queue = queue.then(function () {
+          return send(fresh);
+        });
       });
 
       dropzone.addEventListener("click", function (event) {

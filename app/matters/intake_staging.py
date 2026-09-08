@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Any
@@ -80,18 +81,33 @@ def _expiry() -> Any:
 # ---------------------------------------------------------------------------
 
 
+def _as_uuid(value: Any) -> uuid.UUID | None:
+    """A caller's identifier, or ``None`` if it is not one.
+
+    Parsed here rather than left to the queryset. Handing a malformed string to
+    a UUID column raises, and a 500 is a different answer from a 404 — which is
+    exactly the difference a caller probing for what exists would read
+    (`app.core.decorators`, task §23).
+    """
+    try:
+        return uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        return None
+
+
 def get_session(*, owner: Any, session_id: Any) -> MatterIntakeSession | None:
     """One usable staging session belonging to this person, or ``None``.
 
-    Fail-closed and silent about which of the three reasons applies: a session
-    that is somebody else's, one that has expired and one that a Matter has
-    already consumed all answer the same way. The caller turns ``None`` into
-    the project's 404, so a guessed identifier learns nothing — not even
-    whether it named a row (`app.core.decorators`, §33).
+    Fail-closed and silent about which of the four reasons applies: an
+    identifier that is not one, a session that is somebody else's, one that has
+    expired and one that a Matter has already consumed all answer the same way.
+    The caller turns ``None`` into the project's 404, so a guessed identifier
+    learns nothing — not even whether it named a row.
     """
-    if not session_id:
+    parsed = _as_uuid(session_id)
+    if parsed is None:
         return None
-    return MatterIntakeSession.objects.owned_by(owner).usable().filter(pk=session_id).first()
+    return MatterIntakeSession.objects.owned_by(owner).usable().filter(pk=parsed).first()
 
 
 def live_files(session: MatterIntakeSession) -> list[MatterIntakeFile]:
@@ -175,9 +191,12 @@ def remove_file(*, session: MatterIntakeSession, file_id: Any) -> bool:
     from what `Loo teema` promotes, and there is no window in which it is
     absent from one of the three and present in another.
     """
+    parsed = _as_uuid(file_id)
+    if parsed is None:
+        return False
     updated = (
         session.files.live()
-        .filter(pk=file_id)
+        .filter(pk=parsed)
         .update(removed_at=timezone.now(), updated_at=timezone.now())
     )
     return bool(updated)
