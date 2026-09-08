@@ -38,6 +38,11 @@ MY_WORK = "/minu-asjad/"
 UUS_ASI = "section[aria-label='Uus asi']"
 MARKMED = "section[aria-label='Märkmed']"
 
+#: The unread mark. A browser is the only place the last question about it can
+#: be answered — a class in the HTML says nothing about whether the character
+#: is actually red on the screen, and red was the whole request.
+MARK = ".newasjarow__mark"
+
 
 def _assign_new_matter(page, base_url: str, title: str, owner_short_name: str) -> str:
     """File a Teema through «Uus teema» and name who is to deal with it."""
@@ -53,6 +58,14 @@ def _assign_new_matter(page, base_url: str, title: str, owner_short_name: str) -
 
 def _block(page):
     return page.locator(UUS_ASI)
+
+
+def _rgb(computed: str) -> tuple[int, int, int]:
+    """`rgb(178, 60, 44)` as three numbers. Every browser reports colour this
+    way, whatever the stylesheet wrote."""
+    numbers = re.findall(r"\d+", computed)
+    assert len(numbers) >= 3, f"unreadable colour: {computed}"
+    return tuple(int(value) for value in numbers[:3])  # type: ignore[return-value]
 
 
 def _clear_the_block(page, base_url: str) -> None:
@@ -93,6 +106,23 @@ def test_an_assigned_matter_appears_opens_and_disappears(page, base_url):
     expect(_block(page).get_by_role("heading", name="Uus asi")).to_be_visible()
     expect(_block(page).get_by_role("button", name=title)).to_be_visible()
 
+    # -- and it is marked, in red, on the screen -------------------------
+    #
+    # The stylesheet says `var(--status-danger)`; only a browser can say what
+    # that resolved to after the theme, the cascade and the hover rule beside
+    # it had their turn. So the assertion is on the painted pixel colour:
+    # dominantly red, and different from the title it sits in front of.
+    mark = _block(page).locator(MARK).first
+    expect(mark).to_be_visible()
+    expect(mark).to_have_text("!")
+
+    red, green, blue = _rgb(mark.evaluate("el => getComputedStyle(el).color"))
+    assert red > green + 40 and red > blue + 40, f"the unread mark is not red: {red},{green},{blue}"
+    assert mark.evaluate("el => getComputedStyle(el).color") != _block(page).get_by_role(
+        "button", name=title
+    ).evaluate("el => getComputedStyle(el).color"), "the mark is the same colour as the title"
+    assert mark.get_attribute("aria-hidden") == "true"
+
     notices = _block(page).bounding_box()
     notes = page.locator(MARKMED).bounding_box()
     assert notices is not None and notes is not None
@@ -116,6 +146,8 @@ def test_an_assigned_matter_appears_opens_and_disappears(page, base_url):
     page.wait_for_load_state("networkidle")
     expect(_block(page)).to_have_count(0)
     expect(page.get_by_role("heading", name="Uus asi")).to_have_count(0)
+    # The mark is the notice being unread. Nothing was left behind to hide.
+    expect(page.locator(MARK)).to_have_count(0)
     # The rail is still a rail: nothing was reserved for the absent block.
     expect(page.locator(MARKMED)).to_have_count(1)
 

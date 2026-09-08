@@ -7404,11 +7404,13 @@ button.accordion__action:focus-visible {
   text-decoration: none;
 }
 
-/* «Uus asi». Deliberately the quiet rail row the block above it already uses —
-   no colour, no badge, no alert. It is noticeable because it is at the top of
-   the rail and because it is not there the rest of the time. The row is a
-   submit button because opening the Teema from here is what marks it seen, so
-   the button is reset to look like the link it stands in for. */
+/* «Uus asi». A rail row that was being read past: the block was noticeable only
+   by being at the top of the rail and absent the rest of the time, and that is
+   not enough for the one thing on this page somebody else put there. So the
+   row carries a single red «!» and nothing else changes — no red card, no
+   badge, no pulse. One mark, at the front of the title, where the eye lands.
+   The row is a submit button because opening the Teema from here is what marks
+   it seen, so the button is reset to look like the link it stands in for. */
 .newasjarow {
   padding: var(--spacing-2) 0;
   border-bottom: 1px solid var(--border-subtle);
@@ -7418,8 +7420,11 @@ button.accordion__action:focus-visible {
   border-bottom: none;
 }
 
+/* Flex, so a title that wraps hangs off the mark instead of running under it. */
 .newasjarow__title {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-1);
   width: 100%;
   padding: 0;
   border: 0;
@@ -7434,6 +7439,19 @@ button.accordion__action:focus-visible {
 
 .newasjarow__title:hover {
   color: var(--accent-link);
+}
+
+/* The unread mark. Danger red, because this is the established red of the
+   product and a second one would be a second vocabulary. Heavier and a size up
+   so it reads as a mark rather than as the first character of the title, and
+   `flex: none` so it keeps its width when the title wraps. The colour survives
+   the hover above, which recolours the title only. */
+.newasjarow__mark {
+  flex: none;
+  color: var(--status-danger);
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-bold);
+  line-height: 1;
 }
 
 .quietrow {
