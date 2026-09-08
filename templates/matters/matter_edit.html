@@ -109,63 +109,7 @@
         {% if form.owner.errors %}<span class="field__error">{{ form.owner.errors|first }}</span>{% endif %}
       </fieldset>
 
-      <fieldset class="field">
-        <legend class="field__label">
-          {{ form.source_organisations.label }}
-          <span class="field__count" data-chipcount-for="source_organisations"></span>
-        </legend>
-        {% comment %}
-          The frequent bodies as chips and the rest behind the disclosure —
-          plus, always, whatever this Matter already names: an edit page that
-          hid the current value inside a closed control would look like it had
-          cleared it.
-        {% endcomment %}
-        <div class="chiprow">
-          {% for choice in form.source_organisations %}
-            <label class="chip">
-              {{ choice.tag }}
-              <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-            </label>
-          {% endfor %}
-
-          <details class="chipdetails">
-            <summary class="chipdetails__summary">
-              Vali nimekirjast{% if form.sender_tail_count %} ({{ form.sender_tail_count }}){% endif %}
-            </summary>
-            <div class="chipdetails__body">
-              <label class="field chipdetails__search" data-choicefilter="muuda-saatja-nimekiri">
-                <span class="visually-hidden">Otsi asutust</span>
-                <input class="field__input field__input--compact" type="search"
-                       autocomplete="off" placeholder="Otsi asutust nime järgi">
-              </label>
-              <div class="chiprow" id="muuda-saatja-nimekiri">
-                {% for choice in form.source_organisations_other %}
-                  <label class="chip">
-                    {{ choice.tag }}
-                    <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-                  </label>
-                {% empty %}
-                  <p class="field__help">Kõik salvestatud asutused on juba ülal.</p>
-                {% endfor %}
-              </div>
-              {% comment %}
-                Saatja only. Its Adressaat twin is gone because that field now
-                accepts a typed name; sender auto-creation is a separate
-                decision nobody has taken, so this sentence stands (§11).
-              {% endcomment %}
-              <p class="field__help">
-                Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla —
-                teema vormilt uut asutust ei teki.
-              </p>
-            </div>
-          </details>
-        </div>
-        {% if form.source_organisations.errors %}
-          <span class="field__error">{{ form.source_organisations.errors|first }}</span>
-        {% elif form.source_organisations_other.errors %}
-          <span class="field__error">{{ form.source_organisations_other.errors|first }}</span>
-        {% endif %}
-      </fieldset>
+      {% include "matters/partials/sender_control.html" with list_id="muuda-saatja-nimekiri" %}
     </div>
 
     {# 5 — Valdkonnad, and the free text one of them reveals. #}
@@ -304,11 +248,11 @@
         </div>
         {% comment %}
           Free entry, the same control `Uus teema` carries and with the same
-          contract: `Saatja` stays existing-organisations-only, `Adressaat` may
-          be chosen or typed. A typed name reuses an exact or alias match and
-          otherwise creates the institution, inside this page's own save
-          transaction — a person must not have to learn two Adressaat workflows
-          for one field (§7, app/organisations/services.py).
+          contract — and since docs/adr/0063 the same contract `Saatja` carries
+          too, on its own `Uus saatja` box. A typed name reuses an exact or
+          alias match and otherwise creates the institution, inside this page's
+          own save transaction. One catalogue behind both fields; two questions
+          about it (§7, app/organisations/services.py).
 
           Typing wins over the selected chip, and here that is not a preference
           but the point: this radio group always carries the addressee the

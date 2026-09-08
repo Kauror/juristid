@@ -52,6 +52,7 @@ from app.core.dates import (
 from app.core.decorators import business_write_required
 from app.core.enums import Visibility
 from app.core.errors import DomainError
+from app.documents import pending as pending_uploads
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
 from app.documents.services import link_working_document
@@ -109,6 +110,7 @@ from app.matters.services import (
     personal_note_for,
     reopen_matter,
     resolve_addressee,
+    resolve_source_organisations,
     save_personal_note,
     set_brief_summary,
     set_matter_data_class,
@@ -537,6 +539,7 @@ def intake(request: HttpRequest) -> HttpResponse:
                     actor=request.user,
                     owner=data.get("owner"),
                     source_organisations=list(data.get("source_organisations") or []),
+                    sender_name=data.get("sender_name") or "",
                     received_date=data.get("received_date") or timezone.localdate(),
                     response_deadline=data.get("response_deadline"),
                     visibility=data.get("visibility") or Visibility.NORMAL,
@@ -1213,6 +1216,21 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     written: one rejected attachment must not leave a Matter behind carrying the
     other three, which is the failure mode the intake surface already avoids
     (Stage-2E.1 brief 23).
+
+    **A refusal keeps the files.** It did not, and that was the reported defect:
+    a browser cannot put a file back into a file input, so every answer that
+    re-rendered this form came back with the file area empty. Somebody who chose
+    a file, was told about a valdkond they had ticked without naming, corrected
+    it and pressed the button again filed a Matter with no documents — having
+    been told about neither the loss nor its consequence. The bytes had reached
+    the server and been validated by then; they were dropped because the answer
+    was a page rather than a redirect.
+
+    So the validated uploads are held for the length of the refusal, the
+    re-rendered form carries the keys naming them, and the next attempt resumes
+    them. They are unioned with anything chosen again, in the order they were
+    first offered, and they go through `_attach_incoming_file` exactly as they
+    would have the first time (app/documents/pending.py).
     """
     form = MatterCreateForm(request.POST or None, viewer=request.user)
     # Bound only when somebody actually asked for a next action. Bound
@@ -1238,23 +1256,46 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     action_form = NextActionForm(request.POST if wants_action else None, prefix="next")
     uploads: list[Any] = []
     upload_error = ""
+    # What an earlier refusal is holding, and which of it this attempt still
+    # wants. A key the session is not holding — a stale form, a second tab, a
+    # swept object — is simply not there; it is never a reason to refuse a save
+    # somebody can otherwise complete (app/documents/pending.py).
+    held_keys: list[str] = []
+    chosen: list[Any] = []
+    if request.method == "POST":
+        asked = [key for key in request.POST.getlist("pending") if key]
+        # Described first, so the keys carried forward are the ones this session
+        # is genuinely holding and a stale form does not keep re-offering a file
+        # that is no longer there.
+        held_keys = [item.key for item in pending_uploads.describe(request.session, asked)]
+        resumed = pending_uploads.resume(request.session, held_keys)
+        chosen, upload_error = _read_new_matter_files(request)
+        # Held first, then chosen: the order somebody offered them in. A file
+        # picked again after a refusal is a second file and is filed as one —
+        # the preview lists both, so nothing is deduplicated behind their back.
+        uploads = [*resumed, *chosen]
 
-    if request.method == "POST" and form.is_valid():
-        try:
-            uploads = _read_new_matter_files(request)
-        except (DomainError, UploadRejected) as error:
-            upload_error = str(error)
+        refused = bool(upload_error) or not form.is_valid()
+        if wants_action and not action_form.is_valid():
+            refused = True
 
-        if upload_error or (wants_action and not action_form.is_valid()):
+        if refused:
             if upload_error:
                 messages.error(request, upload_error)
+            # Everything that passed validation survives the refusal, including
+            # the good half of a batch whose other half was rejected. Files
+            # already held stay held — `resume` reads without consuming — so
+            # only what arrived on this request has to be added.
+            newly_held = pending_uploads.hold(request.session, chosen)
+            held_keys = [*held_keys, *(item.key for item in newly_held)]
             return render(
                 request,
                 "matters/matter_create.html",
-                _create_context(request, form, action_form),
+                _create_context(request, form, action_form, held_keys=held_keys),
                 status=400,
             )
 
+    if request.method == "POST" and form.is_valid():
         data = form.cleaned_data
         try:
             with transaction.atomic():
@@ -1268,6 +1309,14 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     chosen=data.get("addressee_organisation"),
                     typed_name=data.get("addressee_name") or "",
                 )
+                # And the sender side, which may now name a body the catalogue
+                # does not hold either. Same catalogue, same reuse-or-create
+                # rule, same transaction — a different question about it
+                # (`resolve_source_organisations`).
+                senders = resolve_source_organisations(
+                    chosen=data.get("source_organisations"),
+                    typed_name=data.get("sender_name") or "",
+                )
                 matter = create_matter(
                     title=data["title"],
                     actor=request.user,
@@ -1279,7 +1328,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     brief_summary=data.get("brief_summary") or "",
                     stage=data.get("stage"),
                     track=data.get("track") or "",
-                    source_organisations=list(data.get("source_organisations") or []),
+                    source_organisations=senders,
                     addressee_organisation=addressee,
                     received_date=data.get("received_date"),
                     response_deadline=data.get("response_deadline"),
@@ -1320,17 +1369,34 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     )
 
         except DomainError as error:
-            # An ambiguous typed addressee, or any other rule the services
-            # refuse. The transaction is already rolled back by the time
-            # this runs, so nothing — least of all a newly created
+            # An ambiguous typed sender or addressee, or any other rule the
+            # services refuse. The transaction is already rolled back by the
+            # time this runs, so nothing — least of all a newly created
             # institution — survives the refusal (§6).
+            #
+            # The files do, though, and they have to: this is the refusal
+            # somebody is most likely to hit twice while they work out which
+            # institution the catalogue means, and it is no more a reason to
+            # take their attachment away than a mistyped valdkond is.
             form.add_error(None, str(error))
+            newly_held = pending_uploads.hold(request.session, chosen)
             return render(
                 request,
                 "matters/matter_create.html",
-                _create_context(request, form, action_form),
+                _create_context(
+                    request,
+                    form,
+                    action_form,
+                    held_keys=[*held_keys, *(item.key for item in newly_held)],
+                ),
                 status=400,
             )
+
+        # The save survived, so the hold is over. Released after the commit
+        # rather than inside it: deleting the held bytes is not part of the
+        # business operation, and a delete that failed must not take a written
+        # Matter with it.
+        pending_uploads.release(request.session, held_keys)
 
         if uploads:
             messages.success(
@@ -1342,22 +1408,29 @@ def matter_create(request: HttpRequest) -> HttpResponse:
         # Straight into the file: creation is the start of work, not the end.
         return redirect("matters:matter_detail", pk=matter.pk)
 
-    # A refused save answers 400, the same as a rejected upload and a malformed
-    # `Järgmiseks` a few lines above. The form itself failing validation used to
-    # answer 200, which made the three refusals on one page indistinguishable to
-    # anything reading the status rather than the HTML.
-    status = 400 if request.method == "POST" else 200
+    # GET only. Every POST above returns: refused ones answer 400 from the
+    # branch that holds their files, and a successful one redirects. A refusal
+    # answering 200 used to make the three refusals on this page
+    # indistinguishable to anything reading the status rather than the HTML.
     return render(
         request,
         "matters/matter_create.html",
         _create_context(request, form, action_form),
-        status=status,
+        status=200,
     )
 
 
-def _create_context(request: HttpRequest, form: Any, action_form: Any) -> dict[str, Any]:
+def _create_context(
+    request: HttpRequest, form: Any, action_form: Any, *, held_keys: list[str] | None = None
+) -> dict[str, Any]:
     return {
         "form": form,
+        # The files a refusal is holding, described for the page: the same
+        # filename and size the browser's own preview shows, plus the key the
+        # next attempt carries them back on. Empty on every GET, so a fresh form
+        # never offers somebody an attachment they abandoned an hour ago
+        # (app/documents/pending.py).
+        "held_files": pending_uploads.describe(request.session, held_keys or []),
         "action_form": action_form,
         "frequent_senders": getattr(form, "frequent_senders", []),
         # `secondary_fields` is gone with the disclosure it fed. The template
@@ -1378,18 +1451,34 @@ def _create_context(request: HttpRequest, form: Any, action_form: Any) -> dict[s
     }
 
 
-def _read_new_matter_files(request: HttpRequest) -> list[Any]:
+def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], str]:
     """Read and validate every attachment before a single row is written.
 
     Reading is what validates: `read_upload` enforces the size, the MIME type
     and the signature rules the rest of the system already relies on. Doing all
     of it up front is the whole point — a Matter created with three of four
     files, and an error message about the fourth, is worse than no Matter.
+
+    Returns what passed *and* the first refusal, rather than raising on the bad
+    one and losing the good ones with it. The caller still refuses the save —
+    that rule is unchanged, and the batch is still all or nothing — but it can
+    now hold the three files that were fine while the person replaces the
+    fourth. Every file is read, so the message names the first problem and the
+    person is not told about them one save at a time.
     """
     from app.documents.uploads import read_upload
 
-    files = request.FILES.getlist("files")
-    return [read_upload(handle) for handle in files if handle]
+    accepted: list[Any] = []
+    refusal = ""
+    for handle in request.FILES.getlist("files"):
+        if not handle:
+            continue
+        try:
+            accepted.append(read_upload(handle))
+        except (DomainError, UploadRejected) as error:
+            if not refusal:
+                refusal = str(error)
+    return accepted, refusal
 
 
 def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
@@ -2388,7 +2477,10 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             # the addressee it already had (§6).
             set_organisations(
                 matter=matter,
-                source_organisations=list(data.get("source_organisations") or []),
+                source_organisations=resolve_source_organisations(
+                    chosen=data.get("source_organisations"),
+                    typed_name=data.get("sender_name") or "",
+                ),
                 addressee_organisation=resolve_addressee(
                     chosen=data.get("addressee_organisation"),
                     typed_name=data.get("addressee_name") or "",
@@ -2561,9 +2653,21 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
             # `list(...)` rather than the queryset, so an empty POST arrives as
             # `[]` — "clear every sender" — and never as the `_UNSET` that means
             # "leave them alone" (Agent-E brief 20, 34).
-            set_organisations(
-                matter=matter, source_organisations=list(value or []), actor=request.user
-            )
+            #
+            # Wrapped, because two writes have to survive or fail together: a
+            # typed name may create an institution, and `set_organisations`
+            # refusing afterwards must not leave it in the catalogue. Every
+            # other branch here is one service call and already atomic in
+            # itself (docs/adr/0063).
+            with transaction.atomic():
+                set_organisations(
+                    matter=matter,
+                    source_organisations=resolve_source_organisations(
+                        chosen=list(value or []),
+                        typed_name=form.cleaned_data.get("sender_name") or "",
+                    ),
+                    actor=request.user,
+                )
         elif field == "addressee_organisation":
             set_organisations(matter=matter, addressee_organisation=value, actor=request.user)
         elif field == "received_date":

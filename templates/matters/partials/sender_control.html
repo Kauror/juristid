@@ -1,0 +1,114 @@
+{% comment %}
+Saatja, on every surface that captures one.
+
+Three surfaces used to write this block out three times — `Uus teema`,
+`Muuda teemat` and `Saabunud` — and they had already drifted: one said «Vali
+nimekirjast (15)», one said «Vali nimekirjast», and all three carried a sentence
+that is no longer true. A person should not learn one sender workflow filing a
+Teema, a second correcting it and a third at intake, so there is one control and
+it lives here (§2E).
+
+**What changed, and why.**
+
+The old shape was a row of chips and a closed `<details>` reading «Vali
+nimekirjast (15)», with the search inside it and a sentence at the bottom
+saying the thing you had come looking for could not be done here:
+
+    Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla —
+    teema vormilt uut asutust ei teki.
+
+Every part of that was a step away from the work. The shortlist could collapse
+to one chip on a young dataset (`organisations_by_usage`), the search that would
+have found the other forty was behind a door nobody had a reason to open, and
+the answer to «it is not here» was: abandon this Teema, go to Asutused, create
+the body, come back and find your place again. Nobody did that. They filed the
+Teema with no sender.
+
+So the three operations are all on the page, in the order somebody reaches for
+them:
+
+1. **the shortlist** — about eight bodies, ranked by what this reader actually
+   works with and filled out deterministically rather than left short;
+2. **the search** — always visible, over the *whole* catalogue, and a filter and
+   nothing else: it hides chips that do not match and never hides a ticked one,
+   because hiding a checkbox does not clear it;
+3. **`Uus saatja`** — a box for a body the catalogue does not hold.
+
+**Two controls, on purpose.** The search box posts nothing. If it did, somebody
+who typed «Kliima», watched the list narrow to `Kliimaministeerium` and ticked
+it would also have filed a new institution called «Kliima». One control filters
+what exists; the other says «this is a body you do not have»
+(`app.matters.forms.sender_name_field`).
+
+Nothing here decides what a typed name *means*. It reaches
+`app.matters.services.resolve_source_organisations`, which reuses an exact or
+alias match, creates only a genuinely new body, and refuses a spelling that
+already names two — the same rules, the same catalogue and the same transaction
+as the Adressaat field beside it. Saatja and Adressaat remain different
+questions about one catalogue of institutions, never two catalogues
+(docs/adr/0063).
+
+Progressive enhancement throughout. With scripting off the shortlist and the
+whole catalogue are visible and tickable, and `Uus saatja` is an ordinary text
+box; only the filtering and the chip count are missing.
+
+Callers pass `list_id`, because two of these on one page would otherwise share
+an id — and `data-choicefilter` finds its list by that id.
+{% endcomment %}
+<fieldset class="field senderpick">
+  <legend class="field__label">
+    {{ form.source_organisations.label }}
+    <span class="field__count" data-chipcount-for="source_organisations"></span>
+  </legend>
+
+  <div class="chiprow">
+    {% for choice in form.source_organisations %}
+      <label class="chip">
+        {{ choice.tag }}
+        <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+      </label>
+    {% endfor %}
+  </div>
+
+  <label class="field senderpick__search"
+         data-choicefilter="{{ list_id }}" data-choicefilter-compact>
+    <span class="visually-hidden">Otsi asutust nime järgi</span>
+    <input class="field__input field__input--compact" type="search"
+           autocomplete="off" placeholder="Otsi asutust nime järgi…">
+  </label>
+  {% comment %}
+    A result area, not a disclosure and not a wall.
+
+    The whole catalogue is in the document — that is what makes hiding any of
+    it allowed, because with scripting off this is an ordinary list of
+    checkboxes and every body is reachable. What scripting adds is that an
+    empty search box shows nothing but the bodies already ticked, and typing
+    shows what matches, bounded and scrollable so a catalogue of hundreds still
+    leaves this a row rather than a column of the form
+    (`data-choicefilter-compact`, static/css/app.css `.chiprow--catalogue`).
+  {% endcomment %}
+  <div class="chiprow chiprow--catalogue" id="{{ list_id }}">
+    {% for choice in form.source_organisations_other %}
+      <label class="chip">
+        {{ choice.tag }}
+        <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+      </label>
+    {% empty %}
+      <p class="field__help">Kõik salvestatud asutused on juba ülal.</p>
+    {% endfor %}
+  </div>
+
+  <label class="field senderpick__new">
+    <span class="field__label">{{ form.sender_name.label }}</span>
+    {{ form.sender_name }}
+    {% if form.sender_name.errors %}
+      <span class="field__error">{{ form.sender_name.errors|first }}</span>
+    {% endif %}
+  </label>
+
+  {% if form.source_organisations.errors %}
+    <span class="field__error">{{ form.source_organisations.errors|first }}</span>
+  {% elif form.source_organisations_other.errors %}
+    <span class="field__error">{{ form.source_organisations_other.errors|first }}</span>
+  {% endif %}
+</fieldset>

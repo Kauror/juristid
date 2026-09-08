@@ -75,6 +75,15 @@ Radio groups (Vastutaja, Hetkeseis, Menetlusliik) use identical chips; only one 
 
 ## 5. Sender and addressee long tail
 
+> **Superseded by docs/adr/0063 (2026-09-08), for the sender half only.** This
+> section is kept as the record of what was briefed and built in that round; it
+> no longer describes the page. The `<details>` labelled "Vali nimekirjast (N)"
+> is gone from Saatja, the search that was inside it is on the page, and the
+> closing sentence quoted below went with the rule it stated — a sender may now
+> be named through a `Uus saatja` box, resolved against the same catalogue and
+> in the same transaction as a typed addressee. Everything else in this section
+> stands.
+
 Frequent organisations render as chips inline. `source_organisations_other` moves behind a chip-shaped `<details>` labelled "Vali nimekirjast (N)". Inside: the existing search input (progressive enhancement — it narrows the chips below and nothing else) and the remaining organisations as chips. The closing sentence stays exactly as written today:
 
 > Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla — teema vormilt uut asutust ei teki.

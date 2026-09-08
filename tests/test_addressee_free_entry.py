@@ -563,9 +563,10 @@ def test_the_obsolete_helper_sentence_is_gone_from_both_forms(signed_in, special
     done, and a paragraph explaining a field is a field that needed explaining.
     """
     obsolete = "Kui adressaati siin ei ole"
-    # The Saatja sentence is word-for-word analogous and stays: sender
-    # auto-creation is a separate decision nobody has taken (§11).
-    kept = "Kui saatjat siin ei ole"
+    # The Saatja sentence was word-for-word analogous and stood while sender
+    # creation was still forbidden. docs/adr/0063 withdrew that rule, so it goes
+    # for the same reason its twin did — the control says what can be done.
+    obsolete_sender = "Kui saatjat siin ei ole"
     matter = factories.MatterFactory(owner=specialist)
 
     for body in (
@@ -573,8 +574,8 @@ def test_the_obsolete_helper_sentence_is_gone_from_both_forms(signed_in, special
         signed_in.get(_edit(matter)).content.decode(),
     ):
         assert obsolete not in body
-        assert "teema vormilt uut asutust ei teki" not in body.split(kept)[0]
-        assert kept in body
+        assert obsolete_sender not in body
+        assert "teema vormilt uut asutust ei teki" not in body
 
 
 def test_both_teema_forms_offer_the_same_addressee_control(signed_in, specialist):

@@ -184,6 +184,7 @@ def test_an_environment_without_real_data_is_accepted(value: str) -> None:
         ("EVIDENCE_ROOT", "/app/evidence/1c9f/2a"),
         ("DERIVATIVE_ROOT", "/app/derivatives"),
         ("LEGACY_SOURCE_ROOT", "/app/legacy-source"),
+        ("PENDING_UPLOAD_ROOT", "/app/pending-uploads"),
     ],
 )
 def test_a_deployments_storage_root_is_refused(variable: str, path: str) -> None:

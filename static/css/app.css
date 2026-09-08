@@ -1377,6 +1377,13 @@ p.formnote {
   margin: 0;
 }
 
+/* `Uus saatja`, under the list it is not part of. Full width of the popover so
+   a ministry's name has somewhere to go, and separated from the checkboxes
+   above by the stacked form's own gap (docs/adr/0063). */
+.inlineform__newname {
+  width: 100%;
+}
+
 .tabs {
   display: flex;
   gap: var(--spacing-6);
@@ -3788,6 +3795,15 @@ a.barchart__row:hover {
   list-style: none;
 }
 
+/* `display: grid` above is an author rule and beats the user agent's
+   `[hidden] { display: none }`. It never showed while the only hidden list was
+   the empty one the browser fills, and it would have the moment a list with
+   rows in it was hidden — which `#hoitud-failid` does when its last held file
+   is taken back off (static/js/app.js). */
+.dropzone__list[hidden] {
+  display: none;
+}
+
 /* -- the register's search box --------------------------------------------- *
  *
  * A search that answers while you type. The form is a real GET form and the
@@ -4406,13 +4422,10 @@ a.barchart__row:hover {
   font-size: var(--typography-size-meta);
 }
 
-.dropzone__kind {
-  flex: none;
-  font-size: var(--typography-size-chip-sm);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-chip);
-  color: var(--status-success);
-}
+/* `.dropzone__kind` stood here and is gone with the badge it styled. The green
+   left border on `.dropzone__file` above still carries the "this is evidence"
+   signal the word was repeating, without spending the first words of every row
+   on it. */
 
 .dropzone__name {
   flex: 1 1 auto;
@@ -4457,6 +4470,22 @@ a.barchart__row:hover {
   position: relative;
   display: inline-flex;
   max-width: 100%;
+}
+
+/* The rule that made the search box work.
+ *
+ * `bindChoiceFilters` narrows a rendered list by setting `hidden` on the chips
+ * that do not match, and `display: inline-flex` above is an author rule — it
+ * beats the user agent's `[hidden] { display: none }`, so every chip stayed
+ * exactly where it was and typing into «Otsi asutust nime järgi» did nothing at
+ * all. The filter has been there since the disclosure was; it has never once
+ * removed a chip from the screen.
+ *
+ * `.checkitem` is the same control on every surface that is not Uus teema and
+ * has the same `display`, so it has the same rule (static/js/app.js). */
+.chip[hidden],
+.checkitem[hidden] {
+  display: none;
 }
 
 /* An explained chip is a wrapper, not a label: its tooltip has to live beside
@@ -4632,6 +4661,58 @@ a.barchart__row:hover {
      than lengthening the page under everything below it. */
   max-height: 220px;
   overflow-y: auto;
+}
+
+/* -- Saatja: shortlist, search and a box for a body we do not have --------- *
+ *
+ * The three operations sit in one column with nothing folded away. What was
+ * here before was a chip row and a closed `<details>` reading «Vali
+ * nimekirjast (15)» — with the search inside it, and a sentence inside it
+ * saying the thing you had opened it for could not be done at all
+ * (docs/adr/0063).
+ *
+ * No component of its own beyond the spacing: the chips are `.chip`, the search
+ * is a `.field`, `Uus saatja` is a `.field`. The only genuinely new rule is the
+ * height cap below, and it is the one thing the disclosure used to buy.
+ */
+
+.senderpick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+.senderpick__search {
+  max-width: 20rem;
+  margin-top: var(--spacing-1);
+}
+
+.senderpick__new {
+  max-width: 20rem;
+}
+
+/* A catalogue of ministries is long, and it is on the page now rather than
+   behind a door. It scrolls inside its own box rather than lengthening the form
+   under everything below it — the same 220px the disclosure gave it, so a row
+   that was reachable by scrolling still is. */
+.chiprow--catalogue {
+  margin-top: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  align-content: flex-start;
+  padding: var(--spacing-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
+/* `.chiprow` sets `display: flex`, and an author rule beats the user agent's
+   `[hidden] { display: none }` — so a list the filter has emptied would stay a
+   bordered empty panel without this. It is what makes the result area absent at
+   rest rather than merely blank. */
+.chiprow--catalogue[hidden] {
+  display: none;
 }
 
 /* -- Hetkeseis: the chip that explains itself ------------------------------ */

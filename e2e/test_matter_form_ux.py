@@ -33,10 +33,6 @@ def create_form(page, base_url) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def open_details(page, summary: str) -> None:
-    page.locator("summary", has_text=summary).first.click()
-
-
 # ---------------------------------------------------------------------------
 # Hetkeseis and Menetlusliik
 # ---------------------------------------------------------------------------
@@ -143,13 +139,14 @@ def test_several_policy_areas_can_be_ticked_at_once(page, base_url):
 
 
 # ---------------------------------------------------------------------------
-# The sender disclosure
+# The sender control
 # ---------------------------------------------------------------------------
 
 
-def test_the_other_sender_panel_does_not_repeat_the_chips_above_it(page, base_url):
+def test_the_catalogue_list_does_not_repeat_the_shortlist_above_it(page, base_url):
     """ "Muu / lisa saatja" used to reopen the same list, which read as a second
-    sender control disagreeing with the first."""
+    sender control disagreeing with the first. It is no longer behind a
+    disclosure, and it still must not repeat the chips (docs/adr/0063)."""
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
@@ -157,23 +154,52 @@ def test_the_other_sender_panel_does_not_repeat_the_chips_above_it(page, base_ur
     expect(frequent.first).to_be_visible()
     chips = set(frequent.evaluate_all("nodes => nodes.map(node => node.value)"))
 
-    open_details(page, "Vali nimekirjast")
     rest = page.locator('input[type="checkbox"][name="source_organisations_other"]')
     listed = set(rest.evaluate_all("nodes => nodes.map(node => node.value)"))
 
-    assert chips.isdisjoint(listed), "the disclosure repeats the chips above it"
+    assert chips.isdisjoint(listed), "the catalogue list repeats the chips above it"
 
 
-def test_the_form_says_where_a_missing_institution_comes_from(page, base_url):
-    """Rather than inviting somebody to type a second spelling of a ministry
-    into a matter form and mint a reference record with it."""
+def test_the_whole_catalogue_is_searchable_without_opening_anything(page, base_url):
+    """The complaint this round answers: the search was behind «Vali
+    nimekirjast», so the way to find a body that was not a chip was invisible
+    to somebody who had no reason to open a door labelled with a number."""
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
-    open_details(page, "Vali nimekirjast")
 
-    # `.first`, because the page holds more than one disclosure body and
-    # Playwright refuses an ambiguous locator rather than picking one.
-    expect(page.get_by_text("asutuste alla", exact=False).first).to_be_visible()
+    search = page.locator("[data-choicefilter='saatja-nimekiri'] input")
+    expect(search).to_be_visible()
+
+    # The catalogue is in the document, so nothing is unreachable with
+    # scripting off; what a query does is show it.
+    rows = page.locator("#saatja-nimekiri .chip")
+    if rows.count():
+        search.fill(rows.first.inner_text().strip()[:4])
+        expect(rows.first).to_be_visible()
+
+    # No sender disclosure left to open. Adressaat still has one, so this is
+    # scoped to the sender field rather than asserted about the whole page.
+    assert page.locator(".senderpick details").count() == 0
+
+
+def test_the_form_answers_a_missing_institution_instead_of_redirecting_it(page, base_url):
+    """It used to say «tuleb asutus enne lisada asutuste alla» and mean it.
+
+    The sentence described a workflow — leave the Teema, create the body under
+    Asutused, come back and find your place — that nobody performed; they filed
+    the Teema with no sender. The answer to «it is not here» is now a box on the
+    page, and the sentence is gone with the rule it stated (docs/adr/0063).
+
+    Nothing has to be opened to reach either. That is the other half of the
+    change: the shortlist, the search over the whole catalogue and `Uus saatja`
+    are all visible at rest.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+
+    assert "asutuste alla" not in page.content()
+    expect(page.get_by_label("Uus saatja")).to_be_visible()
+    expect(page.locator("[data-choicefilter='saatja-nimekiri'] input")).to_be_visible()
 
 
 # ---------------------------------------------------------------------------

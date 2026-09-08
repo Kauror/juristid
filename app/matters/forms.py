@@ -183,6 +183,52 @@ def offered_policy_areas() -> list[PolicyArea]:
     return list(selectable_policy_areas())
 
 
+def _typed_organisation_field(label: str) -> forms.CharField:
+    """A box for naming an institution the catalogue may not hold yet.
+
+    One definition, two counterparty fields. `Adressaat` has had this since the
+    typed-addressee round; `Saatja` gained it when the rule that no institution
+    may be created from a Teema form was withdrawn — see
+    `resolve_source_organisations` for what that decision was and what replaced
+    it. The two remain *different questions* about the same catalogue, so they
+    are two fields with two labels and one implementation.
+    """
+    return forms.CharField(
+        label=label,
+        # `Organisation.name` is 300, so a name this field accepted and the
+        # service could not store is not a state either of them can reach.
+        max_length=300,
+        required=False,
+        strip=True,
+        widget=forms.TextInput(
+            attrs={
+                "class": "field__input field__input--compact",
+                "autocomplete": "off",
+                "placeholder": "Kirjuta asutuse nimi",
+            }
+        ),
+    )
+
+
+def sender_name_field() -> forms.CharField:
+    """`Saatja`'s typed half, on every surface that captures a sender.
+
+    New, and it replaces a rule rather than a control: this field is what the
+    sentence «Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla»
+    used to stand in for. Leaving a half-filled Teema, navigating to Asutused,
+    creating a body and coming back to find it again is not a workflow anybody
+    used; they filed the Teema with no sender.
+
+    Its own control and never a `name` on the search box beside it, for exactly
+    the reason spelled out under `addressee_name_field`: one control filters
+    what exists, the other says «this is a body you do not have».
+
+    Nothing is created here. `app.matters.services.resolve_source_organisations`
+    decides what the typed name means, inside the save's own transaction.
+    """
+    return _typed_organisation_field("Uus saatja")
+
+
 def addressee_name_field() -> forms.CharField:
     """`Adressaat`'s typed half, on both Teema forms.
 
@@ -200,29 +246,15 @@ def addressee_name_field() -> forms.CharField:
     filter, or name a body that is not here — is what makes the difference
     between them decidable on the server (§10).
 
-    Nothing is created here. `clean_addressee_name` trims and length-caps the
+    Nothing is created here. `clean_typed_organisation_name` trims and length-caps the
     text; `app.matters.services.resolve_addressee` decides what it means, and
     does so inside the save's own transaction (§5, §6).
     """
-    return forms.CharField(
-        label="Uus adressaat",
-        # `Organisation.name` is 300, so a name this field accepted and the
-        # service could not store is not a state either of them can reach.
-        max_length=300,
-        required=False,
-        strip=True,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "autocomplete": "off",
-                "placeholder": "Kirjuta asutuse nimi",
-            }
-        ),
-    )
+    return _typed_organisation_field("Uus adressaat")
 
 
-def clean_addressee_name(value: str | None) -> str:
-    """Collapse the typed institution name. Resolve nothing.
+def clean_typed_organisation_name(value: str | None) -> str:
+    """Collapse a typed institution name. Resolve nothing.
 
     Whitespace is collapsed the way `app.core.text.normalize_for_matching`
     collapses it, so «Majandus-  ja   Kommunikatsiooniministeerium» and the
@@ -235,37 +267,107 @@ def clean_addressee_name(value: str | None) -> str:
     return " ".join((value or "").split())
 
 
-def organisations_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
-    """The senders this department actually hears from, most frequent first.
+#: How many bodies the sender control offers without being asked. Eight is what
+#: fits the row at the widths this form is used at, and it is a *target* rather
+#: than a maximum on relevance: see `organisations_by_usage`, which fills the
+#: eight rather than offering however many happen to have sender history.
+SENDER_SHORTLIST_SIZE = 8
 
-    Same authorization reasoning as the policy areas, and the same refusal to
-    hard-code: which ministry is most active changes with the government, and a
-    list written into the source would be wrong within a year.
+
+def _usage_order(viewer: Any, field: str, limit: int) -> list[Any]:
+    """Primary keys of the organisations most used in one direction, best first.
+
+    Scoped by `visible_to`, which is the whole authorization story: a Matter
+    this reader may not see contributes nothing to the order they are shown, so
+    no ranking can disclose that a restricted file exists or who sent it.
     """
     from app.matters.models import Matter
 
     usage = (
         Matter.objects.visible_to(viewer)
-        .filter(source_organisations__isnull=False)
+        .filter(**{f"{field}__isnull": False})
         # Cleared first, then re-ordered by the aggregate. The default ordering
         # would otherwise join the GROUP BY and give every organisation a count
         # of one (see `policy_areas_by_usage`).
         .order_by()
-        .values("source_organisations")
+        .values(field)
         # Distinct *Matters* per organisation, which is what makes the plural
         # relation count correctly in both directions. A Matter sent by two
         # bodies contributes one to each of them, and a Matter with three
         # collaborators still contributes one — the sender join and the
-        # visibility join both fan out, and `Count("source_organisations")`
-        # would have counted the rows either of them produced.
+        # visibility join both fan out, and `Count(...)` would have counted the
+        # rows either of them produced.
         .annotate(total=scoped_count())
         .order_by("-total")[:limit]
     )
-    ranking = {row["source_organisations"]: index for index, row in enumerate(usage)}
-    if not ranking:
-        return list(Organisation.objects.order_by("name")[:limit])
-    found = Organisation.objects.filter(pk__in=ranking)
-    return sorted(found, key=lambda organisation: ranking[organisation.pk])
+    return [row[field] for row in usage]
+
+
+def organisations_by_usage(
+    viewer: Any, *, limit: int = SENDER_SHORTLIST_SIZE
+) -> list[Organisation]:
+    """The bodies to offer as senders without being asked, best first.
+
+    Three sources, in descending order of how much they actually say about this
+    reader's work, and the later ones exist only to *fill* what the earlier ones
+    left empty:
+
+    1. **used as a sender on Matters this reader can see**, most often first.
+       The real signal, and the only one that is about senders at all.
+    2. **used as an addressee on Matters this reader can see.** A weaker signal
+       and deliberately a different fact — who writes to Koda and who Koda
+       writes to are not the same list — but a ministry this department
+       corresponds with is a better guess than the alphabet.
+    3. **the catalogue, alphabetically.** Deterministic, so two readers with no
+       history see the same eight and neither sees one.
+
+    The layering is the fix for what this used to do. It ranked senders and
+    stopped: a department whose new-system records happened to name one sender
+    got a "quick choice" row holding exactly one chip, with every other body —
+    including the nine it writes to every week — behind a disclosure. Falling
+    back only when there was *nothing* at all meant the empty case was handled
+    and the nearly-empty case, which is the one a young dataset is actually in,
+    was not.
+
+    This is presentation ordering and nothing else. Which bodies are valid
+    senders is unchanged (all of them), what a sender *means* is unchanged, and
+    no Matter's stored relations are read for anything but the count.
+
+    Authorization is `visible_to` on both usage passes, so a restricted Matter
+    cannot move a chip and cannot put a body on this row that the reader would
+    otherwise have no reason to see there.
+    """
+    order: list[Any] = []
+    seen: set[Any] = set()
+
+    def take(pks: list[Any]) -> None:
+        for pk in pks:
+            if pk not in seen:
+                seen.add(pk)
+                order.append(pk)
+
+    take(_usage_order(viewer, "source_organisations", limit))
+    if len(order) < limit:
+        # Asked only when the sender history did not fill the row, so a
+        # department with eight active senders never pays for this query.
+        take(_usage_order(viewer, "addressee_organisation", limit))
+
+    order = order[:limit]
+    # One query for the rows, whatever the two passes above found. Ranked in
+    # Python rather than in SQL, because the order is the union's and not any
+    # single query's.
+    found = {
+        organisation.pk: organisation for organisation in Organisation.objects.filter(pk__in=order)
+    }
+    shortlist = [found[pk] for pk in order if pk in found]
+
+    if len(shortlist) < limit:
+        shortlist.extend(
+            Organisation.objects.exclude(pk__in=[item.pk for item in shortlist]).order_by("name")[
+                : limit - len(shortlist)
+            ]
+        )
+    return shortlist
 
 
 def addressees_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
@@ -279,18 +381,16 @@ def addressees_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
     `scoped_count` for the same reason the sender list uses it: the visibility
     join fans out over collaborators, and `Count("id")` inside a `GROUP BY`
     would count join rows (app/core/authorization.py).
-    """
-    from app.matters.models import Matter
 
-    usage = (
-        Matter.objects.visible_to(viewer)
-        .filter(addressee_organisation__isnull=False)
-        .order_by()
-        .values("addressee_organisation")
-        .annotate(total=scoped_count())
-        .order_by("-total")[:limit]
-    )
-    ranking = {row["addressee_organisation"]: index for index, row in enumerate(usage)}
+    Unlike the sender shortlist, this one is not topped up from the other
+    direction — and it does not need to be. Adressaat renders the *whole*
+    catalogue as one radio group, shortlist first and the rest behind it, so a
+    short shortlist moves a body down the page rather than off it. The sender
+    row had no such guarantee, which is why the layering lives there.
+    """
+    ranking = {
+        pk: index for index, pk in enumerate(_usage_order(viewer, "addressee_organisation", limit))
+    }
     if not ranking:
         return list(Organisation.objects.order_by("name")[:limit])
     found = Organisation.objects.filter(pk__in=ranking)
@@ -424,26 +524,31 @@ class MatterCreateForm(forms.Form):
         # was right for the model it had; both moved together (Agent-E brief 28).
         widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
     )
-    #: The long tail. Shown only when the reader asks for it, and validated
-    #: against the same queryset, so this is a second way to pick existing
-    #: organisations rather than a way to invent one.
+    #: The rest of the catalogue, rendered beside the shortlist rather than
+    #: behind a disclosure. The rendered choices exclude the chips above, so the
+    #: same body is never offered twice.
     #:
-    #: Two things changed here. The rendered choices now *exclude* the frequent
-    #: chips above, because a disclosure headed "Muu saatja" that reopened the
-    #: same ten bodies read as a second, contradictory sender control — the
-    #: screenshot complaint this addresses. And it is checkboxes rather than an
-    #: eight-row multiple select, so ticking two does not depend on knowing to
-    #: hold Ctrl (Agent-UI brief 6.1).
+    #: It stopped being a `<details>` when the sender control was reworked: a
+    #: door reading «Vali nimekirjast (15)» is a door somebody has to guess is
+    #: worth opening, and the search that narrows the catalogue was behind it.
+    #: The search is on the page now and this is what it filters — bounded and
+    #: scrollable, so a catalogue that grows does not become a wall
+    #: (static/css/app.css `.chiplist`).
     #:
     #: The queryset stays the whole catalogue. Validation must accept an
-    #: organisation this reader's frequent list happens to contain, or a POST
-    #: from a colleague with a different history would be refused as invalid.
+    #: organisation this reader's shortlist happens to contain, or a POST from a
+    #: colleague with a different history would be refused as invalid.
     source_organisations_other = forms.ModelMultipleChoiceField(
         label="Muu saatja",
         queryset=Organisation.objects.none(),
         required=False,
         widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
     )
+    #: Saatja's typed half. The same contract Adressaat has had since the typed
+    #: addressee round, on the field that was explicitly denied it — see
+    #: `app.matters.services.resolve_source_organisations` for the decision that
+    #: replaced «teema vormilt uut asutust ei teki».
+    sender_name = sender_name_field()
     #: Still one organisation, and still a radio, because `Matter` holds one
     #: addressee. The approved design draws it as a multi-select mirroring what
     #: ADR 0025 did for senders — a file can be answered to a ministry and a
@@ -565,7 +670,10 @@ class MatterCreateForm(forms.Form):
         return cleaned
 
     def clean_addressee_name(self) -> str:
-        return clean_addressee_name(self.cleaned_data.get("addressee_name"))
+        return clean_typed_organisation_name(self.cleaned_data.get("addressee_name"))
+
+    def clean_sender_name(self) -> str:
+        return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
 
     @property
     def data_class(self) -> str:
@@ -618,10 +726,14 @@ class MatterCreateForm(forms.Form):
             senders.choices = [
                 (organisation.pk, organisation.name) for organisation in self.frequent_senders
             ]
-            # The disclosure holds what the chips do not. Offering the same ten
-            # bodies twice is what made "Muu / lisa saatja" read as a second
-            # sender control that contradicted the first — and it is why nobody
-            # could find the body that genuinely was not on the list.
+            # The rest of the catalogue, beside the chips rather than behind a
+            # door. Offering the same bodies twice is what made "Muu / lisa
+            # saatja" read as a second sender control that contradicted the
+            # first, so the shortlist is excluded here.
+            #
+            # `sender_tail_count` went with the disclosure it labelled. It
+            # existed only so «Vali nimekirjast» could carry a number, and a
+            # list that is simply on the page does not need one counted for it.
             frequent = {organisation.pk for organisation in self.frequent_senders}
             rest = cast(Any, self.fields["source_organisations_other"])
             rest.choices = [
@@ -629,11 +741,6 @@ class MatterCreateForm(forms.Form):
                 for organisation in Organisation.objects.order_by("name")
                 if organisation.pk not in frequent
             ]
-            # What the disclosure's own label says it holds. Counted here
-            # because a template cannot take the length of a choice iterator,
-            # and "Vali nimekirjast" with no number is a door with nothing
-            # written on it.
-            self.sender_tail_count = len(rest.choices)
 
             # Adressaat is one radio group rendered in two places: the bodies
             # this department answers most often as chips, the rest inside the
@@ -667,7 +774,6 @@ class MatterCreateForm(forms.Form):
             self.addressee_tail_count = len(tail)
         else:
             self.frequent_senders = []
-            self.sender_tail_count = 0
             self.frequent_addressees = []
             self.addressee_offered = []
             # No viewer means no usage to rank by, so there is no shortlist and
@@ -768,15 +874,19 @@ class MatterEditForm(forms.Form):
         required=False,
         widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
     )
-    #: The long tail, exactly as `Uus teema` splits it. Two fields rather than
-    #: one because a checkbox group cannot be split without splitting the field;
-    #: `clean` unions them back into one answer.
+    #: The rest of the catalogue, exactly as `Uus teema` splits it. Two fields
+    #: rather than one because a checkbox group cannot be split without
+    #: splitting the field; `clean` unions them back into one answer.
     source_organisations_other = forms.ModelMultipleChoiceField(
         label="Muu saatja",
         queryset=Organisation.objects.none(),
         required=False,
         widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
     )
+    #: And Saatja's typed half, so correcting a Teema offers what filing one
+    #: does. A person who learns one sender workflow must not find a different
+    #: one on the next screen (§2E).
+    sender_name = sender_name_field()
     addressee_organisation = forms.ModelChoiceField(
         label="Kellele",
         queryset=Organisation.objects.none(),
@@ -876,7 +986,6 @@ class MatterEditForm(forms.Form):
         rest = cast(Any, self.fields["source_organisations_other"])
         tail = [item for item in organisations if item.pk not in known]
         rest.choices = [(item.pk, item.name) for item in tail]
-        self.sender_tail_count = len(tail)
 
         # Adressaat is one radio group rendered in two places. One group and one
         # name, because it holds one value — the senders need two *fields* only
@@ -934,7 +1043,10 @@ class MatterEditForm(forms.Form):
         return cleaned
 
     def clean_addressee_name(self) -> str:
-        return clean_addressee_name(self.cleaned_data.get("addressee_name"))
+        return clean_typed_organisation_name(self.cleaned_data.get("addressee_name"))
+
+    def clean_sender_name(self) -> str:
+        return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
 
     def clean_title(self) -> str:
         value = (self.cleaned_data.get("title") or "").strip()
@@ -1958,6 +2070,10 @@ class MatterFieldForm(forms.Form):
     addressee_organisation = forms.ModelChoiceField(
         queryset=Organisation.objects.none(), required=False
     )
+    #: Saatja's typed half on the rail's own editor, so the fourth place a
+    #: sender can be set is not the one place a body cannot be named
+    #: (docs/adr/0063, `resolve_source_organisations`).
+    sender_name = sender_name_field()
     # Estonian-reading, like every other date box. These post from the header's
     # inline edits, which submitted ISO from a native control and now submit
     # `7.9.2026` from a text one; ISO stays accepted so nothing that already
@@ -1999,6 +2115,9 @@ class MatterFieldForm(forms.Form):
         # area ticked, which would make correcting one field on an old Matter
         # impossible without silently dropping its filing (Teema redesign §7.2).
         set_choices(self, "policy_areas", PolicyArea.objects.all())
+
+    def clean_sender_name(self) -> str:
+        return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
 
 
 class EngagementForm(forms.Form):
@@ -2236,6 +2355,10 @@ class IncomingIntakeForm(forms.Form):
         required=False,
         widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
     )
+    #: Saatja's typed half, here too. Saabunud is where a letter from a body
+    #: nobody has filed before is most likely to land, so of the three capture
+    #: surfaces this is the one that needed it most (§2E).
+    sender_name = sender_name_field()
     handover_note = forms.CharField(
         label="Märkmed vastutajale",
         required=False,
@@ -2295,7 +2418,6 @@ class IncomingIntakeForm(forms.Form):
         set_choices(self, "source_organisations_other", everything)
 
         self.frequent_senders: list[Organisation] = []
-        self.sender_tail_count = 0
         if viewer is not None:
             senders = cast(Any, self.fields["source_organisations"])
             self.frequent_senders = list(organisations_by_usage(viewer))
@@ -2309,7 +2431,6 @@ class IncomingIntakeForm(forms.Form):
                 for organisation in everything
                 if organisation.pk not in frequent
             ]
-            self.sender_tail_count = len(rest.choices)
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
@@ -2321,3 +2442,6 @@ class IncomingIntakeForm(forms.Form):
                 senders.setdefault(organisation.pk, organisation)
         cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
         return cleaned
+
+    def clean_sender_name(self) -> str:
+        return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))

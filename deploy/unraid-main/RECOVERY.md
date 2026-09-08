@@ -32,6 +32,7 @@ backing up the wrong subset is worse.
 | Evidence | `…/juristid-main/evidence` | **canonical — must be backed up** |
 | OneNote page XML | `…/juristid-main/legacy-source` | **canonical — must be backed up** |
 | Derivatives | `…/juristid-main/derivatives` | rebuildable — needs no backup |
+| Held uploads | inside the container, `/app/pending-uploads` | ephemeral — needs no backup and no mount |
 | Search projection | inside PostgreSQL | rebuildable — comes back empty and is rebuilt |
 | Historical corpus | `/mnt/user/juristid-main/source` | source — read-only input, own recovery path |
 | Secrets | `…/juristid-main/config/juristid.env` | secret — never in a set; **where it is backed up is not recorded** (DR1-C) |
@@ -47,6 +48,15 @@ hashes. That test is the reason skipping them is a decision rather than a hope
 **The page XML is not a derivative.** It is source evidence, it is the only copy
 the application controls, and it lives in its own directory precisely so that
 nobody deletes it while clearing out rebuildable material (docs/adr/0015).
+
+**Held uploads are nobody's evidence and deliberately have no mount.** When a
+save on `Uus teema` is refused, the files it had already received are kept for
+the length of the refusal so the person does not lose them — a browser cannot
+put a file back into a file input. They describe nothing, no row points at them,
+and the oldest of them is minutes old; losing every one of them to a container
+restart costs somebody one re-pick. So there is no volume, nothing to back up,
+and nothing to restore. They are swept by age on the next hold
+(`app/documents/pending.py`).
 
 ## Backing up
 

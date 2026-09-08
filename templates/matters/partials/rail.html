@@ -138,6 +138,22 @@ whose addressee nobody recorded should look short, not incomplete.
                   </label>
                 {% endfor %}
               </fieldset>
+              {% comment %}
+                And the same `Uus saatja` box the capture forms carry. This is
+                the fourth place a sender can be set, and it would otherwise be
+                the one place a body that is not in the catalogue cannot be
+                named — which is precisely the workflow docs/adr/0063 removed.
+
+                Its own control, never a filter over the list above it: one says
+                «this is a body you do not have», and nothing else here does
+                (app/matters/forms.py `sender_name_field`).
+              {% endcomment %}
+              <label class="field inlineform__newname">
+                <span class="field__label">Uus saatja</span>
+                <input class="field__input field__input--compact" type="text"
+                       name="sender_name" autocomplete="off" maxlength="300"
+                       placeholder="Kirjuta asutuse nimi">
+              </label>
               <button class="button button--quiet button--tiny" type="submit"
                       aria-label="Salvesta saatjate muudatus">Salvesta</button>
             </form>

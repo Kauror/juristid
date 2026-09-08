@@ -121,6 +121,21 @@ two controls are **unioned** — nothing is privileged for having come from the
 frequent list — and both validate against the full Organisation queryset, so
 creating a Matter is never a way to create an institution.
 
+> **Amended by ADR 0063 (2026-09-08).** The last clause no longer holds. A
+> sender may be named on the Teema form itself, through a separate `Uus saatja`
+> box, resolved by the same normalised-exact reuse-or-create-or-refuse rule the
+> addressee field uses and inside the same transaction. The rule was withdrawn
+> because the workflow it prescribed — leave the Teema, add the body under
+> Asutused, come back — was not performed: people filed the Teema with no
+> sender, so the register lost the fact rather than gaining a considered one.
+>
+> The disclosure holding the long tail is also gone: the shortlist, a search
+> over the whole catalogue and `Uus saatja` are all on the page at rest, and the
+> shortlist is *filled* to eight rather than left however short the sender
+> history happens to be. Everything else here — the plural relation, the through
+> model, the union of the two controls, validation against the full queryset,
+> the header band's clipping — is unchanged.
+
 ### The header band clips, and says so
 
 The Matter header's facts strip has a hard height budget — a browser test fails

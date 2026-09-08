@@ -24,16 +24,18 @@
     holds one value — Vastutaja, Hetkeseis, Menetlusliik, Adressaat — checkboxes
     where it holds several. Chips are how they look; what they are has not moved
     (Stage-2E.1 brief 16, ADR 0025);
-  - the two counterparty fields do *not* have the same contract, and the
-    difference is deliberate. `Saatja` stays existing-organisations-only: its
-    long tail is a filter over the catalogue and nothing on this page creates a
-    sender. `Adressaat` may be chosen from the catalogue **or** typed — a typed
-    name reuses an exact or alias match and otherwise creates the institution,
-    inside the same transaction that creates the Teema. Do not "restore" the
-    older rule that no institution is ever created here; it was replaced on
-    purpose, because leaving a half-filled Teema to go and add a body under
-    Asutused is not a workflow anybody uses (master specification 14.7,
-    app/organisations/services.py `resolve_organisation_name`);
+  - the two counterparty fields ask *different questions about one catalogue*,
+    and they answer them the same way. Both may be chosen from the catalogue or
+    typed; a typed name reuses an exact or alias match, otherwise creates the
+    institution, and refuses a spelling that already names two — inside the same
+    transaction that creates the Teema. `Saatja` was existing-organisations-only
+    until docs/adr/0063 and is not any more: do not "restore" the rule that no
+    institution is created here, because leaving a half-filled Teema to go and
+    add a body under Asutused is not a workflow anybody used. What stays
+    separate is what the two fields *mean* — `Matter.source_organisations` is
+    who it came from and `Matter.addressee_organisation` is who it is answered
+    to, one catalogue behind both (master specification 14.7,
+    app/matters/services.py `resolve_source_organisations`);
   - only the title is required, and a page that shows a field is not a page that
     demands it (master specification 3.8).
 {% endcomment %}
@@ -95,9 +97,12 @@
       {% comment %}
         A plain multiple file input: no library, no SPA, and it degrades to the
         ordinary chooser everywhere. Each file becomes one Document with one
-        immutable version through the ordinary services — the sentence saying so
-        is gone from the page because the Dokumendid tab shows the TÕEND badge
-        that means it (Stage-2E.1 brief 24, Uus teema redesign §7).
+        immutable version through the ordinary services, and the page no longer
+        says so anywhere — not in a paragraph under the control, and no longer
+        as a TÕEND badge in front of every chosen filename. A label that reads
+        the same on every row of a list is not information, and it took the
+        first words of each line to say nothing (Stage-2E.1 brief 24,
+        Uus teema redesign §7).
       {% endcomment %}
       <fieldset class="field" id="failid">
         <legend class="field__label">
@@ -116,6 +121,36 @@
           <input class="visually-hidden" type="file" name="files" id="id_files" multiple>
           <label class="dropzone__choose" for="id_files">Vali failid</label>
           <span class="dropzone__hint">või lohista need siia</span>
+          {% comment %}
+            Two lists, and they cannot be one.
+
+            `#valitud-failid` belongs to the browser: it is rebuilt from
+            `input.files` on every change, so anything else written into it is
+            erased the next time somebody picks a file.
+
+            `#hoitud-failid` belongs to the server. It holds the files an
+            earlier refusal received — validated, kept, and named here by the
+            hidden `pending` key the next attempt carries them back on. A file
+            input cannot be repopulated by any page, so without this the
+            refusal took the attachment with it and the Teema was created
+            without documents (app/documents/pending.py, `matter_create`).
+
+            Empty on every ordinary visit, so this renders nothing at all
+            unless a save has actually been refused.
+          {% endcomment %}
+          {% if held_files %}
+            <ul class="dropzone__list" id="hoitud-failid">
+              {% for file in held_files %}
+                <li class="dropzone__file">
+                  <span class="dropzone__name">{{ file.filename }}</span>
+                  <span class="dropzone__size">{{ file.human_size }}</span>
+                  <input type="hidden" name="pending" value="{{ file.key }}">
+                  <button type="button" class="dropzone__drop" data-drop-held
+                          aria-label="Eemalda fail {{ file.filename }}">×</button>
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
           <ul class="dropzone__list" id="valitud-failid" hidden></ul>
         </div>
       </fieldset>
@@ -162,74 +197,7 @@
         {% if form.owner.errors %}<span class="field__error">{{ form.owner.errors|first }}</span>{% endif %}
       </fieldset>
 
-      <fieldset class="field">
-        <legend class="field__label">
-          {{ form.source_organisations.label }}
-          <span class="field__count" data-chipcount-for="source_organisations"></span>
-        </legend>
-        {% comment %}
-          Checkboxes, and several may be ticked: a matter really can arrive from
-          a ministry and an association at once (ADR 0025, Agent-E brief 28).
-        {% endcomment %}
-        <div class="chiprow">
-          {% for choice in form.source_organisations %}
-            <label class="chip">
-              {{ choice.tag }}
-              <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-            </label>
-          {% endfor %}
-
-          {% comment %}
-            The long tail, and only the long tail — the chips above are not
-            repeated inside it. Open with scripting off, and the search box only
-            hides chips that do not match: a ticked one never hides, because
-            hiding a checkbox does not clear it (Agent-UI brief 6.1).
-          {% endcomment %}
-          <details class="chipdetails">
-            <summary class="chipdetails__summary">
-              Vali nimekirjast{% if form.sender_tail_count %} ({{ form.sender_tail_count }}){% endif %}
-            </summary>
-            <div class="chipdetails__body">
-              <label class="field chipdetails__search" data-choicefilter="saatja-nimekiri">
-                <span class="visually-hidden">Otsi asutust</span>
-                <input class="field__input field__input--compact" type="search"
-                       autocomplete="off" placeholder="Otsi asutust nime järgi">
-              </label>
-              <div class="chiprow" id="saatja-nimekiri">
-                {% for choice in form.source_organisations_other %}
-                  <label class="chip">
-                    {{ choice.tag }}
-                    <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-                  </label>
-                {% empty %}
-                  <p class="field__help">Kõik salvestatud asutused on juba ülal.</p>
-                {% endfor %}
-              </div>
-              {% comment %}
-                The sentence that survived the copy pass, because it states a
-                rule the UI cannot: on the *sender* side, adding an institution
-                is a deliberate act on the reference data, not a side effect of
-                filing a matter (master specification 14.7).
-
-                Its Adressaat twin is gone, and deliberately so: that field now
-                accepts a typed name and the control beside its chips says so.
-                Sender auto-creation is a separate decision nobody has taken, so
-                this one stands until somebody takes it — do not remove it for
-                looking like the one that went.
-              {% endcomment %}
-              <p class="field__help">
-                Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla —
-                teema vormilt uut asutust ei teki.
-              </p>
-            </div>
-          </details>
-        </div>
-        {% if form.source_organisations.errors %}
-          <span class="field__error">{{ form.source_organisations.errors|first }}</span>
-        {% elif form.source_organisations_other.errors %}
-          <span class="field__error">{{ form.source_organisations_other.errors|first }}</span>
-        {% endif %}
-      </fieldset>
+      {% include "matters/partials/sender_control.html" with list_id="saatja-nimekiri" %}
 
       {% comment %}
         One checkbox, unticked, and no REAL/TEST choice on the capture path.

@@ -57,6 +57,7 @@ migration-audit/
 historical-source/
 legacy-source/
 derivatives/
+pending-uploads/
 *.tsv
 !tests/**/*.tsv
 
