@@ -59,7 +59,7 @@ changes = [
   "Saadetud arvamuse rida algab oma teema pealkirjaga, nii et on kohe näha, mille kohta kiri käib.",
   "Osakonna Eesolev paneelis on iga ajaaken oma lahtikäiv plokk ja päis ütleb, mitu tähtaega selles aknas on.",
   "Töövõit on üks mõiste. Kandidaadi ja kinnitatud töövõidu vahet enam ei näidata.",
-  "Arhiivi otsing leiab uued ja muudetud arvamused ilma, et keegi peaks indeksit eraldi uuendama.",
+  "Ka arhiivi arvamused jõuavad otsingusse ise, kohe pärast lisamist või muutmist.",
   "Pikkade nimekirjade lehekülgede vahel ei kordu ega kao ükski rida.",
 ]
 
@@ -138,7 +138,7 @@ changes = [
   "Tähtaegade vaade on nelja ajaaknaga, teema ajajoon on loetavam ja Järgmiseks ütleb alati sõnadega, mida kuupäev tähendab.",
   "Ülevaatelt kadus Minu tiim, mida süsteem ei osanud sisustada. Alles on Kogu osakond ja Valdkonniti.",
   "Käimasolev töö uueneb hooldatavast registriseisust, nii et rakenduses on sama seis mis tabelis.",
-  "Otsing leiab uue ja muudetud sisu ise, ilma et keegi peaks indeksit käsitsi uuendama.",
+  "Otsing leiab uue ja muudetud sisu ise — selleks ei pea keegi midagi eraldi käivitama.",
 ]
 
 [[day]]
@@ -148,7 +148,7 @@ revisions = ["adce39e5ec3691c98f15d2218c59c1a4c4bc7009"]
 prs = [69, 70, 71, 72, 75]
 changes = [
   "Teemasid nimetatakse pealkirja järgi, mitte tehnilise viite järgi.",
-  "Laial ekraanil jääb sisu loetava laiusega, mitte ei veni üle terve monitori.",
+  "Laial ekraanil jääb sisu loetaval laiusel ega veni üle terve monitori.",
   "Kaasamise saab tühjast olekust lisada ühe klõpsuga.",
   "Töö saab määrata igale osakonna kolleegile, kes seda kanda võib, ja varasemad vastutajad ei kao nimekirjast ära.",
   "Ülemisel ribal on Koja märk.",
