@@ -1319,7 +1319,7 @@ docker compose -p juristid-main -f compose.yml ps
 ```
 
 Nothing should be owed, and `ps` should show `juristid-main-searchindex`
-running beside the other four. From here on the worker keeps the index fresh on
+running beside the other five. From here on the worker keeps the index fresh on
 its own, and this step is not part of an ordinary release again until something
 changes `INDEX_VERSION` a second time.
 
