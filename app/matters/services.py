@@ -715,6 +715,50 @@ def resolve_addressee(*, chosen: Any, typed_name: str) -> Any:
     return chosen
 
 
+def resolve_source_organisations(*, chosen: Any, typed_name: str) -> list[Any]:
+    """The sender set a Teema form asked for, from ticked chips and a typed name.
+
+    **This replaces a rule, not just a control.** Until now the sender field was
+    existing-organisations-only, and every sender surface said so:
+
+        Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla —
+        teema vormilt uut asutust ei teki.
+
+    The decision behind that sentence was that adding an institution is a
+    deliberate act on reference data rather than a side effect of filing a
+    matter. It is withdrawn, for the reason the addressee side was changed
+    first: nobody abandoned a half-filled Teema, navigated to Asutused, created
+    a body and came back to find it again. They filed the Teema with no sender,
+    and the register lost the fact rather than gaining a considered one
+    (docs/adr/0063).
+
+    What is *not* withdrawn is the rule that keeps the catalogue honest, and it
+    is not restated here: `resolve_organisation_name` reuses an exact or alias
+    match, creates only a genuinely new body, and refuses a spelling that
+    already names two. One definition, shared with the addressee field and with
+    the closing composer's recipients.
+
+    **The sender relation is plural, so this is a union rather than a
+    precedence.** That is the one place it differs from `resolve_addressee`,
+    where a typed name has to win because the chip group always carries the
+    value the Matter already has and nothing could otherwise replace it. A
+    sender does not need replacing — «Euroopa Komisjon» ticked and «Eesti
+    Näidisliit» typed is a Matter that arrived from both — so the typed name is
+    added. A body reached twice, ticked and then typed, is one sender:
+    `resolve_recipients` deduplicates by identity, which is also what
+    `MatterSourceOrganisation` enforces.
+
+    Runs inside the caller's transaction. A save refused after this point — a
+    rejected attachment, a refused next action — leaves no institution behind.
+    """
+    from app.organisations.services import resolve_recipients
+
+    return resolve_recipients(
+        chosen=list(chosen or []),
+        typed_names=[typed_name] if (typed_name or "").strip() else [],
+    )
+
+
 @transaction.atomic
 def set_organisations(
     *,

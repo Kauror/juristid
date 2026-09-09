@@ -112,10 +112,13 @@
         var item = document.createElement("li");
         item.className = "dropzone__file";
 
-        var kind = document.createElement("span");
-        kind.className = "dropzone__kind";
-        kind.textContent = "TÕEND";
-        item.appendChild(kind);
+        /* No badge in front of the name. Every row of this list carried the
+           word TÕEND, which is what every row of it always is — a label that
+           never varies tells the reader nothing and takes the first position
+           on the line to do it. The evidence semantics are unchanged: each of
+           these still becomes one Document with one immutable version through
+           `app/documents/services.py`, and the Dokumendid tab is where a file's
+           role is actually a question worth answering. */
 
         var name = document.createElement("span");
         name.className = "dropzone__name";
@@ -143,6 +146,28 @@
       });
     });
 
+    /* Taking a held file back off. The row carries the hidden `pending` key, so
+       removing the row is what stops the next attempt resuming it — there is
+       nothing to tell the server, because the key simply stops being posted.
+
+       Enhancement, like the × beside a freshly chosen file: with scripting off
+       neither control exists and both lists are still correct. */
+    var heldList = document.getElementById("hoitud-failid");
+    if (heldList) {
+      heldList.addEventListener("click", function (event) {
+        var button = event.target.closest ? event.target.closest("[data-drop-held]") : null;
+        if (!button) {
+          return;
+        }
+        var row = button.closest(".dropzone__file");
+        if (row) {
+          row.remove();
+        }
+        heldList.hidden = heldList.querySelectorAll(".dropzone__file").length === 0;
+        fileInput.dispatchEvent(new Event("change"));
+      });
+    }
+
     var zone = fileInput.closest(".dropzone");
     if (zone) {
       ["dragenter", "dragover"].forEach(function (name) {
@@ -158,10 +183,30 @@
         });
       });
       zone.addEventListener("drop", function (event) {
-        if (event.dataTransfer && event.dataTransfer.files.length) {
+        if (!event.dataTransfer || !event.dataTransfer.files.length) {
+          return;
+        }
+        if (!canDrop) {
+          /* No DataTransfer to build with, so the browser's own assignment is
+             the only thing available and a second drop replaces the first. */
           fileInput.files = event.dataTransfer.files;
           fileInput.dispatchEvent(new Event("change"));
+          return;
         }
+        /* Added to what is already there, not put in its place. Dropping a
+           covering letter and then its annex is two gestures and one obvious
+           intention; assigning the second FileList straight onto the input
+           silently threw the first away. The same rebuild the × control uses,
+           in the other direction. */
+        var transfer = new DataTransfer();
+        Array.prototype.slice.call(fileInput.files || []).forEach(function (file) {
+          transfer.items.add(file);
+        });
+        Array.prototype.slice.call(event.dataTransfer.files).forEach(function (file) {
+          transfer.items.add(file);
+        });
+        fileInput.files = transfer.files;
+        fileInput.dispatchEvent(new Event("change"));
       });
     }
   }
@@ -1057,8 +1102,20 @@
       if (!list || !box) {
         return;
       }
-      box.addEventListener("input", function () {
+      /* Opt-in, and only Saatja asks for it.
+       *
+       * With `data-choicefilter-compact`, an empty box shows *nothing* rather
+       * than everything: the list is a result area, not a wall down the middle
+       * of the form. Ticked bodies are the exception and always show, which is
+       * what keeps "what have I chosen" answerable without typing.
+       *
+       * The whole catalogue is still in the document, so with scripting off
+       * this is an ordinary list of checkboxes and nothing is unreachable —
+       * which is the only reason hiding it here is allowed at all. */
+      var compact = holder.hasAttribute("data-choicefilter-compact");
+      var apply = function () {
         var needle = box.value.trim().toLowerCase();
+        var shown = 0;
         /* `.chip` is Uus teema's control, `.checkitem` the one every other
            surface still uses. One selector rather than two bindings, because
            the rule — hide what does not match, never hide what is ticked — is
@@ -1068,9 +1125,22 @@
           var checked = item.querySelector("input:checked");
           /* A ticked choice never hides. Somebody who types after choosing
              should still be able to see — and untick — what they chose. */
-          item.hidden = !checked && needle !== "" && name.indexOf(needle) === -1;
+          var hide = !checked && (needle === "" ? compact : name.indexOf(needle) === -1);
+          item.hidden = hide;
+          if (!hide) {
+            shown += 1;
+          }
         });
-      });
+        if (compact) {
+          /* An empty box would otherwise be an empty bordered panel, which
+             reads as a control that has broken rather than one nobody has
+             asked anything yet. */
+          list.hidden = shown === 0;
+        }
+      };
+      box.addEventListener("input", apply);
+      list.addEventListener("change", apply);
+      apply();
     });
   }
 
@@ -1149,19 +1219,33 @@
         return;
       }
       /* Either a field name — every chip in the group, wherever it is rendered
-         — or one element's id, which is how the file input is counted. */
-      var byName = form.querySelectorAll('input[name="' + key + '"]');
+         — or one element's id, which is how the file input is counted.
+         The `_other` twin is included for the same reason `bindSuggestionUse`
+         looks it up: Saatja is one logical set split across two fields because
+         a checkbox group cannot be rendered in two places without being two
+         fields, and a count that read only the shortlist said «1 valitud» over
+         two ticked bodies (app/matters/forms.py). */
+      var byName = form.querySelectorAll(
+        'input[name="' + key + '"], input[name="' + key + '_other"]'
+      );
       var single = document.getElementById(key);
       var sources = byName.length ? Array.prototype.slice.call(byName) : single ? [single] : [];
       if (!sources.length) {
         return;
       }
+      /* Files a refused save is holding count as chosen, because they are: the
+         next save files them. Counting only `input.files` would have said
+         "1 valitud" over a list of two rows. */
+      var held = key === "id_files" ? document.getElementById("hoitud-failid") : null;
       var sync = function () {
         var count = single && sources[0] === single
           ? (single.files || []).length
           : sources.filter(function (input) {
               return input.checked && input.value !== "";
             }).length;
+        if (held) {
+          count += held.querySelectorAll(".dropzone__file").length;
+        }
         badge.textContent = count ? count + " valitud" : "";
       };
       sources.forEach(function (input) {

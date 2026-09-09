@@ -432,11 +432,49 @@ def test_a_storage_failure_leaves_no_reachable_matter_behind(signed_in, evidence
     assert not Document.objects.filter(title="esimene.pdf").exists()
 
 
+def test_a_storage_failure_leaves_no_stray_sender_behind_either(
+    signed_in, evidence_root, monkeypatch
+):
+    """The second thing the same transaction now writes.
+
+    Since docs/adr/0063 a typed sender becomes an `Organisation` inside this
+    save, so the rollback has one more piece of state to take with it. An
+    institution surviving a save that failed is exactly the orphan the resolver
+    was put inside the transaction to prevent.
+    """
+    from app.matters import views as matter_views
+    from app.organisations.models import Organisation
+
+    real = matter_views.__dict__.get("_attach_incoming_file")
+    assert real is not None, "the attachment helper was renamed"
+
+    def fail(matter, upload, *, actor):
+        raise OSError("evidence store unavailable")
+
+    monkeypatch.setattr(matter_views, "_attach_incoming_file", fail)
+
+    with pytest.raises(OSError):
+        signed_in.post(
+            CREATE,
+            {
+                "title": "Katkise salvestusega saatja",
+                "sender_name": "Eesti Näidisliit",
+                "files": upload("esimene.pdf", corpus.government_pdf()),
+            },
+        )
+
+    assert not Matter.objects.filter(title="Katkise salvestusega saatja").exists()
+    assert not Organisation.objects.filter(name="Eesti Näidisliit").exists()
+
+
 def test_a_validation_error_gives_back_what_was_typed(signed_in, evidence_root):
     """A refused save must not cost somebody the five fields they filled in.
 
-    The files themselves cannot come back — no browser lets a server refill a
-    file input — which is exactly why everything else has to (brief 25, 40.22).
+    Nor the file, which is the part this used to concede: "the files themselves
+    cannot come back — no browser lets a server refill a file input" was true
+    about the input and wrong about the answer. The bytes had already reached
+    the server, so they are held and the re-rendered form names them
+    (`app/documents/pending.py`, `tests/test_held_uploads.py`).
     """
     area = factories.PolicyAreaFactory()
     response = signed_in.post(
@@ -447,6 +485,7 @@ def test_a_validation_error_gives_back_what_was_typed(signed_in, evidence_root):
             "received_date": "2024-03-07",
             "policy_area_other_selected": "on",
             "policy_area_other": "Kosmoseõigus",
+            "files": upload("kaaskiri.pdf", corpus.government_pdf()),
         },
     )
 
@@ -458,3 +497,4 @@ def test_a_validation_error_gives_back_what_was_typed(signed_in, evidence_root):
     assert form["policy_areas"].value() == [str(area.pk)]
     # And the disclosure holding an entered value opens rather than hiding it.
     assert "Kosmoseõigus" in response.content.decode()
+    assert [item.filename for item in response.context["held_files"]] == ["kaaskiri.pdf"]

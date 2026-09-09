@@ -170,20 +170,22 @@ def test_several_senders_can_be_ticked(page, base_url):
     expect(senders.nth(1)).to_be_checked()
 
 
-def test_the_long_tail_of_senders_accepts_several(page, base_url):
+def test_the_rest_of_the_sender_catalogue_accepts_several(page, base_url):
     """Still several, and no longer an eight-row multiple select.
 
-    The disclosure is checkboxes now, so ticking two does not depend on knowing
-    to hold Ctrl — and it no longer re-offers the bodies that are already chips
-    above it, which is what made it read as a second, contradictory sender
-    control (Agent-UI brief 6.1).
+    Checkboxes, so ticking two does not depend on knowing to hold Ctrl — and
+    they do not re-offer the bodies that are already chips above them, which is
+    what made this read as a second, contradictory sender control (Agent-UI
+    brief 6.1).
+
+    Nothing is clicked open first any more. The list is on the page at rest,
+    under the search that filters it (docs/adr/0063).
     """
     sign_in(page, base_url, MARTIN)
     open_create(page, base_url)
 
-    page.locator("summary", has_text="Vali nimekirjast").first.click()
     other = page.locator('input[type="checkbox"][name="source_organisations_other"]')
-    # The seeded world may hold no body outside the frequent chips, which is a
+    # The seeded world may hold no body outside the shortlist chips, which is a
     # legitimate state for this control: what must not exist is the select.
     expect(page.locator("select#id_source_organisations_other")).to_have_count(0)
     assert other.count() >= 0
@@ -266,12 +268,14 @@ def test_a_matter_can_be_created_with_a_file_attached(page, base_url, tmp_path):
 
     page.locator("#id_title").fill("Browseri testist loodud teema")
     page.locator("#id_files").set_input_files(str(attachment))
-    # The row now carries what the file will become as well as its name: TÕEND,
-    # the filename and the size, with the way to take it off again while that
-    # is still free (Uus teema redesign §9).
+    # The row carries the filename, the size and the way to take it back off
+    # again while that is still free. It used to open with the word TÕEND,
+    # which every row of this list always said — a label that never varies is
+    # not information, and it was taking the first words of the line
+    # (Uus teema redesign §9).
     row = page.locator(".dropzone__file")
     expect(row).to_contain_text("kaaskiri.txt")
-    expect(row).to_contain_text("TÕEND")
+    expect(row).not_to_contain_text("TÕEND")
 
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("domcontentloaded")

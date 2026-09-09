@@ -187,12 +187,13 @@ def test_the_obsolete_addressee_sentence_is_gone_from_both_forms(page, base_url)
     sentence used to live inside a closed disclosure and a rendered-text
     assertion would pass merely because nobody had opened it.
 
-    The analogous Saatja sentence must stay — sender auto-creation is a separate
-    decision nobody has taken — and `tests/test_addressee_free_entry.py` holds
-    that assertion, where the catalogue size is controlled and the sender
-    disclosure is guaranteed to render.
+    The analogous Saatja sentence is gone too, since docs/adr/0063 gave that
+    field the same typed-name contract. Both are asserted here rather than one
+    here and one in a comment: they described one workflow and they were
+    withdrawn for one reason.
     """
     obsolete = "Kui adressaati siin ei ole"
+    obsolete_sender = "tuleb asutus enne lisada asutuste alla"
 
     sign_in(page, base_url, MARTIN)
 
@@ -207,10 +208,14 @@ def test_the_obsolete_addressee_sentence_is_gone_from_both_forms(page, base_url)
     page.wait_for_load_state("networkidle")
 
     open_edit(page, base_url)
-    assert obsolete not in page.content()
+    markup = page.content()
+    assert obsolete not in markup
+    assert obsolete_sender not in markup
 
     create_form(page, base_url)
-    assert obsolete not in page.content()
+    markup = page.content()
+    assert obsolete not in markup
+    assert obsolete_sender not in markup
 
 
 # ---------------------------------------------------------------------------

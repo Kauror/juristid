@@ -104,60 +104,7 @@ between; that is not "the rest of the record"
         {% if form.owner.errors %}<span class="field__error">{{ form.owner.errors|first }}</span>{% endif %}
       </fieldset>
 
-      <fieldset class="field">
-        <legend class="field__label">
-          {{ form.source_organisations.label }}
-          <span class="field__count" data-chipcount-for="source_organisations"></span>
-        </legend>
-        <div class="chiprow">
-          {% for choice in form.source_organisations %}
-            <label class="chip">
-              {{ choice.tag }}
-              <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-            </label>
-          {% endfor %}
-
-          {% comment %}
-            The long tail, and only the long tail — the chips above are not
-            repeated inside it. Open with scripting off, and the search box only
-            hides chips that do not match: a ticked one never hides, because
-            hiding a checkbox does not clear it.
-          {% endcomment %}
-          <details class="chipdetails">
-            <summary class="chipdetails__summary">
-              Vali nimekirjast{% if form.sender_tail_count %} ({{ form.sender_tail_count }}){% endif %}
-            </summary>
-            <div class="chipdetails__body">
-              <label class="field chipdetails__search" data-choicefilter="saabunud-saatja-nimekiri">
-                <span class="visually-hidden">Otsi asutust</span>
-                <input class="field__input field__input--compact" type="search"
-                       autocomplete="off" placeholder="Otsi asutust nime järgi">
-              </label>
-              <div class="chiprow" id="saabunud-saatja-nimekiri">
-                {% for choice in form.source_organisations_other %}
-                  <label class="chip">
-                    {{ choice.tag }}
-                    <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-                  </label>
-                {% empty %}
-                  <p class="field__help">Kõik salvestatud asutused on juba ülal.</p>
-                {% endfor %}
-              </div>
-              {% comment %}
-                The one rule the UI cannot show: adding an institution is a
-                deliberate act on the reference data, not a side effect of
-                filing a matter (master specification 14.7).
-              {% endcomment %}
-              <p class="field__help">
-                Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla.
-              </p>
-            </div>
-          </details>
-        </div>
-        {% if form.source_organisations.errors %}
-          <span class="field__error">{{ form.source_organisations.errors|first }}</span>
-        {% endif %}
-      </fieldset>
+      {% include "matters/partials/sender_control.html" with list_id="saabunud-saatja-nimekiri" %}
     </div>
 
     {# 5 — what whoever picks this up needs to know, and who may read it. #}
