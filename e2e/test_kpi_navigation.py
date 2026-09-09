@@ -135,10 +135,10 @@ def every_row(page):
     population — which is a question about how ``ci_sharding.py`` happened to
     group the files, not about the drill-down.
 
-    It is reached, measured, on the «järgmise tegevuseta» figure: the seeded
-    world puts five Matters behind it, so seven Matters filed with no next
-    step anywhere earlier in the shard push the seeded one onto page two and
-    this file goes red for something it is not about.
+    Measured on the «järgmise tegevuseta» figure: the seeded world puts five
+    Matters behind it, so seven Matters filed with no next step anywhere
+    earlier in the shard push the seeded one onto page two, and this file goes
+    red for something it is not about.
 
     ``kaupa=koik`` is the size control's own «kõik», asked for the reason
     ``e2e/test_register_search.py::open_register`` gives. The parameter goes in
