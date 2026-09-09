@@ -9265,3 +9265,38 @@ section:has(.pw-more[open]) tbody.uxextra {
 .relatedmaterials__nohit {
   font-size: var(--typography-size-meta);
 }
+
+/* -- Uuendused: the release-note day list ------------------------------ */
+
+/* `.accordion` draws a rule under each day and none above the first, which
+   reads as a stack that has lost its top edge on a page that is nothing but
+   those rows. Everything else about the row — the caret, the hover, the focus
+   ring, the head's inset — is the component the Teema sections already use, so
+   this page introduces no visual language of its own. */
+.relnotes {
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* The bar is sticky and 48px tall. Without this, a day reached by the keyboard
+   or by a fragment opens underneath it. */
+.relnotes__day {
+  scroll-margin-top: 64px;
+}
+
+/* Prose, not table cells. `ul` carries its inset and bottom margin from
+   base.css; what it cannot know is that these items are sentences, which want
+   the body line height and a paragraph measure rather than the accordion
+   body's default. */
+.relnotes__list {
+  margin: 0;
+  color: var(--text-body);
+  line-height: var(--typography-line-body);
+}
+
+.relnotes__list li {
+  max-width: 76ch;
+}
+
+.relnotes__list li + li {
+  margin-top: var(--spacing-2);
+}

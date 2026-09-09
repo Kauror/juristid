@@ -255,9 +255,25 @@
       </main>
 
       <footer class="app__footer">
+        {% comment %}
+          The build stamp answers "what is running here" by looking, and every
+          part of it stays: the stage, the environment, the revision and when
+          the image was made (tests/test_build_stamp.py).
+
+          `Uuendused` is added beside it and nothing else is. This is where
+          somebody already looks when they wonder what version they are on, and
+          the honest next question — *what changed in it* — had no answer
+          anywhere in the application. One link, in the quietest band on the
+          page: the footer is not a navigation bar and does not become one.
+
+          The revision itself stays plain text. Making the SHA clickable would
+          give one sentence two meanings — an identifier and a destination —
+          and the identifier is the part an operator reads back over a phone.
+        {% endcomment %}
         <p>
           Eesti Kaubandus-Tööstuskoda · {{ application_stage }} · {{ application_environment }} ·
-          versioon {{ application_revision }}{% if application_built_at %} ·
+          versioon {{ application_revision }} ·
+          <a href="{% url 'core:release_notes' %}">Uuendused</a>{% if application_built_at %} ·
           ehitatud {{ application_built_at|date:"j.n.Y H:i" }}{% endif %}
         </p>
       </footer>
