@@ -5,12 +5,17 @@ extraction"*.
 
 The real deployment produces exactly that figure if the states are flattened.
 Stage 2B decided that with ``REAL_DATA_ALLOWED`` a file nobody has scanned is
-not opened by a parser — the scanner is a Secure Pilot Gate deliverable that
-does not exist yet. Stage 2D imports historical evidence with
-``malware_scan_state=PENDING``, because no scanner has ever run on a file from
+not opened by a parser. Stage 2D imports historical evidence with
+``malware_scan_state=PENDING``, because no scanner had ever run on a file from
 2014 and saying otherwise would be inventing a control. Both decisions are
-right. Together they mean a large part of the corpus is *waiting on a control*,
-which is neither a failure, nor a queue, nor a defect (main, commit 34d91b1).
+right and both stand.
+
+What changed with ADR 0066 is that the scanner exists, so this figure is now a
+*queue* rather than a wall: the ordinary extraction worker scans what is waiting
+and the number falls on its own. It was neither a failure nor a defect before
+and it is not one now — but where it used to mean "these files are waiting on a
+control nobody has built", it now means "these files have not been scanned
+yet" (main, commit 34d91b1).
 
 What the reader is told about that state
 ----------------------------------------

@@ -56,6 +56,7 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
 
     problems.extend(_authentication_problems())
     problems.extend(_environment_hygiene_problems())
+    problems.extend(_malware_scanner_problems())
 
     engine = settings.DATABASES["default"]["ENGINE"]
     if engine != "django.db.backends.postgresql":
@@ -63,6 +64,52 @@ def check_runtime_safety(app_configs: Any, **kwargs: Any) -> list[Error | Warnin
             Error(
                 f"Unsupported database engine {engine!r}; PostgreSQL 18+ is required.",
                 id="juristid.E005",
+            )
+        )
+
+    return problems
+
+
+def _malware_scanner_problems() -> list[Error | Warning]:
+    """Real data with no scanner is a form that cannot work, and says so here.
+
+    This is the check that would have turned the reported defect into a refused
+    deployment. `Uus teema` staged a file, the extraction queue refused it
+    because it was not ``CLEAN``, nothing in the system could ever make it
+    ``CLEAN``, and the only place that combination was written down was a table
+    row in `docs/secure-pilot-gate.md` reading "scanner not wired".
+
+    An **Error** rather than a Warning, and deliberately about *configuration*
+    rather than about *availability*. A scanner that is configured and
+    temporarily down is an ordinary operational state: the stack starts, files
+    wait, the extractor healthcheck goes red and the form says so in words. A
+    scanner that was never configured is a deployment that can never read a
+    document, and the cheapest moment to learn that is before it accepts one.
+    """
+    from app.documents.scanning import BACKENDS
+
+    problems: list[Error | Warning] = []
+    backend = getattr(settings, "MALWARE_SCANNER_BACKEND", "none")
+
+    if backend not in BACKENDS:
+        problems.append(
+            Error(
+                f"MALWARE_SCANNER_BACKEND={backend!r} is not a scanner this application has.",
+                hint=f"One of: {', '.join(sorted(BACKENDS))}.",
+                id="juristid.E015",
+            )
+        )
+    elif settings.REAL_DATA_ALLOWED and backend == "none":
+        problems.append(
+            Error(
+                "REAL_DATA_ALLOWED is on with no malware scanner configured.",
+                hint=(
+                    "Set MALWARE_SCANNER_BACKEND=clamav and run the scanner service "
+                    "(deploy/unraid-main/compose.yml). Without it no uploaded file can "
+                    "ever become CLEAN, so nothing is ever read and Uus teema waits for "
+                    "an answer that cannot arrive."
+                ),
+                id="juristid.E015",
             )
         )
 

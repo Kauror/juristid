@@ -211,6 +211,34 @@ guarantee stated on the command itself.
 Migrations are a deliberate step, never container start-up work: on boot they
 would run on every restart.
 
+### 5a. Confirm the scanner actually scans
+
+The `clamav` service comes up with the rest of the stack, and until it has
+loaded its signature database it is honestly unhealthy — allow two or three
+minutes on a cold start. Nothing is broken while you wait: uploaded files stay
+`PENDING`, no parser opens them, and they are read as soon as the scanner
+clears them.
+
+What must be confirmed once, and after every scanner upgrade, is that it
+**detects** — not merely that it answers:
+
+```bash
+docker compose -p juristid-main -f compose.yml exec extractor python manage.py check_malware_scanner --eicar
+```
+
+That streams the EICAR test file (harmless, and the industry's agreed stand-in
+for a real sample) and requires the answer to be `INFECTED`. A clamd running
+with an empty signature database answers a socket perfectly and calls
+everything clean, and in that state this system would stamp `CLEAN` on member
+correspondence nothing had examined — which is worse than having no scanner at
+all. This command is the difference between the two, and CI runs it against the
+same image on every pull request (ADR 0066).
+
+If the application refuses to start with `juristid.E015`, the environment file
+is missing `MALWARE_SCANNER_BACKEND=clamav`. That is deliberate: real data with
+no scanner configured is a deployment that can never read a document, and this
+is the cheapest moment to find out.
+
 ### 6. Accounts
 
 Create the real people, by hand, once. There is no self-service and no

@@ -180,10 +180,24 @@ def test_the_create_form_defaults_to_real(specialist):
     assert form.data_class == MatterDataClass.REAL
 
 
-def test_the_create_form_reads_the_checkbox(specialist):
+def test_the_create_form_has_no_test_data_control_at_all(specialist):
+    """The checkbox is gone from the form, not merely from the template.
+
+    A control removed from a template and left on the form is a control that
+    still binds: anything that can post to this view — a saved bookmark, a
+    script, a stale open tab, somebody curious with the developer tools — could
+    still have classified real work as test data. So the assertion is about the
+    *field*, which is the thing that would have to exist for that to be possible
+    (task §16).
+    """
+    form = MatterCreateForm({"title": "Arendusteema"}, viewer=specialist)
+    assert "is_test_data" not in form.fields
+
+
+def test_a_forged_test_data_parameter_still_creates_real_work(specialist):
     form = MatterCreateForm({"title": "Arendusteema", "is_test_data": "on"}, viewer=specialist)
     assert form.is_valid(), form.errors
-    assert form.data_class == MatterDataClass.TEST
+    assert form.data_class == MatterDataClass.REAL
 
 
 def test_creating_through_the_page_without_the_box_gives_real(signed_in):
@@ -192,11 +206,26 @@ def test_creating_through_the_page_without_the_box_gives_real(signed_in):
     assert matter.data_class == MatterDataClass.REAL
 
 
-def test_creating_through_the_page_with_the_box_gives_a_native_test_matter(signed_in):
+def test_creating_through_the_page_with_a_forged_box_still_gives_real(signed_in):
+    """`Uus teema` creates real work, whatever the request says.
+
+    The end-to-end half of the test above. It goes through the view rather than
+    the form so that nothing between them — a default, a hidden input, a service
+    argument somebody wires up later — can reintroduce the capability without
+    this failing (task §16).
+    """
     signed_in.post(CREATE, {"title": "Arendusteema", "is_test_data": "on"})
     matter = Matter.objects.get(title="Arendusteema")
-    assert matter.data_class == MatterDataClass.TEST
+    assert matter.data_class == MatterDataClass.REAL
     assert matter.origin == MatterOrigin.NATIVE
+
+
+def test_the_create_page_offers_no_data_class_control(signed_in):
+    """And it is not on the page either, by either of its two names."""
+    page = signed_in.get(CREATE).content.decode()
+    assert "Andmeklass" not in page
+    assert "Testandmed" not in page
+    assert 'name="is_test_data"' not in page
 
 
 def test_a_child_of_a_test_matter_carries_no_flag_of_its_own(specialist):

@@ -104,7 +104,11 @@ def test_the_bumped_metric_reports_the_same_population(world, reporting_context,
     settings.REAL_DATA_ALLOWED = True
     context = reporting_context(world.head)
     spec = definition(keys.EXTRACTION_AWAITING_SCANNER)
-    assert spec.version == 2
+    # 3 since ADR 0066: the population is unchanged and the *sentence* is not.
+    # The note used to say the precondition does not work until the Secure Pilot
+    # Gate, which was true and is not now — the figure is a queue that empties
+    # rather than a backlog nothing can clear.
+    assert spec.version == 3
 
     reported = set(documents.awaiting_scanner(context).values_list("pk", flat=True))
     gated = set(queue_awaiting().values_list("pk", flat=True))
