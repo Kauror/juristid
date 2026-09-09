@@ -140,6 +140,11 @@ def parse_release_notes(text: str, *, source: str = "uuendused.toml") -> tuple[R
             )
         seen[day] = index
 
+        # Checked and then dropped, deliberately. `basis`, `revisions` and `prs`
+        # are maintainer notes; keeping them on `ReleaseDay` would put them one
+        # template variable away from a page whose whole point is that a reader
+        # never meets a pull request number. Validating anyway means a typo in
+        # the provenance still fails rather than sitting in the file unread.
         basis = str(entry.get("basis", "deployment"))
         if basis not in BASES:
             raise ReleaseNotesError(f"{where}: unknown basis {basis!r}.")
