@@ -311,13 +311,24 @@ LEGACY_SOURCE_STORAGE_ALIAS = "legacy_source"
 LEGACY_SOURCE_ROOT = Path(env("LEGACY_SOURCE_ROOT", str(BASE_DIR / "legacy-source")))
 
 # A fourth class, and the weakest one: files a form is holding because the save
-# that would have stored them was refused. They describe nothing, no row points
-# at them, and losing one costs somebody a second click rather than a piece of
-# evidence — so this is deliberately **not** backed up and needs no volume of
-# its own. Separate from the evidence store for the same reason derivatives are:
-# mixing what may be deleted with what may not is how an operator ends up one
-# command away from destroying the half that cannot be regenerated
-# (app/documents/pending.py, docs/adr/0014).
+# that would have stored them was refused, and — under `intake/` — the files a
+# `Uus teema` is having read while it is still open. They describe nothing,
+# nothing outside the staging tables points at them, and losing one costs
+# somebody a second click rather than a piece of evidence, so this is
+# deliberately **not** backed up. Separate from the evidence store for the same
+# reason derivatives are: mixing what may be deleted with what may not is how an
+# operator ends up one command away from destroying the half that cannot be
+# regenerated (app/documents/pending.py, docs/adr/0014).
+#
+# It does need a *shared* volume in production, which is a different question
+# from being worth keeping. Since docs/adr/0064 two containers use this path —
+# `web` writes a staged file and the `extractor` container opens it to parse it
+# — and a container's writable layer is private, so an unmounted default leaves
+# the worker looking for a file that only exists in another container. The
+# production stack mounts one project-scoped named volume here, read-write for
+# `web` and read-only for `extractor` (deploy/unraid-main/compose.yml). Being on
+# a volume does not promote it: expiry and `prune_intake_staging` still bound it,
+# and it stays out of every backup set.
 PENDING_UPLOAD_STORAGE_ALIAS = "pending_uploads"
 PENDING_UPLOAD_ROOT = Path(env("PENDING_UPLOAD_ROOT", str(BASE_DIR / "pending-uploads")))
 

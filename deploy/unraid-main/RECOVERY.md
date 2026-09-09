@@ -32,7 +32,7 @@ backing up the wrong subset is worse.
 | Evidence | `…/juristid-main/evidence` | **canonical — must be backed up** |
 | OneNote page XML | `…/juristid-main/legacy-source` | **canonical — must be backed up** |
 | Derivatives | `…/juristid-main/derivatives` | rebuildable — needs no backup |
-| Held uploads and `Uus teema` staging | inside the container, `/app/pending-uploads` | ephemeral — needs no backup and no mount |
+| Held uploads and `Uus teema` staging | Docker volume `juristid-main_pending_uploads`, at `/app/pending-uploads` | ephemeral — needs no backup, and is in no set |
 | Search projection | inside PostgreSQL | rebuildable — comes back empty and is rebuilt |
 | Historical corpus | `/mnt/user/juristid-main/source` | source — read-only input, own recovery path |
 | Secrets | `…/juristid-main/config/juristid.env` | secret — never in a set; **where it is backed up is not recorded** (DR1-C) |
@@ -49,33 +49,65 @@ hashes. That test is the reason skipping them is a decision rather than a hope
 the application controls, and it lives in its own directory precisely so that
 nobody deletes it while clearing out rebuildable material (docs/adr/0015).
 
-**Held uploads are nobody's evidence and deliberately have no mount.** When a
-save on `Uus teema` is refused, the files it had already received are kept for
-the length of the refusal so the person does not lose them — a browser cannot
-put a file back into a file input. They describe nothing, no row points at them,
-and the oldest of them is minutes old; losing every one of them to a container
-restart costs somebody one re-pick. So there is no volume, nothing to back up,
-and nothing to restore. They are swept by age on the next hold
+**Held uploads are nobody's evidence.** When a save on `Uus teema` is refused,
+the files it had already received are kept for the length of the refusal so the
+person does not lose them — a browser cannot put a file back into a file input.
+They describe nothing, no row points at them, and the oldest of them is minutes
+old; losing every one of them costs somebody one re-pick. There is nothing here
+to back up and nothing to restore. They are swept by age on the next hold
 (`app/documents/pending.py`).
 
-**And the same directory now holds `Uus teema` staging, under `intake/`.** A
-file chosen while a Teema is being created is uploaded straight away so the
+**And the same directory holds `Uus teema` staging, under `intake/`.** A file
+chosen while a Teema is being created is uploaded straight away so the
 extraction worker can read it and offer the deadline, the sender and the
 Menetlusliik back on the form; it becomes evidence only when `Loo teema`
 succeeds, through the ordinary services, from those exact bytes. Until then it
 is the same kind of thing as a held upload — one person's unfinished form,
-described by no register row, worth one re-pick if it is lost — so it shares
-the storage class and the same "no mount, no backup" answer (docs/adr/0064).
+described by no register row, worth one re-pick if it is lost — so it shares the
+storage class and the same "no backup" answer (docs/adr/0064).
 
-Two operational differences from held uploads are worth knowing. Staged files
-*do* have rows describing them, in `matters_matterintakesession` and
-`matters_matterintakefile`, which are inside PostgreSQL and therefore inside the
-backup — restoring a set can leave rows whose bytes are gone, which is harmless:
-the session has expired by then and the sweeper removes it. And they are **not**
-swept by the held-upload path, which only looks at the root of the directory; a
-staging session is removed from its own row by `manage.py prune_intake_staging`,
-which an operator runs. Nothing schedules it, and it cannot touch evidence — it
-reads neither the evidence store nor `DocumentVersion`.
+**It is a Docker volume, and that is a topology answer rather than a recovery
+one.** This directory used to be an unmounted path inside each container, which
+was right while one process both wrote and read it. Staging gave it a second
+reader in a second container: `web` receives and stores the file, and the
+`extractor` container opens those exact bytes to parse them. A container's
+writable layer is private to that container, so unmounted meant the worker
+looked for a file that existed only in `web` and every staged read failed. Both
+services now mount one project-scoped named volume at `/app/pending-uploads` —
+`web` read-write, because it stages, holds, promotes and deletes; `extractor`
+read-only, because opening the object in `rb` is the whole of what it does with
+it.
+
+Three things follow, and none of them changes what this data *is*:
+
+- **It is not backed up, and must not be added to one.** `juristid-backup.sh`
+  does not know about this volume and the recovery fingerprint does not cover
+  it. Being on a volume rather than in a container layer makes it survive an
+  ordinary container replacement; that is convenient and means nothing. What
+  bounds this data is expiry and `prune_intake_staging`, exactly as before.
+- **Losing it costs unfinished forms and no evidence.** Anyone mid-`Uus teema`
+  re-picks their file. Nothing that reached `Loo teema` is here at all — that
+  is a Document with an immutable version, in the evidence tree, in the backup.
+- **A restored PostgreSQL set may name bytes that are gone.** The staging rows
+  in `matters_matterintakesession` and `matters_matterintakefile` are inside the
+  database and therefore inside the set, while the volume is not; a restore can
+  leave rows pointing at objects that no longer exist. This is harmless and
+  already handled: those sessions have expired by the time anyone sees them, and
+  `prune_intake_staging` removes an expired session whether or not its bytes are
+  still there.
+
+**It is not a bind mount under appdata.** There is deliberately no
+`/mnt/user/appdata/juristid-main/pending-uploads`. A Docker volume keeps these
+temporary uploaded documents out of the appdata tree, and so out of the SMB
+share exported from it — which is a separate, known host-security matter that
+this arrangement must not widen.
+
+One further operational difference from held uploads is worth knowing: staged
+files are **not** swept by the held-upload path, which only looks at the root of
+the directory. A staging session is removed from its own row by `manage.py
+prune_intake_staging`, which an operator runs. Nothing schedules it, and it
+cannot touch evidence — it reads neither the evidence store nor
+`DocumentVersion`.
 
 ## Backing up
 

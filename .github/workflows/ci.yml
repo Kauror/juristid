@@ -1028,6 +1028,90 @@ jobs:
           resolve > untagged.json
           python3 scripts/ci/assert_deployment_identity.py untagged.json --fallback
 
+      # Two containers, one set of bytes — the property `Uus teema` staging
+      # actually needs, proved by crossing the boundary rather than by reading
+      # the Compose file (which `tests/test_deployment_unraid_main.py` does).
+      #
+      # `web` stages a file and the `extractor` container parses it, so the
+      # storage class they share has to be genuinely shared. It was not: it was
+      # an unmounted path in each image, and a container's writable layer is
+      # private, so every staged read in production would have failed on a file
+      # that existed only in the other container. Nothing in the feature suite
+      # could see that, because nothing in it crosses a container boundary.
+      #
+      # The production model under a synthetic project name and temporary paths:
+      # nothing here touches `/mnt/user`, and `down -v` at the end takes the
+      # volume with it. `--no-deps` because none of this needs PostgreSQL, and
+      # the image is the one already built above, retagged rather than rebuilt.
+      #
+      # The commands run as the image's own user, which is the other half of
+      # what is being checked: a named volume takes the ownership of the image
+      # path it covers, so a mount point the Dockerfile did not create would be
+      # root-owned and `web` could not stage anything into it.
+      - name: Staged uploads written by web are readable by the extractor
+        run: |
+          set -euo pipefail
+          PROJECT=juristid-sharedvolume-ci
+          COMPOSE="deploy/unraid-main/compose.yml"
+          TAG=sharedvolumeci
+          docker tag juristid:ci "juristid-main-web:${TAG}"
+
+          SCRATCH="$(mktemp -d)"
+          JURISTID_ENV_FILE="$(mktemp)"
+          echo "POSTGRES_PASSWORD=x" > "$JURISTID_ENV_FILE"
+          export JURISTID_ENV_FILE
+          export JURISTID_DATA_ROOT="$SCRATCH/data"
+          export JURISTID_SOURCE_ROOT="$SCRATCH/source"
+          export JURISTID_IMAGE_TAG="$TAG"
+          mkdir -p "$JURISTID_DATA_ROOT" "$JURISTID_SOURCE_ROOT"
+
+          PROBE="probe-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}"
+
+          # The probe travels as an environment variable and every assertion is
+          # made *inside* the container, so nothing here depends on parsing
+          # Compose's own progress output back out of a pipeline.
+          compose() { docker compose -p "$PROJECT" -f "$COMPOSE" "$@"; }
+          in_service() {
+            compose run --rm --no-deps -e "PROBE=$PROBE" --entrypoint sh "$1" -c "$2"
+          }
+          cleanup() { compose down -v --remove-orphans >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+
+          echo "--- web stages the bytes, as the application user"
+          in_service web '
+            set -e
+            test "$(id -un)" = juristid
+            mkdir -p /app/pending-uploads/intake
+            printf %s "$PROBE" > "/app/pending-uploads/intake/$PROBE"
+          '
+
+          echo "--- the extractor reads the same bytes from its own container"
+          in_service extractor '
+            set -e
+            staged="/app/pending-uploads/intake/$PROBE"
+            test -f "$staged" || { echo "the volume is not shared: $staged is absent"; exit 1; }
+            test "$(cat "$staged")" = "$PROBE" || { echo "different bytes"; exit 1; }
+          '
+
+          echo "--- and cannot write to it"
+          if in_service extractor 'echo tampered > "/app/pending-uploads/intake/$PROBE"'; then
+            echo "::error::the extractor wrote to a mount that must be read-only"
+            exit 1
+          fi
+          in_service extractor '
+            set -e
+            test "$(cat "/app/pending-uploads/intake/$PROBE")" = "$PROBE" \
+              || { echo "the staged bytes changed under a read-only mount"; exit 1; }
+          '
+
+          echo "--- web deletes it, and the deletion is visible to the extractor too"
+          in_service web 'rm "/app/pending-uploads/intake/$PROBE"'
+          if in_service extractor 'test -e "/app/pending-uploads/intake/$PROBE"'; then
+            echo "::error::the extractor still sees a file web deleted"
+            exit 1
+          fi
+          echo "two containers, one set of bytes, web-only writes"
+
       # The real-data rehearsal template is never started here — it exists to
       # hold a production backup set, and CI has none. What CI can prove is the
       # two things that would otherwise only be discovered mid-rehearsal, by
