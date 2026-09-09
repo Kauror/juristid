@@ -36,7 +36,7 @@ ONLY_INSIDE_THE_PDF = "kaubaaluste"
 MATTER_TITLE = "Näidisministeeriumi digiaruandluse katse-eelnõu"
 
 
-def run_worker(expected_files: Sequence[str] = ()) -> str:
+def run_worker(expected_files: Sequence[str]) -> str:
     """Drain the extraction queue the way the deployment does.
 
     A subprocess rather than an in-process call, because that is what actually
@@ -53,6 +53,11 @@ def run_worker(expected_files: Sequence[str] = ()) -> str:
     report them as `unreadable_pdf`; that must not turn into a red assisted-intake
     test. What the caller is entitled to assert is that *its own* files came
     through, and that is what this checks (tests/extraction_report.py).
+
+    Required rather than defaulted. A caller that names nothing asserts nothing
+    about itself, which is exactly the empty claim this helper was rewritten to
+    stop making — and a default would let one back in silently
+    (tests/test_extraction_report_scope.py).
     """
     # The settings module has to be forced. pytest sets
     # DJANGO_SETTINGS_MODULE=config.test_settings for its own process, the child

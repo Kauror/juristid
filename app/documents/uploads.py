@@ -4,10 +4,13 @@ Client-side checks are a convenience for the user, never a control. Everything
 here runs on the server before a single byte reaches the evidence store
 (master specification 15.6).
 
-Stage 1 validates size, extension and content signature. Malware scanning is a
-Secure Pilot Gate requirement and is deliberately not simulated: a fake "clean"
-verdict would be worse than an honest PENDING state, which is what
-``DocumentVersion.malware_scan_state`` records until a real scanner exists.
+Stage 1 validates size, extension and content signature. It does **not** scan.
+A stored version starts at ``PENDING`` and stays there until a scanner has read
+its bytes — ClamAV over clamd, `app.documents.scanning`, ADR 0066 — because the
+one thing this layer must never do is stamp a verdict it did not obtain. That
+was true when there was no scanner to obtain one from, and it is true now that
+there is: nothing on the upload path writes ``CLEAN``, and no parser opens a
+file that has not been cleared.
 """
 
 from __future__ import annotations

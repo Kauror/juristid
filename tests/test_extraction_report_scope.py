@@ -22,7 +22,9 @@ day the command started printing something else.
 
 from __future__ import annotations
 
+import ast
 import io
+from pathlib import Path
 
 import pytest
 from django.core.management import call_command
@@ -127,3 +129,62 @@ def test_a_worker_that_processed_nothing_names_no_files() -> None:
     assert "Töödeldud 0 faili" in stdout, stdout
     assert problem_files(stdout) == {}
     assert_expected_files_extracted(stdout, ["expected-valid.pdf"], report=stdout)
+
+
+# --- The helper's own contract -----------------------------------------------
+#
+# Read from source rather than imported. `e2e/test_document_content.py` pulls in
+# Playwright and the browser fixtures, and the unit suite must not need either
+# to hold a browser helper to its signature.
+
+REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
+WORKER_HELPER = REPOSITORY_ROOT / "e2e" / "test_document_content.py"
+
+
+def _run_worker_definition() -> ast.FunctionDef:
+    tree = ast.parse(WORKER_HELPER.read_text(encoding="utf-8"), filename=str(WORKER_HELPER))
+    definitions = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "run_worker"
+    ]
+    assert len(definitions) == 1, f"expected one run_worker in {WORKER_HELPER}"
+    return definitions[0]
+
+
+def test_run_worker_requires_the_files_its_caller_owns() -> None:
+    """No default, so «I expect nothing» has to be typed out to happen.
+
+    ``expected_files=()`` reads as an ordinary optional argument and behaves as
+    the assertion this module deleted: every file in a shared queue is somebody
+    else's, so a caller that names none has scoped its claim to nothing at all.
+    """
+    definition = _run_worker_definition()
+    arguments = definition.args
+
+    assert [argument.arg for argument in arguments.args] == ["expected_files"]
+    assert arguments.defaults == [], "expected_files must not have a default"
+    assert arguments.kwonlyargs == []
+
+
+def test_no_browser_test_calls_the_worker_without_naming_its_files() -> None:
+    """The whole suite, not just the two files this round touched.
+
+    A bare ``run_worker()`` would be a type error today, and mypy runs in CI —
+    but the argument could also come back as a default in a later edit, and this
+    is the assertion that notices the pair.
+    """
+    bare: list[str] = []
+    for path in sorted((REPOSITORY_ROOT / "e2e").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            called = node.func
+            name = called.attr if isinstance(called, ast.Attribute) else getattr(called, "id", "")
+            if name != "run_worker":
+                continue
+            if not node.args and not node.keywords:
+                bare.append(f"{path.relative_to(REPOSITORY_ROOT)}:{node.lineno}")
+
+    assert bare == [], f"run_worker called with no expected files: {', '.join(bare)}"

@@ -10,12 +10,25 @@
 [[day]]
 date = 2026-09-09
 basis = "deployment"
+# Kaks väljalaset ühel päeval, üks kirje — nii nagu reegel ütleb.
+#
+# Esimene väljalase (b3df3179) tõi uue teema vormi, ettepanekute paneeli ja
+# failide alleshoidmise. Päris andmetega jäid failid sellegipoolest lugemata:
+# ükski tee ei viinud pahavarakontrollist läbi, nii et fail jäi igaveseks
+# ootele. Sama päeva teine väljalase — allpool loetletud ettevalmistuste
+# ühendus — on see, millega lugemine tegelikult tööle hakkas. Esimest
+# revisjoni ei tohi lugeda selle rea täitjaks üksi.
+#
+# Teise väljalaske liitmisrevisjon sünnib alles pärast selle faili kirjutamist,
+# nii et siia seda ette kirjutada ei saa; ta on kirjas väljalaske raportis.
 revisions = ["b3df3179c273d7c89f22db1d05d764f72e236151"]
-prs = [149, 150, 151, 152, 153, 154]
+prs = [149, 150, 151, 152, 153, 154, 155, 156, 157]
 changes = [
   "Uue teema vormile lisatud failid loetakse läbi kohe, veel enne teema loomist, ning leitud saatja, arvamuse tähtaeg, menetlusliik ja valdkonnad pakutakse samal vormil üle vaatamiseks. Iga leid näitab lauset, kust ta pärineb.",
+  "Kui automaatne lugemine venib, ütleb vorm seda ja pakub väljad käsitsi täita — varem jäi ekraanile lõputult keerlev ootamise märk. Fail on mõlemal juhul alles ja salvestub teemale.",
   "Kui uue teema salvestamine tagasi lükatakse, jäävad juba valitud failid alles — neid ei pea uuesti otsima.",
   "Saatja valimine on lihtsam: sagedasemad saatjad on kohe näha, kogu kataloogi saab läbi otsida ja puuduva saatja saab lisada otse samal vormil.",
+  "Saatjaks valitud asutus on adressaatide seas kohe esimene, nii et vastamiseks ei pea sama asutust nimekirjast uuesti otsima. Valituks ta ise ei hakka.",
   "Jõustumise ja töövõidu saab lisada otse teema lehel, ilma eraldi lehele minemata.",
   "Kokkuvolditud tegevuste kokkuvõte ütleb lühidalt, millal teema loodi ja mitu tegevust seal on, mitte enam süsteemi enda sündmuste loetelu.",
   "Kolleegi määratud lugemata teema ees on töölaual punane hüüumärk.",
