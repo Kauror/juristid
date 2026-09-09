@@ -1,0 +1,69 @@
+{% comment %}
+The fields of a structured-fact form, and only the fields.
+
+One file because there are two surfaces now and there must not be two forms.
+`fact_form.html` is the standalone page a deep link, a bookmark or a browser
+without scripting opens; `inline_form.html` is the accordion the Matter page
+opens under the section the record lands in. Both render *this*, so a field
+that appears on one appears on the other, with the same widget, the same label
+and the same errors beside it (docs/adr/0065).
+
+Rendered only where the form actually declares it, so the same block serves a
+period form, a commencement form and a one-line reason form.
+
+The precision control asks *how exactly do you know this* first, and then only
+for the parts that answer needs. Nobody types an anchor date for a quarter,
+because the anchor is not a fact — it is how the database sorts
+(Stage-2G brief 7, 51).
+{% endcomment %}
+{% if form.non_field_errors %}
+  <div class="formerror" role="alert">
+    {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+  </div>
+{% endif %}
+
+{% include "intelligence/partials/field.html" with field=form.title %}
+{% include "intelligence/partials/field.html" with field=form.description %}
+
+{% if form.kind %}
+  <fieldset class="choiceset" id="joustumise-liik">
+    <legend class="field__label">{{ form.kind.label }}</legend>
+    {% for choice in form.kind %}
+      <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
+    {% endfor %}
+    {% for error in form.kind.errors %}<span class="field__error">{{ error }}</span>{% endfor %}
+  </fieldset>
+{% endif %}
+
+{% if form.precision %}
+  <fieldset class="choiceset" id="tapsuse-valik">
+    <legend class="field__label">{{ form.precision.label }}</legend>
+    {% for choice in form.precision %}
+      <label class="choiceset__option">{{ choice.tag }} <span>{{ choice.choice_label }}</span></label>
+    {% endfor %}
+    {% for error in form.precision.errors %}<span class="field__error">{{ error }}</span>{% endfor %}
+  </fieldset>
+
+  <div class="periodfields" id="perioodi-valjad">
+    <div class="periodfields__group" data-precision="EXACT">
+      {% include "intelligence/partials/field.html" with field=form.exact_date %}
+    </div>
+    <div class="periodfields__group" data-precision="MONTH">
+      {% include "intelligence/partials/field.html" with field=form.month %}
+    </div>
+    <div class="periodfields__group" data-precision="QUARTER">
+      {% include "intelligence/partials/field.html" with field=form.quarter %}
+    </div>
+    <div class="periodfields__group" data-precision="HALF_YEAR">
+      {% include "intelligence/partials/field.html" with field=form.half %}
+    </div>
+    <div class="periodfields__group" data-precision="MONTH QUARTER HALF_YEAR YEAR">
+      {% include "intelligence/partials/field.html" with field=form.year %}
+    </div>
+  </div>
+{% endif %}
+
+{% include "intelligence/partials/field.html" with field=form.detail %}
+{% include "intelligence/partials/field.html" with field=form.source_url %}
+{% include "intelligence/partials/field.html" with field=form.note %}
+{% include "intelligence/partials/field.html" with field=form.reason %}

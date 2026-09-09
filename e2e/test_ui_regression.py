@@ -67,6 +67,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+import re
 
 import pytest
 
@@ -410,17 +411,17 @@ CLOSED_ON = (".banner--closed .banner__text .muted",)
 #: in this application and only this one has content beside it on its line.
 TIMELINE_PREVIEW_ON = (".uxtl__preview time",)
 
-#: The folded system-run summary's date span — «3 süsteemimuudatust — … 31.08
-#: näita ▸». `TimelineRow.span` over the run's own days, so it moves every
-#: morning: it read `31.08` when these baselines were taken and `01.09` the next
-#: day, for 304 of the 308 pixels each Teema capture was drifting by.
+#: The folded system-run summary's date span — «Teema loodud 25.08, tegevusi 3
+#: … 31.08 näita ▸». `TimelineRow.span` over the run's own days, so it moves
+#: every morning: it read `31.08` when these baselines were taken and `01.09`
+#: the next day, for 304 of the 308 pixels each Teema capture was drifting by.
 #:
 #: The selector is positional because the element has no class of its own, and
 #: adding one for a test would put a Playwright concern into product markup. It
 #: is stable rather than incidental: `.uxtl__sysrow` is one `<summary>` with
-#: exactly three unconditional `<span>` children in a fixed order — the count
-#: and kinds sentence, this span, and `.uxtl__sysshow`. Nothing here is inside
-#: an `{% if %}`, so `:nth-child(2)` can only ever be `row.span`
+#: exactly three unconditional `<span>` children in a fixed order —
+#: `row.summary`, this span, and `.uxtl__sysshow`. Nothing here is inside an
+#: `{% if %}`, so `:nth-child(2)` can only ever be `row.span`
 #: (templates/matters/partials/timeline_items.html).
 #:
 #: Masked rather than normalised, and measured rather than assumed.
@@ -432,6 +433,36 @@ TIMELINE_PREVIEW_ON = (".uxtl__preview time",)
 #: rewrite a real range to a single date and say something untrue about how long
 #: the run lasted.
 TIMELINE_RUN_SPAN = (".uxtl__sysrow > span:nth-child(2)",)
+
+#: The folded run's own sentence, «Teema loodud 08.09, tegevusi 5».
+#:
+#: New in the 2026-09-08 pass, and it brought a second clock value onto the same
+#: line: `TimelineRow.summary` names the day the Matter was created, and the
+#: seeded world creates its Matters when the job runs. `short_day_month`
+#: zero-pads, so the glyphs change and the character count does not — but Barlow
+#: sets figures proportionally, so `08.09` and `11.09` are not the same width
+#: and everything to their right on the line moves with them, the masked span
+#: included.
+#:
+#: Normalised rather than masked. Masking would paint over the whole sentence,
+#: and the sentence is the change this pass made: a baseline that stopped
+#: showing it would stop showing that the row says when the file started and how
+#: much is folded into it, which is content (ADR 0057's rule, and the reason
+#: `:nth-child(2)` is scoped to the date beside it).
+#:
+#: **The canonical carries a count**, which is the one thing to know before
+#: adding a scenario. Exactly two captures render a folded run today —
+#: `teema-ulevaade` and `teema-1024`, both of them this same Matter — so
+#: `tegevusi 5` is that Matter's own number and is written into no other
+#: baseline. A third scenario that grew a run of a different length would have
+#: this string painted into it, so
+#: `test_the_folded_run_summary_is_the_sentence_the_page_really_renders` asserts
+#: the live text against the canonical before any capture is taken.
+TIMELINE_RUN_SUMMARY = (".uxtl__sysrow > span:nth-child(1)",)
+
+#: What that sentence is held still as. A real shape the product produces: a
+#: zero-padded `short_day_month` and the seeded Matter's own five events.
+RUN_SUMMARY = "Teema loodud 25.08, tegevusi 5"
 
 #: Values that have to be held still, not merely covered.
 #:
@@ -499,6 +530,7 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
     (CLOSED_ON[0], "(29.8.2026)"),
     (TIMELINE_PREVIEW_ON[0], "29.8"),
     (OPINION_ROW_SENT[0], "29.8.2026 19:35"),
+    (TIMELINE_RUN_SUMMARY[0], RUN_SUMMARY),
 )
 
 #: What each scenario's capture may not silently stop *normalising*.
@@ -533,6 +565,13 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     # render a `Saadetud <date>` under a filename on every run.
     "teema-dokumendid": OPINION_ROW_SENT,
     "teema-arvamused": OPINION_ROW_SENT,
+    # The two captures that render a folded system run, and they are the same
+    # Matter twice. Required for the reason `TIMELINE_RUN_SPAN` is required
+    # beside it: whether the run exists is decided by the seed's own call order
+    # rather than by the day, so an absence here is the markup or the seed
+    # having moved.
+    "teema-ulevaade": TIMELINE_RUN_SUMMARY,
+    "teema-1024": TIMELINE_RUN_SUMMARY,
 }
 
 assert not {
@@ -794,6 +833,34 @@ def test_register_with_the_narrowing_panel_open(page, base_url):
 def test_matter_overview(page, base_url):
     signed_in_matter(page, base_url, OPEN_TITLE)
     compare("teema-ulevaade", capture(page, "teema-ulevaade"))
+
+
+def test_the_folded_run_summary_is_the_sentence_the_page_really_renders(page, base_url):
+    """What `RUN_SUMMARY` claims, checked against the page before anything
+    rewrites it.
+
+    The normalisation for this element replaces the whole sentence, and the
+    sentence carries a count. Everything but the date therefore has to be a
+    thing the product actually says on this page, or `teema-ulevaade` and
+    `teema-1024` hold a number nobody rendered — the one failure a normalisation
+    can cause that a screenshot cannot show.
+
+    Read before `capture`, on its own page load, so it sees the live value.
+    """
+    signed_in_matter(page, base_url, OPEN_TITLE)
+    live = page.locator(visible(TIMELINE_RUN_SUMMARY[0])).first.inner_text().strip()
+
+    assert re.fullmatch(r"Teema loodud \d{2}\.\d{2}, tegevusi \d+", live), (
+        f"the folded run reads {live!r}, which is not the shape "
+        f"`TimelineRow.summary` produces for a run holding the creation — and "
+        f"the normalisation would write {RUN_SUMMARY!r} over it"
+    )
+    assert live.split(", ", 1)[1] == RUN_SUMMARY.split(", ", 1)[1], (
+        f"the folded run reads {live!r} and the baselines are normalised to "
+        f"{RUN_SUMMARY!r}. Only the date may differ: the count is the seeded "
+        f"world's own, and holding it still at the wrong number paints a "
+        f"figure into two baselines that this page never rendered."
+    )
 
 
 def test_matter_header_only(page, base_url):
@@ -1427,11 +1494,44 @@ def _system_run_summary(span: str) -> str:
     """
     return (
         '<details class="uxtl__sys" open><summary class="uxtl__sysrow">'
-        "<span>3 süsteemimuudatust — seisund, vastutaja</span>"
+        f"<span>{RUN_SUMMARY}</span>"
         f"<span>{span}</span>"
         '<span class="uxtl__sysshow">näita ▸</span>'
         "</summary></details>"
     )
+
+
+#: The same sentence on four different mornings. Zero-padded by
+#: `short_day_month`, so the character count never changes — and Barlow's
+#: figures are proportional, so the width does until the normalisation holds it.
+RUN_SUMMARY_VARIANTS = (
+    "Teema loodud 25.08, tegevusi 5",
+    "Teema loodud 08.09, tegevusi 5",
+    "Teema loodud 31.12, tegevusi 5",
+    "Teema loodud 01.01, tegevusi 5",
+)
+
+
+def _system_run_line(summary: str) -> str:
+    """The same three spans, with the *first* one varying."""
+    return (
+        '<details class="uxtl__sys" open><summary class="uxtl__sysrow">'
+        f"<span>{summary}</span>"
+        "<span>31.08</span>"
+        '<span class="uxtl__sysshow">näita ▸</span>'
+        "</summary></details>"
+    )
+
+
+def test_the_run_summary_is_the_same_width_on_any_day(page):
+    """Normalised, not masked, so the *text* has to come out identical too.
+
+    The sentence is the content this pass put on the row; painting over it
+    would leave a baseline that no longer shows the row says anything. So it is
+    held still instead, and this is the assertion that it really is held —
+    across the month and year boundaries where the digits change most.
+    """
+    _holds_still(page, _system_run_line, RUN_SUMMARY_VARIANTS, TIMELINE_RUN_SUMMARY[0])
 
 
 def test_the_system_run_span_keeps_its_box_on_any_day(page):
@@ -1465,14 +1565,15 @@ def test_the_system_run_span_selector_takes_the_date_and_nothing_else(page):
     """`:nth-child(2)` is positional, so what it selects is worth asserting.
 
     A mask paints over everything it matches. If this selector reached the
-    count sentence or «näita ▸», the baseline would stop showing that the
-    summary says how many changes there are — and that is content, not a clock
-    value (the failure `CLOCK_DEPENDENT` documents for `<td>`/`<th>`).
+    summary sentence or «näita ▸», the baseline would stop showing that the
+    row says when the file started and how much is folded into it — and that is
+    content, not a clock value (the failure `CLOCK_DEPENDENT` documents for
+    `<td>`/`<th>`).
     """
     _fixture(page, _system_run_summary("31.08"))
 
     assert page.locator(TIMELINE_RUN_SPAN[0]).count() == 1
     assert page.locator(TIMELINE_RUN_SPAN[0]).inner_text().strip() == "31.08"
     # The two it must not take.
-    assert "süsteemimuudatust" in page.locator(".uxtl__sysrow > span:nth-child(1)").inner_text()
+    assert page.locator(".uxtl__sysrow > span:nth-child(1)").inner_text().strip() == RUN_SUMMARY
     assert page.locator(".uxtl__sysshow").inner_text().strip().startswith("näita")

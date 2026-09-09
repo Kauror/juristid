@@ -40,8 +40,13 @@ next step, no engagement and no opinion renders as a short, deliberate page
       it holds something — the four permanently visible empty headings this
       page used to carry are gone, and the way to add one is the composer
       (Stage-2G brief 36, Teema redesign §3, §13).
+
+      The wrapper is `app.intelligence`'s own swap target: `+ Jõustumine` and
+      `+ Töövõit` open their form inside this block and that app re-renders the
+      block, so the write neither leaves the Matter nor reaches into this
+      view's context builders (docs/adr/0065).
     {% endcomment %}
-    {% include "intelligence/partials/matter_sections.html" %}
+    {% include "intelligence/partials/matter_facts.html" %}
 
     {% if historical %}
       {% comment %}

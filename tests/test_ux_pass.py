@@ -321,6 +321,115 @@ def test_adjacent_system_events_fold_and_a_note_breaks_the_run(
     assert sum(row.count for row in rows) == len(items)
 
 
+def _three_system_events(actor) -> object:
+    """A Matter whose first three timeline events sit together in one run.
+
+    Through `create_matter` rather than the factory, because the point of these
+    tests is the `MATTER_CREATED` event and the factory writes the row without
+    one. Nothing else is added between them, so `collapse_system_runs` folds all
+    three into a single line.
+    """
+    matter = create_matter(title="Pakendiseaduse muutmise eelnõu", actor=actor, owner=actor)
+    change_stage(matter=matter, stage=factories.StageFactory(), actor=actor)
+    set_next_action(
+        matter=matter,
+        text="Jälgi menetluse käiku",
+        kind=ActionKind.MONITOR,
+        date_semantics=DateSemantics.REVIEW_ON,
+        target_date=timezone.localdate() + timedelta(days=7),
+        actor=actor,
+    )
+    return matter
+
+
+@pytest.mark.django_db
+def test_the_folded_run_holding_the_creation_says_when_the_file_started(specialist) -> None:
+    """«Teema loodud 25.08, tegevusi 3», and nothing about event types.
+
+    The two facts a reader deciding whether to open the row can act on: when
+    this file began, and how much is folded in here. The row used to lead with
+    «3 süsteemimuudatust — Järgmiseks määratud, Tõendiversioon lisatud, Teema
+    loodud», which is the application reading its own event vocabulary out at
+    somebody — at the top of nearly every Matter, since a file's own creation
+    ends up in a run on almost all of them.
+    """
+    from app.core.dates import short_day_month
+    from app.matters import timeline as tl
+
+    matter = _three_system_events(specialist)
+
+    items, _ = tl.matter_timeline(matter=matter, user=specialist)
+    runs = [row for row in tl.collapse_system_runs(items) if row.is_run]
+
+    assert len(runs) == 1
+    run = runs[0]
+    assert run.count == 3
+    assert run.summary == f"Teema loodud {short_day_month(timezone.localdate())}, tegevusi 3"
+    for word in ("süsteemimuudatus", "Järgmiseks määratud", "Hetkeseis muudetud"):
+        assert word not in run.summary
+
+
+@pytest.mark.django_db
+def test_a_later_system_run_never_claims_a_creation_date(specialist, other_specialist) -> None:
+    """A run that does not hold the creation must not print one.
+
+    The quiet form is a count and nothing else. Naming the file's creation on a
+    run of two ordinary field changes would be the summary stating a fact its
+    own contents do not contain, and picking the earliest day *in the run* to
+    print it with would be a manufactured creation date.
+    """
+    from app.matters import timeline as tl
+
+    matter = factories.MatterFactory(owner=specialist)
+    change_stage(matter=matter, stage=factories.StageFactory(), actor=specialist)
+    assign_matter(matter=matter, owner=other_specialist, actor=specialist)
+
+    items, _ = tl.matter_timeline(matter=matter, user=specialist)
+    run = next(row for row in tl.collapse_system_runs(items) if row.is_run)
+
+    assert run.created_on is None
+    assert run.summary == f"Tegevusi {run.count}"
+    for word in ("Teema loodud", "süsteemimuudatus", "Hetkeseis muudetud", "Teema määratud"):
+        assert word not in run.summary
+
+
+@pytest.mark.django_db
+def test_the_collapsed_row_stops_reciting_event_types_and_keeps_them_underneath(
+    client, specialist
+) -> None:
+    """A presentation change, and the evidence is untouched.
+
+    The summary line names no event type; the disclosure under it still names
+    every one of them, one per line, and the `ChangeEvent` rows behind those
+    lines are all still there. Nothing is filtered out of the read model to
+    make the summary quieter.
+    """
+    from app.audit.enums import ChangeEventType
+    from app.audit.models import ChangeEvent
+
+    matter = _three_system_events(specialist)
+
+    client.force_login(specialist)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    row = " ".join(body.split('class="uxtl__sysrow"')[1].split("</summary>")[0].split())
+
+    assert "tegevusi 3" in row
+    for word in ("süsteemimuudatus", "Järgmiseks määratud", "Hetkeseis muudetud"):
+        assert word not in row, f"the collapsed summary still recites {word!r}"
+
+    # Open, the run is the event log it always was.
+    opened = body.split('class="uxtl__sysbody"')[1]
+    for label in ("Teema loodud", "Hetkeseis muudetud", "Järgmiseks määratud"):
+        assert label in opened
+
+    kept = set(ChangeEvent.objects.filter(matter=matter).values_list("event_type", flat=True))
+    assert {
+        ChangeEventType.MATTER_CREATED,
+        ChangeEventType.MATTER_STAGE_CHANGED,
+        ChangeEventType.NEXT_ACTION_SET,
+    } <= kept
+
+
 @pytest.mark.django_db
 def test_the_closed_timeline_says_what_was_written_and_what_is_owed(client, specialist) -> None:
     """A counter tells a reader how much there is and nothing about whether
