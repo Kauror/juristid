@@ -234,10 +234,20 @@ correspondence nothing had examined — which is worse than having no scanner at
 all. This command is the difference between the two, and CI runs it against the
 same image on every pull request (ADR 0066).
 
-If the application refuses to start with `juristid.E015`, the environment file
-is missing `MALWARE_SCANNER_BACKEND=clamav`. That is deliberate: real data with
-no scanner configured is a deployment that can never read a document, and this
-is the cheapest moment to find out.
+If the application refuses to start with `juristid.E015`, it has not been told
+where the scanner is. On this stack that is **not** a missing line in
+`config/juristid.env`, and adding one there is the wrong move: `compose.yml`
+sets `MALWARE_SCANNER_BACKEND`, `MALWARE_SCANNER_HOST` and
+`MALWARE_SCANNER_PORT` on both `web` and `extractor` itself, and Compose's
+`environment:` takes precedence over `env_file:`. So E015 here means the stack
+was resolved from a compose file older than the scanner, or those keys were
+overridden on the command line — read `docker compose … config` and fix what it
+actually shows, rather than editing a secret file that is not expected to carry
+them.
+
+The check itself is deliberate either way: real data with no scanner configured
+is a deployment that can never read a document, and this is the cheapest moment
+to find out.
 
 ### 6. Accounts
 
