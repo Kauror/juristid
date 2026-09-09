@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Uuendused · {{ application_name }}{% endblock %}
+
+{% comment %}
+What has changed in Juristid, one accordion per calendar day.
+
+A day, not a release. Several production deployments on one day are one group
+here, because "there were three images that Tuesday" is an operational fact with
+no reader — what a lawyer wants to know is what was different when they next
+opened the application. The rows come from docs/release-notes/uuendused.toml,
+which is where they are edited, in a pull request beside the code they describe.
+
+Native `<details>`/`<summary>`, not a component. Opening and closing works with
+no JavaScript at all, the keyboard and the screen reader get the browser's own
+behaviour, and there is no third accordion implementation in this repository to
+keep in step with the other two. `.accordion` is the same component the Teema
+page's sections use, so this page introduces no visual language of its own.
+
+The newest day is open and the rest are shut: somebody arriving here almost
+always wants the most recent change, and a page of thirty open days would bury
+it. `forloop.first` decides that rather than a flag in the file, so the property
+cannot go stale as days are added.
+
+The heading is written out — «9. september 2026» — and is deliberately *not* a
+`<time>` element. Every `<time>` on a captured page is masked by the visual
+suite as clock-derived (e2e/test_ui_regression.py, `CLOCK_DEPENDENT`), and these
+dates are the opposite of that: they are static content, committed in a file,
+and painting over them would leave a baseline that no longer shows what the page
+says. The date is text either way, so nothing a reader or a screen reader
+receives depends on the element.
+
+Every bullet is plain text from a TOML file, rendered through ordinary
+autoescaping. Nothing here is `|safe`: a release note is prose somebody typed,
+and a typo in it must not be able to become markup.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Uuendused</h1>
+    <span class="pagehead__context">
+      Siit leiad Juristidi uuendused päevade kaupa. Ühe päeva alla on koondatud
+      kõik samal päeval lisandunud muudatused.
+    </span>
+  </div>
+
+  <div class="relnotes">
+    {% for day in release_days %}
+      <details class="accordion relnotes__day" {% if forloop.first %}open{% endif %}>
+        <summary class="accordion__head">
+          <span class="accordion__caret" aria-hidden="true"></span>
+          <h2 class="accordion__title">{{ day.heading }}</h2>
+          {% comment %}
+            The count is supplementary and reads as such. The date beside it is
+            what identifies the group, and it is text, so nothing here depends
+            on seeing the number or the caret.
+          {% endcomment %}
+          <span class="accordion__summary">{{ day.count_label }}</span>
+        </summary>
+        <div class="accordion__body">
+          <ul class="relnotes__list">
+            {% for change in day.changes %}
+              <li>{{ change }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      </details>
+    {% empty %}
+      <p class="empty">Uuendusi ei ole veel kirja pandud.</p>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

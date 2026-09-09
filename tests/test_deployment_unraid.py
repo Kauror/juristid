@@ -237,6 +237,12 @@ def test_the_container_names_do_not_collide_with_anything_on_the_host(
         "juristid-test-extractor",
         "juristid-test-searchindex",
         "juristid-test-tunnel",
+        # The scanner, since ADR 0066. Named on the rehearsal too rather than
+        # only on production, because the two stacks differing in their security
+        # model is what let the original defect live: the rehearsal ran
+        # REAL_DATA_ALLOWED=0, where PENDING is already extractable, and so
+        # exercised a branch production could not reach.
+        "juristid-test-clamav",
     }
 
 

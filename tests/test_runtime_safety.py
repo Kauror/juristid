@@ -39,10 +39,14 @@ def test_a_clean_development_configuration_passes(settings):
 
 
 def test_a_clean_production_configuration_passes(settings):
-    """What "clean" means now includes an authenticator in front.
+    """What "clean" means now includes an authenticator *and* a scanner.
 
     Stage 2D added juristid.E006: real data with nothing authenticating the
     request is not a configuration this system will start in (docs/adr/0016).
+    docs/adr/0066 adds juristid.E015 on the same principle applied one layer in:
+    real data with no malware scanner is a deployment that can never read a
+    document, because nothing can move a file from PENDING to CLEAN and
+    `is_scan_state_extractable` refuses everything else.
     """
     settings.DEBUG = False
     settings.SECRET_KEY = "a-real-secret"  # noqa: S105
@@ -51,7 +55,55 @@ def test_a_clean_production_configuration_passes(settings):
     settings.AUTH_MODE = "cloudflare_access"
     settings.CF_ACCESS_TEAM_DOMAIN = "naidiskoda.cloudflareaccess.invalid"
     settings.CF_ACCESS_AUDIENCE = "a" * 64
+    settings.MALWARE_SCANNER_BACKEND = "clamav"
     assert _ids(settings) == set()
+
+
+# --------------------------------------------------------------------------
+# The scan gate. Real data with no scanner was not merely unguarded before this
+# — it was the reported defect: `Uus teema` staged a file, showed «Loen faili…»
+# and waited for an answer no code path could produce (docs/adr/0066).
+# --------------------------------------------------------------------------
+
+
+def test_real_data_without_a_scanner_is_refused(settings):
+    settings.DEBUG = False
+    settings.SECRET_KEY = "a-real-secret"  # noqa: S105
+    settings.DEV_LOGIN_ENABLED = False
+    settings.REAL_DATA_ALLOWED = True
+    settings.AUTH_MODE = "cloudflare_access"
+    settings.CF_ACCESS_TEAM_DOMAIN = "naidiskoda.cloudflareaccess.invalid"
+    settings.CF_ACCESS_AUDIENCE = "a" * 64
+    settings.MALWARE_SCANNER_BACKEND = "none"
+    assert "juristid.E015" in _ids(settings)
+
+
+def test_development_without_a_scanner_is_fine(settings):
+    """And it must stay fine, or nobody could run this locally.
+
+    With REAL_DATA_ALLOWED off, PENDING is already extractable — it always has
+    been, because the data is invented — so a development environment with no
+    scanner reads its files exactly as before. The check is about the *pair*,
+    not about the scanner alone.
+    """
+    settings.DEBUG = True
+    settings.SECRET_KEY = settings.DEV_INSECURE_SECRET_KEY
+    settings.DEV_LOGIN_ENABLED = True
+    settings.REAL_DATA_ALLOWED = False
+    settings.MALWARE_SCANNER_BACKEND = "none"
+    assert "juristid.E015" not in _ids(settings)
+
+
+def test_a_scanner_backend_that_does_not_exist_is_refused(settings):
+    """A typo must not read as "no scanner, carry on".
+
+    `scanner_configured()` answers False for an unknown backend as well as for
+    `none`, so without this check a misspelled MALWARE_SCANNER_BACKEND would
+    silently produce exactly the state this round removed.
+    """
+    settings.REAL_DATA_ALLOWED = False
+    settings.MALWARE_SCANNER_BACKEND = "clamvav"
+    assert "juristid.E015" in _ids(settings)
 
 
 # --------------------------------------------------------------------------

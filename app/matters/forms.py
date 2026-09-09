@@ -8,6 +8,7 @@ by adding another view (master specification 12.4, 23.4).
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Sequence
 from datetime import date, datetime, time
 from typing import Any, cast
@@ -183,7 +184,7 @@ def offered_policy_areas() -> list[PolicyArea]:
     return list(selectable_policy_areas())
 
 
-def _typed_organisation_field(label: str) -> forms.CharField:
+def _typed_organisation_field(label: str, *, hook: str = "") -> forms.CharField:
     """A box for naming an institution the catalogue may not hold yet.
 
     One definition, two counterparty fields. `Adressaat` has had this since the
@@ -192,7 +193,21 @@ def _typed_organisation_field(label: str) -> forms.CharField:
     `resolve_source_organisations` for what that decision was and what replaced
     it. The two remain *different questions* about the same catalogue, so they
     are two fields with two labels and one implementation.
+
+    ``hook`` names the control for the browser. `Uus teema` offers a sender
+    somebody is typing as an addressee candidate before either exists, and the
+    script needs to find the two boxes without depending on the auto-generated
+    `id_` that a renamed field would change under it. It is an attribute and
+    nothing more: no behaviour here reads it, and with scripting off it does
+    nothing at all (static/js/app.js `bindCounterpartyPromotion`).
     """
+    attrs = {
+        "class": "field__input field__input--compact",
+        "autocomplete": "off",
+        "placeholder": "Kirjuta asutuse nimi",
+    }
+    if hook:
+        attrs[hook] = ""
     return forms.CharField(
         label=label,
         # `Organisation.name` is 300, so a name this field accepted and the
@@ -200,13 +215,7 @@ def _typed_organisation_field(label: str) -> forms.CharField:
         max_length=300,
         required=False,
         strip=True,
-        widget=forms.TextInput(
-            attrs={
-                "class": "field__input field__input--compact",
-                "autocomplete": "off",
-                "placeholder": "Kirjuta asutuse nimi",
-            }
-        ),
+        widget=forms.TextInput(attrs=attrs),
     )
 
 
@@ -226,7 +235,7 @@ def sender_name_field() -> forms.CharField:
     Nothing is created here. `app.matters.services.resolve_source_organisations`
     decides what the typed name means, inside the save's own transaction.
     """
-    return _typed_organisation_field("Uus saatja")
+    return _typed_organisation_field("Uus saatja", hook="data-sender-name")
 
 
 def addressee_name_field() -> forms.CharField:
@@ -250,7 +259,7 @@ def addressee_name_field() -> forms.CharField:
     length-caps the text; `app.matters.services.resolve_addressee` decides what
     it means, and does so inside the save's own transaction (§5, §6).
     """
-    return _typed_organisation_field("Uus adressaat")
+    return _typed_organisation_field("Uus adressaat", hook="data-addressee-name")
 
 
 def clean_typed_organisation_name(value: str | None) -> str:
@@ -395,6 +404,71 @@ def addressees_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
         return list(Organisation.objects.order_by("name")[:limit])
     found = Organisation.objects.filter(pk__in=ranking)
     return sorted(found, key=lambda organisation: ranking[organisation.pk])
+
+
+def _promote_selected_senders(form: Any, shortlist: list[Organisation]) -> list[Organisation]:
+    """The addressee shortlist, with this form's chosen senders moved to the front.
+
+    Ranking only. It reads what the form was *given* and returns a different
+    order of the same catalogue; it selects nothing, writes nothing and creates
+    nothing.
+
+    Read from `form.data` rather than from `cleaned_data`, because this runs in
+    `__init__` — before validation, and on forms that will never be validated
+    at all. Two consequences worth stating:
+
+    * an identifier that is not a real Organisation matches nothing, and one
+      that is not even a UUID is discarded before it reaches the queryset —
+      so a malformed or hostile POST reorders nothing rather than raising,
+      and the page answers with the ordinary refusal instead of a 500;
+    * the promotion survives a *refused* save, which is the case it exists for.
+      A form that comes back with errors comes back with its senders ticked, and
+      the addressee they most likely want must still be at the front.
+
+    Authorization needs no separate thought here: every Organisation is a valid
+    counterparty for every reader, and the ones being promoted are the ones this
+    reader just chose. Nothing about a restricted Matter can reach this — the
+    input is the request, not the register (task §10, §12).
+    """
+    if not form.is_bound:
+        return list(shortlist)
+
+    chosen: list[Any] = []
+    for name in ("source_organisations", "source_organisations_other"):
+        field = form.fields[name]
+        # The widget's own reader, not `form.data.getlist`. A bound form's data
+        # is a QueryDict from a real POST and an ordinary dict from a caller
+        # constructing one, and only the first has `getlist` — so reaching for
+        # it directly is a promotion that works in production and silently does
+        # nothing anywhere else. This is the accessor Django's own field
+        # validation uses, and it honours the form prefix too.
+        raw = field.widget.value_from_datadict(form.data, form.files, form.add_prefix(name))
+        if raw is None:
+            continue
+        chosen.extend(raw if isinstance(raw, (list, tuple)) else [raw])
+
+    # Parsed here rather than handed to the queryset. `Organisation.pk` is a
+    # UUID column, and a value that is not one makes `pk__in` *raise* — which in
+    # `__init__` is a 500 on a page whose whole job is to answer a bad POST with
+    # a form and an error message. A caller probing this endpoint learns nothing
+    # and gets the ordinary refusal; the field's own validation still rejects the
+    # value a moment later.
+    identifiers: list[uuid.UUID] = []
+    for value in chosen:
+        try:
+            identifiers.append(uuid.UUID(str(value)))
+        except (ValueError, AttributeError, TypeError):
+            continue
+
+    if not identifiers:
+        return list(shortlist)
+
+    # One query for however many were named. Ordered by name so that several
+    # senders promote deterministically rather than in whatever order the
+    # browser happened to serialise the checkboxes.
+    promoted = list(Organisation.objects.filter(pk__in=identifiers).order_by("name"))
+    seen = {organisation.pk for organisation in promoted}
+    return [*promoted, *(item for item in shortlist if item.pk not in seen)]
 
 
 class MatterCreateForm(forms.Form):
@@ -620,23 +694,6 @@ class MatterCreateForm(forms.Form):
             attrs={"class": "field__input", "placeholder": "Millisesse valdkonda see kuulub?"}
         ),
     )
-    #: One checkbox, unticked, rather than a REAL/TEST select.
-    #:
-    #: Real work is the overwhelmingly normal case, and a required dropdown on
-    #: every creation would put a decision in front of somebody who has none to
-    #: make — the shape of control people learn to click past without reading.
-    #: The presentation is a boolean; the *stored* value is still the two-value
-    #: class, resolved by the `data_class` property below (Agent-C brief 15, 16).
-    is_test_data = forms.BooleanField(
-        label="Testandmed",
-        required=False,
-        # The one control on this page that is not a chip. Every chip answers
-        # "which of these is it"; this answers "is this even real work", and a
-        # pill in the row beside Valdkonnad would read as one more of them.
-        widget=forms.CheckboxInput(attrs={"class": "checkitem__input"}),
-        help_text="Arenduseks loodud teema; ei kuulu päris aruandlusse.",
-    )
-
     #: `Nähtavus` is deliberately absent from this form.
     #:
     #: Restricting a Matter is a rare, deliberate act, and putting it on the
@@ -677,14 +734,28 @@ class MatterCreateForm(forms.Form):
 
     @property
     def data_class(self) -> str:
-        """What the checkbox means in the vocabulary the model stores.
+        """Ordinary `Uus teema` creates real work. There is no other answer.
 
-        The form parses and the service writes: this hands the service a value
-        from `MatterDataClass`, and nothing here touches a model field
-        (the convention this module opens with, Agent-C brief 16).
+        There used to be a «Testandmed» checkbox here and this read it. Both are
+        gone, and the removal is the point rather than a side effect: the field
+        existed so that somebody generating demonstration records could mark
+        them, and it was standing on the one page a lawyer uses every day, where
+        the only thing it could do was be ticked by mistake.
+
+        **A forged POST cannot bring it back.** This is a constant, not a hidden
+        input and not a default that a stray `is_test_data=on` could override —
+        the form has no such field to bind, so the parameter is simply not part
+        of the request as far as this form is concerned, and the value written
+        is the same either way. A test asserts exactly that (task §16).
+
+        Nothing downstream changed. `Matter.data_class` still exists, the enum
+        still has both values, the historical TEST records still carry theirs,
+        REAL/TEST reporting filters still split on it and the purge tooling
+        still finds them. What no longer exists is a way to *create* TEST work
+        from the ordinary capture path — which is where synthetic fixtures and
+        the seeding commands write it directly, as they always have
+        (app/matters/services.py `set_matter_data_class`, docs/adr/0067).
         """
-        if self.cleaned_data.get("is_test_data"):
-            return MatterDataClass.TEST
         return MatterDataClass.REAL
 
     def __init__(self, *args: Any, viewer: Any = None, **kwargs: Any) -> None:
@@ -731,16 +802,30 @@ class MatterCreateForm(forms.Form):
             # saatja" read as a second sender control that contradicted the
             # first, so the shortlist is excluded here.
             #
-            # `sender_tail_count` went with the disclosure it labelled. It
-            # existed only so «Vali nimekirjast» could carry a number, and a
-            # list that is simply on the page does not need one counted for it.
             frequent = {organisation.pk for organisation in self.frequent_senders}
             rest = cast(Any, self.fields["source_organisations_other"])
-            rest.choices = [
-                (organisation.pk, organisation.name)
+            tail = [
+                organisation
                 for organisation in Organisation.objects.order_by("name")
                 if organisation.pk not in frequent
             ]
+            rest.choices = [(organisation.pk, organisation.name) for organisation in tail]
+            # `sender_tail_count` is back, and so is the door it labels.
+            #
+            # It was removed when the catalogue came out from behind the
+            # disclosure and onto the page, on the argument that a door reading
+            # «Vali nimekirjast (15)» is a door somebody has to guess is worth
+            # opening. What that traded away was the shape of the row: a
+            # permanent search box and a scrolling catalogue sat in the Saatja
+            # column on every visit, including the overwhelming majority where
+            # the answer was one of the chips already on screen.
+            #
+            # Adressaat kept the disclosure and reads better for it, so Saatja
+            # now matches it: chips first, the whole catalogue and its search
+            # one click away, `Uus saatja` outside where it answers "the body I
+            # need is not here" without anything having to be opened
+            # (task §9, matter_create.html).
+            self.sender_tail_count = len(tail)
 
             # Adressaat is one radio group rendered in two places: the bodies
             # this department answers most often as chips, the rest inside the
@@ -753,7 +838,24 @@ class MatterCreateForm(forms.Form):
             # that Django puts first. The template slices on it rather than
             # comparing primary keys, which a template cannot do without a
             # filter written to help it.
-            self.frequent_addressees = addressees_by_usage(viewer)
+            #
+            # **The senders chosen on this form come first.** Replying to
+            # whoever wrote to you is the ordinary case, and Saatja and
+            # Adressaat are two questions about one catalogue of institutions —
+            # so a body ticked as the sender is the single best guess for the
+            # addressee, ahead of any historical ranking (docs/adr/0063,
+            # task §12).
+            #
+            # Promoted, never selected. The order changes; the value does not.
+            # Nothing here writes into `addressee_organisation`, and a person
+            # who has already answered it keeps their answer.
+            #
+            # This is the *server's* half, and it is the half that works on a
+            # bound form — a refused save re-renders with the senders that were
+            # ticked, and they must not fall back down the page underneath the
+            # historical shortlist. Ticking a chip with the form still open is
+            # the browser's half (static/js/app.js `bindCounterpartyPromotion`).
+            self.frequent_addressees = _promote_selected_senders(self, addressees_by_usage(viewer))
             shortlist = {organisation.pk for organisation in self.frequent_addressees}
             tail = [
                 organisation
@@ -774,6 +876,7 @@ class MatterCreateForm(forms.Form):
             self.addressee_tail_count = len(tail)
         else:
             self.frequent_senders = []
+            self.sender_tail_count = 0
             self.frequent_addressees = []
             self.addressee_offered = []
             # No viewer means no usage to rank by, so there is no shortlist and
@@ -986,6 +1089,7 @@ class MatterEditForm(forms.Form):
         rest = cast(Any, self.fields["source_organisations_other"])
         tail = [item for item in organisations if item.pk not in known]
         rest.choices = [(item.pk, item.name) for item in tail]
+        self.sender_tail_count = len(tail)
 
         # Adressaat is one radio group rendered in two places. One group and one
         # name, because it holds one value — the senders need two *fields* only
@@ -2418,6 +2522,7 @@ class IncomingIntakeForm(forms.Form):
         set_choices(self, "source_organisations_other", everything)
 
         self.frequent_senders: list[Organisation] = []
+        self.sender_tail_count = 0
         if viewer is not None:
             senders = cast(Any, self.fields["source_organisations"])
             self.frequent_senders = list(organisations_by_usage(viewer))
@@ -2426,11 +2531,9 @@ class IncomingIntakeForm(forms.Form):
             ]
             frequent = {organisation.pk for organisation in self.frequent_senders}
             rest = cast(Any, self.fields["source_organisations_other"])
-            rest.choices = [
-                (organisation.pk, organisation.name)
-                for organisation in everything
-                if organisation.pk not in frequent
-            ]
+            tail = [organisation for organisation in everything if organisation.pk not in frequent]
+            rest.choices = [(organisation.pk, organisation.name) for organisation in tail]
+            self.sender_tail_count = len(tail)
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}

@@ -4230,20 +4230,15 @@ a.barchart__row:hover {
   grid-template-columns: minmax(0, 1fr) 146px 146px;
 }
 
-/* Uus teema's people row carries three fields, not two.
+/* `createform__trio--people` was here, and is gone with the field it existed
+   for.
 
-   Andmeklass is one checkbox. Paired with Adressaat it took a 130px column and
-   left Adressaat the rest, while this row — Vastutaja beside a Saatja that is
-   commonly one or two chips — ran most of its width empty. The checkbox moves
-   into the empty part and Adressaat gets a whole row, which is the entire
-   change: no field is added, removed or reinterpreted.
-
-   A `trio` modifier rather than a third track on `--people`, because
-   `intake.html` and `matter_edit.html` genuinely have two fields on this row.
-   Widening the pair would narrow their Saatja by a column nothing occupies. */
-.createform__trio--people {
-  grid-template-columns: 246px minmax(0, 1fr) 130px;
-}
+   It gave Uus teema's people row a third 130px track for the Andmeklass
+   checkbox. That checkbox is no longer on the page at all — ordinary Uus teema
+   creates real work and does not ask — so the row is a pair again and uses
+   `--people` like `intake.html` and `matter_edit.html` do. Saatja gets the
+   130px and the gap, which is the field on that row with something to do with
+   it: eight chips, a disclosure and a text box (task §16, §17). */
 
 /* Under ~1024px the paired rows stop being pairs. A breakpoint rather than
    `auto-fit`, because these tracks are deliberately unequal — a 320px note
@@ -4485,6 +4480,30 @@ a.barchart__row:hover {
   color: var(--status-warning);
 }
 
+/* And the per-file «Loen faili…» goes when the page stops waiting.
+ *
+ * The panel's own sentence was not the only thing claiming a file was being
+ * read: each staged row carries its own label, server-rendered from the stored
+ * extraction state, and the browser giving up does not change that state — so
+ * the row went on saying «Loen faili…» beside the filename after the panel had
+ * already admitted it was no longer asking. Two answers on one screen, one of
+ * them false.
+ *
+ * Reached with `:has()` because the row and the panel are siblings in different
+ * parts of the form — the staged list belongs to the file control and the panel
+ * sits between it and the fields — so there is no shared element to hang a
+ * state attribute on that is not the form itself. The same idiom the intake row
+ * already uses to collapse itself when nothing is staged.
+ *
+ * Hidden rather than reworded: the panel says what happened once, in a full
+ * sentence, and a row repeating a shortened version of it per file is noise.
+ * The filename, the size and the × stay exactly where they were — the file is
+ * still there and still going to be filed, which is the whole point. */
+.createform:has(.intakepanel[data-intake-state="stalled"]) .dropzone__read--waiting,
+.createform:has(.intakepanel[data-intake-state="abandoned"]) .dropzone__read--waiting {
+  display: none;
+}
+
 /* -- Uus teema: what the file said ----------------------------------------- *
  *
  * The panel between the file and the fields it can fill. It renders nothing at
@@ -4559,6 +4578,31 @@ a.barchart__row:hover {
 /* Once abandoned, the reading line goes and the rest of the panel — anything
    already found — stays exactly where it was. */
 .intakepanel[data-intake-state="abandoned"] .intakepanel__reading {
+  display: none;
+}
+
+/* The two sentences that replace it, each shown in exactly one state.
+   Hidden by default rather than rendered conditionally, so the strings sit in
+   the template beside every other string on this page and the swap costs no
+   round trip (templates/matters/partials/intake_panel.html).
+
+   `stalled` is reached when the browser stops asking — the poll bound, or a
+   run of failed requests. Before this round it was reached silently and the
+   spinner kept turning over a page that had given up, which is how somebody
+   waited half an hour for an answer nothing was still fetching (task §8). */
+.intakepanel__stalled,
+.intakepanel__abandoned {
+  display: none;
+}
+
+.intakepanel[data-intake-state="stalled"] .intakepanel__stalled,
+.intakepanel[data-intake-state="abandoned"] .intakepanel__abandoned {
+  display: flex;
+}
+
+/* And in the stalled state the reading line goes too — the spinner with it.
+   That is the whole point: no animation may outlive the request it stood for. */
+.intakepanel[data-intake-state="stalled"] .intakepanel__reading {
   display: none;
 }
 
@@ -4668,6 +4712,22 @@ a.barchart__row:hover {
 .chip__input:focus-visible + .chip__name {
   outline: var(--focus-ring-width) solid var(--focus-ring);
   outline-offset: var(--focus-ring-offset-width);
+}
+
+/* A body that does not exist yet.
+ *
+ * `Uus saatja: Euroopa Komisjon` with no such row in the catalogue can still be
+ * the addressee — replying to whoever wrote to you is the ordinary case, and
+ * nothing should make somebody type one name twice. There is no primary key to
+ * offer until `Loo teema` creates one, so this chip stands for a name rather
+ * than for a record and writes into the `Uus adressaat` box when chosen
+ * (static/js/app.js `bindCounterpartyPromotion`, task §14).
+ *
+ * Dashed, because "not saved yet" is exactly what a dashed border means
+ * everywhere else in this application — the private-note field, the draft
+ * markers. Checked, it fills in like any other chip: by then it is an answer. */
+.chip--provisional .chip__name {
+  border-style: dashed;
 }
 
 /* The way back out of a chosen chip, shown only once there is something to
@@ -9264,4 +9324,39 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 .relatedmaterials__nohit {
   font-size: var(--typography-size-meta);
+}
+
+/* -- Uuendused: the release-note day list ------------------------------ */
+
+/* `.accordion` draws a rule under each day and none above the first, which
+   reads as a stack that has lost its top edge on a page that is nothing but
+   those rows. Everything else about the row — the caret, the hover, the focus
+   ring, the head's inset — is the component the Teema sections already use, so
+   this page introduces no visual language of its own. */
+.relnotes {
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* The bar is sticky and 48px tall. Without this, a day reached by the keyboard
+   or by a fragment opens underneath it. */
+.relnotes__day {
+  scroll-margin-top: 64px;
+}
+
+/* Prose, not table cells. `ul` carries its inset and bottom margin from
+   base.css; what it cannot know is that these items are sentences, which want
+   the body line height and a paragraph measure rather than the accordion
+   body's default. */
+.relnotes__list {
+  margin: 0;
+  color: var(--text-body);
+  line-height: var(--typography-line-body);
+}
+
+.relnotes__list li {
+  max-width: 76ch;
+}
+
+.relnotes__list li + li {
+  margin-top: var(--spacing-2);
 }

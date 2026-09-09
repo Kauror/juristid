@@ -444,6 +444,28 @@ EXTRACTION_WORKER_HEARTBEAT_PATH = env(
 )
 
 # --------------------------------------------------------------------------
+# The malware scan gate
+# --------------------------------------------------------------------------
+#
+# What moves a file from PENDING to CLEAN, and therefore the only thing that
+# lets a parser open it in a real-data environment. Before this existed the
+# transition had no implementation at all, so `Uus teema` on the deployed stack
+# staged a file, showed «Loen faili…» and waited for ever (app/documents/scanning.py).
+#
+# `none` is the development answer and it clears nothing. That is not a
+# weakness there: with REAL_DATA_ALLOWED off, PENDING is already extractable and
+# always has been, because the data is invented. The two together are refused at
+# start-up by juristid.E015.
+MALWARE_SCANNER_BACKEND = env("MALWARE_SCANNER_BACKEND", "none")
+MALWARE_SCANNER_HOST = env("MALWARE_SCANNER_HOST", "clamav")
+MALWARE_SCANNER_PORT = env_int("MALWARE_SCANNER_PORT", 3310)
+# Bounded, and bounded generously. clamd answers a small PDF in well under a
+# second; the ceiling is here so that a scanner which has stopped answering
+# costs one file's wait rather than a wedged worker — the failure the extractor
+# healthcheck is meant to be able to distinguish.
+MALWARE_SCANNER_TIMEOUT_SECONDS = env_int("MALWARE_SCANNER_TIMEOUT_SECONDS", 60)
+
+# --------------------------------------------------------------------------
 # Search freshness
 # --------------------------------------------------------------------------
 #

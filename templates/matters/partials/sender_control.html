@@ -8,31 +8,44 @@ that is no longer true. A person should not learn one sender workflow filing a
 Teema, a second correcting it and a third at intake, so there is one control and
 it lives here (§2E).
 
-**What changed, and why.**
+**The shape, and why it is this one again.**
 
-The old shape was a row of chips and a closed `<details>` reading «Vali
-nimekirjast (15)», with the search inside it and a sentence at the bottom
-saying the thing you had come looking for could not be done here:
+Three operations, in the order somebody reaches for them:
+
+1. **the shortlist** — about eight bodies, ranked by what this reader actually
+   works with and filled out deterministically rather than left short
+   (`organisations_by_usage`);
+2. **«Vali nimekirjast (N)»** — a disclosure holding the search box and the rest
+   of the catalogue;
+3. **`Uus saatja`** — a box for a body the catalogue does not hold, *outside*
+   the disclosure and always visible.
+
+The round before this one took the catalogue and its search out of the
+disclosure and put them permanently on the page. The reasoning was sound as far
+as it went — a door reading «Vali nimekirjast (15)» is a door somebody has to
+guess is worth opening, and the search that would have found the other forty was
+behind it. What it did not account for is how rarely the door is the right
+answer at all: the shortlist is *chosen* to hold the bodies this department
+actually works with, so on the overwhelming majority of visits the sender is
+already on screen, and what the permanent catalogue bought was a search box and
+a scrolling list occupying the Saatja column every single time.
+
+Adressaat has kept the disclosure throughout and reads better for it. So this
+matches Adressaat: same `<details class="chipdetails">`, same summary wording,
+same search-inside-the-body arrangement. One interaction to learn for the two
+fields that sit on the same form and answer the two halves of the same question
+(task §9, §18, templates/matters/matter_create.html).
+
+**What did *not* go back.** The sentence that used to close this block —
 
     Kui saatjat siin ei ole, tuleb asutus enne lisada asutuste alla —
     teema vormilt uut asutust ei teki.
 
-Every part of that was a step away from the work. The shortlist could collapse
-to one chip on a young dataset (`organisations_by_usage`), the search that would
-have found the other forty was behind a door nobody had a reason to open, and
-the answer to «it is not here» was: abandon this Teema, go to Asutused, create
-the body, come back and find your place again. Nobody did that. They filed the
-Teema with no sender.
-
-So the three operations are all on the page, in the order somebody reaches for
-them:
-
-1. **the shortlist** — about eight bodies, ranked by what this reader actually
-   works with and filled out deterministically rather than left short;
-2. **the search** — always visible, over the *whole* catalogue, and a filter and
-   nothing else: it hides chips that do not match and never hides a ticked one,
-   because hiding a checkbox does not clear it;
-3. **`Uus saatja`** — a box for a body the catalogue does not hold.
+— stays gone, and `Uus saatja` stays *outside* the disclosure. That is the half
+of the previous round that was actually load-bearing: the answer to "the body I
+need is not on this page" must not itself be hidden behind a click, because the
+workflow it replaced was «abandon this Teema, go to Asutused, come back», and
+nobody did that. They filed the Teema with no sender (docs/adr/0063).
 
 **Two controls, on purpose.** The search box posts nothing. If it did, somebody
 who typed «Kliima», watched the list narrow to `Kliimaministeerium` and ticked
@@ -48,9 +61,10 @@ as the Adressaat field beside it. Saatja and Adressaat remain different
 questions about one catalogue of institutions, never two catalogues
 (docs/adr/0063).
 
-Progressive enhancement throughout. With scripting off the shortlist and the
-whole catalogue are visible and tickable, and `Uus saatja` is an ordinary text
-box; only the filtering and the chip count are missing.
+Progressive enhancement throughout. With scripting off the shortlist is visible
+and tickable, the disclosure opens because that is what `<details>` does without
+help, and `Uus saatja` is an ordinary text box; only the filtering and the chip
+count are missing.
 
 Callers pass `list_id`, because two of these on one page would otherwise share
 an id — and `data-choicefilter` finds its list by that id.
@@ -61,7 +75,16 @@ an id — and `data-choicefilter` finds its list by that id.
     <span class="field__count" data-chipcount-for="source_organisations"></span>
   </legend>
 
-  <div class="chiprow">
+  {% comment %}
+    `data-sender-chips` marks the row the Adressaat promotion reads.
+
+    On `Uus teema` the two fields are on one form and replying to whoever wrote
+    to you is the ordinary case, so ticking a sender here moves that same body
+    to the front of the Adressaat choices. It is the *same* Organisation — one
+    catalogue, two questions about it — which is what makes the promotion a
+    reordering rather than a copy (static/js/app.js `bindCounterpartyPromotion`).
+  {% endcomment %}
+  <div class="chiprow" data-sender-chips>
     {% for choice in form.source_organisations %}
       <label class="chip">
         {{ choice.tag }}
@@ -70,33 +93,43 @@ an id — and `data-choicefilter` finds its list by that id.
     {% endfor %}
   </div>
 
-  <label class="field senderpick__search"
-         data-choicefilter="{{ list_id }}" data-choicefilter-compact>
-    <span class="visually-hidden">Otsi asutust nime järgi</span>
-    <input class="field__input field__input--compact" type="search"
-           autocomplete="off" placeholder="Otsi asutust nime järgi…">
-  </label>
-  {% comment %}
-    A result area, not a disclosure and not a wall.
+  {% if form.sender_tail_count %}
+    {% comment %}
+      The rest of the catalogue, with its search, behind one click.
 
-    The whole catalogue is in the document — that is what makes hiding any of
-    it allowed, because with scripting off this is an ordinary list of
-    checkboxes and every body is reachable. What scripting adds is that an
-    empty search box shows nothing but the bodies already ticked, and typing
-    shows what matches, bounded and scrollable so a catalogue of hundreds still
-    leaves this a row rather than a column of the form
-    (`data-choicefilter-compact`, static/css/app.css `.chiprow--catalogue`).
-  {% endcomment %}
-  <div class="chiprow chiprow--catalogue" id="{{ list_id }}">
-    {% for choice in form.source_organisations_other %}
-      <label class="chip">
-        {{ choice.tag }}
-        <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
-      </label>
-    {% empty %}
-      <p class="field__help">Kõik salvestatud asutused on juba ülal.</p>
-    {% endfor %}
-  </div>
+      `chipdetails--stretch` so that when the row stacks at a narrow width this
+      fills the Saatja field rather than shrink-wrapping into a narrow island —
+      the same modifier and the same reason as Adressaat's
+      (static/css/app.css, narrow breakpoint).
+    {% endcomment %}
+    <details class="chipdetails chipdetails--stretch">
+      <summary class="chipdetails__summary">
+        Vali nimekirjast ({{ form.sender_tail_count }})
+      </summary>
+      <div class="chipdetails__body">
+        <label class="field chipdetails__search" data-choicefilter="{{ list_id }}">
+          <span class="visually-hidden">Otsi asutust nime järgi</span>
+          <input class="field__input field__input--compact" type="search"
+                 autocomplete="off" placeholder="Otsi asutust nime järgi">
+        </label>
+        {% comment %}
+          No `data-choicefilter-compact` here, unlike the version that lived on
+          the page. Compact meant "an empty box shows nothing", which was right
+          for a list nobody had opened deliberately; inside a disclosure the
+          person has just said they want to see the catalogue, and answering
+          that with an empty panel would be the control appearing to be broken.
+        {% endcomment %}
+        <div class="chiprow" id="{{ list_id }}">
+          {% for choice in form.source_organisations_other %}
+            <label class="chip">
+              {{ choice.tag }}
+              <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    </details>
+  {% endif %}
 
   <label class="field senderpick__new">
     <span class="field__label">{{ form.sender_name.label }}</span>

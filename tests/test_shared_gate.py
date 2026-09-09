@@ -476,6 +476,12 @@ def test_the_shared_gate_counts_as_an_authenticator_for_real_data(settings):
     # Behind the tunnel, and saying so — without which no HSTS header is sent
     # and CSRF skips its referer check (juristid.E014).
     settings.SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    # And a scanner, which is a safeguard on the same list since ADR 0066: real
+    # data with nothing able to clear an uploaded file is a deployment that can
+    # never read a document, so it refuses to start (juristid.E015). Named here
+    # because this test asserts the *complete* safe configuration, and the set
+    # of things that makes real data safe grew by one.
+    settings.MALWARE_SCANNER_BACKEND = "clamav"
     assert check_runtime_safety(None) == []
 
 

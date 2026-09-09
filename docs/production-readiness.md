@@ -105,7 +105,7 @@ implied by a deployment.
 | 3.4 | Opinion archive catalogue | `opinion_archive plan --opinions … --expect-archive-sha256 …` | `opinion_archive catalogue` | Archive digest |
 | 3.5 | Opinion archive bytes | `opinion_archive materialize-plan` | `opinion_archive materialize` | Holding bytes is not filing them |
 | 3.6 | Opinion canonical records | `opinion_archive plan` (same plan) | `opinion_archive apply` | Only automatic classes file themselves |
-| 3.7 | Archive text and search | `opinion_archive_search status` | `extract-text`, then `rebuild` | Extraction is **BLOCKED** where real data lives (ADR 0014) |
+| 3.7 | Archive text and search | `opinion_archive_search status` | `extract-text`, then `rebuild` | No longer blocked by a missing scanner (ADR 0066). Real-data extraction requires the file to be `CLEAN`, and the scanner that writes it now exists; a backlog stamped `PENDING` before the scanner was deployed is scanned by the ordinary worker with no operator action. Running the rebuild itself remains a deliberate, owner-decided operation |
 | 3.8 | Second-pass proposals | `opinion_archive content-plan` | `content-apply` | Proposals only; nothing files (ADR 0023) |
 | 3.10 | Counterparty coverage — diagnostic only | `reference_data coverage --expect-register-snapshot-sha256 <sha>` | *(none — it never writes)* | Whether the reviewed institutions resolve enough of the register to be worth a backfill decision |
 

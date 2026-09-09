@@ -36,15 +36,36 @@ def create_form(page, base_url) -> None:
     page.wait_for_load_state("networkidle")
 
 
-def test_the_three_sender_operations_are_all_on_the_page_at_rest(page, base_url):
-    """The shortlist, the search and `Uus saatja`, with nothing to open first."""
+def test_the_two_sender_operations_that_matter_are_on_the_page_at_rest(page, base_url):
+    """The shortlist and `Uus saatja`, with nothing to open first.
+
+    This used to require the *search* to be at rest on the page too, and to
+    assert that the control had no disclosure at all. That decision is
+    superseded (ADR 0067): the catalogue and its search moved back behind
+    «Vali nimekirjast», where Adressaat has always kept them, because the
+    shortlist is filled to eight from the bodies this department actually works
+    with and answers the question on almost every visit — so what the permanent
+    catalogue bought was a search box and a scrolling list occupying the Saatja
+    column every single time.
+
+    What did **not** move is the half of that round which was load-bearing, and
+    it is what this test now pins: `Uus saatja` stays outside the disclosure.
+    The answer to "the body I need is not on this page" must not itself be
+    behind a click, because the workflow that replaced was «abandon this Teema,
+    go to Asutused, come back» and nobody performed it — they filed the Teema
+    with no sender (ADR 0063).
+    """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
     expect(page.locator('input[name="source_organisations"]').first).to_be_visible()
-    expect(page.locator("[data-choicefilter='saatja-nimekiri'] input")).to_be_visible()
     expect(page.get_by_label("Uus saatja")).to_be_visible()
-    assert page.locator(".senderpick details").count() == 0
+
+    # And the search is behind the door rather than beside the chips.
+    search = page.locator("[data-choicefilter='saatja-nimekiri'] input")
+    if search.count():
+        expect(search).to_be_hidden()
+        assert page.locator(".senderpick details").count() == 1
 
 
 def test_the_search_is_a_result_area_that_keeps_what_was_ticked(page, base_url):
@@ -63,8 +84,10 @@ def test_the_search_is_a_result_area_that_keeps_what_was_ticked(page, base_url):
     if not rows.count():
         pytest.skip("the seeded catalogue holds no body outside the shortlist")
 
-    # At rest: nothing ticked, so nothing shown.
+    # At rest the catalogue is behind «Vali nimekirjast» (ADR 0067), so it is
+    # opened before anything inside it is measured.
     expect(rows.first).to_be_hidden()
+    page.locator(".senderpick summary.chipdetails__summary").click()
 
     search = page.locator("[data-choicefilter='saatja-nimekiri'] input")
     name = rows.first.inner_text().strip()
@@ -121,10 +144,25 @@ def test_a_sender_named_here_is_afterwards_an_addressee_anybody_can_choose(page,
 
     create_form(page, base_url)
     addressees = page.locator('input[name="addressee_organisation"]')
+    # `textContent`, not `innerText`. Adressaat offers the *whole* catalogue —
+    # the ranked shortlist inline and every other body inside «Vali nimekirjast»
+    # (`MatterCreateForm.addressee_offered`) — and that disclosure is closed
+    # when the form opens. `innerText` is layout-aware, so it reads an empty
+    # string for a label that is present, correct and simply not painted, which
+    # turns «is this body offered?» into «is this body on screen?».
+    #
+    # The two questions came apart the moment more than one browser file existed
+    # in this shard: `addressees_by_usage` falls back to the alphabetical head
+    # of the catalogue only while *nothing* has ever been filed as an addressee,
+    # so whether this body lands above or below the fold depends on what other
+    # tests put in the shared database first. Sharding is a pure function of the
+    # collected file set, so adding a file anywhere moves that. The claim here
+    # is the one in the docstring — selectable, one `Organisation` table — and
+    # that claim is about the form's choices, not about scroll position.
     labels = addressees.evaluate_all(
         "nodes => nodes.map(node => {"
         "  const label = node.closest('label');"
-        "  return label ? label.innerText.trim() : '';"
+        "  return label ? label.textContent.replace(/\\s+/g, ' ').trim() : '';"
         "})"
     )
     assert any(TYPED_SENDER in label for label in labels), (
@@ -151,6 +189,7 @@ def test_the_count_beside_the_legend_reads_both_halves_of_the_set(page, base_url
     if not rows.count():
         pytest.skip("the seeded catalogue holds no body outside the shortlist")
 
+    page.locator(".senderpick summary.chipdetails__summary").click()
     search = page.locator("[data-choicefilter='saatja-nimekiri'] input")
     search.fill(rows.first.inner_text().strip()[:4])
     rows.first.locator("input").check()

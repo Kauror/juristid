@@ -13,6 +13,7 @@ from django.templatetags.static import static
 
 from app.core.authorization import is_department_head
 from app.core.development_status import ITEMS as DEVELOPMENT_STATUS_ITEMS
+from app.core.release_notes import load_release_notes
 
 
 def healthz(request: HttpRequest) -> JsonResponse:
@@ -87,6 +88,31 @@ def home(request: HttpRequest) -> HttpResponse:
         # their own work.
         return redirect("accounts:choose_persona")
     return render(request, "core/home.html")
+
+
+def release_notes(request: HttpRequest) -> HttpResponse:
+    """What has changed in Juristid, grouped by the day it became available.
+
+    Deliberately **not** `login_required`. The application's door is the shared
+    gate, applied to every path by `AuthenticationModeMiddleware`; a persona is a
+    second, different question — *whose work are you looking at* — and there is
+    no work on this page to look at. Somebody who has typed the department
+    password and not yet said who they are can read what changed, which is
+    exactly the moment they are most likely to want to (docs/adr/0034).
+
+    So the gate is untouched and nothing is exempted from it: in shared-gate mode
+    an unauthenticated request is redirected to the password exactly as it is for
+    every other route, and the reader arrives here only after passing it.
+
+    No database query and no network call. The notes are a file that was baked
+    into this image beside the code they describe, parsed once per process
+    (`app/core/release_notes.py`).
+    """
+    return render(
+        request,
+        "core/release_notes.html",
+        {"release_days": load_release_notes()},
+    )
 
 
 SURFACE_TOKENS = (

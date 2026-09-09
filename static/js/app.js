@@ -245,6 +245,10 @@
       var polls = 0;
       var pollTimer = null;
       var abandoned = false;
+      /* Consecutive failed status requests. One is a dropped packet; three in a
+         row is a page that should stop pretending it is still being answered. */
+      var failures = 0;
+      var MAX_FAILURES = 3;
 
       /* The four controls a suggestion may fill. Pealkiri is deliberately not
          among them: no title is ever pre-filled anywhere in this application,
@@ -435,6 +439,38 @@
         }
       };
 
+      /* ---- The page stopped waiting, so it stops saying it is waiting ------
+       *
+       * This is the reported defect, and it is worth being precise about which
+       * half of it lives here. A file staged on the deployed stack could never
+       * be read at all, because nothing ever moved it past the malware gate —
+       * that is `app/documents/scanning.py`. But the browser gave up after
+       * MAX_POLLS × POLL_MS ≈ 72 seconds and then simply `return`ed, leaving
+       * the panel at `data-intake-state="reading"` with an animated spinner and
+       * the words «Loen faili…» on screen. So somebody could sit in front of a
+       * form for half an hour watching a page that had stopped asking anything
+       * a minute in.
+       *
+       * A bounded poll loop is right and stays bounded. What changes is that
+       * reaching the bound is an *outcome* with something to say, not a silent
+       * exit: the spinner stops, the words become true, and the two things that
+       * were always true — the file is staged, `Loo teema` works — are the ones
+       * the person is left looking at (task §8).
+       */
+      var stall = function () {
+        window.clearTimeout(pollTimer);
+        var panel = document.getElementById("intake-panel");
+        if (!panel || panel.getAttribute("data-intake-state") !== "reading") {
+          return;
+        }
+        /* The same mechanism `Jätka ilma automaatse lugemiseta` uses, because
+           it is the same situation reached by a different route: the page is no
+           longer waiting for an answer. The words differ — one is a choice
+           somebody made, the other is a thing that happened to them — and both
+           are in the template with every other string on this page. */
+        panel.setAttribute("data-intake-state", "stalled");
+      };
+
       var schedule = function () {
         window.clearTimeout(pollTimer);
         var panel = document.getElementById("intake-panel");
@@ -442,6 +478,7 @@
           return;
         }
         if (polls >= MAX_POLLS) {
+          stall();
           return;
         }
         pollTimer = window.setTimeout(function () {
@@ -460,13 +497,22 @@
               return response.text();
             })
             .then(function (html) {
+              failures = 0;
               applyFragment(html);
               schedule();
             })
             .catch(function () {
-              /* Quietly. The file is staged, the form is complete, and a page
-                 that shouted about a failed poll would be alarming about
-                 something nobody has to act on. */
+              /* Still quietly — no alarm, nothing to act on — but no longer
+                 silently *and* for ever. A dropped request is retried; a
+                 sequence of them means the answer is not coming through this
+                 page, and continuing to animate a spinner over it would be the
+                 same lie by a different cause. */
+              failures += 1;
+              if (failures >= MAX_FAILURES) {
+                stall();
+                return;
+              }
+              schedule();
             });
         }, POLL_MS);
       };
@@ -539,6 +585,7 @@
               fileInput.value = "";
             }
             polls = 0;
+            failures = 0;
             abandoned = false;
             applyFragment(parsed);
             schedule();
@@ -1627,6 +1674,252 @@
     });
   }
 
+  /* ---- Saatja chosen here is the first Adressaat offered ------------------
+   *
+   * Answering whoever wrote to you is the ordinary case, and Saatja and
+   * Adressaat are two questions about *one* catalogue of institutions — the
+   * same `Organisation` rows, reached through two relations (docs/adr/0063).
+   * So a body ticked as the sender belongs at the front of the addressee
+   * choices, and «Euroopa Komisjon» chosen as Saatja must not then have to be
+   * hunted for behind «Vali nimekirjast».
+   *
+   * Three rules, and the second is the one that makes this safe to do at all:
+   *
+   * 1. **Promote, never select.** This reorders the choices and never touches a
+   *    `checked` property on the addressee group. Guessing an addressee would
+   *    put a counterparty on the record that nobody chose, on a form where the
+   *    person is right there to choose one.
+   * 2. **A manual answer is never disturbed.** Somebody who has picked an
+   *    addressee and then edits the sender keeps their addressee. The order of
+   *    the chips may change under it; the value does not.
+   * 3. **One radio, moved — never a second one drawn.** The option is the same
+   *    DOM node relocated to the front of the quick row, so the group still
+   *    holds one control per organisation and the long tail loses the entry the
+   *    shortlist gained. A copy would post the same name twice and put the
+   *    browser in charge of which one won.
+   *
+   * The server does the same ordering for the bound case, which is what a
+   * refused save re-renders (`app.matters.forms._promote_selected_senders`).
+   * This is the half that has to work before any round trip.
+   */
+  function bindCounterpartyPromotion(scope) {
+    (scope || document).querySelectorAll("[data-counterparty-form]").forEach(function (form) {
+      if (!once(form, "Counterparty")) {
+        return;
+      }
+      var senders = form.querySelector("[data-sender-chips]");
+      var quick = form.querySelector('[data-clears="addressee_organisation"]');
+      var typed = form.querySelector("[data-sender-name]");
+      var addresseeName = form.querySelector("[data-addressee-name]");
+      if (!senders || !quick) {
+        return;
+      }
+
+      var senderInputs = function () {
+        return form.querySelectorAll(
+          'input[name="source_organisations"], input[name="source_organisations_other"]'
+        );
+      };
+
+      /* The label wrapping one addressee radio, wherever it currently lives —
+         the quick row or the disclosure's long tail.
+         Compared as a property rather than built into an attribute selector, so
+         nothing here has to reason about escaping a value that came from the
+         page. */
+      var optionFor = function (value) {
+        var found = null;
+        form.querySelectorAll('input[name="addressee_organisation"]').forEach(function (radio) {
+          if (!found && radio.value === value) {
+            found = radio.closest(".chip");
+          }
+        });
+        return found;
+      };
+
+      /* ---- the temporary chip for a sender that does not exist yet --------
+       *
+       * `Uus saatja: Euroopa Komisjon` with no such body in the catalogue has
+       * no primary key to promote — there is no row until `Loo teema` creates
+       * one. The same name still has to be offerable as the addressee, so it is
+       * offered as a chip that writes into the `addressee_name` free-text
+       * control, which is the path that already exists for exactly this
+       * (`app.matters.services.resolve_addressee`).
+       *
+       * Deliberately nameless. It is not a form field, it posts nothing, and
+       * everything it does is done through the two controls that do post. On
+       * save the server resolves one typed sender and one typed addressee
+       * against one catalogue inside one transaction, so the same spelling
+       * becomes one Organisation row used twice — never two rows
+       * (`resolve_organisation_name`, task §14, §15).
+       */
+      var provisional = null;
+      var provisionalName = "";
+
+      var clearProvisional = function () {
+        if (!provisional) {
+          return;
+        }
+        var wasChecked = provisional.querySelector("input").checked;
+        provisional.remove();
+        provisional = null;
+        provisionalName = "";
+        /* Only what this chip itself wrote. A name the person typed into
+           Adressaat by hand is theirs and survives the sender being cleared. */
+        if (wasChecked && addresseeName) {
+          addresseeName.value = "";
+        }
+      };
+
+      var syncProvisional = function () {
+        if (!typed || !addresseeName) {
+          return;
+        }
+        var name = typed.value.trim();
+        if (!name) {
+          clearProvisional();
+          return;
+        }
+        /* Already offered as a real body: the catalogue holds this spelling, so
+           the ordinary promotion above covers it and a second chip saying the
+           same word would be the form offering one institution twice. */
+        var existing = Array.prototype.some.call(
+          form.querySelectorAll('input[name="addressee_organisation"]'),
+          function (radio) {
+            var label = radio.closest(".chip");
+            return label && label.textContent.trim().replace(/\s*×$/, "") === name;
+          }
+        );
+        if (existing) {
+          clearProvisional();
+          return;
+        }
+        if (provisional && provisionalName === name) {
+          return;
+        }
+        var checked = provisional && provisional.querySelector("input").checked;
+        if (provisional) {
+          provisional.remove();
+        }
+        provisional = document.createElement("label");
+        provisional.className = "chip chip--provisional";
+        provisional.setAttribute("data-provisional-addressee", "");
+        var input = document.createElement("input");
+        input.type = "radio";
+        input.className = "chip__input";
+        input.checked = !!checked;
+        var text = document.createElement("span");
+        text.className = "chip__name";
+        text.textContent = name;
+        provisional.appendChild(input);
+        provisional.appendChild(text);
+        quick.insertBefore(provisional, quick.firstChild);
+        provisionalName = name;
+        input.addEventListener("change", function () {
+          if (!input.checked) {
+            return;
+          }
+          /* One answer at a time. The typed name is what the server will
+             resolve, so the chosen chip has to let go. */
+          form.querySelectorAll('input[name="addressee_organisation"]').forEach(function (radio) {
+            radio.checked = false;
+          });
+          addresseeName.value = name;
+        });
+        if (checked) {
+          addresseeName.value = name;
+        }
+      };
+
+      var promote = function () {
+        var chosen = [];
+        senderInputs().forEach(function (input) {
+          if (input.checked) {
+            chosen.push(input);
+          }
+        });
+        /* By the label the person reads, so several senders promote in the
+           order the server would also put them in rather than in whichever
+           order the two checkbox groups happen to appear in the document. */
+        chosen.sort(function (a, b) {
+          var left = a.closest(".chip");
+          var right = b.closest(".chip");
+          return (left ? left.textContent : "").localeCompare(
+            right ? right.textContent : "",
+            "et"
+          );
+        });
+        /* Inserted in reverse so that repeated `insertBefore(first)` leaves
+           them in `chosen` order, and after the provisional chip if there is
+           one — a body the catalogue does not hold yet is the one the person is
+           in the middle of typing. */
+        for (var index = chosen.length - 1; index >= 0; index -= 1) {
+          var option = optionFor(chosen[index].value);
+          if (!option) {
+            continue;
+          }
+          var anchor = provisional && provisional.parentNode === quick
+            ? provisional.nextSibling
+            : quick.firstChild;
+          if (option !== anchor) {
+            quick.insertBefore(option, anchor);
+          }
+          option.hidden = false;
+        }
+      };
+
+      form.addEventListener("change", function (event) {
+        var target = event.target;
+        if (!target || !target.name) {
+          return;
+        }
+        if (target.name === "source_organisations" || target.name === "source_organisations_other") {
+          promote();
+        }
+        if (target.name === "addressee_organisation" && target.checked && provisional) {
+          /* The person chose a real body, so the typed one is no longer the
+             answer. `bindExclusiveName` empties the text box; this releases the
+             chip that filled it. */
+          provisional.querySelector("input").checked = false;
+        }
+      });
+
+      if (typed) {
+        typed.addEventListener("input", function () {
+          syncProvisional();
+          promote();
+        });
+      }
+      if (addresseeName) {
+        addresseeName.addEventListener("input", function () {
+          if (provisional && addresseeName.value.trim() !== provisionalName) {
+            provisional.querySelector("input").checked = false;
+          }
+        });
+      }
+
+      syncProvisional();
+      promote();
+    });
+  }
+
+  /* ---- A disclosure holding a ticked choice opens itself ------------------
+   * `Vali nimekirjast` is closed by default, which is right on arrival and
+   * wrong after a refused save: the catalogue behind it may hold the body the
+   * person ticked, and a form that comes back with an error and their answer
+   * hidden looks like a form that discarded it. The value was always posted;
+   * this is only about being able to see it.
+   */
+  function bindOpenChosenDetails(scope) {
+    (scope || document).querySelectorAll("details.chipdetails").forEach(function (holder) {
+      if (!once(holder, "OpenChosen")) {
+        return;
+      }
+      if (holder.querySelector("input:checked")) {
+        holder.open = true;
+      }
+    });
+  }
+
   /* Arriving from a number: put the reader on the rows.
    *
    * Every figure on Ulevaade links to `...#tulemused`, and a filtered register
@@ -2332,6 +2625,8 @@
     bindDatePickers(document);
     bindChoiceFilters(document);
     bindExclusiveName(document);
+    bindCounterpartyPromotion(document);
+    bindOpenChosenDetails(document);
     bindChipCounts(document);
     bindStageHelp(document);
     bindRequiredAction(document);
@@ -2359,6 +2654,8 @@
     bindDatePickers(event.target.querySelector ? event.target : document);
     bindChoiceFilters(event.target.querySelector ? event.target : document);
     bindExclusiveName(event.target.querySelector ? event.target : document);
+    bindCounterpartyPromotion(event.target.querySelector ? event.target : document);
+    bindOpenChosenDetails(event.target.querySelector ? event.target : document);
     bindChipCounts(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);
     bindRequiredAction(event.target.querySelector ? event.target : document);

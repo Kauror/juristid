@@ -100,7 +100,7 @@ def test_the_review_pre_fills_what_it_is_sure_of_and_saves_what_the_person_confi
     expect(page.locator("#id_response_deadline")).to_have_value("")
     screenshots(page, "30-dokumendist-leitud-ootel")
 
-    run_worker()
+    run_worker([letter_pdf.name, message_eml.name])
 
     # -- after extraction: suggestion, evidence, pre-filled blank fields ----
     page.goto(review_url(matter_url))
@@ -139,7 +139,7 @@ def test_a_medium_suggestion_is_saved_only_when_chosen_and_a_typed_title_stays(
 ) -> None:
     sign_in(page, base_url, SANDRA)
     matter_url = file_through_saabunud(page, base_url, [letter_pdf], title=TYPED_TITLE)
-    run_worker()
+    run_worker([letter_pdf.name])
 
     page.goto(review_url(matter_url))
     # The person's own title is kept; the heading is offered beside it.

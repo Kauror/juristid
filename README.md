@@ -530,6 +530,7 @@ docs/
   adr/                     architecture decision records
   data-contracts/          export contract, per-era Excel contracts, snapshot manifest
   metric-catalog/          the rules metric definitions obey (definitions live in code)
+  release-notes/           what /uuendused/ tells users changed, one entry per day
   secure-pilot-gate.md     checklist gating real data
   open-decisions.md        what business owners still have to decide
 static/css/                design tokens and baseline styles

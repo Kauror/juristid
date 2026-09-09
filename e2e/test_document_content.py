@@ -17,12 +17,14 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import READER, SANDRA, sign_in, sign_out
+from tests.extraction_report import assert_expected_files_extracted
 
 pytestmark = pytest.mark.e2e
 
@@ -34,7 +36,7 @@ ONLY_INSIDE_THE_PDF = "kaubaaluste"
 MATTER_TITLE = "Näidisministeeriumi digiaruandluse katse-eelnõu"
 
 
-def run_worker() -> str:
+def run_worker(expected_files: Sequence[str]) -> str:
     """Drain the extraction queue the way the deployment does.
 
     A subprocess rather than an in-process call, because that is what actually
@@ -42,6 +44,20 @@ def run_worker() -> str:
     database connection. Calling the function directly would test the parser and
     quietly skip the part where a *different* process has to see the row the web
     request committed.
+
+    ``expected_files`` names the files the *calling test* filed and expects to
+    come through. The queue is shared — every browser test that files a document
+    puts something in it — so «did anything fail?» is a question about the whole
+    suite and not about the caller. `e2e/test_uus_teema_files.py` files
+    placeholder bytes that are deliberately not PDFs, and the worker is right to
+    report them as `unreadable_pdf`; that must not turn into a red assisted-intake
+    test. What the caller is entitled to assert is that *its own* files came
+    through, and that is what this checks (tests/extraction_report.py).
+
+    Required rather than defaulted. A caller that names nothing asserts nothing
+    about itself, which is exactly the empty claim this helper was rewritten to
+    stop making — and a default would let one back in silently
+    (tests/test_extraction_report_scope.py).
     """
     # The settings module has to be forced. pytest sets
     # DJANGO_SETTINGS_MODULE=config.test_settings for its own process, the child
@@ -73,7 +89,7 @@ def run_worker() -> str:
     # expectation would fail somewhere else with a message about a missing
     # heading.
     assert "Töödeldud 0 faili" not in result.stdout, report
-    assert "FAILED" not in result.stdout, report
+    assert_expected_files_extracted(result.stdout, expected_files, report=report)
     return report
 
 
@@ -128,7 +144,7 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     page.goto(f"{base_url}{detail_url}")
     expect(page.get_by_text(re.compile("Teksti töötlemine ootel|Töötlemisel"))).to_be_visible()
 
-    run_worker()
+    run_worker([synthetic_pdf.name])
 
     # Back to the list, where the only thing extraction changes is that the way
     # into the text appears. That is asserted by the block below, which follows
@@ -198,7 +214,7 @@ def test_a_restricted_document_is_invisible_to_a_reader(page, base_url, syntheti
     page.get_by_role("button", name="Registreeri ja loo teema").click()
     expect(page.get_by_role("heading", name="Piiratud katsedokument")).to_be_visible()
 
-    run_worker()
+    run_worker([synthetic_pdf.name])
 
     page.get_by_placeholder("Otsi teemat, viidet, asutust…").fill(ONLY_INSIDE_THE_PDF)
     page.keyboard.press("Enter")
@@ -234,7 +250,7 @@ def test_an_email_shows_its_sender_and_its_attachments(
     page.get_by_role("button", name="Registreeri ja loo teema").click()
     expect(page.get_by_role("heading", name="Saabunud kiri ministeeriumist")).to_be_visible()
 
-    run_worker()
+    run_worker([path.name])
 
     page.goto(f"{page.url.rstrip('/')}/dokumendid/")
     page.reload()
