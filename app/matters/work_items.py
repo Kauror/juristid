@@ -697,14 +697,25 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
       There is no second idea of a sufficiently human action here.
 
     All three subqueries are ``Exists``, so the whole source stays one query
-    however many Matters it holds, and all three are deliberately
-    **reader-blind** — as the fulfilment rule already was. Each can only ever
-    *remove* a row, so none can widen what anybody sees, and a hidden child
-    cannot be read through the difference: what changes is whether one date is
-    called work, never whether a restricted record is disclosed. Scoping them
-    would be worse than useless here — it would make one reader's deadline live
-    and another's suppressed, which is two answers to a question about the
-    Matter rather than about the reader.
+    however many Matters it holds. **Two of the three are scoped to the reader**
+    and the third is not, and the difference is which table can be restricted.
+
+    ``Submission`` and ``NextAction`` are both
+    :class:`~app.core.models.VisibilityInheritingModel`, so either can be
+    restricted below a Matter its reader may open. They were read unscoped, on
+    the argument that a subquery which can only *remove* a row cannot disclose
+    anything. It can: removing a row is observable. A NORMAL Matter that sits on
+    Osakond's *tähtaeg sel nädalal* and in Statistika's *tähtaeg 30 p jooksul*
+    silently left both the moment a colleague filed a restricted opinion on it,
+    while every other surface went on showing the Matter — so the reader learns
+    that restricted work happened on a named file, which is exactly the
+    inference `visible_to` exists to prevent (AUTH-003, docs/adr/0038). The
+    register's own ``?tegevus=puudub`` had already been scoped for this reason
+    and disagreed with the figure beside it.
+
+    ``CurrentRegisterState`` is not restrictable — it is a derived row per
+    Matter with no override of its own — so scoping it would add a join and
+    change nothing.
 
     ``owner`` narrows by ``Matter.owner``, for the reason
     :func:`important_deadlines` does: this deadline belongs to whoever carries
@@ -712,8 +723,12 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
     töö and appears as *vastutajata* on the department surfaces, which is the
     honest place for work nobody has been given.
     """
-    sent = Submission.objects.filter(matter=OuterRef("pk"), status=SubmissionStatus.SENT)
-    instructed = NextAction.objects.filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
+    sent = Submission.objects.visible_to(user).filter(
+        matter=OuterRef("pk"), status=SubmissionStatus.SENT
+    )
+    instructed = NextAction.objects.visible_to(user).filter(
+        matter=OuterRef("pk"), status=ActionStatus.OPEN
+    )
     completed = CurrentRegisterState.objects.filter(
         matter=OuterRef("pk"),
         currency=RegisterCurrency.CURRENT,

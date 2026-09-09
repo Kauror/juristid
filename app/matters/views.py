@@ -164,7 +164,6 @@ from app.workflow.models import NextAction, StageVocabulary
 from app.workflow.services import (
     acknowledge_review,
     complete_next_action,
-    current_next_action,
     set_next_action_for_new_work,
 )
 
@@ -1788,7 +1787,14 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         matter=matter, user=request.user, limit=TIMELINE_PAGE_SIZE, only=timeline_only
     )
     engagements = selectors.matter_engagements(matter, request.user)
-    current_action = current_next_action(matter)
+    # `selectors.current_action_of`, not `workflow.services.current_next_action`.
+    # The service answers "which action is open on this Matter" for the domain,
+    # which is a question about the file; a *page* asks "which action may this
+    # reader see", and a `NextAction` can be restricted below the Matter it
+    # hangs off. Read unscoped, the Järgmiseks row printed a restricted step's
+    # text and date to anybody who could open the Matter — the same leak
+    # `open_action_prefetch` closed on the register row (AUTH-003).
+    current_action = selectors.current_action_of(matter, request.user)
     # The register's own `JÄRGMISEKS`, and only where no structured action
     # exists. Read here rather than in the template so the page cannot start
     # asking the database a question of its own — and read *conditionally*,
@@ -2401,8 +2407,12 @@ def _next_action_row_context(request: HttpRequest, matter: Matter) -> dict[str, 
     one surface that re-renders on its own, and building the whole overview to
     answer it would run the timeline, the engagement list and the intelligence
     selectors for a fragment that shows none of them.
+
+    Scoped like `_overview_context`, and for the same reason: this fragment
+    renders the same row, so a second reader of the same fact must not answer a
+    different question about it.
     """
-    current_action = current_next_action(matter)
+    current_action = selectors.current_action_of(matter, request.user)
     source_instruction = "" if current_action else source_instruction_for(matter)
     return {
         "matter": matter,
