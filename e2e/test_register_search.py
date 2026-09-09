@@ -38,6 +38,26 @@ def open_register(page, base_url):
     expect(page.get_by_role("heading", name="Teemad")).to_be_visible()
 
 
+def show_all(page):
+    """Ask the filtered register for every row, not its first page.
+
+    `open_register` above already explains why this suite reads the whole
+    register rather than page one. What it cannot do is survive `Filtreeri`:
+    the advanced panel rebuilds the query string from its own fields, the size
+    control is not one of them, and the answer therefore comes back at the
+    default twelve rows however the reader arrived.
+
+    That turns "did the filter keep the seeded Teema" into "did the rest of the
+    browser suite file twelve Matters first", which is a question about how the
+    partition happened to group the files (`ci_sharding.py`) and not about the
+    filter. Asked again here, so the assertion after a filter means the same
+    thing as the assertion before one.
+    """
+    page.goto(f"{page.url}&kaupa=koik")
+    page.wait_for_load_state("networkidle")
+    return page
+
+
 def result_count(page) -> int:
     """The number the page itself is claiming, not the rows we can see."""
     text = page.locator(".registercount strong").inner_text()
@@ -216,6 +236,7 @@ def test_the_owner_filter_narrows_the_register(page, base_url):
 
     page.wait_for_url(re.compile(r"vastutaja="))
     assert "Vastutaja" in chip_text(page)
+    show_all(page)
     expect(page.locator(".table--register")).to_contain_text(OPEN_TITLE)
     expect(page.locator(".table--register")).not_to_contain_text(ARCHIVE_TITLE)
 
@@ -237,6 +258,7 @@ def test_the_organisation_chooser_narrows_by_typing(page, base_url):
 
     page.wait_for_url(re.compile(r"asutus="))
     assert MINISTRY in chip_text(page)
+    show_all(page)
     expect(page.locator(".table--register")).to_contain_text(OPEN_TITLE)
 
 
