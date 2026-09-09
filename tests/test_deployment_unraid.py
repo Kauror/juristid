@@ -120,10 +120,23 @@ def _host_path(volume: str) -> str:
     return _SUBSTITUTION.sub(lambda match: match.group(1), volume).split(":", 1)[0]
 
 
+def _is_bind(volume: str) -> bool:
+    """Whether a short-form volume names a host path rather than a named volume.
+
+    Compose decides on the first character of the source: a leading `/` or `.`
+    is a host path, anything else names a volume from the top-level block. The
+    rule below is about the host filesystem, and a named volume has no host path
+    to place — its isolation comes from the project name instead.
+    """
+    return _host_path(volume).startswith(("/", "."))
+
+
 def test_every_bind_mount_stays_inside_the_juristid_subtree(compose: dict[str, Any]) -> None:
     seen = 0
     for name, service in compose["services"].items():
         for volume in service.get("volumes", []):
+            if not _is_bind(volume):
+                continue
             resolved = _host_path(volume)
             seen += 1
             assert resolved.startswith(OWN_PREFIX), f"{name}: {volume}"
@@ -131,8 +144,73 @@ def test_every_bind_mount_stays_inside_the_juristid_subtree(compose: dict[str, A
                 assert not resolved.startswith(foreign), f"{name} reaches into {foreign}"
     # Guards the guard: a parser bug that produced no paths would pass silently.
     # Six: postgres, cloudflared, and evidence plus derivatives on each of the
-    # two application containers.
+    # two application containers. The shared upload volume is not a bind — that
+    # is the point of it — and has its own tests below.
     assert seen == 6, "expected the postgres, evidence, derivative and cloudflared mounts"
+
+
+def test_every_non_bind_volume_is_a_declared_named_volume(compose: dict[str, Any]) -> None:
+    """What keeps the skip above from becoming a hole."""
+    declared = set(compose.get("volumes") or {})
+    for name, service in compose["services"].items():
+        for volume in service.get("volumes", []):
+            if _is_bind(volume):
+                continue
+            source = _host_path(volume)
+            assert source in declared, f"{name} mounts undeclared volume {source!r}"
+
+
+# -- the shared upload volume ----------------------------------------------
+#
+# The rehearsal earns its keep by meeting deployment defects before production
+# does, which it can only do where the two stacks agree. `Uus teema` staging is
+# written by `web` and read by `extractor` (docs/adr/0064), so a rehearsal
+# without this volume would report assisted intake working while production
+# could not do it at all. `tests/test_deployment_unraid_main.py` holds the two
+# files to the same shape.
+
+UPLOAD_TARGET = "/app/pending-uploads"
+
+
+def _upload_mounts(compose: dict[str, Any], service: str) -> list[str]:
+    mounts = compose["services"][service].get("volumes") or []
+    return [m for m in mounts if m.split(":")[1:2] == [UPLOAD_TARGET]]
+
+
+def test_web_and_the_extractor_share_one_upload_volume(compose: dict[str, Any]) -> None:
+    web = _upload_mounts(compose, "web")
+    extractor = _upload_mounts(compose, "extractor")
+    assert len(web) == 1, f"web: expected one mount at {UPLOAD_TARGET}, got {web}"
+    assert len(extractor) == 1, f"extractor: expected one, got {extractor}"
+    assert web[0].split(":", 1)[0] == extractor[0].split(":", 1)[0]
+
+
+def test_the_upload_volume_is_project_scoped_and_writable_only_by_web(
+    compose: dict[str, Any],
+) -> None:
+    """A named volume, scoped by the project, `web` RW and `extractor` RO.
+
+    No explicit `name:`, so this stack's is `juristid-test_pending_uploads` and
+    cannot be the volume production writes into. Not a bind either: a staged
+    file is correspondence even when the correspondence is invented, and appdata
+    is a share.
+    """
+    volumes = compose.get("volumes") or {}
+    source = _upload_mounts(compose, "web")[0].split(":", 1)[0]
+    assert not source.startswith(("/", ".")), f"{source!r} is a host path"
+    assert source in volumes, "not declared in the top-level volumes block"
+
+    declaration = volumes[source] or {}
+    assert "name" not in declaration, "an explicit name would defeat project scoping"
+    assert declaration.get("external") is not True
+
+    assert _upload_mounts(compose, "web")[0].endswith(UPLOAD_TARGET), "web must be read-write"
+    assert _upload_mounts(compose, "extractor")[0].endswith(f"{UPLOAD_TARGET}:ro")
+
+
+def test_no_other_service_receives_the_upload_volume(compose: dict[str, Any]) -> None:
+    for name in ("db", "searchindex", "tunnel"):
+        assert _upload_mounts(compose, name) == [], f"{name} was given the upload volume"
 
 
 def test_postgres_persists_at_the_path_the_18_image_actually_uses(

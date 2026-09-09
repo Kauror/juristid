@@ -299,28 +299,69 @@ def test_no_other_service_receives_the_upload_volume(compose: dict[str, Any]) ->
         assert _upload_mounts(compose, name) == [], f"{name} was given the upload volume"
 
 
-def test_the_upload_volume_is_not_shared_with_the_rehearsal(
+def test_the_rehearsal_has_the_same_upload_topology(
     compose: dict[str, Any], rehearsal: dict[str, Any]
 ) -> None:
-    """Project scoping is the isolation, so the rehearsal must not name one.
+    """The two stacks must not drift apart on *this* invariant.
 
-    `juristid-test` runs on the same host with invented data. Were it ever to
-    declare a volume of its own, this asserts the two are still told apart by
-    something — today by the rehearsal declaring none at all.
+    The rehearsal's whole purpose is to meet a deployment defect before
+    production does, and it can only do that where the two agree. This is the
+    boundary that hid the original defect: staging is written by `web` and read
+    by `extractor`, so a rehearsal whose containers do not share the volume
+    would exercise assisted intake successfully and prove nothing about the
+    stack that matters.
+
+    Compared as a shape rather than as text — same target, same source in both
+    services, same read-only split, same set of services excluded — so the two
+    files stay free to differ everywhere they legitimately do.
     """
-    theirs = set(rehearsal.get("volumes") or {})
-    if theirs:
-        assert compose["name"] != rehearsal["name"]
-        for volume in (compose.get("volumes") or {}).values():
-            assert (volume or {}).get("name") is None
-        for volume in theirs:
-            assert ((rehearsal.get("volumes") or {})[volume] or {}).get("name") is None
-    else:
-        assert not any(
-            not _is_bind(volume)
-            for service in rehearsal["services"].values()
-            for volume in service.get("volumes") or []
-        ), "the rehearsal mounts a named volume it does not declare"
+    for model in (compose, rehearsal):
+        services = model["services"]
+        web = [
+            m
+            for m in (services["web"].get("volumes") or [])
+            if m.split(":")[1:2] == [UPLOAD_TARGET]
+        ]
+        extractor = [
+            m
+            for m in (services["extractor"].get("volumes") or [])
+            if m.split(":")[1:2] == [UPLOAD_TARGET]
+        ]
+        assert len(web) == 1 and len(extractor) == 1, f"{model['name']}: not exactly one each"
+        assert web[0].split(":", 1)[0] == extractor[0].split(":", 1)[0], model["name"]
+        assert web[0].endswith(UPLOAD_TARGET), f"{model['name']}: web is not read-write"
+        assert extractor[0].endswith(f"{UPLOAD_TARGET}:ro"), f"{model['name']}: not read-only"
+
+        for other in ("db", "searchindex", "tunnel"):
+            mounts = services[other].get("volumes") or []
+            assert not [m for m in mounts if m.split(":")[1:2] == [UPLOAD_TARGET]], (
+                f"{model['name']}: {other} was given the upload volume"
+            )
+
+
+def test_the_two_stacks_cannot_reach_each_others_upload_volume(
+    compose: dict[str, Any], rehearsal: dict[str, Any]
+) -> None:
+    """Same declaration, different project — which is what keeps them apart.
+
+    Both stacks run on one host and both call the volume `pending_uploads`. What
+    stops the Chamber's staged correspondence and the rehearsal's invented mail
+    landing in one directory is that neither declaration overrides the name, so
+    Compose scopes each to its own project: `juristid-main_pending_uploads` and
+    `juristid-test_pending_uploads`.
+
+    An explicit `name:` on either — or `external: true` — would silently join
+    them, which is the one way this arrangement could go wrong quietly.
+    """
+    assert compose["name"] != rehearsal["name"]
+
+    for model in (compose, rehearsal):
+        declared = model.get("volumes") or {}
+        assert declared, f"{model['name']} declares no volumes"
+        for volume, declaration in declared.items():
+            body = declaration or {}
+            assert "name" not in body, f"{model['name']}: {volume} pins a global name"
+            assert body.get("external") is not True, f"{model['name']}: {volume} is external"
 
 
 def test_the_image_owns_the_upload_directory_the_volume_shadows() -> None:

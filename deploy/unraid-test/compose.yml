@@ -100,6 +100,17 @@ services:
       # Mixing them puts an operator one `rm -rf` away from destroying the half
       # that cannot be regenerated (docs/adr/0014).
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/derivatives:/app/derivatives
+      # Held uploads and `Uus teema` staging, READ-WRITE. The same topology as
+      # the main stack and for the same reason: `web` writes a staged file and
+      # `extractor` opens it to parse it, and a container's writable layer is
+      # private to that container (deploy/unraid-main/compose.yml,
+      # docs/adr/0064).
+      #
+      # The rehearsal has to agree with production at this boundary above all
+      # others, because this is the boundary that hid the defect: a stack whose
+      # two containers do not share this volume cannot rehearse assisted intake
+      # at all, and would report it working while production could not.
+      - pending_uploads:/app/pending-uploads
     networks:
       - internal
 
@@ -171,6 +182,11 @@ services:
     volumes:
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/evidence:/app/evidence
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/derivatives:/app/derivatives
+      # The staged files, READ-ONLY — the same volume `web` writes, and the same
+      # split as the main stack: every write to a staged object happens in the
+      # web process, and this one's whole interaction with the bytes is a single
+      # `storage.open(..., "rb")` (app/matters/intake_extraction.py).
+      - pending_uploads:/app/pending-uploads:ro
     networks:
       - internal
 
@@ -250,3 +266,16 @@ networks:
   internal:
     name: juristid-test-internal
     driver: bridge
+
+volumes:
+  # Temporary upload bytes, shared by `web` and `extractor` and by nothing else.
+  #
+  # Declared exactly as the main stack declares it, with no explicit `name:`, so
+  # Compose scopes it to this project: this one is `juristid-test_pending_uploads`
+  # and production's is `juristid-main_pending_uploads`. Two stacks on one host,
+  # one declaration, and no way for the rehearsal's invented correspondence to
+  # land in the volume holding the Chamber's.
+  #
+  # Nothing here is backed up and nothing here is canonical, in this stack least
+  # of all (deploy/unraid-main/RECOVERY.md, docs/adr/0064).
+  pending_uploads:
