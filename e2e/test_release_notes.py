@@ -136,20 +136,26 @@ def test_the_count_matches_the_number_of_changes_under_it(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_the_accordion_needs_no_javascript(browser, base_url):
+def test_the_accordion_needs_no_javascript(browser, browser_context_args, base_url):
     """The whole argument for `<details>` over a third accordion component.
 
     A fresh context with JavaScript disabled, so `app.js` and `ux.js` never run.
-    Sign-in is a plain form post and works without them; if that ever stops
-    being true this test says so, which is worth knowing on its own.
+    The session is carried in rather than signed in there: the development login
+    is a plain form and would probably work, but this test is about the
+    disclosure and should not fail for a reason that lives in the sign-in page.
+
+    `browser_context_args` so both contexts are the viewport, locale and time
+    zone the rest of the suite runs at.
     """
-    context = browser.new_context(java_script_enabled=True)
+    context = browser.new_context(**browser_context_args)
     signed_in = context.new_page()
     sign_in(signed_in, base_url, SANDRA)
     state = context.storage_state()
     context.close()
 
-    context = browser.new_context(java_script_enabled=False, storage_state=state)
+    context = browser.new_context(
+        **browser_context_args, java_script_enabled=False, storage_state=state
+    )
     page = context.new_page()
     try:
         page.goto(f"{base_url}{URL}")

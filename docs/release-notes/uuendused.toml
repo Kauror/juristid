@@ -186,7 +186,8 @@ basis = "deployment"
 revisions = ["53377932f5cba82fdc1193e35f7eca244c9d6809"]
 prs = [24, 30, 32, 33, 41, 42]
 changes = [
-  "Koja varasemad arvamused on rakenduses otsitavad: leiab nii kirja sisu kui ka selle, millise teema juurde ta kuulub.",
+  "Varasem register on sisse loetud: 2011. aastast alates tehtud töö on rakenduses olemas ja otsitav.",
+  "Koja varasemad arvamused on rakenduses olemas ja leitavad pealkirja, kuupäeva ja saaja järgi. Osa neist on juba seotud oma teemaga.",
   "Ühel teemal võib olla mitu saatjat, mitte ainult üks.",
   "Teema juurde saab kirja panna liikmete kaasamise — kellelt arvamust küsiti ja kes vastas.",
   "Statistika ja aruandlus eristavad päris tööd katseandmetest, nii et arvud on usaldusväärsed.",
@@ -198,7 +199,6 @@ basis = "deployment"
 prs = []
 changes = [
   "Juristid on kasutusel Koja päris andmetega. Eelnõude ja arvamuste töö on ühes kohas, mitte Exceli tabelis.",
-  "Varasem register on sisse loetud, nii et 2011. aastast alates tehtud töö on rakenduses olemas ja otsitav.",
   "Teema juurde lisatud failid jäävad teema külge alles ja nende tekst on otsinguga leitav.",
   "Sisse saab osakonna ühise parooliga ning seejärel valitakse, kelle tööd parasjagu vaadatakse.",
 ]
