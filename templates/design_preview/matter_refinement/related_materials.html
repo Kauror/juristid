@@ -1,0 +1,89 @@
+{% comment %}
+`Seotud materjalid`, as the refinement draws it. PREVIEW ONLY.
+
+The move is the point. In production this is a main-column `.factsection` with
+its own sub-headings, its own suggestion cards and two separate controls —
+«Võimalikud seosed» to compute them and «Lisa seotud teema» to search. The
+design makes it the third rail card and puts the search **and** the suggestions
+inside one `Lisa` disclosure: it is look-up material, and there should be one
+way in (`09-differences-and-non-goals.md` §6, §7).
+
+**Nothing here writes, and that is a decision the design forces rather than one
+this preview took.** `04-interaction-spec.md` I13 says typing behaviour, result
+rendering and what a suggestion's «Lisa» does are NOT SPECIFIED, and Q8 and Q9
+ask whether the pager's number is computed and whether «Lisa» confirms
+immediately. A preview that wired them would be answering three open questions
+by writing code. So the search box, the per-suggestion action and the pager are
+presentation, and the reconciliation report says so.
+
+The suggestions themselves are real: `app/related_materials/engine.py` computed
+them for this Matter and this reader, and the muted line under each title is the
+engine's own reason, not a sample string.
+{% endcomment %}
+<div class="railcard" id="seotud-materjalid">
+  <span class="railcard__label">Seotud materjalid</span>
+
+  {% if related_materials.is_empty %}
+    {% comment %}
+      Production copy, and the design keeps it — with a full stop the current
+      template does not have. `07-copy-inventory.md` writes it with one, so the
+      design's spelling is what a design preview renders; the reconciliation
+      report carries it as the single character this preview changes.
+    {% endcomment %}
+    <span class="railcard__none">Seotud teemasid ega taustmaterjali ei ole valitud.</span>
+  {% else %}
+    {% for item in related_materials.relations %}
+      <div class="railcard__row railcard__row--stack">
+        <a class="railcard__value" href="{% url 'matters:matter_detail' pk=item.other.pk %}">{{ item.other.title }}</a>
+        <span class="railcard__key">{{ item.state_label }}</span>
+      </div>
+    {% endfor %}
+    {% for item in related_materials.background %}
+      <div class="railcard__row railcard__row--stack">
+        <a class="railcard__value" href="{{ item.open_url }}">{{ item.title }}</a>
+        <span class="railcard__key">{{ item.label }}{% if item.date %} · {{ item.date|date:"j.n.Y" }}{% endif %}</span>
+      </div>
+    {% endfor %}
+  {% endif %}
+
+  {% if can_write %}
+    <details class="disclosure disclosure--inline">
+      <summary class="disclosure__summary">Lisa</summary>
+      <div class="disclosure__body mrp__stack">
+        <div class="relatedmaterials__search">
+          <label class="visually-hidden" for="mrp-seotud-otsing">Otsi teemat</label>
+          <input id="mrp-seotud-otsing" class="field__input field__input--compact mrp__search"
+                 type="search" autocomplete="off" placeholder="Otsi teemat või dokumenti…">
+        </div>
+
+        {% if preview_suggestions and not preview_suggestions.is_empty %}
+          <div>
+            <span class="railcard__key mrp__groupkey">Võimalikud seosed</span>
+            {% for item in preview_suggestions.matters %}
+              <div class="railcard__row railcard__row--stack">
+                <a class="railcard__value mrp__suggestion"
+                   href="{% url 'matters:matter_detail' pk=item.matter.pk %}">{{ item.matter.title }}</a>
+                <span class="railcard__key">
+                  {% for reason in item.reasons %}{{ reason }} · {% endfor %}
+                  <button class="mrp__inlineaction" type="button">Lisa</button>
+                </span>
+              </div>
+            {% endfor %}
+            {% for item in preview_suggestions.materials %}
+              <div class="railcard__row railcard__row--stack">
+                <a class="railcard__value mrp__suggestion" href="{{ item.open_url }}">{{ item.title }}</a>
+                <span class="railcard__key">
+                  {% for reason in item.reasons %}{{ reason }} · {% endfor %}
+                  <button class="mrp__inlineaction" type="button">Lisa</button>
+                </span>
+              </div>
+            {% endfor %}
+            {% if preview_suggestions.has_more %}
+              <button class="railblock__more mrp__inlineaction" type="button">Näita veel 5 ▾</button>
+            {% endif %}
+          </div>
+        {% endif %}
+      </div>
+    </details>
+  {% endif %}
+</div>

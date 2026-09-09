@@ -1,0 +1,38 @@
+{% comment %}
+`Märkmed`, as the refinement draws it. PREVIEW ONLY.
+
+Production carries two captions — «ainult sulle nähtav mustand» beside the
+label and «Salvestub automaatselt · ei lähe ajajoonele» in the foot — and an
+explicit «Salvesta» button beside the autosave. The design carries none of
+them: one label, the box, and a line saying when it last saved
+(`09-differences-and-non-goals.md` §22).
+
+**That is drawn here and decided nowhere.** `07-copy-inventory.md` says in
+terms that the two production captions being absent from this frame «is not
+authority to delete them from production without a decision», and Q7 asks
+whether removing the button removes the endpoint's UI at all. Both are in the
+reconciliation report.
+
+The saved line is real: it is this reader's own note record, at the minute it
+was last written. It is rendered only when there is one, because what the foot
+says before the first save, while saving and after a failure is open question
+Q6 and no wording for those states exists to render.
+
+No autosave wiring. The design defines the settled state and not the save
+(`04-interaction-spec.md` I14), and a box that posted here would be this preview
+inventing a trigger and an interval.
+{% endcomment %}
+{% if user.is_authenticated %}
+  <div class="railcard railcard--note">
+    <span class="railcard__label">Märkmed</span>
+    <form class="railnote">
+      <label class="visually-hidden" for="{{ note_form.body.id_for_label }}">Märkmed</label>
+      {{ note_form.body }}
+      {% if preview_note_saved_at %}
+        <div class="railnote__foot">
+          <span class="railcard__hint">Salvestatud {{ preview_note_saved_at|time:"H:i" }}</span>
+        </div>
+      {% endif %}
+    </form>
+  </div>
+{% endif %}

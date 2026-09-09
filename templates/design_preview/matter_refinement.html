@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}{{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+The Teema page in the refinement's arrangement. PREVIEW ONLY.
+
+This is a design study of `/teemad/<pk>/` and it is not that page. The Matter
+page's own template, partials, stylesheet and route are untouched; this renders
+the same Matter, from the same context builders, in the order and on the
+surfaces `design-handoff/matter-page-refinement` proposes.
+
+Main column, top to bottom (`02-layout-spec.md`):
+
+  4  Järgmiseks   ┐ zone A — one action unit, one 3 px accent edge
+  5  composer     ┘
+  6  facts panel  — Olulised tähtajad, then Kaasamine, one surface
+  7  Ajajoon      — page ground, open, last
+
+Rail: Teema andmed · Koja arvamus · Seotud materjalid · Märkmed.
+
+**Everything the design says is unchanged is included, not copied.** The header
+band, the banners, the Järgmiseks row and the timeline entries are the
+production partials; what the refinement does to them is in one preview
+stylesheet. Three partials are the design's own, and each says at its top what
+it changed and why.
+
+**The stylesheet and script are linked here rather than from `base.html`,** so
+no shell file is touched and the branch is thrown away by deleting it. Both are
+scoped under `.matter-refinement-preview`, so nothing they contain can reach an
+ordinary page even if they were somehow loaded on one.
+{% endcomment %}
+{% block content %}
+<link rel="stylesheet" href="{% static 'css/matter_refinement_preview.css' %}">
+<script src="{% static 'js/matter_refinement_preview.js' %}" defer></script>
+
+<div class="teema matter-refinement-preview" data-matter-refinement-preview>
+  {% include "matters/partials/header.html" %}
+
+  <div class="teemagrid" id="teema-vaade">
+    <div class="teemamain">
+      {% include "matters/partials/matter_banner.html" %}
+
+      {% comment %}
+        Zone A. Two production surfaces that the refinement reads as one: the
+        `.uxnext` row loses its rounded card and its side borders, the composer
+        loses its 2 px left border, and both carry the same 3 px inset accent
+        edge so the pair reads as a single action unit (§4, §5, §23).
+
+        The row is also the composer's own toggle here — the one scripted
+        interaction the refinement adds (I01), bound in the preview script.
+      {% endcomment %}
+      {% include "matters/partials/next_action_row.html" %}
+
+      {% if matter.is_open and can_write %}
+        {% include "design_preview/matter_refinement/composer.html" %}
+      {% endif %}
+
+      {% include "design_preview/matter_refinement/facts.html" %}
+
+      {% comment %}
+        `Ajalooline materjal` and the production `Seotud materjalid` section are
+        both absent from the design frame. The first is not drawn because the
+        prototype's Matter has no OneNote history; the second moved into the
+        rail. Neither is deleted — see the reconciliation report.
+      {% endcomment %}
+      {% include "design_preview/matter_refinement/timeline.html" %}
+    </div>
+
+    {% include "design_preview/matter_refinement/rail.html" %}
+  </div>
+</div>
+{% endblock %}

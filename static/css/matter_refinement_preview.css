@@ -1,0 +1,394 @@
+/* Teema page — design refinement preview. PREVIEW ONLY.
+ *
+ * Every rule here is scoped under `.matter-refinement-preview` and this file is
+ * linked from one template. Nothing in it can reach the Matter page, the
+ * register, or any other surface, and deleting the file removes the whole
+ * refinement.
+ *
+ * It is a transcription of the `<style>` block in the design's own prototype
+ * (`Teema (praegune).dc.html`, frame `#teema-ettepanek`), with the prototype's
+ * scoping id swapped for the root class and its inline `style=` attributes
+ * moved in — the application's own contract keeps static styling out of
+ * markup (tests/test_ui_contract.py).
+ *
+ * **No new colour, no new shadow, no new typeface.** `01-overview.md` says the
+ * refinement introduces none, and every value below is either a token from
+ * `tokens.css` or a geometry the handoff measures. The one number that is not a
+ * token is the 3 px accent edge, which is the design's own figure.
+ *
+ * ==================================================================== */
+
+/* The root exists so the scope has something to hang on, and so a reader
+   inspecting the page can see at a glance that they are not on `/teemad/`.
+   It sits on the same element as `.teema`, so it declares nothing that could
+   change how that container lays out — `min-width: 0` is what `.teemamain`
+   already carries and is inert on a block that has no flex parent. */
+.matter-refinement-preview {
+  min-width: 0;
+}
+
+/* ====================================================================
+ * Shared left edge — 32 px, the single alignment rule of the refinement
+ * (02-layout-spec.md, "Shared left edge")
+ * ==================================================================== */
+
+.matter-refinement-preview .uxnext,
+.matter-refinement-preview .uxcomp__collapsed,
+.matter-refinement-preview .factsections .factsection,
+.matter-refinement-preview .accordion--timeline .accordion__head {
+  padding-left: 32px;
+  padding-right: 32px;
+}
+
+/* ====================================================================
+ * Zone A — Järgmiseks and the composer as one action unit
+ * ==================================================================== */
+
+/* Square and full-bleed. The row was a rounded card in a gutter; the pair now
+   reads as one surface with one edge (§23). */
+.matter-refinement-preview .uxnext {
+  background: var(--surface-capture);
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  box-shadow: inset 3px 0 0 var(--accent-border);
+  padding-top: 14px;
+  padding-bottom: 14px;
+  cursor: pointer;
+}
+
+.matter-refinement-preview .uxnext__text {
+  font-size: 15px;
+}
+
+/* The same edge, and only that edge. The composer's own card border, its
+   radius and both of its focus rings are suppressed, because three separate
+   outlines around two rows is what stopped them reading as one thing. */
+.matter-refinement-preview .uxcomp {
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  box-shadow: inset 3px 0 0 var(--accent-border);
+}
+
+.matter-refinement-preview .uxcomp[open],
+.matter-refinement-preview .composer:focus-within {
+  border-color: transparent;
+  box-shadow: inset 3px 0 0 var(--accent-border);
+}
+
+/* Two lines at rest instead of three. `.composer__body` is `height` rather
+   than `min-height` in production precisely so it can be shrunk (§18). */
+.matter-refinement-preview .uxcomp[open] .composer__body,
+.matter-refinement-preview .composer:focus-within .composer__body {
+  height: 60px;
+  min-height: 60px;
+}
+
+/* `Järgmiseks` at the resting height the design draws (§19). The design's
+   control is a resizable textarea and production's is a single-line input;
+   only the height is reproducible here, and the difference is in the
+   reconciliation report. */
+.matter-refinement-preview .uxcomp__next {
+  min-height: 38px;
+}
+
+/* ====================================================================
+ * One heading treatment — every section label on the page (§10)
+ * ==================================================================== */
+
+.matter-refinement-preview .factsection__head .sectionlabel,
+.matter-refinement-preview .accordion--timeline .accordion__title,
+.matter-refinement-preview .uxnext__label,
+.matter-refinement-preview .railcard__label {
+  font-size: 12px;
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: 0.08em;
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* ====================================================================
+ * Zone B — the facts panel
+ * ==================================================================== */
+
+.matter-refinement-preview .factsections {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.matter-refinement-preview .factsections .factsection {
+  border-top: 0;
+  margin: 0;
+  padding-top: 16px;
+  padding-bottom: 14px;
+}
+
+.matter-refinement-preview .factsections .factsection + .factsection {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.matter-refinement-preview .factsection__head {
+  margin: 0;
+  min-height: 0;
+}
+
+.matter-refinement-preview .factsections .sectionlabel {
+  padding: 0;
+  margin: 0 0 8px;
+}
+
+.matter-refinement-preview .factsection .factlist {
+  margin-top: 0;
+}
+
+/* Tightened, and the separators dropped. Rows this close together no longer
+   need a rule between them, and a rule every four pixels was most of what made
+   the block read as a table. */
+.matter-refinement-preview .factlist--compact .factrow {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-color: transparent;
+}
+
+.matter-refinement-preview .factrow__title {
+  color: var(--text-primary);
+}
+
+/* The date and its qualifier on one baseline. `.factrow__dist` is a new
+   element in this design (C12): a muted distance beside the date. */
+.matter-refinement-preview .factrow__date {
+  display: inline-flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.matter-refinement-preview .factrow__dist {
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  /* `06-responsive-behaviour.md` says the date and the distance stay on one
+     line. Production's date column is a fixed `15ch` basis — deliberately, so
+     that a quarter does not widen one row's column and break the alignment of
+     every title beside it — and a quarter *plus* a distance does not fit in
+     it. This keeps the distance itself whole; the pair still wraps, and that
+     is a real finding rather than something to paper over. */
+  white-space: nowrap;
+}
+
+/* Chrome only when reached for (§9, I06). `:focus-within` is what makes the
+   actions reachable from a keyboard; touch is not addressed by the design and
+   is an open question. */
+.matter-refinement-preview .factrow__actions {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.matter-refinement-preview .factrow:hover .factrow__actions,
+.matter-refinement-preview .factrow:focus-within .factrow__actions {
+  opacity: 1;
+}
+
+/* The add control under the last row, borderless (§8, C14). */
+.matter-refinement-preview .factsection .addrow {
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.matter-refinement-preview .factsections .addrow .disclosure-chip {
+  border: 0;
+  padding: 2px 0;
+  background: none;
+  color: var(--accent-link);
+  text-decoration: none;
+}
+
+.matter-refinement-preview .factsections .addrow .disclosure-chip:hover {
+  text-decoration: underline;
+}
+
+/* ====================================================================
+ * Zone C — the chronology
+ * ==================================================================== */
+
+.matter-refinement-preview .accordion--timeline {
+  margin-top: 6px;
+}
+
+.matter-refinement-preview .accordion--timeline .accordion__head {
+  padding-top: 18px;
+  padding-bottom: 10px;
+}
+
+/* The head is the label and the count. The caret is hidden rather than
+   deleted: the `<details>` still opens and closes. */
+.matter-refinement-preview .accordion--timeline .accordion__caret {
+  display: none;
+}
+
+/* Open, the preview quote and the next-step chip are what the section is
+   showing in full below them (I11). */
+.matter-refinement-preview #ajajoon[open] .uxtl__preview,
+.matter-refinement-preview #ajajoon[open] .uxtl__previewnext {
+  display: none;
+}
+
+.matter-refinement-preview .mrp__timeline {
+  margin-top: 6px;
+}
+
+/* Hierarchy inverted: the entry body is primary, the actor and the meta are
+   secondary (§13, C16). */
+.matter-refinement-preview .uxtl .richtext,
+.matter-refinement-preview .uxtl .uxtl__text {
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.matter-refinement-preview .uxtl__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.matter-refinement-preview .uxtl__author {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+/* The timestamp ends the meta line instead of standing in a right-hand
+   column, and carries its own separator. */
+.matter-refinement-preview .uxtl__time {
+  margin-left: 0;
+  text-align: left;
+  position: static;
+}
+
+.matter-refinement-preview .uxtl__time::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--text-muted);
+}
+
+/* `.uxtl__item` is `display: contents`, so the spacing between entries has to
+   live on the body (02-layout-spec.md §7). */
+.matter-refinement-preview .uxtl__body {
+  padding-bottom: 6px;
+}
+
+/* A badge on almost every row carries no information (§14, C16).
+ *
+ * The design's own rule names `.uxtl__kind--note`, and **production never
+ * emits that class**: `timeline_items.html` writes `uxtl__kind--{{ marker }}`,
+ * and an entry's marker is `entry` or `meeting`. So the design's selector
+ * matches nothing here, and the rule had to be re-expressed against the markup
+ * that exists.
+ *
+ * What it says is the design's own distinction: an *entry's* kind badge goes,
+ * an *event's* stays — `Järgmiseks tehtud` (`--closed`) and
+ * `Väljasaadetud · arvamus` (`--sent`) are untouched below. Which badges
+ * survive is open question Q4 and this settles nothing; it draws the frame. */
+.matter-refinement-preview .uxtl__meta .uxtl__kind--entry,
+.matter-refinement-preview .uxtl__meta .uxtl__kind--meeting {
+  display: none;
+}
+
+/* ====================================================================
+ * Inline editing — information first, form when reached for (§17, I04)
+ * ==================================================================== */
+
+.matter-refinement-preview .inlineedit__trigger .metaline__value,
+.matter-refinement-preview .inlineedit__trigger .railcard__value {
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.matter-refinement-preview .inlineedit__trigger:hover .metaline__value,
+.matter-refinement-preview .inlineedit__trigger:hover .railcard__value {
+  border-bottom-color: var(--border-strong);
+}
+
+.matter-refinement-preview .railcard__value {
+  border-bottom: 1px solid transparent;
+}
+
+/* ====================================================================
+ * Rail
+ * ==================================================================== */
+
+/* A rail disclosure is a line of text, not a raised panel. */
+.matter-refinement-preview .rail .disclosure--inline {
+  background: none;
+}
+
+.matter-refinement-preview .rail .disclosure__summary {
+  padding-left: 0;
+}
+
+.matter-refinement-preview .railcard__row--stack {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: flex-start;
+}
+
+.matter-refinement-preview .railcard__row--stack .railcard__key {
+  font-size: 12px;
+}
+
+.matter-refinement-preview .mrp__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.matter-refinement-preview .relatedmaterials__search {
+  display: flex;
+  gap: 6px;
+}
+
+.matter-refinement-preview .mrp__search {
+  flex: 1;
+  width: auto;
+}
+
+.matter-refinement-preview .mrp__groupkey {
+  display: block;
+  margin-bottom: 4px;
+}
+
+/* A suggestion's title is a link and not an editable value, so it carries none
+   of the inline-edit underline the rows above it use. */
+.matter-refinement-preview .mrp__suggestion {
+  border-bottom: 0;
+}
+
+/* The design draws these as links. They are buttons here because the design
+   defines no destination and no result for any of them — a suggestion's
+   «Lisa» (Q9), the pager (Q8) and the search (I13) are all unspecified — and a
+   link that goes nowhere is worse than a control that plainly does not act
+   yet. Styled as the text they are drawn as. */
+.matter-refinement-preview .mrp__inlineaction {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--accent-link);
+  font: inherit;
+  cursor: pointer;
+}
+
+.matter-refinement-preview .mrp__inlineaction:hover {
+  text-decoration: underline;
+}
+
+.matter-refinement-preview .railblock__more {
+  display: inline-block;
+  margin-top: 6px;
+}

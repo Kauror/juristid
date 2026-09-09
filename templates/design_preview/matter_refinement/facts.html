@@ -1,0 +1,106 @@
+{% comment %}
+Zone B — the facts panel. PREVIEW ONLY.
+
+One surface carrying two sections divided by a hairline: `Olulised tähtajad`
+first, then `Kaasamine` (`02-layout-spec.md` §6, `01-overview.md`). In
+production these are two unrelated blocks — a fact section from
+`app.intelligence` and a collapsed accordion from `app.matters` — separated by
+the composer and by `Jõustumine` and `Töövõidud`. The refinement's claim is that
+they are the same kind of thing, dated facts about the file, and should read as
+one panel with the forward-looking dates on top.
+
+Three things about this template are the design and not the application:
+
+1. **`.factrow__dist`** — the muted qualifier beside the date. The handoff calls
+   it «a **new element** in this design» (C12). It is computed in
+   `app/core/design_preview.py`, never here.
+2. **Future rows only.** Past `Olulised tähtajad` are absent from the frame and
+   the review decision was «only on the timeline», but the frame never draws one
+   in the chronology either — open question Q2. So this renders what the design
+   renders and the production `past_dates` rows are simply not drawn.
+3. **The add control moved.** Production puts «+ Lisa oluline tähtaeg» in the
+   section head, right-aligned, which reserves a button's height on every
+   section. The design puts a borderless link under the last row and calls it
+   «+ Lisa tähtaeg» (§8). The shorter string is the design's.
+
+**Row actions and add controls are presentation.** `04-interaction-spec.md` I06
+says «the actions themselves ("Muuda", "Tühista") lead nowhere in the
+prototype», and I07 says what «+ Lisa tähtaeg» opens is NOT SPECIFIED. The
+production routes behind all four are real and are listed in the reconciliation
+report; wiring them from a design study would be inventing the answer.
+{% endcomment %}
+<div class="factsections" id="teema-faktid">
+  <section class="factsection" id="olulised-tahtajad" aria-labelledby="teema-tahtajad-heading">
+    <div class="factsection__head">
+      <h2 class="sectionlabel" id="teema-tahtajad-heading">Olulised tähtajad</h2>
+    </div>
+    {% if preview_deadline_rows %}
+      <ul class="factlist factlist--compact">
+        {% for row in preview_deadline_rows %}
+          <li class="factrow">
+            <span class="factrow__date {% if row.is_approximate %}dateline--approximate{% endif %}">{{ row.date_line }}{% if row.distance %} <span class="factrow__dist">{{ row.distance }}</span>{% endif %}</span>
+            <span class="factrow__body"><span class="factrow__title">{{ row.title }}</span></span>
+            {% if can_write %}
+              <span class="factrow__actions">
+                <button class="button button--quiet button--tiny" type="button">Muuda</button>
+                <button class="button button--quiet button--tiny" type="button">Tühista</button>
+              </span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% if can_write %}
+      <div class="addrow">
+        <button class="disclosure-chip" type="button">+ Lisa tähtaeg</button>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="factsection" id="kaasamine" aria-labelledby="teema-kaasamine-heading">
+    <div class="factsection__head">
+      <h2 class="sectionlabel" id="teema-kaasamine-heading">Kaasamine</h2>
+    </div>
+    {% if engagements %}
+      <ul class="factlist factlist--compact">
+        {% for record in engagements %}
+          <li class="factrow">
+            {% comment %}
+              The date leads the row here, in the same column the deadlines
+              above use, rather than trailing the title as production writes
+              it. That column is the whole reason the two sections share a
+              panel: a reader scans one edge for «when».
+
+              An undated engagement still says so in words. That is production
+              copy for a state the design never drew, and the handoff's rule
+              for exactly this case is to preserve it rather than invent
+              something shorter.
+            {% endcomment %}
+            <span class="factrow__date {% if not record.occurred_on %}factrow__date--undated{% endif %}">{% if record.occurred_on %}{{ record.occurred_on|date:"j.n.Y" }}{% else %}Kuupäev teadmata{% endif %}</span>
+            <span class="factrow__body">
+              <span class="factrow__kind">{{ record.get_kind_display }}</span>
+              {% if record.url %}
+                <a class="factrow__title factrow__matter" href="{{ record.url }}"
+                   target="_blank" rel="noopener noreferrer">{{ record.title }}</a>
+                <span class="factrow__source">{{ record.link_label }} ↗</span>
+              {% else %}
+                <span class="factrow__title">{{ record.title }}</span>
+              {% endif %}
+              {% if record.note %}<span class="factrow__note">{{ record.note }}</span>{% endif %}
+            </span>
+            {% if can_write %}
+              <span class="factrow__actions">
+                <button class="button button--quiet button--tiny" type="button">Muuda</button>
+              </span>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+    {% if can_write %}
+      <div class="addrow">
+        <button class="disclosure-chip" type="button">+ Lisa kaasamine</button>
+      </div>
+    {% endif %}
+  </section>
+</div>
