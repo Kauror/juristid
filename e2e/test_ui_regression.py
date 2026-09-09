@@ -555,12 +555,18 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     "teemad-1440": (*OPINION_SENT, *MONTH_VIEW_CHIP),
     "teemad-3440": (*OPINION_SENT, *MONTH_VIEW_CHIP),
     "teemad-filter": (*OPINION_SENT, *MONTH_VIEW_CHIP),
-    # The seeded closed Matter is closed with an entry, so both are on this page
-    # every run. Neither is required anywhere else: the banner belongs to a
-    # closed Matter and the preview renders only `{% if timeline_preview %}`,
-    # and requiring an element that can legitimately be absent turns a quiet
-    # week into a visual failure.
-    "teema-suletud": (*CLOSED_ON, *TIMELINE_PREVIEW_ON),
+    # The seeded closed Matter is closed with an entry, so the banner date is on
+    # this page every run. It is not required anywhere else: the banner belongs
+    # to a closed Matter, and requiring an element that can legitimately be
+    # absent turns a quiet week into a visual failure.
+    #
+    # The timeline preview is no longer among them. It is the *closed*
+    # chronology's line — the last thing somebody wrote, the step that is owed —
+    # and the 2026-09 refinement hides it while the section is open, which it is
+    # on arrival. Nothing on this capture renders that date any more, so a mask
+    # for it would cover no pixels and requiring it would fail every run
+    # (design handoff I11, docs/matter-page-refinement.md).
+    "teema-suletud": CLOSED_ON,
     # The seeded world sends one opinion on `OPEN_TITLE`, so both of these
     # render a `Saadetud <date>` under a filename on every run.
     "teema-dokumendid": OPINION_ROW_SENT,
@@ -938,52 +944,53 @@ def _kaasamine(page):
 def _at_rest(page):
     """Take the pointer off whatever was just clicked, and settle.
 
-    A click leaves the mouse where it landed, and the accordion head paints its
-    `+ Lisa` in the link colour on hover — so the first rendering of these came
-    back with the header hovered in one capture and at rest in another, for no
-    reason a reader of the baseline could see. A baseline should show the state
-    the test is named for and not where the mouse happened to stop.
+    A click leaves the mouse where it landed, and this section paints its add
+    control in the link colour on hover and reveals a row's actions under it —
+    so the first rendering of these came back hovered in one capture and at rest
+    in another, for no reason a reader of the baseline could see. A baseline
+    should show the state the test is named for and not where the mouse happened
+    to stop.
     """
     page.mouse.move(0, 0)
     page.wait_for_timeout(120)
 
 
-def test_kaasamine_collapsed_with_nothing_recorded(page, base_url):
-    """The state a reader arrives at, on a Matter nobody has consulted about.
+# Three clipped captures rather than three full-page ones: what these lock is
+# one section's own shape, and a whole-page baseline per state would put three
+# more pages' worth of unrelated layout under review every time anything else on
+# Teema moved (Kaasamine one-click §23).
+#
+# Three, and not the four there used to be. `kaasamine-suletud` and
+# `kaasamine-tyhi` were the collapsed and the opened empty state, and the
+# 2026-09 refinement left the section no collapsed state to have: it is a
+# section of the facts panel and it always shows what it holds. The two captures
+# had become the same picture, and the baseline that named a state the page no
+# longer has went with the scenario (docs/matter-page-refinement.md).
 
-    Four clipped captures rather than four new full-page ones: the change these
-    lock is one section's interaction, and a whole-page baseline per state would
-    put four more pages' worth of unrelated layout under review every time
-    anything else on Teema moved (Kaasamine one-click §23).
+
+def test_kaasamine_with_nothing_recorded(page, base_url):
+    """The state a reader arrives at, on a Matter nobody has consulted about.
 
     The archive Matter, because it is the one the browser suite never writes to
     that also holds no engagement — the scratch Matter the interactive tests use
     is empty only until they run.
     """
     signed_in_matter(page, base_url, ARCHIVE_TITLE)
-    compare("kaasamine-suletud", capture(page, "kaasamine-suletud", clip_to="#kaasamine"))
-
-
-def test_kaasamine_open_with_nothing_recorded(page, base_url):
-    """One click, and what it opens onto is the form itself."""
-    signed_in_matter(page, base_url, ARCHIVE_TITLE)
-    _kaasamine(page).locator(".accordion__head").click()
     _at_rest(page)
     compare("kaasamine-tyhi", capture(page, "kaasamine-tyhi", clip_to="#kaasamine"))
 
 
-def test_kaasamine_open_with_a_record(page, base_url):
-    """The records, and the composer waiting behind its own control."""
+def test_kaasamine_with_a_record(page, base_url):
+    """The records, and the add control waiting under them."""
     signed_in_matter(page, base_url, OPEN_TITLE)
-    _kaasamine(page).locator(".accordion__head").click()
     _at_rest(page)
     compare("kaasamine-kirjed", capture(page, "kaasamine-kirjed", clip_to="#kaasamine"))
 
 
 def test_kaasamine_composer_open_over_a_record(page, base_url):
-    """`+ Lisa` from collapsed: the section and the form in one action."""
+    """`+ Lisa kaasamine`: one action, and the form is ready to type into."""
     signed_in_matter(page, base_url, OPEN_TITLE)
-    _kaasamine(page).locator("[data-engagement-add-trigger]").click()
+    _kaasamine(page).locator("[data-engagement-composer] summary").click()
     _at_rest(page)
     compare("kaasamine-lisa", capture(page, "kaasamine-lisa", clip_to="#kaasamine"))
 
