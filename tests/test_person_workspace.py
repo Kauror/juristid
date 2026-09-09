@@ -24,7 +24,7 @@ from app.matters.models import PersonalScratchpad
 from app.matters.my_work import build_my_work
 from app.matters.services import create_matter
 from app.workflow.dates import period_bounds
-from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
+from app.workflow.enums import ESTONIAN_MONTHS, ActionKind, DatePrecision, DateSemantics
 from app.workflow.services import set_next_action
 from tests import factories
 
@@ -173,8 +173,15 @@ def test_wait_is_never_late_on_the_page(client, specialist, today):
     assert "workrow2--overdue" not in body
 
 
-def test_month_precision_is_printed_verbatim(client, specialist, today):
-    """«september 2026» stays «september 2026». No day is invented for it."""
+def test_month_precision_is_printed_as_a_month(client, specialist, today):
+    """«09.26» on the page, and no day invented for it.
+
+    The cell used to print «september 2026» and now prints the month and the
+    year's last two digits. The unchanged half is the one this test is really
+    about: two numbers, never three, so nothing on the page can be read as the
+    first of the month. `display_date` still holds the long form for the
+    surfaces that have room for it.
+    """
     anchor = (today.replace(day=1) + timedelta(days=62)).replace(day=1)
     _, end = period_bounds(anchor, DatePrecision.MONTH)
     matter = _matter(specialist, title="Riigihangete seaduse muutmine")
@@ -194,8 +201,10 @@ def test_month_precision_is_printed_verbatim(client, specialist, today):
     item = next(
         item for band in build_my_work(specialist, today=today).bands for item in band.items
     )
-    assert item.display_date in body
-    assert "." not in item.display_date
+    compact = f"{anchor.month:02d}.{anchor.year % 100:02d}"
+    assert f">{compact}</span>" in body
+    assert item.display_date == f"{ESTONIAN_MONTHS[anchor.month - 1]} {anchor.year}"
+    assert f"01.{anchor.month:02d}.{anchor.year}" not in body
     assert item.is_approximate
     # A month-precise date never lands in a band headed by a number of days.
     assert item.period_end == end

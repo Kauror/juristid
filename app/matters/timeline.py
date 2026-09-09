@@ -27,10 +27,11 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from django.db import models
+from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
@@ -259,6 +260,18 @@ class TimelineItem:
         return _join(self.summary_verbs)
 
 
+def _local_day(value: datetime) -> date:
+    """The calendar day a stored moment falls on *for the reader*.
+
+    Timestamps are stored in UTC and this department works in Europe/Tallinn,
+    so anything recorded between midnight and three in the morning belongs to
+    the day before by the raw value and to the right day by the clock on the
+    wall. Both dates the folded summary prints go through here, so the sentence
+    and the span beside it can never name two different days for one event.
+    """
+    return timezone.localtime(value).date()
+
+
 @dataclass(frozen=True)
 class TimelineRow:
     """One line on screen: either a single item, or a run of system events.
@@ -269,6 +282,9 @@ class TimelineRow:
     says how many there are and offers to show them. Nothing is dropped: the
     run is a `<details>` and everything inside it renders exactly as it did
     (design handoff 1b).
+
+    The closed line says when the file started and how much is folded in, and
+    no longer enumerates the event types inside it — see :attr:`summary`.
     """
 
     items: tuple[TimelineItem, ...]
@@ -286,25 +302,49 @@ class TimelineRow:
         return len(self.items)
 
     @property
-    def kinds(self) -> str:
-        """The kinds inside the run, once each, in the order they appear.
+    def created_on(self) -> date | None:
+        """The day the Matter was created, when this run is the one holding it.
 
-        "hetkeseis, arvamuse tähtaeg" rather than a bare count: a reader
-        deciding whether to open it needs to know what is in there.
+        ``None`` for every later run. A summary that named a creation date on a
+        run of ordinary field changes would be stating a fact about the file
+        that the run it summarises does not contain.
         """
-        seen: list[str] = []
         for item in self.items:
-            label = str(item.event.get_event_type_display()) if item.event else ""
-            if label and label not in seen:
-                seen.append(label)
-        return ", ".join(seen)
+            for event in item.events:
+                if event.event_type == ChangeEventType.MATTER_CREATED:
+                    return _local_day(event.occurred_at)
+        return None
+
+    @property
+    def summary(self) -> str:
+        """``Teema loodud 25.08, tegevusi 3``, or ``Tegevusi 3``.
+
+        What a reader deciding whether to open this row can use: when the file
+        started, and how much is folded in here. Not what the application
+        called each of them.
+
+        The row said ``3 süsteemimuudatust — Järgmiseks määratud,
+        Tõendiversioon lisatud, Teema loodud`` until this pass, which is the
+        chronology reciting its own event vocabulary at somebody who has no
+        reason to know it — and reciting it at the top of every Matter, since
+        the file's own creation is folded into a run on nearly all of them. The
+        classifications did not go anywhere: they are inside, on each event's
+        own line, which is where a reader who wants them is looking
+        (`get_event_type_display` in templates/matters/partials/timeline_items.html).
+        """
+        created = self.created_on
+        if created is None:
+            return f"Tegevusi {self.count}"
+        from app.core.dates import short_day_month
+
+        return f"Teema loodud {short_day_month(created)}, tegevusi {self.count}"
 
     @property
     def span(self) -> str:
         """``30.07–05.08``. One date when the run covers a single day."""
         from app.core.dates import short_range
 
-        days = [item.occurred_at.date() for item in self.items]
+        days = [_local_day(item.occurred_at) for item in self.items]
         return short_range(min(days), max(days))
 
 

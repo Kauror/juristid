@@ -1323,12 +1323,20 @@ per-field rather than global:
   the save rather than guess, because a third row spelled the same way would
   make the ambiguity permanent. Creation happens inside the record's own
   transaction, so a refused save leaves no institution behind.
-- **Teema `Saatja`** and `Saabunud` remain existing-organisations-only. Nothing
-  on those controls creates a sender, and 14.7's rule — adding an institution is
-  a deliberate act on the reference data — is what their help text states.
+- **Teema `Saatja`** and `Saabunud` accept a typed name on exactly the same
+  terms, since docs/adr/0063. The sender relation is plural, so a typed name is
+  *added* to whatever is ticked rather than replacing it, and a body reached
+  twice is one sender; everything else — normalised-exact resolution, reuse,
+  refusal on ambiguity, creation inside the record's own transaction — is the
+  same code as the addressee half.
 
-The difference is a product decision, not an oversight. Do not generalise either
-half of it without one.
+The two fields are one catalogue and two questions. `Matter.source_organisations`
+records who a matter came from and `Matter.addressee_organisation` records who
+it is answered to; those meanings stay separate and are never merged. What is no
+longer different is *how a body is named*, which used to be typed on one control
+and forbidden on the other. 14.7's rule that adding an institution is deliberate
+is satisfied by a control labelled `Uus saatja` that somebody has to type into —
+not by sending them to another page to do it.
 
 ### PolicyArea
 

@@ -310,6 +310,22 @@ DERIVATIVE_ROOT = Path(env("DERIVATIVE_ROOT", str(BASE_DIR / "derivatives")))
 LEGACY_SOURCE_STORAGE_ALIAS = "legacy_source"
 LEGACY_SOURCE_ROOT = Path(env("LEGACY_SOURCE_ROOT", str(BASE_DIR / "legacy-source")))
 
+# A fourth class, and the weakest one: files a form is holding because the save
+# that would have stored them was refused. They describe nothing, no row points
+# at them, and losing one costs somebody a second click rather than a piece of
+# evidence — so this is deliberately **not** backed up and needs no volume of
+# its own. Separate from the evidence store for the same reason derivatives are:
+# mixing what may be deleted with what may not is how an operator ends up one
+# command away from destroying the half that cannot be regenerated
+# (app/documents/pending.py, docs/adr/0014).
+PENDING_UPLOAD_STORAGE_ALIAS = "pending_uploads"
+PENDING_UPLOAD_ROOT = Path(env("PENDING_UPLOAD_ROOT", str(BASE_DIR / "pending-uploads")))
+
+# How long a held file survives without being claimed by a save. Long enough
+# that somebody can be interrupted mid-form and finish afterwards; short enough
+# that an abandoned form is not still on disk tomorrow.
+PENDING_UPLOAD_GRACE_HOURS = env_int("PENDING_UPLOAD_GRACE_HOURS", 12)
+
 # Where the read-only historical source material lives on the server. The
 # importer reads from here and never writes to it (Stage-2D brief 54).
 HISTORICAL_SOURCE_ROOT = env("HISTORICAL_SOURCE_ROOT", "")
@@ -327,6 +343,10 @@ STORAGES = {
     LEGACY_SOURCE_STORAGE_ALIAS: {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
         "OPTIONS": {"location": str(LEGACY_SOURCE_ROOT)},
+    },
+    PENDING_UPLOAD_STORAGE_ALIAS: {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {"location": str(PENDING_UPLOAD_ROOT)},
     },
     "staticfiles": {
         "BACKEND": (

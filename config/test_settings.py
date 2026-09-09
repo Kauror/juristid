@@ -77,6 +77,7 @@ CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"
 EVIDENCE_ROOT = Path(tempfile.mkdtemp(prefix="juristid-evidence-"))
 DERIVATIVE_ROOT = Path(tempfile.mkdtemp(prefix="juristid-derivatives-"))
 LEGACY_SOURCE_ROOT = Path(tempfile.mkdtemp(prefix="juristid-legacy-source-"))
+PENDING_UPLOAD_ROOT = Path(tempfile.mkdtemp(prefix="juristid-pending-uploads-"))
 
 # And having chosen them, prove they are not a deployment's. The lines above are
 # unconditional today, so this can only fire if someone edits them — which is
@@ -88,6 +89,7 @@ assert_storage_is_isolated(
         "EVIDENCE_ROOT": EVIDENCE_ROOT,
         "DERIVATIVE_ROOT": DERIVATIVE_ROOT,
         "LEGACY_SOURCE_ROOT": LEGACY_SOURCE_ROOT,
+        "PENDING_UPLOAD_ROOT": PENDING_UPLOAD_ROOT,
     }
 )
 
@@ -104,6 +106,10 @@ STORAGES = {
     LEGACY_SOURCE_STORAGE_ALIAS: {
         "BACKEND": "django.core.files.storage.FileSystemStorage",
         "OPTIONS": {"location": str(LEGACY_SOURCE_ROOT)},
+    },
+    PENDING_UPLOAD_STORAGE_ALIAS: {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+        "OPTIONS": {"location": str(PENDING_UPLOAD_ROOT)},
     },
     "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
 }

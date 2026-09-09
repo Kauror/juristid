@@ -1377,6 +1377,13 @@ p.formnote {
   margin: 0;
 }
 
+/* `Uus saatja`, under the list it is not part of. Full width of the popover so
+   a ministry's name has somewhere to go, and separated from the checkboxes
+   above by the stacked form's own gap (docs/adr/0063). */
+.inlineform__newname {
+  width: 100%;
+}
+
 .tabs {
   display: flex;
   gap: var(--spacing-6);
@@ -3788,6 +3795,15 @@ a.barchart__row:hover {
   list-style: none;
 }
 
+/* `display: grid` above is an author rule and beats the user agent's
+   `[hidden] { display: none }`. It never showed while the only hidden list was
+   the empty one the browser fills, and it would have the moment a list with
+   rows in it was hidden — which `#hoitud-failid` does when its last held file
+   is taken back off (static/js/app.js). */
+.dropzone__list[hidden] {
+  display: none;
+}
+
 /* -- the register's search box --------------------------------------------- *
  *
  * A search that answers while you type. The form is a real GET form and the
@@ -4406,13 +4422,10 @@ a.barchart__row:hover {
   font-size: var(--typography-size-meta);
 }
 
-.dropzone__kind {
-  flex: none;
-  font-size: var(--typography-size-chip-sm);
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: var(--typography-tracking-chip);
-  color: var(--status-success);
-}
+/* `.dropzone__kind` stood here and is gone with the badge it styled. The green
+   left border on `.dropzone__file` above still carries the "this is evidence"
+   signal the word was repeating, without spending the first words of every row
+   on it. */
 
 .dropzone__name {
   flex: 1 1 auto;
@@ -4442,6 +4455,126 @@ a.barchart__row:hover {
   outline-offset: 1px;
 }
 
+/* -- Uus teema: the file being read ---------------------------------------- *
+ *
+ * A staged row is a chosen row plus one thing the other two lists cannot say:
+ * whether the file has been read yet. So it is the same row, with a word at
+ * the end of it — not a second kind of list, not a second border treatment,
+ * and not a colour carrying meaning on its own (app/matters/intake_staging.py,
+ * docs/adr/0064).
+ */
+
+/* The staged list is the ordinary chosen-file list with one more column, so it
+   inherits everything and names itself only so a rule can reach it. */
+.dropzone__list--staged {
+  margin-top: var(--spacing-1);
+}
+
+.dropzone__read {
+  flex: none;
+  font-size: var(--typography-size-label);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dropzone__read--ok {
+  color: var(--status-success);
+}
+
+.dropzone__read--warn {
+  color: var(--status-warning);
+}
+
+/* -- Uus teema: what the file said ----------------------------------------- *
+ *
+ * The panel between the file and the fields it can fill. It renders nothing at
+ * all until something is staged, so the ordinary visit — no file, straight to
+ * Pealkiri — is exactly the page it was.
+ */
+
+/* Nothing staged, nothing to say. Driven by the state attribute rather than by
+   `:empty`, which never matches here: the panel always holds at least the
+   hidden «Laen faili üles…» line, and a template's own whitespace is a text
+   node either way. */
+.intakepanel[data-intake-state="empty"] {
+  display: none;
+}
+
+.intakepanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.intakepanel__state {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-15);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+}
+
+.intakepanel__state--warn {
+  color: var(--status-warning);
+}
+
+/* Shown by script for as long as the bytes are going up, and replaced by the
+   server's own answer the moment one arrives. It is `hidden` in the template
+   rather than absent, so the words live with every other string on the page. */
+.intakepanel__uploading {
+  color: var(--text-muted);
+}
+
+/* Reading is never a gate: `Loo teema` is pressable throughout and the file is
+   already safe. So this is a small quiet mark beside a sentence, not a curtain
+   over the form. */
+.intakepanel__spinner {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--status-warning-border);
+  border-top-color: transparent;
+  border-radius: var(--radius-circle);
+  animation: intakespin 900ms linear infinite;
+}
+
+@keyframes intakespin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The button that stops the page saying an answer is coming. It stays a link
+   rather than becoming a button proper, because pressing it changes nothing
+   about the Teema — only about what this paragraph claims. */
+.intakepanel__skip {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* Once abandoned, the reading line goes and the rest of the panel — anything
+   already found — stays exactly where it was. */
+.intakepanel[data-intake-state="abandoned"] .intakepanel__reading {
+  display: none;
+}
+
+/* The panel on this surface sits between form rows rather than above a whole
+   page, so it takes the narrower padding the createform's own rows use. */
+.suggpanel--intake {
+  padding: var(--spacing-25) var(--spacing-3);
+}
+
+/* And the row it sits in goes with it, or every ordinary visit — no file,
+   straight from the dates to Vastutaja — would pay a row gap for a panel that
+   is not there. */
+.createform__row--intake:has(.intakepanel[data-intake-state="empty"]) {
+  display: none;
+}
+
 /* -- the chip -------------------------------------------------------------- */
 
 .chiprow {
@@ -4457,6 +4590,22 @@ a.barchart__row:hover {
   position: relative;
   display: inline-flex;
   max-width: 100%;
+}
+
+/* The rule that made the search box work.
+ *
+ * `bindChoiceFilters` narrows a rendered list by setting `hidden` on the chips
+ * that do not match, and `display: inline-flex` above is an author rule — it
+ * beats the user agent's `[hidden] { display: none }`, so every chip stayed
+ * exactly where it was and typing into «Otsi asutust nime järgi» did nothing at
+ * all. The filter has been there since the disclosure was; it has never once
+ * removed a chip from the screen.
+ *
+ * `.checkitem` is the same control on every surface that is not Uus teema and
+ * has the same `display`, so it has the same rule (static/js/app.js). */
+.chip[hidden],
+.checkitem[hidden] {
+  display: none;
 }
 
 /* An explained chip is a wrapper, not a label: its tooltip has to live beside
@@ -4632,6 +4781,58 @@ a.barchart__row:hover {
      than lengthening the page under everything below it. */
   max-height: 220px;
   overflow-y: auto;
+}
+
+/* -- Saatja: shortlist, search and a box for a body we do not have --------- *
+ *
+ * The three operations sit in one column with nothing folded away. What was
+ * here before was a chip row and a closed `<details>` reading «Vali
+ * nimekirjast (15)» — with the search inside it, and a sentence inside it
+ * saying the thing you had opened it for could not be done at all
+ * (docs/adr/0063).
+ *
+ * No component of its own beyond the spacing: the chips are `.chip`, the search
+ * is a `.field`, `Uus saatja` is a `.field`. The only genuinely new rule is the
+ * height cap below, and it is the one thing the disclosure used to buy.
+ */
+
+.senderpick {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+.senderpick__search {
+  max-width: 20rem;
+  margin-top: var(--spacing-1);
+}
+
+.senderpick__new {
+  max-width: 20rem;
+}
+
+/* A catalogue of ministries is long, and it is on the page now rather than
+   behind a door. It scrolls inside its own box rather than lengthening the form
+   under everything below it — the same 220px the disclosure gave it, so a row
+   that was reachable by scrolling still is. */
+.chiprow--catalogue {
+  margin-top: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  align-content: flex-start;
+  padding: var(--spacing-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
+/* `.chiprow` sets `display: flex`, and an author rule beats the user agent's
+   `[hidden] { display: none }` — so a list the filter has emptied would stay a
+   bordered empty panel without this. It is what makes the result area absent at
+   rest rather than merely blank. */
+.chiprow--catalogue[hidden] {
+  display: none;
 }
 
 /* -- Hetkeseis: the chip that explains itself ------------------------------ */
@@ -6456,6 +6657,39 @@ button.accordion__action:focus-visible {
   }
 }
 
+/* An add form open inside the Teema page, under the section its record joins.
+
+   Indented and ruled on the left so the form reads as belonging to the section
+   above it rather than as a new section of its own — the same relationship the
+   composer's own disclosures have to the composer (docs/adr/0065). */
+.factslot {
+  margin-top: var(--spacing-3);
+  padding-left: var(--spacing-3);
+  border-left: 2px solid var(--border-subtle);
+}
+
+.factslot__heading {
+  margin: 0 0 var(--spacing-2);
+  padding-left: 0;
+}
+
+/* `.form` is the full-width page form; inside a fact section it is one column
+   of labelled controls beside a list, at the width `.stackform` already
+   established for the row forms next to it. */
+.factslot__form {
+  max-width: 34rem;
+}
+
+/* The empty state has no section for the form to sit inside — it opens under
+   the row of chips — so there it is a page row of its own and takes the gutter
+   every other row on Teema takes. */
+.factsections > .factslot {
+  margin-top: 0;
+  padding: var(--spacing-3) var(--spacing-8) var(--spacing-35);
+  border-left: 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
 /* The empty case for the structured facts: one quiet row of add affordances,
    in place of three headings each announcing that nothing exists. */
 .addrow {
@@ -6468,8 +6702,16 @@ button.accordion__action:focus-visible {
 }
 
 /* The fact sections are rows on the Teema page like everything else, not cards
-   floating in a gutter. */
-.teemamain > .factsection {
+   floating in a gutter.
+
+   Two selectors for one rule: `app.intelligence` wraps its three sections in
+   `.factsections` so it has something to swap when an inline add form opens or
+   closes, and a direct-child selector stopped reaching them the day that
+   wrapper appeared (docs/adr/0065). Named rather than loosened to a descendant
+   selector, which would also claim `Seotud materjalid`' own `.factsection`
+   wherever it happened to be nested. */
+.teemamain > .factsection,
+.teemamain > .factsections > .factsection {
   padding: var(--spacing-35) var(--spacing-8);
   border-bottom: 1px solid var(--border-subtle);
   gap: var(--spacing-2);
@@ -7404,11 +7646,13 @@ button.accordion__action:focus-visible {
   text-decoration: none;
 }
 
-/* «Uus asi». Deliberately the quiet rail row the block above it already uses —
-   no colour, no badge, no alert. It is noticeable because it is at the top of
-   the rail and because it is not there the rest of the time. The row is a
-   submit button because opening the Teema from here is what marks it seen, so
-   the button is reset to look like the link it stands in for. */
+/* «Uus asi». A rail row that was being read past: the block was noticeable only
+   by being at the top of the rail and absent the rest of the time, and that is
+   not enough for the one thing on this page somebody else put there. So the
+   row carries a single red «!» and nothing else changes — no red card, no
+   badge, no pulse. One mark, at the front of the title, where the eye lands.
+   The row is a submit button because opening the Teema from here is what marks
+   it seen, so the button is reset to look like the link it stands in for. */
 .newasjarow {
   padding: var(--spacing-2) 0;
   border-bottom: 1px solid var(--border-subtle);
@@ -7418,8 +7662,11 @@ button.accordion__action:focus-visible {
   border-bottom: none;
 }
 
+/* Flex, so a title that wraps hangs off the mark instead of running under it. */
 .newasjarow__title {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-1);
   width: 100%;
   padding: 0;
   border: 0;
@@ -7434,6 +7681,19 @@ button.accordion__action:focus-visible {
 
 .newasjarow__title:hover {
   color: var(--accent-link);
+}
+
+/* The unread mark. Danger red, because this is the established red of the
+   product and a second one would be a second vocabulary. Heavier and a size up
+   so it reads as a mark rather than as the first character of the title, and
+   `flex: none` so it keeps its width when the title wraps. The colour survives
+   the hover above, which recolours the title only. */
+.newasjarow__mark {
+  flex: none;
+  color: var(--status-danger);
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-bold);
+  line-height: 1;
 }
 
 .quietrow {

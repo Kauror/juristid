@@ -100,27 +100,34 @@ def test_both_chip_rows_are_rendered_as_radios(signed_in, specialist):
 
 
 # ---------------------------------------------------------------------------
-# The sender disclosure
+# The sender control
 # ---------------------------------------------------------------------------
 
 
-def test_the_other_sender_list_does_not_repeat_the_frequent_chips(specialist):
+def test_the_rest_of_the_catalogue_does_not_repeat_the_shortlist(specialist):
     """The screenshot complaint, as an assertion.
 
-    "Muu / lisa saatja" reopened the same ten bodies that were already chips
-    above it, which read as a second sender control contradicting the first and
-    hid the one case it exists for.
+    "Muu / lisa saatja" reopened the same bodies that were already chips above
+    it, which read as a second sender control contradicting the first and hid
+    the one case it exists for. The disclosure is gone (docs/adr/0063) and the
+    two controls are still two halves of one set.
+
+    Enough bodies to have a tail at all: the shortlist is *filled* to eight, so
+    a catalogue of two puts both of them on it and leaves nothing over — which
+    is correct, and is not what this test is about.
     """
     used = factories.OrganisationFactory(name="Näidisministeerium")
-    unused = factories.OrganisationFactory(name="Tundmatu amet")
     factories.MatterFactory(owner=specialist).source_organisations.add(used)
+    unused = [
+        factories.OrganisationFactory(name=f"Tundmatu amet {index:02d}") for index in range(9)
+    ]
 
     form = MatterCreateForm(viewer=specialist)
     frequent = {value for value, _ in form.fields["source_organisations"].choices}
     rest = {value for value, _ in form.fields["source_organisations_other"].choices}
 
     assert used.pk in frequent
-    assert unused.pk in rest
+    assert any(organisation.pk in rest for organisation in unused)
     assert frequent.isdisjoint(rest)
 
 
@@ -157,17 +164,24 @@ def test_the_two_sender_controls_are_still_unioned_without_duplicates(signed_in,
     assert set(matter.source_organisations.values_list("pk", flat=True)) == {first.pk, second.pk}
 
 
-def test_the_form_never_creates_an_organisation(signed_in):
-    """A matter form must not mint a second spelling of a ministry.
+def test_the_form_creates_no_organisation_nobody_named(signed_in):
+    """Ticking chips is not naming a body, and never creates one.
 
-    Reference data is edited deliberately, under its own surface — this is the
-    invariant that keeps the institution catalogue governed
-    (master specification 14.7).
+    This used to assert that the form creates *no* institution ever, on the rule
+    that reference data is edited deliberately under its own surface. That rule
+    is unchanged in substance and withdrawn in form: naming a body is still
+    deliberate, and it now takes typing into `Uus saatja` rather than a journey
+    to Asutused (master specification 14.7, docs/adr/0063). What must never
+    happen is a save that invents an institution nobody typed — including from
+    the search box, which posts nothing at all.
     """
     from app.organisations.models import Organisation
 
     before = Organisation.objects.count()
     signed_in.post(CREATE, {"title": "Tundmatu saatjaga teema"})
+    assert Organisation.objects.count() == before
+
+    signed_in.post(CREATE, {"title": "Tühja nimega saatja", "sender_name": "   "})
     assert Organisation.objects.count() == before
 
 

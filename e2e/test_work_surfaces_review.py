@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import pathlib
+from datetime import date, timedelta
 
 import pytest
 
@@ -46,6 +47,12 @@ def _shoot(page, name: str) -> None:
     page.add_style_tag(content=STYLE_FIXTURE)
     page.wait_for_load_state("networkidle")
     page.screenshot(path=str(SHOT_DIR / f"{name}.png"), full_page=True)
+
+
+def _future(days: int) -> str:
+    """A date box's own format, the way the rest of the browser suite writes it."""
+    value = date.today() + timedelta(days=days)
+    return f"{value.day}.{value.month}.{value.year}"
 
 
 def _open(page, base_url: str, persona, path: str, width: int):
@@ -284,13 +291,42 @@ def test_hiljem_sits_on_the_same_surface_as_the_other_bands(page, base_url):
     Equality between two approved surfaces rather than a hard-coded colour, so
     the assertion survives a palette change and fails only on the thing it is
     here to catch: a background rule reappearing on this one band.
+
+    The ordinary band is *made* rather than found. Martin's seeded step sits at
+    exactly ``today + 30``, the last day the band reaches, so any other file in
+    the shard that defers it empties the band this test needs something in —
+    and `e2e/test_ux_pass.py` does exactly that, seven days on, on the same
+    seeded Matter. Which files share a shard is a pure function of the file set
+    (`ci_sharding.py`), so adding any browser file anywhere repartitions the
+    rest and a dependency like that surfaces as a failure with nothing to do
+    with the change that exposed it. Fourteen days is inside the band and clear
+    of both its edges.
     """
+    sign_in(page, base_url, MARTIN)
+    page.goto(f"{base_url}/teemad/uus/")
+    page.wait_for_load_state("networkidle")
+    page.fill("#id_title", "Järgmise kuu jooksul üle vaadatav teema")
+    # The owner chip, because `owner` is `required=False` on Uus teema and a
+    # Matter belonging to nobody reaches nobody's Minu asjad — the step's
+    # responsible falls back to the Matter's owner and there would be none
+    # (e2e/test_next_step_arrival.py). The title avoids «Tavaline» and
+    # «Näidis», which neighbouring files search the register for by exact count.
+    page.get_by_role("radio", name=MARTIN.short_name, exact=True).check()
+    page.fill("#id_next-text", "Kontrollida, kas ministeerium vastas")
+    # `Kuupäev…` opened rather than a quick span pressed: the spans this form
+    # offers are a week or less, which is the band above the one under test
+    # (`e2e/test_lawyer_workflow.py` reaches the exact box the same way).
+    page.locator("#jargmine-tegevus").locator("summary", has_text="Kuupäev…").click()
+    page.locator("#id_next-target_date").fill(_future(14))
+    page.get_by_role("button", name="Loo teema").click()
+    page.wait_for_load_state("networkidle")
+
     _open(page, base_url, MARTIN, "/minu-asjad/", 1440)
 
     later = page.locator("section.workband--hiljem")
     ordinary = page.locator("section.workband--jargmised_30_paeva")
     assert later.count() == 1, "the seeded world no longer renders Hiljem for Martin"
-    assert ordinary.count() == 1, "the seeded world no longer renders Järgmised 30 päeva"
+    assert ordinary.count() == 1, "the step this test filed did not land in Järgmised 30 päeva"
 
     def surface(locator):
         return locator.evaluate(

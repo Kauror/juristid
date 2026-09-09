@@ -238,6 +238,11 @@ def evidence_root(settings, tmp_path_factory):
     # under the test settings, and `/app/legacy-source` under the production
     # ones. Same mount, same failure, one class of evidence further along.
     settings.LEGACY_SOURCE_ROOT = root / "legacy-source"
+    # The fourth, and the only one that is not evidence of anything: files a
+    # refused form is holding until the save that was refused is retried. It is
+    # isolated with the rest because a test that leaves one behind would leak
+    # into the next test's file count (app/documents/pending.py).
+    settings.PENDING_UPLOAD_ROOT = root / "pending-uploads"
     # Created, not merely named. A deployment's storage roots exist before the
     # process starts — they are bind mounts — and `deployment_readiness` calls a
     # root that is absent a problem, correctly: a container handed an empty
@@ -249,6 +254,7 @@ def evidence_root(settings, tmp_path_factory):
         settings.EVIDENCE_ROOT,
         settings.DERIVATIVE_ROOT,
         settings.LEGACY_SOURCE_ROOT,
+        settings.PENDING_UPLOAD_ROOT,
     ):
         storage_root.mkdir(parents=True, exist_ok=True)
     settings.STORAGES = {
@@ -264,6 +270,10 @@ def evidence_root(settings, tmp_path_factory):
         settings.LEGACY_SOURCE_STORAGE_ALIAS: {
             "BACKEND": "django.core.files.storage.FileSystemStorage",
             "OPTIONS": {"location": str(settings.LEGACY_SOURCE_ROOT)},
+        },
+        settings.PENDING_UPLOAD_STORAGE_ALIAS: {
+            "BACKEND": "django.core.files.storage.FileSystemStorage",
+            "OPTIONS": {"location": str(settings.PENDING_UPLOAD_ROOT)},
         },
     }
     return root

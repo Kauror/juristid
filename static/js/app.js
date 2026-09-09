@@ -112,10 +112,13 @@
         var item = document.createElement("li");
         item.className = "dropzone__file";
 
-        var kind = document.createElement("span");
-        kind.className = "dropzone__kind";
-        kind.textContent = "TÕEND";
-        item.appendChild(kind);
+        /* No badge in front of the name. Every row of this list carried the
+           word TÕEND, which is what every row of it always is — a label that
+           never varies tells the reader nothing and takes the first position
+           on the line to do it. The evidence semantics are unchanged: each of
+           these still becomes one Document with one immutable version through
+           `app/documents/services.py`, and the Dokumendid tab is where a file's
+           role is actually a question worth answering. */
 
         var name = document.createElement("span");
         name.className = "dropzone__name";
@@ -143,6 +146,28 @@
       });
     });
 
+    /* Taking a held file back off. The row carries the hidden `pending` key, so
+       removing the row is what stops the next attempt resuming it — there is
+       nothing to tell the server, because the key simply stops being posted.
+
+       Enhancement, like the × beside a freshly chosen file: with scripting off
+       neither control exists and both lists are still correct. */
+    var heldList = document.getElementById("hoitud-failid");
+    if (heldList) {
+      heldList.addEventListener("click", function (event) {
+        var button = event.target.closest ? event.target.closest("[data-drop-held]") : null;
+        if (!button) {
+          return;
+        }
+        var row = button.closest(".dropzone__file");
+        if (row) {
+          row.remove();
+        }
+        heldList.hidden = heldList.querySelectorAll(".dropzone__file").length === 0;
+        fileInput.dispatchEvent(new Event("change"));
+      });
+    }
+
     var zone = fileInput.closest(".dropzone");
     if (zone) {
       ["dragenter", "dragover"].forEach(function (name) {
@@ -158,11 +183,471 @@
         });
       });
       zone.addEventListener("drop", function (event) {
-        if (event.dataTransfer && event.dataTransfer.files.length) {
+        if (!event.dataTransfer || !event.dataTransfer.files.length) {
+          return;
+        }
+        if (!canDrop) {
+          /* No DataTransfer to build with, so the browser's own assignment is
+             the only thing available and a second drop replaces the first. */
           fileInput.files = event.dataTransfer.files;
           fileInput.dispatchEvent(new Event("change"));
+          return;
+        }
+        /* Added to what is already there, not put in its place. Dropping a
+           covering letter and then its annex is two gestures and one obvious
+           intention; assigning the second FileList straight onto the input
+           silently threw the first away. The same rebuild the × control uses,
+           in the other direction. */
+        var transfer = new DataTransfer();
+        Array.prototype.slice.call(fileInput.files || []).forEach(function (file) {
+          transfer.items.add(file);
+        });
+        Array.prototype.slice.call(event.dataTransfer.files).forEach(function (file) {
+          transfer.items.add(file);
+        });
+        fileInput.files = transfer.files;
+        fileInput.dispatchEvent(new Event("change"));
+      });
+    }
+
+    /* ---- Uus teema: read the files while the form is still open ----------
+     * Choosing a file uploads it before the Teema exists, the extraction
+     * worker reads it behind the same scan gate as every other file, and what
+     * the rules find appears on this form while somebody is still filling it
+     * in (app/matters/intake_staging.py, docs/adr/0064).
+     *
+     * An enhancement, and it fails safely in both directions. With no
+     * `fetch`, no `FormData` or no URLs on the dropzone there is no island at
+     * all, and the input posts its files to `Loo teema` exactly as it always
+     * did. When an upload fails the bytes stay in the input, so that ordinary
+     * path still carries them — the island going wrong costs the suggestions,
+     * never the file.
+     *
+     * The one rule that governs everything below: **a suggestion never
+     * overwrites a person.** Extraction is asynchronous, so an answer can
+     * arrive seconds after somebody has typed a title or ticked a sender, and
+     * a control that is not empty — or that has been touched at all — is left
+     * exactly as it is. The server says what it *would* fill; this decides
+     * whether it still may (task §10).
+     */
+    var dropzone = fileInput.closest(".dropzone");
+    var stageUrl = dropzone && dropzone.getAttribute("data-intake-url");
+    var statusUrl = dropzone && dropzone.getAttribute("data-intake-status-url");
+    var removeUrl = dropzone && dropzone.getAttribute("data-intake-remove-url");
+    var createForm = fileInput.closest("form");
+    if (stageUrl && statusUrl && removeUrl && createForm && window.FormData && window.fetch) {
+      /* Slow enough to be a poll rather than a load, and bounded: after this
+         many the page stops asking. Nothing is blocked while it waits — the
+         file is already safe and `Loo teema` is already pressable — so the
+         cost of stopping early is a suggestion, not a workflow (task §22). */
+      var POLL_MS = 1200;
+      var MAX_POLLS = 60;
+      var polls = 0;
+      var pollTimer = null;
+      var abandoned = false;
+
+      /* The four controls a suggestion may fill. Pealkiri is deliberately not
+         among them: no title is ever pre-filled anywhere in this application,
+         because nothing separates one a person wrote from one a machine
+         proposed (app/matters/intake_suggestions/prefill.py). */
+      var FILLABLE = ["source_organisations", "response_deadline", "track", "policy_areas"];
+      /* Which of them the person has been near, and what we last wrote into
+         each. The second is what lets a later answer replace an *earlier
+         answer* while never replacing a person: a control still holding
+         exactly what we put in it is still empty as far as they are
+         concerned. */
+      var touched = {};
+      var autofilled = {};
+      /* Files already sent. A `change` event is dispatched by the × control,
+         by the held-file list and by our own clearing of the input, so
+         "something changed" is not the question — "which of these has the
+         server not got" is. */
+      var sent = new WeakSet();
+
+      var token = function () {
+        var field = createForm.querySelector('input[name="intake"]');
+        return field ? field.value : "";
+      };
+      var csrf = function () {
+        var field = createForm.querySelector('input[name="csrfmiddlewaretoken"]');
+        return field ? field.value : "";
+      };
+      var controlsFor = function (name) {
+        return Array.prototype.slice.call(
+          createForm.querySelectorAll('[name="' + name + '"], [name="' + name + '_other"]')
+        );
+      };
+      var sameSet = function (left, right) {
+        return (
+          left.length === right.length &&
+          left.every(function (value) {
+            return right.indexOf(value) !== -1;
+          })
+        );
+      };
+
+      /* Touched, generously. Any real interaction anywhere inside the field a
+         control lives in counts — a chip, its label, the date picker's own
+         button — because the cost of being wrong in that direction is one
+         suggestion nobody was offered, and the cost of being wrong in the
+         other is somebody's typing disappearing. */
+      var markTouched = function (event) {
+        if (!event.isTrusted || !event.target.closest) {
+          return;
+        }
+        var within = event.target.closest(".field, fieldset");
+        if (!within) {
+          return;
+        }
+        FILLABLE.forEach(function (name) {
+          if (within.querySelector('[name="' + name + '"], [name="' + name + '_other"]')) {
+            touched[name] = true;
+          }
+        });
+      };
+      ["input", "change", "click"].forEach(function (type) {
+        createForm.addEventListener(type, markTouched, true);
+      });
+
+      /* «Kasuta» is a choice, and it is made outside the field it writes into,
+         so the listener above cannot see it. Pressing it settles that field:
+         a later answer must not take back what somebody has just accepted. */
+      createForm.addEventListener(
+        "click",
+        function (event) {
+          var use = event.target.closest ? event.target.closest("[data-suggest-for]") : null;
+          if (use) {
+            touched[use.getAttribute("data-suggest-for")] = true;
+          }
+        },
+        true
+      );
+
+      var fill = function (name, values) {
+        if (touched[name]) {
+          return;
+        }
+        var controls = controlsFor(name);
+        if (!controls.length) {
+          return;
+        }
+        var boxes = controls.filter(function (control) {
+          return control.type === "checkbox" || control.type === "radio";
+        });
+        var text = controls.filter(function (control) {
+          return control.type !== "checkbox" && control.type !== "radio";
+        })[0];
+        var previous = autofilled[name] || [];
+
+        if (boxes.length) {
+          var checked = boxes
+            .filter(function (box) {
+              return box.checked && box.value !== "";
+            })
+            .map(function (box) {
+              return box.value;
+            });
+          /* Empty, or holding exactly what this put there last time. Anything
+             else is somebody's choice. */
+          if (checked.length && !sameSet(checked, previous)) {
+            return;
+          }
+          boxes.forEach(function (box) {
+            var wanted = values.indexOf(box.value) !== -1;
+            if (box.checked === wanted) {
+              return;
+            }
+            /* Only ever tick what is proposed, or untick what this ticked. A
+               box somebody else's answer left behind is not ours to clear. */
+            if (wanted || previous.indexOf(box.value) !== -1) {
+              box.checked = wanted;
+              box.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          });
+          autofilled[name] = values.slice();
+          return;
+        }
+
+        if (!text) {
+          return;
+        }
+        var current = (text.value || "").trim();
+        if (current && current !== (previous[0] || "")) {
+          return;
+        }
+        text.value = values[0] || "";
+        text.dispatchEvent(new Event("input", { bubbles: true }));
+        text.dispatchEvent(new Event("change", { bubbles: true }));
+        autofilled[name] = values.slice();
+      };
+
+      var applyPrefill = function (scope) {
+        var wanted = {};
+        (scope || document).querySelectorAll("[data-prefill-for]").forEach(function (marker) {
+          var name = marker.getAttribute("data-prefill-for");
+          wanted[name] = wanted[name] || [];
+          wanted[name].push(marker.getAttribute("data-prefill-value") || "");
+        });
+        /* Per field, not per value: Valdkonnad may propose three, and asking
+           "is this control still empty" once per value would answer no after
+           the first of them. */
+        Object.keys(wanted).forEach(function (name) {
+          fill(name, wanted[name]);
+        });
+      };
+
+      /* One answer, two places. The staging routes render both halves and this
+         puts each where it belongs by id — the file rows inside the dropzone,
+         the suggestions above the fields they are about. */
+      var applyFragment = function (source) {
+        /* Either the answer's text or a document already parsed from it. The
+           upload path parses first, because it has to look at what the server
+           kept before deciding whether to empty the file input; the poll and
+           the remove path have no such question and hand the text straight in.
+           One function, so the two can never diverge about which element goes
+           where. */
+        var parsed =
+          typeof source === "string"
+            ? new DOMParser().parseFromString(source, "text/html")
+            : source;
+        ["intake-failid", "intake-panel"].forEach(function (id) {
+          var incoming = parsed.getElementById(id);
+          var existing = document.getElementById(id);
+          if (incoming && existing) {
+            existing.replaceWith(document.importNode(incoming, true));
+          }
+        });
+        var panel = document.getElementById("intake-panel");
+        if (panel) {
+          bindSuggestionUse(panel);
+          applyPrefill(panel);
+        }
+        /* The browser's own list and the chosen count are rebuilt from the
+           input, which staging has just emptied, and from the staged rows that
+           have taken its place. */
+        fileInput.dispatchEvent(new Event("change"));
+      };
+
+      var uploading = function (on) {
+        var notice = document.querySelector(".intakepanel__uploading");
+        if (notice) {
+          notice.hidden = !on;
+        }
+      };
+
+      var schedule = function () {
+        window.clearTimeout(pollTimer);
+        var panel = document.getElementById("intake-panel");
+        if (abandoned || !panel || panel.getAttribute("data-intake-state") !== "reading") {
+          return;
+        }
+        if (polls >= MAX_POLLS) {
+          return;
+        }
+        pollTimer = window.setTimeout(function () {
+          var current = token();
+          if (!current) {
+            return;
+          }
+          polls += 1;
+          fetch(statusUrl + "?intake=" + encodeURIComponent(current), {
+            credentials: "same-origin",
+          })
+            .then(function (response) {
+              if (!response.ok) {
+                throw new Error("status");
+              }
+              return response.text();
+            })
+            .then(function (html) {
+              applyFragment(html);
+              schedule();
+            })
+            .catch(function () {
+              /* Quietly. The file is staged, the form is complete, and a page
+                 that shouted about a failed poll would be alarming about
+                 something nobody has to act on. */
+            });
+        }, POLL_MS);
+      };
+
+      /* One list at a time. The browser's own preview is rebuilt from
+         `input.files` on every change and the staged list is rebuilt from the
+         server's answer, so while staging is working there must be exactly one
+         of them or the two disagree for as long as an upload takes — long
+         enough for somebody to press a × belonging to the list that is about
+         to be replaced. The browser's is the one that goes, because the
+         server's can say something it cannot: whether the file has been read.
+
+         If staging ever fails, this stops suppressing and the browser's list
+         comes back, because from then on it is the only true account of what
+         `Loo teema` will receive. */
+      var stagingWorks = true;
+      var inFlight = 0;
+      var hideChosenList = function () {
+        if (!stagingWorks) {
+          return;
+        }
+        /* Only while there is something to suppress it *for*. A batch the
+           server refused outright stages nothing and clears nothing, so the
+           browser's own preview is the only true account of what `Loo teema`
+           will receive — and hiding it would show an empty file area over an
+           input that still holds a file, which is the defect the held-upload
+           work was about, inverted. */
+        var staged = document.getElementById("intake-failid");
+        if (!inFlight && !(staged && staged.querySelectorAll(".dropzone__file").length)) {
+          return;
+        }
+        fileList.textContent = "";
+        fileList.hidden = true;
+      };
+
+      var send = function (files) {
+        var data = new FormData();
+        files.forEach(function (file) {
+          data.append("files", file);
+        });
+        data.append("csrfmiddlewaretoken", csrf());
+        /* Read here rather than when the files were chosen. A second pick
+           while the first upload is still in flight must join the session the
+           first one created, not open a second — two sessions would mean the
+           form carrying one identifier and half the files being filed. */
+        var current = token();
+        if (current) {
+          data.append("intake", current);
+        }
+        return fetch(stageUrl, { method: "POST", body: data, credentials: "same-origin" })
+          .then(function (response) {
+            /* A 400 carries the same fragment with the refusal on it, so it is
+               read rather than thrown: the page has to be able to say which
+               file was not taken and why. */
+            if (!response.ok && response.status !== 400) {
+              throw new Error("stage");
+            }
+            return response.text();
+          })
+          .then(function (html) {
+            inFlight -= 1;
+            var parsed = new DOMParser().parseFromString(html, "text/html");
+            var staged = parsed.getElementById("intake-failid");
+            var kept = staged ? staged.querySelectorAll(".dropzone__file").length : 0;
+            /* Emptied only once the server actually has something. A file input
+               cannot be refilled by any page, so clearing it before the answer
+               arrived — or when the answer was that nothing was taken — would
+               be the one way to actually lose somebody's file. */
+            if (kept) {
+              fileInput.value = "";
+            }
+            polls = 0;
+            abandoned = false;
+            applyFragment(parsed);
+            schedule();
+          })
+          .catch(function () {
+            /* The bytes are still in the input, so `Loo teema` still carries
+               them and every one of them still becomes a Document. What is
+               lost is the reading, which is help rather than data — and the
+               browser's own preview comes back, because from here on it is
+               what the save will actually receive. */
+            inFlight -= 1;
+            stagingWorks = false;
+            uploading(false);
+            fileInput.dispatchEvent(new Event("change"));
+          });
+      };
+
+      /* Uploads run one at a time. Dropping a covering letter and then its
+         annex a moment later is two gestures somebody makes without waiting,
+         and in parallel the second would be sent before the first had created
+         the session for it to join. */
+      var queue = Promise.resolve();
+
+      fileInput.addEventListener("change", function () {
+        /* Captured now, not when the turn comes: by then the input may have
+           been emptied by the upload in front of this one. A `change` is also
+           dispatched by the × control, by the held-file list and by this
+           module itself, so "what has the server not got" is the question
+           rather than "did something change". */
+        var fresh = Array.prototype.slice.call(fileInput.files || []).filter(function (file) {
+          return !sent.has(file);
+        });
+        if (!fresh.length) {
+          hideChosenList();
+          return;
+        }
+        fresh.forEach(function (file) {
+          sent.add(file);
+        });
+        /* Counted here rather than when the request starts, and that is the
+           whole of what makes the two lists safe. The queue runs `send` a
+           microtask later at the earliest, so between the pick and the request
+           there would otherwise be a window in which the browser's list is
+           still showing rows whose × belongs to a list that is about to be
+           replaced — long enough for somebody to press one, and long enough
+           for a browser driver to. */
+        inFlight += 1;
+        uploading(true);
+        hideChosenList();
+        queue = queue.then(function () {
+          return send(fresh);
+        });
+      });
+
+      dropzone.addEventListener("click", function (event) {
+        var button = event.target.closest ? event.target.closest("[data-intake-remove]") : null;
+        if (!button) {
+          return;
+        }
+        var current = token();
+        if (!current) {
+          return;
+        }
+        var data = new FormData();
+        data.append("csrfmiddlewaretoken", csrf());
+        data.append("intake", current);
+        data.append("fail", button.getAttribute("data-intake-remove"));
+        fetch(removeUrl, { method: "POST", body: data, credentials: "same-origin" })
+          .then(function (response) {
+            if (!response.ok) {
+              throw new Error("remove");
+            }
+            return response.text();
+          })
+          .then(function (html) {
+            /* The server decides what is left, what it now suggests and what
+               `Loo teema` would file, all from one read — so the list and the
+               suggestions cannot end up disagreeing about a file that is half
+               gone (task §17). */
+            applyFragment(html);
+            schedule();
+          })
+          .catch(function () {});
+      });
+
+      createForm.addEventListener("click", function (event) {
+        var skip = event.target.closest ? event.target.closest("[data-intake-skip]") : null;
+        if (!skip) {
+          return;
+        }
+        /* Not a cancellation: the file stays staged and still becomes evidence.
+           This is for the person who can see the answer is not coming and would
+           like the page to stop saying that it is (task §21). */
+        abandoned = true;
+        window.clearTimeout(pollTimer);
+        var panel = document.getElementById("intake-panel");
+        if (panel) {
+          panel.setAttribute("data-intake-state", "abandoned");
         }
       });
+
+      /* A refused save re-renders the page with its staged files and whatever
+         had been found by then, so the island picks up where it left off
+         rather than starting again. */
+      var initial = document.getElementById("intake-panel");
+      if (initial) {
+        applyPrefill(initial);
+        schedule();
+      }
     }
   }
 
@@ -718,8 +1203,15 @@
   function bindOnePeriodControl(scope, fields, chooser) {
     /* Jõustumine asks a question before the precision one: a commencement that
      * happens "üldises korras" has no date to be precise about, so the whole
-     * control goes away rather than sitting there inviting a fabricated day. */
-    var kindChooser = scope.querySelector("#joustumise-liik");
+     * control goes away rather than sitting there inviting a fabricated day.
+     *
+     * Looked for inside this control's own form rather than anywhere in the
+     * scope. The Jõustumine form opens inline on the Matter page now, a few
+     * hundred pixels below a composer carrying a period control of its own —
+     * and a scope-wide lookup would hand the commencement form's kind radios
+     * the power to hide the composer's «Oluline tähtaeg» fields. */
+    var owner = (fields.closest && fields.closest("form")) || scope;
+    var kindChooser = owner.querySelector("#joustumise-liik");
     var groups = Array.prototype.slice.call(
       fields.querySelectorAll(".periodfields__group")
     );
@@ -1057,8 +1549,20 @@
       if (!list || !box) {
         return;
       }
-      box.addEventListener("input", function () {
+      /* Opt-in, and only Saatja asks for it.
+       *
+       * With `data-choicefilter-compact`, an empty box shows *nothing* rather
+       * than everything: the list is a result area, not a wall down the middle
+       * of the form. Ticked bodies are the exception and always show, which is
+       * what keeps "what have I chosen" answerable without typing.
+       *
+       * The whole catalogue is still in the document, so with scripting off
+       * this is an ordinary list of checkboxes and nothing is unreachable —
+       * which is the only reason hiding it here is allowed at all. */
+      var compact = holder.hasAttribute("data-choicefilter-compact");
+      var apply = function () {
         var needle = box.value.trim().toLowerCase();
+        var shown = 0;
         /* `.chip` is Uus teema's control, `.checkitem` the one every other
            surface still uses. One selector rather than two bindings, because
            the rule — hide what does not match, never hide what is ticked — is
@@ -1068,9 +1572,22 @@
           var checked = item.querySelector("input:checked");
           /* A ticked choice never hides. Somebody who types after choosing
              should still be able to see — and untick — what they chose. */
-          item.hidden = !checked && needle !== "" && name.indexOf(needle) === -1;
+          var hide = !checked && (needle === "" ? compact : name.indexOf(needle) === -1);
+          item.hidden = hide;
+          if (!hide) {
+            shown += 1;
+          }
         });
-      });
+        if (compact) {
+          /* An empty box would otherwise be an empty bordered panel, which
+             reads as a control that has broken rather than one nobody has
+             asked anything yet. */
+          list.hidden = shown === 0;
+        }
+      };
+      box.addEventListener("input", apply);
+      list.addEventListener("change", apply);
+      apply();
     });
   }
 
@@ -1149,19 +1666,42 @@
         return;
       }
       /* Either a field name — every chip in the group, wherever it is rendered
-         — or one element's id, which is how the file input is counted. */
-      var byName = form.querySelectorAll('input[name="' + key + '"]');
+         — or one element's id, which is how the file input is counted.
+         The `_other` twin is included for the same reason `bindSuggestionUse`
+         looks it up: Saatja is one logical set split across two fields because
+         a checkbox group cannot be rendered in two places without being two
+         fields, and a count that read only the shortlist said «1 valitud» over
+         two ticked bodies (app/matters/forms.py). */
+      var byName = form.querySelectorAll(
+        'input[name="' + key + '"], input[name="' + key + '_other"]'
+      );
       var single = document.getElementById(key);
       var sources = byName.length ? Array.prototype.slice.call(byName) : single ? [single] : [];
       if (!sources.length) {
         return;
       }
+      /* Files the server is holding count as chosen, because they are: the
+         next save files them. Counting only `input.files` would have said
+         "1 valitud" over a list of two rows — and once `Uus teema` began
+         uploading a chosen file straight away, `input.files` is empty on the
+         ordinary path and the count would have read nothing at all.
+
+         Two lists, looked up per sync rather than once: both are replaced
+         wholesale, the staged one on every answer from the staging routes
+         (static/js/app.js above, app/documents/pending.py). */
+      var lists = key === "id_files" ? ["hoitud-failid", "intake-failid"] : [];
       var sync = function () {
         var count = single && sources[0] === single
           ? (single.files || []).length
           : sources.filter(function (input) {
               return input.checked && input.value !== "";
             }).length;
+        lists.forEach(function (id) {
+          var list = document.getElementById(id);
+          if (list) {
+            count += list.querySelectorAll(".dropzone__file").length;
+          }
+        });
         badge.textContent = count ? count + " valitud" : "";
       };
       sources.forEach(function (input) {

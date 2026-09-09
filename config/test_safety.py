@@ -46,9 +46,11 @@ FORBIDDEN_ROOTS: tuple[Path, ...] = (
     Path("/app/evidence"),
     Path("/app/derivatives"),
     Path("/app/legacy-source"),
+    Path("/app/pending-uploads"),
     REPOSITORY_ROOT / "evidence",
     REPOSITORY_ROOT / "derivatives",
     REPOSITORY_ROOT / "legacy-source",
+    REPOSITORY_ROOT / "pending-uploads",
 )
 
 #: Environment variables that name a writable storage root. Read-only source
@@ -59,6 +61,7 @@ WRITABLE_ROOT_VARIABLES: tuple[str, ...] = (
     "EVIDENCE_ROOT",
     "DERIVATIVE_ROOT",
     "LEGACY_SOURCE_ROOT",
+    "PENDING_UPLOAD_ROOT",
 )
 
 #: Marker a deployed stack sets on itself. Nothing else sets it, so any value at

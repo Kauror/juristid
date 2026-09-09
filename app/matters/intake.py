@@ -35,7 +35,7 @@ from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import AcceptedUpload, read_upload
 from app.matters.entry_enums import EntryKind
 from app.matters.models import Matter
-from app.matters.services import add_entry, create_matter
+from app.matters.services import add_entry, create_matter, resolve_source_organisations
 
 #: Extensions whose contents are an email rather than a document. The file is
 #: captured exactly as it arrived either way; the role records what it *is*, so
@@ -96,6 +96,7 @@ def register_incoming(
     actor: Any = None,
     owner: Any = None,
     source_organisations: Any = None,
+    sender_name: str = "",
     received_date: date | None = None,
     response_deadline: date | None = None,
     stage: Any = None,
@@ -113,11 +114,21 @@ def register_incoming(
     No procedural stage is invented. A file arriving says something has been
     received; it says nothing about where the external process stands, and
     guessing would put a wrong Hetkeseis on the file from its first minute.
+
+    ``sender_name`` is a body somebody typed because the catalogue does not hold
+    it. It is resolved *here* rather than in the view, so that creating the
+    institution and creating the Matter are the same transaction: a rejected
+    file or any other refusal below takes the new institution with it, and
+    Saabunud cannot leave an organisation behind that no Matter names
+    (`app.matters.services.resolve_source_organisations`).
     """
     if not uploads:
         raise DomainError("Vali vähemalt üks fail.")
 
     resolved_title = (title or "").strip() or title_from_filename(uploads[0].filename)
+    senders = resolve_source_organisations(
+        chosen=source_organisations, typed_name=sender_name or ""
+    )
 
     matter = create_matter(
         title=resolved_title,
@@ -125,7 +136,7 @@ def register_incoming(
         owner=owner,
         stage=stage,
         track=track or "",
-        source_organisations=source_organisations,
+        source_organisations=senders,
         received_date=received_date,
         response_deadline=response_deadline,
         visibility=visibility,

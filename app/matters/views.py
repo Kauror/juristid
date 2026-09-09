@@ -52,8 +52,10 @@ from app.core.dates import (
 from app.core.decorators import business_write_required
 from app.core.enums import Visibility
 from app.core.errors import DomainError
-from app.documents.enums import DocumentRole
+from app.documents import pending as pending_uploads
+from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.models import Document
+from app.documents.pending import human_size
 from app.documents.services import link_working_document
 from app.documents.uploads import UploadRejected
 from app.intelligence.selectors import matter_intelligence
@@ -63,7 +65,13 @@ from app.legacy_import.register_display import (
     source_instruction_for,
     source_instructions_for,
 )
-from app.matters import department_dashboard, register_filters, selectors, work_items
+from app.matters import (
+    department_dashboard,
+    intake_staging,
+    register_filters,
+    selectors,
+    work_items,
+)
 from app.matters import person_work as person_workspace
 from app.matters.department_dashboard import SeisFigure
 from app.matters.enums import MatterOrigin, RecordMode
@@ -86,7 +94,9 @@ from app.matters.intake import register_incoming, validate_uploads
 from app.matters.intake_suggestions import (
     CurrentValues,
     SuggestedField,
+    analyse_intake,
     analyse_matter,
+    prefill_controls,
     prefill_initial,
 )
 from app.matters.models import Matter, MatterAssignmentNotice, MatterEngagement
@@ -109,6 +119,7 @@ from app.matters.services import (
     personal_note_for,
     reopen_matter,
     resolve_addressee,
+    resolve_source_organisations,
     save_personal_note,
     set_brief_summary,
     set_matter_data_class,
@@ -537,6 +548,7 @@ def intake(request: HttpRequest) -> HttpResponse:
                     actor=request.user,
                     owner=data.get("owner"),
                     source_organisations=list(data.get("source_organisations") or []),
+                    sender_name=data.get("sender_name") or "",
                     received_date=data.get("received_date") or timezone.localdate(),
                     response_deadline=data.get("response_deadline"),
                     visibility=data.get("visibility") or Visibility.NORMAL,
@@ -1213,6 +1225,35 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     written: one rejected attachment must not leave a Matter behind carrying the
     other three, which is the failure mode the intake surface already avoids
     (Stage-2E.1 brief 23).
+
+    **A refusal keeps the files.** It did not, and that was the reported defect:
+    a browser cannot put a file back into a file input, so every answer that
+    re-rendered this form came back with the file area empty. Somebody who chose
+    a file, was told about a valdkond they had ticked without naming, corrected
+    it and pressed the button again filed a Matter with no documents — having
+    been told about neither the loss nor its consequence. The bytes had reached
+    the server and been validated by then; they were dropped because the answer
+    was a page rather than a redirect.
+
+    So the validated uploads are held for the length of the refusal, the
+    re-rendered form carries the keys naming them, and the next attempt resumes
+    them. They are unioned with anything chosen again, in the order they were
+    first offered, and they go through `_attach_incoming_file` exactly as they
+    would have the first time (app/documents/pending.py).
+
+    **And the files are read before the Teema exists.** Where the browser can
+    upload, choosing a file stages it (`intake_stage`), the worker reads it
+    behind the same scan gate as every other file, and what the rules find
+    appears on this form while it is still being filled in. What arrives here
+    is then a session identifier rather than bytes: `promote_intake_files`
+    turns each staged file into one Document with one immutable version, inside
+    this transaction, from the exact bytes the browser sent
+    (app/matters/intake_staging.py, docs/adr/0064).
+
+    Three paths into the same place, and they compose. Staged files first, then
+    what a refusal is holding, then anything chosen again — the order somebody
+    offered them in. With scripting off the first is simply empty and the page
+    behaves exactly as it did before.
     """
     form = MatterCreateForm(request.POST or None, viewer=request.user)
     # Bound only when somebody actually asked for a next action. Bound
@@ -1238,24 +1279,62 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     action_form = NextActionForm(request.POST if wants_action else None, prefix="next")
     uploads: list[Any] = []
     upload_error = ""
+    # What an earlier refusal is holding, and which of it this attempt still
+    # wants. A key the session is not holding — a stale form, a second tab, a
+    # swept object — is simply not there; it is never a reason to refuse a save
+    # somebody can otherwise complete (app/documents/pending.py).
+    held_keys: list[str] = []
+    chosen: list[Any] = []
+    # The staging this attempt names, if it is this person's and still open.
+    # Somebody else's, an expired one and one a Matter has already consumed all
+    # read as absent, and absent is simply "no staged files" rather than a
+    # refusal: the person can still file the Teema, which is the point
+    # (app/matters/intake_staging.py, task §23).
+    intake_session = (
+        _requested_intake_session(request, request.POST) if request.method == "POST" else None
+    )
+    if request.method == "POST":
+        asked = [key for key in request.POST.getlist("pending") if key]
+        # Described first, so the keys carried forward are the ones this session
+        # is genuinely holding and a stale form does not keep re-offering a file
+        # that is no longer there.
+        held_keys = [item.key for item in pending_uploads.describe(request.session, asked)]
+        resumed = pending_uploads.resume(request.session, held_keys)
+        chosen, upload_error = _read_new_matter_files(request)
+        # Held first, then chosen: the order somebody offered them in. A file
+        # picked again after a refusal is a second file and is filed as one —
+        # the preview lists both, so nothing is deduplicated behind their back.
+        uploads = [*resumed, *chosen]
 
-    if request.method == "POST" and form.is_valid():
-        try:
-            uploads = _read_new_matter_files(request)
-        except (DomainError, UploadRejected) as error:
-            upload_error = str(error)
+        refused = bool(upload_error) or not form.is_valid()
+        if wants_action and not action_form.is_valid():
+            refused = True
 
-        if upload_error or (wants_action and not action_form.is_valid()):
+        if refused:
             if upload_error:
                 messages.error(request, upload_error)
+            # Everything that passed validation survives the refusal, including
+            # the good half of a batch whose other half was rejected. Files
+            # already held stay held — `resume` reads without consuming — so
+            # only what arrived on this request has to be added.
+            newly_held = pending_uploads.hold(request.session, chosen)
+            held_keys = [*held_keys, *(item.key for item in newly_held)]
             return render(
                 request,
                 "matters/matter_create.html",
-                _create_context(request, form, action_form),
+                _create_context(
+                    request,
+                    form,
+                    action_form,
+                    held_keys=held_keys,
+                    intake_session=intake_session,
+                ),
                 status=400,
             )
 
+    if request.method == "POST" and form.is_valid():
         data = form.cleaned_data
+        promoted: list[Any] = []
         try:
             with transaction.atomic():
                 # Resolved *inside* the transaction, and before the Matter, so a
@@ -1268,6 +1347,14 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     chosen=data.get("addressee_organisation"),
                     typed_name=data.get("addressee_name") or "",
                 )
+                # And the sender side, which may now name a body the catalogue
+                # does not hold either. Same catalogue, same reuse-or-create
+                # rule, same transaction — a different question about it
+                # (`resolve_source_organisations`).
+                senders = resolve_source_organisations(
+                    chosen=data.get("source_organisations"),
+                    typed_name=data.get("sender_name") or "",
+                )
                 matter = create_matter(
                     title=data["title"],
                     actor=request.user,
@@ -1279,7 +1366,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     brief_summary=data.get("brief_summary") or "",
                     stage=data.get("stage"),
                     track=data.get("track") or "",
-                    source_organisations=list(data.get("source_organisations") or []),
+                    source_organisations=senders,
                     addressee_organisation=addressee,
                     received_date=data.get("received_date"),
                     response_deadline=data.get("response_deadline"),
@@ -1295,6 +1382,15 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     # anything not created here (Agent-C brief 15, 16, 17).
                     data_class=form.data_class,
                 )
+                # Staged first, because they were chosen first. Each becomes
+                # one Document with one immutable version from the bytes the
+                # browser sent, verified against the checksum recorded when
+                # they arrived — nothing is re-uploaded and nothing is rebuilt
+                # from extracted text (`promote_intake_files`).
+                if intake_session is not None:
+                    promoted = intake_staging.promote_intake_files(
+                        session=intake_session, matter=matter, actor=request.user
+                    )
                 for upload in uploads:
                     _attach_incoming_file(matter, upload, actor=request.user)
 
@@ -1320,44 +1416,82 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     )
 
         except DomainError as error:
-            # An ambiguous typed addressee, or any other rule the services
-            # refuse. The transaction is already rolled back by the time
-            # this runs, so nothing — least of all a newly created
+            # An ambiguous typed sender or addressee, or any other rule the
+            # services refuse. The transaction is already rolled back by the
+            # time this runs, so nothing — least of all a newly created
             # institution — survives the refusal (§6).
+            #
+            # The files do, though, and they have to: this is the refusal
+            # somebody is most likely to hit twice while they work out which
+            # institution the catalogue means, and it is no more a reason to
+            # take their attachment away than a mistyped valdkond is.
             form.add_error(None, str(error))
+            newly_held = pending_uploads.hold(request.session, chosen)
             return render(
                 request,
                 "matters/matter_create.html",
-                _create_context(request, form, action_form),
+                _create_context(
+                    request,
+                    form,
+                    action_form,
+                    held_keys=[*held_keys, *(item.key for item in newly_held)],
+                    intake_session=intake_session,
+                ),
                 status=400,
             )
 
-        if uploads:
+        # The save survived, so the hold is over. Released after the commit
+        # rather than inside it: deleting the held bytes is not part of the
+        # business operation, and a delete that failed must not take a written
+        # Matter with it.
+        pending_uploads.release(request.session, held_keys)
+        # And the staging is over. After the commit for the same reason: the
+        # Teema is written, its evidence is written, and a storage backend
+        # having a bad minute must not take either with it. Anything left
+        # behind is the sweeper's (`consume_session`).
+        if intake_session is not None:
+            intake_staging.consume_session(intake_session)
+
+        filed = len(uploads) + len(promoted)
+        if filed:
             messages.success(
                 request,
-                f"Teema „{matter.title}” on loodud koos {len(uploads)} failiga.",
+                f"Teema „{matter.title}” on loodud koos {filed} failiga.",
             )
         else:
             messages.success(request, f"Teema „{matter.title}” on loodud.")
         # Straight into the file: creation is the start of work, not the end.
         return redirect("matters:matter_detail", pk=matter.pk)
 
-    # A refused save answers 400, the same as a rejected upload and a malformed
-    # `Järgmiseks` a few lines above. The form itself failing validation used to
-    # answer 200, which made the three refusals on one page indistinguishable to
-    # anything reading the status rather than the HTML.
-    status = 400 if request.method == "POST" else 200
+    # GET only. Every POST above returns: refused ones answer 400 from the
+    # branch that holds their files, and a successful one redirects. A refusal
+    # answering 200 used to make the three refusals on this page
+    # indistinguishable to anything reading the status rather than the HTML.
     return render(
         request,
         "matters/matter_create.html",
         _create_context(request, form, action_form),
-        status=status,
+        status=200,
     )
 
 
-def _create_context(request: HttpRequest, form: Any, action_form: Any) -> dict[str, Any]:
+def _create_context(
+    request: HttpRequest,
+    form: Any,
+    action_form: Any,
+    *,
+    held_keys: list[str] | None = None,
+    intake_session: Any = None,
+) -> dict[str, Any]:
     return {
+        **_intake_context(intake_session),
         "form": form,
+        # The files a refusal is holding, described for the page: the same
+        # filename and size the browser's own preview shows, plus the key the
+        # next attempt carries them back on. Empty on every GET, so a fresh form
+        # never offers somebody an attachment they abandoned an hour ago
+        # (app/documents/pending.py).
+        "held_files": pending_uploads.describe(request.session, held_keys or []),
         "action_form": action_form,
         "frequent_senders": getattr(form, "frequent_senders", []),
         # `secondary_fields` is gone with the disclosure it fed. The template
@@ -1378,18 +1512,230 @@ def _create_context(request: HttpRequest, form: Any, action_form: Any) -> dict[s
     }
 
 
-def _read_new_matter_files(request: HttpRequest) -> list[Any]:
+# ---------------------------------------------------------------------------
+# Uus teema: reading the files while the form is still open
+# ---------------------------------------------------------------------------
+#
+# Three small routes and one fragment. Selecting a file on `Uus teema` uploads
+# it before the Teema exists, the extraction worker reads it through exactly the
+# parsers and the scan gate every other file goes through, and what the rules
+# find appears on the form the person is still filling in (docs/adr/0064).
+#
+# What none of them do is create business data. No Matter, no Document, no
+# version, no audit event, no search row, no Organisation. The only thing that
+# exists after any of them is one person's staging session, which expires.
+
+
+#: How each staged file's reading state reads on the page, and which tone it
+#: takes. Words a person filing a Teema can act on, never the stored state:
+#: PENDING, PROCESSING and «Teksti eraldamine ei kohaldu» are how the extraction
+#: system talks to an operator, and on this surface they are noise at best
+#: (task §5, `app.documents.preview` is the operator-facing vocabulary).
+INTAKE_STATE_LABELS: dict[str, tuple[str, str]] = {
+    ExtractionState.PENDING: ("Loen faili…", "waiting"),
+    ExtractionState.PROCESSING: ("Loen faili…", "waiting"),
+    ExtractionState.DONE: ("Loetud", "ok"),
+    ExtractionState.FAILED: ("Ei saanud lugeda", "warn"),
+    ExtractionState.NOT_APPLICABLE: ("Sisu ei loeta", "quiet"),
+}
+
+
+def _intake_context(session: Any, *, error: str = "") -> dict[str, Any]:
+    """Everything the intake fragment renders, decided here rather than there.
+
+    One read of the staged files answers all three questions the page asks —
+    what is on the form, whether anything is still being read, and what the
+    rules found — so the template judges nothing and a poll costs one pass.
+
+    **The analysis runs only once something has been read.** While every file is
+    still PENDING there is provably nothing to suggest, and running the analyser
+    anyway would load the organisation catalogue and the policy vocabulary on
+    every poll to produce an empty answer.
+    """
+    files = intake_staging.live_files(session) if session is not None else []
+    rows = []
+    for staged in files:
+        label, tone = INTAKE_STATE_LABELS.get(staged.extraction_state, ("Loen faili…", "waiting"))
+        rows.append(
+            {
+                "id": staged.pk,
+                "filename": staged.original_filename,
+                "size": human_size(staged.size_bytes),
+                "label": label,
+                "tone": tone,
+            }
+        )
+
+    if not files:
+        state = "empty"
+    elif any(staged.is_reading for staged in files):
+        state = "reading"
+    else:
+        state = "ready"
+
+    assisted = None
+    prefill: list[tuple[str, str]] = []
+    if any(staged.extraction_state == ExtractionState.DONE for staged in files):
+        assisted = analyse_intake(session)
+        # The same pre-fill decision `Muuda teemat` makes, asked here so that
+        # the two surfaces cannot drift apart about which confidence may fill a
+        # control. What differs is only who applies it: there the GET renders it
+        # into an unbound form, here the browser writes it into a live one and
+        # only where the person has not (task §10, §11).
+        #
+        # **And the analysis the panel renders is the unannotated one.** That is
+        # the whole of the difference and it is deliberate. `prefill_initial`
+        # marks the candidates it chose so the edit page can print «vormil
+        # eeltäidetud» beside exactly those — true there, because that page
+        # filled the control itself. Here the server proposes and the *browser*
+        # decides, and it declines wherever somebody has already typed. Printing
+        # «vormil eeltäidetud» over a box holding a person's own value would be
+        # the page stating something it cannot know, and it would take away the
+        # «Kasuta» they would need to change their mind.
+        #
+        # So every candidate is offered, and the button says what happened: it
+        # is bound to the live control, so one the browser filled reads as
+        # chosen and one it declined reads as available (static/js/app.js,
+        # `bindSuggestionUse`).
+        _initial, decided = prefill_initial(assisted, base={}, current=CurrentValues())
+        prefill = prefill_controls(decided)
+
+    unreadable = ""
+    if files and not any(staged.is_reading for staged in files) and assisted is None:
+        # Every file finished and none of them produced text. Said as one calm
+        # sentence rather than as a per-file error: what a person needs to know
+        # is that the automatic help is not coming and that nothing is lost
+        # (task §21).
+        unreadable = "Faili sisu ei õnnestunud automaatselt lugeda."
+
+    return {
+        "intake_session": session,
+        "intake_files": rows,
+        "intake_state": state,
+        "intake_prefill": prefill,
+        "intake_error": error,
+        "intake_unreadable": unreadable,
+        "assisted": assisted,
+    }
+
+
+def _intake_fragment(
+    request: HttpRequest, session: Any, *, error: str = "", status: int = 200
+) -> HttpResponse:
+    return render(
+        request,
+        "matters/partials/intake_region.html",
+        _intake_context(session, error=error),
+        status=status,
+    )
+
+
+def _requested_intake_session(request: HttpRequest, source: Any) -> Any:
+    """The staging session this request names, if it is this person's and open.
+
+    Fail-closed in one place. Somebody else's session, an expired one and one a
+    Matter has already consumed all read as absent, and the caller answers 404 —
+    the refusal this application gives for a record somebody may not touch, so
+    that a guessed identifier learns nothing, not even whether it named a row
+    (`app.core.decorators`, task §23).
+    """
+    return intake_staging.get_session(
+        owner=request.user, session_id=(source.get("intake") or "").strip()
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def intake_stage(request: HttpRequest) -> HttpResponse:
+    """Keep the files somebody just chose, so the extractor may read them.
+
+    The same validator the save path uses, on the same bytes: `read_upload`
+    checks the size, the extension allowlist and the content signature, and a
+    file that fails it is refused here exactly as it would be at `Loo teema`.
+    Nothing is parsed in this request — the worker does that, behind the scan
+    gate, in its own process (docs/adr/0014, docs/adr/0064).
+    """
+    session = _requested_intake_session(request, request.POST)
+    accepted, refusal = _read_new_matter_files(request)
+    if not accepted and session is None:
+        # Nothing to keep and nothing to keep it in. Answered rather than
+        # refused, so the page can show why the file was not taken.
+        return _intake_fragment(request, None, error=refusal, status=400 if refusal else 200)
+
+    result = intake_staging.stage_uploads(owner=request.user, uploads=accepted, session=session)
+    return _intake_fragment(
+        request,
+        result.session,
+        error=refusal or result.refusal,
+        status=400 if refusal else 200,
+    )
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET"])
+def intake_status(request: HttpRequest) -> HttpResponse:
+    """Where the reading has got to, and what has been found so far.
+
+    A read, and small: the staged rows and whatever the rules have to say. It
+    carries no file bytes and re-reads none — the point of polling this rather
+    than anything else is that it costs a couple of indexed queries whatever
+    the files weigh (task §22, §37).
+    """
+    session = _requested_intake_session(request, request.GET)
+    if session is None:
+        raise Http404
+    return _intake_fragment(request, session)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def intake_remove(request: HttpRequest) -> HttpResponse:
+    """Take one staged file back off the form.
+
+    Answered with the same fragment as everything else here, so the list, the
+    suggestions and what `Loo teema` would promote are recomputed together and
+    cannot disagree. A file removed while it was being read stops contributing
+    immediately: the analysis reads the live set (task §17).
+    """
+    session = _requested_intake_session(request, request.POST)
+    if session is None:
+        raise Http404
+    if not intake_staging.remove_file(session=session, file_id=(request.POST.get("fail") or "")):
+        raise Http404
+    return _intake_fragment(request, session)
+
+
+def _read_new_matter_files(request: HttpRequest) -> tuple[list[Any], str]:
     """Read and validate every attachment before a single row is written.
 
     Reading is what validates: `read_upload` enforces the size, the MIME type
     and the signature rules the rest of the system already relies on. Doing all
     of it up front is the whole point — a Matter created with three of four
     files, and an error message about the fourth, is worse than no Matter.
+
+    Returns what passed *and* the first refusal, rather than raising on the bad
+    one and losing the good ones with it. The caller still refuses the save —
+    that rule is unchanged, and the batch is still all or nothing — but it can
+    now hold the three files that were fine while the person replaces the
+    fourth. Every file is read, so the message names the first problem and the
+    person is not told about them one save at a time.
     """
     from app.documents.uploads import read_upload
 
-    files = request.FILES.getlist("files")
-    return [read_upload(handle) for handle in files if handle]
+    accepted: list[Any] = []
+    refusal = ""
+    for handle in request.FILES.getlist("files"):
+        if not handle:
+            continue
+        try:
+            accepted.append(read_upload(handle))
+        except (DomainError, UploadRejected) as error:
+            if not refusal:
+                refusal = str(error)
+    return accepted, refusal
 
 
 def _attach_incoming_file(matter: Any, upload: Any, *, actor: Any) -> None:
@@ -2388,7 +2734,10 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             # the addressee it already had (§6).
             set_organisations(
                 matter=matter,
-                source_organisations=list(data.get("source_organisations") or []),
+                source_organisations=resolve_source_organisations(
+                    chosen=data.get("source_organisations"),
+                    typed_name=data.get("sender_name") or "",
+                ),
                 addressee_organisation=resolve_addressee(
                     chosen=data.get("addressee_organisation"),
                     typed_name=data.get("addressee_name") or "",
@@ -2561,9 +2910,21 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
             # `list(...)` rather than the queryset, so an empty POST arrives as
             # `[]` — "clear every sender" — and never as the `_UNSET` that means
             # "leave them alone" (Agent-E brief 20, 34).
-            set_organisations(
-                matter=matter, source_organisations=list(value or []), actor=request.user
-            )
+            #
+            # Wrapped, because two writes have to survive or fail together: a
+            # typed name may create an institution, and `set_organisations`
+            # refusing afterwards must not leave it in the catalogue. Every
+            # other branch here is one service call and already atomic in
+            # itself (docs/adr/0063).
+            with transaction.atomic():
+                set_organisations(
+                    matter=matter,
+                    source_organisations=resolve_source_organisations(
+                        chosen=list(value or []),
+                        typed_name=form.cleaned_data.get("sender_name") or "",
+                    ),
+                    actor=request.user,
+                )
         elif field == "addressee_organisation":
             set_organisations(matter=matter, addressee_organisation=value, actor=request.user)
         elif field == "received_date":

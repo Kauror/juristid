@@ -22,7 +22,7 @@ Layout::
 
     types.py       the candidate model: field, value, confidence, provenance
     vocabulary.py  the rule tables a maintainer reads
-    input.py       what is read — the current versions' live derivatives
+    input.py       what is read — live derivatives, or a staged intake file
     textscan.py    pure readers over text: dates, headings, contacts, …
     resolvers.py   the organisation and policy-area catalogues, loaded once
     analysis.py    findings to suggestions: precedence, confidence, conflict
@@ -31,9 +31,18 @@ Layout::
 
 from __future__ import annotations
 
-from app.matters.intake_suggestions.analysis import CurrentValues, analyse, analyse_matter
-from app.matters.intake_suggestions.input import AnalysisInput, build_analysis_input
-from app.matters.intake_suggestions.prefill import prefill_initial
+from app.matters.intake_suggestions.analysis import (
+    CurrentValues,
+    analyse,
+    analyse_intake,
+    analyse_matter,
+)
+from app.matters.intake_suggestions.input import (
+    AnalysisInput,
+    build_analysis_input,
+    build_intake_analysis_input,
+)
+from app.matters.intake_suggestions.prefill import prefill_controls, prefill_initial
 from app.matters.intake_suggestions.types import (
     Candidate,
     Confidence,
@@ -57,7 +66,10 @@ __all__ = [
     "SourceKind",
     "SuggestedField",
     "analyse",
+    "analyse_intake",
     "analyse_matter",
     "build_analysis_input",
+    "build_intake_analysis_input",
+    "prefill_controls",
     "prefill_initial",
 ]

@@ -39,6 +39,7 @@ from app.matters.intake_suggestions.input import (
     SourceDocument,
     TextBlock,
     build_analysis_input,
+    build_intake_analysis_input,
 )
 from app.matters.intake_suggestions.resolvers import (
     OrganisationCatalogue,
@@ -112,6 +113,31 @@ def analyse_matter(matter: Any, viewer: Any) -> IntakeAnalysis:
         organisations=load_organisation_catalogue(),
         policy_areas=load_policy_areas(),
         current=CurrentValues.of(matter),
+    )
+
+
+def analyse_intake(session: Any) -> IntakeAnalysis:
+    """Read the files staged on `Uus teema` and propose. Writes nothing.
+
+    The second of the two database-facing wrappers, and the only difference
+    between them is the first line. Every rule, every vocabulary, every
+    precedence decision and the whole confidence contract are the ones above:
+    a deadline read while the form is still open is read by exactly the code
+    that reads one a week later, or the two surfaces would drift into
+    disagreeing about the same letter (docs/adr/0064).
+
+    ``CurrentValues()`` is empty, and deliberately. On an existing Matter the
+    record is the thing a suggestion must never overwrite, and the analyser is
+    told what it holds. Here the thing that must never be overwritten is what
+    the person is typing *now*, which no GET can see — so nothing is claimed
+    to be current, and the browser decides what may be filled in, against the
+    live form (`prefill_controls`, static/js/app.js).
+    """
+    return analyse(
+        build_intake_analysis_input(session),
+        organisations=load_organisation_catalogue(),
+        policy_areas=load_policy_areas(),
+        current=CurrentValues(),
     )
 
 

@@ -46,6 +46,7 @@ from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.matters.models import Matter
+from app.matters.staging import MatterIntakeFile
 from app.related_materials.models import (
     MatterBackgroundMaterial,
     MatterRelation,
@@ -376,6 +377,13 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             .__class__.objects.values_list("status", flat=True)
             .get(pk=w["sent_submission"].pk)
         ),
+    ),
+    WriteRoute(
+        name="matters:intake_stage",
+        label="Uus teema: faili ettevalmistamine",
+        request=lambda w: ({}, {}),
+        files=lambda: {"files": _pdf("loata-ettevalmistatud.pdf")},
+        probe=lambda w: MatterIntakeFile.objects.count(),
     ),
     WriteRoute(
         name="documents:upload_evidence",
@@ -746,6 +754,15 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # same guard, and awkward to fire blind (they need a specific child object
     # or an upload bound to one).
     "matters:matter_edit": "A: gated; exercised by tests/test_matters.py",
+    # A — same guard and same view module as `matters:intake_stage`, which is
+    # in the matrix above and is fired at by every forbidden actor. This one
+    # cannot be fired blind: it needs a staging session and a file inside it
+    # that belong to the caller, and with anything else it answers 404 to
+    # *everybody* — which is the fail-closed behaviour, and is why an authorized
+    # actor would fail the "not refused by the gate" half of the matrix. Its
+    # cross-user refusal is proved directly, with a real session and a real
+    # file, in tests/test_intake_staging.py.
+    "matters:intake_remove": "A: gated; sibling of matters:intake_stage",
     "matters:update_engagement": "A: gated; sibling of matters:add_engagement",
     "intelligence:edit_important_date": "A: gated; sibling of add_important_date",
     "intelligence:cancel_important_date": "A: gated; sibling of add_important_date",

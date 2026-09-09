@@ -47,6 +47,39 @@ from app.matters.intake_suggestions.analysis import CurrentValues
 from app.matters.intake_suggestions.types import IntakeAnalysis, SuggestedField
 
 
+def prefill_controls(analysis: IntakeAnalysis) -> list[tuple[str, str]]:
+    """The ``(control name, control value)`` pairs a pre-fill would write.
+
+    :func:`prefill_initial` answers *which* suggestions may fill a control, and
+    hands the answer to a Django form as initial data. `Uus teema` needs the
+    same answer as a pair of strings instead, because the form is already on
+    the reader's screen and the values arrive afterwards — there is no
+    unbound form left to give an initial to.
+
+    So the decision is not made twice. This reads what
+    :func:`prefill_initial` decided and translates it into what the control
+    actually takes: an organisation's primary key, ``18.9.2026`` rather than
+    ``2026-09-18``, a ``Track`` value, a ``PolicyArea`` key. Whether the
+    control may be written to at all is the browser's question, asked of the
+    live form, and it is answered "only if it is empty and untouched"
+    (static/js/app.js, docs/adr/0064).
+
+    Title is absent for the reason it is absent above: no title is ever
+    pre-filled, on any surface.
+    """
+    pairs: list[tuple[str, str]] = []
+    for name, values in analysis.prefilled.items():
+        suggestions = analysis.fields.get(name)
+        if suggestions is None:  # pragma: no cover - defensive
+            continue
+        by_value = {candidate.value: candidate for candidate in suggestions.candidates}
+        for value in values:
+            candidate = by_value.get(value)
+            if candidate is not None:
+                pairs.append((name, candidate.control_value))
+    return pairs
+
+
 def prefill_initial(
     analysis: IntakeAnalysis, *, base: dict[str, Any], current: CurrentValues
 ) -> tuple[dict[str, Any], IntakeAnalysis]:
