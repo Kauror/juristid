@@ -68,16 +68,39 @@ def add_form(page):
     return page.locator(".factslot")
 
 
+#: The two controls the 2026-09 refinement moved into the composer's action row
+#: — one place from which a fact is added. Same routes, same target, same
+#: conditions; what changed is that reaching them opens the composer first
+#: (docs/matter-page-refinement.md).
+COMPOSER_CHIPS = ("+ Jõustumine", "+ Töövõit")
+
+
 def open_add_form(page, label: str):
     """Click one of the four add controls and wait for its form to arrive.
 
     No `wait_for_load_state`: nothing navigates. The assertion that the form is
     on screen is both the wait and half of what these tests are checking.
+
+    Two of the four now live in the composer, which is closed on a page that is
+    read rather than written to. Opening it is not part of what these tests are
+    about, so it happens here rather than in nine of them.
     """
+    if label in COMPOSER_CHIPS:
+        composer = page.locator("#teema-koostaja")
+        if composer.get_attribute("open") is None:
+            composer.locator("summary.uxcomp__collapsed").click()
     page.get_by_role("link", name=label, exact=True).click()
     form = add_form(page)
     expect(form).to_be_visible()
     return form
+
+
+def expect_chip(page, label: str):
+    """A composer chip is present, with the composer opened to look at it."""
+    composer = page.locator("#teema-koostaja")
+    if composer.get_attribute("open") is None:
+        composer.locator("summary.uxcomp__collapsed").click()
+    return expect(page.get_by_role("link", name=label, exact=True))
 
 
 def open_watchlist(page, base_url: str, path: str = "jalgimine/tahtajad", query: str = "") -> None:
@@ -103,7 +126,7 @@ def test_an_exact_milestone_can_be_added_in_a_few_fields(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
 
-    section(page, "Olulised tähtajad").get_by_role("link", name="+ Lisa oluline tähtaeg").click()
+    section(page, "Olulised tähtajad").get_by_role("link", name="+ Lisa tähtaeg").click()
     page.wait_for_load_state("networkidle")
     page.get_by_label("Mis on oodata").fill("Riigikogu esimene lugemine")
     page.get_by_label("Täpne kuupäev").check()
@@ -126,7 +149,7 @@ def test_a_quarter_is_captured_and_rendered_as_a_quarter(page, base_url, screens
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
 
-    section(page, "Olulised tähtajad").get_by_role("link", name="+ Lisa oluline tähtaeg").click()
+    section(page, "Olulised tähtajad").get_by_role("link", name="+ Lisa tähtaeg").click()
     page.wait_for_load_state("networkidle")
     page.get_by_label("Mis on oodata").fill("Eeldatav rakendusakti eelnõu")
     page.get_by_label("Kvartali täpsusega").check()
@@ -152,7 +175,7 @@ def test_a_milestone_can_be_corrected(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_the_matter(page, base_url, OPEN_TITLE)
 
-    section(page, "Olulised tähtajad").get_by_role("link", name="+ Lisa oluline tähtaeg").click()
+    section(page, "Olulised tähtajad").get_by_role("link", name="+ Lisa tähtaeg").click()
     page.wait_for_load_state("networkidle")
     page.get_by_label("Mis on oodata").fill("Esialgse sõnastusega tähtaeg")
     page.get_by_label("Täpne kuupäev").check()
@@ -338,7 +361,7 @@ def test_the_empty_state_opens_the_commencement_form_in_place(page, base_url, sc
     sign_in(page, base_url, MARTIN)
     where = create_matter(page, base_url, EMPTY_MATTER)
 
-    expect(page.get_by_role("link", name="+ Jõustumine", exact=True)).to_be_visible()
+    expect_chip(page, "+ Jõustumine").to_be_visible()
     form = open_add_form(page, "+ Jõustumine")
 
     expect(form.get_by_role("heading", name="Lisa jõustumine")).to_be_visible()
@@ -382,7 +405,7 @@ def test_closing_the_form_writes_nothing_and_leaves_the_matter_as_it_was(page, b
 
     expect(add_form(page)).to_have_count(0)
     expect(page.get_by_role("region", name="Jõustumine")).to_have_count(0)
-    expect(page.get_by_role("link", name="+ Jõustumine", exact=True)).to_be_visible()
+    expect_chip(page, "+ Jõustumine").to_be_visible()
     assert page.url == where
 
 
@@ -628,7 +651,7 @@ def test_an_administrator_has_no_write_controls(page, base_url):
     sign_in(page, base_url, ADMIN)
     open_the_matter(page, base_url, OPEN_TITLE)
 
-    expect(page.get_by_role("link", name="+ Lisa oluline tähtaeg")).to_have_count(0)
+    expect(page.get_by_role("link", name="+ Lisa tähtaeg")).to_have_count(0)
     expect(page.get_by_role("link", name="+ Lisa töövõit")).to_have_count(0)
 
 

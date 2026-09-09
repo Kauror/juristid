@@ -197,6 +197,12 @@ def test_the_closed_timeline_carries_more_than_a_counter(page, base_url):
 
     summary = page.locator(".accordion--timeline > summary")
     expect(summary).to_contain_text("kirjet")
+    # Closed is what this is about, and the section is open on arrival. The
+    # head is the whole trigger now — the «Ava ajajoon» text action beside it
+    # said what the layout already said and the 2026-09 refinement took it
+    # (design handoff §12, docs/matter-page-refinement.md).
+    summary.click()
+    expect(page.locator(".accordion--timeline")).not_to_have_attribute("open", "")
     expect(summary.locator(".uxtl__preview")).to_be_visible()
 
 

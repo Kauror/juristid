@@ -92,3 +92,4 @@ artifacts/
 .devserver.*
 .devdata/
 devtools/matter-refinement/shots/
+.e2eserver.*
