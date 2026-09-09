@@ -125,6 +125,13 @@ services:
       # inherits a service's environment, so a test process started here sees it
       # and stops. The application itself never reads it.
       JURISTID_RUNTIME: deployed
+      # Where the scan gate lives. `web` needs it because the deployment
+      # readiness command and juristid.E015 both ask whether a scanner is
+      # configured; the process that actually streams bytes to it is
+      # `extractor` below.
+      MALWARE_SCANNER_BACKEND: clamav
+      MALWARE_SCANNER_HOST: clamav
+      MALWARE_SCANNER_PORT: "3310"
     depends_on:
       db:
         condition: service_healthy
@@ -217,9 +224,22 @@ services:
       # inherits a service's environment, so a test process started here sees it
       # and stops. The application itself never reads it.
       JURISTID_RUNTIME: deployed
+      # This is the process that scans. Every staged `Uus teema` file and every
+      # canonical version passes through `app/documents/scanning.py` here before
+      # any parser is allowed to open it (docs/adr/0066).
+      MALWARE_SCANNER_BACKEND: clamav
+      MALWARE_SCANNER_HOST: clamav
+      MALWARE_SCANNER_PORT: "3310"
     depends_on:
       db:
         condition: service_healthy
+      # Started, not healthy. The signature database takes minutes to load and
+      # the worker must not be held out of the queue for that: it scans what it
+      # can, records nothing about what it cannot reach, and tries again next
+      # turn. Waiting for `service_healthy` here would make every deployment's
+      # extraction backlog start three minutes late for no gain.
+      clamav:
+        condition: service_started
     volumes:
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/evidence:/app/evidence
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/derivatives:/app/derivatives
@@ -236,6 +256,79 @@ services:
       # is given the ability to (the same argument as the historical corpus
       # above).
       - pending_uploads:/app/pending-uploads:ro
+    networks:
+      - internal
+
+  # The malware scanner. What makes PENDING -> CLEAN a real transition.
+  #
+  # Before this service existed the scan gate was not a gate but a wall. Every
+  # uploaded file began PENDING, `is_scan_state_extractable` refuses anything
+  # but CLEAN under REAL_DATA_ALLOWED, and nothing in the application could
+  # write CLEAN — so on this stack a file chosen on `Uus teema` was staged,
+  # queued, permanently refused by the queue, and the form said «Loen faili…»
+  # until the person gave up (docs/adr/0066, docs/secure-pilot-gate.md row 6).
+  #
+  # Four properties, each of them the reason a line below is written the way it
+  # is:
+  #
+  #   1. **It mounts nothing.** Not evidence, not derivatives, not the staging
+  #      volume. The application streams bytes to it over clamd's INSTREAM
+  #      protocol, so the scanner sees exactly the files it is asked about and
+  #      has no view of the tree they came from. A container with a signature
+  #      database and a parser for every archive format anybody has ever
+  #      invented is precisely the container not to hand the evidence tree to.
+  #   2. **No host port**, like everything else here. `internal` only.
+  #   3. **Pinned**, not `latest`. This decides whether member material gets
+  #      opened by a parser; an unrelated `docker pull` on this host must not be
+  #      able to change that. Update it deliberately, then run
+  #      `python manage.py check_malware_scanner --eicar` and confirm detection.
+  #   4. **Healthchecked on detection, not on liveness.** `clamdcheck.sh` asks
+  #      clamd whether it is loaded and answering, which is the distinction that
+  #      matters: a clamd that is running with no signature database answers a
+  #      socket perfectly and calls everything clean, and that is the single
+  #      worst state this system could be in — every file marked CLEAN by a
+  #      scanner that examined nothing.
+  #
+  # `_base` is deliberately NOT the tag. The plain version tag ships with a
+  # signature database baked in, so a cold start needs no network and cannot
+  # come up empty; `_base` downloads on first run and is briefly exactly the
+  # state property 4 exists to catch.
+  clamav:
+    image: clamav/clamav:1.4.2
+    container_name: juristid-main-clamav
+    restart: unless-stopped
+    # StreamMaxLength has to reach MAX_EVIDENCE_UPLOAD_BYTES or a large but
+    # perfectly ordinary annex is refused by the scanner and therefore never
+    # read. Appended to the image's own config rather than bind-mounted from
+    # appdata: it is three lines of policy that belong with the service
+    # definition, and a file on the host is a file that can drift from it.
+    #
+    # Failing closed is still the behaviour above the limit — clamd answers
+    # ERROR, `interpret` records ERROR, and no parser opens the file.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        printf '\n%s\n%s\n%s\n' \
+          'StreamMaxLength 128M' \
+          'MaxFileSize 128M' \
+          'MaxScanSize 512M' >> /etc/clamav/clamd.conf
+        exec /init
+    environment:
+      # The updater is a separate daemon inside this image and it reaches the
+      # internet. It stays on: a scanner running on a signature database from
+      # the day the image was built is a scanner that misses everything found
+      # since, and this is the one service here that has a reason to talk out.
+      CLAMAV_NO_FRESHCLAMD: "false"
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 60s
+      timeout: 20s
+      # Loading the signature database into memory takes a while and the
+      # container is honestly unhealthy until it has. Long enough that a cold
+      # start is not reported as a failure; short enough that a real failure is.
+      start_period: 180s
+      retries: 3
     networks:
       - internal
 

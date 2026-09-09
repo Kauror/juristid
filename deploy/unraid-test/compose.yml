@@ -88,6 +88,10 @@ services:
       # inherits a service's environment, so a test process started here sees it
       # and stops. The application itself never reads it.
       JURISTID_RUNTIME: deployed
+      # The same scan gate the main stack runs. See `clamav` below.
+      MALWARE_SCANNER_BACKEND: clamav
+      MALWARE_SCANNER_HOST: clamav
+      MALWARE_SCANNER_PORT: "3310"
     depends_on:
       db:
         condition: service_healthy
@@ -176,9 +180,15 @@ services:
       # inherits a service's environment, so a test process started here sees it
       # and stops. The application itself never reads it.
       JURISTID_RUNTIME: deployed
+      # This is the process that scans, here as on the main stack.
+      MALWARE_SCANNER_BACKEND: clamav
+      MALWARE_SCANNER_HOST: clamav
+      MALWARE_SCANNER_PORT: "3310"
     depends_on:
       db:
         condition: service_healthy
+      clamav:
+        condition: service_started
     volumes:
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/evidence:/app/evidence
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/derivatives:/app/derivatives
@@ -187,6 +197,40 @@ services:
       # web process, and this one's whole interaction with the bytes is a single
       # `storage.open(..., "rb")` (app/matters/intake_extraction.py).
       - pending_uploads:/app/pending-uploads:ro
+    networks:
+      - internal
+
+  # The malware scanner. Present here for exactly the reason it is present on
+  # the main stack: topology parity.
+  #
+  # The rehearsal runs REAL_DATA_ALLOWED=0, where PENDING is already extractable
+  # and reading therefore works without any scanner at all. That is precisely
+  # what made the production defect invisible for so long — the rehearsal
+  # exercised a code path production could not reach. So the scanner runs here
+  # too, the rehearsal scans its invented files with the real thing, and the two
+  # stacks differ in their data rather than in their security model
+  # (docs/adr/0066, tests/test_deployment_unraid_main.py).
+  clamav:
+    image: clamav/clamav:1.4.2
+    container_name: juristid-test-clamav
+    restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        printf '\n%s\n%s\n%s\n' \
+          'StreamMaxLength 128M' \
+          'MaxFileSize 128M' \
+          'MaxScanSize 512M' >> /etc/clamav/clamd.conf
+        exec /init
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "false"
+    healthcheck:
+      test: ["CMD", "clamdcheck.sh"]
+      interval: 60s
+      timeout: 20s
+      start_period: 180s
+      retries: 3
     networks:
       - internal
 

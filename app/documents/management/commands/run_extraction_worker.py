@@ -57,6 +57,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
+        from app.documents import scanning
         from app.documents.extraction import heartbeat
         from app.documents.extraction.orchestrator import (
             awaiting_scanner,
@@ -85,26 +86,63 @@ class Command(BaseCommand):
         # Said once, at the top, because "Töödeldud 0 faili" is the same output
         # for "nothing to do" and "nothing may be done in this environment", and
         # only one of those is fine.
+        #
+        # It now has two readings rather than one, and they are worth telling
+        # apart. With a scanner configured, a backlog here is a queue this loop
+        # is about to work through. Without one, it is the wall this round was
+        # about: files that no code path can ever clear.
         blocked = awaiting_scanner().count()
-        if blocked:
+        if blocked and not scanning.scanner_configured():
             self.stdout.write(
                 self.style.WARNING(
                     f"{blocked} faili ootab pahavarakontrolli ja neid ei töödelda "
-                    "selles keskkonnas. Sisu otsingusse ei jõua enne, kui skanner "
-                    "on olemas."
+                    "selles keskkonnas. Skannerit pole seadistatud "
+                    "(MALWARE_SCANNER_BACKEND), nii et need failid ei muutu kunagi "
+                    "loetavaks."
                 )
             )
+        elif blocked:
+            self.stdout.write(f"{blocked} faili ootab pahavarakontrolli.")
 
         processed = 0
         #: Staged files read per turn before the loop looks at evidence again.
         #: One `Uus teema` envelope is four or five files; more than that in a
         #: single turn would be a form nobody is waiting on.
         INTAKE_BATCH = 5
+        #: Files scanned per turn. Larger than the intake batch because a scan
+        #: is a round trip to a socket rather than an OCR pass, and the queue it
+        #: drains includes the canonical backlog.
+        SCAN_BATCH = 20
         while not stopping["now"]:
             # Before the query, not after it. The point of the mark is that the
             # loop is turning; recording it only on the way out would make a
             # worker that is stuck *on* the query look alive.
             heartbeat.touch()
+
+            # The scan gate, before anything is offered to a parser.
+            #
+            # In this loop rather than in a worker of its own, because the two
+            # halves are one pipeline with one queue discipline and one
+            # heartbeat: a file is scanned and then read, and splitting that
+            # across two containers would double the deployment surface to gain
+            # nothing but the ability to have exactly one of them running.
+            #
+            # Bounded per turn like the intake drain below it, and for the same
+            # reason. `scanning.drain` puts staged files first and stops the
+            # moment the scanner turns out to be unreachable, so a scanner that
+            # is down costs one connection attempt per turn instead of
+            # SCAN_BATCH of them (app/documents/scanning.py).
+            scanned = scanning.drain(limit=SCAN_BATCH)
+            for scan in scanned:
+                if scan.unavailable:
+                    self.stdout.write(
+                        self.style.WARNING("  pahavarakontroll ei vastanud; failid jäävad ootele")
+                    )
+                    continue
+                self.stdout.write(
+                    f"  skann {scan.state:<11} {scan.kind:<8} {scan.seconds:.1f}s"
+                    + (f"  [{scan.signature}]" if scan.signature else "")
+                )
 
             # The staged queue first, and it is not a preference about
             # importance. A file staged on `Uus teema` has somebody sitting in

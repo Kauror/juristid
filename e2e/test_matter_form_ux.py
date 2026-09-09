@@ -160,26 +160,39 @@ def test_the_catalogue_list_does_not_repeat_the_shortlist_above_it(page, base_ur
     assert chips.isdisjoint(listed), "the catalogue list repeats the chips above it"
 
 
-def test_the_whole_catalogue_is_searchable_without_opening_anything(page, base_url):
-    """The complaint this round answers: the search was behind «Vali
-    nimekirjast», so the way to find a body that was not a chip was invisible
-    to somebody who had no reason to open a door labelled with a number."""
+def test_the_whole_catalogue_is_searchable_behind_one_named_door(page, base_url):
+    """Searchable, and reachable — which is not the same as permanently on screen.
+
+    This test used to require the search to be visible at rest, and that
+    decision is superseded (ADR 0067). The reasoning behind it was sound as far
+    as it went: a door labelled only with a number is a door somebody has to
+    guess is worth opening. What it did not weigh is that the shortlist is
+    *filled* to eight from the bodies this department actually works with, so on
+    almost every visit the sender is already on screen and the permanent
+    catalogue was occupying the column for nothing.
+
+    So the requirement becomes the one that was really being made: the whole
+    catalogue must be reachable, the search must reach it, and the door must say
+    how much is behind it. Adressaat has worked exactly this way throughout.
+    """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
+    rows = page.locator("#saatja-nimekiri .chip")
+    if not rows.count():
+        # Every body fits in the shortlist, so there is no catalogue behind a
+        # door and correctly no door.
+        assert page.locator(".senderpick details").count() == 0
+        return
+
+    summary = page.locator(".senderpick summary.chipdetails__summary")
+    expect(summary).to_contain_text("Vali nimekirjast")
+    summary.click()
+
     search = page.locator("[data-choicefilter='saatja-nimekiri'] input")
     expect(search).to_be_visible()
-
-    # The catalogue is in the document, so nothing is unreachable with
-    # scripting off; what a query does is show it.
-    rows = page.locator("#saatja-nimekiri .chip")
-    if rows.count():
-        search.fill(rows.first.inner_text().strip()[:4])
-        expect(rows.first).to_be_visible()
-
-    # No sender disclosure left to open. Adressaat still has one, so this is
-    # scoped to the sender field rather than asserted about the whole page.
-    assert page.locator(".senderpick details").count() == 0
+    search.fill(rows.first.inner_text().strip()[:4])
+    expect(rows.first).to_be_visible()
 
 
 def test_the_form_answers_a_missing_institution_instead_of_redirecting_it(page, base_url):
@@ -190,16 +203,17 @@ def test_the_form_answers_a_missing_institution_instead_of_redirecting_it(page, 
     the Teema with no sender. The answer to «it is not here» is now a box on the
     page, and the sentence is gone with the rule it stated (docs/adr/0063).
 
-    Nothing has to be opened to reach either. That is the other half of the
-    change: the shortlist, the search over the whole catalogue and `Uus saatja`
-    are all visible at rest.
+    And `Uus saatja` is reachable without opening anything. That is the half of
+    the previous round that survived ADR 0067's reversal: the catalogue and its
+    search went back behind «Vali nimekirjast», but the answer to "the body I
+    need is not on this page" may not itself be behind a click, or the workflow
+    this replaced comes back.
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
 
     assert "asutuste alla" not in page.content()
     expect(page.get_by_label("Uus saatja")).to_be_visible()
-    expect(page.locator("[data-choicefilter='saatja-nimekiri'] input")).to_be_visible()
 
 
 # ---------------------------------------------------------------------------
@@ -586,7 +600,6 @@ def test_the_whole_form_is_reachable_without_opening_anything(page, base_url, wi
         "received_date",
         "response_deadline",
         "policy_area_other_selected",
-        "is_test_data",
         "next-text",
         "next-target_date",
     ):

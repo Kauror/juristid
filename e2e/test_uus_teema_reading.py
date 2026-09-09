@@ -366,6 +366,172 @@ def test_a_refused_save_keeps_the_staged_file_and_what_was_found(
     expect(page.get_by_role("link", name="kaaskiri.pdf", exact=True)).to_be_visible()
 
 
+# ---------------------------------------------------------------------------
+# When the answer is not coming, the page says so
+# ---------------------------------------------------------------------------
+#
+# The reported defect had two halves. The deployment could never read anything,
+# because nothing could move a file past the malware gate — that half is
+# `app/documents/scanning.py` and `tests/test_malware_scanning.py`. This is the
+# other half, and it is the one the person actually experienced: after about
+# seventy seconds the browser stopped asking, and then left an animated spinner
+# and the words «Loen faili…» on screen for as long as they were willing to look
+# at them. Somebody waited half an hour for a page that had given up in the
+# first minute.
+#
+# Driven by failing the status route rather than by waiting out MAX_POLLS,
+# because a test that takes seventy-two seconds to make one assertion is a test
+# people delete. The two routes into the state are the same state: the browser
+# is no longer waiting for anything.
+
+
+def test_the_spinner_stops_when_the_page_stops_asking(
+    page, base_url, screenshots, letter_pdf
+) -> None:
+    """No animation may outlive the request it stood for (task §8)."""
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+
+    # Every status poll fails from here on. Three consecutive failures is the
+    # browser's threshold — one is a dropped packet, three is an answer that is
+    # not coming through this page.
+    page.route("**/teemad/uus/failid/olek/**", lambda route: route.abort())
+
+    choose(page, [letter_pdf])
+    wait_for_reading(page)
+
+    panel = page.locator("#intake-panel")
+    expect(panel).to_have_attribute("data-intake-state", "stalled", timeout=30_000)
+
+    # The words are true, and they are about the file rather than about a queue.
+    expect(page.get_by_text("Automaatne lugemine võtab tavapärasest kauem")).to_be_visible()
+    # Asserted as *visibility*, not as absence: both sentences and both spinners
+    # live in the template on every visit and CSS chooses between them, so what
+    # a person could answer by looking at the page is which of them is on
+    # screen (templates/matters/partials/intake_panel.html).
+    #
+    # And named in both of the two places the claim can live, because there were
+    # two. The panel says «Loen faili…» once; each staged row says it again, from
+    # a server-rendered extraction state that a browser giving up does not
+    # change — so the row went on claiming the file was being read after the
+    # panel had admitted it was not (static/css/app.css `.dropzone__read`).
+    expect(panel.locator(".intakepanel__reading")).to_be_hidden()
+    expect(page.locator(".dropzone__read--waiting:visible")).to_have_count(0)
+    expect(panel.locator(".intakepanel__spinner:visible")).to_have_count(0)
+    screenshots(page, "44-uus-teema-lugemine-venib")
+
+
+def test_the_file_is_still_there_and_the_teema_can_still_be_created(
+    page, base_url, letter_pdf
+) -> None:
+    """Reading was never a gate, and giving up on it may not become one.
+
+    The file is staged, `Loo teema` is pressable, and pressing it produces a
+    Teema with the document on it — which is the state the page was in all
+    along and could not say.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+    page.route("**/teemad/uus/failid/olek/**", lambda route: route.abort())
+
+    choose(page, [letter_pdf])
+    wait_for_reading(page)
+    expect(page.locator("#intake-panel")).to_have_attribute(
+        "data-intake-state", "stalled", timeout=30_000
+    )
+
+    # Still on the form, still named, still going to be filed.
+    expect(staged_rows(page)).to_have_count(1)
+    submit = page.get_by_role("button", name="Loo teema")
+    expect(submit).to_be_enabled()
+
+    page.locator("#id_title").fill("Fail jäi lugemata, teema tehtud")
+    name_a_next_step(page)
+    submit.click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+
+    open_documents(page)
+    expect(page.get_by_role("link", name="kaaskiri.pdf", exact=True)).to_be_visible()
+
+
+def test_the_page_stops_asking_rather_than_polling_for_ever(page, base_url, letter_pdf) -> None:
+    """Bounded, and bounded observably.
+
+    The loop was always bounded; what it did on reaching the bound was `return`.
+    This counts the requests so that a future edit removing the bound — or
+    rescheduling after a failure without limit — fails here rather than in
+    somebody's network tab six months later.
+    """
+    attempts = {"count": 0}
+
+    def fail(route):
+        attempts["count"] += 1
+        route.abort()
+
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+    page.route("**/teemad/uus/failid/olek/**", fail)
+
+    choose(page, [letter_pdf])
+    expect(page.locator("#intake-panel")).to_have_attribute(
+        "data-intake-state", "stalled", timeout=30_000
+    )
+
+    settled = attempts["count"]
+    page.wait_for_timeout(6_000)
+    assert attempts["count"] == settled, (
+        f"the page kept polling after giving up: {attempts['count'] - settled} "
+        "further requests in six seconds"
+    )
+
+
+def test_choosing_to_stop_waiting_says_so_too(page, base_url, letter_pdf) -> None:
+    """The same state reached deliberately. One sentence, and no spinner."""
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+    page.route("**/teemad/uus/failid/olek/**", lambda route: route.abort())
+
+    choose(page, [letter_pdf])
+    wait_for_reading(page)
+    page.locator("[data-intake-skip]").click()
+
+    panel = page.locator("#intake-panel")
+    expect(panel).to_have_attribute("data-intake-state", "abandoned")
+    expect(page.get_by_text("Automaatne lugemine on peatatud")).to_be_visible()
+    expect(panel.locator(".intakepanel__reading")).to_be_hidden()
+    expect(page.locator(".dropzone__read--waiting:visible")).to_have_count(0)
+    expect(panel.locator(".intakepanel__spinner:visible")).to_have_count(0)
+    expect(page.get_by_role("button", name="Loo teema")).to_be_enabled()
+
+
+def test_a_second_file_after_a_stall_starts_the_reading_again(page, base_url, letter_pdf) -> None:
+    """Giving up is about this wait, not about this form.
+
+    Choosing another file is a new thing to wait for, so the counters reset and
+    the page goes back to saying it is reading — otherwise one slow answer would
+    silently disable the feature for the rest of the session.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_create(page, base_url)
+
+    handler = {"fail": True}
+    page.route(
+        "**/teemad/uus/failid/olek/**",
+        lambda route: route.abort() if handler["fail"] else route.continue_(),
+    )
+
+    choose(page, [letter_pdf])
+    expect(page.locator("#intake-panel")).to_have_attribute(
+        "data-intake-state", "stalled", timeout=30_000
+    )
+
+    handler["fail"] = False
+    choose(page, [letter_pdf])
+    expect(page.locator("#intake-panel")).to_have_attribute(
+        "data-intake-state", "reading", timeout=30_000
+    )
+
+
 def test_a_file_that_cannot_be_read_does_not_stop_the_teema(
     page, base_url, screenshots, tmp_path
 ) -> None:

@@ -46,7 +46,7 @@
     <h1 class="pagehead__title">Uus teema</h1>
   </div>
 
-  <form class="form createform" method="post"
+  <form class="form createform" method="post" data-counterparty-form
         action="{% url 'matters:matter_create' %}"
         enctype="multipart/form-data">
     {% csrf_token %}
@@ -211,11 +211,25 @@
     </div>
 
     {% comment %}
-      4 — Who owns it, who it came from, and whether it is real work. The third
-      field is Andmeklass, moved here from the Adressaat row: one checkbox does
-      not need a column of its own, and this row had the space to spare.
+      4 — Who owns it and who it came from. Two fields, not three.
+
+      Andmeklass — one checkbox reading «Testandmed» — used to be the third
+      column here. It is gone from this page entirely, and the width it was
+      holding goes to Saatja, which is the field on this row that actually
+      wanted more: a shortlist of eight chips, a disclosure and a text box in a
+      third of a row is cramped, and in two thirds it is not.
+
+      **Nothing about test data changed except who may say it here.** Ordinary
+      `Uus teema` creates REAL work, decided server-side, and a POST carrying
+      `is_test_data=on` creates REAL work too, because the form no longer has
+      the field to bind (`app.matters.forms.MatterCreateForm.data_class`).
+      `Matter.data_class`, the enum, the existing TEST records, the REAL/TEST
+      reporting filters and the purge tooling are all untouched — what is gone
+      is a control on the capture path that put a question in front of somebody
+      who had no answer to give, on the one page a lawyer uses every day
+      (task §16, docs/adr/0067).
     {% endcomment %}
-    <div class="createform__row createform__trio createform__trio--people">
+    <div class="createform__row createform__pair createform__pair--people">
       <fieldset class="field">
         <legend class="field__label">{{ form.owner.label }}</legend>
         <div class="chiprow">
@@ -230,36 +244,6 @@
       </fieldset>
 
       {% include "matters/partials/sender_control.html" with list_id="saatja-nimekiri" %}
-
-      {% comment %}
-        One checkbox, unticked, and no REAL/TEST choice on the capture path.
-        Real work is the normal case and must stay a straight line; a required
-        choice on every creation is a control people learn to click past
-        (Agent-C brief 15, 62).
-      {% endcomment %}
-      {% comment %}
-        `createform__field--compact` is what the narrow breakpoint caps at 18rem.
-        It used to be `.createform__pair--class .field`, which caught the
-        Adressaat field this checkbox then shared a row with and collapsed it to
-        ~288px with the rest of the stacked row empty beside it. Adressaat has
-        its own row now, but the rule stays named on the field that wants it:
-        this one is compact because it holds one checkbox (static/css/app.css).
-      {% endcomment %}
-      <fieldset class="field createform__field--compact">
-        <legend class="field__label">Andmeklass</legend>
-        {% comment %}
-          A real checkbox with its label, not a chip. Every chip on this page
-          answers "which of these is it"; this one answers "is this even real
-          work", which is a different kind of question and should not look like
-          a twenty-third Valdkond (Uus teema redesign §3, mockup 8a).
-        {% endcomment %}
-        <div class="checkitems">
-          <label class="checkitem checkitem--plain" id="andmeklass-test">
-            {{ form.is_test_data }}
-            <span class="checkitem__name">{{ form.is_test_data.label }}</span>
-          </label>
-        </div>
-      </fieldset>
     </div>
 
     {# 5 — Valdkonnad. #}

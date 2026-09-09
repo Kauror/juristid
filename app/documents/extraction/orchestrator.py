@@ -124,9 +124,17 @@ def is_eligible_for_extraction(version: DocumentVersion) -> bool:
     whatever the deployment happens to be:
 
     * With ``REAL_DATA_ALLOWED``, an unscanned file is **not** processed. Real
-      member correspondence goes through a scanner before any parser opens it,
-      and that scanner is a Secure Pilot Gate deliverable that does not exist
-      yet — so in such an environment this simply returns False, and says so.
+      member correspondence goes through a scanner before any parser opens it.
+      That scanner exists now — `app.documents.scanning`, ClamAV over clamd —
+      so ``PENDING`` here is a file that is *waiting* rather than one that can
+      never move: it is scanned by the ordinary worker and becomes eligible the
+      moment the scanner clears it. Until then this returns False (ADR 0066).
+
+      It said "a scanner that does not exist yet" for a long time, and the
+      sentence was true and its consequence was not understood: on the deployed
+      stack nothing could ever leave ``PENDING``, so `Uus teema` staged a file
+      and showed «Loen faili…» to somebody who waited half an hour for an answer
+      that was not coming.
     * Without it, the corpus is synthetic by construction and PENDING is
       processed so the pipeline can be exercised end to end.
 
@@ -231,6 +239,11 @@ def awaiting_scanner() -> Any:
 
     Counted so an operator reading "0 files processed" can tell the difference
     between "nothing to do" and "nothing may be done here yet".
+
+    Since ADR 0066 the count has two readings and the worker distinguishes
+    them: with a scanner configured this is a queue about to be worked through,
+    and without one it is a backlog nothing can ever clear
+    (`run_extraction_worker`).
     """
     return DocumentVersion.objects.filter(extraction_state=ExtractionState.PENDING).exclude(
         eligibility_q()

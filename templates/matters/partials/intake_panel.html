@@ -75,6 +75,35 @@
     </p>
   {% endif %}
 
+  {% comment %}
+    When the page has stopped waiting.
+
+    Rendered on every visit and shown by CSS only in the `stalled` state, the
+    same way `intakepanel__uploading` is — so the sentence lives in the template
+    with every other string on this page rather than being assembled in script,
+    and a translation or a rewording is a template edit.
+
+    Reached two ways, both of which mean the browser is no longer asking: the
+    bounded poll loop ran out, or the status request failed repeatedly. It is
+    deliberately *not* an alarm. Nothing has gone wrong for the person: their
+    file is staged, it will become evidence, and the only thing they have lost
+    is a set of suggestions they never had to accept. So it says what is true
+    and what they can do, and it does not mention scanners, queues or states —
+    those are how this system talks to an operator (task §8, §5).
+  {% endcomment %}
+  <p class="intakepanel__state intakepanel__stalled">
+    Automaatne lugemine võtab tavapärasest kauem. Võid teema kohe luua ja
+    väljad käsitsi täita — fail on alles ja salvestub teemale.
+  </p>
+
+  {% comment %}
+    And the same, for somebody who chose to stop waiting rather than being
+    stopped. One state, one sentence, and neither of them a spinner.
+  {% endcomment %}
+  <p class="intakepanel__state intakepanel__abandoned">
+    Automaatne lugemine on peatatud. Fail on alles ja salvestub teemale.
+  </p>
+
   {% if intake_unreadable %}
     <p class="intakepanel__state">
       {{ intake_unreadable }}

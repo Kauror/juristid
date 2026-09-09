@@ -942,7 +942,17 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         # readers understood it as "these files may be infected". They are not:
         # the Juristid corpus is known to be malware-free. What is missing is a
         # step in this system's own text-extraction pipeline (Statistika QA §4).
-        version=2,
+        #
+        # Version 3: the wording again, and again not the measurement. The note
+        # said the precondition "does not work until the Secure Pilot Gate",
+        # which was true when it was written and is not now — the scanner exists
+        # and runs beside the application (ADR 0066). So the figure changes
+        # meaning without changing definition: it was a backlog nothing could
+        # ever clear, and it is now a queue that empties on its own. A reader
+        # who came back to a non-zero number and remembered the old sentence
+        # would draw exactly the wrong conclusion about whether anybody needs to
+        # act.
+        version=3,
         label_et="Ootab tekstitöötlust",
         description_et=(
             "Versioonid, mille tekst on veel eraldamata, sest eraldamise "
@@ -955,10 +965,11 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         time_basis=TimeBasis.POINT_IN_TIME,
         respects_period=False,
         notes_et=(
-            "Ei ole viga, järjekord ega turvaintsident. Tehniline eeltingimus "
-            "on tekstituvastuse konveieri väravakontroll, mis Turvalise piloodi "
-            "väravani veel ei tööta; selles keskkonnas on nullist erinev arv "
-            "ootuspärane."
+            "Ei ole viga ega turvaintsident. Tehniline eeltingimus on "
+            "tekstituvastuse konveieri väravakontroll, mis nüüd töötab: need "
+            "failid on kontrollimise järjekorras ja arv väheneb ise. Püsivalt "
+            "muutumatu arv tähendab, et kontroll ei vasta — seda näitab ka "
+            "töötleja tervisekontroll."
         ),
     ),
     MetricDefinition(
