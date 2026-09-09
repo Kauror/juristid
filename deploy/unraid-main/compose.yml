@@ -294,7 +294,7 @@ services:
   # come up empty; `_base` downloads on first run and is briefly exactly the
   # state property 4 exists to catch.
   clamav:
-    image: clamav/clamav:1.4.2
+    image: clamav/clamav:1.4.6
     container_name: juristid-main-clamav
     restart: unless-stopped
     # StreamMaxLength has to reach MAX_EVIDENCE_UPLOAD_BYTES or a large but

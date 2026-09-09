@@ -211,7 +211,7 @@ services:
   # stacks differ in their data rather than in their security model
   # (docs/adr/0066, tests/test_deployment_unraid_main.py).
   clamav:
-    image: clamav/clamav:1.4.2
+    image: clamav/clamav:1.4.6
     container_name: juristid-test-clamav
     restart: unless-stopped
     entrypoint:
