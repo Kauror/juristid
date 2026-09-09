@@ -89,7 +89,16 @@ RUN printf '%s' "$GIT_SHA" > /app/GIT_SHA
 # storage classes: one must survive and be backed up, the other may be deleted
 # and rebuilt. Both must exist and belong to the application user, because a
 # named volume inherits the ownership of the image path it shadows.
-RUN mkdir -p /app/evidence /app/derivatives && chown -R juristid:juristid /app
+#
+# `pending-uploads` is on this line for that second reason alone. It is neither
+# canonical nor rebuildable — it is one person's unfinished form — but the
+# production stack now mounts a named volume over it so that `web` and
+# `extractor` see the same staged bytes (deploy/unraid-main/compose.yml,
+# docs/adr/0064). Docker initialises an empty named volume from the image path
+# it covers, so a path that did not exist here would produce a root-owned mount
+# point, and `web` runs as `juristid` and could not stage a file into it at all.
+RUN mkdir -p /app/evidence /app/derivatives /app/pending-uploads \
+    && chown -R juristid:juristid /app
 
 USER juristid
 

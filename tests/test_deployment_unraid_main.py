@@ -140,21 +140,54 @@ def _resolved(volume: str) -> str:
     return _SUBSTITUTION.sub(lambda match: match.group(1), volume)
 
 
+def _is_bind(volume: str) -> bool:
+    """Whether a short-form volume names a host path rather than a named volume.
+
+    Compose tells the two apart by the first character of the source: a leading
+    `/` or `.` is a host path, anything else is the name of a volume declared in
+    the top-level `volumes:` block. The distinction matters here because the
+    rules below are about the *host* filesystem, and a named volume has no host
+    path to check — its isolation comes from the project name instead.
+    """
+    return _resolved(volume).split(":", 1)[0].startswith(("/", "."))
+
+
 def test_every_bind_mount_stays_inside_the_juristid_main_subtree(
     compose: dict[str, Any],
 ) -> None:
     seen = 0
     for name, service in compose["services"].items():
         for volume in service.get("volumes", []):
+            if not _is_bind(volume):
+                continue
             host_path = _resolved(volume).split(":", 1)[0]
             seen += 1
             assert host_path.startswith(OWN_PREFIXES), f"{name}: {volume}"
             for foreign in FOREIGN_APPDATA:
                 assert not host_path.startswith(foreign), f"{name} reaches into {foreign}"
     # Guards the guard: a parser bug producing no paths would pass silently.
-    # Ten: postgres, cloudflared, and four mounts on each of the two
+    # Ten: postgres, cloudflared, and four bind mounts on each of the two
     # application containers (evidence, derivatives, legacy-source, source).
+    # The shared pending-uploads volume is not a bind and is counted by
+    # `test_the_shared_upload_volume_is_a_named_volume_and_not_an_appdata_bind`.
     assert seen == 10
+
+
+def test_every_non_bind_volume_is_a_declared_named_volume(compose: dict[str, Any]) -> None:
+    """Nothing is mounted from a source this file does not itself declare.
+
+    The bind-mount rule above skips anything that is not a host path, so this is
+    what stops that skip from becoming a hole: a source that is not a bind must
+    appear in the top-level `volumes:` block, where its scoping can be reasoned
+    about.
+    """
+    declared = set(compose.get("volumes") or {})
+    for name, service in compose["services"].items():
+        for volume in service.get("volumes", []):
+            if _is_bind(volume):
+                continue
+            source = _resolved(volume).split(":", 1)[0]
+            assert source in declared, f"{name} mounts undeclared volume {source!r}"
 
 
 def test_the_historical_source_is_mounted_read_only(compose: dict[str, Any]) -> None:
@@ -162,12 +195,224 @@ def test_the_historical_source_is_mounted_read_only(compose: dict[str, Any]) -> 
 
     An importer that can write to its own source material is one bad run away
     from having nothing left to re-run against.
+
+    Read-only *bind* mounts, because the extractor also mounts the shared upload
+    volume read-only and that is a different rule with a test of its own. The
+    host filesystem this stack can write to is what this one is about.
     """
     for name in ("web", "extractor"):
         mounts = [_resolved(volume) for volume in compose["services"][name]["volumes"]]
-        historical = [m for m in mounts if m.endswith(":ro")]
-        assert len(historical) == 1, f"{name}: expected exactly one read-only mount"
+        binds = [m for m in mounts if m.startswith(("/", "."))]
+        historical = [m for m in binds if m.endswith(":ro")]
+        assert len(historical) == 1, f"{name}: expected exactly one read-only bind mount"
         assert "/srv/historical-source:ro" in historical[0]
+
+
+# -- the shared upload volume ----------------------------------------------
+#
+# `Uus teema` staging put a second container on this storage class: `web` writes
+# the staged file and `extractor` opens it to parse it (docs/adr/0064). A
+# container's writable layer is private, so the unmounted default that served
+# held uploads for one process leaves the worker looking for a file that only
+# exists in `web` — the feature suite could not see it, because it never crossed
+# a container boundary. These are the Compose contract, checked as configuration
+# because that is what it is.
+
+#: What both application containers agree the storage class is mounted at, and
+#: what `PENDING_UPLOAD_ROOT` defaults to inside the image (`config/settings.py`,
+#: `BASE_DIR` being `/app`).
+UPLOAD_TARGET = "/app/pending-uploads"
+
+
+def _upload_mounts(compose: dict[str, Any], service: str) -> list[str]:
+    mounts = [_resolved(volume) for volume in compose["services"][service].get("volumes") or []]
+    return [m for m in mounts if m.split(":")[1:2] == [UPLOAD_TARGET]]
+
+
+def test_web_and_the_extractor_share_one_upload_volume(compose: dict[str, Any]) -> None:
+    """The defect this whole arrangement exists to prevent, stated once.
+
+    Same source, same target, in both containers. Two volumes that merely happen
+    to be mounted at the same path would satisfy every other test in this file
+    and still leave the worker unable to read a staged file.
+    """
+    web = _upload_mounts(compose, "web")
+    extractor = _upload_mounts(compose, "extractor")
+    assert len(web) == 1, f"web: expected one mount at {UPLOAD_TARGET}, got {web}"
+    assert len(extractor) == 1, f"extractor: expected one at {UPLOAD_TARGET}, got {extractor}"
+
+    web_source = web[0].split(":", 1)[0]
+    extractor_source = extractor[0].split(":", 1)[0]
+    assert web_source == extractor_source, "the two containers mount different sources"
+
+
+def test_the_shared_upload_volume_is_a_named_volume_and_not_an_appdata_bind(
+    compose: dict[str, Any],
+) -> None:
+    """A Docker volume, deliberately, and declared for Compose to scope.
+
+    Not a bind under `/mnt/user/appdata`: these are temporary uploaded documents
+    from real member correspondence, and a bind would put them inside the appdata
+    tree and therefore inside the SMB share exported from it — widening a known
+    host-security matter for storage that is thrown away on a timer.
+
+    Declared with no explicit `name:`, because the project name is what isolates
+    it. Naming it globally would hand the same volume to `juristid-test`, to a
+    CI project and to a recovery rehearsal.
+    """
+    source = _upload_mounts(compose, "web")[0].split(":", 1)[0]
+    assert not source.startswith(("/", ".")), f"{source!r} is a host path, not a named volume"
+
+    volumes = compose.get("volumes") or {}
+    assert source in volumes, f"{source!r} is not declared in the top-level volumes block"
+    # `pending_uploads: ` with nothing under it parses as None, which is the
+    # shape that lets Compose scope the volume to the project.
+    declaration = volumes[source] or {}
+    assert "name" not in declaration, "an explicit name would defeat per-project scoping"
+    assert declaration.get("external") is not True, "an external volume is not project-scoped"
+
+
+def test_the_extractor_cannot_write_to_the_staged_files_it_reads(
+    compose: dict[str, Any],
+) -> None:
+    """`web` read-write, `extractor` read-only, because that is what each does.
+
+    Everything that changes a staged object happens in the web process: the
+    upload view stores it, `consume_session` deletes it after `Loo teema`, and
+    `prune_intake_staging` sweeps what is left. The worker's whole interaction
+    with the bytes is one `storage.open(..., "rb")` in
+    `app/matters/intake_extraction.py`, so read-only costs it nothing and takes
+    the source of a parse out of reach of the process doing the parsing.
+    """
+    assert _upload_mounts(compose, "web")[0].endswith(UPLOAD_TARGET), "web must be read-write"
+    assert _upload_mounts(compose, "extractor")[0].endswith(f"{UPLOAD_TARGET}:ro")
+
+
+def test_no_other_service_receives_the_upload_volume(compose: dict[str, Any]) -> None:
+    """Two processes use this storage class; nothing else is given it.
+
+    `searchindex` rebuilds a projection out of PostgreSQL and reads no file the
+    application stores, `db` and `tunnel` are not the application at all — the
+    same reasoning that keeps the evidence tree off all three.
+    """
+    for name in ("db", "searchindex", "tunnel"):
+        assert _upload_mounts(compose, name) == [], f"{name} was given the upload volume"
+
+
+def test_the_rehearsal_has_the_same_upload_topology(
+    compose: dict[str, Any], rehearsal: dict[str, Any]
+) -> None:
+    """The two stacks must not drift apart on *this* invariant.
+
+    The rehearsal's whole purpose is to meet a deployment defect before
+    production does, and it can only do that where the two agree. This is the
+    boundary that hid the original defect: staging is written by `web` and read
+    by `extractor`, so a rehearsal whose containers do not share the volume
+    would exercise assisted intake successfully and prove nothing about the
+    stack that matters.
+
+    Compared as a shape rather than as text — same target, same source in both
+    services, same read-only split, same set of services excluded — so the two
+    files stay free to differ everywhere they legitimately do.
+    """
+    for model in (compose, rehearsal):
+        services = model["services"]
+        web = [
+            m
+            for m in (services["web"].get("volumes") or [])
+            if m.split(":")[1:2] == [UPLOAD_TARGET]
+        ]
+        extractor = [
+            m
+            for m in (services["extractor"].get("volumes") or [])
+            if m.split(":")[1:2] == [UPLOAD_TARGET]
+        ]
+        assert len(web) == 1 and len(extractor) == 1, f"{model['name']}: not exactly one each"
+        assert web[0].split(":", 1)[0] == extractor[0].split(":", 1)[0], model["name"]
+        assert web[0].endswith(UPLOAD_TARGET), f"{model['name']}: web is not read-write"
+        assert extractor[0].endswith(f"{UPLOAD_TARGET}:ro"), f"{model['name']}: not read-only"
+
+        for other in ("db", "searchindex", "tunnel"):
+            mounts = services[other].get("volumes") or []
+            assert not [m for m in mounts if m.split(":")[1:2] == [UPLOAD_TARGET]], (
+                f"{model['name']}: {other} was given the upload volume"
+            )
+
+
+def test_the_two_stacks_cannot_reach_each_others_upload_volume(
+    compose: dict[str, Any], rehearsal: dict[str, Any]
+) -> None:
+    """Same declaration, different project — which is what keeps them apart.
+
+    Both stacks run on one host and both call the volume `pending_uploads`. What
+    stops the Chamber's staged correspondence and the rehearsal's invented mail
+    landing in one directory is that neither declaration overrides the name, so
+    Compose scopes each to its own project: `juristid-main_pending_uploads` and
+    `juristid-test_pending_uploads`.
+
+    An explicit `name:` on either — or `external: true` — would silently join
+    them, which is the one way this arrangement could go wrong quietly.
+    """
+    assert compose["name"] != rehearsal["name"]
+
+    for model in (compose, rehearsal):
+        declared = model.get("volumes") or {}
+        assert declared, f"{model['name']} declares no volumes"
+        for volume, declaration in declared.items():
+            body = declaration or {}
+            assert "name" not in body, f"{model['name']}: {volume} pins a global name"
+            assert body.get("external") is not True, f"{model['name']}: {volume} is external"
+
+
+def test_the_image_owns_the_upload_directory_the_volume_shadows() -> None:
+    """A named volume inherits the ownership of the image path it covers.
+
+    `/app/pending-uploads` did not have to exist in the image while it was an
+    ordinary directory the application created on first write. Mounted over by a
+    volume it does exist first, created by Docker — root-owned, if the image has
+    nothing there to copy ownership from — and the container runs as `juristid`,
+    which would then be unable to stage a single file.
+    """
+    dockerfile = (Path(settings.BASE_DIR) / "Dockerfile").read_text(encoding="utf-8")
+    creation = next(line for line in dockerfile.splitlines() if "mkdir -p /app/evidence" in line)
+    assert "/app/pending-uploads" in creation, "the image does not create the mount point"
+    assert "chown -R juristid:juristid /app" in dockerfile
+
+
+def test_the_volume_is_mounted_where_the_application_actually_writes(
+    compose: dict[str, Any],
+) -> None:
+    """The mount point and `PENDING_UPLOAD_ROOT` have to be the same directory.
+
+    Everything else in this file checks the Compose side. This is the join: a
+    volume correctly shared at a path the application does not use would satisfy
+    every one of those and still leave staged bytes in a container layer.
+
+    Three links, none of them a coincidence to be left unasserted — the image's
+    `WORKDIR` is `/app`, so `BASE_DIR` is `/app`; the setting's *declared
+    default* is `BASE_DIR / "pending-uploads"`; and neither service overrides the
+    variable, so that default is what a deployed container runs with.
+
+    The declaration is read from the source rather than from `settings`, because
+    the value in force here is not the deployed one: the test settings mint a
+    throwaway storage root per run, which is exactly what stops a test writing
+    into a real tree (`config/test_settings.py`).
+    """
+    dockerfile = (Path(settings.BASE_DIR) / "Dockerfile").read_text(encoding="utf-8")
+    assert "\nWORKDIR /app\n" in dockerfile, "BASE_DIR is no longer /app in the image"
+
+    source = (Path(settings.BASE_DIR) / "config" / "settings.py").read_text(encoding="utf-8")
+    declaration = next(
+        line for line in source.splitlines() if line.startswith("PENDING_UPLOAD_ROOT = ")
+    )
+    assert 'env("PENDING_UPLOAD_ROOT", str(BASE_DIR / "pending-uploads"))' in declaration
+    assert UPLOAD_TARGET == "/app/pending-uploads"
+
+    for name in ("web", "extractor"):
+        environment = compose["services"][name].get("environment", {})
+        assert "PENDING_UPLOAD_ROOT" not in environment, (
+            f"{name} overrides the path the volume is mounted at"
+        )
 
 
 def test_evidence_and_derivatives_stay_separate_directories(compose: dict[str, Any]) -> None:

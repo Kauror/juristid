@@ -143,6 +143,22 @@ services:
       # rewrites it: an importer that can write to its own source is one bad run
       # away from having nothing to re-run against (Stage-2D brief 54).
       - ${JURISTID_SOURCE_ROOT:-/mnt/user/juristid-main/source}:/srv/historical-source:ro
+      # Held uploads and `Uus teema` staging, READ-WRITE: this is the process
+      # that receives a file, holds it across a refused save, promotes it on
+      # `Loo teema` and deletes it afterwards.
+      #
+      # A named volume rather than a directory inside the container, because
+      # since docs/adr/0064 these bytes have a second reader in a second
+      # container: `web` writes the staged file and `extractor` opens it to
+      # parse it. A container's writable layer is private to that container, so
+      # the arrangement before this worked only while one process did both.
+      #
+      # A named volume rather than a bind under the appdata tree, deliberately.
+      # None of this is evidence — nothing outside the staging tables points at
+      # it and losing all of it costs one re-pick — so it must not become
+      # another directory in the backup's field of view, and it must not become
+      # another path inside the appdata SMB share.
+      - pending_uploads:/app/pending-uploads
     networks:
       - internal
 
@@ -209,6 +225,17 @@ services:
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/derivatives:/app/derivatives
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/legacy-source:/app/legacy-source
       - ${JURISTID_SOURCE_ROOT:-/mnt/user/juristid-main/source}:/srv/historical-source:ro
+      # The staged `Uus teema` files, READ-ONLY — the same volume `web` writes.
+      #
+      # Read-only because that is the whole of what this process does with them:
+      # `app/matters/intake_extraction.py` opens the object once, in `rb`, and
+      # every result it produces goes to PostgreSQL. Staging bytes are written
+      # by the upload view, deleted by `consume_session` after `Loo teema`, and
+      # swept by `prune_intake_staging` — all three in `web`. Nothing on this
+      # side needs to change the source it is reading, so nothing on this side
+      # is given the ability to (the same argument as the historical corpus
+      # above).
+      - pending_uploads:/app/pending-uploads:ro
     networks:
       - internal
 
@@ -316,3 +343,21 @@ networks:
   internal:
     name: juristid-main-internal
     driver: bridge
+
+volumes:
+  # Temporary upload bytes, shared by `web` and `extractor` and by nothing else.
+  #
+  # Deliberately left for Compose to name. A volume declared like this becomes
+  # `juristid-main_pending_uploads`, scoped by the project name at the top of
+  # this file — so `juristid-test`, a CI project and a recovery rehearsal each
+  # get their own and none of them can reach this one. Writing an explicit
+  # `name:` here would give up exactly that isolation, which is the property
+  # worth having.
+  #
+  # Its recovery class is unchanged by having become a volume: not canonical,
+  # not backed up, not in the recovery fingerprint. `juristid-backup.sh` does
+  # not know about it and must not learn. It may outlive a container
+  # replacement, which is convenient and means nothing — what bounds this data
+  # is expiry and `prune_intake_staging`, not the lifetime of a container
+  # (deploy/unraid-main/RECOVERY.md, docs/adr/0064).
+  pending_uploads:
