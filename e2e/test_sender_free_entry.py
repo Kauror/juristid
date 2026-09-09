@@ -144,10 +144,25 @@ def test_a_sender_named_here_is_afterwards_an_addressee_anybody_can_choose(page,
 
     create_form(page, base_url)
     addressees = page.locator('input[name="addressee_organisation"]')
+    # `textContent`, not `innerText`. Adressaat offers the *whole* catalogue —
+    # the ranked shortlist inline and every other body inside «Vali nimekirjast»
+    # (`MatterCreateForm.addressee_offered`) — and that disclosure is closed
+    # when the form opens. `innerText` is layout-aware, so it reads an empty
+    # string for a label that is present, correct and simply not painted, which
+    # turns «is this body offered?» into «is this body on screen?».
+    #
+    # The two questions came apart the moment more than one browser file existed
+    # in this shard: `addressees_by_usage` falls back to the alphabetical head
+    # of the catalogue only while *nothing* has ever been filed as an addressee,
+    # so whether this body lands above or below the fold depends on what other
+    # tests put in the shared database first. Sharding is a pure function of the
+    # collected file set, so adding a file anywhere moves that. The claim here
+    # is the one in the docstring — selectable, one `Organisation` table — and
+    # that claim is about the form's choices, not about scroll position.
     labels = addressees.evaluate_all(
         "nodes => nodes.map(node => {"
         "  const label = node.closest('label');"
-        "  return label ? label.innerText.trim() : '';"
+        "  return label ? label.textContent.replace(/\\s+/g, ' ').trim() : '';"
         "})"
     )
     assert any(TYPED_SENDER in label for label in labels), (
