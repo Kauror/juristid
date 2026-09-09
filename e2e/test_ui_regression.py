@@ -1025,6 +1025,27 @@ def test_watchlist(page, base_url):
     compare("jalgimine", capture(page, "jalgimine"))
 
 
+def test_release_notes(page, base_url):
+    """Uuendused: the day accordions, the newest open and the rest shut.
+
+    One scenario, and it is a composition rather than a page of data: the day
+    heading, the count beside it, the caret, the open day's bullets and the shut
+    rows under it. That composition is the whole product decision — one
+    disclosure per day — and it is exactly the kind of thing no DOM assertion
+    notices going wrong.
+
+    Nothing on it is clock-derived, which is unusual enough to be worth saying.
+    The dates come from a file in the image, so they hold still by construction
+    and are deliberately **not** `<time>` elements: the mask list paints over
+    every `<time>` on a captured page, and painting over these would leave a
+    baseline showing a list of empty rectangles
+    (`templates/core/release_notes.html`). The one value here that does move is
+    the build stamp, and `.app__footer` has covered that since this suite began.
+    """
+    signed_in(page, base_url, "/uuendused/")
+    compare("uuendused", capture(page, "uuendused"))
+
+
 def test_dashboard(page, base_url):
     """Osakond: the department page a specialist reads.
 

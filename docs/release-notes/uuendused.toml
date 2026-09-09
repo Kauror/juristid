@@ -1,0 +1,204 @@
+# Juristidi uuendused, päevade kaupa.
+#
+# Üks kirje ühe kalendripäeva kohta. Kuupäev on päev, mil muudatus jõudis
+# kasutajateni; mitu sama päeva väljalaset on üks kirje. Kirjuta kasutaja
+# keeles — mis on teisiti, kui ma Juristidit kasutan.
+#
+# `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
+# need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
+
+[[day]]
+date = 2026-09-09
+basis = "deployment"
+revisions = ["b3df3179c273d7c89f22db1d05d764f72e236151"]
+prs = [149, 150, 151, 152, 153, 154]
+changes = [
+  "Uue teema vormile lisatud failid loetakse läbi kohe, veel enne teema loomist, ning leitud saatja, arvamuse tähtaeg, menetlusliik ja valdkonnad pakutakse samal vormil üle vaatamiseks. Iga leid näitab lauset, kust ta pärineb.",
+  "Kui uue teema salvestamine tagasi lükatakse, jäävad juba valitud failid alles — neid ei pea uuesti otsima.",
+  "Saatja valimine on lihtsam: sagedasemad saatjad on kohe näha, kogu kataloogi saab läbi otsida ja puuduva saatja saab lisada otse samal vormil.",
+  "Jõustumise ja töövõidu saab lisada otse teema lehel, ilma eraldi lehele minemata.",
+  "Kokkuvolditud tegevuste kokkuvõte ütleb lühidalt, millal teema loodi ja mitu tegevust seal on, mitte enam süsteemi enda sündmuste loetelu.",
+  "Kolleegi määratud lugemata teema ees on töölaual punane hüüumärk.",
+  "Kuu täpsusega tähtaeg mahub töörea kitsasse kuupäevalahtrisse: september 2026 asemel 09.26. Päeva juurde ei mõelda.",
+]
+
+[[day]]
+date = 2026-09-08
+basis = "release-image"
+revisions = ["f8169c0f6aba3dc076c3a69ee6c5e728bfd208c3"]
+prs = [148]
+changes = [
+  "Teema dokumentide tabelist kadusid versiooninumber ja faili maht — mõlemad on endiselt dokumendi enda lehel.",
+  "Failirea kõrvalt kadusid teksti töötlemise teated. «Vaata sisu» on alles seal, kus tekst on olemas.",
+  "Saadetud arvamuse real on fail kohe pealkirja all, mitte rea teises servas.",
+]
+
+[[day]]
+date = 2026-09-06
+basis = "release-image"
+revisions = ["8a02be49a0ed1c40e8e43b48ec5e5d24358dc5bd"]
+prs = [143, 144, 145, 146, 147]
+changes = [
+  "Teema arvamused on Dokumentide all: arvamus on fail ja seetõttu rida failide tabelis. Ühel teemal võib olla mitu arvamuse faili — esialgne arvamus, täiendus ja ühiskiri on kolm rida.",
+  "Arvamuse ridadelt kadusid kontrollsumma, tõendi plokk ja arhiivi tehnilised märked. Kõik see on alles dokumendi enda lehel.",
+  "Kui dokumendid on läbi loetud, pakub Muuda teemat üle vaadata, mida neist leiti: saatja, arvamuse tähtaeg, menetlusliik ja valdkonnad, iga leid koos lausega ja failiga, kust ta pärineb.",
+  "Teema lõpus on Seotud materjalid: kinnitatud seotud teemad ja taustaks valitud kirjad. Rakenduse enda pakutud seosed on eraldi «Võimalikud seosed» all ja midagi ei ole kohustuslik.",
+]
+
+[[day]]
+date = 2026-09-03
+basis = "deployment"
+revisions = [
+  "f8d47c564cb0f41eb7fc7ea1104133d346fc59c6",
+  "3ea2da9e487f07527372da721355461024f72440",
+]
+prs = [125, 126, 128, 129, 130, 131, 132, 133, 134, 136]
+changes = [
+  "«Määra» ja töörea menüü viivad tõesti järgmise sammu juurde. Varem jäi leht pika teema alguses seisma ja vorm ei avanenud.",
+  "Kui arvamus on saadetud, ei loeta arvamuse tähtaega enam lahtiseks tööks.",
+  "Saadetud arvamuse rida algab oma teema pealkirjaga, nii et on kohe näha, mille kohta kiri käib.",
+  "Osakonna Eesolev paneelis on iga ajaaken oma lahtikäiv plokk ja päis ütleb, mitu tähtaega selles aknas on.",
+  "Töövõit on üks mõiste. Kandidaadi ja kinnitatud töövõidu vahet enam ei näidata.",
+  "Ka arhiivi arvamused jõuavad otsingusse ise, kohe pärast lisamist või muutmist.",
+  "Pikkade nimekirjade lehekülgede vahel ei kordu ega kao ükski rida.",
+]
+
+[[day]]
+date = 2026-09-02
+basis = "deployment"
+revisions = ["e827d355d462372a3b5fe4ef95903e0ff5286baa"]
+prs = [116, 117, 118, 119, 120, 121, 122, 123]
+changes = [
+  "Osakonna ja statistika lehed avanevad märgatavalt kiiremini.",
+  "Registrist pärit tekst ütleb, millisest tabeliseisust ta on võetud, ja värskendamise kuupäev on Tallinna aja järgi.",
+]
+
+[[day]]
+date = 2026-09-01
+basis = "deployment"
+revisions = [
+  "ba34c76edc5605988734f782b08e7a7fc3cfed60",
+  "a8af5a3ee9b97f1524981a75ab6f4a6955768662",
+  "8d5d99f8e3f49524a02a1cd4825de008e54f7783",
+]
+prs = [106, 107, 108, 110, 111, 112]
+changes = [
+  "Varasemad arvamused on seotud oma teemadega: teema juurest näeb, mis on selles asjas juba saadetud.",
+  "Käimasolev töö on värskendatud 1. septembri registriseisuga.",
+  "Töövaadetest kadusid tehnilised sildid TEEN, OOTAN ja JÄLGIN. Alles on see, mida tegema peab, ja millal.",
+  "Uue teema vormil määratakse järgmine samm sama lihtsalt kui teema lehel.",
+  "Piiratud nähtavuse selgitus ütleb arusaadavalt, miks midagi ei näe, ja sarnaste nimedega kolleegid on nimekirjas eristatavad.",
+  "Parandatud on hulk teema töövoo vigu, mis tulid välja esimeses päriskasutuse ringis.",
+]
+
+[[day]]
+date = 2026-08-31
+basis = "deployment"
+revisions = [
+  "2d18e42ef9e9cfcaf32c3736514d546be7ca5055",
+  "a39717d9920ed6a10c3cc9abb84f9d4ab122cf54",
+]
+prs = [98, 99, 101, 102, 103, 104, 105]
+changes = [
+  "Kolleegi määratud uued teemad ilmuvad Minu asjade ette eraldi plokki «Uus asi», kuni need on avatud.",
+  "Adressaadi saab teemale kirjutada otse, ka siis, kui teda kataloogis veel ei ole.",
+  "Teema andmed on üks kompaktne plokk lehe kõrval; Koja seisukoht eraldi plokina kadus.",
+  "Järgmise sammu määramine küsib kaks asja: mida teha ja millal.",
+  "Ülemise riba järjekord on uus ja Jälgimine kannab nüüd nime Tähtajad.",
+]
+
+[[day]]
+date = 2026-08-30
+basis = "deployment"
+revisions = [
+  "fffc161e8eabf0e2d18c70aeaf6d6f8e7fc8d1a9",
+  "a4538898b53fa4828b0a51205112c33e7d3f0e95",
+  "e68e71f9e84512edb813cc8716acdeb4e0d07cfe",
+]
+prs = [88, 89, 91, 93, 94, 95, 96, 97]
+changes = [
+  "Rakendus on uue kujundusega. Minu asjad, Osakond, Teemad ja teema leht on kõik ümber tehtud ühe kujunduskeele järgi.",
+  "Sisse tulles avaneb Minu asjad — see, mida on täna vaja teha. Osakond on ühe klõpsu kaugusel.",
+  "Ülevaade ja Osakonna töö on üks leht: Osakond.",
+  "Tähtajad on kahes rühmas: see kalendrinädal ja kuu ülejäänud osa.",
+  "Arvamused on Teemade all, sest arvamus on teema tulemus, mitte eraldi maailm.",
+  "Teema lõpetamine küsib ainult need küsimused, millele on tõesti vaja vastata.",
+  "Arvamuse tähtaeg on tavaline tähtaeg nagu iga teine ja ilmub töönimekirjas. Kui teemal on oma Järgmiseks määratud, siis see läheb ettepoole.",
+]
+
+[[day]]
+date = 2026-08-28
+basis = "release-image"
+revisions = ["be28aec2467493ded8d6ce7d0f7ddd2f4f0848f3"]
+prs = [78, 79, 83, 84, 86, 87]
+changes = [
+  "Osakonna juristid näevad üksteise tööd. Varem jäi kolleegi piiratud nähtavusega teema teisele juristile nähtamatuks ka siis, kui ta oli sama osakonna spetsialist.",
+  "Ülemise riba otsingukast pakub kirjutamise ajal vasteid ja Enter viib endiselt täisnimekirja.",
+  "Arvamustel on üks sihtkoht, mitte kaks — arhiivi ja saadetud kirjade vahel valitakse töölehel, mitte ülemisel ribal.",
+  "Tähtaegade vaade on nelja ajaaknaga, teema ajajoon on loetavam ja Järgmiseks ütleb alati sõnadega, mida kuupäev tähendab.",
+  "Ülevaatelt kadus Minu tiim, mida süsteem ei osanud sisustada. Alles on Kogu osakond ja Valdkonniti.",
+  "Käimasolev töö uueneb hooldatavast registriseisust, nii et rakenduses on sama seis mis tabelis.",
+  "Otsing leiab uue ja muudetud sisu ise — selleks ei pea keegi midagi eraldi käivitama.",
+]
+
+[[day]]
+date = 2026-08-26
+basis = "deployment"
+revisions = ["adce39e5ec3691c98f15d2218c59c1a4c4bc7009"]
+prs = [69, 70, 71, 72, 75]
+changes = [
+  "Teemasid nimetatakse pealkirja järgi, mitte tehnilise viite järgi.",
+  "Laial ekraanil jääb sisu loetaval laiusel ega veni üle terve monitori.",
+  "Kaasamise saab tühjast olekust lisada ühe klõpsuga.",
+  "Töö saab määrata igale osakonna kolleegile, kes seda kanda võib, ja varasemad vastutajad ei kao nimekirjast ära.",
+  "Ülemisel ribal on Koja märk.",
+]
+
+[[day]]
+date = 2026-08-25
+basis = "deployment"
+revisions = [
+  "096bcd9cc26f99c5476b5e5dff33d7b5af94b210",
+  "fea7c1112fa3cc4761bf5053c9181e35f846924d",
+]
+prs = [60, 61, 62, 63, 64, 68]
+changes = [
+  "Teema leht on ümber tehtud: kaks vahelehte, üks salvestus ja valdkonnad ühes kohas.",
+  "Uue teema vorm on ümber tehtud sama kujunduse järgi kui teema muutmine.",
+  "Minu töö ja Ülevaade näitavad sama tööd sama loogika järgi, nii et «hilinenud» tähendab mõlemal lehel sama asja.",
+  "Ülevaate arvult saab edasi täpselt sellesse nimekirja, mille kohta arv käib.",
+  "Kelle tööd sa parasjagu vaatad, saab vahetada otse ülemiselt ribalt.",
+]
+
+[[day]]
+date = 2026-08-24
+basis = "deployment"
+revisions = ["d68e34dd52686ea0d152a3823f08713ffb3e539e"]
+prs = [55, 56, 58, 59]
+changes = [
+  "Kuupäevad on kõikjal ühes eesti kujus (7.9.2026) ja teema vorm on loetavam.",
+  "Ülevaate arvud on klõpsatavad: arvult saab edasi selle taga olevasse nimekirja.",
+]
+
+[[day]]
+date = 2026-08-23
+basis = "deployment"
+revisions = ["53377932f5cba82fdc1193e35f7eca244c9d6809"]
+prs = [24, 30, 32, 33, 41, 42]
+changes = [
+  "Varasem register on sisse loetud: 2011. aastast alates tehtud töö on rakenduses olemas ja otsitav.",
+  "Koja varasemad arvamused on rakenduses olemas ja leitavad pealkirja, kuupäeva ja saaja järgi. Osa neist on juba seotud oma teemaga.",
+  "Ühel teemal võib olla mitu saatjat, mitte ainult üks.",
+  "Teema juurde saab kirja panna liikmete kaasamise — kellelt arvamust küsiti ja kes vastas.",
+  "Statistika ja aruandlus eristavad päris tööd katseandmetest, nii et arvud on usaldusväärsed.",
+]
+
+[[day]]
+date = 2026-08-21
+basis = "deployment"
+prs = []
+changes = [
+  "Juristid on kasutusel Koja päris andmetega. Eelnõude ja arvamuste töö on ühes kohas, mitte Exceli tabelis.",
+  "Teema juurde lisatud failid jäävad teema külge alles ja nende tekst on otsinguga leitav.",
+  "Sisse saab osakonna ühise parooliga ning seejärel valitakse, kelle tööd parasjagu vaadatakse.",
+]
