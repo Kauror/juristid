@@ -109,7 +109,20 @@
           Failid
           <span class="field__count" data-chipcount-for="id_files"></span>
         </legend>
-        <div class="dropzone">
+        {% comment %}
+          The three URLs the staged-upload island needs, as data rather than as
+          strings inside a script: templates own routes, JavaScript does not,
+          and a page rendered without them simply has no island.
+
+          Everything below still works with scripting off. The input posts its
+          files to `Loo teema` exactly as it did, a refusal still holds them,
+          and the only thing missing is that nothing is read before the Teema
+          exists (static/js/app.js, docs/adr/0064).
+        {% endcomment %}
+        <div class="dropzone"
+             data-intake-url="{% url 'matters:intake_stage' %}"
+             data-intake-status-url="{% url 'matters:intake_status' %}"
+             data-intake-remove-url="{% url 'matters:intake_remove' %}">
           {% comment %}
             The input is the control and the label is its face. `for=` opens the
             file chooser natively, so hiding the box costs nothing that a
@@ -152,6 +165,12 @@
             </ul>
           {% endif %}
           <ul class="dropzone__list" id="valitud-failid" hidden></ul>
+          {% comment %}
+            The third list, and the one the server is actually reading:
+            uploaded ahead of the save so the extraction worker may open it,
+            with the state of that reading on each row.
+          {% endcomment %}
+          {% include "matters/partials/intake_files.html" %}
         </div>
       </fieldset>
 
@@ -176,6 +195,19 @@
           <span class="field__error">{{ form.response_deadline.errors|first }}</span>
         {% endif %}
       </label>
+    </div>
+
+    {% comment %}
+      3b — What the files say, once they have been read.
+
+      Between the file that produced it and the fields it fills, which is the
+      only place it can be: a panel above the form would push Pealkiri off the
+      screen on the ordinary visit where there is no file at all, and one below
+      Valdkonnad would be under half of what it is about. It renders nothing
+      until something is staged (`intake_panel.html`, docs/adr/0064).
+    {% endcomment %}
+    <div class="createform__row createform__row--intake">
+      {% include "matters/partials/intake_panel.html" %}
     </div>
 
     {% comment %}

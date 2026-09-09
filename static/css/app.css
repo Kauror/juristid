@@ -4455,6 +4455,126 @@ a.barchart__row:hover {
   outline-offset: 1px;
 }
 
+/* -- Uus teema: the file being read ---------------------------------------- *
+ *
+ * A staged row is a chosen row plus one thing the other two lists cannot say:
+ * whether the file has been read yet. So it is the same row, with a word at
+ * the end of it — not a second kind of list, not a second border treatment,
+ * and not a colour carrying meaning on its own (app/matters/intake_staging.py,
+ * docs/adr/0064).
+ */
+
+/* The staged list is the ordinary chosen-file list with one more column, so it
+   inherits everything and names itself only so a rule can reach it. */
+.dropzone__list--staged {
+  margin-top: var(--spacing-1);
+}
+
+.dropzone__read {
+  flex: none;
+  font-size: var(--typography-size-label);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dropzone__read--ok {
+  color: var(--status-success);
+}
+
+.dropzone__read--warn {
+  color: var(--status-warning);
+}
+
+/* -- Uus teema: what the file said ----------------------------------------- *
+ *
+ * The panel between the file and the fields it can fill. It renders nothing at
+ * all until something is staged, so the ordinary visit — no file, straight to
+ * Pealkiri — is exactly the page it was.
+ */
+
+/* Nothing staged, nothing to say. Driven by the state attribute rather than by
+   `:empty`, which never matches here: the panel always holds at least the
+   hidden «Laen faili üles…» line, and a template's own whitespace is a text
+   node either way. */
+.intakepanel[data-intake-state="empty"] {
+  display: none;
+}
+
+.intakepanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.intakepanel__state {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-15);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+}
+
+.intakepanel__state--warn {
+  color: var(--status-warning);
+}
+
+/* Shown by script for as long as the bytes are going up, and replaced by the
+   server's own answer the moment one arrives. It is `hidden` in the template
+   rather than absent, so the words live with every other string on the page. */
+.intakepanel__uploading {
+  color: var(--text-muted);
+}
+
+/* Reading is never a gate: `Loo teema` is pressable throughout and the file is
+   already safe. So this is a small quiet mark beside a sentence, not a curtain
+   over the form. */
+.intakepanel__spinner {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--status-warning-border);
+  border-top-color: transparent;
+  border-radius: var(--radius-circle);
+  animation: intakespin 900ms linear infinite;
+}
+
+@keyframes intakespin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* The button that stops the page saying an answer is coming. It stays a link
+   rather than becoming a button proper, because pressing it changes nothing
+   about the Teema — only about what this paragraph claims. */
+.intakepanel__skip {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+/* Once abandoned, the reading line goes and the rest of the panel — anything
+   already found — stays exactly where it was. */
+.intakepanel[data-intake-state="abandoned"] .intakepanel__reading {
+  display: none;
+}
+
+/* The panel on this surface sits between form rows rather than above a whole
+   page, so it takes the narrower padding the createform's own rows use. */
+.suggpanel--intake {
+  padding: var(--spacing-25) var(--spacing-3);
+}
+
+/* And the row it sits in goes with it, or every ordinary visit — no file,
+   straight from the dates to Vastutaja — would pay a row gap for a panel that
+   is not there. */
+.createform__row--intake:has(.intakepanel[data-intake-state="empty"]) {
+  display: none;
+}
+
 /* -- the chip -------------------------------------------------------------- */
 
 .chiprow {

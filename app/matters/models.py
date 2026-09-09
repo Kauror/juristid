@@ -1028,3 +1028,11 @@ class MatterAssignmentNotice(BaseModel):
 
     def __str__(self) -> str:
         return f"assignment notice {self.matter_id} → {self.recipient_id}"
+
+
+# The pre-creation intake tables live in their own module because they obey the
+# opposite rule to everything above: nothing in them is a record of anything,
+# and all of it is deleted on a timer. Imported here so Django's app registry
+# finds the models — splitting the file is a readability decision, not a second
+# app (docs/adr/0064, the same reasoning as `app/documents/derivatives.py`).
+from app.matters.staging import MatterIntakeFile, MatterIntakeSession  # noqa: E402, F401

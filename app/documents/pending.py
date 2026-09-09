@@ -69,6 +69,23 @@ SESSION_KEY = "pending_uploads"
 MAX_HELD_FILES = 25
 
 
+def human_size(size: int) -> str:
+    """A file size the way the browser's own preview writes it.
+
+    Deliberately the same rounding and the same Estonian decimal comma as
+    `humanSize` in ``static/js/app.js``. Three kinds of row can sit in the same
+    list under the file control — one the browser is showing from the input, one
+    a refused save is holding, one staged and being read — and any two of them
+    disagreeing about «1.4 MB» and «1,4 MB» would look like two different kinds
+    of thing (app/matters/views.py `_intake_context`).
+    """
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{round(size / 1024)} KB"
+    return f"{size / (1024 * 1024):.1f}".replace(".", ",") + " MB"
+
+
 @dataclass(frozen=True)
 class HeldUpload:
     """One validated file waiting for the save that was refused."""
@@ -80,18 +97,7 @@ class HeldUpload:
 
     @property
     def human_size(self) -> str:
-        """The size the way the browser's own preview writes it.
-
-        Deliberately the same rounding and the same Estonian decimal comma as
-        `humanSize` in ``static/js/app.js``: a held row and a freshly chosen row
-        sit in the same list, and one of them reading «1.4 MB» beside the
-        other's «1,4 MB» would look like two different kinds of thing.
-        """
-        if self.size < 1024:
-            return f"{self.size} B"
-        if self.size < 1024 * 1024:
-            return f"{round(self.size / 1024)} KB"
-        return f"{self.size / (1024 * 1024):.1f}".replace(".", ",") + " MB"
+        return human_size(self.size)
 
 
 def pending_storage() -> Any:

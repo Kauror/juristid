@@ -1,0 +1,15 @@
+{% comment %}
+  One answer from the staging routes, holding both places it changes.
+
+  The file rows belong inside the dropzone, beside the control that produced
+  them; the suggestions belong above the fields they are about. They are
+  rendered together because they answer one question and come from one read,
+  and the browser puts each where it goes by id — a hand-rolled out-of-band
+  swap, which is what the two ids are for (static/js/app.js).
+
+  One request, two places, and no second endpoint that could answer differently
+  from this one. The page itself includes the two halves separately, in the
+  places they live (docs/adr/0064).
+{% endcomment %}
+{% include "matters/partials/intake_files.html" %}
+{% include "matters/partials/intake_panel.html" %}

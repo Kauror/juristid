@@ -1,0 +1,28 @@
+{% comment %}
+  The staged rows: what has been uploaded ahead of the save so that the
+  extraction worker may read it.
+
+  Same shape as the browser's own preview and the held-file list beside them —
+  filename, size, a × — plus the one thing neither of those can say, which is
+  whether the file has been read yet.
+
+  Calm words, not states. «Loen faili…» is what is happening; PENDING and
+  PROCESSING are how it is stored, and a person filing a Teema has no use for
+  the difference (task §5, `app.matters.views.INTAKE_STATE_LABELS`).
+
+  Rendered inline by `matter_create.html` and again inside `intake_region.html`
+  on every answer from the staging routes, so a refused save and a poll produce
+  the same markup from the same template (docs/adr/0064).
+{% endcomment %}
+<ul class="dropzone__list dropzone__list--staged" id="intake-failid"
+    {% if not intake_files %}hidden{% endif %}>
+  {% for file in intake_files %}
+    <li class="dropzone__file" data-intake-file="{{ file.id }}">
+      <span class="dropzone__name">{{ file.filename }}</span>
+      <span class="dropzone__size">{{ file.size }}</span>
+      <span class="dropzone__read dropzone__read--{{ file.tone }}">{{ file.label }}</span>
+      <button type="button" class="dropzone__drop" data-intake-remove="{{ file.id }}"
+              aria-label="Eemalda fail {{ file.filename }}">×</button>
+    </li>
+  {% endfor %}
+</ul>

@@ -64,6 +64,7 @@ class Command(BaseCommand):
             extract_document_version,
             pending_versions,
         )
+        from app.matters.intake_extraction import drain as drain_intake
 
         idle = options["idle_seconds"] or settings.EXTRACTION_WORKER_IDLE_SECONDS
         limit = options["limit"]
@@ -95,15 +96,47 @@ class Command(BaseCommand):
             )
 
         processed = 0
+        #: Staged files read per turn before the loop looks at evidence again.
+        #: One `Uus teema` envelope is four or five files; more than that in a
+        #: single turn would be a form nobody is waiting on.
+        INTAKE_BATCH = 5
         while not stopping["now"]:
             # Before the query, not after it. The point of the mark is that the
             # loop is turning; recording it only on the way out would make a
             # worker that is stuck *on* the query look alive.
             heartbeat.touch()
+
+            # The staged queue first, and it is not a preference about
+            # importance. A file staged on `Uus teema` has somebody sitting in
+            # front of the form waiting for it, and it is one small file; an
+            # evidence backlog is a hundred files nobody is watching. Draining
+            # the second before the first would make the feature useless
+            # exactly when the queue is long (app/matters/intake_extraction.py,
+            # docs/adr/0064).
+            #
+            # Bounded per turn so it can never starve the evidence queue: a
+            # session holds at most one intake envelope, and after that this
+            # falls through to the work below.
+            staged = drain_intake(limit=INTAKE_BATCH)
+            for staged_report in staged:
+                processed += 1
+                self.stdout.write(
+                    f"  {staged_report.state:<16} {'(uus teema)':<48} "
+                    f"{staged_report.fragments:>4} osa  {staged_report.seconds:.1f}s"
+                    + (f"  [{staged_report.error_code}]" if staged_report.error_code else "")
+                )
+            if limit and processed >= limit:
+                break
+
             candidate = pending_versions().first()
             if candidate is None:
                 if options["once"]:
                     break
+                if staged:
+                    # Something was read this turn, so there may be more of it.
+                    # Sleeping now would make the next staged file wait a full
+                    # idle period behind an empty evidence queue.
+                    continue
                 time.sleep(idle)
                 continue
 
