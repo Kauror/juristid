@@ -35,6 +35,15 @@ from e2e.conftest import MARTIN, READER, create_matter, open_matter, sign_in, si
 
 pytestmark = pytest.mark.e2e
 
+#: The seeded institution this file makes an addressee of. Named rather than
+#: taken by position: the Adressaat list is the whole `Organisation` catalogue
+#: in alphabetical order, and every browser file that types a new institution
+#: adds a row to it — so `index=1` means "whichever body sorts first in this
+#: shard today". `e2e/test_counterparty_selection.py` files one under a
+#: randomised name, which is both longer than this and unpredictable, and the
+#: density assertion below is about how tall one short fact is.
+MINISTRY = "Näidisministeerium"
+
 #: The Matter the seeded world gives two senders, for the wrapping case.
 MULTI_SENDER_TITLE = "Tavaline avatud teema"
 
@@ -106,8 +115,12 @@ def sparse_matter(page, base_url: str, title: str) -> str:
     Teemaviide, Saabus and Andmeklass come with the record — a new Matter is
     dated the day it was opened. `Kellele` is filled in through the rail's own
     control, which is both how a lawyer would do it and a second proof that the
-    control works. `Menetlusliik` and `Kellelt` are deliberately left empty: the
-    whole complaint was that empty facts made the column tall.
+    control works, and it is filled in with a **named** institution: the option
+    at position 1 is whatever the shared catalogue happens to sort first, and a
+    long name there makes the row two lines tall and fails the density
+    assertion below for a reason that has nothing to do with density.
+    `Menetlusliik` and `Kellelt` are deliberately left empty: the whole
+    complaint was that empty facts made the column tall.
 
     Built here rather than seeded: adding a Matter to the shared world changes
     the register every visual baseline photographs.
@@ -116,8 +129,8 @@ def sparse_matter(page, base_url: str, title: str) -> str:
 
     row = fact_row(page, "Kellele")
     row.get_by_text("+ Lisa").click()
-    row.locator("select[name=addressee_organisation]").select_option(index=1)
-    expect(fact_value(page, "Kellele")).not_to_have_text("+ Lisa")
+    row.locator("select[name=addressee_organisation]").select_option(label=MINISTRY)
+    expect(fact_value(page, "Kellele")).to_have_text(MINISTRY)
 
     return url
 

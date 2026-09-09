@@ -26,6 +26,7 @@ from app.core.management.commands.seed_e2e_data import (
     FORMER_OWNER_TITLE,
     OVERDUE_TITLE,
     RESTRICTED_TITLE,
+    REVIEW_DUE_TITLE,
     SUPERSEDED_DEADLINE_TITLE,
 )
 from e2e.conftest import ADMIN, HEAD, MARTIN, READER, SANDRA, go_to, sign_in, sign_out
@@ -44,6 +45,28 @@ def figure(page, caption: str):
 
 def figure_value(page, caption: str) -> int:
     return int(figure(page, caption).locator(".seis__number").inner_text().strip())
+
+
+def late_work(page):
+    """Every row behind the «üle tähtaja» figure, rather than its first page.
+
+    The figure opens the register, and the register's default page size is
+    twelve (``app/matters/views.py::PAGE_SIZE``) — so both «the late Matter is
+    here» and «the waiting one is not» are answers about page one until some
+    other browser file has filed a thirteenth late Matter. That is a question
+    about how ``ci_sharding.py`` grouped the files, not about the work model.
+
+    ``kaupa=koik`` is the size control's own «kõik», asked for the reason
+    ``e2e/test_register_search.py::open_register`` gives. It goes in front of
+    the fragment, because the figure's address ends in ``#tulemused`` and a
+    query string written after a fragment is part of the fragment.
+    """
+    figure(page, "üle tähtaja").click()
+    page.wait_for_load_state("networkidle")
+    address, _, fragment = page.url.partition("#")
+    page.goto(address + "&kaupa=koik" + (f"#{fragment}" if fragment else ""))
+    page.wait_for_load_state("networkidle")
+    return page.locator(".table--register tbody tr")
 
 
 def team_row(page, name: str):
@@ -156,15 +179,25 @@ def test_the_head_is_offered_the_page_and_opens_it(page, base_url, screenshots):
 def test_a_review_date_reached_is_never_counted_as_a_missed_deadline(page, base_url):
     """The distinction the whole work model rests on.
 
-    The seeded world holds exactly one genuinely late DO and one WAIT whose
-    review date has passed. If those two ever land in the same number, waiting on
-    a ministry starts reading as a failure and the department stops believing the
-    queue (specification 18.8).
+    The seeded world holds a genuinely late DO and a WAIT whose review date has
+    passed. If those two ever land in the same number, waiting on a ministry
+    starts reading as a failure and the department stops believing the queue
+    (specification 18.8).
+
+    Said about the waiting Matter by name rather than about the size of the
+    figure. «üle tähtaja» counts the department's late work, and a browser
+    file that files a step with a date already past adds to it perfectly
+    legitimately — so ``== 1`` was a claim about which other files happened to
+    share this shard, not about the rule under test.
+    ``e2e/test_matter_form_ux.py`` typed `1.9.2026` into a next step until this
+    round, and with that file ahead of this one the figure reads 3.
     """
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    assert figure_value(page, "üle tähtaja") == 1
+    rows = late_work(page)
+    assert rows.count(), "nothing is behind the overdue figure, so this proves nothing"
+    expect(rows.filter(has_text=REVIEW_DUE_TITLE)).to_have_count(0)
 
 
 def test_a_superseded_response_deadline_is_not_overdue_anywhere(page, base_url):
@@ -187,10 +220,9 @@ def test_a_superseded_response_deadline_is_not_overdue_anywhere(page, base_url):
     rows = page.locator(".interrow").filter(has_text=SUPERSEDED_DEADLINE_TITLE)
     expect(rows).to_have_count(0)
 
-    # And not behind the overdue figure either.
-    figure(page, "üle tähtaja").click()
-    page.wait_for_load_state("networkidle")
-    assert SUPERSEDED_DEADLINE_TITLE not in page.content()
+    # And not behind the overdue figure either — over the whole list it opens,
+    # because an absence on page one of twelve is not an absence.
+    expect(late_work(page).filter(has_text=SUPERSEDED_DEADLINE_TITLE)).to_have_count(0)
 
 
 def test_the_superseded_deadline_is_still_a_fact_on_the_teema_header(page, base_url):
@@ -219,9 +251,7 @@ def test_the_overdue_figure_reaches_the_matter_that_is_actually_late(page, base_
     sign_in(page, base_url, HEAD)
     open_work(page, base_url)
 
-    figure(page, "üle tähtaja").click()
-    page.wait_for_load_state("networkidle")
-    expect(page.get_by_role("link", name=OVERDUE_TITLE)).to_be_visible()
+    expect(late_work(page).filter(has_text=OVERDUE_TITLE)).to_have_count(1)
 
 
 def test_work_with_nobody_on_it_is_counted_and_reachable(page, base_url):

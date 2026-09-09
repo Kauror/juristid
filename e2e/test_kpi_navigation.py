@@ -125,6 +125,32 @@ def shown_total(page) -> int:
     return int(match.group(0))
 
 
+def every_row(page):
+    """The whole list a figure opened, rather than its first page.
+
+    A figure opens the register, and the register's default page size is twelve
+    (``app/matters/views.py::PAGE_SIZE``). So «the seeded Matter is one of
+    these rows» and «the passed review is not» are both answers about page one
+    until some other browser file has filed a thirteenth Matter into the same
+    population — which is a question about how ``ci_sharding.py`` happened to
+    group the files, not about the drill-down.
+
+    It is reached, measured, on the «järgmise tegevuseta» figure: the seeded
+    world puts five Matters behind it, so seven Matters filed with no next
+    step anywhere earlier in the shard push the seeded one onto page two and
+    this file goes red for something it is not about.
+
+    ``kaupa=koik`` is the size control's own «kõik», asked for the reason
+    ``e2e/test_register_search.py::open_register`` gives. The parameter goes in
+    front of the fragment because the figure's address ends in ``#tulemused``,
+    and a query string after a fragment is part of the fragment.
+    """
+    address, _, fragment = page.url.partition("#")
+    page.goto(address + "&kaupa=koik" + (f"#{fragment}" if fragment else ""))
+    page.wait_for_load_state("networkidle")
+    return page.locator(".table--register tbody tr")
+
+
 def in_viewport(page, selector: str) -> bool:
     return page.evaluate(
         """(selector) => {
@@ -398,7 +424,7 @@ def test_the_overdue_figure_opens_late_work_and_not_a_passed_review(page, base_u
 
     assert "too=hilinenud" in page.url
     assert shown_total(page) == claimed
-    rows = page.locator(".table--register tbody tr")
+    rows = every_row(page)
     expect(rows.filter(has_text=OVERDUE_TITLE)).to_have_count(1)
     expect(rows.filter(has_text=REVIEW_DUE_TITLE)).to_have_count(0)
 
@@ -411,7 +437,7 @@ def test_the_stalled_figure_opens_the_matters_with_no_next_action(page, base_url
     page.locator(".seis__figure").filter(has_text="järgmise tegevuseta").first.click()
     page.wait_for_load_state("networkidle")
 
-    rows = page.locator(".table--register tbody tr")
+    rows = every_row(page)
     # The unassigned Matter has no next action either, so it is in this list —
     # what matters is that the list is filtered at all, which the chip proves.
     expect(rows.filter(has_text=UNASSIGNED_TITLE)).to_have_count(1)
