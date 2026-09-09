@@ -290,6 +290,16 @@ The rail holds only what has no honest place on a timeline.
 
           A form per row rather than a link, because opening the Teema from
           here is what marks it seen, and a GET must never do that.
+
+          The red «!» is the unread state and nothing else. It is drawn from
+          the notice being in this list at all, so opening the row takes the
+          mark away with the row — there is no second «seen» flag behind it,
+          and there is nothing here for a notice to be marked read *into*.
+
+          `aria-hidden`, because the mark is the visual half of a fact the
+          section already states in words: a screen reader reaches these rows
+          through «Uus asi», and a bare exclamation point announced once per
+          row would only be punctuation read aloud.
         {% endcomment %}
         {% if assignment_notices %}
           <section class="railblock" aria-label="Uus asi">
@@ -299,7 +309,9 @@ The rail holds only what has no honest place on a timeline.
                     method="post"
                     action="{% url 'matters:open_assignment_notice' notice_id=notice.pk %}">
                 {% csrf_token %}
-                <button type="submit" class="newasjarow__title">{{ notice.matter.title }}</button>
+                <button type="submit" class="newasjarow__title">
+                  <span class="newasjarow__mark" aria-hidden="true">!</span>{{ notice.matter.title }}
+                </button>
               </form>
             {% endfor %}
           </section>

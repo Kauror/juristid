@@ -195,8 +195,13 @@ class WorkItem:
     ``when`` is the anchor the list sorts on; ``display_date`` is how it reads
     at the precision it was actually recorded to. Those differ on purpose: a
     MONTH-precision expectation anchored on 1 September sorts with the first of
-    the month and prints as *september 2026*, because printing ``01.09.2026``
-    would manufacture a day nobody named (master specification 3.5).
+    the month and never prints as ``01.09.2026``, because that would manufacture
+    a day nobody named (master specification 3.5).
+
+    The compact date cell writes a month as ``09.26`` rather than as *september
+    2026* — narrower than the column, and still two numbers rather than three,
+    so it cannot be read as a day. ``display_date`` keeps the long form for
+    every other surface; only this read model's compact accessors shorten it.
     """
 
     source_type: str
@@ -215,6 +220,11 @@ class WorkItem:
     date_semantics: str
     when: date | None
     period_end: date | None
+    #: The stored ``DatePrecision``. Carried so the compact cell can ask what
+    #: the source actually knew instead of inspecting the rendered string —
+    #: a month has to be recognised to be shortened, and «september 2026» is
+    #: not something to pattern-match a UI decision out of (01 §3.2).
+    date_precision: str
     display_date: str
     meaning: str
     text: str
@@ -272,24 +282,51 @@ class WorkItem:
         return (self.today - end).days
 
     @property
+    def compact_month(self) -> str:
+        """A MONTH-precision period as ``09.26``, or "" for every other one.
+
+        Month and two-digit year, in that order — the shape the compact column
+        was already using for a day (``15.09``), reused for the one approximate
+        precision that fits it. Two numbers, never three: ``09.26`` says *month
+        09 of 2026* and cannot be misread as the first of September the way
+        ``01.09.2026`` would be (master specification 3.5).
+
+        Only MONTH. A quarter and a half-year have a Roman numeral and a word
+        of their own — *II kvartal 2027* — and there is no two-number spelling
+        of those that a reader would arrive at unaided, so this returns nothing
+        for them and they keep the long form the rest of the product uses.
+        """
+        if self.when is None or self.date_precision != DatePrecision.MONTH:
+            return ""
+        return f"{self.when.month:02d}.{self.when.year % 100:02d}"
+
+    @property
     def short_date(self) -> str:
         """The value the date cell prints — the honest one, not always a day.
 
         ``10 p üle`` for something genuinely late, a bare ``9 p`` for a review
         that has merely come round, ``täna`` for today, ``26.08`` for an exact
-        date this year, and the stored period verbatim for anything recorded to
-        a month or a quarter.
+        date this year, ``09.26`` for a month, and the stored period verbatim
+        for anything recorded to a quarter or wider.
 
         The word *üle* appears only where something was actually missed. A
         ministry that has not replied is not over anything, and one word is the
         whole difference between "you failed" and "have a look at this"
         (master specification 18.8).
+
+        The month is answered before ``täna`` on purpose. A month anchors on its
+        first day, so on 1 September a September expectation would otherwise
+        print *täna* — which names a day as firmly as ``01.09.2026`` does, from
+        the other direction.
         """
         if self.when is None:
             return "—"
         late = self.days_late
         if late:
             return f"{late} p üle" if self.is_overdue else f"{late} p"
+        month = self.compact_month
+        if month:
+            return month
         if self.when == self.today:
             return "täna"
         if self.display_date and self.is_approximate:
@@ -350,9 +387,12 @@ class WorkItem:
 
         ``TÄHTAEG 14.08`` rather than a bare ``TÄHTAEG``, because the cell above
         it is showing *10 p üle* and the reader still needs the day it was.
+
+        The same compact month as the line above it: the two halves of one cell
+        do not get to spell a period two different ways.
         """
         if self.when is not None and self.days_late:
-            return f"{self.meaning} {self.display_date}"
+            return f"{self.meaning} {self.compact_month or self.display_date}"
         return self.meaning
 
 
@@ -450,6 +490,7 @@ def action_item(action: NextAction, today: date) -> WorkItem:
         date_semantics=action.date_semantics,
         when=action.target_date,
         period_end=end,
+        date_precision=action.date_precision,
         display_date=action.display_date,
         meaning=_SEMANTICS_MEANING.get(action.date_semantics, MEANING_DEADLINE),
         text=action.text,
@@ -477,6 +518,7 @@ def _deadline_item(record: MatterImportantDate, today: date) -> WorkItem:
         date_semantics=DateSemantics.DEADLINE.value,
         when=record.date_value,
         period_end=record.period_end,
+        date_precision=record.date_precision,
         display_date=record.display_date
         or format_at_precision(record.date_value, record.date_precision),
         meaning=MEANING_IMPORTANT,
@@ -517,6 +559,10 @@ def _response_deadline_item(matter: Matter, today: date) -> WorkItem:
         date_semantics=DateSemantics.DEADLINE.value,
         when=deadline,
         period_end=deadline,
+        # Exact by construction — see the docstring. Named rather than left to
+        # a default, so the one source with no precision column still says what
+        # it knows instead of inheriting an answer.
+        date_precision=DatePrecision.EXACT,
         display_date=format_estonian_date(deadline),
         meaning=MEANING_RESPONSE,
         # No text. The row already names the Matter and states its meaning, and

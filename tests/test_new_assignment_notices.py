@@ -71,6 +71,11 @@ def _active(recipient):
     )
 
 
+#: The unread mark. Named once, because every assertion below counts it and a
+#: class spelled by hand in six places is a rename waiting to go half-done.
+MARK = '<span class="newasjarow__mark" aria-hidden="true">!</span>'
+
+
 def _rail(html: str) -> str:
     """Just the «Uus asi» section, so an unrelated hit elsewhere is not a leak.
 
@@ -642,7 +647,7 @@ def test_ordinary_matter_viewing_does_not_acknowledge(client, specialist):
 
 
 def test_no_unread_renders_no_block_at_all(client, specialist):
-    """Not an empty section, not a zero, not a heading. Nothing."""
+    """Not an empty section, not a zero, not a heading, and not a mark."""
     client.force_login(specialist)
 
     html = client.get(MY_WORK).content.decode()
@@ -650,6 +655,7 @@ def test_no_unread_renders_no_block_at_all(client, specialist):
     assert "Märkmed" in html
     assert "Uus asi" not in html
     assert 'aria-label="Uus asi"' not in html
+    assert "newasjarow__mark" not in html
 
 
 def test_one_unread_renders_the_block_above_markmed(client, specialist, other_specialist):
@@ -663,6 +669,9 @@ def test_one_unread_renders_the_block_above_markmed(client, specialist, other_sp
     assert block
     assert block.count("Saabunud üksik teema") == 1
     assert html.index('aria-label="Uus asi"') < html.index('aria-label="Märkmed"')
+    # The mark, and the title still readable beside it.
+    assert MARK in block
+    assert block.index(MARK) < block.index("Saabunud üksik teema")
 
 
 def test_several_unread_render_one_heading_and_every_row(client, specialist, other_specialist):
@@ -683,6 +692,10 @@ def test_several_unread_render_one_heading_and_every_row(client, specialist, oth
     assert html.count('<h2 class="railblock__label">Uus asi</h2>') == 1
     for title in titles:
         assert title in block
+    # One mark per unread row, not one per section. Three arrivals are three
+    # things somebody has to look at, and a single mark over a list of three
+    # says only that *something* came in.
+    assert block.count(MARK) == len(titles)
 
 
 def test_the_block_shrinks_and_then_disappears(client, specialist, other_specialist):
@@ -702,6 +715,10 @@ def test_the_block_shrinks_and_then_disappears(client, specialist, other_special
     assert "Teema A saabunud" in block
     assert "Teema C saabunud" in block
     assert "Teema B saabunud" not in block
+    # The mark is drawn from the notice being unread and from nothing else, so
+    # the one that was opened took its mark with it and the other two kept
+    # theirs. There is no third state for a mark to be left in.
+    assert block.count(MARK) == 2
 
     for remaining in list(_active(specialist)):
         client.post(_open_url(remaining))
@@ -709,7 +726,78 @@ def test_the_block_shrinks_and_then_disappears(client, specialist, other_special
     html = client.get(MY_WORK).content.decode()
     assert _rail(html) == ""
     assert "Uus asi" not in html
+    assert "newasjarow__mark" not in html
     assert "Märkmed" in html
+
+
+# ---------------------------------------------------------------------------
+# The mark itself: what it is made of, and what it is not
+# ---------------------------------------------------------------------------
+
+
+def test_the_mark_is_inside_the_row_that_acknowledges_the_notice(
+    client, specialist, other_specialist
+):
+    """One «!», in the button, before the title — and the button is still a POST.
+
+    The mark had to go somewhere, and the only place that keeps it tied to the
+    notice is inside the control that acknowledges it. A mark beside the form
+    would be a second thing to keep in step with the first.
+    """
+    matter = factories.MatterFactory(owner=None, title="Märgiga saabunud teema")
+    assign_matter(matter=matter, owner=specialist, actor=other_specialist)
+    notice = _active(specialist).get()
+    client.force_login(specialist)
+
+    block = _rail(client.get(MY_WORK).content.decode())
+
+    assert 'method="post"' in block
+    assert _open_url(notice) in block
+    assert "csrfmiddlewaretoken" in block
+    row = re.search(r"<form class=\"newasjarow\".*?</form>", block, re.S).group(0)
+    assert row.count(MARK) == 1
+    assert row.index(MARK) < row.index("Märgiga saabunud teema")
+
+
+def test_the_mark_is_hidden_from_a_screen_reader_and_the_title_is_not(
+    client, specialist, other_specialist
+):
+    """§B4. The red is the visual half of a fact the section states in words.
+
+    A screen reader reaches these rows through «Uus asi», so the row's own name
+    is the Teema and nothing else: an exclamation point announced once per row
+    would be punctuation read aloud, and the reader would still not have been
+    told anything the heading had not already said.
+    """
+    matter = factories.MatterFactory(owner=None, title="Ekraanilugeja teema")
+    assign_matter(matter=matter, owner=specialist, actor=other_specialist)
+    client.force_login(specialist)
+
+    block = _rail(client.get(MY_WORK).content.decode())
+
+    assert 'aria-hidden="true">!</span>' in block
+    assert "Ekraanilugeja teema" in block
+    # The section is what names the state, and it still does.
+    assert 'aria-label="Uus asi"' in block
+
+
+def test_the_mark_is_the_products_own_red_and_nothing_louder() -> None:
+    """§B1, read off the stylesheet.
+
+    Danger red because that is the red this product already has; a second one
+    would be a second vocabulary for the same idea. And nothing else: the rule
+    colours a single character, so the row it sits in is still the quiet rail
+    row every other block on the rail uses.
+    """
+    from pathlib import Path
+
+    css = (Path(settings.BASE_DIR) / "static" / "css" / "app.css").read_text(encoding="utf-8")
+    rule = re.search(r"\.newasjarow__mark \{(.*?)\}", css, re.S)
+
+    assert rule, "the unread mark has no rule of its own"
+    assert "var(--status-danger)" in rule.group(1)
+    assert "background" not in rule.group(1), "one mark, not a red card"
+    assert "animation" not in rule.group(1), "no pulse"
 
 
 # ---------------------------------------------------------------------------
@@ -737,6 +825,7 @@ def test_a_department_head_does_not_receive_a_colleagues_queue(client, specialis
     assert "assignment_notices" not in response.context
     assert _rail(html) == ""
     assert 'aria-label="Uus asi"' not in html
+    assert "newasjarow__mark" not in html
     assert reverse("matters:open_assignment_notice", kwargs={"notice_id": notice.pk}) not in html
 
     notice.refresh_from_db()
@@ -754,6 +843,7 @@ def test_a_person_reading_their_own_page_by_the_person_route_still_gets_it(
     html = client.get(reverse("matters:person_work", kwargs={"pk": specialist.pk})).content.decode()
 
     assert "Iseenda lehel nähtav" in _rail(html)
+    assert MARK in _rail(html)
 
 
 # ---------------------------------------------------------------------------
