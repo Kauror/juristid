@@ -85,3 +85,10 @@ artifacts/
 # refuses to run anywhere real data is permitted. Every pixel in them is
 # synthetic, and a baseline that is not in the repository is not a baseline.
 !e2e/baselines/*.png
+
+# The Matter-refinement development server's own output and scratch data
+# (devtools/matter-refinement). Local only: the captures it takes are not
+# baselines, and the evidence root it writes is synthetic.
+.devserver.*
+.devdata/
+devtools/matter-refinement/shots/

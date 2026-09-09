@@ -696,17 +696,27 @@ def test_the_quick_dates_carry_the_day_the_server_resolved(client, specialist) -
     assert "→ " in body
 
 
-def test_the_l_shortcut_is_advertised_where_it_applies() -> None:
+def test_the_l_shortcut_has_an_obvious_click_equivalent() -> None:
     """Every keyboard shortcut has an obvious click equivalent (AGENTS.md).
 
-    Here the equivalent is the closed row itself, which is the disclosure's own
-    <summary>; the hint says which key does the same thing.
+    The rule is about the *equivalent*, not about advertising the key, and the
+    equivalent has always been the closed row itself — the disclosure's own
+    `<summary>`. The 2026-09 refinement dropped the `L` hint that sat at the end
+    of that row explaining a letter to a reader who had not asked, and added a
+    second click target in its place: the Järgmiseks row above the composer now
+    opens it too (design handoff §20, §24; the hint is named under TEXT NOT
+    PRESENT in the approved copy inventory).
+
+    The shortcut itself is untouched, which is what the last two assertions are
+    for: `ux.js` still binds it, and it still refuses to fire inside a text
+    control.
     """
     composer = (TEMPLATE_DIR / "matters" / "partials" / "composer.html").read_text(encoding="utf-8")
-    assert '<kbd class="key">L</kbd>' in composer
     assert "<summary" in composer, "the click equivalent is the summary itself"
+    assert '<kbd class="key">L</kbd>' not in composer, "the hint was retired, not the shortcut"
 
     script = (JS_DIR / "ux.js").read_text(encoding="utf-8")
+    assert '"l"' in script.lower(), "the shortcut is still bound"
     assert "isEditing" in script, "no shortcut may fire inside a text control"
 
 

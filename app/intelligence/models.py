@@ -49,6 +49,11 @@ from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictorySta
 from app.workflow.dates import format_at_precision, is_approximate, period_bounds
 from app.workflow.enums import DatePrecision
 
+#: How far ahead a date is still counted in days beside itself. See
+#: `MatterImportantDate.distance_label`; the header band applies the same
+#: window to `Arvamuse tähtaeg` (templates/matters/partials/header.html).
+DISTANCE_WINDOW_DAYS = 60
+
 #: Reused by every constraint that guards a visibility override column.
 VISIBILITY_OVERRIDE_VALUES = ["", Visibility.NORMAL, Visibility.RESTRICTED]
 
@@ -219,6 +224,33 @@ class MatterImportantDate(MatterFact):
     def has_passed(self, today: date | None = None) -> bool:
         """A period is past only once its **last** day is behind us."""
         return self.period_end < (today or timezone.localdate())
+
+    def distance_label(self, today: date | None = None) -> str:
+        """«N p» — how far off this is, or nothing at all.
+
+        The muted qualifier the 2026-09 refinement puts beside the date. A list
+        of dates answers *when*; a reader scanning it is asking *how soon*, and
+        deriving that from four calendar dates is arithmetic they should not be
+        doing (design handoff C12).
+
+        The window is the header band's own: a date more than sixty days out is
+        rendered as the date alone, because past that a day count stops telling
+        anybody anything and starts pushing the title off the row. The rule and
+        the number are `active_deadline`'s — stated here rather than shared
+        because that selector answers a different question (which single
+        deadline the header shows) and folding the two together would couple a
+        row's presentation to the header's choice of row.
+
+        Nothing for a date behind us. What a past `Oluline tähtaeg` should say
+        is undetermined by the design and is deliberately left alone: the row
+        already carries `factrow--past`, and inventing «N p üle» here would put
+        a lateness claim on a milestone this page has never made.
+        """
+        day = today or timezone.localdate()
+        if self.period_end < day:
+            return ""
+        remaining = (self.period_end - day).days
+        return f"{remaining} p" if remaining <= DISTANCE_WINDOW_DAYS else ""
 
     def recomputed_bounds(self) -> tuple[date, date]:
         """What ``date_value``/``period_end`` should be for this precision."""
