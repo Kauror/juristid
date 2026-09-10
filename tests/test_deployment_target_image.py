@@ -578,3 +578,67 @@ def test_both_runbooks_name_the_thing_that_goes_wrong(readme: str, recovery: str
             f"{name} no longer names the fallback tag, which is the concrete thing that goes "
             "wrong when the identity is missing"
         )
+
+
+# ---------------------------------------------------------------------------
+# The CI guard's own derivation
+#
+# `assert_deployment_identity.py` runs where Docker is, so nothing here can run
+# it against a resolved Compose file. What *can* be checked without Docker is
+# the one thing that went stale twice: which services it thinks a release
+# replaces.
+#
+# It listed them — `("web", "extractor", "searchindex")` — and was correct on
+# the day it was written. `extractor` left both stacks with docs/adr/0069 and
+# the guard then failed claiming it was "looking at the wrong file", when what
+# had happened is that the deployment changed shape and the list had not. The
+# same thing happened to `scripts/ci/assert_scanner_topology.py` in PR #163, so
+# the rule is derived now, and this is the test that a derivation which quietly
+# stopped matching cannot pass.
+# ---------------------------------------------------------------------------
+
+
+def _identity_guard():
+    """The CI script, loaded by path. `scripts/` is not a package."""
+    import importlib.util
+
+    path = Path(settings.BASE_DIR) / "scripts" / "ci" / "assert_deployment_identity.py"
+    spec = importlib.util.spec_from_file_location("assert_deployment_identity", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_identity_guard_derives_exactly_this_stacks_application_services() -> None:
+    """Derived by the script, pinned here — the split that makes both safe.
+
+    The script deriving is what puts the next worker somebody writes in scope
+    the day they write it. This asserting the *output* is what stops a pattern
+    that matches nothing from leaving the guard green over one service. Add a
+    fourth worker and this fails, somebody reads it, and the requirement itself
+    stays derived.
+    """
+    import yaml
+
+    guard = _identity_guard()
+    compose = yaml.safe_load((MAIN / "compose.yml").read_text(encoding="utf-8"))
+    # The raw file rather than a resolved one: `${JURISTID_IMAGE_TAG:-local}`
+    # is still inside the image string, and the prefix is what is being matched.
+    assert guard.application_services(compose["services"]) == [
+        "intake-reader",
+        "searchindex",
+        "web",
+    ]
+
+
+def test_the_identity_guard_refuses_a_stack_that_is_not_this_one() -> None:
+    """Its original job, which the derivation must not lose.
+
+    Pointed at the wrong Compose file the guard has to say so rather than
+    silently assert nothing — that was the whole point of naming `web`.
+    """
+    guard = _identity_guard()
+    with pytest.raises(SystemExit) as exit_code:
+        guard.application_services({"db": {"image": "postgres:18"}})
+    assert exit_code.value.code == 1
