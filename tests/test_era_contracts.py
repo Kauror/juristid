@@ -10,6 +10,7 @@ import pytest
 from app.legacy_import.contracts import (
     AUTHORITY_LEVELS,
     CANONICAL_FIELDS,
+    ColumnContract,
     ContractError,
     EraContract,
     contract_for_year,
@@ -144,6 +145,58 @@ def test_the_sent_date_has_no_canonical_home_and_says_so() -> None:
         assert column is not None
         assert column.authority == "deferred"
         assert "Submission" in column.notes
+
+
+def test_oigusakt_is_mapped_in_every_era_and_still_writes_nothing() -> None:
+    """`ÕIGUSAKT` has a canonical home now, and the import still does not use it.
+
+    The column was `deferred` from Stage 2A until docs/adr/0070, on the correct
+    argument that nobody had said where it belonged. It belongs to
+    `Matter.legal_instruments` now, and every historical spelling has a reviewed
+    reading in `app.taxonomy.legal_instruments` — so `deferred` became false.
+
+    `authoritative` would have been false in the other direction, which is the
+    whole reason `mapped` exists: a reviewed *reading* of a column is not an
+    importer that applies it, and whether a spreadsheet cell may overwrite a
+    lawyer's own classification is a precedence question nobody has answered.
+    The assertion below is the one that keeps the contract honest about that.
+    """
+    for year in YEARS:
+        column = contract_for_year(year).column_for("legal_instrument")
+        assert column is not None, f"{year} must read ÕIGUSAKT"
+        assert column.authority == "mapped", year
+        # The cell is still stored verbatim. Nothing normalises source evidence.
+        assert column.parser == "raw", year
+        # And nothing writes the canonical model on import.
+        assert not column.is_written_to_canonical_model, year
+        assert "legal_instruments" in column.notes, year
+
+
+def test_the_mapped_level_is_not_a_synonym_for_any_other() -> None:
+    """A level that behaved like `deferred` would not be worth having.
+
+    What distinguishes it is exactly one claim — *there is a reviewed home and
+    a reviewed reading* — and exactly one non-claim, that the importer writes
+    neither. Both are asserted here so that widening
+    `is_written_to_canonical_model` later cannot pass silently.
+    """
+    assert "mapped" in AUTHORITY_LEVELS
+    written = {
+        level
+        for level in AUTHORITY_LEVELS
+        if ColumnContract(
+            letter="A",
+            header="X",
+            canonical_field="title",
+            parser="text",
+            authority=level,
+            direction="",
+            meaning="",
+            null_semantics="x",
+            notes="",
+        ).is_written_to_canonical_model
+    }
+    assert written == {"authoritative", "optional"}
 
 
 @pytest.mark.parametrize("year", YEARS)

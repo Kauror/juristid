@@ -162,7 +162,7 @@ has a place already built for the answer to land.
 | What the five free-text `HETKESEIS` variants mean | Lawyers | Before the first real import | The rows use `Riigikogus 2. lugemisel`, `riigikogus 2. lugemisel`, `kinnitatud`, `rohkem tegevusi pole` and `rohkem tegevusi pole plaanis`, none of which are in the controlled eleven. The last two sit one word from the controlled `rohkem pole tegevusi plaanis`. **The importer will not decide they are the same value.** Each answer becomes one reviewed `LegacyStatusMapping` row. |
 | What the unlabelled 2022 column K holds | Whoever kept the 2022 sheet | Before the first real import | 27 non-blank values, no header, no established semantics. Preserved raw and flagged. Assigning it a meaning without evidence is exactly what the era contracts exist to prevent. |
 | Whether `VÄLJA` (the sent date) should become a Submission | Department head + reporting owner | Stage 2B | The register records when an opinion went out. Juristid's canonical outbound record is `Submission`, whose `SENT` state requires both a timestamp and an immutable final evidence document. Importing a bare date would create a sent opinion with no evidence and break a Stage-1 invariant, so the value is preserved raw and no Submission is created. The alternative — a `SENT_HISTORICAL` state that does not require evidence — is a real option and a real weakening, and it is not the coding agent's call. |
-| Whether `ÕIGUSAKT` (instrument type) becomes a canonical field | Department head + reporting owner | Stage 4 | Present in every year and used in every row. It is not a Track and not a stage. Its notation changed from single letters (`S`, `M`, `D`) to words (`seadus`, `määrus`, `direktiiv`, `VTK`, `muu`), so any canonical field needs a reviewed mapping across eras. Preserved raw meanwhile. |
+| ~~Whether `ÕIGUSAKT` (instrument type) becomes a canonical field~~ — **resolved by ADR 0070** | Department head + reporting owner | Decided 2026-09-10 | **It does, and it is multi-select.** `Matter.legal_instruments` points at a reviewed `LegalInstrumentType` vocabulary of seventeen rows, derived from a read-only survey of all sixteen year sheets — 2418 non-empty cells in 58 distinct spellings — and it is not a Track and not a stage, exactly as this row said. The mapping across eras the row asked for exists as one seam, `canonical_legal_instrument_keys`, with every spelling covered by test and two of them (`EL`, `sisendi küsimine VTK ettevalmistamiseks`) deliberately left unmapped rather than filed as `Muu`. The raw value is preserved unchanged, and the era contracts moved from `deferred` to a new `mapped` authority that says the reading exists and the importer does not apply it. **What is still open is narrower and named below**: whether a source value may overwrite a person's canonical selection during the recurring register refresh. No historical backfill has been run. | Done — `app/taxonomy/legal_instruments.py`, `taxonomy/0005`–`0006`, `matters/0015`, ADR 0070 |
 | ~~Who attests the active set, and how~~ — **resolved by ADR 0020** | Department head | Decided 2026-08-21 | The active set is the 2026 register year, activated wholesale by `promote_current_register`. Everything before it defaults to historical (`historical_cutover_state`), and an older Matter becomes current only through a per-Matter written attestation via `reactivate_historical_matter`. What remains open is narrower and listed below: who may record that attestation. |
 | Whether pre-numbered references should become placeholder Matters | Department head | Before the first real import | The 2026 sheet is numbered to `2026_300` while 192 rows carry a matter. Stage 2A treats the other 108 as reserved numbers: no Matter, but the reference sequence is pushed past them so native creation cannot collide. The alternative — creating 108 empty Matters — was rejected as manufacturing records, but it is a defensible choice if the department wants the numbers visible in Teemad. |
 | Whether the `JÄRGMISEKS` candidates should be applied at cutover | Department head + lawyers | Stage 2B or cutover | 159 cells are populated in the snapshot; 13 produce a deterministic candidate. The rest is prose that does not state its own meaning. Nothing is converted automatically. A reviewed candidate file could create the approved ones at cutover without anybody retyping them. |
@@ -527,3 +527,64 @@ for sentence into `workflow/0006`. Two of them a migration cannot resolve:
 
 The `idee` text as supplied carries an unbalanced parenthesis and is transcribed
 as given. Closing it would be a guess about where the sentence was meant to end.
+
+## Surfaced by the Õigusakt field (2026-09-10)
+
+`ÕIGUSAKT` is a canonical Matter field now (ADR 0070), which closes the row in
+*Raised during Stage 2A* and opens exactly one narrower question in its place.
+
+### May a source value overwrite a person's Õigusakt?
+
+`Matter.legal_instruments` can be answered two ways: a lawyer chooses it on
+`Uus teema`, or the historical register says it and
+`canonical_legal_instrument_keys` reads what it says. Both readings exist today.
+Neither is applied to the other's records, because nobody has decided what
+happens when they disagree — and the disagreement is not hypothetical: the
+recurring current-register refresh (`refresh_matter_from_register`, ADR 0045)
+runs against Matters people are working on.
+
+Three answers are available and they are genuinely different:
+
+- **the person always wins** — the source fills only an empty field, ever;
+- **the source always wins** — the register is authoritative for this column the
+  way it is for `Saabus`, and a lawyer's correction is overwritten on the next
+  refresh;
+- **the source proposes** — a disagreement becomes a review finding rather than
+  a write, like the `JÄRGMISEKS` candidates.
+
+Until it is answered: `legal_instruments` is deliberately **not** a keyword of
+`refresh_matter_from_register`, so nothing picks it up by accident; no
+historical backfill has been run, in any environment; and the era contracts say
+`mapped` rather than `authoritative`, which is the contract vocabulary stating
+exactly this gap.
+
+**Owner:** department head + reporting owner. **Where it lands:** one keyword on
+`refresh_matter_from_register`, one reviewed apply command, and a change of the
+era-contract authority from `mapped` to whatever the answer makes true.
+
+### The two spellings the mapping will not read
+
+Seven of the register's 2418 `ÕIGUSAKT` cells carry a value that names no
+instrument: six say `EL` and one says `sisendi küsimine VTK ettevalmistamiseks`.
+They are preserved raw and given no canonical classification, because `Muu` is
+an answer — *the kind is some other kind* — and neither of them gives one.
+
+Nothing needs deciding for the product to work; what a reviewed backfill would
+need is somebody saying whether those seven rows should be looked at by hand.
+They are listed as data in `UNMAPPABLE_RAW_VALUES` and asserted by test, so they
+cannot be lost track of.
+
+### The header text on the 2011–2017 era contracts
+
+Noticed while surveying the column and deliberately **not** changed here. Those
+seven contracts declare `header = "ÕIGUSAKT"` for column C, and the sheets in
+the department's own working copy head that column «Määrus/ seadus/ dok»,
+«Määrus/ seadus/ direktiiv» and «SEADUS, MÄÄRUS, VTK, DIREKTIIV». The column,
+its position and its meaning are the ones the contract describes — only the
+transcribed heading differs, and it differs only for the years that predate the
+`ÕIGUSAKT` spelling.
+
+Whether the contracts should record the heading each sheet actually carries is a
+question for whoever owns the era contracts, checked against the *approved
+snapshot* rather than against a working copy. This branch changed only the
+column's `authority` and `notes`.

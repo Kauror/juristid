@@ -39,6 +39,18 @@ class ChangeEventType(models.TextChoices):
     # is not a position, not a stage and not taxonomy, and a timeline that
     # called it any of those would be describing a change that did not happen.
     MATTER_POLICY_AREA_OTHER_SET = "MATTER_POLICY_AREA_OTHER_SET", "Muu valdkond muudetud"
+    # Which Õigusakt a Matter concerns. Its own event beside the Valdkonnad
+    # pair above rather than a shared "classification changed", for the reason
+    # every other field here has its own: Menetlusliik, Valdkond and Õigusakt
+    # are three independent answers, and a history that could not say which of
+    # them somebody corrected would be a history nobody trusts (docs/adr/0070).
+    MATTER_LEGAL_INSTRUMENTS_CHANGED = "MATTER_LEGAL_INSTRUMENTS_CHANGED", "Õigusakt muudetud"
+    # And the free text beside it, which is not taxonomy and moves no relation —
+    # the same split MATTER_POLICY_AREA_OTHER_SET makes for the same reason.
+    MATTER_LEGAL_INSTRUMENT_OTHER_SET = (
+        "MATTER_LEGAL_INSTRUMENT_OTHER_SET",
+        "Muu õigusakt muudetud",
+    )
     MATTER_VISIBILITY_CHANGED = "MATTER_VISIBILITY_CHANGED", "Nähtavus muudetud"
     # Real business data, or a record made while developing. Its own event
     # rather than a reused field-change one, for the same reason as the two

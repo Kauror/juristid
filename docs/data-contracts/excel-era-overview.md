@@ -4,7 +4,7 @@
 olevad `excel-era-<aasta>.toml` failid ja selle kirjutab uuesti
 `python manage.py check_era_contracts`.
 
-Lepingu skeemi versioon: `1.0`.
+Lepingu skeemi versioon: `1.1`.
 
 ## Ajastud
 
@@ -35,7 +35,7 @@ Registri põhikuju. Kaheksa veergu. Vastaspool on KELLELT ehk saatja. Liikmete t
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -50,7 +50,7 @@ Registri põhikuju. Kaheksa veergu. Vastaspool on KELLELT ehk saatja. Liikmete t
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -65,7 +65,7 @@ Registri põhikuju. Kaheksa veergu. Vastaspool on KELLELT ehk saatja. Liikmete t
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -80,7 +80,7 @@ Registri põhikuju. Kaheksa veergu. Vastaspool on KELLELT ehk saatja. Liikmete t
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -95,7 +95,7 @@ Registri põhikuju. Kaheksa veergu. Vastaspool on KELLELT ehk saatja. Liikmete t
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -110,7 +110,7 @@ Registri põhikuju. Kaheksa veergu. Vastaspool on KELLELT ehk saatja. Liikmete t
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -125,7 +125,7 @@ Registri põhikuju. Kaheksa veergu. Vastaspool on KELLELT ehk saatja. Liikmete t
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -140,7 +140,7 @@ Kümme veergu. Vastaspool on endiselt KELLELT ehk saatja. Ilmuvad liikmete tagas
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -157,7 +157,7 @@ Kümme veergu. Vastaspool on endiselt KELLELT ehk saatja. Ilmuvad liikmete tagas
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -174,7 +174,7 @@ Vastaspoole veerg muutub: KELLELT asemel on KELLELE ja tähendus pöördub saatj
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -191,7 +191,7 @@ Vastaspoole veerg muutub: KELLELT asemel on KELLELE ja tähendus pöördub saatj
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -208,7 +208,7 @@ Vastaspoole veerg muutub: KELLELT asemel on KELLELE ja tähendus pöördub saatj
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -226,7 +226,7 @@ Ilmub HETKESEIS. Kasutus on hõre ja ebaühtlane, 2024 sisaldab vabatekstilisi v
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -244,7 +244,7 @@ Ilmub HETKESEIS. Kasutus on hõre ja ebaühtlane, 2024 sisaldab vabatekstilisi v
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -262,7 +262,7 @@ Ilmub JÄRGMISEKS, kuid ainult osal ridadest. Tekst säilib sõna-sõnalt ja sed
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |
@@ -281,7 +281,7 @@ Praegune standardiseeritud tööstruktuur. Kõik algne tekst säilib. Igast reas
 | --- | --- | --- | --- | --- | --- |
 | A | `NR` | `matter_reference` | `human_reference` | kanooniline | Tühi tähendab, et reale ei ole kunagi viidet antud. Selline rida ei ole teemarida. |
 | B | `TEEMA` | `title` | `text` | kanooniline | Tühi pealkiri on andmekvaliteedi märge, mitte tühi teema. Ilma pealkirjata rida ei impordi, vaid läheb ülevaatusse. |
-| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | edasi lükatud | Tühi tähendab, et liiki ei märgitud. |
+| C | `ÕIGUSAKT` | `legal_instrument` | `raw` | kaardistatud | Tühi tähendab, et liiki ei märgitud. |
 | D | `SISSE` | `received_date` | `date` | kanooniline | Tühi ei ole epohh ega null. Tühi tähendab, et saabumiskuupäeva ei ole kirjas. |
 | E | `ARVAMUSE TÄHTAEG` | `response_deadline` | `date` | kanooniline | Tühi tähendab, et tähtaeg ei ole kirjas — mitte et tähtaega ei olnud. |
 | F | `VÄLJA` | `opinion_sent_date` | `date` | edasi lükatud | Tühi tähendab, et väljasaatmise kuupäeva ei ole kirjas. |

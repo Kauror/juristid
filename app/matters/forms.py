@@ -32,8 +32,12 @@ from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, MatterDataClass
 from app.matters.models import Matter
 from app.organisations.models import Organisation
-from app.taxonomy.models import PolicyArea, Tag
-from app.taxonomy.vocabulary import selectable_policy_areas
+from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEY
+from app.taxonomy.models import LegalInstrumentType, PolicyArea, Tag
+from app.taxonomy.vocabulary import (
+    selectable_legal_instrument_types,
+    selectable_policy_areas,
+)
 from app.workflow.dates import MAX_YEAR, MIN_YEAR, InvalidPeriod, bounds_for
 from app.workflow.enums import (
     ESTONIAN_MONTHS,
@@ -182,6 +186,137 @@ def offered_policy_areas() -> list[PolicyArea]:
     is learnable and a self-rearranging one is not.
     """
     return list(selectable_policy_areas())
+
+
+def legal_instruments_field() -> forms.ModelMultipleChoiceField:
+    """The `Õigusakt` control, defined once for the two forms that carry it.
+
+    Checkboxes, because `Matter.legal_instruments` holds several — the control
+    shape is a promise about the data, and shipping a single-value control over
+    a many-valued field is the one thing the approved design forbids outright
+    (OIGUSAKT_UUS_TEEMA_DESIGN §4, ADR 0025).
+
+    The queryset is empty here and filled per form: `Uus teema` offers the
+    active vocabulary, `Muuda teemat` validates against all of it so a Matter
+    carrying a since-retired type does not lose it to an unrelated correction.
+    """
+    return forms.ModelMultipleChoiceField(
+        label="Õigusakt",
+        queryset=LegalInstrumentType.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+    )
+
+
+def legal_instrument_other_field() -> forms.CharField:
+    """The box `Muu` reveals. Label exactly «Õigusakti liik» (design §16).
+
+    `required=False` at the field level and required by `clean` when `Muu` is
+    among the chosen instruments — the same shape `policy_area_other` has,
+    because "required, but only in one state" is a fact about the form and not
+    about the field.
+    """
+    return forms.CharField(
+        label="Õigusakti liik",
+        max_length=400,
+        required=False,
+        widget=forms.TextInput(attrs={"class": "field__input field__input--compact"}),
+    )
+
+
+def clean_legal_instrument_answer(form: forms.Form, cleaned: dict[str, Any]) -> None:
+    """Settle `Õigusakt` and the text beside it, for whichever form asks.
+
+    One implementation, because `Uus teema` and `Muuda teemat` must agree about
+    what `Muu` means: a rule that is true on the page somebody files from and
+    false on the page they correct from is a rule people learn twice.
+
+    Two things happen here and both are decisions rather than tidying:
+
+    * **Free text belongs to the chip that reveals it.** Unticking `Muu` and
+      leaving the box full must not quietly save the text — the same rule
+      `policy_area_other` follows. Nothing "hidden" survives a save.
+    * **`Muu` without the text is refused**, on the box that is empty. `Muu`
+      alone records that the instrument was none of sixteen listed kinds and
+      says nothing about which, which is less than the blank field it replaced.
+    """
+    chosen = list(cleaned.get("legal_instruments") or [])
+    other_selected = any(item.key == OTHER_LEGAL_INSTRUMENT_KEY for item in chosen)
+    cleaned["legal_instrument_other"] = (cleaned.get("legal_instrument_other") or "").strip()
+    if not other_selected:
+        cleaned["legal_instrument_other"] = ""
+    elif not cleaned["legal_instrument_other"]:
+        form.add_error("legal_instrument_other", "Kirjuta, millise õigusaktiga on tegemist.")
+
+
+class LegalInstrumentChoicesMixin:
+    """What the template needs to draw the row, on both forms that draw it.
+
+    `Muu` is a real vocabulary row here rather than a checkbox beside one, so
+    the template cannot tell it apart by field name the way the Valdkonnad block
+    does. It compares against these instead — one property saying which rendered
+    value is `Muu`, one saying whether its box renders open.
+    """
+
+    fields: dict[str, forms.Field]
+    errors: Any
+
+    #: Set by `offer_legal_instruments`. Declared here so a form that somehow
+    #: never called it renders a plain chip row instead of raising.
+    _other_instrument_value: str = ""
+
+    def offer_legal_instruments(self, offered: Sequence[Any]) -> None:
+        """Render these types, in this order, and remember which one is `Muu`.
+
+        Both forms narrow the *rendered* list without narrowing the validating
+        queryset — the edit form so a Matter carrying a since-retired type keeps
+        it — so the choices are assigned rather than left to Django's iterator,
+        and the `Muu` row's rendered value has to be captured while the objects
+        are still in hand. Reading it back off `choices` afterwards would mean
+        either a query per render or a dependence on Django keeping the
+        model instance attached to the value it yields.
+        """
+        cast(Any, self.fields["legal_instruments"]).choices = [
+            (item.pk, item.label_et) for item in offered
+        ]
+        other = next((item for item in offered if item.key == OTHER_LEGAL_INSTRUMENT_KEY), None)
+        self._other_instrument_value = "" if other is None else str(other.pk)
+
+    @property
+    def other_instrument_value(self) -> str:
+        """The rendered value of the `Muu` chip, as the template sees it.
+
+        `Muu` is a real vocabulary row here rather than a checkbox beside one —
+        see docs/adr/0070 §8 for why — so the template cannot tell it apart by
+        field name the way the Valdkonnad block does, and compares against this.
+
+        Empty when the offered vocabulary carries no `Muu` row. That is a real
+        state, not an error: a database seeded before this vocabulary existed
+        renders a plain chip row and no reveal.
+        """
+        return self._other_instrument_value
+
+    @property
+    def other_instrument_open(self) -> bool:
+        """Whether the free-text box renders visible without any scripting.
+
+        True when `Muu` is ticked in whatever this form is about to render —
+        the POST on a refused save, the Matter's own values on an unbound edit.
+        `BoundField.value()` is what answers both without the caller having to
+        know which it is looking at.
+
+        This is what makes the refusal in design §9 legible: the box comes back
+        open, holding what was typed, with the error inside it. A reveal only
+        JavaScript can open would hide a refusal behind a click (§16, §10).
+        """
+        other = self.other_instrument_value
+        if not other:
+            return False
+        raw = cast(Any, self)["legal_instruments"].value()
+        if raw is None:
+            return False
+        values = raw if isinstance(raw, (list, tuple)) else [raw]
+        return any(str(item) == other for item in values)
 
 
 def _typed_organisation_field(label: str, *, hook: str = "") -> forms.CharField:
@@ -549,7 +684,7 @@ def _default_addressee(form: Any, senders: list[Organisation]) -> tuple[str, str
     return ("addressee_name", typed)
 
 
-class MatterCreateForm(forms.Form):
+class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
     """Creating a Teema requires a title and nothing else.
 
     Everything else is optional and disclosed under a details panel. Demanding
@@ -667,6 +802,14 @@ class MatterCreateForm(forms.Form):
         required=False,
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
+    #: `Õigusakt`, directly after `Menetlusliik` and answered independently of
+    #: it. Checkboxes rather than the radios above, and the asymmetry is the
+    #: whole answer to "do not let these two read as one question split in two":
+    #: the count beside the legend and the `×` on each chosen chip appear here
+    #: and nowhere on Menetlusliik, so the two rows are visibly different kinds
+    #: of control (OIGUSAKT_UUS_TEEMA_DESIGN §4, docs/adr/0070).
+    legal_instruments = legal_instruments_field()
+    legal_instrument_other = legal_instrument_other_field()
     source_organisations = forms.ModelMultipleChoiceField(
         label="Saatja",
         queryset=Organisation.objects.none(),
@@ -827,6 +970,8 @@ class MatterCreateForm(forms.Form):
         if cleaned.get("policy_area_other_selected") and not cleaned["policy_area_other"]:
             self.add_error("policy_area_other", "Kirjuta, millise valdkonnaga on tegemist.")
 
+        clean_legal_instrument_answer(self, cleaned)
+
         return cleaned
 
     def clean_addressee_name(self) -> str:
@@ -969,6 +1114,11 @@ class MatterCreateForm(forms.Form):
         set_choices(self, "source_organisations_other", everything)
 
         set_choices(self, "policy_areas", selectable_policy_areas())
+        # The active vocabulary, in the department's reviewed order. New work is
+        # filed under what is offered today; the edit form is the one that also
+        # has to accept what a Matter already carries.
+        set_choices(self, "legal_instruments", selectable_legal_instrument_types())
+        self.offer_legal_instruments(list(selectable_legal_instrument_types()))
 
         # Ordering is a presentation concern, so it is applied to the rendered
         # choices rather than to the validating queryset.
@@ -1076,7 +1226,7 @@ class MatterCreateForm(forms.Form):
             self.addressee_tail_count = 0
 
 
-class MatterEditForm(forms.Form):
+class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
     """`Muuda teemat` — the whole record on one page.
 
     The redesign replaced the edit page with inline controls in the header and
@@ -1147,6 +1297,11 @@ class MatterEditForm(forms.Form):
         required=False,
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
+    #: The same control `Uus teema` carries, because a canonical Matter fact
+    #: that could only be answered at creation time would be a fact nobody could
+    #: correct — and the two pages are one job seen twice (task §18).
+    legal_instruments = legal_instruments_field()
+    legal_instrument_other = legal_instrument_other_field()
     policy_areas = forms.ModelMultipleChoiceField(
         label="Valdkonnad",
         queryset=PolicyArea.objects.none(),
@@ -1316,6 +1471,17 @@ class MatterEditForm(forms.Form):
             offered += [area for area in matter.policy_areas.all() if area.pk not in known]
         areas = cast(Any, self.fields["policy_areas"])
         areas.choices = [(area.pk, area.name_et) for area in offered]
+
+        # Õigusakt, the same way and for the same reason: validation accepts the
+        # whole vocabulary so a Matter carrying a since-retired type does not
+        # lose it to an unrelated correction, and the *offered* list is the
+        # active one plus whatever this Matter already holds.
+        set_choices(self, "legal_instruments", LegalInstrumentType.objects.all())
+        instruments = list(selectable_legal_instrument_types())
+        if matter is not None:
+            seen = {item.pk for item in instruments}
+            instruments += [item for item in matter.legal_instruments.all() if item.pk not in seen]
+        self.offer_legal_instruments(instruments)
         #: The retired areas this Matter carries. The template says so rather
         #: than showing a ticked box that looks like every other one.
         self.retired_area_ids = {
@@ -1332,6 +1498,10 @@ class MatterEditForm(forms.Form):
             for organisation in cleaned.get(source) or []:
                 senders.setdefault(organisation.pk, organisation)
         cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
+        # One rule about what `Muu` means, shared with `Uus teema`. A rule that
+        # is true on the page somebody files from and false on the page they
+        # correct from is a rule people have to learn twice.
+        clean_legal_instrument_answer(self, cleaned)
         return cleaned
 
     def clean_addressee_name(self) -> str:
@@ -1365,6 +1535,8 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
         "track": matter.track,
         "policy_areas": [area.pk for area in matter.policy_areas.all()],
         "policy_area_other": matter.policy_area_other,
+        "legal_instruments": [item.pk for item in matter.legal_instruments.all()],
+        "legal_instrument_other": matter.legal_instrument_other,
         "source_organisations": [
             organisation.pk for organisation in matter.source_organisations.all()
         ],

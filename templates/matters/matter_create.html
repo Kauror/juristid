@@ -371,6 +371,72 @@
     </div>
 
     {% comment %}
+      7b — Õigusakt: what kind of instrument, beside what kind of procedure.
+
+      A fourth full-width classification row, inserted after Menetlusliik and
+      before Adressaat. Not paired with Menetlusliik and not put in front of
+      it: the three rows above are each one field of wrapping chips, and a
+      fourth one of the same shape is invisible as a change — which is the
+      approved design's stated goal (OIGUSAKT_UUS_TEEMA_DESIGN §3).
+
+      Checkboxes, a `field__count` and a `chip__clear` on every chip. Menetlusliik
+      directly above has none of the three, because it holds one value. That
+      asymmetry is the whole answer to «do not let Õigusakt and Menetlusliik
+      read as one question split in two» — two visibly different controls,
+      answered independently, with no explanatory sentence added anywhere
+      (§4, §6, ADR 0025).
+
+      `Muu` is a real vocabulary row here, unlike Valdkonnad's, so the template
+      cannot tell it apart by field name and compares against the form instead
+      (app/matters/forms.py `other_instrument_value`, docs/adr/0070).
+    {% endcomment %}
+    <div class="createform__row">
+      <fieldset class="field">
+        <legend class="field__label">
+          {{ form.legal_instruments.label }}
+          <span class="field__count" data-chipcount-for="legal_instruments"></span>
+        </legend>
+        <div class="chiprow">
+          {% for choice in form.legal_instruments %}
+            {% if choice.data.value|stringformat:"s" == form.other_instrument_value %}
+              <label class="chip chip--other" id="oigusakt-muu">
+                {{ choice.tag }}
+                <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+              </label>
+            {% else %}
+              <label class="chip">
+                {{ choice.tag }}
+                <span class="chip__name">{{ choice.choice_label }}<span class="chip__clear" aria-hidden="true">×</span></span>
+              </label>
+            {% endif %}
+          {% endfor %}
+        </div>
+        {% comment %}
+          Ticking `Muu` reveals the free-text box directly under the row, the
+          same treatment `Valdkond · Muu` gets. It creates no
+          `LegalInstrumentType` — the text lands in
+          `Matter.legal_instrument_other` and stays this Matter's own.
+
+          Server-rendered open when `Muu` is ticked, so a refused save shows the
+          box and the refusal without any scripting having to run (§9, §16).
+        {% endcomment %}
+        <div class="createform__other" id="oigusakt-muu-tekst"
+             {% if not form.other_instrument_open %}hidden{% endif %}>
+          <label class="field">
+            <span class="field__label">{{ form.legal_instrument_other.label }}</span>
+            {{ form.legal_instrument_other }}
+            {% if form.legal_instrument_other.errors %}
+              <span class="field__error">{{ form.legal_instrument_other.errors|first }}</span>
+            {% endif %}
+          </label>
+        </div>
+        {% if form.legal_instruments.errors %}
+          <span class="field__error">{{ form.legal_instruments.errors|first }}</span>
+        {% endif %}
+      </fieldset>
+    </div>
+
+    {% comment %}
       6 — Adressaat, on a row of its own, and folded away on it.
 
       The field is *answered* by the time somebody reaches it: a file that

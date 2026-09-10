@@ -27,7 +27,7 @@ from __future__ import annotations
 
 from django.db.models import QuerySet
 
-from app.taxonomy.models import PolicyArea
+from app.taxonomy.models import LegalInstrumentType, PolicyArea
 
 
 def selectable_policy_areas() -> QuerySet[PolicyArea]:
@@ -47,3 +47,20 @@ def policy_area_choices() -> list[tuple[str, str]]:
     the stable key, so a bookmarked filter survives a rename.
     """
     return [(area.key, area.name_et) for area in selectable_policy_areas()]
+
+
+def selectable_legal_instrument_types() -> QuerySet[LegalInstrumentType]:
+    """Every Õigusakt a person may attach to a Matter today, in reviewed order.
+
+    The same rule Valdkonnad follows, for the same reason: `is_active` separates
+    the working vocabulary from what the department has stopped filing under, a
+    retired row keeps every relation it has, and `sort_order` carries the
+    reviewed sequence rather than a usage ranking.
+
+    `Muu` is in this list. It is a real row here — unlike Valdkonnad's `Muu`,
+    which is a checkbox that is not a `PolicyArea` — because 1130 of the
+    register's 2418 historical answers are literally «muu», and a vocabulary
+    with nowhere to put them would lose the department's own answer
+    (`app/taxonomy/legal_instruments.py`).
+    """
+    return LegalInstrumentType.objects.filter(is_active=True).order_by("sort_order", "label_et")
