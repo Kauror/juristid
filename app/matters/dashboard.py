@@ -221,7 +221,16 @@ def reviews_due(user: Any, today: date) -> QuerySet[NextAction]:
 
 
 def without_next_action(user: Any) -> QuerySet[Matter]:
-    has_open = NextAction.objects.filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
+    """Open FULL Matters carrying no instruction *this reader can see*.
+
+    Scoped, because a `NextAction` can be restricted below the Matter it hangs
+    off. Read unscoped, a Matter dropped out of Osakond's *järgmine tegevus
+    puudub* column the moment somebody filed a restricted step on it, which is
+    a restricted record announcing itself through a count (AUTH-003).
+    """
+    has_open = NextAction.objects.visible_to(user).filter(
+        matter=OuterRef("pk"), status=ActionStatus.OPEN
+    )
     return active_matters(user).annotate(has_action=Exists(has_open)).filter(has_action=False)
 
 
@@ -379,7 +388,12 @@ def attention_rows(user: Any, today: date | None = None) -> list[AttentionRow]:
             )
         )
 
-    sent = Submission.objects.filter(matter=OuterRef("pk"), status=SubmissionStatus.SENT)
+    # Scoped for the reason `without_next_action` gives: a Submission carries
+    # its own override, and an unscoped probe lets a restricted one decide
+    # whether a visible Matter appears here.
+    sent = Submission.objects.visible_to(user).filter(
+        matter=OuterRef("pk"), status=SubmissionStatus.SENT
+    )
     missed = (
         active_matters(user)
         .filter(response_deadline__lt=today)
