@@ -112,9 +112,13 @@
               corpus say about Koja work". Overloading the dashboard with both
               would make neither readable (Stage-2E brief 6).
 
-              Olulised tähtajad, Jõustuvad aktid and Töövõidud sit behind
-              Tähtajad rather than as three items. They are generated reading
-              surfaces over the same structured facts (Stage-2G brief 38).
+              Olulised tähtajad, Jõustuvad aktid and Töövõidud are not here at
+              all any more, behind Tähtajad or otherwise. Töövõit and
+              Jõustumine are structured filters on Teemad and an Oluline
+              tähtaeg is its owner's own upcoming work, so there is one
+              register to search and one personal queue rather than four
+              parallel lists of the same Matters (docs/adr/0067, superseding
+              Stage-2G brief 38).
 
               Osakond is not in here. It was, as a second department-head-only
               destination beside the universal Ülevaade, and the bar therefore
@@ -135,7 +139,7 @@
                 worth saying is only "you are in here" — which the same inset
                 brand underline the bar uses everywhere else already says.
               {% endcomment %}
-              <summary class="topnav__trigger{% if nav_active == 'jalgimine' or nav_active == 'statistika' %} is-active{% endif %}">Veel</summary>
+              <summary class="topnav__trigger{% if nav_active == 'statistika' %} is-active{% endif %}">Veel</summary>
               <div class="topnav__menu">
                 {% include "components/topnav_secondary.html" %}
               </div>

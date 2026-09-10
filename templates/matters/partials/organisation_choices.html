@@ -8,11 +8,26 @@ HTMX swaps this same fragment back in, which is why the search box and the
 select live together in one file (Stage-2E.1 brief 13).
 
 Without JavaScript the select still holds the currently chosen body plus the
-first page of the catalogue, and the form still submits. The search box is an
-improvement on that, not a precondition for it.
+first page of the catalogue, and the form still submits — and the term somebody
+typed reaches the server as an ordinary parameter, so the page comes back with
+the list they asked for rather than the unsearched first twenty
+(`app.matters.views._organisation_choosers`).
 
-Rendered by the register's Täpsem otsing panel and re-rendered by
-`matters:organisation_choices`, so both paths produce identical markup.
+Rendered by the register's Täpsem otsing panel — for **all three** institution
+dimensions — and re-rendered by `matters:organisation_choices`, so every path
+produces identical markup over one catalogue.
+
+`Saatja` and `Adressaat` used to be plain selects carrying whatever
+`_organisation_options("")` returned, which is the first twenty bodies
+alphabetically. Two consequences, and both were reported as "the asutus I just
+added is not there": a body outside that page could not be chosen at all, and
+an applied `?saatja=` whose body was outside it was not redisplayed in its own
+control — so the next submit silently dropped a filter the chip above still
+claimed was on (docs/adr/0067).
+
+`chosen_value` is the raw parameter and `chosen_organisation` the body it names,
+because they answer different questions: `puudub` names no body and still has to
+come back selected.
 {% endcomment %}
 <fieldset class="field orgchooser" id="orgchooser-{{ field }}">
   <legend class="field__label">{{ field_label }}</legend>
@@ -37,7 +52,7 @@ Rendered by the register's Täpsem otsing panel and re-rendered by
     <span class="visually-hidden">Vali asutus</span>
     <select class="field__input" name="{{ field }}">
       <option value="">Kõik</option>
-      <option value="puudub">Määramata</option>
+      <option value="puudub" {% if chosen_value == "puudub" %}selected{% endif %}>Määramata</option>
       {% comment %}
         The chosen body is listed first and unconditionally. Searching for
         something else must not silently drop a filter that is already applied.

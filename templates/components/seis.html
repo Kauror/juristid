@@ -26,17 +26,17 @@ the stricter form of one rule rather than a second rule.
 `trailing` is the caller's own last child of the strip, *inside* the flex row —
 Osakond's sort control sits on this line, right of a `seis__spacer`, and a
 control lifted out of the row would be a different page. Django's `{% include %}`
-has no slot, so it is a template name, the same way
-`intelligence/partials/tracking_section.html` takes `row_template`.
+has no slot, so it is a template name.
 
-No emptiness guard here: four callers render this band's rule and padding
-whether or not a figure survives, and Osakond renders `trailing` inside it.
-Jälgimine is the one surface that drops the band, and it keeps its own
+No emptiness guard here: every caller renders this band's rule and padding
+whether or not a figure survives, and Osakond renders `trailing` inside it. The
+one surface that dropped the band was Jälgimine, which is retired
+(docs/adr/0067); a caller that needs the band gone still keeps its own
 `{% if seis %}` around the include.
 
-`figures` is duck-typed on `value`, `caption`, `url` and `tone`. Four different
-dataclasses feed this — two `SeisFigure`s and two `Figure`s — and only two of
-them carry `key`, which no template has ever read.
+`figures` is duck-typed on `value`, `caption`, `url` and `tone`. Several
+different dataclasses feed this and only some carry `key`, which no template has
+ever read.
 {% endcomment %}
 <div class="seis{% if compact %} seis--compact{% endif %}">
   {% for figure in figures %}

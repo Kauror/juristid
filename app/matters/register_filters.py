@@ -109,6 +109,52 @@ WORK_WINDOW_END_PARAM = "too_kuni"
 #: the department finished it (Ülevaade's Aruandlus rail asks the second).
 CLOSED_YEAR_PARAM = "suletud"
 
+#: What `?toovoit=` and `?joustumine=` mean. The register's own two words for
+#: "this fact is on the file" and "it is not", so a reader who already knows
+#: `?allikas=on` does not have to learn a second vocabulary.
+FACT_PRESENT = "on"
+FACT_ABSENT = "puudub"
+
+#: Teemad answers "which files carry a Töövõit", and answers it about the same
+#: population the retired Töövõidud page listed.
+#:
+#: The definition is imported rather than restated — `VISIBLE_VICTORY_STATUS` is
+#: the one place that says which internal state is a work victory a reader may
+#: see, and a register that decided this for itself would be a second definition
+#: to keep in step (app/intelligence/selectors.py, docs/adr/0067).
+#:
+#: `?toovoit=` takes three shapes and no more: `on`, `puudub`, or a year. The
+#: year is the business period the victory was recorded for — never
+#: `created_at`, never `confirmed_at` — which is the same column the retired
+#: page's `?aasta=` read, so a bookmark's meaning survives the move.
+VICTORY_PARAM = "toovoit"
+
+#: Teemad answers "which files carry a Jõustumine" from the structured
+#: `MatterEffectiveDate` records and from nothing else: never from the title,
+#: the Menetlusliik, the Hetkeseis or a tag, all of which would be guesses
+#: dressed as a filter.
+COMMENCEMENT_PARAM = "joustumine"
+
+#: The commencement window, both ends inclusive, over the same records.
+#:
+#: **Containment, not overlap**, and that is the whole of the period question.
+#: A commencement recorded as *III kvartal 2026* is a claim about a quarter, so
+#: the only window this product can honestly say it falls inside is one that
+#: contains the whole quarter. Asked for 01.07–31.08 it is excluded, because it
+#: may well commence in September and answering "yes" would state a precision
+#: nobody recorded.
+#:
+#: The rule is not new here. `app.intelligence.selectors._direction_q` already
+#: decides *möödunud* by `period_end` for exactly this reason — II poolaasta
+#: 2027 has not passed on 2 July 2027 — and this is that rule with both ends
+#: named instead of one.
+#:
+#: `GENERAL_ORDER` and `UNKNOWN` carry no date at all, by database constraint,
+#: so neither bound can ever match one. They are found by `?joustumine=on`,
+#: which is the honest place for a commencement whose date nobody knows.
+COMMENCEMENT_START_PARAM = "joustub_alates"
+COMMENCEMENT_END_PARAM = "joustub_kuni"
+
 #: The two organisation directions, as URL parameters. Never merged: the same
 #: register column meant the sender until 2019 and the addressee from 2020.
 #: URL parameter -> the lookup path that answers it, and whether the path
@@ -226,6 +272,143 @@ def filter_by_opinion_state(queryset: QuerySet[Matter], value: str) -> QuerySet[
         current_register_state__currency=RegisterCurrency.CURRENT,
         current_register_state__opinion_sent_recorded=value == OPINION_SENT,
     )
+
+
+def filter_by_work_victory(
+    queryset: QuerySet[Matter], user: Any, value: str
+) -> QuerySet[Matter]:
+    """Apply `?toovoit=`: does this file carry a work victory a reader may see.
+
+    **Authorization happens before the existence test contributes anything.**
+    The subquery is ``MatterWorkVictory.objects.visible_to(user)`` rather than
+    the raw table, so a victory restricted below its Matter cannot make that
+    Matter appear — or, under `puudub`, make it disappear. A row this reader may
+    not read is a row that does not exist for this reader, in both directions
+    (Stage-2G brief 31, docs/adr/0067).
+
+    **A Matter appears once however many victories it carries.** ``Exists`` is a
+    correlated subquery rather than a join, so the register's row count is
+    unchanged by a file that won three times — the failure a naive
+    ``filter(work_victories__status=...)`` would produce, and the one the
+    sender-side filters above already pay ``.distinct()`` to avoid.
+
+    An unreadable value empties the list rather than being ignored, like every
+    other filter in this module.
+    """
+    from app.intelligence.models import MatterWorkVictory
+    from app.intelligence.selectors import VISIBLE_VICTORY_STATUS
+
+    victories = MatterWorkVictory.objects.visible_to(user).filter(
+        status=VISIBLE_VICTORY_STATUS, matter=OuterRef("pk")
+    )
+    if value in {FACT_PRESENT, FACT_ABSENT}:
+        return queryset.annotate(has_victory=Exists(victories)).filter(
+            has_victory=value == FACT_PRESENT
+        )
+
+    # A year, read through the same reader every other `?aasta=` uses, so a
+    # value outside the supported range empties the list here too rather than
+    # reaching `period_date__year` and raising (CORR-02).
+    year = year_from(value)
+    if year is None:
+        return queryset.none()
+    # A victory with no period stays out of every year. It is never inferred
+    # into the selected one (Stage-2G brief 27).
+    dated = victories.filter(period_date__year=year)
+    return queryset.annotate(has_dated_victory=Exists(dated)).filter(has_dated_victory=True)
+
+
+def commencement_window(
+    params: Any,
+) -> tuple[tuple[date | None, date | None] | None, dict[str, str]]:
+    """``?joustub_alates=``/``?joustub_kuni=`` as a closed interval, and its echo.
+
+    ``None`` for the interval means "no window was asked for". A window whose
+    text does not parse comes back as ``(None, None)`` *with* an echo, which the
+    caller reads as "this emptied the list" — the same contract
+    :func:`apply_date_filters` keeps, and for the same reason: a chip reading
+    "31.02.2024" above the whole register is a lie the reader has no way to
+    catch.
+
+    Read the way an Estonian writes a date, with ISO still accepted, and echoed
+    back in the one form this application writes (app/core/dates.py).
+    """
+    echo: dict[str, str] = {}
+    bounds: dict[str, date | None] = {}
+    asked = False
+    for parameter, edge in (
+        (COMMENCEMENT_START_PARAM, "start"),
+        (COMMENCEMENT_END_PARAM, "end"),
+    ):
+        raw = (params.get(parameter) or "").strip()
+        if not raw:
+            continue
+        asked = True
+        parsed = parse_flexible_date(raw)
+        if parsed is None:
+            # The raw text, so the reader can see what was refused.
+            echo[parameter] = raw
+            return (None, None), echo
+        echo[parameter] = format_estonian_date(parsed)
+        bounds[edge] = parsed
+    if not asked:
+        return None, echo
+    return (bounds.get("start"), bounds.get("end")), echo
+
+
+def filter_by_commencement(
+    queryset: QuerySet[Matter],
+    user: Any,
+    value: str,
+    window: tuple[date | None, date | None] | None = None,
+) -> QuerySet[Matter]:
+    """Apply `?joustumine=` and the commencement window, over one child read.
+
+    The population is the Matter's **active** ``MatterEffectiveDate`` records,
+    scoped to this reader first — same rule and same reason as
+    :func:`filter_by_work_victory`, and it matters more here because a
+    commencement is frequently the most sensitive thing on a restricted file.
+
+    The window narrows that same population by containment; see
+    :data:`COMMENCEMENT_START_PARAM` for why containment and not overlap. Both
+    ends are optional and both are inclusive.
+
+    ``?joustumine=puudub`` and a window together are a contradiction — "carries
+    no commencement, and it is in April" — and produce nothing, which is what
+    the two conditions honestly mean read together rather than a special case.
+    """
+    from app.intelligence.enums import FactStatus
+    from app.intelligence.models import MatterEffectiveDate
+
+    if value and value not in {FACT_PRESENT, FACT_ABSENT}:
+        return queryset.none()
+
+    commencements = MatterEffectiveDate.objects.visible_to(user).filter(
+        status=FactStatus.ACTIVE, matter=OuterRef("pk")
+    )
+
+    if value:
+        queryset = queryset.annotate(has_commencement=Exists(commencements)).filter(
+            has_commencement=value == FACT_PRESENT
+        )
+
+    if window is not None:
+        start, end = window
+        if start is None and end is None:
+            # A window was asked for and could not be read.
+            return queryset.none()
+        dated = commencements
+        if start is not None:
+            # The period begins no earlier than the lower bound.
+            dated = dated.filter(date_value__gte=start)
+        if end is not None:
+            # And ends no later than the upper one, which is what excludes a
+            # quarter that merely overlaps the window.
+            dated = dated.filter(period_end__lte=end)
+        queryset = queryset.annotate(commences_in_window=Exists(dated)).filter(
+            commences_in_window=True
+        )
+    return queryset
 
 
 def filter_by_work_state(
@@ -426,14 +609,38 @@ def apply_register_filters(
     # them. Nothing stored is collapsed: this is an OR over two columns that
     # keep their separate meanings (Stage-2E.1 brief 11F).
     if involved := params.get("asutus"):
-        try:
+        if involved == selectors.MISSING:
+            # «Määramata» over both directions at once: no sender recorded and
+            # no addressee either. The control has always offered this option
+            # and the filter has always answered it with an empty register,
+            # because `puudub` reached `uuid.UUID()` and was refused as
+            # unreadable — a dead option above a list of nothing, which is
+            # precisely the lie the "unreadable empties the list" rule exists to
+            # prevent. Two conditions rather than one: the outer join over the
+            # plural sender relation produces a single null row for a Matter
+            # with no link at all, so no duplicate is possible here either.
             queryset = queryset.filter(
-                selectors.organisation_involved_q(uuid.UUID(involved))
-            ).distinct()
-        except ValueError:
-            queryset = queryset.none()
+                source_organisations__isnull=True, addressee_organisation__isnull=True
+            )
+        else:
+            try:
+                queryset = queryset.filter(
+                    selectors.organisation_involved_q(uuid.UUID(involved))
+                ).distinct()
+            except ValueError:
+                queryset = queryset.none()
     if materials := params.get("materjalid"):
         queryset = selectors.filter_by_materials(queryset, user, materials)
+    # The two structured facts Teemad became the discovery surface for. Both
+    # consult a child table and both scope it to this reader before the
+    # existence test contributes anything, exactly as `?materjalid=` and
+    # `?tegevus=` above do (docs/adr/0067).
+    if victory := params.get(VICTORY_PARAM):
+        queryset = filter_by_work_victory(queryset, user, victory)
+    window, commencement_echo = commencement_window(params)
+    commencement = params.get(COMMENCEMENT_PARAM, "")
+    if commencement or window is not None:
+        queryset = filter_by_commencement(queryset, user, commencement, window)
     # After every authorization-bearing filter above, and applied to the scoped
     # queryset rather than the raw table. Data class narrows what is already
     # visible; it never decides what is visible (Agent-C brief 14, 50).
@@ -441,7 +648,12 @@ def apply_register_filters(
         queryset, params.get("andmed", selectors.DATA_CLASS_ALL)
     )
 
-    return apply_date_filters(queryset, params)
+    queryset, echo = apply_date_filters(queryset, params)
+    # One echo for the controls to redisplay. The commencement window keeps its
+    # own reader because it narrows a child table rather than a Matter column,
+    # but what it hands back is the same shape and is merged here so the view
+    # has one place to look.
+    return queryset, {**echo, **commencement_echo}
 
 
 def as_text(params: Any) -> dict[str, str]:

@@ -27,10 +27,6 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
-from django.urls import reverse
-
-from app.intelligence import selectors as intelligence
-from app.intelligence.enums import WorkVictoryStatus
 from app.matters import register_filters, selectors, work_items
 from app.matters.department_dashboard import register_url
 from app.matters.enums import RecordMode
@@ -68,26 +64,33 @@ def _count(viewer: Any, params: dict[str, Any], today: date, population: Any) ->
     ).count()
 
 
-def _confirmed_victories(viewer: Any, year: int) -> int:
-    return (
-        intelligence.work_victories(user=viewer, status=WorkVictoryStatus.CONFIRMED)
-        .filter(period_date__year=year)
-        .count()
-    )
+def _victory_params(year: int) -> dict[str, Any]:
+    """The register narrowing that *is* this figure.
+
+    `?toovoit=<aasta>` selects the Matters carrying a work victory recorded for
+    that business period — the same population, read through the same
+    `VISIBLE_VICTORY_STATUS`, that the retired Töövõidud page listed. `?olek=`
+    is `koik` because a work victory does not stop being one when the file
+    closes, and the register's default would otherwise hide most of them.
+    """
+    return {register_filters.VICTORY_PARAM: str(year), "olek": "koik"}
 
 
-def _victories_url(year: int) -> str:
-    # `?aasta=` only: the Töövõidud page has no state filter, so a `?staatus=`
-    # here would name a parameter nothing reads.
-    return f"{reverse('intelligence:work_victories')}?aasta={year}"
+def _in_force_params(today: date) -> dict[str, Any]:
+    """This year's commencements that have already taken effect, as a window.
 
-
-def _in_force(viewer: Any, today: date) -> int:
-    return (
-        intelligence.effective_dates(user=viewer, today=today, direction=intelligence.PAST)
-        .filter(date_value__year=today.year)
-        .count()
-    )
+    `?joustub_alates=` the first of January and `?joustub_kuni=` yesterday. The
+    upper bound is yesterday rather than today because the window is a
+    containment test on the whole period, so `period_end <= today - 1 day` is
+    exactly `period_end < today` — which is the definition of *möödunud* this
+    figure has always used (app/matters/register_filters.py).
+    """
+    return {
+        register_filters.COMMENCEMENT_PARAM: register_filters.FACT_PRESENT,
+        register_filters.COMMENCEMENT_START_PARAM: date(today.year, 1, 1).isoformat(),
+        register_filters.COMMENCEMENT_END_PARAM: (today - timedelta(days=1)).isoformat(),
+        "olek": "koik",
+    }
 
 
 def strip(results: dict[str, Any], viewer: Any, today: date, period_label: str) -> list[Figure]:
@@ -96,8 +99,9 @@ def strip(results: dict[str, Any], viewer: Any, today: date, period_label: str) 
     The first three are catalogued metrics read for their value and their own
     drill-through, so the number here and the list it opens are the definition's
     own answer rather than a second one taken beside it. The fourth is the
-    confirmed work victories of the current year, which live in
-    ``app.intelligence`` and have a list of their own.
+    Matters carrying a confirmed work victory this year — a register population
+    like the rail's, since the register is where a Teema is found
+    (docs/adr/0067).
     """
     figures: list[Figure] = []
     for key, caption in (
@@ -109,11 +113,17 @@ def strip(results: dict[str, Any], viewer: Any, today: date, period_label: str) 
         if result is None:
             continue
         figures.append(Figure(result.value, caption, result.drillthrough_url))
+    # Counted through the register, in the register's own parameters, because
+    # that is now where the list lives. It counts **Matters** carrying a work
+    # victory this year rather than the victories themselves — the register
+    # pages Matters, so a figure counting rows would have been a number with no
+    # list behind it the first time one file won twice, and this module's whole
+    # first rule is that a number opens the list it counted (docs/adr/0067).
     figures.append(
         Figure(
-            _confirmed_victories(viewer, today.year),
-            f"töövõitu {today.year}",
-            _victories_url(today.year),
+            _count(viewer, _victory_params(today.year), today, Matter.objects.visible_to(viewer)),
+            f"teemat töövõiduga {today.year}",
+            register_url(**_victory_params(today.year)),
         )
     )
     return figures
@@ -154,19 +164,23 @@ def rail(viewer: Any, today: date, results: dict[str, Any]) -> list[RailBlock]:
     sent = results.get("SUBMISSIONS_SENT")
     if sent is not None:
         reporting_rows.append(Figure(sent.value, "arvamusi välja", sent.drillthrough_url))
+    # Both counted and both linked through the register, for the reason
+    # `strip` above states: the lists these two used to open are retired, so the
+    # only list either number can open is a list of Matters — and a caption
+    # saying "töövõite" over a count of Matters would be the disagreement this
+    # module exists to prevent (docs/adr/0067).
     reporting_rows.append(
         Figure(
-            _confirmed_victories(viewer, today.year),
-            "töövõite",
-            _victories_url(today.year),
+            _count(viewer, _victory_params(today.year), today, population),
+            "teemat töövõiduga",
+            register_url(**_victory_params(today.year)),
         )
     )
     reporting_rows.append(
         Figure(
-            _in_force(viewer, today),
-            "jõustunud akte",
-            f"{reverse('intelligence:effective_dates')}"
-            f"?suund={intelligence.PAST}&aasta={today.year}",
+            _count(viewer, _in_force_params(today), today, population),
+            "teemat jõustunud aktiga",
+            register_url(**_in_force_params(today)),
         )
     )
 

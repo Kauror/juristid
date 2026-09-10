@@ -38,19 +38,27 @@ and the two sections that were genuinely the head's are decided on the page
   (docs/adr/0028, docs/adr/0047).
 {% endcomment %}
 {% comment %}
-  The item reads «Tähtajad» and the destination is unchanged: it is still the
-  important-dates surface at `intelligence:important_dates`, still under
-  `/jalgimine/`, and the key that lights it is still `jalgimine`.
+  «Tähtajad» is no longer here, and neither is the workspace it opened.
 
-  A rename of the word only. «Jälgimine» named the activity — watching — where
-  every reader arriving here is looking for the thing being watched, and the
-  first tab of the page they land on is already headed *Olulised tähtajad*. The
-  route, its models, its namespace and every existing bookmark are untouched,
-  because a navigation label is not a domain decision.
+  It led to three generated reading pages — Olulised tähtajad, Jõustuvad aktid,
+  Töövõidud — each listing Matters by one structured fact. That made four
+  parallel places to find a Teema, none of which could be intersected with
+  another, and it put a department-wide deadline list on the bar for work that
+  belongs to whoever owns the file.
+
+  Each of the three moved to where it is actually used, and nothing was
+  deleted: `Töövõit` and `Jõustumine` are structured filters on Teemad, which
+  is now the one register a reader searches; an `Oluline tähtaeg` is personal
+  upcoming work and appears in its Matter owner's Minu asjad, which it already
+  did. The models, the rows and the write surfaces on the Matter page are
+  untouched, and every old address still resolves — to the new destination
+  (docs/adr/0067, superseding the Stage-2G grouping).
+
+  So no replacement item goes here. «Jälgimine», «Jõustuvad aktid»,
+  «Töövõidud» and «Olulised tähtajad» are not navigation destinations any more,
+  in this branch or in the Veel disclosure; putting one back would rebuild the
+  parallel model this removed.
 {% endcomment %}
-<a class="topnav__link {% if nav_active == 'jalgimine' %}is-active{% endif %}"
-   {% if nav_active == 'jalgimine' %}aria-current="page"{% endif %}
-   href="{% url 'intelligence:important_dates' %}">Tähtajad</a>
 <a class="topnav__link {% if nav_active == 'statistika' %}is-active{% endif %}"
    {% if nav_active == 'statistika' %}aria-current="page"{% endif %}
    href="{% url 'reporting:overview' %}">Statistika</a>

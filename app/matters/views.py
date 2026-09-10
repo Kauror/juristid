@@ -58,7 +58,11 @@ from app.documents.models import Document
 from app.documents.pending import human_size
 from app.documents.services import link_working_document
 from app.documents.uploads import UploadRejected
-from app.intelligence.selectors import matter_intelligence
+from app.intelligence.selectors import (
+    VISIBLE_VICTORY_STATUS,
+    matter_intelligence,
+)
+from app.intelligence.selectors import work_victory_years as victory_years
 from app.legacy_import.register_display import (
     register_facts_for,
     snapshot_label,
@@ -618,6 +622,14 @@ FILTER_LABELS = {
     # question nobody asked (Stage-2E brief 27).
     "saatja": "Algataja või saatja",
     "adressaat": "Adressaat",
+    # The two structured facts Teemad became the discovery surface for when the
+    # separate Tähtajad destination was retired. Properties of a Matter, so they
+    # narrow the register like any other dimension rather than opening a list of
+    # their own (docs/adr/0067).
+    "toovoit": "Töövõit",
+    "joustumine": "Jõustumine",
+    "joustub_alates": "Jõustub alates",
+    "joustub_kuni": "Jõustub kuni",
     # Stage 2E.1. The convenience filter sits *beside* the two precise ones and
     # never replaces them: `asutus` asks "was this body involved at all", which
     # is the question somebody has when they cannot remember which direction a
@@ -707,6 +719,21 @@ NEXT_ACTION_LABELS = {
     "puudub": "Puudub",
     "hilinenud": "Tähtaeg möödas",
     selectors.REVIEW_DUE: "Ülevaatus käes",
+}
+
+#: How each `?toovoit=` value reads in the control and in a chip. A year is not
+#: in here: it is offered as its own option list, and read back as itself.
+VICTORY_LABELS = {
+    register_filters.FACT_PRESENT: "Töövõiduga",
+    register_filters.FACT_ABSENT: "Ilma töövõiduta",
+}
+
+#: The same for `?joustumine=`. Two words rather than a checkbox, because the
+#: absence is a question people genuinely ask of this register — «millised aktid
+#: ei ole veel jõustumas».
+COMMENCEMENT_LABELS = {
+    register_filters.FACT_PRESENT: "Jõustumisega",
+    register_filters.FACT_ABSENT: "Ilma jõustumiseta",
 }
 
 STATUS_SEGMENTS = (
@@ -829,6 +856,13 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         return person.get_short_name() if person else value
     if name == "arvamus":
         return OPINION_LABELS.get(value, value)
+    if name == register_filters.VICTORY_PARAM:
+        # A year reads as the year. It is neither of the two words, and echoing
+        # it back as typed is what makes «Töövõit: 2024» a chip somebody can act
+        # on rather than a key.
+        return VICTORY_LABELS.get(value, value)
+    if name == register_filters.COMMENCEMENT_PARAM:
+        return COMMENCEMENT_LABELS.get(value, value)
     if name in {"saatja", "adressaat", "asutus"}:
         organisation = _named_by_pk(Organisation, value)
         return organisation.name if organisation else value
@@ -841,6 +875,8 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
         in (
             register_filters.WORK_WINDOW_START_PARAM,
             register_filters.WORK_WINDOW_END_PARAM,
+            register_filters.COMMENCEMENT_START_PARAM,
+            register_filters.COMMENCEMENT_END_PARAM,
         )
         or name in register_filters.DATE_FILTERS
     ):
@@ -1009,6 +1045,8 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             "allikas": params.get("allikas", ""),
             "tegevus": params.get("tegevus", ""),
             "arvamus": params.get("arvamus", ""),
+            "toovoit": params.get(register_filters.VICTORY_PARAM, ""),
+            "joustumine": params.get(register_filters.COMMENCEMENT_PARAM, ""),
             "too": params.get("too", ""),
             "saatja": params.get("saatja", ""),
             "adressaat": params.get("adressaat", ""),
@@ -1059,6 +1097,14 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "origins": MatterOrigin.choices,
         "next_action_options": list(NEXT_ACTION_LABELS.items()),
         "opinion_options": list(OPINION_LABELS.items()),
+        "victory_options": list(VICTORY_LABELS.items()),
+        "commencement_options": list(COMMENCEMENT_LABELS.items()),
+        # The years a work victory this reader may see was actually recorded
+        # for, so choosing one shows something. Scoped by the same selector the
+        # retired page used, over the same visible population — a year built
+        # from rows the register cannot show would be a filter that empties the
+        # page it is attached to (app/intelligence/selectors.py).
+        "victory_years": victory_years(request.user, status=VISIBLE_VICTORY_STATUS),
         "material_options": sorted(MATERIAL_LABELS.items()),
         # Kõik first: it is the default, and the control should open on the
         # state the page is actually in.
@@ -1067,8 +1113,10 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             (selectors.DATA_CLASS_REAL, DATA_CLASS_LABELS[selectors.DATA_CLASS_REAL]),
             (selectors.DATA_CLASS_TEST, DATA_CLASS_LABELS[selectors.DATA_CLASS_TEST]),
         ],
-        "chosen_organisation": _organisation_or_none(params.get("asutus", "")),
-        "organisation_options": _organisation_options(""),
+        # One per dimension. The three controls are one partial over one
+        # catalogue, and each has to offer and redisplay the body *it* filters
+        # by (docs/adr/0067).
+        "organisation_choosers": _organisation_choosers(params),
         # Who a row may be handed to, current reader first. The same population
         # the Matter header's own control offers, so the two cannot disagree
         # about who work may be given to (app/accounts/selectors.py, ADR 0036).
@@ -1106,9 +1154,16 @@ def _assignable_first(reader: Any) -> list[User]:
 #: The register dimensions that name an institution, and what each is called on
 #: screen. A parameter outside this mapping is a 404 rather than a field name
 #: reflected back into the page.
+#:
+#: These strings are the legends the Täpsem otsing panel renders, read from here
+#: rather than written into the template beside the include. The panel and the
+#: HTMX fragment are the same partial, so two spellings of one legend meant the
+#: control silently renamed itself the first time somebody typed into it — it
+#: opened as «Asutus (saatja või adressaat)» and came back as «Asutus»
+#: (docs/adr/0067).
 ORGANISATION_CHOOSER_FIELDS = {
-    "asutus": "Asutus",
-    "saatja": "Algataja voi saatja",
+    "asutus": "Asutus (saatja või adressaat)",
+    "saatja": "Saatja / algataja",
     "adressaat": "Adressaat",
 }
 
@@ -1181,6 +1236,43 @@ def _organisation_or_none(raw: str) -> Organisation | None:
     organisation: Organisation | None = _named_by_pk(Organisation, raw)
     return organisation
 
+def _organisation_choosers(params: Any) -> list[dict[str, Any]]:
+    """The three institution controls the Täpsem otsing panel renders.
+
+    One catalogue, one partial, three dimensions — built here so the panel and
+    the HTMX fragment cannot drift apart in what they offer, what they call
+    themselves or what they redisplay (docs/adr/0067).
+
+    **The typed term is read from the parameters, not assumed empty.** With
+    scripting on, the search box swaps itself through
+    :func:`organisation_choices` and this never matters. With scripting off — or
+    before HTMX has loaded, or after it has failed — pressing Enter in that box
+    submits the enclosing filter form, which lands back here carrying
+    ``?asutus_otsing=kliima``. Rendering the unsearched first page in answer to
+    that would be the control ignoring what somebody just typed into it, and
+    since the unsearched page is the first twenty bodies alphabetically, the
+    institution they were looking for is precisely the one it would not show.
+
+    ``_otsing`` is a control parameter: `_is_control_param` keeps it out of the
+    chips, out of `Tühjenda kõik` and out of the search box's carried inputs, so
+    reading it here does not turn it into a filter.
+    """
+    choosers: list[dict[str, Any]] = []
+    for field, label in ORGANISATION_CHOOSER_FIELDS.items():
+        term = (params.get(f"{field}{CONTROL_PARAM_SUFFIX}") or "").strip()
+        chosen = params.get(field, "")
+        choosers.append(
+            {
+                "field": field,
+                "field_label": label,
+                "term": term,
+                "organisation_options": _organisation_options(term),
+                "chosen_organisation": _organisation_or_none(chosen),
+                "chosen_value": chosen,
+            }
+        )
+    return choosers
+
 
 @login_required
 def organisation_choices(request: HttpRequest) -> HttpResponse:
@@ -1190,22 +1282,17 @@ def organisation_choices(request: HttpRequest) -> HttpResponse:
     real catalogue runs to hundreds, and the alternative the brief rules out — a
     wall of radio buttons — is unusable at that size. No frontend library is
     introduced; this is one HTMX swap of one labelled ``<select>`` (brief 13).
+
+    All three institution dimensions come through here, and the context is built
+    by the same function the full page builds it with — so a search cannot
+    answer with a differently-labelled control, a different catalogue or a
+    forgotten selection (:func:`_organisation_choosers`).
     """
     field = request.GET.get("vali", "asutus")
     if field not in ORGANISATION_CHOOSER_FIELDS:
         raise Http404("Tundmatu vali.")
-    term = request.GET.get(f"{field}_otsing", "")
-    return render(
-        request,
-        "matters/partials/organisation_choices.html",
-        {
-            "field": field,
-            "field_label": ORGANISATION_CHOOSER_FIELDS[field],
-            "term": term,
-            "organisation_options": _organisation_options(term),
-            "chosen_organisation": _organisation_or_none(request.GET.get(field, "")),
-        },
-    )
+    chooser = next(item for item in _organisation_choosers(request.GET) if item["field"] == field)
+    return render(request, "matters/partials/organisation_choices.html", chooser)
 
 
 # ---------------------------------------------------------------------------
