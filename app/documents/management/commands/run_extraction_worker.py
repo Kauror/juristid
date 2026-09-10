@@ -1,15 +1,30 @@
-"""The extraction worker: PostgreSQL is the queue.
+"""The corpus extraction worker. **Not a deployed service.**
 
-No Redis, no Celery, no broker. At this scale — six lawyers, a few thousand
-matters, a few files a day — a job queue would be a second piece of
-infrastructure to run, back up, monitor and explain, in exchange for capabilities
-none of the work needs (AGENTS.md, Stage-2B brief 31).
+An operator tool since docs/adr/0072, and the demotion is the point of this
+paragraph. This loop parses canonical ``DocumentVersion`` rows — the historical
+archive, the imported corpus, anything an operator deliberately wants text out
+of — and on 2026-09-10 running it against a 16 000-file backlog drove the
+production array's checkpoint fsyncs from under 2.5 s to 155 s and made a
+single-row INSERT block for two minutes. Corpus-wide extraction is no longer
+part of the minimal product, so nothing starts this on `docker compose up -d`:
+it is absent from both stacks' Compose files, and what *is* deployed is
+`run_intake_reader`, whose universe is one open form
+(app/matters/management/commands/run_intake_reader.py).
 
-What PostgreSQL gives instead is the part that actually matters:
-``SELECT ... FOR UPDATE SKIP LOCKED`` makes claiming a job atomic, so two
-workers never take the same file and neither queues behind the other. The claim
-is a row state with a timestamp, so a worker that dies leaves evidence of what
-it was doing rather than a lock nobody can clear.
+It is kept, rather than deleted, because the capability is still occasionally
+wanted — rebuilding text for the opinions archive, reading a batch of imported
+historical material — and because deleting it would take the parser stack's
+only end-to-end exercise with it. Run it deliberately, off working hours, and
+watch the array:
+
+    docker compose -p juristid-main -f compose.yml run --rm \
+        web python manage.py run_extraction_worker --once --limit 50
+
+No Redis, no Celery, no broker. ``SELECT ... FOR UPDATE SKIP LOCKED`` makes
+claiming a job atomic, so two workers never take the same file and neither
+queues behind the other. The claim is a row state with a timestamp, so a worker
+that dies leaves evidence of what it was doing rather than a lock nobody can
+clear.
 
 Three properties this loop is built around:
 
@@ -19,6 +34,10 @@ Three properties this loop is built around:
   again; the derivative it was building was never promoted, so the previous one
   is still serving.
 * **It is safe to run twice.** Nothing here assumes it is the only worker.
+
+**It never touches `Uus teema` staging.** It used to drain both queues, which
+is how one saturated array became one stalled form. `MatterIntakeFile` is the
+intake reader's and nothing here can reach it.
 """
 
 from __future__ import annotations
@@ -57,15 +76,12 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        from app.documents import scanning
-        from app.documents.extraction import heartbeat
+        from app.documents.extraction.heartbeat import EXTRACTION_WORKER as mark
         from app.documents.extraction.orchestrator import (
-            awaiting_scanner,
             claim_version,
             extract_document_version,
             pending_versions,
         )
-        from app.matters.intake_extraction import drain as drain_intake
 
         idle = options["idle_seconds"] or settings.EXTRACTION_WORKER_IDLE_SECONDS
         limit = options["limit"]
@@ -83,98 +99,31 @@ class Command(BaseCommand):
             if handler is not None:
                 signal.signal(handler, stop)
 
-        # Said once, at the top, because "Töödeldud 0 faili" is the same output
-        # for "nothing to do" and "nothing may be done in this environment", and
-        # only one of those is fine.
-        #
-        # It now has two readings rather than one, and they are worth telling
-        # apart. With a scanner configured, a backlog here is a queue this loop
-        # is about to work through. Without one, it is the wall this round was
-        # about: files that no code path can ever clear.
-        blocked = awaiting_scanner().count()
-        if blocked and not scanning.scanner_configured():
-            self.stdout.write(
-                self.style.WARNING(
-                    f"{blocked} faili ootab pahavarakontrolli ja neid ei töödelda "
-                    "selles keskkonnas. Skannerit pole seadistatud "
-                    "(MALWARE_SCANNER_BACKEND), nii et need failid ei muutu kunagi "
-                    "loetavaks."
-                )
-            )
-        elif blocked:
-            self.stdout.write(f"{blocked} faili ootab pahavarakontrolli.")
+        # Said once, at the top, because this loop is now started by hand and
+        # the number it is about to work through is the number that decides
+        # whether starting it during working hours was a good idea.
+        waiting = pending_versions().count()
+        self.stdout.write(
+            f"Korpuse töötleja käivitus. Ootel: {waiting} faili. "
+            "See ei ole püsiteenus — vt docs/adr/0072."
+        )
 
         processed = 0
-        #: Staged files read per turn before the loop looks at evidence again.
-        #: One `Uus teema` envelope is four or five files; more than that in a
-        #: single turn would be a form nobody is waiting on.
-        INTAKE_BATCH = 5
-        #: Files scanned per turn. Larger than the intake batch because a scan
-        #: is a round trip to a socket rather than an OCR pass, and the queue it
-        #: drains includes the canonical backlog.
-        SCAN_BATCH = 20
         while not stopping["now"]:
             # Before the query, not after it. The point of the mark is that the
             # loop is turning; recording it only on the way out would make a
             # worker that is stuck *on* the query look alive.
-            heartbeat.touch()
-
-            # The scan gate, before anything is offered to a parser.
             #
-            # In this loop rather than in a worker of its own, because the two
-            # halves are one pipeline with one queue discipline and one
-            # heartbeat: a file is scanned and then read, and splitting that
-            # across two containers would double the deployment surface to gain
-            # nothing but the ability to have exactly one of them running.
-            #
-            # Bounded per turn like the intake drain below it, and for the same
-            # reason. `scanning.drain` puts staged files first and stops the
-            # moment the scanner turns out to be unreachable, so a scanner that
-            # is down costs one connection attempt per turn instead of
-            # SCAN_BATCH of them (app/documents/scanning.py).
-            scanned = scanning.drain(limit=SCAN_BATCH)
-            for scan in scanned:
-                if scan.unavailable:
-                    self.stdout.write(
-                        self.style.WARNING("  pahavarakontroll ei vastanud; failid jäävad ootele")
-                    )
-                    continue
-                self.stdout.write(
-                    f"  skann {scan.state:<11} {scan.kind:<8} {scan.seconds:.1f}s"
-                    + (f"  [{scan.signature}]" if scan.signature else "")
-                )
-
-            # The staged queue first, and it is not a preference about
-            # importance. A file staged on `Uus teema` has somebody sitting in
-            # front of the form waiting for it, and it is one small file; an
-            # evidence backlog is a hundred files nobody is watching. Draining
-            # the second before the first would make the feature useless
-            # exactly when the queue is long (app/matters/intake_extraction.py,
-            # docs/adr/0064).
-            #
-            # Bounded per turn so it can never starve the evidence queue: a
-            # session holds at most one intake envelope, and after that this
-            # falls through to the work below.
-            staged = drain_intake(limit=INTAKE_BATCH)
-            for staged_report in staged:
-                processed += 1
-                self.stdout.write(
-                    f"  {staged_report.state:<16} {'(uus teema)':<48} "
-                    f"{staged_report.fragments:>4} osa  {staged_report.seconds:.1f}s"
-                    + (f"  [{staged_report.error_code}]" if staged_report.error_code else "")
-                )
-            if limit and processed >= limit:
-                break
+            # Throttled like the reader's, and for the same reason at a smaller
+            # scale: this loop turns once per document, and during the
+            # 2026-09-10 backlog drain that was 900 an hour of file writes onto
+            # the array it was already saturating.
+            mark.touch_periodically()
 
             candidate = pending_versions().first()
             if candidate is None:
                 if options["once"]:
                     break
-                if staged:
-                    # Something was read this turn, so there may be more of it.
-                    # Sleeping now would make the next staged file wait a full
-                    # idle period behind an empty evidence queue.
-                    continue
                 time.sleep(idle)
                 continue
 
@@ -198,5 +147,5 @@ class Command(BaseCommand):
         # Removed on the way out, so a stopped worker is never reported alive by
         # a mark it left behind. `--once` runs are the common case here: they
         # finish in seconds and would otherwise look like a healthy daemon.
-        heartbeat.clear()
+        mark.clear()
         self.stdout.write(self.style.SUCCESS(f"Töödeldud {processed} faili."))

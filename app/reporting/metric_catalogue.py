@@ -134,7 +134,7 @@ EXTRACTION_SUCCESS = "EXTRACTION_SUCCESS"
 EXTRACTION_PENDING = "EXTRACTION_PENDING"
 EXTRACTION_FAILED = "EXTRACTION_FAILED"
 EXTRACTION_NOT_APPLICABLE = "EXTRACTION_NOT_APPLICABLE"
-EXTRACTION_AWAITING_SCANNER = "EXTRACTION_AWAITING_SCANNER"
+EXTRACTION_INTAKE_READ = "EXTRACTION_INTAKE_READ"
 SEARCHABLE_DOCUMENT_COVERAGE = "SEARCHABLE_DOCUMENT_COVERAGE"
 
 OPINION_ARCHIVE_OCCURRENCES = "OPINION_ARCHIVE_OCCURRENCES"
@@ -903,11 +903,16 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     # -- Dokumendid ja otsitavus -------------------------------------------
     MetricDefinition(
         key=EXTRACTION_ELIGIBLE,
-        version=1,
-        label_et="Eraldamiseks kõlblikke",
+        # Version 2: the measurement, this time, and not only the wording. It
+        # used to be the positive side of the malware gate — «versions a worker
+        # is allowed to open» — and that gate no longer exists (ADR 0072). What
+        # is left of the same question, and what the searchability denominator
+        # has always used, is whether any parser opens the format at all.
+        version=2,
+        label_et="Avatavaid vorminguid",
         description_et=(
-            "Tõendiversioonid, mida töötaja tohib avada. Tekstitöötlust ootavat "
-            "faili ei pakuta järjekorda ega loeta ebaõnnestunuks."
+            "Tõendiversioonid, mille vormingut mõni parser avab. Allkirjaümbrik "
+            "ja muu avamatu vorming ei kuulu siia ega ka otsitavuse nimetajasse."
         ),
         source_population_et="Nähtavate teemade tõendiversioonid",
         drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
@@ -935,42 +940,19 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         respects_period=False,
     ),
     MetricDefinition(
-        key=EXTRACTION_AWAITING_SCANNER,
-        # Version 2: the wording, not the measurement. The population is
-        # unchanged — the same versions the extraction queue will not yet offer
-        # a worker — but "Ootab pahavarakontrolli" described the *mechanism* and
-        # readers understood it as "these files may be infected". They are not:
-        # the Juristid corpus is known to be malware-free. What is missing is a
-        # step in this system's own text-extraction pipeline (Statistika QA §4).
-        #
-        # Version 3: the wording again, and again not the measurement. The note
-        # said the precondition "does not work until the Secure Pilot Gate",
-        # which was true when it was written and is not now — the scanner exists
-        # and runs beside the application (ADR 0066). So the figure changes
-        # meaning without changing definition: it was a backlog nothing could
-        # ever clear, and it is now a queue that empties on its own. A reader
-        # who came back to a non-zero number and remembered the old sentence
-        # would draw exactly the wrong conclusion about whether anybody needs to
-        # act.
-        version=3,
-        label_et="Ootab tekstitöötlust",
+        key=EXTRACTION_INTAKE_READ,
+        version=1,
+        label_et="Loetud teema loomisel",
         description_et=(
-            "Versioonid, mille tekst on veel eraldamata, sest eraldamise "
-            "tehniline eeltingimus ei ole täidetud. Failid ise on teadaolevalt "
-            "pahavaravabad — see seisund ei tähenda pahavarakahtlust ega "
-            "lahendamata turvaküsimust."
+            "Failid, mille teksti loeti siis, kui teemat alles loodi, ja mille "
+            "vastused läksid vormile. Neid ei loeta uuesti: sisestuslugeja töö "
+            "on tehtud ja püsivat teksti sellest ei sünni. Ei ole viga ega "
+            "järjekord."
         ),
         source_population_et="Nähtavate teemade tõendiversioonid",
         drillthrough_et="Tõendiversioonide eraldi loendit ei ole; failid avanevad teema juurest",
         time_basis=TimeBasis.POINT_IN_TIME,
         respects_period=False,
-        notes_et=(
-            "Ei ole viga ega turvaintsident. Tehniline eeltingimus on "
-            "tekstituvastuse konveieri väravakontroll, mis nüüd töötab: need "
-            "failid on kontrollimise järjekorras ja arv väheneb ise. Püsivalt "
-            "muutumatu arv tähendab, et kontroll ei vasta — seda näitab ka "
-            "töötleja tervisekontroll."
-        ),
     ),
     MetricDefinition(
         key=EXTRACTION_FAILED,

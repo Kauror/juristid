@@ -125,13 +125,6 @@ services:
       # inherits a service's environment, so a test process started here sees it
       # and stops. The application itself never reads it.
       JURISTID_RUNTIME: deployed
-      # Where the scan gate lives. `web` needs it because the deployment
-      # readiness command and juristid.E015 both ask whether a scanner is
-      # configured; the process that actually streams bytes to it is
-      # `extractor` below.
-      MALWARE_SCANNER_BACKEND: clamav
-      MALWARE_SCANNER_HOST: clamav
-      MALWARE_SCANNER_PORT: "3310"
     depends_on:
       db:
         condition: service_healthy
@@ -156,8 +149,8 @@ services:
       #
       # A named volume rather than a directory inside the container, because
       # since docs/adr/0064 these bytes have a second reader in a second
-      # container: `web` writes the staged file and `extractor` opens it to
-      # parse it. A container's writable layer is private to that container, so
+      # container: `web` writes the staged file and `intake-reader` opens it
+      # to parse it. A container's writable layer is private to that container, so
       # the arrangement before this worked only while one process did both.
       #
       # A named volume rather than a bind under the appdata tree, deliberately.
@@ -169,53 +162,67 @@ services:
     networks:
       - internal
 
-  # Text extraction and OCR, in its own container.
+  # The `Uus teema` intake reader. The only queue consumer this stack runs.
   #
-  # Separate from the web process because OCR on a scanned 2014 annex takes
-  # minutes and a lawyer opening a file must not wait for it. Same image, so
-  # there is one thing to build and one version to reason about. It reaches the
-  # database and nothing else: no host port, no other network.
+  # It reads the files somebody has just chosen on `Uus teema`, so that the
+  # form in front of them fills itself in, and it reads nothing else. Its whole
+  # universe is `MatterIntakeFile` rows belonging to a live staging session:
+  # not the canonical corpus, not the archive, not the historical import
+  # (app/matters/management/commands/run_intake_reader.py, docs/adr/0072).
   #
-  # Evidence is mounted read-write on purpose. A worker only ever *reads*
-  # originals — except for email, whose attachments are themselves new evidence,
-  # and this is the process that captures them (docs/adr/0014). Existing
-  # evidence stays immutable through a PostgreSQL trigger, not a mount option.
-  extractor:
+  # **This service replaces `extractor`, and the replacement is the point.**
+  # The old worker drained both queues from one loop. On 2026-09-10 the
+  # canonical half of it worked through a 16 000-file backlog, drove this
+  # host's checkpoint fsyncs from under 2.5 s to 155 s — every small write to
+  # the parity-protected array is a read-modify-write on a saturated USB disk —
+  # and a single-row INSERT into a 264 kB audit table blocked for two minutes
+  # until gunicorn killed the worker holding it. Corpus-wide extraction is no
+  # longer part of the product, so there is deliberately no service here that
+  # `docker compose up -d` can start it from. An operator who wants it runs
+  # `run_extraction_worker` by hand, outside working hours.
+  #
+  # Separate from `web` because parsing a PDF or running OCR takes seconds to
+  # minutes and a request must not wait for it. Same image, so there is one
+  # thing to build and one version to reason about.
+  #
+  # **It mounts one thing and it is read-only.** No evidence, no derivatives,
+  # no historical corpus. This process opens staged objects with
+  # `storage.open(..., "rb")` and writes its answers to PostgreSQL, so the
+  # tree it is given is exactly the tree it reads from and nothing else on this
+  # host is reachable from it.
+  intake-reader:
     image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
-    container_name: juristid-main-extractor
+    container_name: juristid-main-intake-reader
     restart: unless-stopped
     # The image's HEALTHCHECK asks an HTTP port this container does not have, so
     # inherited it can only ever be red — and a container that is always red
-    # makes a container that *becomes* unhealthy indistinguishable. The rehearsal
-    # ran that way for 28 hours.
+    # makes a container that *becomes* unhealthy indistinguishable.
     #
-    # The worker leaves a mark each time round its loop; this reads it. That
+    # The reader leaves a mark each time round its loop; this reads it. That
     # says more than "the process exists": a parser wedged on a malformed file
-    # leaves the process alive and the queue stopped, and this catches it.
+    # leaves the process alive and the queue stopped, and this catches it — the
+    # failure that made a lawyer watch «Loen faili…» for half an hour.
     #
-    # The window is EXTRACTION_STALE_CLAIM_MINUTES, which already means "a claim
-    # this old belongs to a worker that died" — so a slow file cannot raise a
-    # false alarm, because nothing may hold a claim longer than that anyway.
+    # The window is INTAKE_READER_STALE_CLAIM_MINUTES, five rather than the old
+    # worker's thirty. A staged file is bounded by MAX_INTAKE_UPLOAD_BYTES and
+    # finishes in seconds, so a loop that has not turned in five minutes has
+    # stopped — and waiting half an hour to say so would outlast the form.
     healthcheck:
-      test: ["CMD", "python", "manage.py", "check_extraction_worker", "--quiet"]
-      interval: 60s
+      test: ["CMD", "python", "manage.py", "check_intake_reader", "--quiet"]
+      interval: 30s
       timeout: 15s
       start_period: 60s
       retries: 3
     command:
       - python
       - manage.py
-      - run_extraction_worker
+      - run_intake_reader
     env_file:
       - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
     environment:
       POSTGRES_HOST: db
       POSTGRES_PORT: "5432"
       POSTGRES_SSLMODE: disable
-      EVIDENCE_ROOT: /app/evidence
-      DERIVATIVE_ROOT: /app/derivatives
-      LEGACY_SOURCE_ROOT: /app/legacy-source
-      HISTORICAL_SOURCE_ROOT: /srv/historical-source
       SEED_DEV_DATA: "0"
       # This is a deployed stack, and it says so. `config/test_safety.py`
       # refuses to start the test suite in any environment carrying this
@@ -224,111 +231,19 @@ services:
       # inherits a service's environment, so a test process started here sees it
       # and stops. The application itself never reads it.
       JURISTID_RUNTIME: deployed
-      # This is the process that scans. Every staged `Uus teema` file and every
-      # canonical version passes through `app/documents/scanning.py` here before
-      # any parser is allowed to open it (docs/adr/0066).
-      MALWARE_SCANNER_BACKEND: clamav
-      MALWARE_SCANNER_HOST: clamav
-      MALWARE_SCANNER_PORT: "3310"
     depends_on:
       db:
         condition: service_healthy
-      # Started, not healthy. The signature database takes minutes to load and
-      # the worker must not be held out of the queue for that: it scans what it
-      # can, records nothing about what it cannot reach, and tries again next
-      # turn. Waiting for `service_healthy` here would make every deployment's
-      # extraction backlog start three minutes late for no gain.
-      clamav:
-        condition: service_started
     volumes:
-      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/evidence:/app/evidence
-      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/derivatives:/app/derivatives
-      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-main}/legacy-source:/app/legacy-source
-      - ${JURISTID_SOURCE_ROOT:-/mnt/user/juristid-main/source}:/srv/historical-source:ro
       # The staged `Uus teema` files, READ-ONLY — the same volume `web` writes.
       #
-      # Read-only because that is the whole of what this process does with them:
-      # `app/matters/intake_extraction.py` opens the object once, in `rb`, and
-      # every result it produces goes to PostgreSQL. Staging bytes are written
-      # by the upload view, deleted by `consume_session` after `Loo teema`, and
-      # swept by `prune_intake_staging` — all three in `web`. Nothing on this
-      # side needs to change the source it is reading, so nothing on this side
-      # is given the ability to (the same argument as the historical corpus
-      # above).
+      # Read-only because that is the whole of what this process does with
+      # them. Staging bytes are written by the upload view, deleted by
+      # `consume_session` after `Loo teema` and swept by
+      # `prune_intake_staging` — all three in `web`. Nothing on this side needs
+      # to change the source it is reading, so nothing on this side is given
+      # the ability to.
       - pending_uploads:/app/pending-uploads:ro
-    networks:
-      - internal
-
-  # The malware scanner. What makes PENDING -> CLEAN a real transition.
-  #
-  # Before this service existed the scan gate was not a gate but a wall. Every
-  # uploaded file began PENDING, `is_scan_state_extractable` refuses anything
-  # but CLEAN under REAL_DATA_ALLOWED, and nothing in the application could
-  # write CLEAN — so on this stack a file chosen on `Uus teema` was staged,
-  # queued, permanently refused by the queue, and the form said «Loen faili…»
-  # until the person gave up (docs/adr/0066, docs/secure-pilot-gate.md row 6).
-  #
-  # Four properties, each of them the reason a line below is written the way it
-  # is:
-  #
-  #   1. **It mounts nothing.** Not evidence, not derivatives, not the staging
-  #      volume. The application streams bytes to it over clamd's INSTREAM
-  #      protocol, so the scanner sees exactly the files it is asked about and
-  #      has no view of the tree they came from. A container with a signature
-  #      database and a parser for every archive format anybody has ever
-  #      invented is precisely the container not to hand the evidence tree to.
-  #   2. **No host port**, like everything else here. `internal` only.
-  #   3. **Pinned**, not `latest`. This decides whether member material gets
-  #      opened by a parser; an unrelated `docker pull` on this host must not be
-  #      able to change that. Update it deliberately, then run
-  #      `python manage.py check_malware_scanner --eicar` and confirm detection.
-  #   4. **Healthchecked on detection, not on liveness.** `clamdcheck.sh` asks
-  #      clamd whether it is loaded and answering, which is the distinction that
-  #      matters: a clamd that is running with no signature database answers a
-  #      socket perfectly and calls everything clean, and that is the single
-  #      worst state this system could be in — every file marked CLEAN by a
-  #      scanner that examined nothing.
-  #
-  # `_base` is deliberately NOT the tag. The plain version tag ships with a
-  # signature database baked in, so a cold start needs no network and cannot
-  # come up empty; `_base` downloads on first run and is briefly exactly the
-  # state property 4 exists to catch.
-  clamav:
-    image: clamav/clamav:1.4.6
-    container_name: juristid-main-clamav
-    restart: unless-stopped
-    # StreamMaxLength has to reach MAX_EVIDENCE_UPLOAD_BYTES or a large but
-    # perfectly ordinary annex is refused by the scanner and therefore never
-    # read. Appended to the image's own config rather than bind-mounted from
-    # appdata: it is three lines of policy that belong with the service
-    # definition, and a file on the host is a file that can drift from it.
-    #
-    # Failing closed is still the behaviour above the limit — clamd answers
-    # ERROR, `interpret` records ERROR, and no parser opens the file.
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        printf '\n%s\n%s\n%s\n' \
-          'StreamMaxLength 128M' \
-          'MaxFileSize 128M' \
-          'MaxScanSize 512M' >> /etc/clamav/clamd.conf
-        exec /init
-    environment:
-      # The updater is a separate daemon inside this image and it reaches the
-      # internet. It stays on: a scanner running on a signature database from
-      # the day the image was built is a scanner that misses everything found
-      # since, and this is the one service here that has a reason to talk out.
-      CLAMAV_NO_FRESHCLAMD: "false"
-    healthcheck:
-      test: ["CMD", "clamdcheck.sh"]
-      interval: 60s
-      timeout: 20s
-      # Loading the signature database into memory takes a while and the
-      # container is honestly unhealthy until it has. Long enough that a cold
-      # start is not reported as a failure; short enough that a real failure is.
-      start_period: 180s
-      retries: 3
     networks:
       - internal
 
@@ -380,21 +295,6 @@ services:
       # As on every other service in this file: `config/test_safety.py` refuses
       # to run the test suite in a process that inherits this marker.
       JURISTID_RUNTIME: deployed
-      # This worker never opens a document, and it needs these anyway.
-      #
-      # `juristid.E015` is a check on *configuration*, and every process that
-      # boots Django runs it — so a service that runs the application image with
-      # real data and no scanner setting does not start at all. That is what
-      # happened on 2026-09-09: `web` and `extractor` were given these three and
-      # this one was not, so the search-freshness worker restarted 419 times
-      # behind a stack that was otherwise healthy.
-      #
-      # The rule the CI guard now enforces: every service running the
-      # application image carries them, because every one of them runs the
-      # check (scripts/ci/assert_scanner_topology.py, docs/adr/0066).
-      MALWARE_SCANNER_BACKEND: clamav
-      MALWARE_SCANNER_HOST: clamav
-      MALWARE_SCANNER_PORT: "3310"
     depends_on:
       db:
         condition: service_healthy
@@ -453,7 +353,7 @@ networks:
     driver: bridge
 
 volumes:
-  # Temporary upload bytes, shared by `web` and `extractor` and by nothing else.
+  # Temporary upload bytes, shared by `web` and `intake-reader` and by nothing else.
   #
   # Deliberately left for Compose to name. A volume declared like this becomes
   # `juristid-main_pending_uploads`, scoped by the project name at the top of

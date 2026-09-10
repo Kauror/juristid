@@ -191,6 +191,10 @@ class MatterIntakeFile(BaseModel):
     )
 
     # -- reading them, which is disposable ---------------------------------
+    # Dead since docs/adr/0072. Nothing writes it, nothing reads it, and no
+    # gate stands on it; it is kept because dropping a column from a
+    # 19 000-row production table is a destructive migration performed for
+    # neatness. See `MalwareScanState` for the full note.
     malware_scan_state = models.CharField(
         max_length=32,
         choices=MalwareScanState.choices,

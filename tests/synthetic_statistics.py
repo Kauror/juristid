@@ -760,16 +760,16 @@ def build_world(today: date | None = None) -> World:
     )
     # `eml` gets no import row at all: still to copy.
 
-    # One version waiting on a malware scanner. With REAL_DATA_ALLOWED the
-    # extractor may not open it, so it is neither queued nor failed — a
-    # distinction the Andmekvaliteet tab has to make (main, commit 34d91b1).
-    gated_document = _document(native_open, "Skannimata manus")
-    versions["gated"] = _version(
-        gated_document,
-        filename="skannimata.pdf",
-        payload="gated",
-        malware_scan_state=MalwareScanState.PENDING,
-        extraction_state=ExtractionState.PENDING,
+    # One version read while its Teema was being created. It is terminal and
+    # successful, and it is neither queued nor failed — a distinction the
+    # Andmekvaliteet tab has to make, and the one that replaced «waiting on a
+    # scanner» when that subsystem was removed (docs/adr/0072).
+    intake_document = _document(native_open, "Teema loomisel loetud kiri")
+    versions["intake_read"] = _version(
+        intake_document,
+        filename="kaaskiri.pdf",
+        payload="intake",
+        extraction_state=ExtractionState.INTAKE_READ,
     )
 
     # -- reconciliation queue ---------------------------------------------

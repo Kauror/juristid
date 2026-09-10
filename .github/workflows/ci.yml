@@ -186,6 +186,7 @@ jobs:
           uv run python manage.py migrate submissions 0004 --noinput
           uv run python manage.py migrate search 0006 --noinput
           uv run python manage.py migrate legacy_import 0012 --noinput
+          uv run python manage.py migrate documents 0006 --noinput
           uv run python manage.py migrate matters 0011 --noinput
           uv run python manage.py migrate audit 0015 --noinput
           uv run python manage.py migrate reporting 0001 --noinput
@@ -1033,7 +1034,7 @@ jobs:
       # actually needs, proved by crossing the boundary rather than by reading
       # the Compose file (which `tests/test_deployment_unraid_main.py` does).
       #
-      # `web` stages a file and the `extractor` container parses it, so the
+      # `web` stages a file and the `intake-reader` container parses it, so the
       # storage class they share has to be genuinely shared. It was not: it was
       # an unmounted path in each image, and a container's writable layer is
       # private, so every staged read in production would have failed on a file
@@ -1049,7 +1050,7 @@ jobs:
       # what is being checked: a named volume takes the ownership of the image
       # path it covers, so a mount point the Dockerfile did not create would be
       # root-owned and `web` could not stage anything into it.
-      - name: Staged uploads written by web are readable by the extractor
+      - name: Staged uploads written by web are readable by the intake reader
         run: |
           set -euo pipefail
           PROJECT=juristid-sharedvolume-ci
@@ -1086,8 +1087,8 @@ jobs:
             printf %s "$PROBE" > "/app/pending-uploads/intake/$PROBE"
           '
 
-          echo "--- the extractor reads the same bytes from its own container"
-          in_service extractor '
+          echo "--- the intake reader reads the same bytes from its own container"
+          in_service intake-reader '
             set -e
             staged="/app/pending-uploads/intake/$PROBE"
             test -f "$staged" || { echo "the volume is not shared: $staged is absent"; exit 1; }
@@ -1095,93 +1096,23 @@ jobs:
           '
 
           echo "--- and cannot write to it"
-          if in_service extractor 'echo tampered > "/app/pending-uploads/intake/$PROBE"'; then
-            echo "::error::the extractor wrote to a mount that must be read-only"
+          if in_service intake-reader 'echo tampered > "/app/pending-uploads/intake/$PROBE"'; then
+            echo "::error::the intake reader wrote to a mount that must be read-only"
             exit 1
           fi
-          in_service extractor '
+          in_service intake-reader '
             set -e
             test "$(cat "/app/pending-uploads/intake/$PROBE")" = "$PROBE" \
               || { echo "the staged bytes changed under a read-only mount"; exit 1; }
           '
 
-          echo "--- web deletes it, and the deletion is visible to the extractor too"
+          echo "--- web deletes it, and the deletion is visible to the reader too"
           in_service web 'rm "/app/pending-uploads/intake/$PROBE"'
-          if in_service extractor 'test -e "/app/pending-uploads/intake/$PROBE"'; then
-            echo "::error::the extractor still sees a file web deleted"
+          if in_service intake-reader 'test -e "/app/pending-uploads/intake/$PROBE"'; then
+            echo "::error::the intake reader still sees a file web deleted"
             exit 1
           fi
           echo "two containers, one set of bytes, web-only writes"
-
-      # The scan gate, against the actual scanner rather than against a mock.
-      #
-      # This is the job that would have caught the reported defect, and the one
-      # assertion that matters is the last: not "clamd answers" but "clamd
-      # detects". A clamd running with an empty signature database answers PING
-      # perfectly and calls every file clean — and in that state this system
-      # would stamp CLEAN on member correspondence nothing had examined, which
-      # is worse than the wall it replaced (ADR 0066).
-      #
-      # EICAR is the industry's agreed harmless test file. It is streamed over
-      # the socket and never written to disk: any host with an on-access scanner
-      # deletes it between a write and a read, which is a fight this job has no
-      # reason to pick.
-      #
-      # The container is the pinned image the deployment runs, on a private
-      # network with no published port, exactly as `deploy/unraid-main` runs it.
-      - name: The malware scanner is reachable, and actually detects
-        run: |
-          set -euo pipefail
-          IMAGE="$(python3 scripts/ci/read_scanner_image.py deploy/unraid-main/compose.yml)"
-          echo "using the image the deployment pins: $IMAGE"
-
-          docker network create juristid-scan-ci >/dev/null
-          docker run -d --name juristid-scan-ci-clamav \
-            --network juristid-scan-ci "$IMAGE" >/dev/null
-          cleanup() {
-            docker logs juristid-scan-ci-clamav 2>&1 | tail -40 || true
-            docker rm -f juristid-scan-ci-clamav >/dev/null 2>&1 || true
-            docker network rm juristid-scan-ci >/dev/null 2>&1 || true
-          }
-          trap cleanup EXIT
-
-          # Loading the signature database takes a while and the container is
-          # honestly unhealthy until it has. Waited on with the image's own
-          # probe rather than with a fixed sleep.
-          for attempt in $(seq 1 60); do
-            if docker exec juristid-scan-ci-clamav clamdcheck.sh >/dev/null 2>&1; then
-              echo "clamd loaded after about $((attempt * 5))s"
-              break
-            fi
-            if [ "$attempt" -eq 60 ]; then
-              echo "::error::clamd never became healthy"
-              exit 1
-            fi
-            sleep 5
-          done
-
-          # The application's own client, from the application's own image, over
-          # the network — so what is proved is that *this code* can talk to
-          # *that container*, which is the pair nothing crossed before.
-          docker run --rm --network juristid-scan-ci \
-            -e DJANGO_SECRET_KEY=ci-only-secret-not-used-anywhere-else \
-            -e DJANGO_DEBUG=0 \
-            -e DJANGO_ALLOWED_HOSTS=localhost \
-            -e MALWARE_SCANNER_BACKEND=clamav \
-            -e MALWARE_SCANNER_HOST=juristid-scan-ci-clamav \
-            -e MALWARE_SCANNER_PORT=3310 \
-            -e MALWARE_SCANNER_TIMEOUT_SECONDS=120 \
-            juristid:ci python manage.py check_malware_scanner --eicar
-
-      # And it is not reachable from anywhere it should not be, on either stack.
-      #
-      # Read off the Compose files rather than off a running stack, because what
-      # is being asserted is what an operator would *deploy* — and because the
-      # rehearsal's copy exists precisely so the two cannot drift. The rehearsal
-      # running a different security model from production is what let this
-      # defect live: it exercised a branch production could not reach.
-      - name: The scanner is internal, pinned and used on both stacks
-        run: python3 scripts/ci/assert_scanner_topology.py
 
       # The real-data rehearsal template is never started here — it exists to
       # hold a production backup set, and CI has none. What CI can prove is the

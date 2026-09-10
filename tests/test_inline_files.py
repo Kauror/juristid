@@ -13,7 +13,7 @@ import pytest
 from django.urls import reverse
 
 from app.core.enums import Visibility
-from app.documents.enums import DocumentRole, MalwareScanState
+from app.documents.enums import DocumentRole
 from app.documents.inline import may_open_inline
 from app.documents.services import add_evidence_version, create_document
 from tests import factories
@@ -43,7 +43,6 @@ def stored(evidence_root, normal_matter):
             content=content,
             original_filename=filename,
             mime_type=mime_type,
-            malware_scan_state=MalwareScanState.PENDING,
         )
 
     return store

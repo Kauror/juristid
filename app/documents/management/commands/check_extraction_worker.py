@@ -28,13 +28,13 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        from app.documents.extraction import heartbeat
+        from app.documents.extraction.heartbeat import EXTRACTION_WORKER as mark
 
-        age = heartbeat.age_seconds()
-        limit = heartbeat.threshold_seconds()
+        age = mark.age_seconds()
+        limit = mark.threshold_seconds()
 
         if age is None:
-            raise SystemExit(self._fail(f"The worker has left no heartbeat at {heartbeat.path()}."))
+            raise SystemExit(self._fail(f"The worker has left no heartbeat at {mark.path()}."))
         if age >= limit:
             raise SystemExit(
                 self._fail(

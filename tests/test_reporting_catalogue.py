@@ -59,7 +59,7 @@ def test_every_published_metric_appears_on_some_tab() -> None:
         "EXTRACTION_ELIGIBLE",
         "EXTRACTION_SUCCESS",
         "EXTRACTION_PENDING",
-        "EXTRACTION_AWAITING_SCANNER",
+        "EXTRACTION_INTAKE_READ",
         "EXTRACTION_FAILED",
         "EXTRACTION_NOT_APPLICABLE",
         # Superseded on the Teemad tab by `MATTERS_BY_RESPONSIBILITY`, which

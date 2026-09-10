@@ -270,6 +270,33 @@ def test_the_application_never_serves(compose: dict[str, Any]) -> None:
 # -- nothing writes to the restored data unless asked ----------------------
 
 
+def test_every_service_but_the_database_and_the_shell_is_behind_the_profile(
+    compose: dict[str, Any],
+) -> None:
+    """The CI guard's derivation, pinned — and it is what the rule actually is.
+
+    `scripts/ci/assert_rehearsal_isolation.py` used to ask about two named
+    workers, which was correct until `extractor` left the stacks with
+    docs/adr/0072 and then failed claiming it was reading the wrong file. It
+    derives now: everything outside `db` and `web` must sit behind `workers`,
+    so a service added tomorrow is in scope tomorrow rather than the day
+    somebody remembers to add it to a tuple.
+
+    This asserts today's answer, so a derivation that quietly matched nothing
+    could not leave the guard green over an empty set.
+    """
+    import importlib.util
+
+    path = Path(settings.BASE_DIR) / "scripts" / "ci" / "assert_rehearsal_isolation.py"
+    spec = importlib.util.spec_from_file_location("assert_rehearsal_isolation", path)
+    assert spec is not None and spec.loader is not None
+    guard = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(guard)
+
+    assert guard.profiled_services(_services(compose)) == ["intake-reader", "searchindex"]
+    assert set(guard.DEFAULT_SERVICES) == {"db", "web"}
+
+
 def test_the_workers_are_behind_a_profile(compose: dict[str, Any]) -> None:
     """Both write to the restored database.
 
@@ -277,7 +304,7 @@ def test_the_workers_are_behind_a_profile(compose: dict[str, Any]) -> None:
     starts with `up -d` changes it before anybody looks, and the change is
     indistinguishable from something the backup got wrong.
     """
-    for name in ("extractor", "searchindex"):
+    for name in ("intake-reader", "searchindex"):
         service = _services(compose)[name]
         assert "workers" in service.get("profiles", []), f"{name}: would start on a plain `up`"
 

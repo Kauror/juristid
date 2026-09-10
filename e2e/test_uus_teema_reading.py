@@ -89,7 +89,7 @@ def read_staged_files() -> str:
     """
     environment = {**os.environ, "DJANGO_SETTINGS_MODULE": "config.settings"}
     result = subprocess.run(
-        [sys.executable, "manage.py", "extract_pending_intake_files", "--limit", "20"],
+        [sys.executable, "manage.py", "run_intake_reader", "--once", "--limit", "20"],
         cwd=REPOSITORY_ROOT,
         env=environment,
         capture_output=True,
@@ -208,27 +208,31 @@ def test_the_letter_is_read_on_the_create_form_and_the_teema_keeps_what_was_conf
     expect(page.locator("#id_response_deadline")).to_have_value("18.9.2026")
     ministry = page.locator("label.chip", has_text="Näidisministeerium").locator("input").first
     expect(ministry).to_be_checked()
-    # The title is offered and never written, on any surface.
-    expect(page.locator("#id_title")).to_have_value("")
+    # And the title, which is the one rule that differs by surface. On a saved
+    # Matter no title is ever replaced, because the *record* cannot tell one a
+    # person typed from one intake derived. Here there is no record: the box is
+    # empty, nobody has touched it, and the letter carries exactly one strong
+    # formal heading — so it is filled (docs/adr/0072, task §12).
+    expect(page.locator("#id_title")).to_have_value("Pakendiseaduse muutmise seaduse eelnõu")
     expect(page.locator('button[data-suggest-for="title"]').first).to_be_visible()
-    # And «Kasuta» says what actually happened rather than what the server
-    # would have done: it is bound to the live control, so the deadline the
-    # browser filled reads as chosen and the title it did not touch does not.
+    # «Kasuta» says what actually happened rather than what the server would
+    # have done: it is bound to the live control, so everything the browser
+    # filled reads as chosen.
     expect(page.locator('button[data-suggest-for="response_deadline"]').first).to_have_attribute(
         "aria-pressed", "true"
     )
     expect(page.locator('button[data-suggest-for="title"]').first).to_have_attribute(
-        "aria-pressed", "false"
+        "aria-pressed", "true"
     )
     screenshots(page, "41-uus-teema-failist-leitud")
 
     # Still nothing in the register: a suggestion is a proposal, and reading a
-    # file creates no business data whatsoever.
+    # file creates no business data whatsoever — a filled box least of all.
     assert register_holds(page, base_url, title) == 0
 
-    # -- 4. take the heading, write a title over it, and file it -----------
-    page.locator('button[data-suggest-for="title"]').first.click()
-    expect(page.locator("#id_title")).to_have_value("Pakendiseaduse muutmise seaduse eelnõu")
+    # -- 4. write a title of one's own over it, and file it ----------------
+    # The machine's title is replaceable by the person, always and without
+    # ceremony: it is an ordinary value in an ordinary input.
     page.locator("#id_title").fill(title)
     name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
@@ -371,8 +375,11 @@ def test_a_refused_save_keeps_the_staged_file_and_what_was_found(
 # ---------------------------------------------------------------------------
 #
 # The reported defect had two halves. The deployment could never read anything,
-# because nothing could move a file past the malware gate — that half is
-# `app/documents/scanning.py` and `tests/test_malware_scanning.py`. This is the
+# because nothing could move a file past the malware gate — that half was fixed
+# by building a scanner (ADR 0066) and then removed altogether with the
+# subsystem it belonged to (docs/adr/0072): there is no gate in front of a
+# parser any more, and `tests/test_intake_reader.py` holds the reader to
+# reading whatever scan state a row happens to carry. This is the
 # other half, and it is the one the person actually experienced: after about
 # seventy seconds the browser stopped asking, and then left an animated spinner
 # and the words «Loen faili…» on screen for as long as they were willing to look
@@ -624,9 +631,23 @@ def test_uploading_a_document_later_starts_no_reading_workflow(
 
     # The letter states 18.9.2026 and names a ministry. Neither reaches the
     # Matter, and no suggestion panel appears anywhere.
+    #
+    # **Asked of the deadline control rather than of the whole page**, and the
+    # difference is not pedantry. This read `get_by_text("18.9.2026")` and
+    # required zero anywhere on the page — which is a page-wide search for a
+    # date the *test itself* can produce: `name_a_next_step` clicks «+1 nädal»,
+    # so on the one day of the year when today + 7 is the date the letter
+    # states, the Järgmiseks row and its timeline preview both carry it and the
+    # assertion fails on a Teema that is behaving perfectly. That day was
+    # 2026-09-11. A test whose verdict depends on the calendar is a test
+    # somebody eventually deletes rather than reads.
+    #
+    # What it means is «the letter's deadline did not become this Matter's», so
+    # it asks the control that holds a Matter's deadline.
     page.goto(matter_url)
-    expect(page.get_by_text("1.10.2026").first).to_be_visible()
-    expect(page.get_by_text("18.9.2026")).to_have_count(0)
+    deadline = page.locator(".metaline__value--deadline")
+    expect(deadline).to_have_text(re.compile(r"1\.10\.2026"))
+    expect(deadline).not_to_contain_text("18.9.2026")
     expect(page.locator("#intake-panel")).to_have_count(0)
     expect(page.get_by_role("heading", name="Failist leitud")).to_have_count(0)
 
@@ -640,7 +661,7 @@ def read_staged_files_is_a_noop() -> None:
     """
     environment = {**os.environ, "DJANGO_SETTINGS_MODULE": "config.settings"}
     result = subprocess.run(
-        [sys.executable, "manage.py", "extract_pending_intake_files", "--limit", "20"],
+        [sys.executable, "manage.py", "run_intake_reader", "--once", "--limit", "20"],
         cwd=REPOSITORY_ROOT,
         env=environment,
         capture_output=True,
@@ -649,4 +670,9 @@ def read_staged_files_is_a_noop() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert "Ootel: 0 ettevalmistatud faili" in result.stdout, result.stdout
+    # The reader's own start-up line, which names the size of its whole
+    # universe. Zero here *is* the product decision this test is named after:
+    # a document uploaded to an existing Matter stages nothing, so there is
+    # nothing for the reader to have found.
+    assert "Ootel: 0 faili" in result.stdout, result.stdout
+    assert "Loetud 0 faili" in result.stdout, result.stdout

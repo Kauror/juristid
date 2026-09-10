@@ -70,11 +70,11 @@ storage class and the same "no backup" answer (docs/adr/0064).
 one.** This directory used to be an unmounted path inside each container, which
 was right while one process both wrote and read it. Staging gave it a second
 reader in a second container: `web` receives and stores the file, and the
-`extractor` container opens those exact bytes to parse them. A container's
+`intake-reader` container opens those exact bytes to parse them. A container's
 writable layer is private to that container, so unmounted meant the worker
 looked for a file that existed only in `web` and every staged read failed. Both
 services now mount one project-scoped named volume at `/app/pending-uploads` —
-`web` read-write, because it stages, holds, promotes and deletes; `extractor`
+`web` read-write, because it stages, holds, promotes and deletes; `intake-reader`
 read-only, because opening the object in `rb` is the whole of what it does with
 it.
 
@@ -499,7 +499,7 @@ script again.
 ### Then verify, before anything is published
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build web extractor searchindex
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build web intake-reader searchindex
 ```
 
 Named rather than unqualified, unlike a redeploy: the tunnel is not behind a

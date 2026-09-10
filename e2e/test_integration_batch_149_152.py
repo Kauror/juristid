@@ -73,7 +73,7 @@ def read_staged_files() -> None:
     """
     environment = {**os.environ, "DJANGO_SETTINGS_MODULE": "config.settings"}
     result = subprocess.run(
-        [sys.executable, "manage.py", "extract_pending_intake_files", "--limit", "20"],
+        [sys.executable, "manage.py", "run_intake_reader", "--once", "--limit", "20"],
         cwd=REPOSITORY_ROOT,
         env=environment,
         capture_output=True,

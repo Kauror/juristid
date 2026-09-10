@@ -262,11 +262,22 @@
       var failures = 0;
       var MAX_FAILURES = 3;
 
-      /* The four controls a suggestion may fill. Pealkiri is deliberately not
-         among them: no title is ever pre-filled anywhere in this application,
-         because nothing separates one a person wrote from one a machine
-         proposed (app/matters/intake_suggestions/prefill.py). */
-      var FILLABLE = ["source_organisations", "response_deadline", "track", "policy_areas"];
+      /* The five controls a suggestion may fill.
+         `title` is here and is not on `Muuda teemat`, which is the one rule
+         that differs between the two surfaces. On a saved Matter nothing can
+         tell a title a person wrote from one intake derived, so none is ever
+         replaced; on this form there is no saved title, and this island can
+         see the thing the record never could — whether the box is empty and
+         whether anybody has been near it. `fill` below refuses on either
+         count, so a machine title only ever lands in a box nobody has touched
+         (app/matters/intake_suggestions/prefill.py, task §12). */
+      var FILLABLE = [
+        "title",
+        "source_organisations",
+        "response_deadline",
+        "track",
+        "policy_areas",
+      ];
       /* Which of them the person has been near, and what we last wrote into
          each. The second is what lets a later answer replace an *earlier
          answer* while never replacing a person: a control still holding
@@ -455,7 +466,8 @@
        *
        * This is the reported defect, and it is worth being precise about which
        * half of it lives here. A file staged on the deployed stack could never
-       * be read at all, because nothing ever moved it past the malware gate —
+       * be read at all, because nothing ever moved it past the malware gate
+       * that used to stand in front of every parser (since removed) —
        * that is `app/documents/scanning.py`. But the browser gave up after
        * MAX_POLLS × POLL_MS ≈ 72 seconds and then simply `return`ed, leaving
        * the panel at `data-intake-state="reading"` with an animated spinner and

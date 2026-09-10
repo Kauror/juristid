@@ -684,10 +684,44 @@ def count_signals(document: SourceDocument, signals: tuple[vocab.Signal, ...]) -
     Hits are capped per signal so a term on every page of a draft is one
     piece of evidence, and two signals with the same label pool into one —
     the vocabulary spells *ülevõtmine* three ways and means one thing.
+
+    **A message's ``Subject:`` is scanned as well as its body**, and used not to
+    be. The blocks read here are `prose_blocks`, which deliberately excludes the
+    header summary — so «Eelnõu kooskõlastamiseks: pakendiseaduse muutmine»
+    contributed nothing at all to deciding the Menetlusliik or the Valdkond,
+    while the same words three pages into an annex contributed fully. That is
+    backwards, and it is the whole of what
+    :attr:`~app.matters.intake_suggestions.input.SourceDocument.emphasis_text`
+    fixes (assisted-intake brief §16).
+
+    The subject counts as ordinary occurrences rather than at a multiplier.
+    Weighting it higher was considered and refused: with `AREA_HIGH_THRESHOLD`
+    at 8 and single signals worth up to 5, a multiplier would let one subject
+    line reach HIGH on its own and fill a control from four words. Being read
+    at all is the fix; being read twice as loudly would trade a miss for a
+    wrong one (brief §28).
     """
     pooled: dict[str, SignalHit] = {}
-    for block in document.prose_blocks:
-        for signal in signals:
+    blocks = list(document.prose_blocks)
+    emphasis = document.emphasis_text
+    first_block = blocks[0] if blocks else None
+
+    def record(label: str, weight: int, hits: int, block: TextBlock, start: int, end: int) -> None:
+        existing = pooled.get(label)
+        if existing is None:
+            pooled[label] = SignalHit(label, weight, hits, block, start, end)
+            return
+        pooled[label] = SignalHit(
+            existing.label,
+            max(existing.weight, weight),
+            existing.hits + hits,
+            existing.block,
+            existing.start,
+            existing.end,
+        )
+
+    for signal in signals:
+        for block in blocks:
             hits = 0
             first: re.Match[str] | None = None
             for match in signal.regex.finditer(block.text):
@@ -698,20 +732,20 @@ def count_signals(document: SourceDocument, signals: tuple[vocab.Signal, ...]) -
                     break
             if first is None:
                 continue
-            existing = pooled.get(signal.label)
-            if existing is None:
-                pooled[signal.label] = SignalHit(
-                    signal.label, signal.weight, hits, block, first.start(), first.end()
-                )
-            else:
-                pooled[signal.label] = SignalHit(
-                    existing.label,
-                    max(existing.weight, signal.weight),
-                    existing.hits + hits,
-                    existing.block,
-                    existing.start,
-                    existing.end,
-                )
+            record(signal.label, signal.weight, hits, block, first.start(), first.end())
+
+    # The emphasis zone last, so an ordinary body hit keeps its own excerpt as
+    # the evidence line where there is one. A subject-only hit still gets a
+    # locator: the first block, or nothing when the message has no body at all.
+    if emphasis:
+        for signal in signals:
+            found = signal.regex.search(emphasis)
+            if found is None:
+                continue
+            if first_block is None:
+                continue
+            record(signal.label, signal.weight, 1, first_block, 0, 0)
+
     return sorted(pooled.values(), key=lambda hit: (-hit.points, hit.label))
 
 

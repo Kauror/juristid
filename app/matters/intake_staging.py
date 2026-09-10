@@ -45,7 +45,7 @@ from django.utils import timezone
 
 from app.core.errors import DomainError
 from app.core.ids import uuid7
-from app.documents.enums import DocumentRole
+from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.services import add_evidence_version, create_document
 from app.documents.uploads import AcceptedUpload
 from app.matters.intake import MAX_INTAKE_FILES, role_for
@@ -207,6 +207,23 @@ def remove_file(*, session: MatterIntakeSession, file_id: Any) -> bool:
 # ---------------------------------------------------------------------------
 
 
+#: What the intake reader's verdict on a staged file becomes on the canonical
+#: version promoted from it. Anything not named here — ``PENDING`` and
+#: ``PROCESSING``, the two states meaning "nobody has read this yet" — falls
+#: through to ``PENDING``, which is the only honest reading of a binary the
+#: reader never reached (docs/adr/0072).
+PROMOTED_EXTRACTION_STATE: dict[str, str] = {
+    ExtractionState.DONE: ExtractionState.INTAKE_READ,
+    ExtractionState.NOT_APPLICABLE: ExtractionState.NOT_APPLICABLE,
+    ExtractionState.FAILED: ExtractionState.FAILED,
+}
+
+
+def promoted_extraction_state(staged_state: str) -> str:
+    """The canonical version's extraction state, from the staged file's."""
+    return PROMOTED_EXTRACTION_STATE.get(staged_state, ExtractionState.PENDING)
+
+
 def promote_intake_files(
     *, session: MatterIntakeSession, matter: Any, actor: Any
 ) -> list[MatterIntakeFile]:
@@ -222,14 +239,45 @@ def promote_intake_files(
     compared, so the version that is written is provably the file the browser
     sent.
 
-    **Nothing derived is carried across.** The staged text stays in staging and
-    the new version is queued for extraction like any other, which is the
-    deliberate half of this design and is argued in docs/adr/0064: the
-    canonical publish path also writes attachment Documents, derivative
-    binaries and the search projection, and reusing a staged parse would mean
-    either duplicating that against a second source of truth or promoting a
-    derivative that later readers assume is complete. One extra parse of a file
-    the department uploads once is the cheaper mistake.
+    **The bytes are carried across and the reading is not — but the *fact* of
+    the reading is.** docs/adr/0064 promoted a staged file at ``PENDING`` so
+    the ordinary extraction worker would parse it again from scratch, and gave
+    a good argument for it: reusing a staged parse would mean either
+    duplicating the canonical publish path against a second source of truth or
+    promoting a derivative that later readers assume is complete.
+
+    That argument still holds and this does not contradict it. Nothing derived
+    is carried across — no derivative row, no text fragment, no search
+    projection, no attachment Document — and the staged text is still thrown
+    away with the session. What changed in docs/adr/0072 is the *other* half:
+    the second parse is not performed either. A file read while somebody was
+    looking at the form has done its job, the answers went onto the form, and
+    re-reading it the moment a Matter exists is the corpus write amplification
+    that stalled production on 2026-09-10 for a result nobody asked for.
+
+    So the promoted version records what is true of it, and the intake reader's
+    verdict maps straight onto the canonical column:
+
+    ==================  ====================  =======================================
+    staged              promoted              what it says
+    ==================  ====================  =======================================
+    ``DONE``            ``INTAKE_READ``       read once, on the form; nothing owed
+    ``NOT_APPLICABLE``  ``NOT_APPLICABLE``    no parser opens this format, ever
+    ``FAILED``          ``FAILED``            a parser opened these exact bytes and
+                                              could not read them
+    ``PENDING`` /       ``PENDING``           nothing has read it — promoted before
+    ``PROCESSING``                            the reader reached it
+    ==================  ====================  =======================================
+
+    Only the last of those is offered to `pending_versions`, and it is the only
+    one that is honestly still pending. An operator who wants text out of a
+    promoted file anyway runs `extract_document_version` on it deliberately;
+    what is refused is the automatic re-read.
+
+    **The original bytes are untouched by any of this.** The checksum is
+    recomputed from what is read back and compared before a version row exists,
+    so the evidence is provably the file the browser sent whatever the reader
+    made of it.
     """
     storage = staging_storage()
     promoted: list[MatterIntakeFile] = []
@@ -267,6 +315,7 @@ def promote_intake_files(
             original_filename=staged.original_filename,
             mime_type=staged.mime_type,
             uploaded_by=actor,
+            extraction_state=promoted_extraction_state(staged.extraction_state),
         )
         promoted.append(staged)
 

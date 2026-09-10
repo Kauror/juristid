@@ -554,7 +554,10 @@ SETTLED_LEAVES = {
     # that already has 0015, so CI steps the app back and applies it forwards
     # from exactly that state (docs/adr/0062).
     "core": "0001_initial",
-    "documents": "0006_legacy_material_role",
+    # `documents` is not here any more: 0007 adds the `INTAKE_READ` extraction
+    # state, and the next release carries it into a database that already has
+    # 0006, so CI steps the app back and applies it forwards from exactly that
+    # state (docs/adr/0072).
     "intelligence": "0001_initial",
     # `matters` is not here any more: 0012 adds `PersonalScratchpad` and the
     # next release carries it into a database that already has 0011, so CI

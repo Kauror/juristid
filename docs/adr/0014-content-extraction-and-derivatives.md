@@ -1,5 +1,15 @@
 # ADR 0014 — Content extraction: derivatives, the worker, and child-content search
 
+
+> **Amended by ADR 0072 (2026-09-10).** Two of this record's premises no longer
+> hold. Extraction is not a persistent capability of every canonical document:
+> corpus-wide extraction is an operator command and is not deployed as a
+> service, because running it over the archive saturated production's storage.
+> And the malware gate this record defined is gone with the scanner ADR 0066
+> built for it — no scan state stands in front of any parser. What stands
+> unchanged is everything about *derivatives*: they are rebuildable, they are
+> not evidence, the original bytes are immutable, and a parser upgrade builds
+> alongside the representation that is serving.
 - Status: accepted
 - Date: 2026-08-19
 - Stage: 2B

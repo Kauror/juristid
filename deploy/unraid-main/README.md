@@ -9,7 +9,7 @@ to it, in one system. This is the environment that holds the real thing.
 | Auth mode | `shared_gate` (temporary; see below) |
 | Public URL | `https://juristid.orgusaar.ee` — behind the shared gate |
 | Compose project | `juristid-main` |
-| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-extractor`, `juristid-main-searchindex`, `juristid-main-tunnel` |
+| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-intake-reader`, `juristid-main-searchindex`, `juristid-main-tunnel` |
 | Network | `juristid-main-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-main/` |
 | Evidence | `…/evidence` — **back this up** |
@@ -211,65 +211,44 @@ guarantee stated on the command itself.
 Migrations are a deliberate step, never container start-up work: on boot they
 would run on every restart.
 
-### 5a. Confirm the scanner actually scans
+### 5a. Confirm the intake reader is reading
 
-The `clamav` service comes up with the rest of the stack, and until it has
-loaded its signature database it is honestly unhealthy — allow two or three
-minutes on a cold start. Nothing is broken while you wait: uploaded files stay
-`PENDING`, no parser opens them, and they are read as soon as the scanner
-clears them.
-
-What must be confirmed once, and after every scanner upgrade, is that it
-**detects** — not merely that it answers:
+The reader is what makes `Uus teema` fill itself in. It is the only queue
+consumer this stack runs, its universe is the files behind an open form, and it
+settles to idle within a second of having nothing to do (docs/adr/0072).
 
 ```bash
-docker compose -p juristid-main -f compose.yml exec extractor python manage.py check_malware_scanner --eicar
+docker inspect -f '{{.State.Health.Status}}' juristid-main-intake-reader
 ```
 
-That streams the EICAR test file (harmless, and the industry's agreed stand-in
-for a real sample) and requires the answer to be `INFECTED`. A clamd running
-with an empty signature database answers a socket perfectly and calls
-everything clean, and in that state this system would stamp `CLEAN` on member
-correspondence nothing had examined — which is worse than having no scanner at
-all. This command is the difference between the two, and CI runs it against the
-same image on every pull request (ADR 0066).
+`healthy` means its loop turned inside the last five minutes. The probe reads a
+heartbeat the loop writes rather than a port, because the failure worth catching
+is a parser wedged on one file — a process that is alive with a queue that has
+stopped, which is what a lawyer experiences as «Loen faili…» for half an hour.
 
-If the application refuses to start with `juristid.E015`, it has not been told
-where the scanner is. On this stack that is **not** a missing line in
-`config/juristid.env`, and adding one there is the wrong move: `compose.yml`
-sets `MALWARE_SCANNER_BACKEND`, `MALWARE_SCANNER_HOST` and
-`MALWARE_SCANNER_PORT` on both `web` and `extractor` itself, and Compose's
-`environment:` takes precedence over `env_file:`. So E015 here means the stack
-was resolved from a compose file older than the scanner, or those keys were
-overridden on the command line — read `docker compose … config` and fix what it
-actually shows, rather than editing a secret file that is not expected to carry
-them.
+**There is no malware scanner on this stack any more, and no `clamav` service.**
+It was removed with the whole subsystem in docs/adr/0072: no scan gate stands in
+front of any parser, `juristid.E015` is gone, and the `MALWARE_SCANNER_*` keys
+mean nothing. If `config/juristid.env` on this host still carries the three keys
+appended on 2026-09-10, they are inert — harmless to leave, and an edit for no
+behavioural change to remove.
 
-The check itself is deliberate either way: real data with no scanner configured
-is a deployment that can never read a document, and this is the cheapest moment
-to find out.
+What still stands between a browser and the evidence store is upload validation,
+and it is unchanged: a size ceiling, an extension allowlist and a
+content-signature check, all of them in the request that uploads
+(`app/documents/uploads.py`).
 
-**A cold clamd is not idle while it loads, and the unqualified `up -d` starts
-it beside the application.** The 2026-09-09 rehearsal measured what that costs:
-the host's load average went from 0.5 to 7.5, the container settled at about
-1 GB resident, and the first file scanned took 14 seconds where a warm scanner
-takes 2.5. In that window an ordinary `Uus teema` save exceeded gunicorn's
-60-second timeout and the worker was killed — a 500 for the person saving. The
-transaction rolled back cleanly and the same save succeeded a minute later, so
-nothing was lost; but a lawyer saw an error page during a deployment that was
-otherwise fine.
-
-Cheap to avoid, on a host that also serves the register: start the scanner
-before the replacement and let it come up on its own.
+**The corpus extraction worker is not a service either.** Running it over the
+whole archive is what saturated this host's parity disk on 2026-09-10 — 155 s
+checkpoint fsyncs, a single-row INSERT blocked for two minutes, a gunicorn
+worker killed. It is absent from `compose.yml` so that `up -d` cannot start it.
+If text really is wanted out of imported material, run it deliberately, outside
+working hours, and watch the array:
 
 ```bash
-docker compose -p juristid-main -f compose.yml up -d clamav
-docker inspect -f '{{.State.Health.Status}}' juristid-main-clamav
+docker compose -p juristid-main -f compose.yml run --rm \
+    web python manage.py run_extraction_worker --once --limit 50
 ```
-
-Wait for `healthy`, then continue. `up -d clamav` replaces nothing that is
-serving — the rehearsal started the scanner this way against a running stack
-and `web`, `extractor` and `db` were not touched.
 
 ### 6. Accounts
 
@@ -330,7 +309,7 @@ as not found, which is correct behaviour and a wasted afternoon.
 ```bash
 docker compose -p juristid-main -f compose.yml ps
 docker compose -p juristid-main -f compose.yml logs -f web
-docker compose -p juristid-main -f compose.yml logs -f extractor
+docker compose -p juristid-main -f compose.yml logs -f intake-reader
 docker compose -p juristid-main -f compose.yml logs -f searchindex
 docker compose -p juristid-main -f compose.yml restart web
 ```
@@ -1213,12 +1192,6 @@ not a schema change, and the backup's job is to be the last thing before one.
 Still the same shell, so still the same two variables, so still the same image
 that step 6 read the plan from.
 
-On a release that introduces or upgrades the scanner, bring `clamav` up and
-wait for it to be healthy *before* the replacement below — a cold clamd loading
-its signature database is heavy enough to time out an ordinary request, and
-step 5a says what that looked like when it was measured. On every other
-release it is already running and this costs nothing.
-
 ```bash
 docker compose -p juristid-main -f compose.yml run --rm web python manage.py migrate
 ```
@@ -1232,7 +1205,8 @@ docker compose -p juristid-main -f compose.yml up -d --no-build
 happen — would build the image on this host, silently, from whatever the
 checkout holds. With `--no-build` the same mistake is an error naming the
 missing image, which is the honest outcome. Unqualified otherwise: `web`,
-`extractor` and `searchindex` all run the release image and all move together.
+`intake-reader` and `searchindex` all run the release image and all move
+together.
 
 Migrations are a deliberate step, never container start-up work: on boot they
 would run on every restart, including the restart that happens at three in the
