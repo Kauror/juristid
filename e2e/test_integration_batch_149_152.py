@@ -139,6 +139,10 @@ def test_the_inline_add_forms_still_work_on_a_teema_filed_through_assisted_intak
     page.goto(where)
 
     form = page.locator(".factslot")
+    # `+ Töövõit` moved into the composer's action row with the 2026-09
+    # refinement — one place from which a fact is added — so reaching it opens
+    # the composer first (docs/matter-page-refinement.md).
+    page.locator("#teema-koostaja summary.uxcomp__collapsed").click()
     page.get_by_role("link", name="+ Töövõit", exact=True).click()
     expect(form).to_be_visible()
 

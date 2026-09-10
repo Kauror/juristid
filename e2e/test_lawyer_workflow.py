@@ -251,7 +251,13 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # strip below now shows in full (design handoff 1b).
     entry = page.locator(".uxtl__body").filter(has_text="Ministeerium lubas uue sõnastuse")
     expect(entry).to_have_count(1)
-    expect(entry.locator(".uxtl__kind")).to_be_visible()
+    # The kind badge is still rendered and still carries the stored kind; the
+    # 2026-09 refinement stopped *showing* it on an entry, because every note
+    # said «Märkus» and a badge on almost every row carries no information. An
+    # event's badge is untouched (design handoff §14,
+    # docs/matter-page-refinement.md).
+    expect(entry.locator(".uxtl__kind")).to_have_count(1)
+    expect(entry.locator(".uxtl__kind")).to_be_hidden()
     expect(entry.locator(".uxtl__next")).to_contain_text("Kontrollida ministeeriumi uut sõnastust")
     # The strip states the step, not its category. It re-states the same fact
     # the Järgmiseks row above it carries, and that row stopped naming a kind

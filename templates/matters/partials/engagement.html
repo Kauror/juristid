@@ -5,58 +5,39 @@ A pointer, not a system. Each row says when, what kind, what it was called and
 where to look; the recipient list, the responses and the analytics stay with
 whatever service actually sent it (Agent-F brief 5).
 
-One collapsed row when nothing is open, and a row that says what the latest
-engagement was rather than a heading over an empty list. A Matter nobody has
-consulted anybody about costs one quiet line with an add control on it — not a
-labelled section announcing an absence (Teema redesign §6, §24).
+**The 2026-09 refinement made this a section of the facts panel rather than an
+accordion of its own.** It is a dated fact about the file, like the deadlines
+above it, and it now shares their surface, their date column and their heading
+treatment. Two consequences worth naming:
 
-The section is collapsed on arrival in both states. What differs is what opening
-it shows: with records, the records; with none, the add form itself. Nothing is
-auto-opened at page load either way (Kaasamine one-click §8).
+* It is no longer collapsed, so `engagement_open` no longer decides whether it
+  is visible. The view still sets it and it is still meaningful — a save that
+  landed here scrolls to a section that is already showing its own result.
+* The section head no longer carries a count, a summary line or a trailing
+  button. A collapsed row needed all three to say what was inside it; an open
+  one shows the rows themselves, and «Kaasamist ei ole kirja pandud» over an
+  empty list would be announcing an absence the layout already states
+  (design handoff §1, §8, §10).
 
 There is no delete: a wrong row is corrected.
 
-**No response count.** The mockup's collapsed line reads "47 vastajat", and
+**No response count.** The mockup's collapsed line read "47 vastajat", and
 `MatterEngagement` stores no such number. Adding a column to a five-field
 pointer model for a summary string would be inventing data to decorate a
-sentence, so the line shows the type and the date instead — which the model does
+sentence, so the row shows the type and the date instead — which the model does
 know (Teema redesign §14.2).
 {% endcomment %}
-<details class="accordion" id="kaasamine"
+{% if engagements or can_write %}
+<section class="factsection" id="kaasamine"
          data-engagement-count="{{ engagement_count }}"
-         {% if engagement_open %}open{% endif %}>
-  <summary class="accordion__head">
-    <span class="accordion__caret" aria-hidden="true"></span>
-    <h2 class="accordion__label">Kaasamine{% if engagement_count %} · {{ engagement_count }}{% endif %}</h2>
-    {% if engagements %}
-      {% with latest=engagements.0 %}
-        <span class="accordion__summary">
-          {{ latest.get_kind_display }} · {{ latest.title|truncatechars:60 }}
-          {% if latest.occurred_on %}· {{ latest.occurred_on|date:"j.n.Y" }}{% endif %}
-        </span>
-      {% endwith %}
-    {% else %}
-      <span class="accordion__summary accordion__summary--empty">Kaasamist ei ole kirja pandud</span>
-    {% endif %}
-    <span class="accordion__spacer"></span>
-    {% comment %}
-      A real button, not a span. Inside the summary a span is only the
-      disclosure's own toggle, so `+ Lisa` on a section with records opened the
-      section and left the composer shut — the explicit add action asking for a
-      second click to add anything. The button takes the click, cancels the
-      toggle it would otherwise cause, and opens both (Kaasamine one-click §13).
-    {% endcomment %}
-    {% if can_write %}
-      <button class="accordion__action" type="button"
-              data-engagement-add-trigger>+ Lisa</button>
-    {% endif %}
-  </summary>
+         aria-labelledby="teema-kaasamine-heading">
+  <div class="factsection__head">
+    <h2 class="sectionlabel" id="teema-kaasamine-heading">Kaasamine</h2>
+  </div>
 
-  <div class="accordion__body">
-    {% if engagement_error %}
-      <p class="formerror" role="alert">{{ engagement_error }}</p>
-    {% endif %}
-
+  {% if engagement_error %}
+    <p class="formerror" role="alert">{{ engagement_error }}</p>
+  {% endif %}
     {% comment %}
       What the maintained register observed, above the pointers Koda recorded
       here. Two counts, and they are two independent observations — not a
@@ -172,18 +153,32 @@ know (Teema redesign §14.2).
       </p>
     {% endif %}
 
+
     {% if engagements %}
       <ul class="factlist factlist--compact">
         {% comment %}
           Rows, not records: the second half of each pair says whether *this*
           row is the one a refused save came from. One bound form is shared by
-          the add form and every edit form, so the row's disclosure and the
-          fields inside it have to agree about that — and a comparison written
-          twice in a template is two places for them to stop agreeing. The view
-          decides it once (Kaasamine one-click §7).
+          the add form and every row's edit form, so the row's disclosure and
+          the fields inside it have to agree about that — and a comparison
+          written twice in a template is two places for them to stop agreeing.
+          The view decides it once (Kaasamine one-click §7).
+
+          The date leads the row, in the column the deadlines above it use.
+          That shared column is the whole reason the two sections sit on one
+          panel: a reader scans one edge for «when» (design handoff §2).
         {% endcomment %}
         {% for record, is_editing in engagement_rows %}
           <li class="factrow">
+            {% comment %}
+              An undated engagement says so in words. A record entered years
+              after the consultation it describes may genuinely have no date,
+              and an empty cell reads as a missing field rather than as an
+              honest answer.
+            {% endcomment %}
+            <span class="factrow__date {% if not record.occurred_on %}factrow__date--undated{% endif %}">
+              {% if record.occurred_on %}{{ record.occurred_on|date:"j.n.Y" }}{% else %}Kuupäev teadmata{% endif %}
+            </span>
             <span class="factrow__body">
               <span class="factrow__kind">{{ record.get_kind_display }}</span>
               {% comment %}
@@ -199,16 +194,6 @@ know (Teema redesign §14.2).
               {% else %}
                 <span class="factrow__title">{{ record.title }}</span>
               {% endif %}
-              {% comment %}
-                An undated engagement says so in words. A record entered years
-                after the consultation it describes may genuinely have no date,
-                and an empty cell reads as a missing field rather than as an
-                honest answer.
-              {% endcomment %}
-              <span class="factrow__date {% if not record.occurred_on %}factrow__date--undated{% endif %}">
-                {% if record.occurred_on %}{{ record.occurred_on|date:"j.n.Y" }}
-                {% else %}Kuupäev teadmata{% endif %}
-              </span>
               {% if record.note %}<span class="factrow__note">{{ record.note }}</span>{% endif %}
             </span>
 
@@ -233,16 +218,11 @@ know (Teema redesign §14.2).
         {% endfor %}
       </ul>
     {% endif %}
-
     {% comment %}
-      Two shapes of the same form, and which one renders is decided by whether
-      there is anything to read here.
-
-      With records, the records are what the reader opened the section for and
-      the composer waits behind its own control. With none, the composer *is*
-      the section: the first click on `KAASAMINE` already said what the reader
-      came to do, so there is nothing left for a `+ Lisa kaasamine` row to add
-      (Kaasamine one-click §3A, §5).
+      The add control, under the last row rather than in the section head. One
+      shape now instead of two: the section is always open, so there is no
+      longer a state in which the form has to *be* the section to save a click
+      (design handoff §8; supersedes Kaasamine one-click §3A, §5).
 
       `engagement_add_open` rather than the error text: a field error — an empty
       title, an unreadable date — leaves `engagement_error` empty, and the
@@ -250,7 +230,7 @@ know (Teema redesign §14.2).
       saves that needed explaining (Kaasamine one-click §7).
     {% endcomment %}
     {% if can_write %}
-      {% if engagements %}
+      <div class="addrow">
         <details class="disclosure disclosure--inline" data-engagement-composer
                  {% if engagement_add_open %}open{% endif %}>
           <summary class="disclosure__summary">+ Lisa kaasamine</summary>
@@ -258,9 +238,7 @@ know (Teema redesign §14.2).
             {% include "matters/partials/engagement_add.html" %}
           </div>
         </details>
-      {% else %}
-        {% include "matters/partials/engagement_add.html" %}
-      {% endif %}
+      </div>
     {% endif %}
-  </div>
-</details>
+</section>
+{% endif %}

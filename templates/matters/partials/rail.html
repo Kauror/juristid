@@ -367,6 +367,30 @@ whose addressee nobody recorded should look short, not incomplete.
   {% include "matters/partials/opinion_rail.html" %}
 
   {% comment %}
+    `Seotud materjalid`, moved here from the main column by the 2026-09
+    refinement. It is look-up material — what else on the file bears on this —
+    and it is read the way the rest of this rail is read, by reaching for it
+    (design handoff §6).
+
+    The template is the section's own, unchanged and unforked: it is the same
+    fragment `related_materials:section` swaps into `#seotud-materjalid` and the
+    same one `section_page.html` renders for a browser with no scripting. What
+    makes it a rail card is the stylesheet, scoped to `.rail`. Forking it would
+    have given the confirmed lists, the suggestions and the picker two places to
+    drift apart in (docs/adr/0062).
+
+    Rendered only where its context was built, which is the Teema view and the
+    fragments that re-render it. Keyed on `related_materials` and deliberately
+    not on `tab`: the composer, the engagement forms and every other write on
+    this page swap `#teema-vaade` through `_render_overview`, which builds the
+    overview context and not the tab — so a `tab` test dropped this card off the
+    rail on the first save and put it back on the next full load.
+  {% endcomment %}
+  {% if related_materials %}
+    {% include "related_materials/partials/section.html" %}
+  {% endif %}
+
+  {% comment %}
     Seotud — the canonical relations, in both directions. `supersedes` is the
     reverse of `superseded_by`, so a Matter that continued somebody else's work
     says so without anything being stored twice (app/matters/models.py).

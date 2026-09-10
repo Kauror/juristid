@@ -802,9 +802,13 @@ def test_the_engagement_line_shows_type_and_date_not_an_invented_count(signed_in
     )
 
     body = _detail(signed_in, matter)
-    # Scoped to the collapsed line. The composer's outcome box quotes a survey
-    # result as its placeholder, which is copy rather than data.
-    line = body[body.index("accordion__summary") : body.index("accordion__body")]
+    # Scoped to the section's own rows. The composer's outcome box quotes a
+    # survey result as its placeholder, which is copy rather than data.
+    #
+    # The 2026-09 refinement retired the collapsed summary line this used to
+    # read: the section is open and shows its rows, so what a count would have
+    # decorated is the row itself.
+    line = body[body.index('id="kaasamine"') : body.index("+ Lisa kaasamine")]
 
     assert "Küsitlus" in line
     assert "vastajat" not in line
@@ -1529,7 +1533,13 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
         assert absence not in body
     # And the prompts that replace them are one line each.
     assert "Mida see teema ettevõtjatele tähendab?" in body
-    assert "Kaasamist ei ole kirja pandud" in body
+    # `Kaasamine` used to carry the last of these sentences — a collapsed line
+    # reading «Kaasamist ei ole kirja pandud», which is a heading and a summary
+    # spent announcing that a list is empty. The 2026-09 refinement took it: the
+    # section is a label and an add control, and the absence is the blank space
+    # under them (docs/matter-page-refinement.md).
+    assert "Kaasamist ei ole kirja pandud" not in body
+    assert "+ Lisa kaasamine" in body
 
 
 def test_the_matter_page_does_not_explode_into_queries(

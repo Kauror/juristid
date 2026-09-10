@@ -23,26 +23,23 @@ from e2e.conftest import SANDRA, sign_in
 
 
 def open_kaasamine(page):
-    """Open the Kaasamine accordion, which is closed on arrival.
+    """The Kaasamine section, which no longer opens because it is never shut.
 
-    A Matter that nobody has consulted anybody about costs one quiet line now,
-    not a labelled section announcing an absence — so every test that works
-    inside it has to open it first (Teema redesign §14, §24).
+    The 2026-09 refinement made it a section of the facts panel rather than an
+    accordion of its own: it is a dated fact about the file like the deadlines
+    above it, and it shows its rows without being asked
+    (docs/matter-page-refinement.md).
+
+    Kept as a function, and kept under this name, so every test below still
+    reads as "work inside Kaasamine" and the change is stated once rather than
+    twenty times.
     """
-    section = page.locator("#kaasamine")
-    if section.get_attribute("open") is None:
-        section.locator(".accordion__head").click()
-    return section
+    return page.locator("#kaasamine")
 
 
 def composer(page):
-    """The `+ Lisa kaasamine` disclosure. Only rendered where records exist."""
+    """The `+ Lisa kaasamine` disclosure — now the only way to the add form."""
     return page.locator("#kaasamine [data-engagement-composer]")
-
-
-def add_trigger(page):
-    """The header's `+ Lisa`, which opens the section and the form together."""
-    return page.locator("#kaasamine [data-engagement-add-trigger]")
 
 
 def title_box(page):
@@ -79,40 +76,37 @@ def add_form(page):
     return page.locator("#kaasamine form[data-engagement-add]")
 
 
-def test_one_click_opens_the_section_and_its_form_when_nothing_is_recorded(page, base_url):
-    """The primary regression. Two clicks used to be needed for the first record."""
+def test_one_click_opens_the_form_when_nothing_is_recorded(page, base_url):
+    """The primary regression. Two clicks used to be needed for the first record.
+
+    It is still one, and the section around it no longer costs a click of its
+    own: the rows are visible on arrival and `+ Lisa kaasamine` is the single
+    gesture between a reader and the form.
+    """
     sign_in(page, base_url, SANDRA)
     open_empty_matter(page, base_url)
 
     section = page.locator("#kaasamine")
     expect(section).to_be_visible()
     expect(section.get_by_role("heading", name="Kaasamine")).to_be_visible()
-    # Collapsed on arrival, and the form with it: the section is read far more
-    # often than written, in this state as in any other.
-    assert section.get_attribute("open") is None
     assert section.get_attribute("data-engagement-count") == "0"
     expect(title_box(page)).to_be_hidden()
 
-    section.locator(".accordion__head").click()
+    composer(page).locator("summary").click()
 
-    # One click. The section is open and so is the form — and there is no
-    # `+ Lisa kaasamine` step between them to click a second time.
-    assert section.get_attribute("open") is not None
     expect(title_box(page)).to_be_visible()
-    expect(composer(page)).to_have_count(0)
-    expect(section.get_by_text("+ Lisa kaasamine")).to_have_count(0)
 
 
-def test_the_keyboard_opens_the_empty_section_and_its_form(page, base_url):
-    """Tab to the summary, press Enter, and the form is there (§15)."""
+def test_the_keyboard_opens_the_form(page, base_url):
+    """Tab to the control, press Enter, and the form is there (§15)."""
     sign_in(page, base_url, SANDRA)
     open_empty_matter(page, base_url)
 
-    section = page.locator("#kaasamine")
-    section.locator(".accordion__head").focus()
+    trigger = composer(page).locator("summary")
+    trigger.focus()
+    expect(trigger).to_be_focused()
     page.keyboard.press("Enter")
 
-    assert section.get_attribute("open") is not None
     expect(title_box(page)).to_be_visible()
 
 
@@ -124,7 +118,7 @@ def test_an_engagement_can_be_added_and_then_corrected(page, base_url):
     # save and not about the empty state: `+ Lisa` opens the composer whether
     # the scratch Matter still holds nothing or already holds what an earlier
     # run put there.
-    add_trigger(page).click()
+    composer(page).locator("summary").click()
     expect(title_box(page)).to_be_visible()
 
     # The three approved options. `WEB_CALL` is still a valid stored value and
@@ -171,7 +165,7 @@ def test_an_engagement_link_never_opens_without_noopener(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_scratch_matter(page, base_url)
 
-    add_trigger(page).click()
+    composer(page).locator("summary").click()
     expect(title_box(page)).to_be_visible()
     add_form(page).locator('input[name="title"]').fill("Väline küsitlus")
     add_form(page).locator('input[name="url"]').fill("https://survey.example.invalid/s/1")
@@ -209,17 +203,17 @@ def with_one_record(page, base_url: str):
     return page.locator("#kaasamine")
 
 
-def test_a_section_with_records_opens_onto_the_records_and_not_the_form(page, base_url):
-    """The records are what the reader opened the section for (§19)."""
+def test_the_records_are_readable_without_opening_anything(page, base_url):
+    """The records are what a reader came for, and they no longer cost a click.
+
+    This used to assert that opening the section showed the records rather than
+    the form. The section does not open any more — it is a section of the facts
+    panel — so what is asserted is the same thing one step earlier: the rows are
+    on the page, and the form still waits to be asked for (§19).
+    """
     sign_in(page, base_url, SANDRA)
     section = with_one_record(page, base_url)
 
-    assert section.get_attribute("open") is None
-    expect(title_box(page)).to_be_hidden()
-
-    section.locator(".accordion__head").click()
-
-    assert section.get_attribute("open") is not None
     expect(section.locator(".factrow").first).to_be_visible()
     # Here, and shut. Nothing auto-opens once there is something to read.
     expect(composer(page)).to_have_count(1)
@@ -229,43 +223,35 @@ def test_a_section_with_records_opens_onto_the_records_and_not_the_form(page, ba
     expect(title_box(page)).to_be_visible()
 
 
-def test_the_header_add_action_opens_the_section_and_the_form_together(page, base_url):
-    """One action, from collapsed, with records present (§20).
-
-    A span in the summary was only the disclosure's toggle: it opened the
-    section and left the composer shut, so `+ Lisa` — the one control that says
-    "add" — needed a second click before anything could be added.
-    """
+def test_the_add_action_opens_the_form_with_records_present(page, base_url):
+    """One action, and the form is ready to type into (§20)."""
     sign_in(page, base_url, SANDRA)
-    section = with_one_record(page, base_url)
-    assert section.get_attribute("open") is None
+    with_one_record(page, base_url)
 
-    add_trigger(page).click()
+    composer(page).locator("summary").click()
 
-    assert section.get_attribute("open") is not None
     expect(title_box(page)).to_be_visible()
-    # An explicit Add may take the focus; opening the section may not (§14).
+    # An explicit Add may take the focus (§14).
     expect(add_form(page).locator('select[name="kind"]')).to_be_focused()
 
 
-def test_the_header_add_action_is_operable_from_the_keyboard(page, base_url):
-    """Reachable by Tab, and Enter on it does not toggle the section shut (§15)."""
+def test_the_add_action_is_operable_from_the_keyboard(page, base_url):
+    """Reachable by Tab, and Enter on it opens what it names (§15)."""
     sign_in(page, base_url, SANDRA)
-    section = with_one_record(page, base_url)
+    with_one_record(page, base_url)
 
-    add_trigger(page).focus()
-    expect(add_trigger(page)).to_be_focused()
+    composer(page).locator("summary").focus()
+    expect(composer(page).locator("summary")).to_be_focused()
     page.keyboard.press("Enter")
 
-    assert section.get_attribute("open") is not None
     expect(title_box(page)).to_be_visible()
 
 
 def test_a_saved_record_stays_visible_and_the_composer_closes(page, base_url):
     """The reader must see what they just made, not an emptied form (§21)."""
     sign_in(page, base_url, SANDRA)
-    section = with_one_record(page, base_url)
-    add_trigger(page).click()
+    with_one_record(page, base_url)
+    composer(page).locator("summary").click()
 
     title_box(page).fill("Teine kaasamiskutse")
     add_form(page).get_by_role("button", name="Lisa kaasamine").click()
@@ -277,12 +263,11 @@ def test_a_saved_record_stays_visible_and_the_composer_closes(page, base_url):
     expect(
         page.locator("#kaasamine .factrow").get_by_text("Teine kaasamiskutse", exact=True).first
     ).to_be_visible()
-    assert section.get_attribute("open") is not None
     expect(composer(page)).to_have_count(1)
     expect(title_box(page)).to_be_hidden()
 
     # And another one can be added straight away.
-    add_trigger(page).click()
+    composer(page).locator("summary").click()
     expect(title_box(page)).to_be_visible()
     expect(title_box(page)).to_have_value("")
 
@@ -295,15 +280,14 @@ def test_a_refused_save_keeps_both_open_with_the_reason_and_the_values(page, bas
     person can actually reach is an unreadable date.
     """
     sign_in(page, base_url, SANDRA)
-    section = with_one_record(page, base_url)
-    add_trigger(page).click()
+    with_one_record(page, base_url)
+    composer(page).locator("summary").click()
 
     title_box(page).fill("Vigane kuupäev")
     add_form(page).locator('input[name="occurred_on"]').fill("32.13.2026")
     add_form(page).get_by_role("button", name="Lisa kaasamine").click()
 
     expect(add_form(page).locator(".field__error")).to_be_visible()
-    assert section.get_attribute("open") is not None
     assert composer(page).get_attribute("open") is not None
     expect(title_box(page)).to_be_visible()
     expect(title_box(page)).to_have_value("Vigane kuupäev")

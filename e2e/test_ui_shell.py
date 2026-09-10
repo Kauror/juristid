@@ -846,7 +846,12 @@ def test_the_composer_starts_as_one_row(page, base_url):
     field = page.locator(".composer__body")
     expect(field).to_be_visible()
     working = field.bounding_box()["height"]
-    assert working >= 90, f"the opened composer gives {working}px to write in"
+    # Two lines, not three. The 2026-09 refinement shrank the resting height of
+    # the opened box from 108px to 60px: an eight-line form standing open under
+    # the Järgmiseks row pushed the file's own content below the fold on every
+    # visit, and the box still grows the moment anybody types in it
+    # (design handoff §18, docs/matter-page-refinement.md).
+    assert 55 <= working <= 70, f"the opened composer gives {working}px to write in"
 
     # And it does not shrink back when focus moves to a control beside it.
     page.locator(".uxcomp__row .uxchip", has_text="Homme").first.click()

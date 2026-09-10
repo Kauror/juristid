@@ -6,8 +6,17 @@ A cancelled row is marked rather than hidden, and a superseded one says what
 replaced it.
 {% endcomment %}
 <li class="factrow {% if past %}factrow--past{% endif %} {% if record.is_cancelled %}factrow--cancelled{% endif %}">
+  {% comment %}
+    The date, and how far off it is. `.factrow__dist` is the muted qualifier
+    the 2026-09 refinement adds: a list of dates answers *when*, and a reader
+    scanning it is asking *how soon* (design handoff C12).
+
+    Empty for anything past, and for anything more than sixty days out — the
+    rule and the window are `MatterImportantDate.distance_label`'s, which is
+    also where the reasoning for both lives.
+  {% endcomment %}
   <span class="factrow__date {% if record.is_approximate %}dateline--approximate{% endif %}">
-    {{ record.display_date }}
+    {{ record.display_date }}{% with distance=record.distance_label %}{% if distance %} <span class="factrow__dist">{{ distance }}</span>{% endif %}{% endwith %}
   </span>
   <span class="factrow__body">
     <span class="factrow__title">{{ record.title }}</span>
