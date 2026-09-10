@@ -143,10 +143,25 @@ def test_every_bind_mount_stays_inside_the_juristid_subtree(compose: dict[str, A
             for foreign in FOREIGN_APPDATA:
                 assert not resolved.startswith(foreign), f"{name} reaches into {foreign}"
     # Guards the guard: a parser bug that produced no paths would pass silently.
-    # Six: postgres, cloudflared, and evidence plus derivatives on each of the
-    # two application containers. The shared upload volume is not a bind — that
-    # is the point of it — and has its own tests below.
-    assert seen == 6, "expected the postgres, evidence, derivative and cloudflared mounts"
+    # Eight: postgres, cloudflared, and evidence, derivatives and legacy-source
+    # on each of the two application containers. The shared upload volume is not
+    # a bind — that is the point of it — and has its own tests below.
+    #
+    # It was six until the rehearsal was given `legacy-source` to mount. That
+    # parity is the point of the rehearsal: `deployment_readiness` fails on a
+    # `LEGACY_SOURCE_ROOT` that does not exist, so a stack without the mount
+    # cannot run the gate production runs, and the rehearsal stops rehearsing
+    # the thing it is for (docs/adr/0022).
+    #
+    # The count is what has to be maintained by hand, and it is worth keeping
+    # rather than deriving: every one of these paths is asserted to stay inside
+    # this deployment's own subtree, and a mount that stopped being parsed as a
+    # bind would silently leave that assertion. A number somebody has to change
+    # deliberately is the point — the two new entries were read before this
+    # became eight.
+    assert seen == 8, (
+        "expected the postgres, evidence, derivative, legacy-source and cloudflared mounts"
+    )
 
 
 def test_every_non_bind_volume_is_a_declared_named_volume(compose: dict[str, Any]) -> None:
