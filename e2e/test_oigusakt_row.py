@@ -196,8 +196,7 @@ def test_the_count_reads_the_number_chosen(page, base_url):
         would make this test fail for the thing it is not about.
         """
         return [
-            chips.nth(index).inner_text().replace("×", "").strip()
-            for index in range(chips.count())
+            chips.nth(index).inner_text().replace("×", "").strip() for index in range(chips.count())
         ]
 
     before = labels()

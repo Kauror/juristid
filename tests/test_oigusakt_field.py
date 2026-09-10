@@ -631,3 +631,124 @@ def test_the_create_page_still_holds_the_sender_default_and_the_folded_addressee
     body = signed_in.get(CREATE).content.decode()
     disclosure = body[body.index("data-addressee-disclosure") :][:400]
     assert " open" not in disclosure.split(">")[0]
+
+
+# ---------------------------------------------------------------------------
+# Raw source and canonical reading are two facts, and both survive
+# ---------------------------------------------------------------------------
+
+
+def test_the_raw_register_value_survives_beside_an_empty_canonical_reading(specialist):
+    """The invariant the whole change is arranged around (task §5, §11, §21).
+
+    `CurrentRegisterState.legal_instrument_raw` is what the spreadsheet said.
+    `Matter.legal_instruments` is the reviewed interpretation. They are
+    different concepts, both exist for one record, and nothing normalises the
+    first in order to produce the second.
+
+    Asserted on the two spellings that produce *no* canonical reading, because
+    that is where a codebase would be tempted to tidy: an unmappable value is
+    exactly the one somebody would round to `Muu` to make a coverage number
+    look better, and rounding it would destroy the only record of what the
+    department actually wrote.
+    """
+    from django.utils import timezone
+
+    from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
+    from app.taxonomy.legal_instruments import (
+        UNMAPPABLE_RAW_VALUES,
+        canonical_legal_instrument_keys,
+    )
+
+    snapshot = "e" * 64
+    for index, raw in enumerate(sorted(UNMAPPABLE_RAW_VALUES), start=1):
+        matter = factories.MatterFactory(title=f"Ajalooline {index}")
+        reference = factories.MatterSourceReferenceFactory(
+            matter=matter,
+            source_sheet="2026",
+            source_row_number=index,
+            source_snapshot_sha256=snapshot,
+        )
+        state = CurrentRegisterState.objects.create(
+            matter=matter,
+            source_reference=reference,
+            source_snapshot_sha256=snapshot,
+            source_sheet="2026",
+            source_row_number=index,
+            currency=RegisterCurrency.CURRENT,
+            legal_instrument_raw=raw,
+            observed_at=timezone.now(),
+        )
+
+        state.refresh_from_db()
+        assert state.legal_instrument_raw == raw, "the source string was altered"
+        assert canonical_legal_instrument_keys(raw) == ()
+        # And the canonical field is untouched — no importer wrote it, and the
+        # unmappable value certainly did not become `Muu`.
+        assert list(matter.legal_instruments.all()) == []
+        assert matter.legal_instrument_other == ""
+
+
+def test_a_mappable_raw_value_still_does_not_write_the_canonical_field(specialist):
+    """A reviewed *reading* is not an importer that applies it (task §12).
+
+    `seadus` reads as `["seadus"]` and the Matter beside it stays unclassified,
+    because whether the source may answer this question for a person is a
+    decision nobody has made. The era contracts say `mapped` rather than
+    `authoritative` for exactly this reason.
+    """
+    from django.utils import timezone
+
+    from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
+    from app.taxonomy.legal_instruments import canonical_legal_instrument_keys
+
+    snapshot = "d" * 64
+    matter = factories.MatterFactory(title="Registri rida")
+    reference = factories.MatterSourceReferenceFactory(
+        matter=matter,
+        source_sheet="2026",
+        source_row_number=9,
+        source_snapshot_sha256=snapshot,
+    )
+    CurrentRegisterState.objects.create(
+        matter=matter,
+        source_reference=reference,
+        source_snapshot_sha256=snapshot,
+        source_sheet="2026",
+        source_row_number=9,
+        currency=RegisterCurrency.CURRENT,
+        legal_instrument_raw="seadus",
+        observed_at=timezone.now(),
+    )
+
+    assert canonical_legal_instrument_keys("seadus") == ("seadus",)
+    assert list(matter.legal_instruments.all()) == []
+
+
+def test_the_register_refresh_does_not_carry_legal_instruments():
+    """Nothing picks this field up by accident on the recurring refresh.
+
+    `refresh_matter_from_register` takes one explicit keyword per field it is
+    allowed to move, so a field it does not name is a field it cannot touch.
+    That is the guarantee standing in for the precedence decision nobody has
+    made yet (docs/open-decisions.md, task §12).
+    """
+    import inspect
+
+    from app.matters.services import refresh_matter_from_register
+
+    parameters = set(inspect.signature(refresh_matter_from_register).parameters)
+    assert "legal_instruments" not in parameters
+    assert "legal_instrument_other" not in parameters
+    # The keywords it *does* carry, so widening it is a deliberate edit here.
+    assert parameters == {
+        "matter",
+        "owner",
+        "stage",
+        "received_date",
+        "response_deadline",
+        "source_organisations",
+        "addressee_organisation",
+        "actor",
+        "provenance",
+    }
