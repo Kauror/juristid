@@ -322,14 +322,38 @@ result says which of those it is and where inside it the match was — `lk 17`,
 `slaid 3`, `leht "Kulud"` — and clicking one opens that document rather than
 merely its matter.
 
-## Content extraction
+## Reading documents
 
-Uploading a file does not wait for its contents to be read; a worker does that
-afterwards. On the deployment it is its own container, and locally it is a
-command:
+Reading exists to fill in `Uus teema`. Somebody chooses a file, the reader opens
+it while the form is still on screen, and what it can determine appears in the
+controls they have not touched — a title, a sender, a response deadline, a
+Menetlusliik, Valdkonnad. That is the whole of the capability, and it is
+deliberately not a general document pipeline (docs/adr/0069).
+
+On the deployment it is its own container; locally it is a command:
 
 ```bash
-uv run python manage.py run_extraction_worker
+uv run python manage.py run_intake_reader
+```
+
+It reads files staged on an open `Uus teema` session and nothing else — no
+canonical `DocumentVersion`, no archive, no historical import. With no open
+form anywhere in the department it does nothing and idles.
+
+Nothing permanent is produced. The text goes onto the staging row, onto the
+form, and is thrown away with the session; a document filed this way keeps its
+exact original bytes as evidence and has **no** extracted text, no derivative
+and no content in the search index. That is a deliberate trade — see the
+Statistika tab, which says so beside the number.
+
+### Corpus extraction, when somebody really wants it
+
+The general worker still exists and is **not** a deployed service. Running it
+across the archive is what saturated production's storage on 2026-09-10, so it
+is absent from both Compose files and is started deliberately, with a limit:
+
+```bash
+uv run python manage.py run_extraction_worker --once --limit 25
 ```
 
 ```bash

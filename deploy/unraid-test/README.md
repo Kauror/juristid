@@ -10,7 +10,7 @@ public hostname.
 | LAN URL | <http://192.168.1.133:3020> |
 | Public URL | <https://juristid.orgusaar.ee> — **the PIN is the only gate** |
 | Compose project | `juristid-test` |
-| Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-extractor`, `juristid-test-searchindex`, `juristid-test-tunnel` |
+| Containers | `juristid-test-web`, `juristid-test-db`, `juristid-test-intake-reader`, `juristid-test-searchindex`, `juristid-test-tunnel` |
 | Network | `juristid-test-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-test/` |
 | Evidence | `…/evidence` — **back this up** |
@@ -157,26 +157,35 @@ docker compose -p juristid-test -f compose.yml run --rm web python manage.py reb
 Finally:
 
 ```bash
-docker compose -p juristid-test -f compose.yml up -d web extractor searchindex
+docker compose -p juristid-test -f compose.yml up -d web intake-reader searchindex
 ```
 
-## The extraction worker
+## The `Uus teema` intake reader
 
-`juristid-test-extractor` runs `manage.py run_extraction_worker` from the same
-image as the web process. It claims pending `DocumentVersion` rows, parses them,
-writes derivatives and reindexes — none of which a web request waits for,
-because OCR on a scanned annex takes minutes.
+`juristid-test-intake-reader` runs `manage.py run_intake_reader` from the same
+image as the web process. It reads the files somebody has just chosen on
+`Uus teema`, so the form in front of them fills itself in, and it reads nothing
+else — no canonical `DocumentVersion`, no archive, no historical import
+(docs/adr/0069).
 
-It publishes no port and joins only this project's network. It *can* write
-evidence, which is deliberate and was a correction: an email's attachments are
-themselves new evidence and this is the process that captures them, so a
-read-only mount failed every `.eml`. Existing evidence stays immutable because a
-PostgreSQL trigger says so, not because of a mount option.
+It publishes no port, joins only this project's network, and mounts exactly one
+thing: the staging volume, read-only. No evidence tree, no derivatives, no
+source corpus — it opens staged bytes and writes rows.
 
-Watch it:
+**There is no `extractor` service any more, on either stack.** Corpus-wide
+extraction saturated the production array on 2026-09-10 and is no longer part of
+the product; the service is gone so `up -d` cannot start it. An operator who
+genuinely wants text out of imported material runs it deliberately:
 
 ```bash
-docker compose -p juristid-test -f compose.yml logs -f extractor
+docker compose -p juristid-test -f compose.yml run --rm \
+    web python manage.py run_extraction_worker --once --limit 50
+```
+
+Watch the reader:
+
+```bash
+docker compose -p juristid-test -f compose.yml logs -f intake-reader
 ```
 
 ## The search freshness worker
@@ -266,10 +275,10 @@ docker compose -p juristid-test -f compose.yml up -d
 ```
 
 Unqualified, not `up -d web`. Three services run the application image — `web`,
-`extractor` and `searchindex` — and naming one of them leaves the other two
+`intake-reader` and `searchindex` — and naming one of them leaves the other two
 running the build this deployment replaced. `searchindex` made that visible
 rather than new: before it existed, a redeploy that said `up -d web` left the
-extractor on the old image, and now it also leaves the search worker not running
+worker on the old image, and now it also leaves the search worker not running
 at all on a stack deployed after ADR 0041. The tunnel is behind a profile, so
 this starts nothing that is meant to be started deliberately.
 

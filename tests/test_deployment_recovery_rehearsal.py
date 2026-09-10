@@ -277,7 +277,7 @@ def test_the_workers_are_behind_a_profile(compose: dict[str, Any]) -> None:
     starts with `up -d` changes it before anybody looks, and the change is
     indistinguishable from something the backup got wrong.
     """
-    for name in ("extractor", "searchindex"):
+    for name in ("intake-reader", "searchindex"):
         service = _services(compose)[name]
         assert "workers" in service.get("profiles", []), f"{name}: would start on a plain `up`"
 

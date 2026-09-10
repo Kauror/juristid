@@ -89,7 +89,7 @@ def read_staged_files() -> str:
     """
     environment = {**os.environ, "DJANGO_SETTINGS_MODULE": "config.settings"}
     result = subprocess.run(
-        [sys.executable, "manage.py", "extract_pending_intake_files", "--limit", "20"],
+        [sys.executable, "manage.py", "run_intake_reader", "--once", "--limit", "20"],
         cwd=REPOSITORY_ROOT,
         env=environment,
         capture_output=True,
@@ -371,8 +371,11 @@ def test_a_refused_save_keeps_the_staged_file_and_what_was_found(
 # ---------------------------------------------------------------------------
 #
 # The reported defect had two halves. The deployment could never read anything,
-# because nothing could move a file past the malware gate — that half is
-# `app/documents/scanning.py` and `tests/test_malware_scanning.py`. This is the
+# because nothing could move a file past the malware gate — that half was fixed
+# by building a scanner (ADR 0066) and then removed altogether with the
+# subsystem it belonged to (docs/adr/0069): there is no gate in front of a
+# parser any more, and `tests/test_intake_reader.py` holds the reader to
+# reading whatever scan state a row happens to carry. This is the
 # other half, and it is the one the person actually experienced: after about
 # seventy seconds the browser stopped asking, and then left an animated spinner
 # and the words «Loen faili…» on screen for as long as they were willing to look
@@ -640,7 +643,7 @@ def read_staged_files_is_a_noop() -> None:
     """
     environment = {**os.environ, "DJANGO_SETTINGS_MODULE": "config.settings"}
     result = subprocess.run(
-        [sys.executable, "manage.py", "extract_pending_intake_files", "--limit", "20"],
+        [sys.executable, "manage.py", "run_intake_reader", "--once", "--limit", "20"],
         cwd=REPOSITORY_ROOT,
         env=environment,
         capture_output=True,

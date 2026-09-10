@@ -360,6 +360,61 @@ def _with_current(candidate: Candidate, already: bool) -> Candidate:
 
 
 # ---------------------------------------------------------------------------
+# Agreement across the envelope
+# ---------------------------------------------------------------------------
+
+
+def _promote_on_agreement(
+    candidates: dict[Any, Candidate], seen: dict[Any, set[Any]]
+) -> dict[Any, Candidate]:
+    """Two documents saying the same thing is stronger than one saying it once.
+
+    `Uus teema` receives an envelope, not a file. A ministry's covering letter
+    carries its own letterhead and the message that brought it carries the same
+    organisation in its ``From:``; the letter states a date and the message
+    repeats it. Each of those on its own is a MEDIUM — a display name is not a
+    catalogue entry, a shared letterhead is not a signature — and the analyser
+    used to leave it at MEDIUM, so a value two independent documents agreed on
+    filled nothing while a single strong phrase in one document filled the
+    control (brief §10).
+
+    So a MEDIUM value witnessed by **two different documents** becomes HIGH.
+    Two conditions, both of them about precision rather than about recall:
+
+    * ``seen`` counts *documents*, not mentions. The same letterhead read twice
+      on two pages of one letter is one witness, or a long document would
+      promote itself.
+    * **Nothing is promoted while the field already has a HIGH candidate.** If
+      one document states a deadline in so many words, that is the answer;
+      promoting a second date that two other files happen to share would
+      manufacture a conflict and take away an autofill that was correct. This
+      rule can only rescue a field that would otherwise fill nothing — it can
+      never overturn a strong reading, and it can never reduce what the person
+      is offered.
+    """
+    if any(candidate.is_high for candidate in candidates.values()):
+        return candidates
+    promoted = dict(candidates)
+    for key, candidate in candidates.items():
+        if candidate.confidence != Confidence.MEDIUM:
+            continue
+        if len(seen.get(key, set())) < 2:
+            continue
+        promoted[key] = replace(
+            candidate,
+            confidence=Confidence.HIGH,
+            rule=f"{candidate.rule}_agreed",
+            detail=_agreement_detail(candidate.detail, len(seen[key])),
+        )
+    return promoted
+
+
+def _agreement_detail(detail: str, documents: int) -> str:
+    note = f"Sama väärtus {documents} eri failis."
+    return f"{detail} {note}".strip() if detail else note
+
+
+# ---------------------------------------------------------------------------
 # Kellelt
 # ---------------------------------------------------------------------------
 
@@ -372,8 +427,13 @@ def _senders(
 ) -> None:
     best: dict[Any, Candidate] = {}
     mentions_only: dict[Any, Candidate] = {}
+    #: Which documents named each organisation somewhere better than the body.
+    #: The input to `_promote_on_agreement`; a set, so one letterhead read on
+    #: three pages of one letter is still one witness.
+    witnesses: dict[Any, set[Any]] = {}
 
-    def offer(candidate: Candidate) -> None:
+    def offer(candidate: Candidate, source: SourceDocument) -> None:
+        witnesses.setdefault(candidate.value, set()).add(source.document_id)
         existing = best.get(candidate.value)
         if existing is None or (
             _rank(candidate.confidence),
@@ -411,8 +471,9 @@ def _senders(
                 if entry.id not in mentions_only:
                     mentions_only[entry.id] = candidate
             else:
-                offer(candidate)
+                offer(candidate, document)
 
+    best = _promote_on_agreement(best, witnesses)
     high = [c for c in best.values() if c.is_high]
     distinct_high = {c.value for c in high}
     if len(distinct_high) > 1:
@@ -474,7 +535,8 @@ def _senders_from_email(
                 if from_email
                 else f"Saatja: {from_name}",
                 score=5,
-            )
+            ),
+            document,
         )
     label, _ = textscan.fold(textscan.domain_label(from_email))
     if not label:
@@ -499,7 +561,8 @@ def _senders_from_email(
                 evidence=f"Saatja aadress: {from_email}",
                 detail=f"Domeen „{label}” vastab nimekujule „{pattern.form}”",
                 score=2,
-            )
+            ),
+            document,
         )
 
 
@@ -514,6 +577,8 @@ def _deadlines(
     documents: tuple[SourceDocument, ...], current: CurrentValues, builder: _Builder
 ) -> None:
     by_date: dict[date, Candidate] = {}
+    #: Which documents stated each date as a deadline, for `_promote_on_agreement`.
+    witnesses: dict[Any, set[Any]] = {}
     for document in documents:
         is_memorandum = _is_explanatory_memorandum(document)
         blocks = document.prose_blocks
@@ -539,6 +604,7 @@ def _deadlines(
                     form_value=format_estonian_date(found.value),
                     score=3 if confidence == Confidence.HIGH else 1,
                 )
+                witnesses.setdefault(found.value, set()).add(document.document_id)
                 existing = by_date.get(found.value)
                 if existing is None or _rank(confidence) < _rank(existing.confidence):
                     by_date[found.value] = candidate
@@ -558,6 +624,7 @@ def _deadlines(
             )
     if not by_date:
         return
+    by_date = _promote_on_agreement(by_date, witnesses)
     high_dates = {value for value, candidate in by_date.items() if candidate.is_high}
     if len(high_dates) > 1:
         builder.conflicts.add(SuggestedField.RESPONSE_DEADLINE)
@@ -590,6 +657,85 @@ def _block_for_offset(document: SourceDocument, offset: int) -> TextBlock | None
 
 
 # ---------------------------------------------------------------------------
+# Pooled vocabulary scoring, shared by Menetlusliik and Valdkonnad
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _Pooled:
+    """One vocabulary rule's evidence across the whole intake envelope."""
+
+    total: int
+    hits: tuple[textscan.SignalHit, ...]
+    document: SourceDocument
+    #: Every signal that fired for this rule fired only in an annex. The rule
+    #: may still be offered; it may not reach HIGH and fill a control
+    #: (`vocab.ANNEX_ONLY_HIGH_MARGIN`).
+    annex_only: bool = False
+
+    def capped(self, high_threshold: int) -> int:
+        """The score this rule is allowed to carry into a confidence.
+
+        Identical to ``total`` unless every witness was an annex, in which case
+        it is held one point below HIGH — offered with its evidence, never
+        filling a control (`vocab.ANNEX_ONLY_HIGH_MARGIN`).
+        """
+        if self.annex_only:
+            return min(self.total, high_threshold - vocab.ANNEX_ONLY_HIGH_MARGIN)
+        return self.total
+
+
+def _pool_signals(
+    documents: tuple[SourceDocument, ...], signals: tuple[vocab.Signal, ...]
+) -> _Pooled | None:
+    """Score one rule over every document, counting each signal once.
+
+    Two decisions live here and nowhere else, so Menetlusliik and Valdkonnad
+    cannot come to differ about either.
+
+    **A signal counts once across the envelope, at its strongest.** A ministry
+    sends the same word in the letter, the draft and the memorandum; three
+    copies of one term are one piece of evidence about what the file is, and
+    summing them would let the size of an envelope decide its subject.
+
+    **A rule witnessed only by annexes is marked**, and its caller holds it one
+    point below HIGH. An annex is where the comparison table and the impact
+    assessment live, and those name every neighbouring policy area in passing —
+    honestly and repeatedly, which is why discounting the score does not work:
+    the corpus's twelve-page comparison table scores 74 for procurement against
+    the covering letter's 46 for the environment. The evidence is real and the
+    conclusion is wrong, so what is refused is the *confidence*, not the
+    finding: the area is still offered with its evidence, one click away
+    (brief §16, `vocab.ANNEX_ONLY_HIGH_MARGIN`).
+
+    A signal that fires in an annex *and* anywhere else leaves the rule
+    unmarked. What is capped is the annex being the only witness.
+    """
+    pooled: dict[str, textscan.SignalHit] = {}
+    pooled_document: dict[str, SourceDocument] = {}
+    annex_only: dict[str, bool] = {}
+    for document in documents:
+        for hit in textscan.count_signals(document, signals):
+            existing = pooled.get(hit.label)
+            if existing is None or hit.points > existing.points:
+                pooled[hit.label] = hit
+                pooled_document[hit.label] = document
+            annex_only[hit.label] = annex_only.get(hit.label, True) and document.is_annex
+    if not pooled:
+        return None
+    hits = sorted(pooled.values(), key=lambda hit: -hit.points)
+    total = sum(hit.points for hit in hits)
+    if total <= 0:
+        return None
+    return _Pooled(
+        total=total,
+        hits=tuple(hits),
+        document=pooled_document[hits[0].label],
+        annex_only=all(annex_only.get(hit.label, False) for hit in hits),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Menetlusliik
 # ---------------------------------------------------------------------------
 
@@ -599,23 +745,16 @@ def _tracks(
 ) -> None:
     scored: list[tuple[str, int, list[textscan.SignalHit], SourceDocument]] = []
     for track, rule in vocab.TRACK_RULES.items():
-        pooled: dict[str, textscan.SignalHit] = {}
-        pooled_document: dict[str, SourceDocument] = {}
-        for document in documents:
-            for hit in textscan.count_signals(document, rule.signals):
-                existing = pooled.get(hit.label)
-                if existing is None or hit.points > existing.points:
-                    pooled[hit.label] = hit
-                    pooled_document[hit.label] = document
-        hits = sorted(pooled.values(), key=lambda hit: -hit.points)
-        total = sum(hit.points for hit in hits)
-        if total <= 0:
+        found = _pool_signals(documents, rule.signals)
+        if found is None:
             continue
-        if rule.requires and not all(label in pooled for label in rule.requires):
+        total = found.capped(vocab.TRACK_HIGH_THRESHOLD)
+        seen = {hit.label for hit in found.hits}
+        if rule.requires and not all(label in seen for label in rule.requires):
             total = min(total, vocab.TRACK_HIGH_THRESHOLD - 1)
         if rule.ceiling == "MEDIUM":
             total = min(total, vocab.TRACK_HIGH_THRESHOLD - 1)
-        scored.append((track, total, hits, pooled_document[hits[0].label]))
+        scored.append((track, total, list(found.hits), found.document))
 
     if not scored:
         return
@@ -682,18 +821,12 @@ def _areas(
         area = policy_areas.get(key)
         if area is None:
             continue
-        pooled: dict[str, textscan.SignalHit] = {}
-        pooled_document: dict[str, SourceDocument] = {}
-        for document in documents:
-            for hit in textscan.count_signals(document, signals):
-                existing = pooled.get(hit.label)
-                if existing is None or hit.points > existing.points:
-                    pooled[hit.label] = hit
-                    pooled_document[hit.label] = document
-        hits = sorted(pooled.values(), key=lambda hit: -hit.points)
-        total = sum(hit.points for hit in hits)
+        found = _pool_signals(documents, signals)
+        if found is None:
+            continue
+        total = found.capped(vocab.AREA_HIGH_THRESHOLD)
         if total >= vocab.AREA_MEDIUM_THRESHOLD:
-            scored.append((area, total, hits, pooled_document[hits[0].label]))
+            scored.append((area, total, list(found.hits), found.document))
     scored.sort(key=lambda row: (-row[1], row[0].sort_order))
     for area, total, hits, document in scored[: vocab.AREA_LIMIT]:
         first = hits[0]

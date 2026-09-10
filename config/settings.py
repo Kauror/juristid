@@ -10,7 +10,14 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from config.env import database_config_from_url, env, env_bool, env_int, env_list
+from config.env import (
+    database_config_from_url,
+    env,
+    env_bool,
+    env_float,
+    env_int,
+    env_list,
+)
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -444,26 +451,38 @@ EXTRACTION_WORKER_HEARTBEAT_PATH = env(
 )
 
 # --------------------------------------------------------------------------
-# The malware scan gate
+# The Uus teema intake reader
 # --------------------------------------------------------------------------
 #
-# What moves a file from PENDING to CLEAN, and therefore the only thing that
-# lets a parser open it in a real-data environment. Before this existed the
-# transition had no implementation at all, so `Uus teema` on the deployed stack
-# staged a file, showed «Loen faili…» and waited for ever (app/documents/scanning.py).
+# Where the intake reader marks that its loop turned. Its own file, not the
+# extraction worker's: the two are different processes answering different
+# healthchecks, and one heartbeat serving both would let a stopped reader be
+# reported alive by a corpus run somebody started by hand
+# (app/documents/extraction/heartbeat.py, docs/adr/0069).
+INTAKE_READER_HEARTBEAT_PATH = env(
+    "INTAKE_READER_HEARTBEAT_PATH",
+    str(Path(tempfile.gettempdir()) / "juristid-intake-reader.heartbeat"),
+)
+
+# How long the reader waits when no `Uus teema` form has a file waiting.
 #
-# `none` is the development answer and it clears nothing. That is not a
-# weakness there: with REAL_DATA_ALLOWED off, PENDING is already extractable and
-# always has been, because the data is invented. The two together are refused at
-# start-up by juristid.E015.
-MALWARE_SCANNER_BACKEND = env("MALWARE_SCANNER_BACKEND", "none")
-MALWARE_SCANNER_HOST = env("MALWARE_SCANNER_HOST", "clamav")
-MALWARE_SCANNER_PORT = env_int("MALWARE_SCANNER_PORT", 3310)
-# Bounded, and bounded generously. clamd answers a small PDF in well under a
-# second; the ceiling is here so that a scanner which has stopped answering
-# costs one file's wait rather than a wedged worker — the failure the extractor
-# healthcheck is meant to be able to distinguish.
-MALWARE_SCANNER_TIMEOUT_SECONDS = env_int("MALWARE_SCANNER_TIMEOUT_SECONDS", 60)
+# Much shorter than the extraction worker's ten seconds, and the difference is
+# the whole product decision: somebody is sitting in front of the form. A file
+# staged at the wrong moment would otherwise wait most of a sleep before the
+# loop even looked, which is latency for nothing — this queue is empty almost
+# always, so a short poll costs one indexed query a second against a table with
+# single-digit rows in it (docs/adr/0069 §Performance).
+INTAKE_READER_IDLE_SECONDS = env_float("INTAKE_READER_IDLE_SECONDS", 0.5)
+
+# How long a reader's claim may stand before another reader may take it.
+#
+# Its own number rather than EXTRACTION_STALE_CLAIM_MINUTES, because the two
+# describe different work. A corpus parse may be a 500-page OCR run and needs
+# half an hour of grace; a staged intake file is bounded by
+# MAX_INTAKE_UPLOAD_BYTES and finishes in seconds, so a claim older than this
+# belongs to a reader that died — and waiting thirty minutes to find that out
+# would strand the form it was reading for long past the session's own life.
+INTAKE_READER_STALE_CLAIM_MINUTES = env_int("INTAKE_READER_STALE_CLAIM_MINUTES", 5)
 
 # --------------------------------------------------------------------------
 # Search freshness

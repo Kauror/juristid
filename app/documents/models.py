@@ -163,6 +163,10 @@ class DocumentVersion(BaseModel):
     source_identifier = models.CharField(max_length=400, blank=True)
     sharepoint_item_version = models.CharField(max_length=200, blank=True)
 
+    # Dead since docs/adr/0069. Nothing writes it, nothing reads it, and no
+    # gate stands on it; it is kept because dropping a column from a
+    # 19 000-row production table is a destructive migration performed for
+    # neatness. See `MalwareScanState` for the full note.
     malware_scan_state = models.CharField(
         max_length=32,
         choices=MalwareScanState.choices,

@@ -3,11 +3,17 @@
 The analyser never opens a file. It reads what the extraction system already
 made of each document — the ACTIVE ``EXTRACTED_TEXT`` or ``OCR_TEXT``
 derivative's fragments, and the ``EMAIL_METADATA`` record for a message — for
-the document's *current* version only. That is the whole of the security
-boundary this feature sits behind: the malware gate and the extraction gate
-are the extraction worker's (`app.documents.extraction.orchestrator`), and a
-document that has not passed them has no derivative to read, so the analyser
-has nothing to say about it and says so (docs/adr/0014, docs/adr/0060).
+the document's *current* version only. A document nothing has parsed has no
+derivative to read, so the analyser has nothing to say about it and says so
+(docs/adr/0014, docs/adr/0060).
+
+That is now the ordinary case on this surface rather than a transient one.
+Corpus extraction is not a deployed service any more, and a file promoted out
+of `Uus teema` is deliberately never re-read (docs/adr/0069), so `Muuda teemat`
+usually finds nothing to analyse — the reading happened on `Uus teema`, while
+somebody was watching. This page stays because the historical corpus does have
+derivatives, and because a document added to an existing Matter can still be
+read by a deliberate operator run.
 
 Authorization is applied here, once, before anything is read:
 ``Document.objects.visible_to(viewer)`` is the same queryset every document
@@ -57,6 +63,7 @@ from app.documents.enums import (
     TextSource,
 )
 from app.documents.models import Document, DocumentDerivative, DocumentTextFragment
+from app.matters.intake_suggestions import vocabulary as vocab
 from app.matters.intake_suggestions.types import SourceKind
 from app.matters.staging import MatterIntakeFile, MatterIntakeSession
 
@@ -102,6 +109,14 @@ MAX_TOTAL_ANALYSIS_CHARACTERS = 200_000
 #: where a Matter has collected many small documents, so that the work stays
 #: proportional to a reading rather than to a filing cabinet.
 MAX_TEXT_DOCUMENTS_ANALYSED = 20
+
+#: How much of a document's opening counts as its emphasis zone.
+#:
+#: About a page. A ministry letter puts its letterhead, its reference number
+#: and its subject line inside the first page and then starts the body; a draft
+#: act puts its formal title there. Longer would start reading the body as
+#: though it were the heading, which is the distinction this exists to draw.
+EMPHASIS_CHARACTERS = 2_500
 
 #: Which material is read first when a Matter holds more than the budget.
 #:
@@ -183,6 +198,59 @@ class SourceDocument:
         return tuple(block for block in self.blocks if not block.is_email_header)
 
     @property
+    def emphasis_text(self) -> str:
+        """Where a document says what it is about, rather than merely says it.
+
+        A message's ``Subject:`` and the opening of a document's first block —
+        the letterhead, the reference line and the formal heading. Vocabulary
+        that fires here is about the file; the same word in the body of an
+        annex may be about anything.
+
+        The subject line was previously invisible to the Menetlusliik and
+        Valdkonna scoring altogether. `count_signals` reads
+        :attr:`prose_blocks`, and a message's headers are deliberately not
+        prose — so «Eelnõu 24-0918/02 kooskõlastamiseks» contributed exactly
+        nothing to deciding what the Teema was about, which is the opposite of
+        what a subject line is for (assisted-intake brief §16).
+        """
+        parts: list[str] = []
+        subject = self.email_value("subject")
+        if subject:
+            parts.append(subject)
+        prose = self.prose_blocks
+        if prose:
+            parts.append(prose[0].text[:EMPHASIS_CHARACTERS])
+        return "\n".join(parts)
+
+    @property
+    def is_annex(self) -> bool:
+        """Whether this file is an annex rather than the letter or the draft.
+
+        Read from the filename and the first line, and from nothing cleverer.
+        The ministry writes «Lisa 1», «Võrdlustabel» or «Mõjude analüüs» on the
+        front of these and the classifier recognises exactly that; anything it
+        does not recognise is *not* an annex, so an unfamiliar file keeps its
+        full weight and the failure direction is "counted normally" rather than
+        "quietly discounted" (`vocabulary.ANNEX_MARKERS`).
+
+        The filename is normalised before it is matched, because the markers
+        are anchored and real filenames are not written with spaces:
+        ``Lisa_1_vordlustabel.pdf`` has to reach the pattern as ``lisa 1
+        vordlustabel``, or an anchored rule matches nothing anybody actually
+        sends.
+        """
+        if self.is_email:
+            return False
+        candidates = [_filename_words(self.filename)]
+        prose = self.prose_blocks
+        if prose:
+            first_line = prose[0].text.lstrip().split("\n", 1)[0]
+            candidates.append(first_line.strip()[:120])
+        return any(
+            marker.search(value) for value in candidates if value for marker in vocab.ANNEX_MARKERS
+        )
+
+    @property
     def text(self) -> str:
         return "\n\n".join(block.text for block in self.prose_blocks)
 
@@ -194,6 +262,21 @@ class SourceDocument:
         if value is None or isinstance(value, list | dict):
             return ""
         return str(value).strip()
+
+
+def _filename_words(filename: str) -> str:
+    """``Lisa_1_vordlustabel.pdf`` → ``lisa 1 vordlustabel``.
+
+    The extension goes, separators become spaces, and the result is folded to
+    lower case so an anchored marker can be written the way a person would say
+    it. Deliberately the same mechanical treatment
+    `app.matters.intake.title_from_filename` gives a name, and for the same
+    reason: nothing here tries to read meaning out of a filename beyond the
+    words that are literally in it.
+    """
+    stem = (filename or "").rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    stem = stem.rsplit(".", 1)[0] if "." in stem else stem
+    return " ".join(stem.replace("_", " ").replace("-", " ").split()).casefold()
 
 
 @dataclass(frozen=True)

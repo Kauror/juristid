@@ -105,7 +105,7 @@ COMPUTERS: dict[str, Computer] = {
     keys.EXTRACTION_ELIGIBLE: documents.extraction_eligible,
     keys.EXTRACTION_SUCCESS: documents.extraction_success,
     keys.EXTRACTION_PENDING: documents.extraction_pending,
-    keys.EXTRACTION_AWAITING_SCANNER: documents.extraction_awaiting_scanner,
+    keys.EXTRACTION_INTAKE_READ: documents.extraction_intake_read,
     keys.EXTRACTION_FAILED: documents.extraction_failed,
     keys.EXTRACTION_NOT_APPLICABLE: documents.extraction_not_applicable,
     keys.SEARCHABLE_DOCUMENT_COVERAGE: documents.searchable_document_coverage,
@@ -449,7 +449,7 @@ def quality_page(context: ReportingContext) -> Page:
         tables=[
             compute(keys.EXTRACTION_SUCCESS, context),
             compute(keys.EXTRACTION_PENDING, context),
-            compute(keys.EXTRACTION_AWAITING_SCANNER, context),
+            compute(keys.EXTRACTION_INTAKE_READ, context),
             compute(keys.EXTRACTION_FAILED, context),
             compute(keys.EXTRACTION_NOT_APPLICABLE, context),
         ],

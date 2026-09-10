@@ -166,11 +166,14 @@ def test_every_bind_mount_stays_inside_the_juristid_main_subtree(
             for foreign in FOREIGN_APPDATA:
                 assert not host_path.startswith(foreign), f"{name} reaches into {foreign}"
     # Guards the guard: a parser bug producing no paths would pass silently.
-    # Ten: postgres, cloudflared, and four bind mounts on each of the two
-    # application containers (evidence, derivatives, legacy-source, source).
-    # The shared pending-uploads volume is not a bind and is counted by
+    # Six: postgres, cloudflared, and four bind mounts on `web` (evidence,
+    # derivatives, legacy-source, source). It was ten while `extractor` mounted
+    # the same four; the intake reader that replaced it mounts staging and
+    # nothing else, because it has no reason to see an evidence tree
+    # (docs/adr/0069). The shared pending-uploads volume is not a bind and is
+    # counted by
     # `test_the_shared_upload_volume_is_a_named_volume_and_not_an_appdata_bind`.
-    assert seen == 10
+    assert seen == 6
 
 
 def test_every_non_bind_volume_is_a_declared_named_volume(compose: dict[str, Any]) -> None:
@@ -196,11 +199,11 @@ def test_the_historical_source_is_mounted_read_only(compose: dict[str, Any]) -> 
     An importer that can write to its own source material is one bad run away
     from having nothing left to re-run against.
 
-    Read-only *bind* mounts, because the extractor also mounts the shared upload
-    volume read-only and that is a different rule with a test of its own. The
-    host filesystem this stack can write to is what this one is about.
+    Read-only *bind* mounts, because the intake reader also mounts the shared
+    upload volume read-only and that is a different rule with a test of its own.
+    The host filesystem this stack can write to is what this one is about.
     """
-    for name in ("web", "extractor"):
+    for name in ("web",):
         mounts = [_resolved(volume) for volume in compose["services"][name]["volumes"]]
         binds = [m for m in mounts if m.startswith(("/", "."))]
         historical = [m for m in binds if m.endswith(":ro")]
@@ -211,7 +214,8 @@ def test_the_historical_source_is_mounted_read_only(compose: dict[str, Any]) -> 
 # -- the shared upload volume ----------------------------------------------
 #
 # `Uus teema` staging put a second container on this storage class: `web` writes
-# the staged file and `extractor` opens it to parse it (docs/adr/0064). A
+# the staged file and `intake-reader` opens it to parse it (docs/adr/0064,
+# docs/adr/0069). A
 # container's writable layer is private, so the unmounted default that served
 # held uploads for one process leaves the worker looking for a file that only
 # exists in `web` — the feature suite could not see it, because it never crossed
@@ -223,27 +227,32 @@ def test_the_historical_source_is_mounted_read_only(compose: dict[str, Any]) -> 
 #: `BASE_DIR` being `/app`).
 UPLOAD_TARGET = "/app/pending-uploads"
 
+#: The one queue consumer this stack deploys, since docs/adr/0069. It was
+#: `extractor`, which drained the corpus queue too; that service is gone from
+#: both stacks so `up -d` cannot restart the workload that saturated the array.
+READER = "intake-reader"
+
 
 def _upload_mounts(compose: dict[str, Any], service: str) -> list[str]:
     mounts = [_resolved(volume) for volume in compose["services"][service].get("volumes") or []]
     return [m for m in mounts if m.split(":")[1:2] == [UPLOAD_TARGET]]
 
 
-def test_web_and_the_extractor_share_one_upload_volume(compose: dict[str, Any]) -> None:
+def test_web_and_the_intake_reader_share_one_upload_volume(compose: dict[str, Any]) -> None:
     """The defect this whole arrangement exists to prevent, stated once.
 
     Same source, same target, in both containers. Two volumes that merely happen
     to be mounted at the same path would satisfy every other test in this file
-    and still leave the worker unable to read a staged file.
+    and still leave the reader unable to read a staged file.
     """
     web = _upload_mounts(compose, "web")
-    extractor = _upload_mounts(compose, "extractor")
+    reader = _upload_mounts(compose, READER)
     assert len(web) == 1, f"web: expected one mount at {UPLOAD_TARGET}, got {web}"
-    assert len(extractor) == 1, f"extractor: expected one at {UPLOAD_TARGET}, got {extractor}"
+    assert len(reader) == 1, f"{READER}: expected one at {UPLOAD_TARGET}, got {reader}"
 
     web_source = web[0].split(":", 1)[0]
-    extractor_source = extractor[0].split(":", 1)[0]
-    assert web_source == extractor_source, "the two containers mount different sources"
+    reader_source = reader[0].split(":", 1)[0]
+    assert web_source == reader_source, "the two containers mount different sources"
 
 
 def test_the_shared_upload_volume_is_a_named_volume_and_not_an_appdata_bind(
@@ -272,10 +281,10 @@ def test_the_shared_upload_volume_is_a_named_volume_and_not_an_appdata_bind(
     assert declaration.get("external") is not True, "an external volume is not project-scoped"
 
 
-def test_the_extractor_cannot_write_to_the_staged_files_it_reads(
+def test_the_intake_reader_cannot_write_to_the_staged_files_it_reads(
     compose: dict[str, Any],
 ) -> None:
-    """`web` read-write, `extractor` read-only, because that is what each does.
+    """`web` read-write, `intake-reader` read-only, because that is what each does.
 
     Everything that changes a staged object happens in the web process: the
     upload view stores it, `consume_session` deletes it after `Loo teema`, and
@@ -285,7 +294,7 @@ def test_the_extractor_cannot_write_to_the_staged_files_it_reads(
     the source of a parse out of reach of the process doing the parsing.
     """
     assert _upload_mounts(compose, "web")[0].endswith(UPLOAD_TARGET), "web must be read-write"
-    assert _upload_mounts(compose, "extractor")[0].endswith(f"{UPLOAD_TARGET}:ro")
+    assert _upload_mounts(compose, READER)[0].endswith(f"{UPLOAD_TARGET}:ro")
 
 
 def test_no_other_service_receives_the_upload_volume(compose: dict[str, Any]) -> None:
@@ -307,7 +316,7 @@ def test_the_rehearsal_has_the_same_upload_topology(
     The rehearsal's whole purpose is to meet a deployment defect before
     production does, and it can only do that where the two agree. This is the
     boundary that hid the original defect: staging is written by `web` and read
-    by `extractor`, so a rehearsal whose containers do not share the volume
+    by `intake-reader`, so a rehearsal whose containers do not share the volume
     would exercise assisted intake successfully and prove nothing about the
     stack that matters.
 
@@ -322,15 +331,15 @@ def test_the_rehearsal_has_the_same_upload_topology(
             for m in (services["web"].get("volumes") or [])
             if m.split(":")[1:2] == [UPLOAD_TARGET]
         ]
-        extractor = [
+        reader = [
             m
-            for m in (services["extractor"].get("volumes") or [])
+            for m in (services[READER].get("volumes") or [])
             if m.split(":")[1:2] == [UPLOAD_TARGET]
         ]
-        assert len(web) == 1 and len(extractor) == 1, f"{model['name']}: not exactly one each"
-        assert web[0].split(":", 1)[0] == extractor[0].split(":", 1)[0], model["name"]
+        assert len(web) == 1 and len(reader) == 1, f"{model['name']}: not exactly one each"
+        assert web[0].split(":", 1)[0] == reader[0].split(":", 1)[0], model["name"]
         assert web[0].endswith(UPLOAD_TARGET), f"{model['name']}: web is not read-write"
-        assert extractor[0].endswith(f"{UPLOAD_TARGET}:ro"), f"{model['name']}: not read-only"
+        assert reader[0].endswith(f"{UPLOAD_TARGET}:ro"), f"{model['name']}: not read-only"
 
         for other in ("db", "searchindex", "tunnel"):
             mounts = services[other].get("volumes") or []
@@ -408,7 +417,7 @@ def test_the_volume_is_mounted_where_the_application_actually_writes(
     assert 'env("PENDING_UPLOAD_ROOT", str(BASE_DIR / "pending-uploads"))' in declaration
     assert UPLOAD_TARGET == "/app/pending-uploads"
 
-    for name in ("web", "extractor"):
+    for name in ("web", READER):
         environment = compose["services"][name].get("environment", {})
         assert "PENDING_UPLOAD_ROOT" not in environment, (
             f"{name} overrides the path the volume is mounted at"
@@ -469,9 +478,9 @@ def test_the_worker_is_not_judged_by_a_healthcheck_it_cannot_pass(
     indistinguishable — the signal is gone rather than merely wrong. The
     rehearsal ran that way for 28 hours.
     """
-    check = compose["services"]["extractor"].get("healthcheck")
-    assert check is not None, "the extractor inherits the web healthcheck"
-    assert "check_extraction_worker" in " ".join(check["test"])
+    check = compose["services"][READER].get("healthcheck")
+    assert check is not None, "the intake reader inherits the web healthcheck"
+    assert "check_intake_reader" in " ".join(check["test"])
     assert "healthz" not in " ".join(check["test"])
 
 
@@ -481,7 +490,7 @@ def test_the_web_service_keeps_the_image_healthcheck(compose: dict[str, Any]) ->
 
 
 def test_nothing_seeds_synthetic_data(compose: dict[str, Any]) -> None:
-    for name in ("web", "extractor"):
+    for name in ("web", READER):
         assert compose["services"][name]["environment"]["SEED_DEV_DATA"] == "0"
 
 
@@ -740,8 +749,10 @@ def test_every_storage_class_has_a_mount(compose: dict[str, Any]) -> None:
     }
     assert "/var/lib/postgresql" in targets["db"]
     assert "/home/nonroot/.cloudflared" in targets["tunnel"]
-    for name in ("web", "extractor"):
-        assert {"/app/evidence", "/app/derivatives", "/app/legacy-source"} <= targets[name]
+    assert {"/app/evidence", "/app/derivatives", "/app/legacy-source"} <= targets["web"]
+    # And the reader has none of them. It reads staged bytes and writes rows;
+    # an evidence tree would be reach without purpose (docs/adr/0069).
+    assert targets[READER] == {UPLOAD_TARGET}
 
 
 def test_the_source_corpus_is_read_only_on_every_service_that_sees_it(
@@ -759,7 +770,7 @@ def test_the_source_corpus_is_read_only_on_every_service_that_sees_it(
             if "/srv/historical-source" in resolved:
                 seen += 1
                 assert resolved.endswith(":ro"), f"{name}: {volume}"
-    assert seen == 2
+    assert seen == 1
 
 
 # -- isolation from the recovery rehearsal ---------------------------------

@@ -20,7 +20,7 @@
 #   * no `ports:` — nothing is reachable from the host or the network;
 #   * `internal: true` — the containers cannot route off the bridge at all;
 #   * no tunnel, no Cloudflare, no authenticator anybody can reach;
-#   * `extractor` and `searchindex` sit behind the `workers` profile, so a
+#   * `intake-reader` and `searchindex` sit behind the `workers` profile, so a
 #     plain `up` cannot start something that writes to the restored database;
 #   * `web` runs `sleep infinity`, never gunicorn — the application is driven
 #     with `run --rm`, so a rehearsal never serves a request;
@@ -152,13 +152,17 @@ services:
   # starts on its own changes it before anybody looks. They are here so that a
   # rehearsal which *does* want to prove the workers can ask for them:
   #
-  #   docker compose … --profile workers up -d extractor
+  #   docker compose … --profile workers up -d intake-reader
   #
-  extractor:
+  # It is the *intake reader*, not the corpus extraction worker, because that is
+  # what production deploys since docs/adr/0069. A rehearsal that proved a
+  # service production does not run would be proving the wrong thing, which is
+  # the mistake ADR 0066 was written about.
+  intake-reader:
     profiles: ["workers"]
     image: juristid-main-web:${JURISTID_REHEARSAL_IMAGE_TAG:?set it to the exact deployed image tag, e.g. the short SHA production is running}
-    container_name: juristid-recovery-rehearsal-real-extractor
-    command: ["python", "manage.py", "run_extraction_worker"]
+    container_name: juristid-recovery-rehearsal-real-intake-reader
+    command: ["python", "manage.py", "run_intake_reader"]
     env_file:
       - ${JURISTID_REHEARSAL_ENV_FILE:?set it to the throwaway env file you generated from real-data.env.example}
     environment:

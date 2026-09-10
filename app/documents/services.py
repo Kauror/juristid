@@ -31,7 +31,7 @@ from app.audit.services import record_change_event
 from app.core.enums import validate_visibility_override
 from app.core.errors import DomainError
 from app.core.ids import uuid7
-from app.documents.enums import DocumentRole, MalwareScanState
+from app.documents.enums import DocumentRole, ExtractionState
 from app.documents.models import Document, DocumentVersion
 from app.matters.models import Matter
 
@@ -220,10 +220,21 @@ def add_evidence_version(
     source_url: str = "",
     source_identifier: str = "",
     sharepoint_item_version: str = "",
-    malware_scan_state: str = MalwareScanState.PENDING,
+    extraction_state: str = ExtractionState.PENDING,
     make_current: bool = True,
 ) -> DocumentVersion:
-    """Store one immutable binary as the next version of ``document``."""
+    """Store one immutable binary as the next version of ``document``.
+
+    ``extraction_state`` is the caller's when the caller already knows. Every
+    ordinary upload leaves it ``PENDING`` — nothing has read the bytes — but a
+    file promoted out of `Uus teema` was read while the form was open, and
+    saying so is what keeps a corpus run from reading it a second time
+    (``INTAKE_READ``; app/matters/intake_staging.py, docs/adr/0069).
+
+    There is no ``malware_scan_state`` parameter. The column still exists on
+    the model and still defaults to ``PENDING``, and nothing anywhere reads it
+    (app/documents/enums.py, docs/adr/0069).
+    """
     if mime_type not in ALLOWED_EVIDENCE_MIME_TYPES:
         raise DomainError(f"MIME type {mime_type!r} is not an accepted evidence format.")
     if len(content) == 0:
@@ -264,7 +275,7 @@ def add_evidence_version(
             source_url=source_url,
             source_identifier=source_identifier,
             sharepoint_item_version=sharepoint_item_version,
-            malware_scan_state=malware_scan_state,
+            extraction_state=extraction_state,
         )
 
         if make_current:

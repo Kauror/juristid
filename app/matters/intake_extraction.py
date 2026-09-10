@@ -1,33 +1,41 @@
-"""Reading a staged intake file: the same parsers, a different publication target.
+"""Reading a staged intake file: the whole universe of the intake reader.
 
-The security boundary this feature moves earlier is the one thing it may not
-weaken. A file chosen on `Uus teema` is not opened in the request that
-uploaded it, is not opened by a second parser written for the occasion, and is
-not opened at all until it has passed the scan gate — because everything that
-decides those three things is `app.documents.extraction.orchestrator`'s
-:func:`~app.documents.extraction.orchestrator.parse_source`, which this module
-calls and does not reimplement (docs/adr/0014, docs/adr/0064).
+**This module can only see one table.** ``MatterIntakeFile`` — the rows behind
+somebody's open `Uus teema` form — and nothing else. It does not import
+``DocumentVersion``, it holds no query that could reach one, and the worker
+that calls it (`run_intake_reader`) imports nothing that could either. That is
+not tidiness: on 2026-09-10 the canonical extraction backlog saturated the
+production array's parity disk badly enough that a single-row INSERT into a
+264 kB table blocked for two minutes, and the lesson taken from it is that a
+reader serving a form somebody is sitting in front of must be structurally
+incapable of joining a corpus-wide queue (docs/adr/0069).
+
+Parsing itself is not reimplemented. `app.documents.extraction.orchestrator`'s
+:func:`~app.documents.extraction.orchestrator.parse_source` is a pure function
+of bytes that writes nothing anywhere, and it is what opens the file — so the
+`Uus teema` reader and any deliberate corpus run agree about what a PDF says,
+because they are the same parser (docs/adr/0014, docs/adr/0064).
 
 What differs is only what happens to the answer. A ``DocumentVersion``
 publishes derivative rows, text fragments, attachment Documents and a search
 projection. A staged file publishes a little JSON on its own temporary row and
 none of that — no derivative, no fragment table, no attachment Document, no
-search row — because none of those things may exist before there is a Matter.
+search row — because none of those things may exist before there is a Matter,
+and since docs/adr/0069 none of them is created afterwards either.
 
-The queue is the same shape as the canonical one, and for the same reasons:
-PostgreSQL is the broker, ``SELECT … FOR UPDATE SKIP LOCKED`` makes a claim
-atomic, the claim is a timestamped row state so a worker that dies leaves
-evidence rather than a lock, and the claim is re-asserted at the moment of
-writing so a pass whose claim was reclaimed underneath it writes nothing at
-all (`run_extraction_worker`).
+The queue discipline is PostgreSQL's: ``SELECT … FOR UPDATE SKIP LOCKED``
+makes a claim atomic, the claim is a timestamped row state so a worker that
+dies leaves evidence rather than a lock, and the claim is re-asserted at the
+moment of writing so a pass whose claim was reclaimed underneath it writes
+nothing at all. No broker, no Redis, no Celery — the queue is at most a
+handful of rows belonging to sessions that expire on their own.
 
 **Attachments inside a staged message are deliberately not unpacked.** The
 canonical path turns an `.eml`'s attachments into Documents of their own, and
 there is nowhere to put them here — a Document needs a Matter. The message's
 own headers and body are read, which is where the sender, the subject and the
-sent time are; the attachments arrive as Documents the moment `Loo teema`
-promotes the message and the ordinary worker reads it properly. Nothing is
-lost, and the alternative would be a second, weaker unpacking path.
+sent time are; a person who wants the attachment filed adds it as a file of
+its own. The alternative would be a second, weaker unpacking path.
 """
 
 from __future__ import annotations
@@ -43,9 +51,9 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from app.documents.enums import DerivativeKind, ExtractionState, MalwareScanState
+from app.documents.enums import DerivativeKind, ExtractionState
 from app.documents.extraction import parsers  # noqa: F401  (registers every parser)
-from app.documents.extraction.orchestrator import is_scan_state_extractable, parse_source
+from app.documents.extraction.orchestrator import parse_source
 from app.matters.intake_staging import staging_storage
 from app.matters.staging import MatterIntakeFile
 
@@ -71,28 +79,20 @@ class IntakeExtractionReport:
     error_code: str = ""
 
 
-def eligibility_q() -> Q:
-    """:func:`is_scan_state_extractable`, as SQL.
-
-    The same rule in two places, and it earns it here for the same reason it
-    does on the canonical queue: the queue must exclude what the worker would
-    refuse, or a file waiting on a scanner is offered, declined and offered
-    again in a hot loop for ever. A test holds the two against each other.
-    """
-    eligible = Q(malware_scan_state=MalwareScanState.CLEAN)
-    if not settings.REAL_DATA_ALLOWED:
-        eligible |= Q(malware_scan_state=MalwareScanState.PENDING)
-    return eligible
-
-
 def pending_intake_files() -> Any:
-    """Staged files a worker may pick up, oldest first.
+    """Staged files the reader may pick up, oldest first. Its whole universe.
 
-    Three clauses beyond the canonical queue's, and each of them is the reason
-    this queue cannot grow without bound: a file the person took off the form
-    is not read, a session a Matter has already consumed is not read, and an
-    expired session is not read. Work nobody is waiting for is work nobody
-    should be doing.
+    Three clauses beyond the claim state, and each of them is a reason this
+    queue cannot grow: a file the person took off the form is not read, a
+    session a Matter has already consumed is not read, and an expired session
+    is not read. Work nobody is waiting for is work nobody should be doing —
+    so with no open `Uus teema` form anywhere in the department this returns
+    nothing and the reader idles.
+
+    The bound is therefore the product's rather than a number somebody chose:
+    at most `app.matters.intake.MAX_INTAKE_FILES` per session, sessions expire
+    on their own, and `prune_intake_staging` sweeps what expiry leaves. A
+    backlog of the kind a corpus queue accumulates cannot form here.
     """
     stale_before = timezone.now() - timedelta(minutes=settings.EXTRACTION_STALE_CLAIM_MINUTES)
     return (
@@ -104,7 +104,6 @@ def pending_intake_files() -> Any:
             )
             | Q(extraction_state=ExtractionState.PROCESSING, extraction_claimed_at__isnull=True)
         )
-        .filter(eligibility_q())
         .filter(
             removed_at__isnull=True,
             session__consumed_at__isnull=True,
@@ -144,8 +143,10 @@ def extract_intake_file(staged: MatterIntakeFile) -> IntakeExtractionReport:
     """Read one staged file and record what came out of it.
 
     Assumes the caller has claimed the row. No exit path leaves it PROCESSING
-    for this pass: it ends DONE, FAILED, NOT_APPLICABLE, or back at PENDING
-    when the file is waiting on a scanner that has not run.
+    for this pass: it ends DONE, FAILED or NOT_APPLICABLE, all three terminal.
+    A file the reader cannot understand is one of the last two, and the form
+    stays usable either way — `Loo teema` never waits on this
+    (docs/adr/0069 §Failure).
     """
     started = time.monotonic()
     fence = staged.extraction_claimed_at
@@ -153,7 +154,6 @@ def extract_intake_file(staged: MatterIntakeFile) -> IntakeExtractionReport:
     outcome = parse_source(
         filename=staged.original_filename,
         mime_type=staged.mime_type,
-        scan_state=staged.malware_scan_state,
         load=lambda: _read_staged(staged),
         reference=f"intake file {staged.pk}",
     )
@@ -286,8 +286,3 @@ def drain(*, limit: int = 25) -> list[IntakeExtractionReport]:
             continue
         reports.append(extract_intake_file(claimed))
     return reports
-
-
-def is_extractable(staged: MatterIntakeFile) -> bool:
-    """Whether this staged file may be opened by a parser at all."""
-    return is_scan_state_extractable(staged.malware_scan_state)

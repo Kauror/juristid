@@ -1596,7 +1596,14 @@ def _intake_context(session: Any, *, error: str = "") -> dict[str, Any]:
         # is bound to the live control, so one the browser filled reads as
         # chosen and one it declined reads as available (static/js/app.js,
         # `bindSuggestionUse`).
-        _initial, decided = prefill_initial(assisted, base={}, current=CurrentValues())
+        # `allow_title=True`, and only here. On `Uus teema` the browser can
+        # see what no saved record can — whether the person has typed in the
+        # Pealkiri box — so a strong formal title may fill an empty untouched
+        # one, and may never touch anything else
+        # (app/matters/intake_suggestions/prefill.py, task §12).
+        _initial, decided = prefill_initial(
+            assisted, base={}, current=CurrentValues(), allow_title=True
+        )
         prefill = prefill_controls(decided)
 
     unreadable = ""

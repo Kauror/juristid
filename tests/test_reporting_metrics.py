@@ -477,42 +477,52 @@ def test_extraction_states_are_reported_separately(world, reporting_context):
     assert value(world.martin, keys.EXTRACTION_NOT_APPLICABLE, reporting_context) == 2
 
 
-def test_a_file_waiting_on_a_scanner_is_not_a_failure(world, reporting_context, settings):
+def test_a_file_read_at_intake_is_neither_queued_nor_failed(world, reporting_context):
     """The number this whole module exists to avoid printing.
 
-    With real data allowed, an unscanned file may not be opened. It is not
-    queued, and it is emphatically not a parse failure — flattening the states
-    is what turns a security control into "16 000 failed extraction"
-    (main, commit 34d91b1).
+    A file read on `Uus teema` is finished. It is not waiting for a worker and
+    it is emphatically not a parse failure — flattening the states is what
+    turns a terminal success into "16 000 failed extraction".
     """
-    settings.REAL_DATA_ALLOWED = True
     context = reporting_context(world.martin)
 
-    assert compute(keys.EXTRACTION_AWAITING_SCANNER, context).value == 1
+    assert compute(keys.EXTRACTION_INTAKE_READ, context).value == 1
     assert compute(keys.EXTRACTION_FAILED, context).value == 1
     assert compute(keys.EXTRACTION_PENDING, context).value == 1
 
 
-def test_without_real_data_the_scanner_gate_does_not_apply(world, reporting_context):
-    """In a synthetic environment an unscanned file is extractable, so nothing waits."""
-    context = reporting_context(world.martin)
-    assert compute(keys.EXTRACTION_AWAITING_SCANNER, context).value == 0
-    assert compute(keys.EXTRACTION_PENDING, context).value == 2
-
-
-def test_the_reporting_eligibility_rule_is_the_orchestrators_rule(
+def test_the_environment_no_longer_changes_the_extraction_figures(
     world, reporting_context, settings
 ):
-    """Imported, not restated. Two copies of this rule would drift."""
-    from app.documents.extraction.orchestrator import awaiting_scanner as queue_awaiting
-    from app.reporting.selectors.documents import awaiting_scanner, visible_versions
+    """The same corpus reports the same numbers in both environments.
 
-    settings.REAL_DATA_ALLOWED = True
+    `REAL_DATA_ALLOWED` used to move versions between «queued» and «waiting on
+    a scanner», so the rehearsal's Statistika and production's could not be
+    compared. There is no gate left to move them (docs/adr/0069).
+    """
+    for real_data in (True, False):
+        settings.REAL_DATA_ALLOWED = real_data
+        context = reporting_context(world.martin)
+        assert compute(keys.EXTRACTION_INTAKE_READ, context).value == 1
+        assert compute(keys.EXTRACTION_PENDING, context).value == 1
+
+
+def test_the_openable_population_is_one_rule_the_card_and_the_percentage_share(
+    world, reporting_context
+):
+    """Imported, not restated. Two copies of this rule would drift.
+
+    `EXTRACTION_ELIGIBLE` and the searchability denominator are the same
+    question — which files could have text — and a reader comparing the card
+    with the percentage has no way to detect the two having come apart.
+    """
+    from app.reporting.selectors.documents import openable
+
     context = reporting_context(world.head)
-    reported = set(awaiting_scanner(context).values_list("pk", flat=True))
-    queued = set(queue_awaiting().values_list("pk", flat=True))
-    visible = set(visible_versions(context).values_list("pk", flat=True))
-    assert reported == queued & visible
+    card = compute(keys.EXTRACTION_ELIGIBLE, context).value
+    coverage = compute(keys.SEARCHABLE_DOCUMENT_COVERAGE, context)
+    assert card == openable(context).count()
+    assert card == coverage.coverage_denominator
 
 
 def test_searchability_excludes_what_no_parser_opens(world, reporting_context):
@@ -524,19 +534,20 @@ def test_searchability_excludes_what_no_parser_opens(world, reporting_context):
     assert result.value == 67
 
 
-def test_searchability_says_what_is_holding_it_back(world, reporting_context, settings):
+def test_searchability_says_what_is_holding_it_back(world, reporting_context):
     """And says it without implying the corpus might be infected.
 
-    The files are known to be malware-free; what has not happened is text
-    extraction. Naming the scanner told a reader the opposite (ADR 0033).
+    The note names the real trade: files read on `Uus teema` have no permanent
+    text, so their content is not searchable, and that is a decision rather
+    than tegemata töö. Naming a scanner told a reader something else entirely,
+    and there is no longer one to name (ADR 0033, docs/adr/0069).
     """
-    settings.REAL_DATA_ALLOWED = True
     result = compute(keys.SEARCHABLE_DOCUMENT_COVERAGE, reporting_context(world.martin))
     notes = " ".join(result.notes)
 
-    assert "tekstitöötlust" in notes
-    assert "pahavaravabad" in notes
-    assert "pahavarakontrolli" not in notes
+    assert "teema loomise ajal" in notes
+    assert "teadlik valik" in notes
+    assert "pahavara" not in notes
 
 
 # ---------------------------------------------------------------------------

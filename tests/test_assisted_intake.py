@@ -200,6 +200,20 @@ Lugupidamisega
 Näidisministeerium
 """
 
+#: 12b. Two organisations in the letterhead, so neither of them is *the*
+#: letterhead: `letterhead_shared`, MEDIUM, filling nothing on its own. The
+#: shape the agreement rule exists for — a joint circular whose sender is
+#: nevertheless perfectly well known once the message that carried it is read.
+SHARED_LETTERHEAD = """Näidisministeerium
+Näidisamet
+
+Eesti Kaubandus-Tööstuskoda
+
+Pakendiseaduse muutmise seaduse eelnõu kooskõlastamiseks
+
+Saadame kooskõlastamiseks pakendiseaduse muutmise seaduse eelnõu.
+"""
+
 #: 13. A contact address in the body that is not the sender.
 CONTACT_IN_BODY = """Näidisministeerium
 
@@ -537,6 +551,255 @@ def test_no_title_is_ever_pre_filled_however_strong_the_heading() -> None:
     assert initial["title"] == "kiri"
     assert SuggestedField.TITLE not in annotated.prefilled
     assert all(not c.prefilled for c in annotated.fields[SuggestedField.TITLE].candidates)
+
+
+# ---------------------------------------------------------------------------
+# One envelope, several files
+#
+# `Uus teema` receives a covering letter, a draft, a memorandum and annexes
+# together, and treats them as one incoming envelope rather than as four
+# unrelated documents (task §10). Two rules follow from that, and both are here.
+# ---------------------------------------------------------------------------
+
+
+def test_the_envelope_is_read_in_priority_order_and_says_what_it_left_out() -> None:
+    """§27.28 — deterministic priority, and it is arithmetic rather than luck.
+
+    A message's headers are the most exact thing in an envelope and its body is
+    short, so it is admitted first; a covering letter next, because that is
+    where a ministry states a deadline; an annex last. `_admit` spends the
+    budget over material *already in rank order*, so what it must guarantee is
+    that the front of the queue wins and what did not fit is reported rather
+    than silently dropped — a short answer beside unread material must never
+    read as «there was nothing in there».
+    """
+    admitted, skipped = intake_input._admit(
+        [
+            ("kiri.eml", "kiri.eml", 900),
+            ("kaaskiri.pdf", "kaaskiri.pdf", 900),
+            ("lisa.pdf", "lisa.pdf", 900),
+        ],
+        character_limit=1_000,
+        # Exactly one document's worth. The budget is checked *before* a
+        # document is admitted rather than after, so a ceiling of 1 000 would
+        # admit two — which is the arithmetic, and worth pinning at the size
+        # where it decides something.
+        total_limit=900,
+        document_limit=20,
+    )
+    assert list(admitted) == ["kiri.eml"]
+    assert skipped == {"kaaskiri.pdf", "lisa.pdf"}
+
+    # And the rank the plan hands it, which is what puts the message in front
+    # whatever order the person happened to choose the files in.
+    chosen_in_any_order = [
+        ("lisa.pdf", DocumentRole.INCOMING_AUTHORITY, 1),
+        ("manus.pdf", DocumentRole.EMAIL_ATTACHMENT, 2),
+        ("kiri.eml", DocumentRole.ORIGINAL_EMAIL, 3),
+    ]
+    ranked = sorted(
+        chosen_in_any_order,
+        key=lambda row: (
+            intake_input.DOCUMENT_PRIORITY.get(row[1], intake_input.DEFAULT_PRIORITY),
+            row[2],
+        ),
+    )
+    assert [name for name, _role, _ordinal in ranked] == ["kiri.eml", "lisa.pdf", "manus.pdf"]
+
+
+def test_two_documents_agreeing_on_a_sender_make_it_strong_enough_to_fill() -> None:
+    """§27.29 — agreement across the envelope, on the field it matters most for.
+
+    A `From:` domain is not a name and a letterhead shared with a second
+    organisation is not a signature: each is a MEDIUM on its own and fills
+    nothing, which is right — and leaves a form empty on an envelope whose
+    sender two separate files agree about. Two independent documents saying the
+    same thing is stronger than either.
+    """
+    envelope = run(
+        email_document(),
+        document(SHARED_LETTERHEAD, "kaaskiri.pdf"),
+    )
+    senders = envelope.fields[SuggestedField.SOURCE_ORGANISATIONS]
+    strong = [c for c in senders.candidates if c.is_high]
+
+    assert [c.display for c in strong] == ["Näidisministeerium"]
+    assert strong[0].rule.endswith("_agreed")
+    assert "2 eri failis" in strong[0].detail
+    assert senders.prefill_candidate is not None
+
+
+def test_one_document_saying_it_twice_is_still_one_witness() -> None:
+    """The precision half of the rule above, and why it counts documents.
+
+    The same letterhead read on three pages of one letter is one organisation
+    appearing once, not three independent agreements — a long document must not
+    be able to promote itself.
+    """
+    alone = run(document(SHARED_LETTERHEAD, "kaaskiri.pdf"))
+    senders = alone.fields[SuggestedField.SOURCE_ORGANISATIONS]
+
+    assert senders.candidates
+    assert all(not c.is_high for c in senders.candidates)
+    assert senders.prefill_candidate is None
+
+
+def test_agreement_never_overturns_a_strong_answer() -> None:
+    """It can rescue a field and can never take one away.
+
+    If one document names its sender in a way that earns HIGH on its own, that
+    is the answer. Promoting a second organisation two other files happen to
+    mention would manufacture a conflict and remove an autofill that was
+    correct — so the rule declines to run at all once the field has a HIGH
+    candidate.
+    """
+    envelope = run(
+        document(COVERING_LETTER, "kaaskiri.pdf"),
+        document(SHARED_LETTERHEAD, "teine.pdf"),
+    )
+    senders = envelope.fields[SuggestedField.SOURCE_ORGANISATIONS]
+    strong = [c for c in senders.candidates if c.is_high]
+
+    assert [c.display for c in strong] == ["Näidisministeerium"]
+    assert not senders.conflict
+    assert senders.prefill_candidate is not None
+
+
+# ---------------------------------------------------------------------------
+# The title, on `Uus teema` only
+#
+# The one rule that differs by surface. Above: a saved Matter's title is never
+# replaced, because nothing in the record separates one a person typed from one
+# intake derived. Below: an unsaved form has no such record, and the browser can
+# see what the record never could — whether the box is empty and whether
+# anybody has been near it (docs/adr/0069, task §12).
+# ---------------------------------------------------------------------------
+
+
+#: An unsaved `Uus teema` form: no Matter, and therefore no title at all.
+#:
+#: Deliberately not `EMPTY`, which carries ``title="kiri"`` — the mechanical
+#: filename fallback a *saved* Matter gets from `register_incoming`. The
+#: difference is the whole of what this section is about: a fallback title is
+#: still a stored value and is still never overwritten, while a box on a form
+#: nobody has typed into is not a value at all.
+UNSAVED = CurrentValues()
+
+
+def test_uus_teema_pre_fills_an_empty_title_from_one_strong_heading() -> None:
+    """§27.11 — the change this round makes, in one assertion."""
+    analysis = run(document(COVERING_LETTER), current=UNSAVED)
+    initial, annotated = prefill_initial(analysis, base={}, current=UNSAVED, allow_title=True)
+
+    assert initial["title"] == "Pakendiseaduse muutmise seaduse eelnõu"
+    assert annotated.prefilled_values(SuggestedField.TITLE) == (
+        "Pakendiseaduse muutmise seaduse eelnõu",
+    )
+
+
+def test_the_edit_surface_still_fills_no_title_from_the_same_letter() -> None:
+    """The other half of the same decision, so the two cannot drift.
+
+    Identical analysis, identical candidate, and `Muuda teemat` still declines —
+    because it is the *record* that cannot tell a person's title from a
+    machine's, and that argument does not reach a form with no record behind it.
+    """
+    analysis = run(document(COVERING_LETTER), current=UNSAVED)
+    initial, annotated = prefill_initial(analysis, base={}, current=UNSAVED)
+
+    assert "title" not in initial
+    assert SuggestedField.TITLE not in annotated.prefilled
+
+
+def test_a_title_the_person_has_typed_is_never_overwritten_on_uus_teema() -> None:
+    """§27.12 — `allow_title` widens nothing about whose value wins.
+
+    Server-side, «typed» is `CurrentValues.title`; in the browser it is an
+    input that is non-empty or has been touched, and `fill()` refuses on either
+    (static/js/app.js). Both refusals are unconditional.
+    """
+    typed = CurrentValues(title="Pakendite arvamus, minu sõnastuses")
+    analysis = run(document(COVERING_LETTER), current=typed)
+    initial, annotated = prefill_initial(
+        analysis, base={"title": typed.title}, current=typed, allow_title=True
+    )
+
+    assert initial["title"] == typed.title
+    assert SuggestedField.TITLE not in annotated.prefilled
+    # And the heading is still offered, so changing their mind costs one click.
+    assert analysis.fields[SuggestedField.TITLE].candidates[0].confidence == Confidence.HIGH
+
+
+def test_two_plausible_titles_pre_fill_nothing_on_uus_teema() -> None:
+    """§27.13 — a conflict beats confidence, on this surface too.
+
+    Two documents carrying different formal headings is the case where the
+    envelope itself disagrees about what the file is called, and the answer is
+    the person's. Both are offered with their evidence; neither is written.
+    """
+    analysis = run(
+        document(COVERING_LETTER, "a.pdf"),
+        document(MULTI_AREA, "b.pdf"),
+        current=UNSAVED,
+    )
+    assert analysis.fields[SuggestedField.TITLE].conflict
+
+    initial, annotated = prefill_initial(analysis, base={}, current=UNSAVED, allow_title=True)
+    assert "title" not in initial
+    assert SuggestedField.TITLE not in annotated.prefilled
+
+
+def test_a_medium_heading_is_offered_and_never_pre_filled() -> None:
+    """Only HIGH may fill a control, and `allow_title` did not change that.
+
+    The failure mode this guards is the tempting one: a surface that is allowed
+    to fill titles quietly becoming a surface that fills weaker ones.
+    """
+    weak = "Kiri\n\nSaadame teile materjali tutvumiseks."
+    analysis = run(document(weak), current=UNSAVED)
+    suggestions = analysis.fields.get(SuggestedField.TITLE)
+    if suggestions is not None:
+        assert all(c.confidence != Confidence.HIGH for c in suggestions.candidates)
+
+    initial, _ = prefill_initial(analysis, base={}, current=UNSAVED, allow_title=True)
+    assert "title" not in initial
+
+
+# ---------------------------------------------------------------------------
+# Saabus is not inferred from anything a document says
+# ---------------------------------------------------------------------------
+
+
+def test_no_suggestion_exists_for_saabus_at_all() -> None:
+    """§17 — a letter's own date is not the day it reached Koda.
+
+    Asserted on the *vocabulary of fields* rather than on one document, because
+    the safe property is structural: there is no `received_date` in
+    `SuggestedField`, so no rule can propose one and no future rule can start
+    to without somebody adding the field. A message's `Date:` header is
+    surfaced as a finding — «Kirja saatmise aeg» — which is what it is: when
+    the sender sent it.
+    """
+    assert not [name for name in SuggestedField if "received" in str(name)]
+    assert SuggestedField.EMAIL_SENT_AT in SuggestedField
+
+
+def test_the_form_still_defaults_saabus_to_today() -> None:
+    """And the existing correct default is untouched by any of this.
+
+    The reader may not replace it, and it may not be quietly removed either:
+    nearly everything arrives on the day it is entered, so today is a useful
+    capture default and a wrong one is harmless
+    (`app/matters/forms.py`, brief 18).
+    """
+    from django.utils import timezone
+
+    from app.matters.forms import MatterCreateForm
+
+    # `base_fields` rather than an instance: instantiating this form reads the
+    # organisation and vocabulary catalogues, and what is being asserted is a
+    # declaration rather than a rendering.
+    assert MatterCreateForm.base_fields["received_date"].initial is timezone.localdate
 
 
 # ---------------------------------------------------------------------------

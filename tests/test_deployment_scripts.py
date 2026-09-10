@@ -483,7 +483,7 @@ def test_every_production_up_that_starts_the_application_says_no_build(runbook: 
     application = {
         name for name, service in compose["services"].items() if service.get("image") == web_image
     }
-    assert {"web", "extractor", "searchindex"} <= application
+    assert {"web", "intake-reader", "searchindex"} <= application
 
     examined = 0
     for line in command_lines(runbook.read_text(encoding="utf-8")):

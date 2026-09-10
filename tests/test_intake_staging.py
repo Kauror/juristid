@@ -270,27 +270,25 @@ def test_the_panel_claims_no_pre_fill_it_cannot_know_about(signed_in, evidence_r
     assert dict(answer.context["intake_prefill"])["response_deadline"] == "18.9.2026"
 
 
-def test_a_file_the_scanner_has_not_cleared_is_not_offered_to_a_parser(
-    signed_in, evidence_root, settings
-):
-    """The queue and the worker agree about the gate, on this table too.
+def test_no_scan_state_can_keep_a_staged_file_out_of_the_queue(signed_in, evidence_root, settings):
+    """The gate is gone, and this is the test that says so (task §3, §27.10).
 
-    The rule lives in one place (`is_scan_state_extractable`); this asserts the
-    SQL twin excludes exactly what the Python one refuses, which is what stops
-    an unscannable file being claimed, declined and re-offered for ever.
+    Until docs/adr/0069 a staged file was offered to a parser only once a
+    scanner had written ``CLEAN``, and on the deployed stack nothing ever
+    could — so `Uus teema` showed «Loen faili…» for as long as anybody was
+    willing to watch. The column survives as dead schema; what must be true now
+    is that **no value in it changes anything**, in either environment.
     """
     session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
     staged = MatterIntakeFile.objects.get(session=session)
 
-    settings.REAL_DATA_ALLOWED = True
-    assert not intake_extraction.is_extractable(staged)
-    assert not intake_extraction.pending_intake_files().filter(pk=staged.pk).exists()
-
-    staged.malware_scan_state = MalwareScanState.CLEAN
-    staged.save(update_fields=["malware_scan_state"])
-    staged.refresh_from_db()
-    assert intake_extraction.is_extractable(staged)
-    assert intake_extraction.pending_intake_files().filter(pk=staged.pk).exists()
+    for real_data in (True, False):
+        settings.REAL_DATA_ALLOWED = real_data
+        for state in MalwareScanState.values:
+            MatterIntakeFile.objects.filter(pk=staged.pk).update(malware_scan_state=state)
+            assert intake_extraction.pending_intake_files().filter(pk=staged.pk).exists(), (
+                f"REAL_DATA_ALLOWED={real_data}, scan={state}: the staged file was withheld"
+            )
 
 
 def test_a_file_that_cannot_be_read_is_still_kept_and_still_becomes_evidence(
@@ -395,7 +393,10 @@ def test_three_staged_files_become_three_documents(signed_in, evidence_root, min
         assert document.versions.count() == 1
         assert document.current_version.version_number == 1
         assert document.current_version.malware_scan_state == MalwareScanState.PENDING
-        assert document.current_version.extraction_state == ExtractionState.PENDING
+        # Read on the form, and therefore finished. Not PENDING: a corpus run
+        # must never open these bytes again merely because a Matter now exists
+        # to hang them off (docs/adr/0069, task §7).
+        assert document.current_version.extraction_state == ExtractionState.INTAKE_READ
 
 
 def test_an_email_is_filed_under_the_role_its_name_earns_it(signed_in, evidence_root):

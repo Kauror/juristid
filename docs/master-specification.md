@@ -481,7 +481,7 @@ Real current Koda work may enter only an approved environment with at minimum:
 - centralized authorization and restricted-record tests;
 - approved encrypted PostgreSQL and document storage;
 - secret management;
-- upload type/size controls and malware scanning/quarantine path;
+- upload type/size controls and malware scanning/quarantine path (scanning removed by ADR 0069; the upload controls are unchanged and are now the whole of this line that is implemented);
 - successful backup and restore test;
 - retention decision for raw email/member feedback;
 - controlled developer/support access.
@@ -1253,7 +1253,7 @@ Fields:
 - uploader/acquisition time;
 - source path/URL/identifier;
 - optional source SharePoint item/version metadata;
-- malware/validation state;
+- malware/validation state (the `malware_scan_state` column survives as dead schema; nothing writes or reads it — ADR 0069);
 - extraction/indexing state;
 - created metadata.
 
@@ -1788,7 +1788,7 @@ Development may use local filesystem storage with the same Document/DocumentVers
 - size limits;
 - never execute uploaded content;
 - serve untrusted HTML/SVG as attachment or sanitize safe previews;
-- malware scan/quarantine before general use where real data is involved;
+- malware scan/quarantine before general use where real data is involved — **not implemented; withdrawn by ADR 0069 as a product decision, and recorded as unmet in `docs/secure-pilot-gate.md` row 6 rather than reworded away**;
 - downloads mediated through authorization;
 - log restricted downloads/exports according to policy.
 

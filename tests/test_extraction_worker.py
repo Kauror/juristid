@@ -24,13 +24,11 @@ from app.documents.enums import (
     DerivativeStatus,
     DocumentRole,
     ExtractionState,
-    MalwareScanState,
 )
 from app.documents.extraction.orchestrator import (
     claim_version,
     discard_derivatives,
     extract_document_version,
-    is_eligible_for_extraction,
     pending_versions,
 )
 from app.documents.models import DocumentDerivative, DocumentTextFragment, DocumentVersion
@@ -48,16 +46,16 @@ def pdf_version(normal_matter, capture_evidence):
 
 
 @pytest.fixture
-def unscannable(normal_matter, capture_evidence):
-    """One stored PDF, with whichever scan state the case is about."""
+def stored_pdf(normal_matter, capture_evidence):
+    """One stored PDF, in whichever extraction state the case is about."""
 
-    def make(scan_state):
+    def make(extraction_state=ExtractionState.PENDING):
         return capture_evidence(
             normal_matter,
             corpus.government_pdf(),
             "kaaskiri.pdf",
             PDF,
-            malware_scan_state=scan_state,
+            extraction_state=extraction_state,
         )
 
     return make
@@ -327,42 +325,52 @@ def test_a_finished_version_is_not_reclaimed_without_force(pdf_version, extract)
     assert claim_version(pdf_version.pk, force=True) is not None
 
 
-# -- the malware gate ------------------------------------------------------
+# -- what the queue will and will not offer ---------------------------------
+#
+# There is no scan gate here any more. It was removed with the whole malware
+# subsystem in docs/adr/0069, and what replaced it as the thing `pending_versions`
+# must exclude is INTAKE_READ: a binary that was already read on `Uus teema`
+# while somebody watched.
 
 
-def test_a_clean_file_is_always_eligible(pdf_version) -> None:
-    pdf_version.malware_scan_state = MalwareScanState.CLEAN
-    assert is_eligible_for_extraction(pdf_version) is True
+def test_a_pending_version_is_offered(pdf_version) -> None:
+    assert pdf_version.pk in {version.pk for version in pending_versions()}
 
 
-def test_an_unscanned_file_is_processed_only_in_a_synthetic_environment(
-    pdf_version, settings
-) -> None:
+def test_real_data_no_longer_changes_what_is_offered(pdf_version, settings) -> None:
+    """The environment used to decide this, through the scan gate. It must not.
+
+    A rehearsal exercising a code path production could not reach is exactly
+    what hid the original `Uus teema` defect for months, so the queue is now
+    the same queue in both environments (docs/adr/0066 §Superseded).
+    """
     settings.REAL_DATA_ALLOWED = False
-    assert is_eligible_for_extraction(pdf_version) is True
+    assert pdf_version.pk in {version.pk for version in pending_versions()}
 
     settings.REAL_DATA_ALLOWED = True
-    assert is_eligible_for_extraction(pdf_version) is False
+    assert pdf_version.pk in {version.pk for version in pending_versions()}
 
 
-def test_an_ineligible_file_stays_pending_and_is_never_marked_clean(
-    pdf_version, settings, extract
-) -> None:
-    """Marking PENDING as CLEAN to unblock extraction replaces a missing
-    control with a lie about one."""
-    settings.REAL_DATA_ALLOWED = True
-    report = extract(pdf_version)
+def test_a_file_read_at_intake_is_never_offered_to_the_corpus_worker(stored_pdf) -> None:
+    """The invariant §7 of the brief asks for, at the queue.
 
-    pdf_version.refresh_from_db()
-    assert report.state == ExtractionState.PENDING
-    assert pdf_version.malware_scan_state == MalwareScanState.PENDING
-    assert not DocumentDerivative.objects.filter(version=pdf_version).exists()
+    A staged file the reader understood becomes INTAKE_READ when `Loo teema`
+    promotes it. Re-reading it would be the corpus doing again, unwatched, the
+    work a person just watched being done.
+    """
+    version = stored_pdf(ExtractionState.INTAKE_READ)
+    assert version.pk not in {offered.pk for offered in pending_versions()}
 
 
-def test_an_infected_file_is_never_processed(pdf_version, settings) -> None:
-    settings.REAL_DATA_ALLOWED = True
-    pdf_version.malware_scan_state = MalwareScanState.INFECTED
-    assert is_eligible_for_extraction(pdf_version) is False
+def test_a_file_read_at_intake_is_not_claimable_either(stored_pdf) -> None:
+    """Not offered *and* not claimable: two doors, both shut.
+
+    `pending_versions` is what a worker reads, but `claim_version` takes a
+    primary key — so a caller holding one from anywhere else must meet the same
+    answer, or the invariant is a query rather than a rule.
+    """
+    version = stored_pdf(ExtractionState.INTAKE_READ)
+    assert claim_version(version.pk) is None
 
 
 # -- rebuilding ------------------------------------------------------------
@@ -605,86 +613,60 @@ def test_an_email_attachment_is_written_by_the_worker_not_the_web_request(
 # --------------------------------------------------------------------------
 
 
-def test_the_queue_does_not_offer_what_the_worker_will_refuse(settings, unscannable):
-    """The bug, stated as the invariant that was missing.
+def test_the_queue_drains_to_empty_and_the_worker_idles(stored_pdf, settings):
+    """The property the hot loop lacked, stated without the gate that caused it.
 
-    Not "unscanned files are extracted" — they are still not. They are simply
-    not *offered*, so the queue drains to empty and the worker idles.
+    The original defect was a queue that offered what the worker would refuse,
+    so the same row came back for ever. There is nothing left for a worker to
+    refuse — every terminal state is excluded by `pending_versions` and nothing
+    else can decline — so a `--once` run over one file leaves an empty queue.
     """
-    from app.documents.extraction.orchestrator import (
-        is_eligible_for_extraction,
-        pending_versions,
-    )
-
-    settings.REAL_DATA_ALLOWED = True
-    version = unscannable(MalwareScanState.PENDING)
-
-    assert not is_eligible_for_extraction(version)
-    assert version not in list(pending_versions())
-
-
-def test_the_worker_stops_instead_of_spinning_on_an_unscannable_file(settings, unscannable):
     from io import StringIO
 
     from django.core.management import call_command
 
     settings.REAL_DATA_ALLOWED = True
-    version = unscannable(MalwareScanState.PENDING)
+    version = stored_pdf()
 
     out = StringIO()
     call_command("run_extraction_worker", "--once", stdout=out)
 
     version.refresh_from_db()
-    assert version.extraction_state == ExtractionState.PENDING
-    assert "Töödeldud 0 faili" in out.getvalue()
-    # And it says why, so "0 files" is not mistaken for "nothing to do".
-    assert "pahavarakontrolli" in out.getvalue()
+    assert version.extraction_state == ExtractionState.DONE
+    assert not list(pending_versions())
 
 
-def test_a_scanned_file_is_still_offered_with_real_data(settings, unscannable):
-    from app.documents.extraction.orchestrator import pending_versions
+def test_the_corpus_worker_says_it_is_not_a_service(stored_pdf):
+    """An operator reading its output learns that starting it was deliberate."""
+    from io import StringIO
 
-    settings.REAL_DATA_ALLOWED = True
-    version = unscannable(MalwareScanState.CLEAN)
-    assert version in list(pending_versions())
+    from django.core.management import call_command
 
-
-def test_without_real_data_an_unscanned_file_is_still_offered(settings, unscannable):
-    """The synthetic corpus has no scanner either, and has to be exercisable."""
-    from app.documents.extraction.orchestrator import pending_versions
-
-    settings.REAL_DATA_ALLOWED = False
-    version = unscannable(MalwareScanState.PENDING)
-    assert version in list(pending_versions())
+    stored_pdf()
+    out = StringIO()
+    call_command("run_extraction_worker", "--once", stdout=out)
+    assert "ei ole püsiteenus" in out.getvalue()
 
 
-def test_the_queue_filter_and_the_worker_check_are_the_same_rule(settings, unscannable):
-    """Two expressions of one rule, kept honest against each other."""
-    from app.documents.extraction.orchestrator import (
-        is_eligible_for_extraction,
-        pending_versions,
-    )
+def test_the_corpus_worker_never_touches_uus_teema_staging(stored_pdf, monkeypatch):
+    """The two queues are separate loops now, and this is the proof at runtime.
 
-    for real_data in (True, False):
-        settings.REAL_DATA_ALLOWED = real_data
-        for state in (MalwareScanState.CLEAN, MalwareScanState.PENDING):
-            version = unscannable(state)
-            offered = version in list(pending_versions())
-            assert offered == is_eligible_for_extraction(version), (
-                f"REAL_DATA_ALLOWED={real_data}, scan={state}: "
-                f"queue says {offered}, worker says {is_eligible_for_extraction(version)}"
-            )
+    A source-level import guard lives in `tests/test_intake_reader.py`; this is
+    the behavioural half. `drain` is the intake reader's only entry point, and
+    a corpus run that called it would fail here rather than in production.
+    """
+    from io import StringIO
 
+    from django.core.management import call_command
 
-def test_the_files_waiting_on_a_scanner_are_countable(settings, unscannable):
-    from app.documents.extraction.orchestrator import awaiting_scanner
+    import app.matters.intake_extraction as intake
 
-    settings.REAL_DATA_ALLOWED = True
-    unscannable(MalwareScanState.PENDING)
-    unscannable(MalwareScanState.PENDING)
-    unscannable(MalwareScanState.CLEAN)
+    def refuse(*args, **kwargs):  # pragma: no cover - the assertion is that it never runs
+        raise AssertionError("the corpus worker reached the Uus teema queue")
 
-    assert awaiting_scanner().count() == 2
+    monkeypatch.setattr(intake, "drain", refuse)
+    stored_pdf()
+    call_command("run_extraction_worker", "--once", stdout=StringIO())
 
 
 # --------------------------------------------------------------------------
@@ -700,24 +682,23 @@ def test_the_files_waiting_on_a_scanner_are_countable(settings, unscannable):
 @pytest.fixture
 def heartbeat_path(settings, tmp_path):
     settings.EXTRACTION_WORKER_HEARTBEAT_PATH = str(tmp_path / "worker.heartbeat")
-    from app.documents.extraction import heartbeat
+    from app.documents.extraction.heartbeat import EXTRACTION_WORKER
 
-    heartbeat.clear()
+    EXTRACTION_WORKER.clear()
     return Path(settings.EXTRACTION_WORKER_HEARTBEAT_PATH)
 
 
 def test_a_worker_that_has_never_run_is_not_alive(heartbeat_path):
-    from app.documents.extraction import heartbeat
+    from app.documents.extraction.heartbeat import EXTRACTION_WORKER
 
-    assert heartbeat.age_seconds() is None
-    assert not heartbeat.is_alive()
+    assert EXTRACTION_WORKER.age_seconds() is None
+    assert not EXTRACTION_WORKER.is_alive()
 
 
 def test_the_loop_marks_itself_even_with_nothing_to_do(settings, heartbeat_path):
     """Idle is not dead. A worker with an empty queue must still read healthy."""
     from django.core.management import call_command
 
-    settings.REAL_DATA_ALLOWED = True  # so nothing is eligible at all
     call_command("run_extraction_worker", "--once")
 
     # The mark is removed on the way out, so the run is observable only while it
@@ -726,39 +707,38 @@ def test_the_loop_marks_itself_even_with_nothing_to_do(settings, heartbeat_path)
     assert not heartbeat_path.exists()
 
 
-def test_a_stopped_worker_does_not_look_alive(settings, heartbeat_path, unscannable):
+def test_a_stopped_worker_does_not_look_alive(settings, heartbeat_path, stored_pdf):
     """A `--once` run finishes in seconds and must not read as a live daemon."""
     from django.core.management import call_command
 
-    settings.REAL_DATA_ALLOWED = False
-    unscannable(MalwareScanState.PENDING)
+    stored_pdf()
     call_command("run_extraction_worker", "--once", "--limit", "1")
 
-    from app.documents.extraction import heartbeat
+    from app.documents.extraction.heartbeat import EXTRACTION_WORKER
 
-    assert not heartbeat.is_alive()
+    assert not EXTRACTION_WORKER.is_alive()
 
 
 def test_a_recent_mark_is_alive_and_an_old_one_is_not(settings, heartbeat_path):
     import os
     import time
 
-    from app.documents.extraction import heartbeat
+    from app.documents.extraction.heartbeat import EXTRACTION_WORKER
 
-    heartbeat.touch()
-    assert heartbeat.is_alive()
+    EXTRACTION_WORKER.touch()
+    assert EXTRACTION_WORKER.is_alive()
 
     stale = time.time() - (settings.EXTRACTION_STALE_CLAIM_MINUTES * 60) - 60
     os.utime(heartbeat_path, (stale, stale))
-    assert not heartbeat.is_alive()
+    assert not EXTRACTION_WORKER.is_alive()
 
 
 def test_the_window_is_the_one_the_system_already_uses(settings, heartbeat_path):
     """One definition of "this worker died", not two that can disagree."""
-    from app.documents.extraction import heartbeat
+    from app.documents.extraction.heartbeat import EXTRACTION_WORKER
 
     settings.EXTRACTION_STALE_CLAIM_MINUTES = 7
-    assert heartbeat.threshold_seconds() == 7 * 60
+    assert EXTRACTION_WORKER.threshold_seconds() == 7 * 60
 
 
 def test_a_worker_that_cannot_write_its_mark_keeps_working(settings, heartbeat_path):
@@ -768,16 +748,16 @@ def test_a_worker_that_cannot_write_its_mark_keeps_working(settings, heartbeat_p
     container goes red, which is correct and a far smaller problem than a queue
     that stopped because a temporary directory was not writable.
     """
-    from app.documents.extraction import heartbeat
+    from app.documents.extraction.heartbeat import EXTRACTION_WORKER
 
     # A file where a directory would have to be, so `mkdir` genuinely fails.
     blocker = heartbeat_path.parent / "blocker"
     blocker.write_text("not a directory", encoding="utf-8")
     settings.EXTRACTION_WORKER_HEARTBEAT_PATH = str(blocker / "worker.heartbeat")
 
-    heartbeat.touch()  # must not raise
-    assert heartbeat.age_seconds() is None
-    assert not heartbeat.is_alive()
+    EXTRACTION_WORKER.touch()  # must not raise
+    assert EXTRACTION_WORKER.age_seconds() is None
+    assert not EXTRACTION_WORKER.is_alive()
 
 
 def test_the_healthcheck_command_fails_when_the_loop_has_stopped(heartbeat_path):
@@ -791,9 +771,9 @@ def test_the_healthcheck_command_fails_when_the_loop_has_stopped(heartbeat_path)
 def test_the_healthcheck_command_passes_while_the_loop_turns(heartbeat_path):
     from django.core.management import call_command
 
-    from app.documents.extraction import heartbeat
+    from app.documents.extraction.heartbeat import EXTRACTION_WORKER
 
-    heartbeat.touch()
+    EXTRACTION_WORKER.touch()
     call_command("check_extraction_worker", "--quiet")
 
 

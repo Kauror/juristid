@@ -4,13 +4,22 @@ Client-side checks are a convenience for the user, never a control. Everything
 here runs on the server before a single byte reaches the evidence store
 (master specification 15.6).
 
-Stage 1 validates size, extension and content signature. It does **not** scan.
-A stored version starts at ``PENDING`` and stays there until a scanner has read
-its bytes — ClamAV over clamd, `app.documents.scanning`, ADR 0066 — because the
-one thing this layer must never do is stamp a verdict it did not obtain. That
-was true when there was no scanner to obtain one from, and it is true now that
-there is: nothing on the upload path writes ``CLEAN``, and no parser opens a
-file that has not been cleared.
+**This is the whole of what stands between a browser and the evidence
+store**, and it got more load-bearing rather than less when the malware scanner
+was removed with its subsystem (docs/adr/0069). Three checks, each cheap enough
+to run inside the request that uploads:
+
+* a size ceiling, so one file cannot fill a volume;
+* an extension allowlist, so the accepted set is a list somebody decided rather
+  than whatever a browser offered;
+* a **content signature** check, which is the one that matters — the bytes must
+  actually start like the format the name claims, so `arve.pdf` that is not a
+  PDF is refused here rather than handed to a parser.
+
+None of the three was weakened when the scanner went. What went is the fourth
+thing, which was a separate container asking clamd about every file and a
+column recording its answer; what is left is a refusal at the door, computed
+from the bytes themselves, with nothing to deploy and nothing to keep running.
 """
 
 from __future__ import annotations
