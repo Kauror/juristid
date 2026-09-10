@@ -77,6 +77,13 @@ services:
       POSTGRES_SSLMODE: disable
       EVIDENCE_ROOT: /app/evidence
       DERIVATIVE_ROOT: /app/derivatives
+      # Declared and mounted for the same reason the main stack declares it:
+      # `deployment_readiness` treats LEGACY_SOURCE_ROOT as a canonical storage
+      # root and refuses a deployment whose root does not exist. Left unset it
+      # falls back to BASE_DIR/legacy-source inside the image, nothing mounts
+      # it, and the post-deployment gate that production runs can never go
+      # green here — so the rehearsal could not rehearse it.
+      LEGACY_SOURCE_ROOT: /app/legacy-source
       # Migrations and seeding are controlled one-off steps, never container
       # start-up work (master specification 24.2). A container that migrates on
       # boot will happily migrate on a restart nobody intended.
@@ -104,6 +111,10 @@ services:
       # Mixing them puts an operator one `rm -rf` away from destroying the half
       # that cannot be regenerated (docs/adr/0014).
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/derivatives:/app/derivatives
+      # OneNote page XML, kept as source evidence beside the register. Empty on
+      # this stack — the rehearsal imports no register — but it must exist, because
+      # `deployment_readiness` requires every canonical root to be present.
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/legacy-source:/app/legacy-source
       # Held uploads and `Uus teema` staging, READ-WRITE. The same topology as
       # the main stack and for the same reason: `web` writes a staged file and
       # `extractor` opens it to parse it, and a container's writable layer is
@@ -172,6 +183,7 @@ services:
       POSTGRES_SSLMODE: disable
       EVIDENCE_ROOT: /app/evidence
       DERIVATIVE_ROOT: /app/derivatives
+      LEGACY_SOURCE_ROOT: /app/legacy-source
       SEED_DEV_DATA: "0"
       # This is a deployed stack, and it says so. `config/test_safety.py`
       # refuses to start the test suite in any environment carrying this
@@ -192,6 +204,10 @@ services:
     volumes:
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/evidence:/app/evidence
       - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/derivatives:/app/derivatives
+      # OneNote page XML, kept as source evidence beside the register. Empty on
+      # this stack — the rehearsal imports no register — but it must exist, because
+      # `deployment_readiness` requires every canonical root to be present.
+      - ${JURISTID_DATA_ROOT:-/mnt/user/appdata/juristid-test}/legacy-source:/app/legacy-source
       # The staged files, READ-ONLY — the same volume `web` writes, and the same
       # split as the main stack: every write to a staged object happens in the
       # web process, and this one's whole interaction with the bytes is a single

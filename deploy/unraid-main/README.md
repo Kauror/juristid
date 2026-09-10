@@ -249,6 +249,28 @@ The check itself is deliberate either way: real data with no scanner configured
 is a deployment that can never read a document, and this is the cheapest moment
 to find out.
 
+**A cold clamd is not idle while it loads, and the unqualified `up -d` starts
+it beside the application.** The 2026-09-09 rehearsal measured what that costs:
+the host's load average went from 0.5 to 7.5, the container settled at about
+1 GB resident, and the first file scanned took 14 seconds where a warm scanner
+takes 2.5. In that window an ordinary `Uus teema` save exceeded gunicorn's
+60-second timeout and the worker was killed — a 500 for the person saving. The
+transaction rolled back cleanly and the same save succeeded a minute later, so
+nothing was lost; but a lawyer saw an error page during a deployment that was
+otherwise fine.
+
+Cheap to avoid, on a host that also serves the register: start the scanner
+before the replacement and let it come up on its own.
+
+```bash
+docker compose -p juristid-main -f compose.yml up -d clamav
+docker inspect -f '{{.State.Health.Status}}' juristid-main-clamav
+```
+
+Wait for `healthy`, then continue. `up -d clamav` replaces nothing that is
+serving — the rehearsal started the scanner this way against a running stack
+and `web`, `extractor` and `db` were not touched.
+
 ### 6. Accounts
 
 Create the real people, by hand, once. There is no self-service and no
@@ -1190,6 +1212,12 @@ not a schema change, and the backup's job is to be the last thing before one.
 
 Still the same shell, so still the same two variables, so still the same image
 that step 6 read the plan from.
+
+On a release that introduces or upgrades the scanner, bring `clamav` up and
+wait for it to be healthy *before* the replacement below — a cold clamd loading
+its signature database is heavy enough to time out an ordinary request, and
+step 5a says what that looked like when it was measured. On every other
+release it is already running and this costs nothing.
 
 ```bash
 docker compose -p juristid-main -f compose.yml run --rm web python manage.py migrate
