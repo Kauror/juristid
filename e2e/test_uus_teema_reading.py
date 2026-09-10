@@ -631,9 +631,23 @@ def test_uploading_a_document_later_starts_no_reading_workflow(
 
     # The letter states 18.9.2026 and names a ministry. Neither reaches the
     # Matter, and no suggestion panel appears anywhere.
+    #
+    # **Asked of the deadline control rather than of the whole page**, and the
+    # difference is not pedantry. This read `get_by_text("18.9.2026")` and
+    # required zero anywhere on the page — which is a page-wide search for a
+    # date the *test itself* can produce: `name_a_next_step` clicks «+1 nädal»,
+    # so on the one day of the year when today + 7 is the date the letter
+    # states, the Järgmiseks row and its timeline preview both carry it and the
+    # assertion fails on a Teema that is behaving perfectly. That day was
+    # 2026-09-11. A test whose verdict depends on the calendar is a test
+    # somebody eventually deletes rather than reads.
+    #
+    # What it means is «the letter's deadline did not become this Matter's», so
+    # it asks the control that holds a Matter's deadline.
     page.goto(matter_url)
-    expect(page.get_by_text("1.10.2026").first).to_be_visible()
-    expect(page.get_by_text("18.9.2026")).to_have_count(0)
+    deadline = page.locator(".metaline__value--deadline")
+    expect(deadline).to_have_text(re.compile(r"1\.10\.2026"))
+    expect(deadline).not_to_contain_text("18.9.2026")
     expect(page.locator("#intake-panel")).to_have_count(0)
     expect(page.get_by_role("heading", name="Failist leitud")).to_have_count(0)
 
