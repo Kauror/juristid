@@ -78,6 +78,7 @@ consequences and reversibility.
 | [0066](0066-the-malware-scan-gate-is-a-real-scanner.md) | The malware scan gate is a real scanner | Accepted |
 | [0067](0067-uus-teema-asks-two-questions-about-one-catalogue.md) | `Uus teema` asks two questions about one catalogue, and creates real work | Accepted |
 | [0068](0068-the-snapshot-records-which-step-it-photographed.md) | The operational snapshot records which step it photographed | Accepted |
+| [0071](0071-teemad-is-the-one-discovery-surface.md) | Teemad is the discovery surface, and «Tähtajad» is not a destination | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 
