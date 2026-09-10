@@ -28,11 +28,12 @@ import re
 
 import pytest
 from django.urls import reverse
+from django.utils import timezone
 
 from app.core.enums import Visibility
 from app.intelligence.enums import EffectiveDateKind, FactStatus, WorkVictoryStatus
 from app.matters import register_filters
-from app.workflow.enums import DatePrecision
+from app.workflow.enums import DatePrecision, Disposition
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -700,10 +701,10 @@ def test_a_chosen_value_comes_back_selected_in_the_panel(signed_in):
 @pytest.mark.parametrize(
     "route,destination",
     [
-        ("intelligence:work_victories", f"{REGISTER}?toovoit=on"),
-        ("intelligence:effective_dates", f"{REGISTER}?joustumine=on"),
-        ("intelligence:work_victories_legacy", f"{REGISTER}?toovoit=on"),
-        ("intelligence:effective_dates_legacy", f"{REGISTER}?joustumine=on"),
+        ("intelligence:work_victories", f"{REGISTER}?toovoit=on&olek=koik"),
+        ("intelligence:effective_dates", f"{REGISTER}?joustumine=on&olek=koik"),
+        ("intelligence:work_victories_legacy", f"{REGISTER}?toovoit=on&olek=koik"),
+        ("intelligence:effective_dates_legacy", f"{REGISTER}?joustumine=on&olek=koik"),
     ],
 )
 def test_a_retired_fact_page_lands_on_the_register_filter_that_replaced_it(
@@ -813,3 +814,41 @@ def test_the_new_filters_do_not_cost_a_query_per_row(signed_in, django_assert_ma
             },
         )
     assert response.context["total"] == 20
+
+
+@pytest.mark.parametrize(
+    "route,param",
+    [
+        ("intelligence:work_victories", register_filters.VICTORY_PARAM),
+        ("intelligence:effective_dates", register_filters.COMMENCEMENT_PARAM),
+    ],
+)
+def test_a_retired_page_does_not_lose_its_closed_matters_on_the_way(
+    client, specialist, route, param
+):
+    """The redirect carries `?olek=koik`, and this is why.
+
+    Neither retired page had an open/closed dimension at all — Töövõidud listed
+    every confirmed victory there had ever been. The register's default is
+    *avatud*, so a redirect that omitted the parameter would show a fraction of
+    what the bookmark used to show, with nothing on the page saying so. For a
+    work victory that fraction is small: the win usually arrives around the time
+    the file closes.
+    """
+    # Closed properly: the database refuses `is_open=False` without a
+    # disposition and a closing timestamp, which is the constraint that makes
+    # "suletud" mean something.
+    closed = factories.MatterFactory(
+        title="Suletud võiduga",
+        is_open=False,
+        disposition=Disposition.COMPLETED,
+        closed_at=timezone.now(),
+    )
+    if param == register_filters.VICTORY_PARAM:
+        _victory(closed)
+    else:
+        _commencement(closed, start=datetime.date(2026, 4, 1), end=datetime.date(2026, 4, 1))
+    client.force_login(specialist)
+
+    landing = client.get(client.get(reverse(route))["Location"])
+    assert titles_on(landing) == ["Suletud võiduga"]

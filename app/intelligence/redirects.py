@@ -60,12 +60,19 @@ from app.matters.register_filters import (
 def _register(parameter: str) -> str:
     """The register, narrowed to files carrying one structured fact.
 
-    No ``?olek=`` either way. The register's own default is *avatud*, which is
-    what somebody following one of these links is nearly always after, and
-    stating it explicitly would put a parameter in the address that the reader
-    did not choose and cannot tell apart from one they did.
+    **``?olek=koik`` is load-bearing and is the whole reason this is a function
+    rather than a literal.** Neither retired page had an open/closed dimension
+    at all: Töövõidud listed every confirmed victory there had ever been, and
+    Jõustuvad aktid every active commencement. The register's own default is
+    *avatud*, so omitting the parameter would silently drop every fact on a
+    closed file — which, for a work victory, is most of them. A redirect that
+    quietly shows a fraction of what the bookmark used to show is worse than
+    one that 404s, because nothing on the page says anything is missing.
+
+    Preserving the population is what a redirect owes; the *window* is what
+    cannot be preserved and is documented as lost at the top of this module.
     """
-    return f"{reverse('matters:matter_list')}?{parameter}={FACT_PRESENT}"
+    return f"{reverse('matters:matter_list')}?{parameter}={FACT_PRESENT}&olek=koik"
 
 
 def work_victories(request: HttpRequest) -> HttpResponse:
