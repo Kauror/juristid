@@ -971,3 +971,41 @@ def test_a_row_read_off_the_manager_is_the_whole_truth(specialist):
     assert row.next_action_id == step.pk
     assert row.next_action_kind == ActionKind.DO
     assert row.next_action_date == HIDDEN_DEADLINE
+
+
+def test_break_glass_reaches_the_photographed_step_and_expiry_ends_it(specialist):
+    """One scope, not a second rule in the snapshot.
+
+    The administrator is the adversary the audit's matrix cares about most —
+    technical administration is not business access — and break-glass is the one
+    audited route across that line. It has to reach the photograph exactly as it
+    reaches everything else, and stop reaching it the moment the grant does,
+    without a recapture. That last half is the whole argument for deriving from
+    the live row: a visibility written at capture time would still be sitting
+    there when the grant expired.
+    """
+    from app.accounts.models import BreakGlassGrant
+
+    administrator = factories.AdministratorFactory()
+    hiding, _, _ = _world_with_one_restricted_step(specialist)
+
+    assert _facts(_photographed(administrator, hiding)) == ("", "", None)
+
+    grant = BreakGlassGrant.objects.create(
+        user=administrator,
+        granted_by=specialist,
+        reason="Intsidendi uurimine",
+        starts_at=timezone.now() - timedelta(minutes=5),
+        expires_at=timezone.now() + timedelta(hours=2),
+    )
+
+    assert _facts(_photographed(administrator, hiding)) == (
+        ActionKind.DO,
+        DateSemantics.DEADLINE,
+        HIDDEN_DEADLINE,
+    )
+
+    grant.expires_at = timezone.now() - timedelta(minutes=1)
+    grant.save(update_fields=["expires_at"])
+
+    assert _facts(_photographed(administrator, hiding)) == ("", "", None)
