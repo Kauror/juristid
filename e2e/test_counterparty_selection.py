@@ -341,6 +341,55 @@ def test_an_addressee_chosen_by_hand_survives_a_change_of_sender(page, base_url)
     assert _addressee_labels(page)[0] == MINISTRY, "the sender was not moved to the front at all"
 
 
+def test_swapping_the_sender_moves_the_answer_with_it(page, base_url):
+    """Saatja A answered A; change it to B and B is the answer (§7).
+
+    The second body is taken by position rather than by name, because every
+    browser test in this suite shares one database and earlier files create
+    institutions — so which bodies are in the Saatja shortlist depends on what
+    has already run. What is being checked is that the answer *follows*, and
+    that is true of whichever second body the world happens to offer.
+    """
+    create_form(page, base_url)
+
+    chips = page.locator(f"{SENDER_FIELD} > .chiprow > label.chip")
+    if chips.count() < 2:
+        pytest.skip("this world offers one sender chip, so there is nothing to swap to")
+    first = (chips.nth(0).inner_text() or "").strip().rstrip("×").strip()
+    second = (chips.nth(1).inner_text() or "").strip().rstrip("×").strip()
+
+    _tick_sender(page, first)
+    assert _summary(page) == f"Adressaat · {first}"
+
+    _tick_sender(page, first)
+    _tick_sender(page, second)
+
+    assert _summary(page) == f"Adressaat · {second}", (
+        "the answer did not follow the sender that replaced the one it came from"
+    )
+
+
+def test_a_second_sender_does_not_replace_the_answer_the_first_gave(page, base_url):
+    """Once seeded, adding another sender is not a reason to re-decide (§9).
+
+    The browser knows which of the two was chosen first, which is exactly what
+    the server cannot know from a POST — so this is the one part of the rule
+    that only a browser can hold.
+    """
+    create_form(page, base_url)
+
+    chips = page.locator(f"{SENDER_FIELD} > .chiprow > label.chip")
+    if chips.count() < 2:
+        pytest.skip("this world offers one sender chip, so there is no second to add")
+    first = (chips.nth(0).inner_text() or "").strip().rstrip("×").strip()
+    second = (chips.nth(1).inner_text() or "").strip().rstrip("×").strip()
+
+    _tick_sender(page, first)
+    _tick_sender(page, second)
+
+    assert _summary(page) == f"Adressaat · {first}"
+
+
 def test_unticking_the_sender_takes_the_answer_it_supplied_with_it(page, base_url):
     """§8, in the browser: a default never stands on nothing."""
     create_form(page, base_url)
