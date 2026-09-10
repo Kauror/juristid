@@ -4835,6 +4835,24 @@ a.barchart__row:hover {
   max-width: 20rem;
 }
 
+/* Adressaat's own disclosure, which is a whole field rather than a long tail.
+   `inline-block` is right for a door standing in a row of chips and wrong for
+   one standing on a row of its own: shrink-to-fit measures the widest chip
+   inside and leaves the open panel an island in a field with the whole row to
+   spend. The summary keeps its own `inline-block`, so the closed state is still
+   a pill and only the open body takes the width (templates/matters/matter_create.html). */
+.chipdetails--field {
+  display: block;
+}
+
+/* What the door opens onto. No border, no fill and no second panel: the field
+   inside already draws its own chips and its own `Uus adressaat` box, and
+   wrapping them in `.chipdetails__body` would put a bordered panel inside a
+   bordered panel for the long tail sitting one level further in. */
+.createform__addressee {
+  margin-top: var(--spacing-2);
+}
+
 .chipdetails__body .chiprow {
   margin-top: 0;
   /* A catalogue of ministries is long. It scrolls inside its own box rather

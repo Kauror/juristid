@@ -1667,44 +1667,61 @@
     });
   }
 
-  /* ---- Saatja chosen here is the first Adressaat offered ------------------
+  /* ---- Saatja is also the Adressaat, until somebody says otherwise -------
    *
-   * Answering whoever wrote to you is the ordinary case, and Saatja and
+   * A file arrives from X and is normally answered to X, so `Uus teema` fills
+   * Adressaat from Saatja instead of asking the same question twice. Saatja and
    * Adressaat are two questions about *one* catalogue of institutions — the
-   * same `Organisation` rows, reached through two relations (docs/adr/0063).
-   * So a body ticked as the sender belongs at the front of the addressee
-   * choices, and «Euroopa Komisjon» chosen as Saatja must not then have to be
-   * hunted for behind «Vali nimekirjast».
+   * same `Organisation` rows reached through two relations (docs/adr/0063) —
+   * which is what makes the answer to one usable as the answer to the other.
    *
-   * Three rules, and the second is the one that makes this safe to do at all:
+   * This replaces a rule rather than extending one. Until docs/adr/0069 the
+   * sender was promoted to the front of the addressee choices and deliberately
+   * *never* selected, on the argument that guessing a counterparty puts a fact
+   * on the register nobody stated. That argument was not wrong about the risk;
+   * it was wrong about the trade. Making the ordinary case free costs somebody
+   * who is answering a different body one click of correction, and it is a
+   * click they can see themselves making — the field says who it is answering,
+   * and they change it.
    *
-   * 1. **Promote, never select.** This reorders the choices and never touches a
-   *    `checked` property on the addressee group. Guessing an addressee would
-   *    put a counterparty on the record that nobody chose, on a form where the
-   *    person is right there to choose one.
-   * 2. **A manual answer is never disturbed.** Somebody who has picked an
-   *    addressee and then edits the sender keeps their addressee. The order of
-   *    the chips may change under it; the value does not.
-   * 3. **One radio, moved — never a second one drawn.** The option is the same
-   *    DOM node relocated to the front of the quick row, so the group still
-   *    holds one control per organisation and the long tail loses the entry the
-   *    shortlist gained. A copy would post the same name twice and put the
-   *    browser in charge of which one won.
+   * Four rules, and the second is the one that makes this safe to do at all:
    *
-   * The server does the same ordering for the bound case, which is what a
-   * refused save re-renders (`app.matters.forms._promote_selected_senders`).
-   * This is the half that has to work before any round trip.
+   * 1. **One unambiguous sender seeds it.** Whichever sender is chosen while
+   *    nothing is seeded becomes the seed. A second sender added afterwards
+   *    does not replace it, and when nothing is seeded and *several* senders
+   *    are named there is no unambiguous body to answer, so Adressaat stays
+   *    unanswered rather than guessed at.
+   * 2. **A manual answer wins for ever.** The moment somebody touches Adressaat
+   *    themselves, nothing here writes to it again — not a sender being added,
+   *    removed, re-sorted, searched for or typed. That fact is posted in
+   *    `addressee_is_manual`, so it survives a refused save and the server
+   *    honours it too; it is never inferred from which chip happens to be
+   *    first, because reordering is something this file legitimately does.
+   * 3. **What was derived is taken back honestly.** Remove the sender the
+   *    default came from and the default goes with it, rather than leaving a
+   *    counterparty on the form that nothing on the page still supports.
+   * 4. **One radio, moved — never a second one drawn.** The chosen sender's
+   *    option is the same DOM node relocated to the front of the quick row, so
+   *    the group still holds one control per organisation. A copy would post
+   *    the same name twice and put the browser in charge of which one won.
+   *
+   * The server does all of this for the bound case, which is what a refused
+   * save re-renders and what a browser with scripting off gets
+   * (`app.matters.forms._default_addressee`). This is the half that has to work
+   * before any round trip.
    */
-  function bindCounterpartyPromotion(scope) {
+  function bindAddresseeDefault(scope) {
     (scope || document).querySelectorAll("[data-counterparty-form]").forEach(function (form) {
       if (!once(form, "Counterparty")) {
         return;
       }
-      var senders = form.querySelector("[data-sender-chips]");
+      var senderRow = form.querySelector("[data-sender-chips]");
       var quick = form.querySelector('[data-clears="addressee_organisation"]');
       var typed = form.querySelector("[data-sender-name]");
       var addresseeName = form.querySelector("[data-addressee-name]");
-      if (!senders || !quick) {
+      var manualField = form.querySelector("[data-addressee-manual]");
+      var summary = form.querySelector("[data-addressee-summary]");
+      if (!senderRow || !quick) {
         return;
       }
 
@@ -1712,6 +1729,14 @@
         return form.querySelectorAll(
           'input[name="source_organisations"], input[name="source_organisations_other"]'
         );
+      };
+      var addresseeInputs = function () {
+        return form.querySelectorAll('input[name="addressee_organisation"]');
+      };
+
+      var chipName = function (chip) {
+        var name = chip ? chip.querySelector(".chip__name") : null;
+        return name ? name.textContent.trim().replace(/\s*×$/, "") : "";
       };
 
       /* The label wrapping one addressee radio, wherever it currently lives —
@@ -1721,7 +1746,7 @@
          page. */
       var optionFor = function (value) {
         var found = null;
-        form.querySelectorAll('input[name="addressee_organisation"]').forEach(function (radio) {
+        addresseeInputs().forEach(function (radio) {
           if (!found && radio.value === value) {
             found = radio.closest(".chip");
           }
@@ -1729,11 +1754,72 @@
         return found;
       };
 
+      /* ---- the two states this has to tell apart -------------------------
+       *
+       * `manual` is somebody having answered Adressaat themselves, and it is
+       * the only thing that stops everything below. It is restored from the
+       * hidden field on load so that a refused save comes back knowing which of
+       * the two it is looking at — a value on a re-rendered form is otherwise
+       * indistinguishable from a value this script wrote a moment before the
+       * person pressed the button.
+       *
+       * `seed` is the sender the current default came from, held as a token
+       * rather than as a position: `{kind: "pk"|"typed", value}`. Position
+       * cannot carry it, because answering Adressaat moves chips around.
+       */
+      var manual = !!(manualField && manualField.value);
+      var seed = null;
+
+      var provisional = null;
+      var provisionalName = "";
+
+      var sameToken = function (left, right) {
+        return !!left && !!right && left.kind === right.kind && left.value === right.value;
+      };
+
+      /* The addressee radio offering one body *by name*, if the catalogue holds
+         it. `Uus saatja` is a box for a body that does not exist yet, but people
+         type into it names that do — and a spelling the catalogue already holds
+         should answer with the row rather than with the word. */
+      var optionValueNamed = function (name) {
+        var found = null;
+        addresseeInputs().forEach(function (radio) {
+          if (found === null && radio.value && chipName(radio.closest(".chip")) === name) {
+            found = radio.value;
+          }
+        });
+        return found;
+      };
+
+      /* Every sender this form currently names: the ticked bodies, plus the one
+         being typed into `Uus saatja`. A typed name the catalogue does not hold
+         has no primary key and is carried by its spelling — which is exactly
+         what `addressee_name` posts, and what the server resolves against the
+         same catalogue inside the save's own transaction. */
+      var senderTokens = function () {
+        var tokens = [];
+        senderInputs().forEach(function (input) {
+          if (input.checked) {
+            tokens.push({ kind: "pk", value: input.value, name: chipName(input.closest(".chip")) });
+          }
+        });
+        var name = typed ? typed.value.trim() : "";
+        if (name) {
+          var known = optionValueNamed(name);
+          tokens.push(
+            known
+              ? { kind: "pk", value: known, name: name }
+              : { kind: "typed", value: name, name: name }
+          );
+        }
+        return tokens;
+      };
+
       /* ---- the temporary chip for a sender that does not exist yet --------
        *
        * `Uus saatja: Euroopa Komisjon` with no such body in the catalogue has
-       * no primary key to promote — there is no row until `Loo teema` creates
-       * one. The same name still has to be offerable as the addressee, so it is
+       * no primary key to answer with — there is no row until `Loo teema`
+       * creates one. The same name still has to become the addressee, so it is
        * offered as a chip that writes into the `addressee_name` free-text
        * control, which is the path that already exists for exactly this
        * (`app.matters.services.resolve_addressee`).
@@ -1742,25 +1828,15 @@
        * everything it does is done through the two controls that do post. On
        * save the server resolves one typed sender and one typed addressee
        * against one catalogue inside one transaction, so the same spelling
-       * becomes one Organisation row used twice — never two rows
-       * (`resolve_organisation_name`, task §14, §15).
+       * becomes one Organisation row used twice — never two (§5, §15).
        */
-      var provisional = null;
-      var provisionalName = "";
-
       var clearProvisional = function () {
         if (!provisional) {
           return;
         }
-        var wasChecked = provisional.querySelector("input").checked;
         provisional.remove();
         provisional = null;
         provisionalName = "";
-        /* Only what this chip itself wrote. A name the person typed into
-           Adressaat by hand is theirs and survives the sender being cleared. */
-        if (wasChecked && addresseeName) {
-          addresseeName.value = "";
-        }
       };
 
       var syncProvisional = function () {
@@ -1773,15 +1849,11 @@
           return;
         }
         /* Already offered as a real body: the catalogue holds this spelling, so
-           the ordinary promotion above covers it and a second chip saying the
-           same word would be the form offering one institution twice. */
-        var existing = Array.prototype.some.call(
-          form.querySelectorAll('input[name="addressee_organisation"]'),
-          function (radio) {
-            var label = radio.closest(".chip");
-            return label && label.textContent.trim().replace(/\s*×$/, "") === name;
-          }
-        );
+           the ordinary chip covers it and a second one saying the same word
+           would be the form offering one institution twice. */
+        var existing = Array.prototype.some.call(addresseeInputs(), function (radio) {
+          return chipName(radio.closest(".chip")) === name;
+        });
         if (existing) {
           clearProvisional();
           return;
@@ -1790,9 +1862,7 @@
           return;
         }
         var checked = provisional && provisional.querySelector("input").checked;
-        if (provisional) {
-          provisional.remove();
-        }
+        clearProvisional();
         provisional = document.createElement("label");
         provisional.className = "chip chip--provisional";
         provisional.setAttribute("data-provisional-addressee", "");
@@ -1813,7 +1883,7 @@
           }
           /* One answer at a time. The typed name is what the server will
              resolve, so the chosen chip has to let go. */
-          form.querySelectorAll('input[name="addressee_organisation"]').forEach(function (radio) {
+          addresseeInputs().forEach(function (radio) {
             radio.checked = false;
           });
           addresseeName.value = name;
@@ -1823,6 +1893,13 @@
         }
       };
 
+      /* The chosen senders, at the front of the quick row.
+       *
+       * Ordering, and since docs/adr/0069 it is ordering with a job rather than
+       * a suggestion: the body that has just become the addressee has to be one
+       * of the chips, because the chips are what somebody sees when they open
+       * Adressaat to check. A default left in the long tail would be an answer
+       * hidden behind a second disclosure. */
       var promote = function () {
         var chosen = [];
         senderInputs().forEach(function (input) {
@@ -1830,16 +1907,11 @@
             chosen.push(input);
           }
         });
-        /* By the label the person reads, so several senders promote in the
-           order the server would also put them in rather than in whichever
-           order the two checkbox groups happen to appear in the document. */
+        /* By the label the person reads, so several senders move in the order
+           the server would also put them in rather than in whichever order the
+           two checkbox groups happen to appear in the document. */
         chosen.sort(function (a, b) {
-          var left = a.closest(".chip");
-          var right = b.closest(".chip");
-          return (left ? left.textContent : "").localeCompare(
-            right ? right.textContent : "",
-            "et"
-          );
+          return chipName(a.closest(".chip")).localeCompare(chipName(b.closest(".chip")), "et");
         });
         /* Inserted in reverse so that repeated `insertBefore(first)` leaves
            them in `chosen` order, and after the provisional chip if there is
@@ -1850,9 +1922,10 @@
           if (!option) {
             continue;
           }
-          var anchor = provisional && provisional.parentNode === quick
-            ? provisional.nextSibling
-            : quick.firstChild;
+          var anchor =
+            provisional && provisional.parentNode === quick
+              ? provisional.nextSibling
+              : quick.firstChild;
           if (option !== anchor) {
             quick.insertBefore(option, anchor);
           }
@@ -1860,38 +1933,176 @@
         }
       };
 
-      form.addEventListener("change", function (event) {
-        var target = event.target;
-        if (!target || !target.name) {
+      /* What the collapsed disclosure says: «Adressaat», or «Adressaat · X».
+         The server renders the same sentence for a bound form; this keeps it
+         true while somebody is still filling the form in. */
+      var updateSummary = function () {
+        if (!summary) {
           return;
         }
-        if (target.name === "source_organisations" || target.name === "source_organisations_other") {
-          promote();
+        var name = "";
+        if (provisional && provisional.querySelector("input").checked) {
+          name = provisionalName;
+        } else {
+          addresseeInputs().forEach(function (radio) {
+            if (radio.checked && radio.value) {
+              name = chipName(radio.closest(".chip"));
+            }
+          });
         }
-        if (target.name === "addressee_organisation" && target.checked && provisional) {
-          /* The person chose a real body, so the typed one is no longer the
-             answer. `bindExclusiveName` empties the text box; this releases the
-             chip that filled it. */
+        if (!name && addresseeName) {
+          name = addresseeName.value.trim();
+        }
+        summary.textContent = name ? " · " + name : "";
+      };
+
+      /* Write the derived answer, or take it back.
+       *
+       * Only ever reached while `manual` is false, which is what makes it safe
+       * to overwrite whatever is in the controls: everything there was put
+       * there by this function, or by the server's identical rule. */
+      var applyDefault = function () {
+        if (seed && seed.kind === "typed") {
+          addresseeInputs().forEach(function (radio) {
+            radio.checked = false;
+          });
+          if (provisional) {
+            provisional.querySelector("input").checked = true;
+          }
+          if (addresseeName) {
+            addresseeName.value = seed.value;
+          }
+          return;
+        }
+        if (provisional) {
           provisional.querySelector("input").checked = false;
+        }
+        if (addresseeName) {
+          addresseeName.value = "";
+        }
+        /* `Määramata` is a real radio with an empty value, and it is what "no
+           answer" looks like — so clearing the default means selecting it,
+           never leaving the group with nothing checked. */
+        addresseeInputs().forEach(function (radio) {
+          radio.checked = seed ? radio.value === seed.value : radio.value === "";
+        });
+      };
+
+      var refresh = function () {
+        syncProvisional();
+        promote();
+        if (!manual) {
+          var tokens = senderTokens();
+          if (
+            seed &&
+            !tokens.some(function (token) {
+              return sameToken(token, seed);
+            })
+          ) {
+            /* The sender the answer came from is gone, so the answer goes with
+               it rather than standing on nothing (§8). */
+            seed = null;
+          }
+          if (!seed && tokens.length === 1) {
+            seed = tokens[0];
+          }
+          applyDefault();
+        }
+        updateSummary();
+      };
+
+      /* What the form arrived holding, before anybody touches it.
+       *
+       * A bound form the server defaulted comes back with the answer in place
+       * and `addressee_is_manual` unset, and this is where that becomes a seed
+       * again — found by matching the answer against the senders, which is
+       * exact, rather than by reading which chip is first, which is not. An
+       * answer no sender explains was given by a person, on this form or on the
+       * one before the refusal, and it is theirs. */
+      var adopt = function () {
+        if (manual) {
+          return;
+        }
+        var answer = "";
+        addresseeInputs().forEach(function (radio) {
+          if (radio.checked && radio.value) {
+            answer = radio.value;
+          }
+        });
+        var name = addresseeName ? addresseeName.value.trim() : "";
+        senderTokens().forEach(function (token) {
+          if (seed) {
+            return;
+          }
+          if (token.kind === "pk" && answer && token.value === answer) {
+            seed = token;
+          }
+          if (token.kind === "typed" && !answer && name && token.value === name) {
+            seed = token;
+          }
+        });
+        if (!seed && (answer || name)) {
+          takeOver();
+        }
+      };
+
+      function takeOver() {
+        if (manual) {
+          return;
+        }
+        manual = true;
+        seed = null;
+        if (manualField) {
+          manualField.value = "1";
+        }
+      }
+
+      form.addEventListener("change", function (event) {
+        var target = event.target;
+        if (!target) {
+          return;
+        }
+        if (!target.name) {
+          /* The provisional chip posts nothing and so has no name. Choosing it
+             is still a person answering Adressaat. */
+          if (provisional && provisional.contains(target) && event.isTrusted) {
+            takeOver();
+            updateSummary();
+          }
+          return;
+        }
+        if (
+          target.name === "source_organisations" ||
+          target.name === "source_organisations_other"
+        ) {
+          refresh();
+          return;
+        }
+        if (target.name === "addressee_organisation" && event.isTrusted) {
+          takeOver();
+          updateSummary();
         }
       });
 
       if (typed) {
-        typed.addEventListener("input", function () {
-          syncProvisional();
-          promote();
-        });
+        typed.addEventListener("input", refresh);
       }
       if (addresseeName) {
-        addresseeName.addEventListener("input", function () {
+        addresseeName.addEventListener("input", function (event) {
+          if (event.isTrusted) {
+            takeOver();
+          }
           if (provisional && addresseeName.value.trim() !== provisionalName) {
             provisional.querySelector("input").checked = false;
           }
+          updateSummary();
         });
       }
 
       syncProvisional();
       promote();
+      adopt();
+      updateSummary();
     });
   }
 
@@ -1901,10 +2112,21 @@
    * person ticked, and a form that comes back with an error and their answer
    * hidden looks like a form that discarded it. The value was always posted;
    * this is only about being able to see it.
+   *
+   * `data-stay-closed` is the exception, and it exists because the rule above
+   * assumes a ticked choice is somebody's answer. Adressaat's own disclosure
+   * holds one on the *ordinary* visit now — the sender fills it in — so
+   * applying this there would unfold a section every time the page answered a
+   * question on the person's behalf, which is the opposite of what defaulting
+   * it was for. That disclosure opens for an error and for a click, and for
+   * nothing else (docs/adr/0069, templates/matters/matter_create.html).
    */
   function bindOpenChosenDetails(scope) {
     (scope || document).querySelectorAll("details.chipdetails").forEach(function (holder) {
       if (!once(holder, "OpenChosen")) {
+        return;
+      }
+      if (holder.hasAttribute("data-stay-closed")) {
         return;
       }
       if (holder.querySelector("input:checked")) {
@@ -2618,7 +2840,7 @@
     bindDatePickers(document);
     bindChoiceFilters(document);
     bindExclusiveName(document);
-    bindCounterpartyPromotion(document);
+    bindAddresseeDefault(document);
     bindOpenChosenDetails(document);
     bindChipCounts(document);
     bindStageHelp(document);
@@ -2647,7 +2869,7 @@
     bindDatePickers(event.target.querySelector ? event.target : document);
     bindChoiceFilters(event.target.querySelector ? event.target : document);
     bindExclusiveName(event.target.querySelector ? event.target : document);
-    bindCounterpartyPromotion(event.target.querySelector ? event.target : document);
+    bindAddresseeDefault(event.target.querySelector ? event.target : document);
     bindOpenChosenDetails(event.target.querySelector ? event.target : document);
     bindChipCounts(event.target.querySelector ? event.target : document);
     bindStageHelp(event.target.querySelector ? event.target : document);

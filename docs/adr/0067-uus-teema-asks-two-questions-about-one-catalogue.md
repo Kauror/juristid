@@ -77,6 +77,16 @@ what a refused save re-renders and what a browser with scripting off gets; the
 browser does the same thing live, because the interaction has to work before a
 round trip. One rule, stated twice, with a test holding each.
 
+> **Superseded by ADR 0069 (2026-09-10).** The sender now *is* the addressee by
+> default. Only the "never chosen" half is withdrawn: the promotion, the move
+> rather than the copy, and the rule that a manual answer survives any change of
+> sender are all still in force — the third of them more strictly, since the
+> default writes to the same control. The reasoning is in ADR 0069; the short
+> version is that this record priced the alternative as "offering costs a click"
+> when the cost was finding the thing to click, and priced the risk as
+> "discovered late or never" when the fold now makes the field state its own
+> answer on every visit.
+
 **A sender being typed is offered as an addressee too.** A chip standing for a
 name rather than a record, dashed to say "not saved yet", which fills the
 existing `addressee_name` free-text path when chosen. Nothing is created before
@@ -129,6 +139,11 @@ it.
 tempting and wrong often enough to be a real defect — an opinion sent to the
 ministry that merely forwarded the letter. Offering costs a click; guessing
 costs a wrong counterparty on the record, discovered late or never.
+
+> **Reversed by ADR 0069 (2026-09-10)**, which is where the counter-argument is
+> made rather than here. The forwarding ministry is still the case that has to
+> be answerable, and it is: the person opens Adressaat and chooses, and from
+> that moment nothing derives it again.
 
 **Copying the promoted radio into the quick row** rather than moving it. Two
 controls with one name post twice and leave the browser deciding which counts.
