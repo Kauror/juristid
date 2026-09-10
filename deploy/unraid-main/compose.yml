@@ -380,6 +380,17 @@ services:
       # As on every other service in this file: `config/test_safety.py` refuses
       # to run the test suite in a process that inherits this marker.
       JURISTID_RUNTIME: deployed
+      # This process opens no file and calls no scanner. It is told where the
+      # scanner is anyway, because `juristid.E015` is a check on the
+      # *deployment's* configuration and not on what this container does:
+      # `REAL_DATA_ALLOWED=1` arrives from the env file for every service, and a
+      # service that reads it without also being told a scanner backend fails
+      # its start-up system check and exits 1. Under `restart: unless-stopped`
+      # that is a crash loop rather than a message, and the freshness worker is
+      # the one service whose absence nothing else reports.
+      MALWARE_SCANNER_BACKEND: clamav
+      MALWARE_SCANNER_HOST: clamav
+      MALWARE_SCANNER_PORT: "3310"
     depends_on:
       db:
         condition: service_healthy

@@ -259,6 +259,15 @@ services:
       POSTGRES_SSLMODE: disable
       SEED_DEV_DATA: "0"
       JURISTID_RUNTIME: deployed
+      # Named here for the same reason as on the main stack, and stated rather
+      # than left out because this is the stack where leaving it out is
+      # harmless: `REAL_DATA_ALLOWED=0` means `juristid.E015` never fires, so
+      # the omission that crash-loops production is invisible here. The two
+      # stacks are meant to differ in their data and not in their security
+      # model (docs/adr/0066).
+      MALWARE_SCANNER_BACKEND: clamav
+      MALWARE_SCANNER_HOST: clamav
+      MALWARE_SCANNER_PORT: "3310"
     depends_on:
       db:
         condition: service_healthy

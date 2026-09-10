@@ -818,3 +818,53 @@ def test_the_search_worker_reaches_no_evidence(compose: dict[str, Any]) -> None:
     assert services["searchindex"]["image"] == services["web"]["image"]
     assert "volumes" not in services["searchindex"]
     assert services["searchindex"]["networks"] == ["internal"]
+
+
+#: Services that run this application's code. `db`, `clamav` and `tunnel` are
+#: other people's images and never load Django.
+APPLICATION_SERVICES = ("web", "extractor", "searchindex")
+
+
+@pytest.mark.parametrize("service", APPLICATION_SERVICES)
+def test_every_application_service_is_told_where_the_scanner_is(
+    compose: dict[str, Any], service: str
+) -> None:
+    """`juristid.E015` is a check on configuration, not on what a process does.
+
+    Every service here loads the same `env_file`, and on this stack that file
+    carries ``REAL_DATA_ALLOWED=1``. The check refuses that combined with a
+    scanner backend of ``none`` — at *start-up*, in any process that runs
+    Django's system checks, whether or not that process will ever open a file.
+
+    `searchindex` opens nothing and calls no scanner, and it was left without
+    the three scanner variables for exactly that reason. The consequence was a
+    crash loop: the container failed its system check, exited 1, and
+    ``restart: unless-stopped`` started it again, 465 times, while
+    `check_search_freshness` had nothing to report it from. Search freshness
+    simply stopped, and no other service says so.
+
+    The rehearsal stack cannot catch this — it runs ``REAL_DATA_ALLOWED=0``,
+    where E015 never fires — so it is caught here.
+    """
+    environment = compose["services"][service]["environment"]
+    assert environment.get("MALWARE_SCANNER_BACKEND") == "clamav", (
+        f"{service} loads REAL_DATA_ALLOWED=1 from the env file but is not told a scanner "
+        f"backend, so juristid.E015 fails its start-up checks and the container exits 1"
+    )
+    assert environment.get("MALWARE_SCANNER_HOST") == "clamav"
+    assert str(environment.get("MALWARE_SCANNER_PORT")) == "3310"
+
+
+def test_the_rehearsal_names_the_scanner_the_same_way(rehearsal: dict[str, Any]) -> None:
+    """Same three variables, same values, on the same three services.
+
+    The two stacks are meant to differ in their data and not in their security
+    model (docs/adr/0066). ``REAL_DATA_ALLOWED=0`` there means E015 would not
+    fire either way, which is precisely why this is asserted rather than left
+    to be noticed.
+    """
+    for service in APPLICATION_SERVICES:
+        environment = rehearsal["services"][service]["environment"]
+        assert environment.get("MALWARE_SCANNER_BACKEND") == "clamav", service
+        assert environment.get("MALWARE_SCANNER_HOST") == "clamav", service
+        assert str(environment.get("MALWARE_SCANNER_PORT")) == "3310", service
