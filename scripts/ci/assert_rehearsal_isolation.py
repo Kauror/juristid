@@ -31,11 +31,28 @@ from pathlib import Path
 #: resolve to it.
 REHEARSAL_PROJECT = "juristid-recovery-rehearsal"
 
-#: Services a plain `up` is allowed to start. Both workers write to the restored
-#: database, so they sit behind a profile: a rehearsal exists to observe what
-#: came back, and a worker that starts on its own changes it first.
+#: Services a plain `up` is allowed to start, and the only names this file may
+#: state literally — because *this is the rule*: a rehearsal exists to observe
+#: what came back, so the database and a shell are what may start on their own.
 DEFAULT_SERVICES = ("db", "web")
-PROFILED_SERVICES = ("extractor", "searchindex")
+
+
+def profiled_services(services: dict) -> list[str]:
+    """Everything else, derived — and every one of them must be profiled.
+
+    This was a second literal tuple, `("extractor", "searchindex")`, and it went
+    stale the same way `assert_deployment_identity.py` did when `extractor` left
+    the stacks with docs/adr/0069: the guard failed saying it was "looking at
+    the wrong file" when the file was right and the list was old.
+
+    Derived is also *stronger* than the list was. A service added to the
+    template with no profile used to pass this check silently, because it was
+    not one of the two names being asked about; now it is in scope the moment
+    it exists, and the assertion below is that everything outside
+    `DEFAULT_SERVICES` sits behind `workers`.
+    """
+    return sorted(set(services) - set(DEFAULT_SERVICES))
+
 
 #: Host trees a rehearsal may never bind at all. The source corpus is not here:
 #: it is the one production path the overlay may mount, read-only, and it is
@@ -62,9 +79,15 @@ def main(argv: list[str]) -> None:
             f"'{REHEARSAL_PROJECT}'. A rehearsal must not be able to name production."
         )
 
-    for name in (*DEFAULT_SERVICES, *PROFILED_SERVICES):
+    for name in DEFAULT_SERVICES:
         if name not in services:
             fail(f"no '{name}' service; this check is looking at the wrong file")
+
+    profiled = profiled_services(services)
+    if not profiled:
+        # Guards the guard: a template with nothing but `db` and `web` would
+        # satisfy every loop below by having nothing to check.
+        fail("no service outside db/web; the rehearsal template defines no workers at all")
 
     # -- nothing can reach it ------------------------------------------------
 
@@ -90,7 +113,7 @@ def main(argv: list[str]) -> None:
 
     # -- nothing writes to the restored data unless asked --------------------
 
-    for name in PROFILED_SERVICES:
+    for name in profiled:
         if "workers" not in services[name].get("profiles", []):
             fail(f"'{name}' is not behind the 'workers' profile and would start on `up`")
     for name in DEFAULT_SERVICES:
@@ -131,7 +154,7 @@ def main(argv: list[str]) -> None:
 
     print(
         f"{config['name']}: no published ports, internal network, "
-        f"{', '.join(PROFILED_SERVICES)} behind a profile, corpus read-only"
+        f"{', '.join(profiled)} behind a profile, corpus read-only"
     )
 
 
