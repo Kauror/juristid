@@ -279,3 +279,42 @@ def test_the_scorecard_prints_something_a_person_can_read(scored):
         row = card.row(field_name)
         assert field_name in row
         assert "VALE" in row
+
+
+def test_the_command_runs_and_prints_the_scorecard(catalogue):
+    """The tool itself, not only the scoring it wraps.
+
+    `evaluate_intake_corpus` imports the corpus from `tests` at call time —
+    deliberately, so `tests` is not a runtime dependency of the application
+    image — which is exactly the kind of import that rots without anybody
+    noticing until they reach for the tool.
+    """
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    out = StringIO()
+    call_command("evaluate_intake_corpus", stdout=out)
+    printed = out.getvalue()
+
+    assert "VALE" in printed
+    assert "Ühtegi väära eeltäitmist ei ole." in printed
+    for field_name in SCORED_FIELDS:
+        assert field_name in printed
+
+
+def test_the_command_can_explain_one_case(catalogue):
+    """`--case` is the answer to «why was this field missed», so it has to say
+    more than the table above does: the candidates, their rules and their
+    confidences."""
+    from io import StringIO
+
+    from django.core.management import call_command
+
+    out = StringIO()
+    call_command("evaluate_intake_corpus", "--case", "mitu-kuupaeva", stdout=out)
+    printed = out.getvalue()
+
+    assert "mitu-kuupaeva" in printed
+    assert "response_deadline" in printed
+    assert "explicit_response_deadline" in printed
