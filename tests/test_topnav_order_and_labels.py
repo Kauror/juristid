@@ -1,14 +1,19 @@
-"""The order of the main navigation, and the word on its deadline item.
+"""The order of the main navigation, and which item is marked current.
 
-Two changes, both to the shell and neither to the product behind it:
+The bar reads: **Minu asjad, Osakond, Teemad, Statistika**. A lawyer's own queue
+is where the day starts, so it is where the bar starts.
 
-* «Minu asjad» is the first destination on the bar. A lawyer's own queue is
-  where the day starts, so it is where the bar starts; Osakond, which used to
-  hold the first slot, is second.
-* The reading destination labelled «Jälgimine» reads «Tähtajad». The route, its
-  namespace, its ``nav_active`` key and every bookmark under ``/jalgimine/`` are
-  untouched — this is the word, not the domain, which is what the assertions
-  below are written to hold apart.
+There used to be a fifth item between Teemad and Statistika. It was called
+«Jälgimine», then «Tähtajad», and it opened three generated department-wide
+reading pages over the structured Matter facts. It is gone, and so are they:
+`Töövõit` and `Jõustumine` are structured filters on Teemad and an `Oluline
+tähtaeg` is its owner's own upcoming work, so there is one register to search
+and one personal queue rather than four parallel lists of the same Matters
+(docs/adr/0067).
+
+That product decision, its redirects and its filters belong to
+`tests/test_teemad_consolidation.py`. What this file keeps is the shell
+contract: the order, the active state, and the two branches of the include.
 
 The order is asserted by position in the rendered ``<nav>`` rather than by mere
 presence: a test that only asks "is Osakond on the bar" passes on every possible
@@ -26,13 +31,14 @@ from app.accounts.enums import AuthMode
 
 pytestmark = pytest.mark.django_db
 
-#: The visible destinations, in the order a reader must find them. The last two
-#: are inside the "Veel" disclosure below 1560px and inline above it — one
+#: The visible destinations, in the order a reader must find them. The last one
+#: is inside the "Veel" disclosure below 1560px and inline above it — one
 #: include rendered in two branches, so one order for both.
-EXPECTED_ORDER = ["Minu asjad", "Osakond", "Teemad", "Tähtajad", "Statistika"]
+EXPECTED_ORDER = ["Minu asjad", "Osakond", "Teemad", "Statistika"]
 
-#: What the deadline item used to say. It may not survive anywhere in the shell.
-RETIRED_LABEL = "Jälgimine"
+#: What the fifth item said, in both of the words it ever used. Neither may
+#: survive anywhere in the shell.
+RETIRED_LABELS = ("Jälgimine", "Tähtajad")
 
 LINK = re.compile(r"<a\b[^>]*>([^<]+)</a>")
 
@@ -121,65 +127,50 @@ def test_the_head_reads_the_same_order_as_a_specialist(client, department_head):
 
 
 # ---------------------------------------------------------------------------
-# B, C. the label, and the destination under it
+# B. the retired fifth item
 # ---------------------------------------------------------------------------
 
 
-def test_jalgimine_is_no_longer_a_visible_navigation_label(signed_in):
-    """Gone from the bar at every width.
+@pytest.mark.parametrize("retired", RETIRED_LABELS)
+def test_the_retired_deadline_item_is_on_no_branch_of_the_bar(signed_in, retired):
+    """Gone at every width.
 
     The whole ``<nav>`` is searched, so a label merely pushed into the "Veel"
     disclosure would still fail this.
     """
-    navigation = navigation_of(signed_in.get(reverse("matters:department")))
-
-    assert RETIRED_LABEL not in navigation
+    assert retired not in navigation_of(signed_in.get(reverse("matters:department")))
 
 
-def test_tahtajad_leads_where_jalgimine_led(signed_in):
-    """Same view, same route name, same address. Only the word changed."""
-    navigation = navigation_of(signed_in.get(reverse("matters:department")))
-    anchor = anchor_for(navigation, "Tähtajad")
+def test_the_veel_trigger_is_not_marked_by_a_destination_that_no_longer_exists(
+    client, specialist
+):
+    """The trigger lit up for `nav_active == 'jalgimine'` as well as Statistika.
 
-    destination = reverse("intelligence:important_dates")
-    assert destination == "/jalgimine/tahtajad/"
-    assert f'href="{destination}"' in anchor
-
-
-def test_the_route_and_its_namespace_are_untouched(client, specialist):
-    """The half of the change that must *not* have happened.
-
-    A label change that quietly took the URL with it would break every
-    bookmark, every internal link and the legacy redirects that still point at
-    these views. So the addresses are resolved and then actually opened.
+    Nothing sets that key any more, and a condition kept for a page that is gone
+    is a condition nobody would notice had stopped meaning anything.
     """
     client.force_login(specialist)
+    body = client.get(reverse("matters:matter_list")).content.decode()
 
-    assert reverse("intelligence:important_dates") == "/jalgimine/tahtajad/"
-    assert reverse("intelligence:effective_dates") == "/jalgimine/joustumised/"
-    assert reverse("intelligence:work_victories") == "/jalgimine/toovoidud/"
+    trigger = re.search(r'<summary class="topnav__trigger[^"]*"', body)
+    assert trigger, "the disclosure trigger is not on the page"
+    assert "is-active" not in trigger.group(0)
 
-    assert client.get("/jalgimine/tahtajad/").status_code == 200
-    assert client.get(reverse("intelligence:important_dates_legacy")).status_code == 301
+
+def test_the_veel_trigger_still_marks_statistika(client, specialist):
+    """Below 1560px Statistika is inside the disclosure and the closed trigger is
+    all a reader can see. It carries the signal, off its own key."""
+    client.force_login(specialist)
+    body = client.get(reverse("reporting:overview")).content.decode()
+
+    trigger = re.search(r'<summary class="topnav__trigger[^"]*"', body)
+    assert trigger, "the disclosure trigger is not on the page"
+    assert "is-active" in trigger.group(0)
 
 
 # ---------------------------------------------------------------------------
-# D. the active state
+# C. the active state
 # ---------------------------------------------------------------------------
-
-
-def test_tahtajad_is_marked_current_on_its_own_page(client, specialist):
-    """The internal key stayed ``jalgimine``.
-
-    So this is the assertion that the renamed item still lights up — the one
-    thing a word change can silently break.
-    """
-    client.force_login(specialist)
-    navigation = navigation_of(client.get(reverse("intelligence:important_dates")))
-    anchor = anchor_for(navigation, "Tähtajad")
-
-    assert "is-active" in anchor
-    assert 'aria-current="page"' in anchor
 
 
 @pytest.mark.parametrize(
@@ -188,7 +179,6 @@ def test_tahtajad_is_marked_current_on_its_own_page(client, specialist):
         ("matters:my_work", "Minu asjad"),
         ("matters:department", "Osakond"),
         ("matters:matter_list", "Teemad"),
-        ("intelligence:important_dates", "Tähtajad"),
         ("reporting:overview", "Statistika"),
     ],
 )
@@ -208,19 +198,8 @@ def test_each_destination_marks_only_itself(client, specialist, route, label):
     assert current == {label}
 
 
-def test_the_veel_trigger_still_marks_the_renamed_destination(client, specialist):
-    """Below 1560px the item is inside the disclosure and the closed trigger is
-    all a reader can see. It carries the same signal, off the same key."""
-    client.force_login(specialist)
-    body = client.get(reverse("intelligence:important_dates")).content.decode()
-
-    trigger = re.search(r'<summary class="topnav__trigger[^"]*"', body)
-    assert trigger, "the disclosure trigger is not on the page"
-    assert "is-active" in trigger.group(0)
-
-
 # ---------------------------------------------------------------------------
-# E. the shared gate with no persona selected
+# D. the shared gate with no persona selected
 # ---------------------------------------------------------------------------
 
 
@@ -244,30 +223,28 @@ def test_a_reader_with_no_persona_is_not_offered_minu_asjad(behind_the_gate):
     There is no "minu" behind the shared door until somebody is selected, and
     ``login_required`` on that surface would bounce the reader straight back to
     the persona page. An item that can only fail is worse than no item
-    (Vali kasutaja brief 23). The remaining four keep their relative order.
+    (Vali kasutaja brief 23). The remaining three keep their relative order.
     """
     navigation = navigation_of(behind_the_gate.get(reverse("matters:department")))
 
     assert ">Minu asjad</a>" not in navigation
-    assert labels_of(navigation) == ["Osakond", "Teemad", "Tähtajad", "Statistika"]
+    assert labels_of(navigation) == ["Osakond", "Teemad", "Statistika"]
 
 
-def test_the_renamed_item_is_offered_behind_the_gate_too(behind_the_gate):
-    """The label is not conditional on being signed in as somebody."""
-    navigation = navigation_of(behind_the_gate.get(reverse("matters:department")))
-
-    assert RETIRED_LABEL not in navigation
-    assert f'href="{reverse("intelligence:important_dates")}"' in anchor_for(navigation, "Tähtajad")
+@pytest.mark.parametrize("retired", RETIRED_LABELS)
+def test_the_retired_item_is_absent_behind_the_gate_too(behind_the_gate, retired):
+    """Its removal is not conditional on being signed in as somebody."""
+    assert retired not in navigation_of(behind_the_gate.get(reverse("matters:department")))
 
 
 # ---------------------------------------------------------------------------
-# G, H. the two branches
+# E. the two branches
 # ---------------------------------------------------------------------------
 
 
-def test_the_secondary_pair_reads_the_same_in_both_branches(signed_in):
-    """The wide row and the disclosure hold the same two links in the same
-    order, because they are the same include.
+def test_the_secondary_items_read_the_same_in_both_branches(signed_in):
+    """The wide row and the disclosure hold the same links in the same order,
+    because they are the same include.
 
     The contract the shell depends on — exactly one branch displayed at a time,
     so each destination reaches the accessibility tree once — is asserted in a
@@ -280,4 +257,4 @@ def test_the_secondary_pair_reads_the_same_in_both_branches(signed_in):
     menu = navigation.index('<div class="topnav__menu">')
 
     for branch in (navigation[wide:menu], navigation[menu:]):
-        assert labels_of(branch) == ["Tähtajad", "Statistika"]
+        assert labels_of(branch) == ["Statistika"]

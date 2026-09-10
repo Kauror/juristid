@@ -39,38 +39,42 @@ from django.urls import reverse
 pytestmark = pytest.mark.django_db
 
 #: Every surface that renders the Seis strip, and how to reach it.
+#:
+#: Jälgimine was the fifth, and it is gone with the pages behind it: `Töövõit`
+#: and `Jõustumine` are structured filters on Teemad now and an `Oluline
+#: tähtaeg` is its owner's own upcoming work (docs/adr/0067). The two contracts
+#: that were written specifically for that strip went with it; the four
+#: remaining surfaces keep every rule this file exists for.
 STRIPS = [
     ("Osakond", "matters:department", {}),
     ("Minu asjad", "matters:my_work", {}),
     ("Saabunud", "matters:inbox", {}),
-    ("Jälgimine", "intelligence:important_dates", {}),
     ("Statistika", "reporting:overview", {}),
 ]
 
 FIGURE = re.compile(r'<(a|span)\s+class="seis__figure"(?:\s+href="([^"]*)")?')
 
 
-#: Inside `sections.NEAR_DAYS`, so the seeded upcoming date lands in the window
-#: «30 päeva jooksul» counts and in the section that figure points at.
+#: A fortnight out, so the seeded upcoming date lands inside every «tähtaeg
+#: lähiajal» window the remaining strips count.
 NEAR_IN_DAYS = 10
 
 
 def _seeded(owner, today):
     """Enough work that the strips are not empty and the zeros are not dropped.
 
-    Ordinary Matters keep four of the five strips alive, and for a while that
-    was the whole fixture — which left the fifth one parameterized over a page
-    with no figures on it at all. `components/seis.html` drops zeros by design,
-    so a Jälgimine strip counting nothing renders *nothing*, and every loop in
-    this file iterated an empty list for that surface: each contract passed,
-    none of them was asked. The one below, added with this seed, immediately
-    found a case no assertion here had ever seen.
+    `components/seis.html` drops zeros by design, so a strip counting nothing
+    renders *nothing* — and a loop over a page with no figures on it passes
+    every contract in this file while asking none of them. That is what the
+    fixture is for, and it is why it seeds work rather than only Matters.
 
-    Jälgimine counts `MatterImportantDate`, not Matters, so it needs its own
-    seed. Both directions the strip reports are given one — a date still ahead
-    and inside the thirty-day window, and one already passed — through
-    `add_important_date`, the service the application writes them with, rather
-    than a row pushed into the table behind it.
+    The two `MatterImportantDate` rows are still written, and still through
+    `add_important_date` rather than pushed into the table behind it. They no
+    longer feed a strip of their own — the Jälgimine surface that counted them
+    is retired (docs/adr/0067) — but an important deadline is dated work, so
+    Minu asjad's «üle tähtaja» and Osakond's deadline windows both read them.
+    One ahead and one already passed, so neither direction is a figure this
+    file walks past unasked.
     """
     from datetime import timedelta
 
@@ -156,75 +160,6 @@ def test_the_statistika_strip_states_a_number_it_cannot_open(client, populated):
         "no figure on Statistika rendered as a span; if every figure now has an "
         "honest destination, say so here and delete this test"
     )
-
-
-def test_the_jalgimine_strip_is_asked_a_question_with_an_answer(client, populated):
-    """The seed above is load-bearing, so it is asserted rather than trusted.
-
-    Everything in this file is a loop over five surfaces, and a loop is only as
-    good as the world it runs in. Jälgimine counts a table nothing else here
-    writes to, so before `_seeded` grew its two `add_important_date` calls the
-    parameterized cases walked a page whose strip had been emptied by the
-    zero-dropping rule: each contract held over nothing at all. A strip that
-    counts nothing cannot link to the wrong list.
-
-    So this pins the world rather than the markup. Delete the seed and the
-    cases above stay green while quietly meaning nothing — this one fails and
-    says why.
-
-    Read off the view's own `seis` context rather than scraped back out of the
-    HTML: the number the strip renders *is* `Figure.value`, and a regex that
-    re-derived it would be asserting against its own parse.
-    """
-    client.force_login(populated)
-
-    response = client.get(reverse("intelligence:important_dates"))
-    figures = response.context["seis"]
-
-    assert figures, "the Jälgimine strip rendered no figures at all"
-    zeros = [figure.caption for figure in figures if figure.value <= 0]
-    assert not zeros, (
-        f"the Jälgimine strip counts nothing for {zeros}, so the contracts above "
-        "loop over a page with no populations and prove nothing about it. Restore "
-        "the MatterImportantDate seed in `_seeded`."
-    )
-
-
-def test_every_jalgimine_figure_opens_something_real(client, populated):
-    """The linked half of the contract, on the strip that can now answer it.
-
-    Two of these figures carry a query and one carries a fragment, and the
-    difference matters: a `?suund=` is a filtered read of this page, so it is
-    asserted the way every other drill-down in the product is — the destination
-    holds exactly the number the figure printed. The fragment names a section of
-    the page already on screen, so what it promises is that the section is
-    there to scroll to.
-
-    An honest destination that happens to be empty is the failure this catches:
-    it is the same lie as `<a href="">`, told one navigation later.
-    """
-    client.force_login(populated)
-    route = reverse("intelligence:important_dates")
-    figures = client.get(route).context["seis"]
-
-    for figure in figures:
-        if figure.url.startswith("#"):
-            body = client.get(route).content.decode()
-            assert f'id="{figure.url[1:]}"' in body, (
-                f"«{figure.caption}» points at {figure.url}, which this page does "
-                "not render — the reader clicks and nothing moves"
-            )
-            continue
-
-        landing = client.get(route + figure.url)
-        assert landing.status_code == 200, f"«{figure.caption}» does not resolve"
-        assert landing.context["total"] == figure.value, (
-            f"«{figure.caption}» says {figure.value} and {figure.url} shows "
-            f"{landing.context['total']}"
-        )
-        assert landing.context["page"].object_list, (
-            f"«{figure.caption}» counted {figure.value} and opens an empty list"
-        )
 
 
 @pytest.mark.parametrize(("label", "route", "params"), STRIPS, ids=[s[0] for s in STRIPS])

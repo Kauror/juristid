@@ -86,14 +86,11 @@ def test_tahtajad_is_not_on_the_bar(signed_in, route):
     """Asserted on four surfaces, because the bar is one template on all of them.
 
     A single-page check would still pass if some page shadowed the include with
-    a copy of its own.
+    a copy of its own. The *order* of what remains is
+    `tests/test_topnav_order_and_labels.py`'s contract, not this file's; what
+    this asserts is the product decision — the destination is gone.
     """
-    assert labels_of(navigation_of(signed_in.get(reverse(route)))) == [
-        "Minu asjad",
-        "Osakond",
-        "Teemad",
-        "Statistika",
-    ]
+    assert "Tähtajad" not in navigation_of(signed_in.get(reverse(route)))
 
 
 def test_tahtajad_is_not_in_the_veel_disclosure_either(signed_in):

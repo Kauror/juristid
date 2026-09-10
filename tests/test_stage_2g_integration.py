@@ -177,7 +177,10 @@ def test_the_head_is_offered_one_department_destination(client, department_head)
     # `Ülevaade` and a head-only `Osakond` inside «Veel» (docs/adr/0049 §9).
     assert ">Osakond</a>" in body
     assert body.count(f'href="{reverse("matters:department")}"') == 1
-    assert ">Tähtajad</a>" in body
+    # Teemad, because that is where these facts are found now. The «Tähtajad»
+    # item that used to be asserted here opened three generated reading pages,
+    # and it is retired along with them (docs/adr/0067).
+    assert ">Teemad</a>" in body
 
 
 def test_a_specialist_is_offered_the_same_destinations(client, specialist):
@@ -186,7 +189,7 @@ def test_a_specialist_is_offered_the_same_destinations(client, specialist):
     client.force_login(specialist)
     body = client.get(reverse("matters:department")).content.decode()
 
-    assert ">Tähtajad</a>" in body
+    assert ">Teemad</a>" in body
     assert body.count(f'href="{reverse("matters:department")}"') == 1
 
 

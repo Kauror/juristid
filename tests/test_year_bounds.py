@@ -144,9 +144,12 @@ YEAR_SURFACES = [
     # read means the link was edited, and every year is not the answer.
     ("/statistika/arvamused/", "aasta", 404),
     ("/teemad/", "suletud", 200),
-    ("/jalgimine/tahtajad/", "aasta", 200),
-    ("/jalgimine/joustumised/", "aasta", 200),
-    ("/jalgimine/toovoidud/", "aasta", 200),
+    # The register's own new dimension, and it keeps the register's rule rather
+    # than Jälgimine's: an unreadable year empties the list. The three
+    # `/jalgimine/` entries that used to sit here are gone with the pages
+    # (docs/adr/0067); their redirects answer 302 whatever the query says, and
+    # a redirect never reaches a date constructor.
+    ("/teemad/", "toovoit", 200),
     ("/arvamused/", "aasta", 200),
 ]
 
@@ -208,12 +211,23 @@ def test_the_arvamused_workspace_refuses_with_a_sentence_naming_the_range(specia
     assert str(MIN_YEAR) in message and str(MAX_YEAR) in message
 
 
-def test_jalgimine_drops_an_unreadable_year_and_shows_everything(client, department_head, world):
-    """The filter is dropped, which its own docstring already promised."""
+def test_the_register_empties_the_list_for_an_unreadable_toovoit_year(
+    client, department_head, world
+):
+    """Jälgimine dropped an unreadable year and showed everything; the register
+    does not, and the difference is deliberate.
+
+    That page was a reading surface whose whole population was work victories,
+    so dropping a bad filter still showed the reader work victories. `?toovoit=`
+    narrows the *register*, where dropping it would show every Teema there is
+    under a chip claiming a year — the lie the register's rule exists to
+    prevent (app/matters/register_filters.py, docs/adr/0067).
+    """
     client.force_login(department_head)
 
-    unfiltered = client.get("/jalgimine/toovoidud/")
-    crafted = client.get("/jalgimine/toovoidud/", {"aasta": "99999"})
+    unfiltered = client.get("/teemad/", {"olek": "koik"})
+    crafted = client.get("/teemad/", {"olek": "koik", "toovoit": "99999"})
 
     assert unfiltered.status_code == crafted.status_code == 200
-    assert crafted.context["page"].paginator.count == unfiltered.context["page"].paginator.count
+    assert crafted.context["page"].paginator.count == 0
+    assert unfiltered.context["page"].paginator.count > 0
