@@ -48,26 +48,38 @@
     }
   });
 
-  /* ---- Uus teema: the "Muu" valdkond reveals its own text field --------
-   * Progressive enhancement only. Without JavaScript the input is visible from
-   * the start and the form still works — the server decides what "Muu" means,
-   * not this (Stage-2E.1 brief 20).
+  /* ---- Uus teema: a "Muu" chip reveals its own text field ---------------
+   * Progressive enhancement only. Without JavaScript the box is rendered by
+   * the server in the state the answer puts it in and the form still works —
+   * the server decides what "Muu" means, not this (Stage-2E.1 brief 20,
+   * OIGUSAKT_UUS_TEEMA_DESIGN §16).
+   *
+   * Two fields now use the pattern, so it is written once. Valdkond's "Muu" is
+   * a checkbox that is not a PolicyArea; Õigusakt's is a real vocabulary row.
+   * That difference matters to the server and not at all to this: both are a
+   * checkbox inside a known id that shows a known block.
    */
-  var otherArea = document.querySelector("#valdkond-muu input[type=checkbox]");
-  var otherAreaText = document.getElementById("valdkond-muu-tekst");
-  if (otherArea && otherAreaText) {
-    var syncOtherArea = function () {
-      otherAreaText.hidden = !otherArea.checked;
-      if (otherArea.checked) {
-        var input = otherAreaText.querySelector("input");
+  [
+    ["valdkond-muu", "valdkond-muu-tekst"],
+    ["oigusakt-muu", "oigusakt-muu-tekst"]
+  ].forEach(function (pair) {
+    var chip = document.querySelector("#" + pair[0] + " input[type=checkbox]");
+    var revealed = document.getElementById(pair[1]);
+    if (!chip || !revealed) {
+      return;
+    }
+    var syncOther = function () {
+      revealed.hidden = !chip.checked;
+      if (chip.checked) {
+        var input = revealed.querySelector("input");
         if (input) {
           input.focus();
         }
       }
     };
-    otherArea.addEventListener("change", syncOtherArea);
-    syncOtherArea();
-  }
+    chip.addEventListener("change", syncOther);
+    syncOther();
+  });
 
   /* ---- Uus teema: say which files are about to be uploaded --------------
    * A file input shows "3 files" and nothing about which three. This lists

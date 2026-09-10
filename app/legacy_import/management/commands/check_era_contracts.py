@@ -31,6 +31,7 @@ _AUTHORITY_LABELS = {
     "authoritative": "kanooniline",
     "optional": "valikuline",
     "derived": "tuletatud",
+    "mapped": "kaardistatud",
     "deferred": "edasi lükatud",
     "unknown": "tundmatu",
 }

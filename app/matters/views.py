@@ -122,6 +122,8 @@ from app.matters.services import (
     resolve_source_organisations,
     save_personal_note,
     set_brief_summary,
+    set_legal_instrument_other,
+    set_legal_instruments,
     set_matter_data_class,
     set_matter_dates,
     set_matter_title,
@@ -1371,6 +1373,13 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     response_deadline=data.get("response_deadline"),
                     policy_areas=list(data.get("policy_areas") or []),
                     policy_area_other=data.get("policy_area_other") or "",
+                    # Handed to the service as part of the creation operation
+                    # rather than written onto the Matter afterwards. One
+                    # transaction, one MATTER_CREATED event, and no path where
+                    # a Teema exists for an instant carrying a classification
+                    # nobody chose (task §17, §19).
+                    legal_instruments=list(data.get("legal_instruments") or []),
+                    legal_instrument_other=data.get("legal_instrument_other") or "",
                     # Decided here, never read from the form. The control is gone
                     # from the page and an omitted field must not become a blank
                     # value the model would refuse (brief 21).
@@ -2765,6 +2774,18 @@ def matter_edit(request: HttpRequest, pk: Any) -> HttpResponse:
             )
             set_policy_area_other(
                 matter=matter, value=data.get("policy_area_other") or "", actor=request.user
+            )
+            # Through the service, never `matter.legal_instruments.set(...)`
+            # here: a canonical classification that moved without a change
+            # event is a correction the audit trail cannot answer for, and the
+            # service is what writes one (app/matters/services.py, task §19).
+            set_legal_instruments(
+                matter=matter,
+                legal_instruments=list(data.get("legal_instruments") or []),
+                actor=request.user,
+            )
+            set_legal_instrument_other(
+                matter=matter, value=data.get("legal_instrument_other") or "", actor=request.user
             )
             set_tags(matter=matter, tags=list(data.get("tags") or []), actor=request.user)
             set_matter_visibility(

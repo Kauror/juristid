@@ -202,7 +202,22 @@ def create_matter(
     if other_area:
         extra["policy_area_other"] = other_area[:400]
 
+    # Same treatment as `policy_area_other` directly above, and for the same
+    # reason: one place normalises it, so two callers cannot store the same
+    # answer two ways. It is cleared rather than kept when `Muu` is not among
+    # the chosen instruments — that decision belongs to the form, which knows
+    # what was ticked; what this guarantees is only the shape.
+    other_instrument = str(extra.pop("legal_instrument_other", "") or "").strip()
+    if other_instrument:
+        extra["legal_instrument_other"] = other_instrument[:400]
+
     policy_areas = extra.pop("policy_areas", None)
+    # A relation, not a column, so it cannot go to `objects.create` and is
+    # written once the Matter has a primary key — exactly like `policy_areas`.
+    # Named in `extra` rather than in the signature because every caller that
+    # sets it is a form, and adding a keyword to a service twenty callers share
+    # to serve one of them buys nothing (task §17).
+    legal_instruments = extra.pop("legal_instruments", None)
     # Validated before the Matter exists, so a bad sender fails the whole
     # creation rather than leaving a titled Matter behind with no senders.
     senders = normalize_source_organisations(source_organisations)
@@ -221,6 +236,10 @@ def create_matter(
     )
     if policy_areas:
         matter.policy_areas.set(policy_areas)
+    if legal_instruments:
+        # `.set()` and not `.add()`: a list that names the same type twice is
+        # one relation, because that is what the relation means.
+        matter.legal_instruments.set(legal_instruments)
     if senders:
         matter.source_organisations.set(senders)
 
@@ -1134,6 +1153,81 @@ def set_policy_area_other(*, matter: Matter, value: str, actor: Any = None) -> M
         # The value itself is not in the payload. A timeline entry that quotes
         # the old and new text turns an audit row into a second, unmanaged copy
         # of a field somebody may later have had a reason to clear.
+        payload={"cleared": not cleaned},
+    )
+    return matter
+
+
+@transaction.atomic
+def set_legal_instruments(
+    *, matter: Matter, legal_instruments: Sequence[Any], actor: Any = None
+) -> Matter:
+    """Replace the Matter's Õigusakt with the chosen set.
+
+    The counterpart to what `create_matter` accepts, so a canonical fact
+    recorded on the day a file arrived is not stuck that way. Everything about
+    the shape mirrors `set_policy_areas` above, deliberately: the set is
+    replaced whole rather than diffed, because an unticked checkbox is simply
+    absent from a POST and "none of them" and "this request is about something
+    else" would otherwise be indistinguishable.
+
+    **A view never writes this relation directly.** The whole reason this
+    function exists rather than an `matter.legal_instruments.set(...)` in the
+    edit view is the change event below: a canonical classification that moved
+    without one is a correction the audit trail cannot answer for (task §19).
+
+    Returns early when nothing moved, so a save that changed a title writes one
+    event rather than two.
+    """
+    chosen = list(legal_instruments)
+    before = {item.pk for item in matter.legal_instruments.all()}
+    after = {item.pk for item in chosen}
+    if before == after:
+        return matter
+
+    matter.legal_instruments.set(chosen)
+    record_change_event(
+        event_type=ChangeEventType.MATTER_LEGAL_INSTRUMENTS_CHANGED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=", ".join(item.label_et for item in chosen)[:200],
+        payload={
+            "added": sorted(str(pk) for pk in after - before),
+            "removed": sorted(str(pk) for pk in before - after),
+        },
+    )
+    return matter
+
+
+@transaction.atomic
+def set_legal_instrument_other(*, matter: Matter, value: str, actor: Any = None) -> Matter:
+    """Record — or clear — the free text beside the canonical instruments.
+
+    Same trimming and same length cap as `create_matter` applies, in one place,
+    because two callers normalising a string two ways is how the same value
+    starts comparing unequal to itself.
+
+    It stays free text. Nothing here creates a `LegalInstrumentType` and no
+    statistic counts it as one — the rule `set_policy_area_other` follows, for
+    the same reason: a taxonomy that grows from whatever somebody typed is a
+    taxonomy that stops being reviewed (docs/adr/0070).
+    """
+    cleaned = (value or "").strip()[:400]
+    if cleaned == matter.legal_instrument_other:
+        return matter
+
+    matter.legal_instrument_other = cleaned
+    matter.save(update_fields=["legal_instrument_other", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.MATTER_LEGAL_INSTRUMENT_OTHER_SET,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        # The value itself is not in the payload, for the reason
+        # `set_policy_area_other` keeps it out: a timeline entry that quotes the
+        # old and new text becomes a second, unmanaged copy of a field somebody
+        # may later have had a reason to clear.
         payload={"cleared": not cleaned},
     )
     return matter

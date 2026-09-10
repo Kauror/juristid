@@ -7,7 +7,7 @@ year = 2012
 sheet = "2012"
 era = "2011-2017"
 header_row = 1
-contract_version = "1.0"
+contract_version = "1.1"
 status = "reviewed"
 reviewed_by = "Stage 2A parser owner — iga veerg kontrollitud 2026-08 hetktõmmise vastu; osakonna sisuline kinnitus on veel andmata"
 notes = """
@@ -45,7 +45,7 @@ letter = "C"
 header = "ÕIGUSAKT"
 canonical_field = "legal_instrument"
 parser = "raw"
-authority = "deferred"
+authority = "mapped"
 meaning = """
 Õigusakti liik allika enda tähistuses.
 """
@@ -53,7 +53,9 @@ null_semantics = """
 Tühi tähendab, et liiki ei märgitud.
 """
 notes = """
-Kanoonilist välja ei ole. See ei ole menetlusliik (Track) ega menetlusetapp (Hetkeseis), vaid instrumendi liik, ja tähistus muutus aastate jooksul ühetähelistest koodidest (S, M, D) sõnadeks (seadus, määrus, direktiiv, VTK, muu). Nende ühendamine on juristide sisuline otsus, mitte parseri oma, seega väärtus säilib toorena.
+Kanooniline väli on nüüd olemas: Matter.legal_instruments (taksonoomia LegalInstrumentType, üle vaadatud sõnavara). See ei ole menetlusliik (Track) ega menetlusetapp (Hetkeseis), vaid instrumendi liik. Selle ajastu tähistus on ühetähelised koodid (S, M, D) ja sõnad (muu, VTK, seadus, direktiiv), sealhulgas kombinatsioonid nagu "S, M" ja "D, M" — need on kaks vastust, mitte üks. Toorele väärtusele annab kanoonilise lugemise app.taxonomy.legal_instruments.canonical_legal_instrument_keys, mis on ainus koht, kus seda tehakse.
+
+Import EI kirjuta kanoonilist välja. Toores väärtus säilib muutmata kujul ja jääb allikatõendiks; kas allikas tohib inimese valitud liigituse üle kirjutada, on eraldi otsustada (docs/adr/0070).
 """
 
 [[column]]
