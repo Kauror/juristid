@@ -29,11 +29,21 @@ the only safe direction. A stored copy of a visibility decision is a copy that
 goes stale the moment somebody changes it, and this codebase has already
 removed one such column for exactly that reason (docs/adr/0005).
 
+That applies to the photographed *step* as well, and it is why the row keeps a
+foreign key to the `NextAction` it copied. A `NextAction` may be restricted
+below a Matter anybody can read, so a row carrying its kind, its date meaning
+and its date is a projection of a child, authorized by the child — never by the
+Matter alone (docs/adr/0038, 0068). The pointer is how the read reaches the
+child's *current* override; it is deliberately not a copy of what that override
+said on the night of the capture.
+
 **One row per Matter per date**, enforced by a constraint. The capture command
 is therefore idempotent by construction rather than by remembering to check.
 """
 
 from __future__ import annotations
+
+from datetime import date
 
 from django.conf import settings
 from django.db import models
@@ -102,6 +112,27 @@ class OperationalMatterSnapshot(BaseModel):
         verbose_name="kuupäeva tähendus",
     )
     next_action_date = models.DateField(null=True, blank=True, verbose_name="tegevuse kuupäev")
+
+    # Which step the three columns above were copied from. A **pointer, never a
+    # visibility**: the read joins the live `NextAction` and derives its
+    # effective visibility there, exactly as every other surface does. Without
+    # it the row cannot say whether the step it photographed carried its own
+    # `visibility_override`, and a projection that cannot answer that question
+    # is broader than its source (docs/adr/0038, 0068).
+    #
+    # `SET_NULL`, not `CASCADE`: losing the pointer must cost the *facts*, not
+    # the row — a Matter that disappeared from a trend would be the disclosure
+    # this closes, one level up. A null pointer beside a non-empty
+    # `next_action_kind` is the unanswerable case, and the read blanks it.
+    next_action = models.ForeignKey(
+        "workflow.NextAction",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="operational_snapshots",
+        verbose_name="järgmine tegevus",
+    )
+
     response_deadline = models.DateField(null=True, blank=True, verbose_name="arvamuse tähtaeg")
 
     captured_at = models.DateTimeField(verbose_name="hõivatud")
@@ -130,9 +161,36 @@ class OperationalMatterSnapshot(BaseModel):
     def __str__(self) -> str:
         return f"{self.snapshot_date:%Y-%m-%d} · {self.matter_id}"
 
+    def next_action_facts(self) -> tuple[str, str, date | None]:
+        """Kind, date meaning and date — scoped when the row was read scoped.
+
+        ``visible_snapshots`` annotates blanked copies of the three columns for
+        a reader who may not read the step they were copied from, and every
+        accessor here prefers those. Otherwise a template could walk around the
+        scoping simply by asking the instance instead of the queryset —
+        ``{% if row.was_overdue %}`` reading a restricted deadline off a row the
+        selector had already blanked.
+
+        A row read straight off ``.objects`` — the capture, a management
+        command, a test about what was *recorded* — carries no annotation and
+        gets the stored columns, which is the whole truth. That is deliberate
+        and it is the reason the capture is allowed to run unauthorized:
+        authorization happens on the way out, in one place.
+        """
+        missing = object()
+        kind = getattr(self, "visible_next_action_kind", missing)
+        if kind is missing:
+            return self.next_action_kind, self.next_action_date_semantics, self.next_action_date
+        return (
+            str(kind),
+            str(getattr(self, "visible_next_action_date_semantics", "")),
+            getattr(self, "visible_next_action_date", None),
+        )
+
     @property
     def has_next_action(self) -> bool:
-        return bool(self.next_action_kind)
+        kind, _, _ = self.next_action_facts()
+        return bool(kind)
 
     def was_overdue(self) -> bool:
         """Whether this photograph shows genuinely late work.
@@ -141,10 +199,11 @@ class OperationalMatterSnapshot(BaseModel):
         review date had passed was due for a look, not missed, and a history
         that says otherwise would make a trend of "overdue work" meaningless.
         """
-        if self.next_action_kind != ActionKind.DO:
+        kind, semantics, target = self.next_action_facts()
+        if kind != ActionKind.DO:
             return False
-        if self.next_action_date_semantics != DateSemantics.DEADLINE:
+        if semantics != DateSemantics.DEADLINE:
             return False
-        if self.next_action_date is None:
+        if target is None:
             return False
-        return self.next_action_date < self.snapshot_date
+        return target < self.snapshot_date

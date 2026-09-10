@@ -32,7 +32,7 @@ from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.reporting.models import OperationalMatterSnapshot
 from app.reporting.selectors.snapshots import capture, snapshot_population, visible_snapshots
-from app.workflow.enums import ActionKind, DateSemantics, Disposition
+from app.workflow.enums import ActionKind, ActionStatus, DateSemantics, Disposition
 
 pytestmark = pytest.mark.django_db
 
@@ -220,6 +220,55 @@ def test_the_model_stores_no_visibility_of_its_own(world):
     columns = {field.name for field in OperationalMatterSnapshot._meta.get_fields()}
     assert "visibility" not in columns
     assert "visibility_override" not in columns
+
+
+def test_a_restricted_step_is_blanked_for_the_shared_gate(world):
+    """The reader who actually exists in production.
+
+    Under `AUTH_MODE=shared_gate` only SPECIALIST and DEPARTMENT_HEAD accounts
+    are personas, so READER and ADMINISTRATOR are code-level roles nobody signs
+    in as. `DepartmentViewer` — past the door, no persona — is the one reader
+    here who is neither a lawyer nor a participant, and it is the likeliest
+    first consumer of an operational trend.
+
+    Its scope has `user=None`, so `restricted_participation_q` refuses to build
+    a clause at all and the whole answer comes from the step's own override.
+    """
+    from app.workflow.models import NextAction
+
+    step = NextAction.objects.get(matter=world.native_open, status=ActionStatus.OPEN)
+    capture(on=world.today)
+
+    row = visible_snapshots(DEPARTMENT_VIEWER).get(matter=world.native_open)
+    assert row.visible_next_action_kind == ActionKind.DO
+    assert row.visible_next_action_date is not None
+
+    step.visibility_override = Visibility.RESTRICTED
+    step.save(update_fields=["visibility_override"])
+
+    row = visible_snapshots(DEPARTMENT_VIEWER).get(matter=world.native_open)
+    assert (row.visible_next_action_kind, row.visible_next_action_date) == ("", None)
+    # The Matter is still there. Only the step it was carrying went quiet.
+    assert visible_snapshots(DEPARTMENT_VIEWER).count() == 5
+
+
+def test_a_row_captured_before_the_pointer_existed_blanks(world):
+    """The honest cost of having no backfill, asserted rather than described.
+
+    Nothing recorded which step those rows photographed, so the read cannot
+    authorize their contents and refuses to publish them — to everyone except a
+    scope that already sees every restricted child, for whom there is nothing to
+    withhold.
+    """
+    capture(on=world.today)
+    OperationalMatterSnapshot.objects.filter(matter=world.native_open).update(next_action=None)
+
+    blanked = visible_snapshots(world.reader).get(matter=world.native_open)
+    assert (blanked.visible_next_action_kind, blanked.visible_next_action_date) == ("", None)
+    assert blanked.next_action_kind == ActionKind.DO, "the stored column is untouched"
+
+    lawyer = visible_snapshots(world.martin).get(matter=world.native_open)
+    assert lawyer.visible_next_action_kind == ActionKind.DO
 
 
 # ---------------------------------------------------------------------------
