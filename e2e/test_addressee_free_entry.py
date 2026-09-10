@@ -46,6 +46,24 @@ def create_form(page, base_url) -> None:
     page.wait_for_load_state("networkidle")
 
 
+def open_addressee(page) -> None:
+    """Unfold Adressaat on `Uus teema`, where it arrives folded.
+
+    Since docs/adr/0069 the field is answered by the Saatja on the ordinary
+    visit, so the whole of it sits behind one summary. A closed `<details>`
+    keeps its contents in the document but gives them no box, and Playwright
+    will neither fill nor click what nobody can see — so anything here that
+    *answers* Adressaat opens it first, which is what the person does too.
+
+    A no-op where there is no such disclosure. `Muuda teemat` is somebody
+    correcting a record that already has an addressee, so nothing there is
+    folded and this file drives both forms.
+    """
+    disclosure = page.locator("[data-addressee-disclosure]")
+    if disclosure.count() and not disclosure.evaluate("node => node.open"):
+        disclosure.locator("> summary").click()
+
+
 def file_teema(page, base_url, *, title: str, addressee: str) -> None:
     """Fill in `Uus teema` with a typed addressee and save it.
 
@@ -59,6 +77,7 @@ def file_teema(page, base_url, *, title: str, addressee: str) -> None:
     """
     create_form(page, base_url)
     page.fill("#id_title", title)
+    open_addressee(page)
     page.fill("#id_addressee_name", addressee)
     page.fill("#id_next-text", "Kontrollida, kas adressaat vastas")
     # `Millal?` is required with the sentence now, and the quick span is how a
@@ -167,6 +186,7 @@ def test_selecting_a_chip_clears_a_name_typed_beside_it(page, base_url):
     """
     sign_in(page, base_url, MARTIN)
     create_form(page, base_url)
+    open_addressee(page)
 
     page.fill("#id_addressee_name", "Midagi pooleli kirjutatud")
     page.locator('input[name="addressee_organisation"]').nth(1).check()
@@ -235,6 +255,13 @@ def _box(page, selector: str) -> dict:
 #: subject of the measurements below.
 ADDRESSEE_FIELD = "fieldset.field:has(#id_addressee_name)"
 
+#: The **long tail's** disclosure, which is now one of two inside that fieldset:
+#: the field itself is folded behind `chipdetails--field` and «Vali nimekirjast»
+#: sits inside it (docs/adr/0069). Named by the modifier the tail has always
+#: carried, so that a bare `details.chipdetails` here cannot silently start
+#: measuring the outer one and reporting that the catalogue is always present.
+ADDRESSEE_TAIL = f"{ADDRESSEE_FIELD} details.chipdetails--stretch"
+
 
 def _ensure_long_tail(page, base_url) -> None:
     """Make sure `Vali nimekirjast` is on the page before measuring it.
@@ -245,7 +272,8 @@ def _ensure_long_tail(page, base_url) -> None:
     department has answered", and everything else moves into the disclosure.
     """
     create_form(page, base_url)
-    assert page.locator(f"{ADDRESSEE_FIELD} details.chipdetails").count(), (
+    open_addressee(page)
+    assert page.locator(ADDRESSEE_TAIL).count(), (
         "no long tail on the Adressaat control: the workflow test above files a "
         "Teema with an addressee, which is what moves the rest of the catalogue "
         "out of the frequent shortlist and into the disclosure"
@@ -274,6 +302,7 @@ def test_the_addressee_field_takes_the_stacked_row_width(page, base_url, width):
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
     create_form(page, base_url)
+    open_addressee(page)
 
     field = _box(page, ADDRESSEE_FIELD)
     row = _box(page, f".createform__row:has({ADDRESSEE_FIELD})")
@@ -299,12 +328,11 @@ def test_the_open_long_tail_uses_the_addressee_width(page, base_url, width):
     page.set_viewport_size({"width": width, "height": 900})
     _ensure_long_tail(page, base_url)
 
-    disclosure = f"{ADDRESSEE_FIELD} details.chipdetails"
-    assert page.locator(disclosure).count(), "the long tail is not on this page"
-    page.locator(f"{disclosure} > summary").click()
+    assert page.locator(ADDRESSEE_TAIL).count(), "the long tail is not on this page"
+    page.locator(f"{ADDRESSEE_TAIL} > summary").click()
 
     field = _box(page, ADDRESSEE_FIELD)
-    panel = _box(page, f"{disclosure} .chipdetails__body")
+    panel = _box(page, f"{ADDRESSEE_TAIL} .chipdetails__body")
 
     assert panel["width"] >= field["width"] * 0.9, (
         f"the opened long tail is {panel['width']}px inside a {field['width']}px field at {width}px"
@@ -316,7 +344,7 @@ def test_naming_an_institution_never_takes_the_page_sideways(page, base_url, wid
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
     _ensure_long_tail(page, base_url)
-    page.locator(f"{ADDRESSEE_FIELD} details.chipdetails > summary").click()
+    page.locator(f"{ADDRESSEE_TAIL} > summary").click()
     page.fill("#id_addressee_name", "Väga pika nimega näidisasutuse õigusosakond")
 
     overflows = page.evaluate(

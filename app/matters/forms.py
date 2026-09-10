@@ -194,12 +194,13 @@ def _typed_organisation_field(label: str, *, hook: str = "") -> forms.CharField:
     it. The two remain *different questions* about the same catalogue, so they
     are two fields with two labels and one implementation.
 
-    ``hook`` names the control for the browser. `Uus teema` offers a sender
-    somebody is typing as an addressee candidate before either exists, and the
-    script needs to find the two boxes without depending on the auto-generated
-    `id_` that a renamed field would change under it. It is an attribute and
-    nothing more: no behaviour here reads it, and with scripting off it does
-    nothing at all (static/js/app.js `bindCounterpartyPromotion`).
+    ``hook`` names the control for the browser. `Uus teema` answers Adressaat
+    with a sender somebody is typing before either exists, and the script needs
+    to find the two boxes without depending on the auto-generated `id_` that a
+    renamed field would change under it. It is an attribute and nothing more: no
+    behaviour here reads it, and with scripting off the same default is reached
+    on the server instead (`_default_addressee`, static/js/app.js
+    `bindAddresseeDefault`).
     """
     attrs = {
         "class": "field__input field__input--compact",
@@ -406,43 +407,50 @@ def addressees_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
     return sorted(found, key=lambda organisation: ranking[organisation.pk])
 
 
-def _promote_selected_senders(form: Any, shortlist: list[Organisation]) -> list[Organisation]:
-    """The addressee shortlist, with this form's chosen senders moved to the front.
+def _raw_value(form: Any, name: str) -> Any:
+    """What the request said about one field, before any validation ran.
 
-    Ranking only. It reads what the form was *given* and returns a different
-    order of the same catalogue; it selects nothing, writes nothing and creates
-    nothing.
+    The widget's own reader rather than `form.data.get`, for the reason
+    `_named_senders` gives below: a bound form's data is a `QueryDict` from a
+    real POST and an ordinary dict from a caller constructing one, and only the
+    widget knows how to read both — and how to honour a form prefix.
+    """
+    field = form.fields[name]
+    return field.widget.value_from_datadict(form.data, form.files, form.add_prefix(name))
+
+
+def _named_senders(form: Any) -> list[Organisation]:
+    """The organisations this bound form's two sender controls name, as rows.
 
     Read from `form.data` rather than from `cleaned_data`, because this runs in
-    `__init__` — before validation, and on forms that will never be validated
-    at all. Two consequences worth stating:
+    `__init__` — before validation, and on forms that will never be validated at
+    all. Two consequences worth stating:
 
     * an identifier that is not a real Organisation matches nothing, and one
-      that is not even a UUID is discarded before it reaches the queryset —
-      so a malformed or hostile POST reorders nothing rather than raising,
-      and the page answers with the ordinary refusal instead of a 500;
-    * the promotion survives a *refused* save, which is the case it exists for.
-      A form that comes back with errors comes back with its senders ticked, and
-      the addressee they most likely want must still be at the front.
+      that is not even a UUID is discarded before it reaches the queryset — so a
+      malformed or hostile POST answers with the ordinary refusal rather than a
+      500;
+    * this survives a *refused* save, which is the case both of its callers
+      exist for. A form that comes back with errors comes back with its senders
+      ticked, and everything the page derives from them has to come back too.
 
     Authorization needs no separate thought here: every Organisation is a valid
-    counterparty for every reader, and the ones being promoted are the ones this
-    reader just chose. Nothing about a restricted Matter can reach this — the
-    input is the request, not the register (task §10, §12).
+    counterparty for every reader, and these are the ones this reader just
+    chose. Nothing about a restricted Matter can reach this — the input is the
+    request, not the register (task §10, §18).
     """
     if not form.is_bound:
-        return list(shortlist)
+        return []
 
     chosen: list[Any] = []
     for name in ("source_organisations", "source_organisations_other"):
-        field = form.fields[name]
         # The widget's own reader, not `form.data.getlist`. A bound form's data
         # is a QueryDict from a real POST and an ordinary dict from a caller
         # constructing one, and only the first has `getlist` — so reaching for
-        # it directly is a promotion that works in production and silently does
+        # it directly is a read that works in production and silently does
         # nothing anywhere else. This is the accessor Django's own field
         # validation uses, and it honours the form prefix too.
-        raw = field.widget.value_from_datadict(form.data, form.files, form.add_prefix(name))
+        raw = _raw_value(form, name)
         if raw is None:
             continue
         chosen.extend(raw if isinstance(raw, (list, tuple)) else [raw])
@@ -451,8 +459,8 @@ def _promote_selected_senders(form: Any, shortlist: list[Organisation]) -> list[
     # UUID column, and a value that is not one makes `pk__in` *raise* — which in
     # `__init__` is a 500 on a page whose whole job is to answer a bad POST with
     # a form and an error message. A caller probing this endpoint learns nothing
-    # and gets the ordinary refusal; the field's own validation still rejects the
-    # value a moment later.
+    # and gets the ordinary refusal; the field's own validation still rejects
+    # the value a moment later.
     identifiers: list[uuid.UUID] = []
     for value in chosen:
         try:
@@ -461,14 +469,84 @@ def _promote_selected_senders(form: Any, shortlist: list[Organisation]) -> list[
             continue
 
     if not identifiers:
-        return list(shortlist)
+        return []
 
     # One query for however many were named. Ordered by name so that several
-    # senders promote deterministically rather than in whatever order the
+    # senders are read deterministically rather than in whatever order the
     # browser happened to serialise the checkboxes.
-    promoted = list(Organisation.objects.filter(pk__in=identifiers).order_by("name"))
-    seen = {organisation.pk for organisation in promoted}
-    return [*promoted, *(item for item in shortlist if item.pk not in seen)]
+    return list(Organisation.objects.filter(pk__in=identifiers).order_by("name"))
+
+
+def _promote_named_senders(
+    senders: list[Organisation], shortlist: list[Organisation]
+) -> list[Organisation]:
+    """The addressee shortlist, with this form's chosen senders moved to the front.
+
+    Ranking only. It returns a different order of the same catalogue; it selects
+    nothing, writes nothing and creates nothing.
+
+    **What this is for changed, and it is no longer decoration.** It used to be
+    the whole of the sender→addressee relationship: the sender was offered first
+    and deliberately never chosen. Since `Uus teema` began *answering* Adressaat
+    with the sender (docs/adr/0069) the ordering carries a different weight — the
+    body that has just become the default addressee has to be one of the chips,
+    because the chips are what the collapsed disclosure shows on the ordinary
+    visit. A default sitting in the long tail would be an answer the person
+    could only see by opening two disclosures to look for it.
+    """
+    seen = {organisation.pk for organisation in senders}
+    return [*senders, *(item for item in shortlist if item.pk not in seen)]
+
+
+def _default_addressee(form: Any, senders: list[Organisation]) -> tuple[str, str] | None:
+    """Who this form answers, when nobody has said — as a field name and a value.
+
+    The ordinary case is that a file arrived from X and is answered to X, so
+    `Uus teema` fills Adressaat from Saatja rather than asking the same question
+    twice. This is the server's statement of that rule, and it is the
+    authoritative one: the browser mirrors it live so the page reads correctly
+    while somebody is still filling it in, but with scripting off a POST naming
+    one sender and no addressee still saves a Matter answered to that sender
+    (docs/adr/0069, task §10).
+
+    Three conditions, and each is a refusal to guess:
+
+    1. **Nothing may already answer Adressaat.** A chosen chip or a typed name
+       is the person's own answer and outranks anything derived here.
+    2. **`addressee_is_manual` must not be set.** That hidden field is how the
+       browser says «this person answered Adressaat themselves», and it is what
+       makes deliberately choosing «Määramata» beside a sender possible. With no
+       scripting it is simply absent, which is why the rule above still holds
+       for the case it exists for.
+    3. **Exactly one sender must be named.** Two ticked bodies, or one ticked
+       and one typed, is a Matter that arrived from two places and no
+       unambiguous body to answer — so Adressaat is left unanswered rather than
+       guessed. The browser has more to go on than a POST does (it watched which
+       sender was chosen first) and keeps that seed; the server has only a set,
+       so the deterministic reading of a set of two is "no default" (§9).
+
+    A typed sender defaults the *typed* addressee, because a body being named
+    for the first time has no primary key until `Loo teema` runs. Both then
+    resolve through `resolve_organisation_name` inside one transaction, so the
+    same spelling becomes one `Organisation` row used on both relations rather
+    than two rows (`app.matters.services.resolve_addressee`, §5).
+    """
+    if not form.is_bound:
+        return None
+    if (
+        _raw_value(form, "addressee_organisation")
+        or (_raw_value(form, "addressee_name") or "").strip()
+    ):
+        return None
+    if _raw_value(form, "addressee_is_manual"):
+        return None
+
+    typed = clean_typed_organisation_name(_raw_value(form, "sender_name"))
+    if len(senders) + (1 if typed else 0) != 1:
+        return None
+    if senders:
+        return ("addressee_organisation", str(senders[0].pk))
+    return ("addressee_name", typed)
 
 
 class MatterCreateForm(forms.Form):
@@ -631,6 +709,11 @@ class MatterCreateForm(forms.Form):
     #: layout is the design's, the cardinality is the model's, and the schema
     #: change is left as a decision rather than made as a side effect of a form
     #: redesign (Uus teema redesign §5, ADR 0032).
+    #:
+    #: What is new is that it arrives *answered* on the ordinary journey. A file
+    #: that came from X is normally answered to X, so a single named sender
+    #: fills this field and the person overrides it only when the ordinary case
+    #: does not hold (`_default_addressee`, docs/adr/0069).
     addressee_organisation = forms.ModelChoiceField(
         label="Adressaat",
         queryset=Organisation.objects.none(),
@@ -644,6 +727,26 @@ class MatterCreateForm(forms.Form):
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
     addressee_name = addressee_name_field()
+    #: «This person answered Adressaat themselves», said by the browser.
+    #:
+    #: Since a named sender fills Adressaat by default, the two states the form
+    #: has to tell apart are *nobody has answered yet* and *somebody answered
+    #: «Määramata»* — and both post an empty `addressee_organisation`. Without
+    #: this the second is unreachable: the server would re-derive the sender and
+    #: silently overwrite a deliberate answer, which is the one thing the
+    #: default is not allowed to do (task §6).
+    #:
+    #: Deliberately a hidden field rather than an inference. Display order,
+    #: chip position and «which value is currently checked» are all things the
+    #: promotion legitimately changes, so none of them can carry this fact.
+    #:
+    #: Absent with scripting off, which is correct rather than a gap: a browser
+    #: that cannot set it also cannot have offered the person the default to
+    #: reject, so the server's own rule is the whole behaviour there (§10).
+    addressee_is_manual = forms.BooleanField(
+        required=False,
+        widget=forms.HiddenInput(attrs={"data-addressee-manual": ""}),
+    )
     received_date = EstonianDateField(
         label="Saabus",
         required=False,
@@ -733,6 +836,53 @@ class MatterCreateForm(forms.Form):
         return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
 
     @property
+    def addressee_summary(self) -> str:
+        """The addressee this form currently holds, as a name to read.
+
+        What the collapsed Adressaat disclosure says after the word itself:
+        «Adressaat · Kliimaministeerium», or «Adressaat» when nothing is
+        answered. A disclosure that hid whether a question had been answered
+        would make the person open it every time to find out (task §12).
+
+        Read off the *rendered choices* rather than by fetching the row. The
+        catalogue is already on the page as `(pk, name)` pairs, so the label is
+        there to be found and asking the database for a name the template is
+        about to print anyway would be a query per render.
+
+        `Määramata` is deliberately not a summary. It is the same state as an
+        unanswered field — that is what `blank=True` makes it — and printing it
+        would dress "no answer" up as one.
+        """
+        typed = (_raw_value(self, "addressee_name") or "").strip() if self.is_bound else ""
+        if typed:
+            return typed
+        chosen = str(_raw_value(self, "addressee_organisation") or "") if self.is_bound else ""
+        if not chosen:
+            return ""
+        # `fields[...]` is typed as the base Field, which has no `choices`. This
+        # one is a ModelChoiceField by construction.
+        for value, label in cast(Any, self.fields["addressee_organisation"]).choices:
+            if str(value) == chosen:
+                return str(label)
+        return ""
+
+    @property
+    def addressee_disclosure_open(self) -> bool:
+        """Whether the Adressaat disclosure renders open.
+
+        Only for an error on Adressaat itself. A refusal whose message is inside
+        a closed accordion is a form that appears to have refused for no reason,
+        and «avage see, et näha miks» is not something a page may ask
+        (task §11 C).
+
+        Deliberately *not* opened by an answer being present — including the one
+        the sender just filled in. A default that made another section unfold
+        would be the page reacting to itself, and the summary already says what
+        the answer is (§4, §12).
+        """
+        return bool(self.errors.get("addressee_organisation") or self.errors.get("addressee_name"))
+
+    @property
     def data_class(self) -> str:
         """Ordinary `Uus teema` creates real work. There is no other answer.
 
@@ -761,6 +911,39 @@ class MatterCreateForm(forms.Form):
     def __init__(self, *args: Any, viewer: Any = None, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.viewer = viewer
+
+        # Read once, used twice: the default below decides from it, and the
+        # addressee shortlist is ordered by it. A second read would be a second
+        # query for an answer that cannot have changed inside `__init__`.
+        self.named_senders = _named_senders(self)
+
+        # Saatja answers Adressaat, and it does so *here* rather than in
+        # `clean()`.
+        #
+        # The value has two readers and they must agree. `clean()` would satisfy
+        # the save and leave the re-render of a refused form showing an
+        # unanswered Adressaat beside a sender — so a browser with scripting off
+        # would be told the field was empty and then find the Matter answered
+        # anyway. Writing the derived value into the bound data instead means
+        # the rendered radio, `cleaned_data` and the saved Matter are one fact
+        # with one origin, and the person can see the default and override it
+        # (docs/adr/0069, task §10, §11).
+        #
+        # `self.data` is a `QueryDict` from a real POST and an ordinary dict
+        # from a caller constructing one; `copy()` is the one call both answer
+        # with something mutable, and the copy is this form's alone.
+        self.addressee_default: tuple[str, str] | None = _default_addressee(
+            self, self.named_senders
+        )
+        if self.addressee_default is not None:
+            field, value = self.addressee_default
+            # `Form.data` is annotated as a read-only mapping because most forms
+            # only ever read it. A `QueryDict` copy is mutable and a plain dict's
+            # is a plain dict, so the write below is real on both; the cast says
+            # so rather than widening the annotation for every other form.
+            data = cast(Any, self.data).copy()
+            data[self.add_prefix(field)] = value
+            self.data = data
 
         # New work, and only new work: this form has no existing owner to
         # preserve, so the population is the current department workers with no
@@ -846,16 +1029,21 @@ class MatterCreateForm(forms.Form):
             # addressee, ahead of any historical ranking (docs/adr/0063,
             # task §12).
             #
-            # Promoted, never selected. The order changes; the value does not.
-            # Nothing here writes into `addressee_organisation`, and a person
-            # who has already answered it keeps their answer.
+            # Ordering only — the *answer* is written above, once, and this
+            # cannot disagree with it because both read `self.named_senders`.
+            # What this guarantees is that the answer is reachable: the chips
+            # are what the collapsed Adressaat disclosure summarises and what
+            # opening it shows first, so a default left in the long tail would
+            # be an answer nobody could see.
             #
             # This is the *server's* half, and it is the half that works on a
             # bound form — a refused save re-renders with the senders that were
             # ticked, and they must not fall back down the page underneath the
             # historical shortlist. Ticking a chip with the form still open is
-            # the browser's half (static/js/app.js `bindCounterpartyPromotion`).
-            self.frequent_addressees = _promote_selected_senders(self, addressees_by_usage(viewer))
+            # the browser's half (static/js/app.js `bindAddresseeDefault`).
+            self.frequent_addressees = _promote_named_senders(
+                self.named_senders, addressees_by_usage(viewer)
+            )
             shortlist = {organisation.pk for organisation in self.frequent_addressees}
             tail = [
                 organisation
