@@ -537,6 +537,43 @@ def test_the_reader_and_the_corpus_worker_keep_separate_heartbeats(settings, tmp
     assert not INTAKE_READER.is_alive()
 
 
+def test_a_dead_readers_claim_comes_back_on_the_readers_own_clock(
+    settings, evidence_root, signed_in
+):
+    """The claim window is the reader's, not the corpus worker's.
+
+    A reader that dies holding a claim leaves the row `PROCESSING`. Waiting the
+    corpus worker's thirty minutes to reclaim it would strand somebody's form
+    for longer than they would keep the page open — and a staged file is
+    bounded by `MAX_INTAKE_UPLOAD_BYTES` and finishes in seconds, so a claim
+    older than five minutes belongs to a reader that is not coming back.
+    """
+    session = stage(signed_in, upload())
+    stranded = timezone.now() - timedelta(minutes=settings.INTAKE_READER_STALE_CLAIM_MINUTES + 1)
+    MatterIntakeFile.objects.filter(session=session).update(
+        extraction_state=ExtractionState.PROCESSING, extraction_claimed_at=stranded
+    )
+    # Comfortably inside the corpus worker's window, so if that number were the
+    # one in force this file would still be nobody's.
+    assert settings.INTAKE_READER_STALE_CLAIM_MINUTES + 1 < settings.EXTRACTION_STALE_CLAIM_MINUTES
+
+    run_reader()
+    assert MatterIntakeFile.objects.get(session=session).extraction_state == ExtractionState.DONE
+
+
+def test_a_fresh_claim_is_left_alone(settings, evidence_root, signed_in):
+    """The other side of it: two readers must not both take one file."""
+    session = stage(signed_in, upload())
+    MatterIntakeFile.objects.filter(session=session).update(
+        extraction_state=ExtractionState.PROCESSING, extraction_claimed_at=timezone.now()
+    )
+
+    run_reader()
+    assert (
+        MatterIntakeFile.objects.get(session=session).extraction_state == ExtractionState.PROCESSING
+    )
+
+
 def test_the_readers_window_is_shorter_than_the_corpus_workers(settings):
     """Five minutes against thirty, and the difference is the product's.
 

@@ -93,8 +93,16 @@ def pending_intake_files() -> Any:
     at most `app.matters.intake.MAX_INTAKE_FILES` per session, sessions expire
     on their own, and `prune_intake_staging` sweeps what expiry leaves. A
     backlog of the kind a corpus queue accumulates cannot form here.
+
+    A stale `PROCESSING` claim comes back after
+    `INTAKE_READER_STALE_CLAIM_MINUTES` rather than the corpus worker's
+    `EXTRACTION_STALE_CLAIM_MINUTES`, and the difference is the work: a corpus
+    parse may be a 500-page OCR run and needs half an hour of grace, while a
+    staged file is bounded by `MAX_INTAKE_UPLOAD_BYTES` and finishes in
+    seconds. Thirty minutes here would strand somebody's form behind a reader
+    that died, for longer than they would keep the page open.
     """
-    stale_before = timezone.now() - timedelta(minutes=settings.EXTRACTION_STALE_CLAIM_MINUTES)
+    stale_before = _stale_before()
     return (
         MatterIntakeFile.objects.filter(
             Q(extraction_state=ExtractionState.PENDING)
@@ -113,9 +121,20 @@ def pending_intake_files() -> Any:
     )
 
 
+def _stale_before() -> Any:
+    """The moment before which a `PROCESSING` claim belongs to a dead reader.
+
+    One expression, read by the queue and by the claim, because a queue that
+    offered a row the claim then refused would hand back the same row for ever
+    — the hot loop the first real-data deployment ran at full speed over 16 440
+    attachments.
+    """
+    return timezone.now() - timedelta(minutes=settings.INTAKE_READER_STALE_CLAIM_MINUTES)
+
+
 def claim_intake_file(file_id: Any, *, force: bool = False) -> MatterIntakeFile | None:
     """Take one staged file for processing, or return None if somebody has it."""
-    stale_before = timezone.now() - timedelta(minutes=settings.EXTRACTION_STALE_CLAIM_MINUTES)
+    stale_before = _stale_before()
     with transaction.atomic():
         locked = (
             MatterIntakeFile.objects.select_for_update(skip_locked=True).filter(pk=file_id).first()
