@@ -2080,6 +2080,13 @@
         }
         if (target.name === "addressee_organisation" && event.isTrusted) {
           takeOver();
+          if (target.checked && provisional) {
+            /* The person chose a real body, so the typed one is no longer the
+               answer. `bindExclusiveName` empties the text box; this releases
+               the chip that filled it — it has no `name`, so the radio group
+               cannot uncheck it on its own. */
+            provisional.querySelector("input").checked = false;
+          }
           updateSummary();
         }
       });
