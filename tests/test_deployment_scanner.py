@@ -16,6 +16,7 @@ file and calls every document clean. That is
 
 from __future__ import annotations
 
+import importlib.util
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,25 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 MAIN = ROOT / "deploy" / "unraid-main" / "compose.yml"
 REHEARSAL = ROOT / "deploy" / "unraid-test" / "compose.yml"
+
+
+def _application_services_from_the_ci_guard() -> Any:
+    """The CI script's own derivation, loaded from the file CI runs.
+
+    `scripts/` is not a package and is not on the path, and copying the rule
+    here would recreate the thing that went wrong: two places that agree until
+    one of them is edited. This way the fast suite and the container job cannot
+    come to disagree about which services are application services.
+    """
+    path = ROOT / "scripts" / "ci" / "assert_scanner_topology.py"
+    spec = importlib.util.spec_from_file_location("assert_scanner_topology", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.application_services
+
+
+application_services = _application_services_from_the_ci_guard()
 
 #: Both of them, always. The rehearsal exists to meet a deployment defect before
 #: production does, and it can only do that where the two agree — and *this* is
@@ -101,23 +121,42 @@ def test_the_scanner_is_healthchecked(stacks: dict[str, Any], stack: str) -> Non
 
 
 @pytest.mark.parametrize("stack", STACKS)
-@pytest.mark.parametrize("service", ["web", "extractor"])
-def test_both_application_services_are_pointed_at_the_scanner(
-    stacks: dict[str, Any], stack: str, service: str
+def test_every_application_service_is_pointed_at_the_scanner(
+    stacks: dict[str, Any], stack: str
 ) -> None:
-    """A scanner nothing asks anything is decoration.
+    """A scanner nothing asks anything is decoration — and a Django process
+    that cannot answer where the scanner is does not start at all.
 
-    `extractor` is the process that actually scans. `web` needs the setting too,
-    because `juristid.E015` and `manage.py deployment_readiness` both ask whether
-    a scanner is configured, and a web container that answered "no" would refuse
-    to start with real data.
+    `extractor` is the process that actually scans. `web` needs the setting
+    because `juristid.E015` and `manage.py deployment_readiness` both ask
+    whether a scanner is configured. And `searchindex` needs it for the same
+    reason as `web` even though it never opens a document: E015 is a check on
+    *configuration*, run by every process that boots Django.
+
+    This was parametrised over `["web", "extractor"]` and shipped on
+    2026-09-09 with `searchindex` unconfigured, which under real data restarted
+    it 419 times behind a stack whose other five containers were healthy. A
+    named pair answers "are these two right?"; the question is "is any of them
+    wrong?", so the set is derived from the file and the next service somebody
+    adds is covered the day it is written.
     """
-    environment = stacks[stack]["services"][service].get("environment") or {}
-    assert environment.get("MALWARE_SCANNER_BACKEND") == "clamav", (
-        f"{stack}/{service} does not use the scanner"
+    services = stacks[stack]["services"]
+    application = application_services(services)
+
+    assert len(application) >= 2, (
+        f"{stack}: only {sorted(application)} run the application image, which cannot be "
+        "right — the derivation has stopped matching this file"
     )
-    assert environment.get("MALWARE_SCANNER_HOST") == "clamav", (
-        f"{stack}/{service} does not point at the scanner service"
+
+    unconfigured = {
+        name
+        for name in application
+        if (services[name].get("environment") or {}).get("MALWARE_SCANNER_BACKEND") != "clamav"
+        or (services[name].get("environment") or {}).get("MALWARE_SCANNER_HOST") != "clamav"
+    }
+    assert not unconfigured, (
+        f"{stack}: {sorted(unconfigured)} run the application image without the scanner "
+        "settings, so juristid.E015 refuses to start them under real data"
     )
 
 

@@ -24,6 +24,8 @@ exercised, with REAL_DATA_ALLOWED off, a branch production could not reach
 
 from __future__ import annotations
 
+import re
+
 import yaml
 
 STACKS = (
@@ -58,18 +60,47 @@ def problems_in(path: str) -> list[str]:
             f"{path}: clamav has no healthcheck, so a scanner that loaded nothing reads as green"
         )
 
-    for name in ("web", "extractor"):
-        service = services.get(name)
-        if service is None:
-            found.append(f"{path}: no {name} service to check")
-            continue
-        environment = service.get("environment") or {}
+    application = application_services(services)
+    if len(application) < 2:
+        found.append(
+            f"{path}: found {len(application)} service(s) running the application image, "
+            "which cannot be right — the derivation below has stopped matching this file"
+        )
+    for name in sorted(application):
+        environment = services[name].get("environment") or {}
         if environment.get("MALWARE_SCANNER_BACKEND") != "clamav":
             found.append(f"{path}: {name} is not configured to use the scanner")
         if environment.get("MALWARE_SCANNER_HOST") != "clamav":
             found.append(f"{path}: {name} does not point at the scanner service")
 
     return found
+
+
+def application_services(services: dict) -> set[str]:
+    """Every service that boots Django, derived rather than listed.
+
+    This used to read ``("web", "extractor")``, and on 2026-09-09 that cost a
+    production deployment its search-freshness worker: `searchindex` runs the
+    same image, `juristid.E015` is a check on configuration that *every* Django
+    process runs at start-up, and a service without the setting therefore does
+    not start at all under real data. Two of the three were configured, this
+    guard asked about exactly those two, and the third restarted 419 times
+    behind a stack that was otherwise green.
+
+    A hard-coded pair answers "are these two right?" when the question is "is
+    any of them wrong?" — so the set is taken from the file. A service running
+    `juristid-<stack>-web:<tag>` is a service running the application, and the
+    next one somebody adds is in scope the day it is written.
+
+    The rehearsal stack has `REAL_DATA_ALLOWED=0` and so never reaches E015,
+    which is precisely why this is checked statically on both stacks rather than
+    left to whether a container happens to fall over (ADR 0066).
+    """
+    return {
+        name
+        for name, service in services.items()
+        if re.match(r"^juristid-[a-z0-9-]+-web:", str(service.get("image", "")))
+    }
 
 
 def main() -> int:
