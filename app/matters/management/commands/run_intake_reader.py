@@ -119,7 +119,12 @@ class Command(BaseCommand):
             # Before the query, not after it. The point of the mark is that the
             # loop is turning; recording it only on the way out would make a
             # reader that is stuck *on* the query look alive.
-            mark.touch()
+            #
+            # `touch_periodically`, not `touch`: this loop turns twice a second
+            # and the mark is a file write on the container's writable layer,
+            # which on the production host sits behind the parity disk this
+            # whole round is about (app/documents/extraction/heartbeat.py).
+            mark.touch_periodically()
 
             reports = drain(limit=BATCH)
             for report in reports:

@@ -551,6 +551,50 @@ def test_the_readers_window_is_shorter_than_the_corpus_workers(settings):
     assert INTAKE_READER.threshold_seconds() == settings.INTAKE_READER_STALE_CLAIM_MINUTES * 60
 
 
+def test_a_fast_loop_does_not_write_its_mark_on_every_turn(settings, tmp_path):
+    """The mark is a file write, and file writes are what this round is about.
+
+    The reader polls twice a second and its temporary directory is the
+    container's writable layer, which on the production host is
+    `docker-xfs.img` on `/mnt/disk1` — behind the same parity disk whose
+    saturation caused the incident. An unconditional touch per turn would be
+    172 000 writes a day onto exactly that device, to answer a probe that runs
+    every thirty seconds.
+
+    Asserted on the mtime rather than on a call count, because what matters is
+    the *write*, not the call.
+    """
+    import os
+
+    from app.documents.extraction.heartbeat import INTAKE_READER
+
+    settings.INTAKE_READER_HEARTBEAT_PATH = str(tmp_path / "reader.heartbeat")
+    INTAKE_READER.clear()
+
+    INTAKE_READER.touch_periodically()
+    first = os.stat(INTAKE_READER.path()).st_mtime_ns
+    for _ in range(50):
+        INTAKE_READER.touch_periodically()
+    assert os.stat(INTAKE_READER.path()).st_mtime_ns == first
+
+    # And it does write once the interval has passed, or the probe would go
+    # stale under a loop that is turning perfectly well.
+    INTAKE_READER.touch_periodically(at_most_every=0.0)
+    assert os.stat(INTAKE_READER.path()).st_mtime_ns >= first
+
+
+def test_a_restarted_reader_marks_itself_immediately(settings, tmp_path):
+    """The throttle is per process, and a process that has just started has
+    just turned. Nothing durable decides whether the first write happens."""
+    from app.documents.extraction.heartbeat import INTAKE_READER
+
+    settings.INTAKE_READER_HEARTBEAT_PATH = str(tmp_path / "reader.heartbeat")
+    INTAKE_READER.clear()
+
+    INTAKE_READER.touch_periodically()
+    assert INTAKE_READER.is_alive()
+
+
 def test_the_healthcheck_fails_when_the_readers_loop_has_stopped(settings, tmp_path):
     from app.documents.extraction.heartbeat import INTAKE_READER
 

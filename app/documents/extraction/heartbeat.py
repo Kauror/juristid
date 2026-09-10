@@ -47,6 +47,19 @@ from pathlib import Path
 
 from django.conf import settings
 
+#: How often a loop may actually write its mark, however fast it turns.
+#:
+#: Fine granularity against either worker's staleness window — five minutes for
+#: the reader, thirty for the corpus worker — and coarse enough that a
+#: half-second poll does not become a hundred and seventy thousand file writes
+#: a day on a host whose whole problem is write latency.
+WRITE_INTERVAL_SECONDS = 10.0
+
+#: When each mark was last actually written, by setting name. Per process and
+#: deliberately not durable: a restarted worker writes once immediately, which
+#: is right, because it has just turned.
+_LAST_TOUCH: dict[str, float] = {}
+
 
 @dataclass(frozen=True)
 class Heartbeat:
@@ -80,6 +93,34 @@ class Heartbeat:
         except OSError:
             pass
 
+    def touch_periodically(self, *, at_most_every: float = WRITE_INTERVAL_SECONDS) -> None:
+        """:meth:`touch`, but not on every turn of a fast loop.
+
+        **This exists because the mark is a file write, and file writes are the
+        thing.** The intake reader polls twice a second, and its temporary
+        directory is the container's writable layer — which on the production
+        host is `docker-xfs.img` on `/mnt/disk1`, behind the same parity disk
+        whose saturation caused the incident this worker was built for. An
+        unconditional `touch()` per turn is 172 000 writes a day onto exactly
+        that device, to answer a probe that runs every thirty seconds.
+
+        Ten seconds is fine granularity against a five-minute window, and it is
+        still an observation of *this* loop turning rather than of the process
+        existing: a reader wedged on a malformed file stops calling this, and
+        the mark goes stale on schedule.
+
+        In-process state rather than a stat of the file, because reading the
+        mtime to decide whether to write is a syscall per turn to save a
+        syscall per turn. A restarted worker writes once immediately, which is
+        correct — it *has* just turned.
+        """
+        now = time.monotonic()
+        last = _LAST_TOUCH.get(self.path_setting)
+        if last is not None and now - last < at_most_every:
+            return
+        _LAST_TOUCH[self.path_setting] = now
+        self.touch()
+
     def age_seconds(self) -> float | None:
         """Seconds since the loop last turned, or None if it never has."""
         target = self.path()
@@ -102,6 +143,7 @@ class Heartbeat:
         — would leave a fresh heartbeat that made the container look like a
         healthy daemon for the rest of the window.
         """
+        _LAST_TOUCH.pop(self.path_setting, None)
         try:
             self.path().unlink(missing_ok=True)
         except OSError:
