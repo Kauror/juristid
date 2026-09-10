@@ -60,6 +60,7 @@ from app.search.indexing import (
 )
 from app.search.models import INDEX_VERSION, SearchDocument, SearchSourceKind
 from app.search.services import search_documents, search_matters
+from app.workflow.enums import ActionKind, DateSemantics
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -741,3 +742,232 @@ def test_a_personal_note_never_reaches_a_shared_projection(specialist):
 
     feed = activity_feed(other, timezone.localdate())
     assert "SALAJANE-MARGE-852" not in str([(i.verb, i.matter_title) for i in feed])
+
+
+# ---------------------------------------------------------------------------
+# The operational photograph — a copied step is still a projection of a child
+# ---------------------------------------------------------------------------
+#
+# F-4 of the 2026-09-09 restricted-data leakage audit, and the last of that
+# audit's findings to be closed. `capture` copies a `NextAction`'s kind, date
+# meaning and date onto the snapshot row for its Matter, and it does so
+# unauthorized on purpose — the command runs as the system and must record the
+# whole department. `visible_snapshots` then scoped those rows by the *Matter's*
+# visibility alone, which is the invariant at the top of this file broken by a
+# different route: a step restricted below a NORMAL Matter had its three facts
+# published to every reader of that Matter.
+#
+# It was latent when it was reported — `visible_snapshots` had no callers, so
+# nothing rendered the columns and there was no page to write a two-world test
+# against. These are that missing observable, taken at the selector rather than
+# at a surface, so the property holds before the first chart is built rather
+# than after.
+
+HIDDEN_DEADLINE = timezone.localdate() - timedelta(days=11)
+PLAIN_DEADLINE = timezone.localdate() + timedelta(days=4)
+
+
+def _photographed(viewer, matter):
+    """The one snapshot row for `matter`, as `viewer` reads it."""
+    from app.reporting.selectors.snapshots import visible_snapshots
+
+    return visible_snapshots(viewer).get(matter=matter)
+
+
+def _facts(row):
+    return (
+        row.visible_next_action_kind,
+        row.visible_next_action_date_semantics,
+        row.visible_next_action_date,
+    )
+
+
+def _world_with_one_restricted_step(specialist):
+    """Two open Matters anybody may read: one hiding a step, one not."""
+    from app.reporting.selectors.snapshots import capture
+    from app.workflow.services import set_next_action
+
+    hiding = _matter(specialist, number=560, title="Teema, mille samm on kinnine")
+    step = set_next_action(
+        matter=hiding, text=HIDDEN_STEP, target_date=HIDDEN_DEADLINE, actor=specialist
+    )
+    step.visibility_override = Visibility.RESTRICTED
+    step.save(update_fields=["visibility_override"])
+
+    plain = _matter(specialist, number=561, title="Harilik teema sammuga")
+    set_next_action(matter=plain, text="Avalik samm", target_date=PLAIN_DEADLINE, actor=specialist)
+
+    capture(on=timezone.localdate())
+    return hiding, plain, step
+
+
+def test_a_restricted_steps_dates_are_not_in_the_operational_photograph(specialist):
+    """The regression. Without the fix all three columns come back populated."""
+    stranger = factories.ReaderFactory()
+    hiding, _, _ = _world_with_one_restricted_step(specialist)
+
+    row = _photographed(stranger, hiding)
+
+    assert row.next_action_is_visible is False
+    assert _facts(row) == ("", "", None)
+    assert not row.has_next_action
+    assert not row.was_overdue(), "an overdue flag is the date, one bit at a time"
+
+
+def test_the_matter_itself_stays_in_the_photograph(specialist):
+    """Blanked, never dropped.
+
+    A Matter that left the trend the day a restricted step appeared would be the
+    disclosure this closes, one level up — the F-2 defect of the same audit.
+    """
+    from app.reporting.selectors.snapshots import visible_snapshots
+
+    stranger = factories.ReaderFactory()
+    hiding, plain, _ = _world_with_one_restricted_step(specialist)
+
+    photographed = {row.matter_id for row in visible_snapshots(stranger)}
+
+    assert {hiding.pk, plain.pk} <= photographed
+    assert visible_snapshots(stranger).count() == visible_snapshots(specialist).count()
+
+
+def test_a_blanked_row_looks_exactly_like_a_day_with_no_step(specialist):
+    """The property that keeps this from being an existence oracle.
+
+    A reader must not be able to tell "there was a step you may not read" from
+    "there was no step". Both are three empty columns and a false flag.
+    """
+    from app.reporting.selectors.snapshots import capture
+
+    stranger = factories.ReaderFactory()
+    hiding, _, _ = _world_with_one_restricted_step(specialist)
+    quiet = _matter(specialist, number=562, title="Teema ilma sammuta")
+    capture(on=timezone.localdate())
+
+    blanked = _photographed(stranger, hiding)
+    empty = _photographed(stranger, quiet)
+
+    assert (blanked.next_action_is_visible, _facts(blanked)) == (
+        empty.next_action_is_visible,
+        _facts(empty),
+    )
+
+
+def test_the_ordinary_step_beside_it_is_still_photographed(specialist):
+    """Scoped, not switched off. Over-blanking would be a quiet way to comply."""
+    stranger = factories.ReaderFactory()
+    _, plain, _ = _world_with_one_restricted_step(specialist)
+
+    row = _photographed(stranger, plain)
+
+    assert row.next_action_is_visible is True
+    assert _facts(row) == (ActionKind.DO, DateSemantics.DEADLINE, PLAIN_DEADLINE)
+
+
+def test_the_lawyers_still_read_the_restricted_step(specialist, department_head):
+    """Since docs/adr/0042 the boundary is the department, not the file."""
+    hiding, _, _ = _world_with_one_restricted_step(specialist)
+
+    for lawyer in (specialist, department_head, factories.UserFactory()):
+        row = _photographed(lawyer, hiding)
+        assert _facts(row) == (ActionKind.DO, DateSemantics.DEADLINE, HIDDEN_DEADLINE)
+        assert row.was_overdue()
+
+
+def test_a_participant_who_is_not_a_lawyer_still_reads_their_own_step(specialist):
+    """Participation opens a restricted child, and it must keep doing so here.
+
+    A READER on the file is not a stranger to it — `child_visibility_q` says so
+    for every other surface, and this one asks the same question of the same
+    table rather than a narrower one of its own.
+    """
+    participant = factories.ReaderFactory()
+    hiding, _, _ = _world_with_one_restricted_step(specialist)
+    hiding.collaborators.add(participant)
+
+    row = _photographed(participant, hiding)
+
+    assert _facts(row) == (ActionKind.DO, DateSemantics.DEADLINE, HIDDEN_DEADLINE)
+
+
+def test_restricting_a_step_today_blanks_yesterdays_photograph(specialist):
+    """The half that a stored copy of the override would get wrong.
+
+    Deciding on Tuesday that Monday's step was sensitive must reach back through
+    every photograph already taken. A visibility written at capture time cannot
+    do that, and nothing on the resulting chart would look wrong — which is this
+    same defect, moved a day later.
+    """
+    from app.reporting.selectors.snapshots import capture
+    from app.workflow.services import set_next_action
+
+    stranger = factories.ReaderFactory()
+    matter = _matter(specialist, number=563)
+    step = set_next_action(
+        matter=matter, text=HIDDEN_STEP, target_date=HIDDEN_DEADLINE, actor=specialist
+    )
+    capture(on=timezone.localdate())
+    assert _facts(_photographed(stranger, matter)) != ("", "", None)
+
+    step.visibility_override = Visibility.RESTRICTED
+    step.save(update_fields=["visibility_override"])
+
+    assert _facts(_photographed(stranger, matter)) == ("", "", None)
+    # ...and relaxing it again gives the history back, on the next query and
+    # with no recapture. Live derivation runs in both directions.
+    step.visibility_override = ""
+    step.save(update_fields=["visibility_override"])
+    assert _facts(_photographed(stranger, matter)) != ("", "", None)
+
+
+def test_the_blanking_survives_an_aggregate(specialist):
+    """Where the first real surface will read this table.
+
+    A trend is `values(...).annotate(...)`, and a blanking applied in Python
+    after the rows arrive would be right in the template and silently wrong in
+    the SQL underneath it. So it is asserted through the aggregate too, not only
+    through the instances.
+
+    Note the `order_by()`. `OperationalMatterSnapshot.Meta.ordering` names the
+    Matter, which resolves through *its* ordering into three more columns, and
+    every one of them lands in the `GROUP BY` — so an aggregate that keeps the
+    default ordering silently returns one group per row. Clearing it is what any
+    correct count over this table has to do, and asserting through a broken
+    aggregate would have proved nothing about the blanking either way.
+    """
+    from app.core.authorization import scoped_count
+    from app.reporting.selectors.snapshots import visible_snapshots
+
+    stranger = factories.ReaderFactory()
+    _world_with_one_restricted_step(specialist)
+
+    def by_kind(user):
+        return {
+            row["visible_next_action_kind"]: row["n"]
+            for row in visible_snapshots(user)
+            .order_by()
+            .values("visible_next_action_kind")
+            .annotate(n=scoped_count())
+        }
+
+    assert by_kind(stranger) == {ActionKind.DO: 1, "": 1}, "one countable step, one blank"
+    assert by_kind(specialist) == {ActionKind.DO: 2}
+
+
+def test_a_row_read_off_the_manager_is_the_whole_truth(specialist):
+    """The capture side is deliberately unauthorized, and stays that way.
+
+    `.objects` is not a reading surface — it is what the nightly command, a
+    management command and the tests about *what was recorded* use. Scoping it
+    would make the history depend on who ran the cron, and the pointer is what
+    lets the read authorize afterwards.
+    """
+    from app.reporting.models import OperationalMatterSnapshot
+
+    hiding, _, step = _world_with_one_restricted_step(specialist)
+
+    row = OperationalMatterSnapshot.objects.get(matter=hiding)
+
+    assert row.next_action_id == step.pk
+    assert row.next_action_kind == ActionKind.DO
+    assert row.next_action_date == HIDDEN_DEADLINE
