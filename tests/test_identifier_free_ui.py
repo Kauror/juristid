@@ -173,10 +173,19 @@ def test_my_work_names_topics_by_title(signed_in, marked_matter):
     assert REFERENCE not in body
 
 
-def test_the_watchlist_names_topics_by_title(signed_in, marked_matter, specialist):
+def test_the_personal_queue_names_topics_by_title(signed_in, marked_matter, specialist):
+    """An important deadline, on the surface that shows one now.
+
+    This used to be asserted on the department-wide Olulisi tähtaegu page. That
+    page is retired and the deadline belongs to its Matter's owner, so the
+    surface that has to name the Teema by title is the owner's own Minu asjad
+    (docs/adr/0071).
+    """
+    marked_matter.owner = specialist
+    marked_matter.save(update_fields=["owner"])
     factories.ImportantDateFactory(matter=marked_matter, created_by=specialist)
 
-    body = _get(signed_in, "intelligence:important_dates")
+    body = _get(signed_in, "matters:my_work")
 
     assert TITLE in body
     assert REFERENCE not in body

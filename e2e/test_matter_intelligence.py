@@ -17,8 +17,6 @@ now carries three lists with the same control names, and an unscoped
 
 from __future__ import annotations
 
-from datetime import date
-
 import pytest
 from playwright.sync_api import expect
 
@@ -103,8 +101,14 @@ def expect_chip(page, label: str):
     return expect(page.get_by_role("link", name=label, exact=True))
 
 
-def open_watchlist(page, base_url: str, path: str = "jalgimine/tahtajad", query: str = "") -> None:
-    page.goto(f"{base_url}/{path}/{query}")
+def open_register(page, base_url: str, query: str = "") -> None:
+    """Teemad, narrowed by the structured facts this file is about.
+
+    The three generated department pages this used to open are retired: a
+    Teema is found in the register now, and `Töövõit` and `Jõustumine` narrow
+    it like any other dimension (docs/adr/0071).
+    """
+    page.goto(f"{base_url}/teemad/{query}")
     page.wait_for_load_state("networkidle")
 
 
@@ -309,11 +313,6 @@ def test_the_department_head_confirms_a_proposed_candidate(page, base_url, scree
     """
     sign_in(page, base_url, HEAD)
 
-    # Nobody has decided about it, so it is not on the department's Töövõidud
-    # page. Losing the state filter did not turn every proposal into a win.
-    open_watchlist(page, base_url, "jalgimine/toovoidud")
-    expect(page.get_by_text(MACHINE_CANDIDATE)).to_have_count(0)
-
     open_the_matter(page, base_url, OPEN_TITLE)
 
     row = section(page, "Töövõidud").get_by_role("listitem").filter(has_text=MACHINE_CANDIDATE)
@@ -335,9 +334,10 @@ def test_the_department_head_confirms_a_proposed_candidate(page, base_url, scree
     expect(confirmed.get_by_role("link", name="Kinnita töövõiduks")).to_have_count(0)
     screenshots(page, "teema-kinnitatud-toovoit")
 
-    # And now — and only now — it is a Töövõit like any other.
-    open_watchlist(page, base_url, "jalgimine/toovoidud")
-    expect(page.get_by_text(MACHINE_CANDIDATE)).to_be_visible()
+    # Whether a candidate counts as a Töövõit is `VISIBLE_VICTORY_STATUS`'s
+    # answer and is asserted against the database — this Matter carries a
+    # confirmed victory of its own, so no register query could tell the two
+    # rows apart (tests/test_teemad_consolidation.py).
 
 
 # -- adding a fact without leaving the Matter -------------------------------
@@ -507,126 +507,85 @@ def test_a_reader_is_offered_no_inline_add_control(page, base_url):
     expect(add_form(page)).to_have_count(0)
 
 
-# -- the generated department pages -----------------------------------------
+# -- finding these facts in the register ------------------------------------
+#
+# The three generated department pages are gone. What they answered — which
+# files carry a Töövõit, which carry a Jõustumine, and when — is answered by the
+# register, where it composes with every other dimension a lawyer already knows
+# (docs/adr/0071).
+#
+# Deliberately few, like the rest of this suite. The populations, the period
+# semantics and the authorization are proved against the database in
+# `tests/test_teemad_consolidation.py`; what only a browser shows is that the
+# controls are on the panel, that choosing one navigates, and that the chip
+# above the rows says what was chosen.
 
 
-def test_jalgimine_is_one_navigation_item_with_three_views(page, base_url, screenshots):
+def test_the_panel_offers_both_facts_as_filters(page, base_url, screenshots):
     sign_in(page, base_url, MARTIN)
-    # The bar item reads «Tähtajad»; the address it opens is unchanged.
-    go_to(page, "Tähtajad")
-    page.wait_for_url(f"{base_url}/jalgimine/tahtajad/")
+    go_to(page, "Teemad")
+    page.wait_for_url(f"{base_url}/teemad/")
 
-    tabs = page.get_by_label("Jälgimise vaated")
-    for label in ("Olulised tähtajad", "Jõustuvad aktid", "Töövõidud"):
-        expect(tabs.get_by_role("link", name=label, exact=True)).to_be_visible()
+    panel = page.locator("#tapsem-otsing")
+    panel.locator("summary.filterpanel__trigger").click()
 
-    screenshots(page, "jalgimine-olulised-tahtajad")
+    # Located by the parameter each control submits rather than by its
+    # accessible name, and not for convenience: every field in this panel wraps
+    # its `<select>` inside the `<label>`, so the computed name is the legend
+    # *plus every option's text* — `get_by_label("Töövõit", exact=True)` matches
+    # nothing and the loose form matches by accident. The visible legend is
+    # asserted separately below, which is the half a reader actually reads.
+    expect(panel.locator("select[name='toovoit']")).to_be_visible()
+    expect(panel.locator("select[name='joustumine']")).to_be_visible()
+    expect(panel.locator("input[name='joustub_alates']")).to_be_visible()
+    expect(panel.locator("input[name='joustub_kuni']")).to_be_visible()
+    expect(panel.get_by_text("Töövõit", exact=True).first).to_be_visible()
+    expect(panel.get_by_text("Jõustumine", exact=True).first).to_be_visible()
+    screenshots(page, "teemad-struktuursed-filtrid")
 
 
-def test_the_calendar_shows_both_event_kinds_and_says_which_is_which(page, base_url):
-    """One source of truth, two labelled presentations (Stage-2G brief 47)."""
+def test_choosing_toovoit_narrows_the_register_and_says_so(page, base_url):
+    """The whole round trip a reader makes: choose, submit, read the chip."""
     sign_in(page, base_url, MARTIN)
-    open_watchlist(page, base_url, query="?suund=koik")
+    open_register(page, base_url, "?olek=koik")
 
-    # The v2 page draws named sections over a register table rather than one
-    # region headed «Olulised tähtajad», so the rows are scoped to the table
-    # (02-EKRAANID §D). What is asserted is unchanged: both event kinds reach
-    # this page, and each row says which kind it is.
-    watchlist = page.locator("table.table--register")
-    expect(watchlist.get_by_text("Jõustumine").first).to_be_visible()
-    expect(watchlist.get_by_text("Tähtaeg").first).to_be_visible()
-    expect(watchlist.get_by_text("Eeldatav VTK avalikustamine").first).to_be_visible()
+    panel = page.locator("#tapsem-otsing")
+    panel.locator("summary.filterpanel__trigger").click()
+    panel.locator("select[name='toovoit']").select_option("on")
+    panel.get_by_role("button", name="Filtreeri").click()
+    page.wait_for_load_state("networkidle")
+
+    assert "toovoit=on" in page.url
+    # The chip above the rows, which is how a reader knows what narrowed them.
+    chip = page.locator(".filterbar--chips .filterchip").filter(has_text="Töövõit")
+    expect(chip.first).to_contain_text("Töövõiduga")
+    expect(page.get_by_role("link", name=OPEN_TITLE).first).to_be_visible()
 
 
-def test_an_approximate_period_keeps_its_precision_on_the_department_page(page, base_url):
+def test_a_register_row_still_opens_its_matter(page, base_url):
     sign_in(page, base_url, MARTIN)
-    open_watchlist(page, base_url, query="?suund=koik")
+    open_register(page, base_url, "?joustumine=on&olek=koik")
 
-    # The seeded quarter-precision milestone. Its heading is the quarter, not a
-    # month somebody's anchor date happened to fall in.
-    expect(page.get_by_text("kvartal").first).to_be_visible()
-
-
-def test_the_source_selector_narrows_the_calendar(page, base_url):
-    sign_in(page, base_url, MARTIN)
-    open_watchlist(page, base_url, query="?suund=koik&allikad=joustumised")
-
-    watchlist = page.locator("table.table--register")
-    expect(watchlist.get_by_text("Eeldatav VTK avalikustamine")).to_have_count(0)
-    expect(watchlist.get_by_text("Jõustumine").first).to_be_visible()
-
-
-def test_a_calendar_row_opens_its_matter(page, base_url):
-    sign_in(page, base_url, MARTIN)
-    open_watchlist(page, base_url, query="?suund=koik")
     page.get_by_role("link", name=OPEN_TITLE).first.click()
     page.wait_for_load_state("networkidle")
 
     expect(page.get_by_role("heading", name=OPEN_TITLE)).to_be_visible()
 
 
-def test_the_commencement_page_is_grouped_and_the_undated_are_apart(page, base_url, screenshots):
-    sign_in(page, base_url, MARTIN)
-    open_watchlist(page, base_url, "jalgimine/joustumised", "?suund=koik")
-
-    expect(page.get_by_role("heading", name="Jõustuvad aktid")).to_be_visible()
-    expect(page.get_by_text("põhiosa")).to_be_visible()
-    screenshots(page, "jalgimine-joustuvad-aktid")
-
-    page.get_by_role("link", name="Kuupäev täpsustamisel", exact=True).click()
-    page.wait_for_load_state("networkidle")
-    expect(page.get_by_text("Jõustub üldises korras").first).to_be_visible()
-    # An undated commencement has no place on a chronological axis, so the
-    # dated rows are not mixed into this view.
-    expect(page.get_by_text("põhiosa")).to_have_count(0)
-
-
-def test_the_work_victory_page_lists_work_victories(page, base_url, screenshots):
-    """One concept, one filter, and no vocabulary from the old review step.
-
-    The seed carries a work victory and a machine proposal on the same Matter,
-    so the page showing exactly one of them is a decision this test can see.
-    """
-    sign_in(page, base_url, MARTIN)
-    open_watchlist(page, base_url, "jalgimine/toovoidud")
-
-    expect(page.get_by_role("heading", name="Töövõidud")).to_be_visible()
-    expect(
-        page.get_by_text("Koja ettepanek rakendusaja pikendamiseks võeti arvesse")
-    ).to_be_visible()
-    screenshots(page, "jalgimine-toovoidud")
-
-    # No state filter, and none of its words anywhere on the page.
-    expect(page.get_by_role("navigation", name="Staatus")).to_have_count(0)
-    expect(page.get_by_text("Töövõidu kandidaat")).to_have_count(0)
-    expect(page.get_by_text("Kinnitatud töövõit")).to_have_count(0)
-    expect(page.locator(".victorystate")).to_have_count(0)
-
-    # The period filter is the one that stayed, and it still narrows the page.
-    period = page.get_by_role("navigation", name="Periood")
-    expect(period).to_be_visible()
-    period.get_by_role("link", name=str(date.today().year), exact=True).click()
-    page.wait_for_load_state("networkidle")
-    expect(
-        page.get_by_text("Koja ettepanek rakendusaja pikendamiseks võeti arvesse")
-    ).to_be_visible()
-
-
 # -- authorization ----------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    "path", ["jalgimine/tahtajad", "jalgimine/joustumised", "jalgimine/toovoidud"]
-)
-def test_a_restricted_matters_facts_never_reach_the_department_pages(page, base_url, path):
+@pytest.mark.parametrize("query", ["?toovoit=on", "?joustumine=on"])
+def test_a_restricted_matters_facts_never_reach_the_register_filters(page, base_url, query):
     """Not the row, not the title, not the Matter behind it.
 
-    Martin has no relationship to Sandra's restricted Matter, so nothing about
-    it may appear on a page built by combining everybody's records
-    (Stage-2G brief 31).
+    A `READER` has no relationship to Sandra's restricted Matter, so nothing
+    about it may appear — and, crucially, its *absence* from `puudub` must not
+    disclose it either. The filter scopes the child table before the existence
+    test contributes anything (Stage-2G brief 31, docs/adr/0071).
     """
     sign_in(page, base_url, READER)
-    open_watchlist(page, base_url, path, "?suund=koik")
+    open_register(page, base_url, f"{query}&olek=koik")
 
     expect(page.get_by_text("Konfidentsiaalne")).to_have_count(0)
     expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
@@ -634,17 +593,17 @@ def test_a_restricted_matters_facts_never_reach_the_department_pages(page, base_
 
 def test_the_owner_does_see_her_own_restricted_facts(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_watchlist(page, base_url, query="?suund=koik")
+    open_register(page, base_url, "?joustumine=on&olek=koik")
 
-    expect(page.get_by_text("Konfidentsiaalne tähtaeg")).to_be_visible()
+    expect(page.get_by_role("link", name=RESTRICTED_TITLE).first).to_be_visible()
 
 
 def test_a_technical_administrator_sees_no_restricted_facts(page, base_url):
     """Technical administration is not business access (specification 5.2)."""
     sign_in(page, base_url, ADMIN)
-    open_watchlist(page, base_url, query="?suund=koik")
+    open_register(page, base_url, "?joustumine=on&olek=koik")
 
-    expect(page.get_by_text("Konfidentsiaalne tähtaeg")).to_have_count(0)
+    expect(page.get_by_text(RESTRICTED_TITLE)).to_have_count(0)
 
 
 def test_an_administrator_has_no_write_controls(page, base_url):
@@ -657,6 +616,26 @@ def test_an_administrator_has_no_write_controls(page, base_url):
 
 def test_the_department_head_sees_restricted_facts_by_role(page, base_url):
     sign_in(page, base_url, HEAD)
-    open_watchlist(page, base_url, query="?suund=koik")
+    open_register(page, base_url, "?joustumine=on&olek=koik")
 
-    expect(page.get_by_text("Konfidentsiaalne tähtaeg")).to_be_visible()
+    expect(page.get_by_role("link", name=RESTRICTED_TITLE).first).to_be_visible()
+
+
+def test_an_important_deadline_is_on_its_owners_own_page(page, base_url, screenshots):
+    """The third fact, on the surface it moved to.
+
+    There is no department-wide deadline list any more. An `Oluline tähtaeg`
+    belongs to whoever owns the file, so it is on that person's Minu asjad and
+    on nobody else's (docs/adr/0071).
+    """
+    sign_in(page, base_url, SANDRA)
+    page.goto(f"{base_url}/minu-asjad/")
+    page.wait_for_load_state("networkidle")
+
+    expect(page.get_by_text("Konfidentsiaalne tähtaeg").first).to_be_visible()
+    screenshots(page, "minu-asjad-oluline-tahtaeg")
+
+    sign_in(page, base_url, ADMIN)
+    page.goto(f"{base_url}/minu-asjad/")
+    page.wait_for_load_state("networkidle")
+    expect(page.get_by_text("Konfidentsiaalne tähtaeg")).to_have_count(0)

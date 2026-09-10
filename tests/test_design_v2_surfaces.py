@@ -25,20 +25,22 @@ pytestmark = pytest.mark.django_db
 
 
 @pytest.mark.parametrize(
-    ("old", "new"),
-    [
-        ("/olulised-tahtajad/", "/jalgimine/tahtajad/"),
-        ("/joustuvad-aktid/", "/jalgimine/joustumised/"),
-        ("/toovoidud/", "/jalgimine/toovoidud/"),
-    ],
+    "old",
+    ["/olulised-tahtajad/", "/joustuvad-aktid/", "/toovoidud/", "/jalgimine/tahtajad/"],
 )
-def test_the_jalgimine_pages_kept_their_old_addresses(client, specialist, old, new):
-    """Grouped under one prefix, and every existing link still lands (03-BACKEND §4)."""
+def test_every_retired_reading_address_still_lands_somewhere_real(client, specialist, old):
+    """The pages are gone; the addresses are not (03-BACKEND §4, docs/adr/0071).
+
+    Where each one goes, and what happens to `?aasta=`, is asserted in
+    `tests/test_teemad_consolidation.py`, which owns the product decision. What
+    this file keeps is the shell-level guarantee it has always kept: no address
+    this application ever published answers 404, and none of them redirects to
+    another redirect.
+    """
     client.force_login(specialist)
     response = client.get(f"{old}?aasta=2026")
-    assert response.status_code == 301
-    assert response["Location"] == f"{new}?aasta=2026"
-    assert client.get(new).status_code == 200
+    assert response.status_code in {301, 302}
+    assert client.get(response["Location"]).status_code == 200
 
 
 def test_the_arvamused_workspace_is_still_a_full_destination(client, specialist):

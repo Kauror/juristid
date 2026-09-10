@@ -48,10 +48,12 @@ NOT_ON_THE_BAR = ["Saabunud"]
 #: now, and there is exactly one of it — a second copy in here is the
 #: duplication the merge removed (ADR 0049).
 #:
-#: «Tähtajad» is the item that used to read «Jälgimine». Only the word changed:
-#: the route, its namespace and the `jalgimine` key that lights it are all
-#: untouched (templates/components/topnav_secondary.html).
-SECONDARY = ["Tähtajad", "Statistika"]
+#: «Tähtajad» is no longer among them, and neither is the workspace it opened:
+#: `Töövõit` and `Jõustumine` are structured filters on Teemad and an `Oluline
+#: tähtaeg` is its owner's own upcoming work, so there is one register to search
+#: and one personal queue rather than four parallel lists of the same Matters
+#: (docs/adr/0071).
+SECONDARY = ["Statistika"]
 
 #: What the bar reads, left to right, for somebody who is signed in.
 NAVIGATION_ORDER = [*PRIMARY, *SECONDARY]
@@ -147,12 +149,12 @@ def test_every_destination_stays_reachable_at_every_width(page, base_url, width,
 
 @pytest.mark.parametrize("width,height", [*VIEWPORTS, (1600, 900)], ids=lambda v: str(v))
 def test_the_bar_reads_in_the_approved_order(page, base_url, width, height):
-    """Minu asjad, Osakond, Teemad, Tähtajad, Statistika — in that sequence.
+    """Minu asjad, Osakond, Teemad, Statistika — in that sequence.
 
     Read off the laid-out page rather than the markup, so it holds whichever
-    branch this width renders: above 1560 all five are one inline row, below it
-    the last two are in the opened disclosure and sit under the trigger. Either
-    way a reader meets them in this order, which a presence check cannot say.
+    branch this width renders: above 1560 all four are one inline row, below it
+    the last is in the opened disclosure and sits under the trigger. Either way
+    a reader meets them in this order, which a presence check cannot say.
 
     `boundingBox` is the reason this is a browser test at all: the wide row and
     the menu are both in the DOM, and only geometry knows which one a person is
@@ -179,7 +181,10 @@ def test_the_bar_reads_in_the_approved_order(page, base_url, width, height):
     # one inline row above 1560, a row plus an opened menu below it.
     assert placed == sorted(placed), f"the bar does not read in order: {placed}"
 
-    assert "Jälgimine" not in navigation.inner_text()
+    # Neither word the retired fifth item ever used, on either branch.
+    text = navigation.inner_text()
+    assert "Jälgimine" not in text
+    assert "Tähtajad" not in text
 
 
 @pytest.mark.parametrize("width,height", VIEWPORTS, ids=lambda v: str(v))
@@ -533,7 +538,7 @@ def test_no_ordinary_reading_surface_prints_a_matter_reference(page, base_url):
     sign_in(page, base_url, SANDRA)
     pattern = re.compile(r"(19|20)\d{2}_\d+")
 
-    for path in ("/osakond/", "/minu-asjad/", "/teemad/", "/saabunud/", "/jalgimine/tahtajad/"):
+    for path in ("/osakond/", "/minu-asjad/", "/teemad/", "/saabunud/"):
         page.goto(f"{base_url}{path}")
         page.wait_for_load_state("networkidle")
         text = page.locator("#sisu").inner_text()
