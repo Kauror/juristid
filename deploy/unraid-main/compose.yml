@@ -380,6 +380,21 @@ services:
       # As on every other service in this file: `config/test_safety.py` refuses
       # to run the test suite in a process that inherits this marker.
       JURISTID_RUNTIME: deployed
+      # This worker never opens a document, and it needs these anyway.
+      #
+      # `juristid.E015` is a check on *configuration*, and every process that
+      # boots Django runs it — so a service that runs the application image with
+      # real data and no scanner setting does not start at all. That is what
+      # happened on 2026-09-09: `web` and `extractor` were given these three and
+      # this one was not, so the search-freshness worker restarted 419 times
+      # behind a stack that was otherwise healthy.
+      #
+      # The rule the CI guard now enforces: every service running the
+      # application image carries them, because every one of them runs the
+      # check (scripts/ci/assert_scanner_topology.py, docs/adr/0066).
+      MALWARE_SCANNER_BACKEND: clamav
+      MALWARE_SCANNER_HOST: clamav
+      MALWARE_SCANNER_PORT: "3310"
     depends_on:
       db:
         condition: service_healthy

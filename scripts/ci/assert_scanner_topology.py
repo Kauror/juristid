@@ -13,8 +13,11 @@ useless:
   that;
 * **a healthcheck** — a clamd with no signature database answers a socket and
   calls everything clean, which is the worst state this system could be in;
-* **both application services actually configured to use it** — a scanner
-  running beside an application that never asks it anything is decoration.
+* **every application service actually configured to use it** — a scanner
+  running beside an application that never asks it anything is decoration,
+  and a Django process that cannot say where the scanner is does not start
+  at all under real data. Which services those are is derived from the file
+  rather than listed, because a list is what shipped the defect.
 
 And all of it on the rehearsal stack too. The rehearsal running a different
 security model from production is what let the original defect live: it
@@ -24,12 +27,27 @@ exercised, with REAL_DATA_ALLOWED off, a branch production could not reach
 
 from __future__ import annotations
 
+import re
+
 import yaml
 
 STACKS = (
     "deploy/unraid-main/compose.yml",
     "deploy/unraid-test/compose.yml",
 )
+
+#: What a Django process needs in order to answer «where is the scanner?».
+#:
+#: All three, not the two that decide whether the check passes. A service
+#: given a backend and a host but no port is configured against whatever the
+#: application's default happens to be — true today, and a divergence nobody
+#: would see the day it changes. The compose files have carried the port
+#: since the scanner shipped; this is the assertion catching up with them.
+SCANNER_SETTINGS = {
+    "MALWARE_SCANNER_BACKEND": "clamav",
+    "MALWARE_SCANNER_HOST": "clamav",
+    "MALWARE_SCANNER_PORT": "3310",
+}
 
 
 def problems_in(path: str) -> list[str]:
@@ -58,18 +76,67 @@ def problems_in(path: str) -> list[str]:
             f"{path}: clamav has no healthcheck, so a scanner that loaded nothing reads as green"
         )
 
-    for name in ("web", "extractor"):
-        service = services.get(name)
-        if service is None:
-            found.append(f"{path}: no {name} service to check")
-            continue
-        environment = service.get("environment") or {}
-        if environment.get("MALWARE_SCANNER_BACKEND") != "clamav":
-            found.append(f"{path}: {name} is not configured to use the scanner")
-        if environment.get("MALWARE_SCANNER_HOST") != "clamav":
-            found.append(f"{path}: {name} does not point at the scanner service")
+    application = application_services(services)
+    if len(application) < 2:
+        found.append(
+            f"{path}: found {len(application)} service(s) running the application image, "
+            "which cannot be right — the derivation below has stopped matching this file"
+        )
+    for gap in scanner_gaps(services):
+        found.append(
+            f"{path}: {gap} — a service running the application image without it does not "
+            "pass juristid.E015 under real data, and exits 1 before it serves anything"
+        )
 
     return found
+
+
+def application_services(services: dict) -> set[str]:
+    """Every service that boots Django, derived rather than listed.
+
+    This used to read ``("web", "extractor")``, and on 2026-09-09 that cost a
+    production deployment its search-freshness worker: `searchindex` runs the
+    same image, `juristid.E015` is a check on configuration that *every* Django
+    process runs at start-up, and a service without the setting therefore does
+    not start at all under real data. Two of the three were configured, this
+    guard asked about exactly those two, and the third restarted 419 times
+    behind a stack that was otherwise green.
+
+    A hard-coded pair answers "are these two right?" when the question is "is
+    any of them wrong?" — so the set is taken from the file. A service running
+    `juristid-<stack>-web:<tag>` is a service running the application, and the
+    next one somebody adds is in scope the day it is written.
+
+    The rehearsal stack has `REAL_DATA_ALLOWED=0` and so never reaches E015,
+    which is precisely why this is checked statically on both stacks rather than
+    left to whether a container happens to fall over (ADR 0066).
+    """
+    return {
+        name
+        for name, service in services.items()
+        if re.match(r"^juristid-[a-z0-9-]+-web:", str(service.get("image", "")))
+    }
+
+
+def scanner_gaps(services: dict) -> list[str]:
+    """Every `<service>: <SETTING>` an application service is missing.
+
+    One rule, consumed by two callers. `main` below turns these into CI
+    annotations for the container job; `tests/test_deployment_scanner.py`
+    loads this same function, so the fast suite and the container job cannot
+    come to disagree about what «configured» means — which is the failure one
+    step up from the one that crash-looped production, and the reason the
+    duplicate fix for this defect was not merged beside it.
+
+    Returns the gaps rather than raising, so a test can hand it a compose file
+    that does not exist yet and assert what it says about it.
+    """
+    return [
+        f"{name}: {key}"
+        for name in sorted(application_services(services))
+        for key, expected in SCANNER_SETTINGS.items()
+        if str((services[name].get("environment") or {}).get(key, "")) != expected
+    ]
 
 
 def main() -> int:

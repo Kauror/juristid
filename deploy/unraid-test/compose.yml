@@ -259,6 +259,15 @@ services:
       POSTGRES_SSLMODE: disable
       SEED_DEV_DATA: "0"
       JURISTID_RUNTIME: deployed
+      # Here for the same reason as on production, and here *because* it is on
+      # production: the two stacks differing in their security model is what hid
+      # the original scanner defect for months (ADR 0066). This stack runs
+      # `REAL_DATA_ALLOWED=0`, so `juristid.E015` would not fire — which is
+      # exactly why the setting cannot be left to whether the check happens to
+      # be reachable.
+      MALWARE_SCANNER_BACKEND: clamav
+      MALWARE_SCANNER_HOST: clamav
+      MALWARE_SCANNER_PORT: "3310"
     depends_on:
       db:
         condition: service_healthy
