@@ -682,16 +682,23 @@ def _outgoing_email_timestamp(sha256: str) -> datetime.date | None:
     """A date only if an outgoing message demonstrably carried these bytes.
 
     Reads the *already extracted* EMAIL_METADATA derivative. Nothing here opens
-    a message, and a version whose malware scan has not cleared is never
-    consulted, because reopening scanner-gated evidence in a parser is exactly
-    the door Stage 2B closed (brief 18, 32).
+    a message: reopening evidence inside a planner is the door Stage 2B closed
+    (brief 18, 32), and a derivative that exists is proof a worker did the
+    opening in the place that is allowed to.
+
+    It used to also require ``malware_scan_state=CLEAN`` on the parent. That
+    clause was removed with the scanner (docs/adr/0072) and removing it changed
+    nothing about what this function can reach — the gate it named lived in
+    front of the parser, so a parent with no clearance had no EMAIL_METADATA
+    derivative to consult and was already excluded by the loop below. Leaving
+    it in would have been worse than redundant: nothing writes ``CLEAN`` any
+    more, so it would have quietly matched nothing at all.
     """
     from app.documents.derivatives import DocumentDerivative, EmailAttachmentLink
-    from app.documents.enums import DerivativeKind, DerivativeStatus, MalwareScanState
+    from app.documents.enums import DerivativeKind, DerivativeStatus
 
     links = EmailAttachmentLink.objects.filter(
         attachment_version__sha256=sha256,
-        parent_version__malware_scan_state=MalwareScanState.CLEAN,
     ).select_related("parent_version")
     for link in links:
         derivative = DocumentDerivative.objects.filter(

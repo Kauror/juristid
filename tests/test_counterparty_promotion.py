@@ -8,10 +8,13 @@ reachable. A person should not learn one interaction for the field on the left
 and a different one for the field on the right when the two sit on the same row
 of the same form and answer the two halves of one question.
 
-**Whoever wrote to you is the first person you might answer.** A body chosen as
-the sender is promoted to the front of the addressee choices — promoted, never
-selected. Guessing a counterparty would put a fact on the register that nobody
-stated, on a form where the person is right there to state it.
+**Whoever wrote to you is the first person you might answer** — and since
+docs/adr/0069, the one the form answers. A body chosen as the sender is moved to
+the front of the addressee choices *and* becomes the addressee. This file owns
+the first half of that sentence, which is what makes the second half visible: a
+default sitting in the long tail behind a closed disclosure would be an answer
+nobody could find. What the default *is* belongs to
+`tests/test_addressee_defaults_to_sender.py`.
 
 **One name is one institution.** Typing the same new body into `Uus saatja` and
 `Uus adressaat` on one form creates exactly one `Organisation` row, used twice.
@@ -182,7 +185,7 @@ def test_every_organisation_is_offered_in_both_directions(signed_in, specialist,
 
 
 # ---------------------------------------------------------------------------
-# The selected sender comes first
+# The selected sender comes first — and is the answer
 # ---------------------------------------------------------------------------
 
 
@@ -196,6 +199,11 @@ def test_a_selected_sender_is_the_first_addressee_offered(specialist, komisjon):
     The bound form is what a refused save re-renders, and it is also what the
     server can promise without any script at all — the browser does the same
     thing live, but this is the half that survives scripting being off.
+
+    Being *first* matters more than it did. Adressaat is a closed disclosure
+    now, so the shortlist is what opening it shows; an answer that had fallen
+    into «Vali nimekirjast» would be one the person could only find by opening a
+    second door to look for something the page had already decided.
     """
     for index in range(6):
         # Bodies with real addressee history, so the shortlist is not empty and
@@ -211,14 +219,22 @@ def test_a_selected_sender_is_the_first_addressee_offered(specialist, komisjon):
     assert _addressee_order(form)[0] == komisjon.pk
 
 
-def test_promoting_a_sender_never_selects_it(specialist, komisjon):
-    """Ordering is a suggestion. A counterparty is a fact, and stays unanswered."""
+def test_the_promoted_sender_is_also_the_answer(specialist, komisjon):
+    """The decision this file used to assert the opposite of.
+
+    It read `test_promoting_a_sender_never_selects_it`, on the argument that
+    ordering is a suggestion and a counterparty is a fact that should be stated
+    rather than guessed. The argument was right about the risk and wrong about
+    the trade: answering the body that wrote to you is the ordinary case, and
+    making the ordinary case free costs somebody answering a different body one
+    correction they can see themselves making (docs/adr/0069, task §2).
+    """
     form = MatterCreateForm(
         {"title": "Vastus komisjonile", "source_organisations": [str(komisjon.pk)]},
         viewer=specialist,
     )
     assert form.is_valid(), form.errors
-    assert form.cleaned_data["addressee_organisation"] is None
+    assert form.cleaned_data["addressee_organisation"] == komisjon
 
 
 def test_a_manually_chosen_addressee_survives_the_promotion(specialist, komisjon):
@@ -226,7 +242,9 @@ def test_a_manually_chosen_addressee_survives_the_promotion(specialist, komisjon
 
     The failure this prevents is the worst kind: silent, plausible, and only
     visible on the saved record — a Teema answered to the ministry that happened
-    to be re-sorted into the slot the person had clicked.
+    to be re-sorted into the slot the person had clicked. It is also why the
+    default above may never be inferred from *position*: this test's whole point
+    is that the first chip and the chosen one are different bodies.
     """
     chosen = Organisation.objects.create(name="Riigikogu majanduskomisjon")
 
@@ -241,7 +259,8 @@ def test_a_manually_chosen_addressee_survives_the_promotion(specialist, komisjon
 
     assert form.is_valid(), form.errors
     assert form.cleaned_data["addressee_organisation"] == chosen
-    # Promoted for display, and still not the answer.
+    # Moved for display, and still not the answer: an answer already given
+    # outranks the one the sender would have supplied.
     assert _addressee_order(form)[0] == komisjon.pk
 
 

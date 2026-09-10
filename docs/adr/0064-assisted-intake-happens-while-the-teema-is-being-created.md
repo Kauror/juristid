@@ -1,6 +1,15 @@
 # ADR 0064 — Assisted intake happens while the Teema is being created
 
-- Status: accepted
+> **Amended by ADR 0072 (2026-09-10)** in two places, and only two. The
+> staged queue is now drained by a dedicated `intake-reader` service rather than
+> by the general extraction worker, which no longer runs as a service at all;
+> and a promoted file is marked `INTAKE_READ` rather than left `PENDING` for a
+> second parse. Everything else here — the staging tables, the expiry, the
+> `SKIP LOCKED` claims, `parse_source` as the one parser stack, the pre-fill
+> being decided server-side and applied by the browser only to an empty
+> untouched control — stands exactly as written.
+
+- Status: accepted (amended by ADR 0072)
 - Date: 2026-09-08
 - Stage: pre-QA (shared-gate development phase)
 - Amends: ADR 0060 (which put the same analyser on the *edit* surface, and

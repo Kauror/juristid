@@ -110,7 +110,16 @@ coming back either.
 | **Approach** | CSS density on `railcard` plus template edits. No selector or service changes. |
 | **Conflict** | None. |
 
-### Jälgimine — three pages
+### Jälgimine — three pages · **retired 2026-09-10 (ADR 0071)**
+
+The row below records what the v2 design asked for and what was built for it,
+and it is kept rather than rewritten. What changed after it is the product
+decision, not the implementation: the three pages are not destinations any more
+— `Töövõit` and `Jõustumine` are structured filters on Teemad, an `Oluline
+tähtaeg` is its owner's own upcoming work, and every address here still resolves
+to whichever of those answers it. The `Approach` line's rule was the right one
+and is why the retirement cost no data: nothing was ever duplicated, so removing
+the reading surface removed only a reading surface.
 
 | | |
 | --- | --- |

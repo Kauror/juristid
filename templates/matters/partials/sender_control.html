@@ -76,13 +76,18 @@ an id — and `data-choicefilter` finds its list by that id.
   </legend>
 
   {% comment %}
-    `data-sender-chips` marks the row the Adressaat promotion reads.
+    `data-sender-chips` marks the row the Adressaat default reads.
 
-    On `Uus teema` the two fields are on one form and replying to whoever wrote
-    to you is the ordinary case, so ticking a sender here moves that same body
-    to the front of the Adressaat choices. It is the *same* Organisation — one
-    catalogue, two questions about it — which is what makes the promotion a
-    reordering rather than a copy (static/js/app.js `bindCounterpartyPromotion`).
+    On `Uus teema` the two fields are on one form and answering whoever wrote to
+    you is the ordinary case, so ticking a sender here *is* answering Adressaat.
+    It is the same `Organisation` — one catalogue, two questions about it — which
+    is what lets one answer serve both, and the sender's option is moved to the
+    front of the addressee chips rather than copied, so the group still holds one
+    control per body (static/js/app.js `bindAddresseeDefault`, docs/adr/0069).
+
+    Nothing here is a lock. The person opens Adressaat and chooses somebody else
+    whenever the ordinary case does not hold, and from that moment this stops
+    writing to it.
   {% endcomment %}
   <div class="chiprow" data-sender-chips>
     {% for choice in form.source_organisations %}

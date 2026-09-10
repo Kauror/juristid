@@ -162,7 +162,7 @@ has a place already built for the answer to land.
 | What the five free-text `HETKESEIS` variants mean | Lawyers | Before the first real import | The rows use `Riigikogus 2. lugemisel`, `riigikogus 2. lugemisel`, `kinnitatud`, `rohkem tegevusi pole` and `rohkem tegevusi pole plaanis`, none of which are in the controlled eleven. The last two sit one word from the controlled `rohkem pole tegevusi plaanis`. **The importer will not decide they are the same value.** Each answer becomes one reviewed `LegacyStatusMapping` row. |
 | What the unlabelled 2022 column K holds | Whoever kept the 2022 sheet | Before the first real import | 27 non-blank values, no header, no established semantics. Preserved raw and flagged. Assigning it a meaning without evidence is exactly what the era contracts exist to prevent. |
 | Whether `VÄLJA` (the sent date) should become a Submission | Department head + reporting owner | Stage 2B | The register records when an opinion went out. Juristid's canonical outbound record is `Submission`, whose `SENT` state requires both a timestamp and an immutable final evidence document. Importing a bare date would create a sent opinion with no evidence and break a Stage-1 invariant, so the value is preserved raw and no Submission is created. The alternative — a `SENT_HISTORICAL` state that does not require evidence — is a real option and a real weakening, and it is not the coding agent's call. |
-| Whether `ÕIGUSAKT` (instrument type) becomes a canonical field | Department head + reporting owner | Stage 4 | Present in every year and used in every row. It is not a Track and not a stage. Its notation changed from single letters (`S`, `M`, `D`) to words (`seadus`, `määrus`, `direktiiv`, `VTK`, `muu`), so any canonical field needs a reviewed mapping across eras. Preserved raw meanwhile. |
+| ~~Whether `ÕIGUSAKT` (instrument type) becomes a canonical field~~ — **resolved by ADR 0070** | Department head + reporting owner | Decided 2026-09-10 | **It does, and it is multi-select.** `Matter.legal_instruments` points at a reviewed `LegalInstrumentType` vocabulary of seventeen rows, derived from a read-only survey of all sixteen year sheets — 2418 non-empty cells in 58 distinct spellings — and it is not a Track and not a stage, exactly as this row said. The mapping across eras the row asked for exists as one seam, `canonical_legal_instrument_keys`, with every spelling covered by test and two of them (`EL`, `sisendi küsimine VTK ettevalmistamiseks`) deliberately left unmapped rather than filed as `Muu`. The raw value is preserved unchanged, and the era contracts moved from `deferred` to a new `mapped` authority that says the reading exists and the importer does not apply it. **What is still open is narrower and named below**: whether a source value may overwrite a person's canonical selection during the recurring register refresh. No historical backfill has been run. | Done — `app/taxonomy/legal_instruments.py`, `taxonomy/0005`–`0006`, `matters/0015`, ADR 0070 |
 | ~~Who attests the active set, and how~~ — **resolved by ADR 0020** | Department head | Decided 2026-08-21 | The active set is the 2026 register year, activated wholesale by `promote_current_register`. Everything before it defaults to historical (`historical_cutover_state`), and an older Matter becomes current only through a per-Matter written attestation via `reactivate_historical_matter`. What remains open is narrower and listed below: who may record that attestation. |
 | Whether pre-numbered references should become placeholder Matters | Department head | Before the first real import | The 2026 sheet is numbered to `2026_300` while 192 rows carry a matter. Stage 2A treats the other 108 as reserved numbers: no Matter, but the reference sequence is pushed past them so native creation cannot collide. The alternative — creating 108 empty Matters — was rejected as manufacturing records, but it is a defensible choice if the department wants the numbers visible in Teemad. |
 | Whether the `JÄRGMISEKS` candidates should be applied at cutover | Department head + lawyers | Stage 2B or cutover | 159 cells are populated in the snapshot; 13 produce a deterministic candidate. The rest is prose that does not state its own meaning. Nothing is converted automatically. A reviewed candidate file could create the approved ones at cutover without anybody retyping them. |
@@ -316,7 +316,7 @@ architecture reasoning is in ADR 0018; these are the ones with a product edge.
 | Year filtering only, for approximate periods | Every precision offered sits inside one calendar year, so the year is exact. A day-level range filter over a quarter-level fact would expose false precision. | High |
 | The work-victory form requires an explicit period answer, including "Teadmata periood" | Neither a silently unknown period nor a pre-filled current year is a fact somebody stated. Choosing costs one click and the record then says what a person meant. | High |
 | Writes go through full-page forms that redirect back to the Matter anchor, not HTMX fragment swaps | The Matter overview is rendered by `app.matters.views` from its own context builders; swapping part of it from `app.intelligence` would couple the two apps for half a second of latency. | High |
-| `Jälgimine` is one navigation item with three tabs | Three more top-level links would crowd a shell that already carries five. Statistika established the pattern. | High |
+| ~~`Jälgimine` is one navigation item with three tabs~~ — **reversed 2026-09-10 by ADR 0071** | The reasoning weighed *how many* links to add and was right about that. What it did not weigh is that each tab was a list of Matters selected by one property, and none of them could be intersected with the register — so «avatud teemad, millel on töövõit» was a question the product could not ask. The item and the three pages are gone; `Töövõit` and `Jõustumine` are register filters and an `Oluline tähtaeg` is its owner's own upcoming work. | High |
 | Structured text is **not** yet in `SearchDocument` | A structured fact deserves its own `SearchSourceKind` row so a result can name what matched, which means new foreign keys and signal wiring in a module Stage 2E.1 is editing concurrently. The dedicated pages filter their own records meanwhile. | High — additive when 2E.1 has landed |
 
 ## New decisions Stage 2G raises for Koda
@@ -325,7 +325,7 @@ architecture reasoning is in ADR 0018; these are the ones with a product edge.
 | --- | --- | --- | --- |
 | Whether a confirmed `Töövõit` must later carry a Proposal/Outcome/Attribution record | Department head + management | Before any work-victory figure is published outside the department | Today a confirmed victory means a person judged it one. The specification's eventual outcome model (6.6) is more demanding, and `MatterWorkVictory` is shaped so those rows can be referenced or migrated rather than discarded. Nothing in this stage computes influence. |
 | Whether a specialist may confirm a work victory, or only the department head | Department head | Before the pilot | Implemented as department-head only, because it is the Chamber's own claim about its influence. Specialists create and edit candidates freely on any Matter they can reach. One frozen set in `app.core.authorization` if the answer differs. |
-| Whether `Jõustumine` should keep appearing inside the combined *Olulised tähtajad* view | Department head + lawyers | After the pages have been used | Implemented as a labelled presentation over one source of truth, with a selector that narrows to either kind. No row is duplicated, so turning it off is a default change. |
+| ~~Whether `Jõustumine` should keep appearing inside the combined *Olulised tähtajad* view~~ — **moot since ADR 0071** | Department head + lawyers | Answered by retirement | The combined view is gone. The question it asked — should these two kinds be read together — is now the reader's, one filter at a time, on a register that can also cross them with everything else. No row was ever duplicated and none was touched. |
 | The exact OneNote-list import and reconciliation procedure | Department head + whoever owns the archive | Before any import | Planned route: list entry → embedded OneNote page id → `LegacySourcePage` → `MatterSourcePage` → Matter → structured record with `legacy_source_page` and `source_text` set. Where a page relationship exists it is authoritative; where unique resolution fails the row goes to a review queue. **Title fuzzy-matching must never run automatically.** |
 | How a legacy line that says only "2 töövõitu" should be reviewed | Department head + the lawyer who wrote it | With the import | The importer will create **one** candidate preserving the raw sentence in `source_text`, for a person to split. It will not invent two descriptions, and there is deliberately no quantity column to put a 2 in. |
 | Whether these dates should eventually trigger reminders | Department head | After the pilot | Nothing schedules, mails or notifies in this stage. The structured dates make it possible; whether a deadline three weeks out should reach somebody's inbox is a working-practice decision, not a technical one. |
@@ -390,7 +390,7 @@ architecture reasoning is in ADR 0023.
 | The archive gets its **own** search projection rather than a nullable `matter` on `SearchDocument` | Every authorization decision in the global search rests on each row naming the Matter that authorizes it. Making the column nullable to fit unfiled letters would remove that invariant from every other row at the same time. A fake holding Matter was refused for the same reason in reverse: it would put a row in the register nobody opened. | Low — the new table is derived and rebuildable |
 | Reading the archive is administrator-only, and refused behind the shared gate | There is no Matter to inherit a restriction from, so the boundary is a property of the corpus. It is the reconciliation queue's rule, one step stricter: the queue shows filenames, this serves the letters, and an audit row naming a persona is not a record of who read real correspondence. | Moderate — one predicate, `may_read_archive` |
 | All-or-nothing, including the coverage figures | A reader who may see the totals can infer the corpus, and one who may see titles but not text can already read a subject and a recipient. A partial view would look like protection without being any. | Low |
-| Extraction is `BLOCKED` where real data lives, rather than excepted | ADR 0014 says an unscanned file is not opened, and the scanner that would clear these is a Secure Pilot Gate deliverable. The archive stays fully searchable by metadata either way, which is what makes obeying the rule affordable rather than merely principled. | High — one setting, and a re-run reconsiders every BLOCKED row |
+| ~~Extraction is `BLOCKED` where real data lives~~ — **closed, and replaced by a different constraint** | The scan gate that blocked it is gone (ADR 0072) and so is the thing it was blocking: corpus-wide extraction is an operator command rather than a running service, because performing it saturated production's storage. The archive stays fully searchable by metadata, as it always was; what is now a deliberate gap is content search over documents filed through `Uus teema`, which have no permanent text at all. | Medium — an operator run per batch, and the storage question underneath it is unresolved |
 | Native PDF text only; no OCR | 767 files through a shared OCR engine is a real cost, and a scanned letter with no text layer is a fact worth recording rather than a gap worth filling at that price. `NO_TEXT_LAYER` is counted separately from failure and from refusal. | High |
 | A reclassified proposal becomes `SUPERSEDED`, and only from `PENDING` | The stranded row cannot be APPLIED (it produced nothing), must not be REJECTED (nobody rejected it) and must not be deleted (it records what was believed). Restricting it to PENDING is what stops an importer rerun from overwriting a person's answer. | Low |
 | An archive-to-Matter link is weaker than a Submission, and cannot unmake one | One letter can concern several Matters — the corpus has bundles of four resent opinions — and a candidate names only one. The link says the evidence concerns the Matter and nothing more. Withdrawing a link a Submission stands on is a different act with a different bar. | Moderate |
@@ -426,7 +426,7 @@ sections above stands as written.
 | Item | Status |
 | --- | --- |
 | Off-host disaster-recovery destination, retention, RPO and RTO | Genuinely open; `deploy/unraid-main/RECOVERY.md` states the contract and picks nothing |
-| Trusted-extraction policy for the real opinions archive | Genuinely open; blocked on the Secure Pilot Gate scanner, and the archive is metadata-searchable meanwhile (ADR 0023) |
+| Trusted-extraction policy for the real opinions archive | Genuinely open, and no longer blocked on a scanner — there is none (ADR 0072). What it is blocked on now is storage: the run is affordable when PostgreSQL is not behind a parity-protected USB disk. The archive is metadata-searchable meanwhile (ADR 0023) |
 | Promotion criteria for `CONTENT_MULTI_SIGNAL` | Genuinely open; the measurement that would justify it is written down in ADR 0023 and has not been taken |
 | Global-search behaviour at real corpus scale | Genuinely open; cannot be answered without EXPLAIN on a realistic corpus, and no index has been added on intuition |
 | Whether final evidence may be more restricted than its submission | Newly surfaced, and a product question rather than a bug. `check_evidence_is_usable` permits it; a restricted document bound to a normal submission puts its filename on a card everyone can see. Nothing in this pass changed the rule |
@@ -527,3 +527,64 @@ for sentence into `workflow/0006`. Two of them a migration cannot resolve:
 
 The `idee` text as supplied carries an unbalanced parenthesis and is transcribed
 as given. Closing it would be a guess about where the sentence was meant to end.
+
+## Surfaced by the Õigusakt field (2026-09-10)
+
+`ÕIGUSAKT` is a canonical Matter field now (ADR 0070), which closes the row in
+*Raised during Stage 2A* and opens exactly one narrower question in its place.
+
+### May a source value overwrite a person's Õigusakt?
+
+`Matter.legal_instruments` can be answered two ways: a lawyer chooses it on
+`Uus teema`, or the historical register says it and
+`canonical_legal_instrument_keys` reads what it says. Both readings exist today.
+Neither is applied to the other's records, because nobody has decided what
+happens when they disagree — and the disagreement is not hypothetical: the
+recurring current-register refresh (`refresh_matter_from_register`, ADR 0045)
+runs against Matters people are working on.
+
+Three answers are available and they are genuinely different:
+
+- **the person always wins** — the source fills only an empty field, ever;
+- **the source always wins** — the register is authoritative for this column the
+  way it is for `Saabus`, and a lawyer's correction is overwritten on the next
+  refresh;
+- **the source proposes** — a disagreement becomes a review finding rather than
+  a write, like the `JÄRGMISEKS` candidates.
+
+Until it is answered: `legal_instruments` is deliberately **not** a keyword of
+`refresh_matter_from_register`, so nothing picks it up by accident; no
+historical backfill has been run, in any environment; and the era contracts say
+`mapped` rather than `authoritative`, which is the contract vocabulary stating
+exactly this gap.
+
+**Owner:** department head + reporting owner. **Where it lands:** one keyword on
+`refresh_matter_from_register`, one reviewed apply command, and a change of the
+era-contract authority from `mapped` to whatever the answer makes true.
+
+### The two spellings the mapping will not read
+
+Seven of the register's 2418 `ÕIGUSAKT` cells carry a value that names no
+instrument: six say `EL` and one says `sisendi küsimine VTK ettevalmistamiseks`.
+They are preserved raw and given no canonical classification, because `Muu` is
+an answer — *the kind is some other kind* — and neither of them gives one.
+
+Nothing needs deciding for the product to work; what a reviewed backfill would
+need is somebody saying whether those seven rows should be looked at by hand.
+They are listed as data in `UNMAPPABLE_RAW_VALUES` and asserted by test, so they
+cannot be lost track of.
+
+### The header text on the 2011–2017 era contracts
+
+Noticed while surveying the column and deliberately **not** changed here. Those
+seven contracts declare `header = "ÕIGUSAKT"` for column C, and the sheets in
+the department's own working copy head that column «Määrus/ seadus/ dok»,
+«Määrus/ seadus/ direktiiv» and «SEADUS, MÄÄRUS, VTK, DIREKTIIV». The column,
+its position and its meaning are the ones the contract describes — only the
+transcribed heading differs, and it differs only for the years that predate the
+`ÕIGUSAKT` spelling.
+
+Whether the contracts should record the heading each sheet actually carries is a
+question for whoever owns the era contracts, checked against the *approved
+snapshot* rather than against a working copy. This branch changed only the
+column's `authority` and `notes`.

@@ -102,7 +102,7 @@ class DocumentAdmin(admin.ModelAdmin):
 @admin.register(DocumentVersion)
 class DocumentVersionAdmin(admin.ModelAdmin):
     list_display = ("original_filename", "document", "version_number", "size_bytes", "sha256")
-    list_filter = ("malware_scan_state", "extraction_state")
+    list_filter = ("extraction_state",)
     readonly_fields = tuple(
         field.name for field in DocumentVersion._meta.fields if field.name != "id"
     )

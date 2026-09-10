@@ -5,8 +5,16 @@
 - **Supersedes nothing.** Sits beside ADR 0011, which separated `Hetkeseis`, `Järgmiseks` and closure.
 - **Amended 2026-09-08 by ADR 0065**, which reverses one alternative below —
   *«HTMX fragment swapping for the capture forms»* — for the `Jõustumine` and
-  `Töövõit` **add** flows. Everything else here stands, including the models,
-  the precision vocabulary, the write gate and the standalone pages themselves.
+  `Töövõit` **add** flows.
+- **Amended 2026-09-10 by ADR 0071**, which retires the *three generated
+  department views* as destinations: `Töövõit` and `Jõustumine` become
+  structured filters on Teemad and an `Oluline tähtaeg` is its owner's own
+  upcoming work. The half of this record that made that possible is untouched
+  and is the reason it was cheap — these are **structured facts recorded once
+  on the Matter**, with dates, precision, status transitions, provenance and
+  their own audit trail, so a new reading surface is a new query rather than a
+  new list to maintain. The models, the precision vocabulary, the constraints
+  and the write gate all stand exactly as written below.
 
 ## Context
 
@@ -169,7 +177,11 @@ as a follow-up in `docs/open-decisions.md`.
 - `NextAction.display_date` now delegates to `app.workflow.dates`, so the
   precision vocabulary has exactly one rendering.
 - One more top-level navigation item — *Jälgimine* — with three tabs under it,
-  rather than three more links in the shell.
+  rather than three more links in the shell. **Withdrawn by ADR 0071**: the item
+  and the three pages are gone, and the shell carries four destinations. The
+  reasoning below was about how many links to add; what it did not weigh is that
+  a list of Matters selected by one property cannot be intersected with the
+  register, which is where every real question about a file starts.
 - A work victory in this model carries no evidence link and no attribution. It
   is a marker a person set, and nothing computes influence from it.
 

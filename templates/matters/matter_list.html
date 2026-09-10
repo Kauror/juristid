@@ -269,6 +269,69 @@ localStorage (Stage-2E.1 brief 12).
           </select>
         </label>
 
+        {% comment %}
+          Töövõit and Jõustumine, as dimensions of this register.
+
+          They were a separate destination — three generated reading pages
+          behind a top-level «Tähtajad» item — and that made them parallel
+          lists of Matters rather than facts about the Matters in the one
+          register. A lawyer looking for the file could arrive at either and
+          had no way to say «avatud teemad, millel on töövõit», because the
+          two lists could not be intersected. Here they compose with every
+          other dimension, they are in the URL like every other dimension, and
+          there is one place to look for a Teema (docs/adr/0071).
+
+          Not a tab, not a second search page. A property of a Matter narrows
+          the Matter register.
+        {% endcomment %}
+        <label class="field">
+          <span class="field__label">Töövõit</span>
+          <select class="field__input" name="toovoit">
+            <option value="">Kõik</option>
+            {% for value, label in victory_options %}
+              <option value="{{ value }}" {% if filters.toovoit == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+            {% comment %}
+              The years the visible population actually holds a victory in, so
+              choosing one shows something. A year that only a restricted
+              Matter uses never appears here (Stage-2G brief 31).
+            {% endcomment %}
+            {% for year in victory_years %}
+              <option value="{{ year }}" {% if filters.toovoit == year|stringformat:"s" %}selected{% endif %}>Töövõit {{ year }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        <label class="field">
+          <span class="field__label">Jõustumine</span>
+          <select class="field__input" name="joustumine">
+            <option value="">Kõik</option>
+            {% for value, label in commencement_options %}
+              <option value="{{ value }}" {% if filters.joustumine == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </label>
+
+        {% comment %}
+          The commencement window, both ends inclusive, over the structured
+          `MatterEffectiveDate` records. A period is inside the window only
+          when the *whole* period is: III kvartal 2026 does not answer
+          01.07–31.08, because it may commence in September and saying yes
+          would state a precision nobody recorded
+          (app/matters/register_filters.py).
+        {% endcomment %}
+        <fieldset class="field daterange">
+          <legend class="field__label">Jõustub</legend>
+          <label class="daterange__end">
+            <span class="field__help">Alates</span>
+            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="joustub_alates" value="{{ filters.joustub_alates }}">
+          </label>
+          <label class="daterange__end">
+            <span class="field__help">Kuni</span>
+            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="joustub_kuni" value="{{ filters.joustub_kuni }}">
+          </label>
+        </fieldset>
+
         <label class="field">
           <span class="field__label">Materjalid</span>
           <select class="field__input" name="materjalid">
@@ -328,35 +391,15 @@ localStorage (Stage-2E.1 brief 12).
           because the register itself changed which direction its single
           counterparty column meant in 2020 (Stage-2E.1 brief 11F–H).
         {% endcomment %}
-        {% include "matters/partials/organisation_choices.html" with field="asutus" field_label="Asutus (saatja või adressaat)" term="" %}
-
-        <label class="field">
-          <span class="field__label">Saatja / algataja</span>
-          <select class="field__input" name="saatja">
-            <option value="">Kõik</option>
-            <option value="puudub" {% if filters.saatja == "puudub" %}selected{% endif %}>Määramata</option>
-            {% for organisation in organisation_options %}
-              <option value="{{ organisation.pk }}"
-                      {% if filters.saatja == organisation.pk|stringformat:"s" %}selected{% endif %}>
-                {{ organisation.name }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="field">
-          <span class="field__label">Adressaat</span>
-          <select class="field__input" name="adressaat">
-            <option value="">Kõik</option>
-            <option value="puudub" {% if filters.adressaat == "puudub" %}selected{% endif %}>Määramata</option>
-            {% for organisation in organisation_options %}
-              <option value="{{ organisation.pk }}"
-                      {% if filters.adressaat == organisation.pk|stringformat:"s" %}selected{% endif %}>
-                {{ organisation.name }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
+        {% comment %}
+          One catalogue behind all three, and one control shape over it. The
+          two precise dimensions were plain selects carrying the first twenty
+          bodies alphabetically, which is why an institution somebody had just
+          typed on Uus teema could not be found here (docs/adr/0071).
+        {% endcomment %}
+        {% for chooser in organisation_choosers %}
+          {% include "matters/partials/organisation_choices.html" with field=chooser.field field_label=chooser.field_label term=chooser.term organisation_options=chooser.organisation_options chosen_organisation=chooser.chosen_organisation chosen_value=chooser.chosen_value %}
+        {% endfor %}
 
         <label class="field">
           <span class="field__label">Järjestus</span>

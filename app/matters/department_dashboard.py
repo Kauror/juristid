@@ -101,6 +101,7 @@ from app.matters.models import Entry, Matter
 from app.matters.register_filters import (
     OPINION_DRAFTING,
     RESULTS_ANCHOR,
+    VICTORY_PARAM,
     WORK_PARAM,
     register_population,
 )
@@ -1338,6 +1339,9 @@ def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
     year = today.year
     start, end = reporting_year(today)
     closed_params = {"olek": "suletud", "liik": RecordMode.FULL.value, "suletud": str(year)}
+    # `?olek=koik`: a work victory does not stop being one when the file closes,
+    # and the register's default would hide most of them.
+    victory_params = {VICTORY_PARAM: str(year), "olek": "koik"}
     return [
         RailRow(
             "Saadetud arvamusi",
@@ -1345,18 +1349,23 @@ def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
             f"{reverse('submissions:sent')}?aasta={year}",
         ),
         RailRow(
-            "Töövõite kinnitatud",
-            # The business period, which is what the destination list filters
-            # `?aasta=` on — not `confirmed_at`, which is when somebody got
-            # round to recording it. A count and a list that read two different
-            # dates is the failure this page exists to avoid (ADR 0043).
-            MatterWorkVictory.objects.visible_to(user)
-            .filter(status=WorkVictoryStatus.CONFIRMED, period_date__year=year)
-            .count(),
-            # `?aasta=` only. The destination has no state filter any more:
-            # a Töövõit is a Töövõit there, and a `?staatus=` this link still
-            # carried would name a parameter nothing reads.
-            f"{reverse('intelligence:work_victories')}?aasta={year}",
+            "Teemasid töövõiduga",
+            # Counted through the register, in the register's own parameters,
+            # because the register is the destination now: the standalone
+            # Töövõidud page is retired and `?toovoit=<aasta>` is the narrowing
+            # that reproduces it (docs/adr/0071).
+            #
+            # So this counts **Matters** rather than victories, and the row
+            # says so. A count of rows over a list of Matters is exactly the
+            # count-disagrees-with-its-list failure this page exists to avoid
+            # (ADR 0043), and one file can legitimately win twice.
+            #
+            # The year is still the business period — not `confirmed_at`, which
+            # is when somebody got round to recording it — because `?toovoit=`
+            # reads `period_date`, the same column the retired page's `?aasta=`
+            # read.
+            register_population(user, victory_params, today=today).count(),
+            register_url(**victory_params),
         ),
         RailRow(
             "Suletud teemasid",

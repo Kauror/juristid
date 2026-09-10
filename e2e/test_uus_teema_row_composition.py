@@ -36,6 +36,14 @@ OWNER = 'fieldset.field:has(input[name="owner"])'
 SENDER = 'fieldset.field:has(input[name="sender_name"])'
 ADDRESSEE = "fieldset.field:has(#id_addressee_name)"
 
+#: Adressaat's own disclosure. Since docs/adr/0069 the field is folded away
+#: behind it — a sender answers it, so on the ordinary visit there is nothing
+#: left to spend a row of chips on — and a closed `<details>` gives its contents
+#: no box at all. Everything below that measures the *field* therefore opens it
+#: first; what the closed state has to satisfy is only that the pill is on the
+#: row and the row does not scroll sideways.
+ADDRESSEE_DISCLOSURE = "[data-addressee-disclosure]"
+
 #: The row element itself, whatever modifier it carries this month.
 PEOPLE_ROW = f".createform__row:has({OWNER})"
 ADDRESSEE_ROW = f".createform__row:has({ADDRESSEE})"
@@ -56,6 +64,13 @@ def _open(page, base_url, width: int) -> None:
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size({"width": width, "height": 900})
     create_form(page, base_url)
+
+
+def _open_addressee(page) -> None:
+    """Unfold Adressaat, so the field inside it has a box to measure."""
+    disclosure = page.locator(ADDRESSEE_DISCLOSURE)
+    if not disclosure.evaluate("node => node.open"):
+        disclosure.locator("> summary").click()
 
 
 # ---------------------------------------------------------------------------
@@ -170,16 +185,42 @@ def test_the_row_holds_exactly_two_fields(page, base_url):
 # ---------------------------------------------------------------------------
 
 
-def test_adressaat_begins_on_a_row_below_and_takes_all_of_it(page, base_url):
+def test_adressaat_begins_on_a_row_below_and_costs_it_a_pill(page, base_url):
+    """Closed, it is one chip-shaped summary and the row is nearly all air.
+
+    That is the point of folding it: the field is answered by the time somebody
+    reaches it, so the height it used to take for a chip row, a disclosure and a
+    text box is height spent on a question nobody has to answer (§3).
+    """
     _open(page, base_url, 1440)
+
+    people = _box(page, PEOPLE_ROW)
+    row = _box(page, ADDRESSEE_ROW)
+    pill = _box(page, f"{ADDRESSEE_DISCLOSURE} > summary")
+
+    assert row["y"] >= people["y"] + people["height"] - 2, (
+        "the Adressaat row does not begin below the Vastutaja/Saatja row"
+    )
+    assert pill["width"] < row["width"] / 2, (
+        f"the closed Adressaat summary is {pill['width']}px of a {row['width']}px row — "
+        "that is a control, not a folded one"
+    )
+
+
+def test_opening_adressaat_gives_it_the_whole_row(page, base_url):
+    """`chipdetails--field`: a door standing on its own row opens onto all of it.
+
+    `.chipdetails` is `inline-block`, which is right for a disclosure sitting in
+    a row of chips and wrong here — shrink-to-fit would measure the widest chip
+    inside and leave the open field an island in a row it owns.
+    """
+    _open(page, base_url, 1440)
+    _open_addressee(page)
 
     people = _box(page, PEOPLE_ROW)
     row = _box(page, ADDRESSEE_ROW)
     field = _box(page, ADDRESSEE)
 
-    assert row["y"] >= people["y"] + people["height"] - 2, (
-        "the Adressaat row does not begin below the Vastutaja/Saatja row"
-    )
     assert abs(field["width"] - row["width"]) <= 2, (
         f"Adressaat is {field['width']}px inside a {row['width']}px row"
     )
@@ -239,6 +280,7 @@ def test_the_sender_disclosure_is_not_a_narrow_island_when_stacked(page, base_ur
 @pytest.mark.parametrize("width", [1024, 768, 420])
 def test_adressaat_stays_full_width_when_stacked(page, base_url, width):
     _open(page, base_url, width)
+    _open_addressee(page)
 
     row = _box(page, ADDRESSEE_ROW)
     field = _box(page, ADDRESSEE)

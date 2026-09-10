@@ -1,50 +1,44 @@
 """Routes for the structured Matter facts.
 
-Estonian paths, like the rest of the product. The three generated views live at
-the top level because they are department destinations in their own right; the
-write surfaces sit under the Matter they belong to, so a bookmarked form always
-carries the Matter it is about.
+Estonian paths, like the rest of the product. The write surfaces sit under the
+Matter they belong to, so a bookmarked form always carries the Matter it is
+about.
+
+The three generated reading pages that used to live at the top level are gone.
+Their addresses are not: every one of them still resolves, and each lands on the
+destination that now answers the question it was opened for
+(:mod:`app.intelligence.redirects`, docs/adr/0071).
 """
 
-from collections.abc import Callable
-from typing import Any
-
 from django.urls import path
-from django.views.generic import RedirectView
 
-from app.intelligence import views
-
-
-def _moved(name: str) -> Callable[..., Any]:
-    """The address one of these pages had before the v2 rebuild grouped them.
-
-    Permanent, and carrying the query string, so a bookmarked filter still opens
-    the view it named. The route names did not change, so nothing in the
-    codebase had to be rewritten to keep pointing at these pages
-    (03-BACKEND §4).
-    """
-    return RedirectView.as_view(pattern_name=name, permanent=True, query_string=True)
-
+from app.intelligence import redirects, views
 
 urlpatterns = [
-    # -- generated department views ---------------------------------------
+    # -- the retired reading pages, and where each one goes ----------------
     #
-    # One prefix, because they are one destination with three tabs and the bar
-    # offers them as one item (02-EKRAANID §D).
-    path("jalgimine/tahtajad/", views.important_dates, name="important_dates"),
-    path("jalgimine/joustumised/", views.effective_dates, name="effective_dates"),
-    path("jalgimine/toovoidud/", views.work_victories, name="work_victories"),
+    # Kept as named routes so that nothing in the codebase, in a bookmark or in
+    # a pasted message resolves to a 404. The route names are the ones the
+    # three views had, which is why no caller had to be rewritten to keep
+    # pointing at "the deadlines page" — it simply resolves somewhere else now.
+    path("jalgimine/tahtajad/", redirects.important_dates, name="important_dates"),
+    path("jalgimine/joustumised/", redirects.effective_dates, name="effective_dates"),
+    path("jalgimine/toovoidud/", redirects.work_victories, name="work_victories"),
+    # The addresses these pages had before the v2 rebuild grouped them under
+    # `/jalgimine/`. Pointed at the new destination directly rather than at the
+    # `/jalgimine/` route, so an old bookmark costs one hop rather than two —
+    # and so that no chain of redirects exists to reason about.
     path(
         "olulised-tahtajad/",
-        _moved("intelligence:important_dates"),
+        redirects.important_dates,
         name="important_dates_legacy",
     ),
     path(
         "joustuvad-aktid/",
-        _moved("intelligence:effective_dates"),
+        redirects.effective_dates,
         name="effective_dates_legacy",
     ),
-    path("toovoidud/", _moved("intelligence:work_victories"), name="work_victories_legacy"),
+    path("toovoidud/", redirects.work_victories, name="work_victories_legacy"),
     # -- Olulised tähtajad, on one Matter ---------------------------------
     path(
         "teemad/<uuid:matter_id>/olulised-tahtajad/lisa/",

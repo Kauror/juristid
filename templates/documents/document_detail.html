@@ -55,7 +55,6 @@
         <summary>Tehnilised andmed</summary>
         <dl class="detailgrid">
           <div><dt>SHA-256</dt><dd class="mono">{{ version.sha256 }}</dd></div>
-          <div><dt>Pahavarakontroll</dt><dd>{{ version.get_malware_scan_state_display }}</dd></div>
           {% if document.provenance_note %}
             <div><dt>Päritolu</dt><dd>{{ document.provenance_note }}</dd></div>
           {% endif %}

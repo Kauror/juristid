@@ -13,7 +13,12 @@ import pytest
 
 from app.documents.derivatives import AttachmentDisposition, EmailAttachmentLink
 from app.documents.email_intake import attachments_of, parent_email_of
-from app.documents.enums import DerivativeKind, DerivativeStatus, DocumentRole, MalwareScanState
+from app.documents.enums import (
+    DerivativeKind,
+    DerivativeStatus,
+    DocumentRole,
+    ExtractionState,
+)
 from app.documents.models import DocumentDerivative, DocumentVersion
 from tests import synthetic_corpus as corpus
 
@@ -116,25 +121,27 @@ def test_an_attachment_is_never_assumed_to_be_an_official_document(
     assert roles == {DocumentRole.EMAIL_ATTACHMENT}
 
 
-def test_an_attachment_does_not_inherit_the_parent_scan_verdict(
+def test_an_attachment_is_its_own_version_and_inherits_nothing_derived(
     normal_matter, capture_evidence, extract
 ) -> None:
-    """The message having been scanned says nothing about what was inside it."""
-    version = capture_evidence(
-        normal_matter,
-        corpus.consultation_eml(),
-        "kiri.eml",
-        EML,
-        malware_scan_state=MalwareScanState.CLEAN,
-    )
+    """An attachment is new evidence, not a property of the message.
+
+    This asked whether a parent's `CLEAN` verdict leaked onto the files inside
+    it. There are no verdicts any more — the scanner and the gate went with
+    docs/adr/0072 and `malware_scan_state` is dead schema — so what is left of
+    the question is the part that was always the real one: an attachment gets
+    its own version row, its own checksum and its own unread extraction state,
+    and takes nothing from the message except what `email_intake` copies on
+    purpose.
+    """
+    version = capture_evidence(normal_matter, corpus.consultation_eml(), "kiri.eml", EML)
     extract(version)
 
-    states = set(
-        DocumentVersion.objects.filter(document__role=DocumentRole.EMAIL_ATTACHMENT).values_list(
-            "malware_scan_state", flat=True
-        )
-    )
-    assert states == {MalwareScanState.PENDING}
+    attachments = DocumentVersion.objects.filter(document__role=DocumentRole.EMAIL_ATTACHMENT)
+    assert attachments.exists(), "the message produced no attachments to check"
+    assert set(attachments.values_list("extraction_state", flat=True)) == {ExtractionState.PENDING}
+    assert version.sha256 not in set(attachments.values_list("sha256", flat=True))
+    assert set(attachments.values_list("version_number", flat=True)) == {1}
 
 
 def test_an_attachment_inherits_the_parent_restriction(

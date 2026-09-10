@@ -43,6 +43,21 @@ class RetentionClass(models.TextChoices):
 
 
 class MalwareScanState(models.TextChoices):
+    """Dead. Kept only because two tables still carry the column.
+
+    The malware subsystem was removed in docs/adr/0072: there is no scanner,
+    no scan gate in front of any parser, and nothing in this application reads
+    or writes this field. It survives as `choices` on two historical columns
+    — `documents.DocumentVersion.malware_scan_state` and
+    `matters.MatterIntakeFile.malware_scan_state` — which were left in place
+    deliberately rather than dropped, because dropping a column from a
+    19 000-row production table is a destructive migration performed for
+    neatness (docs/adr/0072 §What is left behind).
+
+    Do not read it, do not filter on it, and do not give it a new meaning. If
+    the columns are ever dropped, this goes with them.
+    """
+
     PENDING = "PENDING", "Ootel"
     CLEAN = "CLEAN", "Puhas"
     INFECTED = "INFECTED", "Nakatunud"
@@ -69,6 +84,20 @@ class ExtractionState(models.TextChoices):
     DONE = "DONE", "Tehtud"
     FAILED = "FAILED", "Ebaõnnestus"
     NOT_APPLICABLE = "NOT_APPLICABLE", "Ei kohaldu"
+    # Read once, while the Teema was being created, and finished.
+    #
+    # Terminal, and deliberately neither DONE nor NOT_APPLICABLE. DONE promises
+    # that every derivative the format requires was written and committed, and
+    # this file has none — the text was read into a staging row and thrown away
+    # with the session. NOT_APPLICABLE claims nothing will ever open the format,
+    # which is false: something did, and it worked.
+    #
+    # What it is *for* is `pending_versions`. A binary that has already been
+    # read while somebody was looking at it must not be handed back to a corpus
+    # run merely because a Matter now exists to hang it off — that re-read is
+    # exactly the write amplification docs/adr/0072 was written to end. This
+    # state is how the queue knows (app/matters/intake_staging.py).
+    INTAKE_READ = "INTAKE_READ", "Loetud teema loomisel"
 
 
 class DerivativeKind(models.TextChoices):

@@ -105,7 +105,7 @@ implied by a deployment.
 | 3.4 | Opinion archive catalogue | `opinion_archive plan --opinions … --expect-archive-sha256 …` | `opinion_archive catalogue` | Archive digest |
 | 3.5 | Opinion archive bytes | `opinion_archive materialize-plan` | `opinion_archive materialize` | Holding bytes is not filing them |
 | 3.6 | Opinion canonical records | `opinion_archive plan` (same plan) | `opinion_archive apply` | Only automatic classes file themselves |
-| 3.7 | Archive text and search | `opinion_archive_search status` | `extract-text`, then `rebuild` | No longer blocked by a missing scanner (ADR 0066). Real-data extraction requires the file to be `CLEAN`, and the scanner that writes it now exists; a backlog stamped `PENDING` before the scanner was deployed is scanned by the ordinary worker with no operator action. Running the rebuild itself remains a deliberate, owner-decided operation |
+| 3.7 | Archive text and search | `opinion_archive_search status` | `extract-text`, then `rebuild` | Not blocked by any gate, and no longer performed by anything running on its own (ADR 0072). There is no scan state in front of a parser, and corpus-wide extraction is not a deployed service: draining this backlog is what took production's checkpoint `fsync` from 2.5 s to 155 s on 2026-09-10. Run `run_extraction_worker --once --limit N` deliberately, outside working hours, and watch the array; the rebuild after it remains a separate owner-decided operation |
 | 3.8 | Second-pass proposals | `opinion_archive content-plan` | `content-apply` | Proposals only; nothing files (ADR 0023) |
 | 3.10 | Counterparty coverage — diagnostic only | `reference_data coverage --expect-register-snapshot-sha256 <sha>` | *(none — it never writes)* | Whether the reviewed institutions resolve enough of the register to be worth a backfill decision |
 
@@ -148,7 +148,7 @@ derived column:
 | 3.9.3 | Apply the migration with the target image |
 | 3.9.4 | **Rebuild the derived state before the new web container serves traffic** — `final_register_cutover --snapshot <approved> --apply`, which is idempotent and, on an already-reconciled portfolio, performs ACTIVATE 0 / RETIRE 0 and only rewrites derived rows |
 | 3.9.5 | Verify the derived table before exposing it: row count, CURRENT count, drafting count |
-| 3.9.6 | Replace web and extractor |
+| 3.9.6 | Replace web and the intake reader |
 | 3.9.7 | Verify the dashboard reads what the cutover reads |
 
 Doing 3.9.6 before 3.9.4 shows every reader a wrong number for as long as it

@@ -154,10 +154,11 @@ ITEMS: tuple[StatusItem, ...] = (
             "teema lehelt. Nupp, mis peaks teema ise välja mõtlema, oleks "
             "leiutatud funktsionaalsus."
         ),
-        state=DEVIATION,
+        state=DECIDED,
         next_step=(
-            "Nuppu ei lisatud. Kui globaalne lisamine on soovitud, vajab see "
-            "teema valikut ja eraldi disaini."
+            "Küsimus on ära langenud: osakonnaülest jälgimisvaadet ei ole. "
+            "Oluline tähtaeg on teema omaniku enda eesolev töö ja seda "
+            "lisatakse teema lehelt (docs/adr/0071)."
         ),
         sources=("prototüüp raam 19", "app/intelligence/urls.py"),
     ),
@@ -326,10 +327,12 @@ ITEMS: tuple[StatusItem, ...] = (
             "arvu ei kuvata. Uue filtri leiutamine ainult ühe numbri jaoks oleks "
             "uus otsingupind."
         ),
-        state=DEVIATION,
+        state=DECIDED,
         next_step=(
-            "Ribad kuvavad neid figuure, millel on oma nimekiri. Kui puuduvad "
-            "arvud on vajalikud, tuleb otsustada, millise filtri nad avavad."
+            "Jälgimise SEIS-riba ei ole enam olemas. Reegel ise kehtib edasi ja "
+            "on nüüd tugevam: Statistika kaks figuuri loevad teemasid registri "
+            "enda päringuga, sest ainus nimekiri, mida nad avada saavad, on "
+            "teemade nimekiri (docs/adr/0071)."
         ),
         sources=("01-EHITUSJUHIS §3.3", "prototüüp raamid 19–21"),
     ),
@@ -341,10 +344,10 @@ ITEMS: tuple[StatusItem, ...] = (
             "on jõustuva akti kirjeldus, mitte tähtaeg."
         ),
         why="Tõenäoliselt kopeerimisviga tähtaegade tabelist.",
-        state=OPEN,
+        state=DECIDED,
         next_step=(
-            "Kasutusel on prototüübi sõnastus, sest §4 keelab oma sõnade "
-            "leiutamise. Vajab ühte sõna tellijalt."
+            "Tabelit ei ole enam olemas: jõustumine on teemade registri filter "
+            "ja veerupäist ei ole kellelegi vaja valida (docs/adr/0071)."
         ),
         sources=("02-EKRAANID §D", "prototüüp raam 20"),
     ),
@@ -359,9 +362,11 @@ ITEMS: tuple[StatusItem, ...] = (
             "Need on ainus tee möödunud ja aastapõhiste kirjeteni. Ainsa tee "
             "eemaldamine populatsioonini ei ole visuaalne muudatus."
         ),
-        state=DEVIATION,
+        state=DECIDED,
         next_step=(
-            "Filtrid on säilitatud sakiriba all. Sektsioonid asendavad ajalise suuna vaikevaates."
+            "Lehti ei ole enam olemas. Ajaline suund ja allikas kadusid koos "
+            "nendega; aasta ja jõustumise vahemik on nüüd registri filtrid, mis "
+            "käivad kokku kõigi teiste filtritega (docs/adr/0071)."
         ),
         sources=("02-EKRAANID §D", "app/intelligence/selectors.py"),
     ),

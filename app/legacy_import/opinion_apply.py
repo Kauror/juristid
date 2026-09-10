@@ -20,8 +20,8 @@ copy of a 400 KB PDF is not extra safety, it is a second thing that can drift
 (brief 30).
 
 **Evidence enters through the front door.** ``create_document`` and
-``add_evidence_version``, with the malware state left PENDING for the normal
-scanner. No parallel store, no hand-set CLEAN (brief 32).
+``add_evidence_version``. No parallel store, no hand-written state: the
+version is written exactly as an upload writes one (brief 32).
 
 **Cataloguing and applying are two authority levels, not two halves of one.**
 `catalogue_plan` records what the archive contains and what the reconciliation

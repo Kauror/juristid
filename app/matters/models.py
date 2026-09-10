@@ -223,6 +223,43 @@ class Matter(BaseModel):
         related_name="matters",
         verbose_name="valdkonnad",
     )
+    #: `Õigusakt` — what kind of legal or source instrument this Matter concerns.
+    #:
+    #: **Not `track`.** `Menetlusliik` says what kind of *procedure* a file
+    #: belongs to; this says what kind of *instrument* it is about, and the two
+    #: are answered independently: `ELi õiguse ülevõtmine` about a `Seadus` and
+    #: `ELi algatus` about an `EL määrus` are both ordinary combinations. Neither
+    #: value can be derived from the other, which is why one is not a filter over
+    #: the other (docs/adr/0070).
+    #:
+    #: **Many, because the register really says several.** `S, M`,
+    #: `direktiiv ja määrus` and `direktiiv/määrus` are all in the historical
+    #: column, and a single-valued field would have to either concatenate them
+    #: into a pseudo-value or throw one away. Blank stays valid: only the title
+    #: is ever required.
+    legal_instruments = models.ManyToManyField(
+        "taxonomy.LegalInstrumentType",
+        blank=True,
+        related_name="matters",
+        verbose_name="õigusakt",
+    )
+    #: The free text `Muu` reveals. One Matter's own words, never taxonomy:
+    #: nothing here creates a `LegalInstrumentType`, and no statistic counts it
+    #: as one — exactly the rule `policy_area_other` follows above.
+    #:
+    #: Distinct from `legal_instrument_raw` on `CurrentRegisterState`, which is
+    #: what the *spreadsheet* said and is never written from the application.
+    #: This is what a person typed. Both can exist for one record and neither
+    #: replaces the other (task §21).
+    legal_instrument_other = models.CharField(
+        max_length=400,
+        blank=True,
+        verbose_name="õigusakti liik",
+        help_text=(
+            "Vabatekst, kui ükski loetletud õigusakt ei sobi. Ei ole taksonoomia: "
+            "siit ei teki uut õigusakti liiki."
+        ),
+    )
     tags = models.ManyToManyField(
         "taxonomy.Tag",
         through="matters.TagAssignment",

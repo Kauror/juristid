@@ -2,6 +2,9 @@
 
 **Status:** accepted
 **Date:** 2026-09-08
+**Extended by** ADR 0069 — the two relations stay distinct exactly as decided
+here, and on `Uus teema` the answer to one now fills in the answer to the other
+by default. Nothing in this record is withdrawn.
 **Amends** ADR 0025 (multiple Matter senders), §"The control matches the model".
 **Builds on** ADR 0029 (reference data foundation), ADR 0032 (Uus teema redesign).
 

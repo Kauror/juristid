@@ -1,10 +1,22 @@
-"""Two separate classification dimensions.
+"""Three separate classification dimensions.
 
 ``PolicyArea`` is the small, stable reporting classification that replaced the
 exclusive OneNote folders. ``Tag`` is a governed thematic concept used for
 search and reuse. Neither may encode owner, stage, institution, date,
 confidentiality, legal instrument or workflow, and sector is deliberately not
 squeezed into ``Tag`` (master specification 3.13, 14.7).
+
+``LegalInstrumentType`` is the third, and it is the one the sentence above was
+holding a place for: *legal instrument* was named as something the other two may
+not encode, because it is a real dimension of its own and nobody had yet said
+where it lived. It does now — ``Õigusakt``, a governed reference vocabulary read
+from the historical register and reviewed once (docs/adr/0070).
+
+The three answer different questions and none is derivable from another:
+Valdkond is *which area of law*, Silt is *what specifically about it*, and
+Õigusakt is *what kind of instrument*. Menetlusliik — *what kind of procedure* —
+is a fourth, and it is a ``Matter`` column rather than a vocabulary because its
+seven values are the product's own and never grew from a source.
 """
 
 from __future__ import annotations
@@ -32,6 +44,36 @@ class PolicyArea(BaseModel):
 
     def __str__(self) -> str:
         return self.name_et
+
+
+class LegalInstrumentType(BaseModel):
+    """One kind of legal or source instrument a Matter can concern — ``Õigusakt``.
+
+    Reference data with a reviewed vocabulary behind it
+    (``app/taxonomy/legal_instruments.py``), not a taxonomy people add to. A
+    spelling nobody has reviewed does not become a row: ``Muu`` plus
+    ``Matter.legal_instrument_other`` is where an unlisted instrument goes, and
+    that text is one Matter's own and creates nothing here.
+
+    Deliberately *not* ``Tag``: a tag is free subject vocabulary with aliases
+    and merging, this is a closed reviewed list. Deliberately not
+    ``Matter.track``: that is the procedure, this is the instrument, and the
+    same file answers both (docs/adr/0070).
+    """
+
+    key = models.SlugField(max_length=64, unique=True, verbose_name="võti")
+    label_et = models.CharField(max_length=200, verbose_name="nimi")
+    description = models.TextField(blank=True, verbose_name="kirjeldus")
+    is_active = models.BooleanField(default=True, verbose_name="aktiivne")
+    sort_order = models.PositiveSmallIntegerField(default=100, verbose_name="järjekord")
+
+    class Meta:
+        verbose_name = "õigusakti liik"
+        verbose_name_plural = "õigusakti liigid"
+        ordering = ["sort_order", "label_et"]
+
+    def __str__(self) -> str:
+        return self.label_et
 
 
 class Tag(BaseModel):

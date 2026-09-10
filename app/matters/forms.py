@@ -32,8 +32,12 @@ from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, MatterDataClass
 from app.matters.models import Matter
 from app.organisations.models import Organisation
-from app.taxonomy.models import PolicyArea, Tag
-from app.taxonomy.vocabulary import selectable_policy_areas
+from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEY
+from app.taxonomy.models import LegalInstrumentType, PolicyArea, Tag
+from app.taxonomy.vocabulary import (
+    selectable_legal_instrument_types,
+    selectable_policy_areas,
+)
 from app.workflow.dates import MAX_YEAR, MIN_YEAR, InvalidPeriod, bounds_for
 from app.workflow.enums import (
     ESTONIAN_MONTHS,
@@ -184,6 +188,137 @@ def offered_policy_areas() -> list[PolicyArea]:
     return list(selectable_policy_areas())
 
 
+def legal_instruments_field() -> forms.ModelMultipleChoiceField:
+    """The `Õigusakt` control, defined once for the two forms that carry it.
+
+    Checkboxes, because `Matter.legal_instruments` holds several — the control
+    shape is a promise about the data, and shipping a single-value control over
+    a many-valued field is the one thing the approved design forbids outright
+    (OIGUSAKT_UUS_TEEMA_DESIGN §4, ADR 0025).
+
+    The queryset is empty here and filled per form: `Uus teema` offers the
+    active vocabulary, `Muuda teemat` validates against all of it so a Matter
+    carrying a since-retired type does not lose it to an unrelated correction.
+    """
+    return forms.ModelMultipleChoiceField(
+        label="Õigusakt",
+        queryset=LegalInstrumentType.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={"class": "chip__input"}),
+    )
+
+
+def legal_instrument_other_field() -> forms.CharField:
+    """The box `Muu` reveals. Label exactly «Õigusakti liik» (design §16).
+
+    `required=False` at the field level and required by `clean` when `Muu` is
+    among the chosen instruments — the same shape `policy_area_other` has,
+    because "required, but only in one state" is a fact about the form and not
+    about the field.
+    """
+    return forms.CharField(
+        label="Õigusakti liik",
+        max_length=400,
+        required=False,
+        widget=forms.TextInput(attrs={"class": "field__input field__input--compact"}),
+    )
+
+
+def clean_legal_instrument_answer(form: forms.Form, cleaned: dict[str, Any]) -> None:
+    """Settle `Õigusakt` and the text beside it, for whichever form asks.
+
+    One implementation, because `Uus teema` and `Muuda teemat` must agree about
+    what `Muu` means: a rule that is true on the page somebody files from and
+    false on the page they correct from is a rule people learn twice.
+
+    Two things happen here and both are decisions rather than tidying:
+
+    * **Free text belongs to the chip that reveals it.** Unticking `Muu` and
+      leaving the box full must not quietly save the text — the same rule
+      `policy_area_other` follows. Nothing "hidden" survives a save.
+    * **`Muu` without the text is refused**, on the box that is empty. `Muu`
+      alone records that the instrument was none of sixteen listed kinds and
+      says nothing about which, which is less than the blank field it replaced.
+    """
+    chosen = list(cleaned.get("legal_instruments") or [])
+    other_selected = any(item.key == OTHER_LEGAL_INSTRUMENT_KEY for item in chosen)
+    cleaned["legal_instrument_other"] = (cleaned.get("legal_instrument_other") or "").strip()
+    if not other_selected:
+        cleaned["legal_instrument_other"] = ""
+    elif not cleaned["legal_instrument_other"]:
+        form.add_error("legal_instrument_other", "Kirjuta, millise õigusaktiga on tegemist.")
+
+
+class LegalInstrumentChoicesMixin:
+    """What the template needs to draw the row, on both forms that draw it.
+
+    `Muu` is a real vocabulary row here rather than a checkbox beside one, so
+    the template cannot tell it apart by field name the way the Valdkonnad block
+    does. It compares against these instead — one property saying which rendered
+    value is `Muu`, one saying whether its box renders open.
+    """
+
+    fields: dict[str, forms.Field]
+    errors: Any
+
+    #: Set by `offer_legal_instruments`. Declared here so a form that somehow
+    #: never called it renders a plain chip row instead of raising.
+    _other_instrument_value: str = ""
+
+    def offer_legal_instruments(self, offered: Sequence[Any]) -> None:
+        """Render these types, in this order, and remember which one is `Muu`.
+
+        Both forms narrow the *rendered* list without narrowing the validating
+        queryset — the edit form so a Matter carrying a since-retired type keeps
+        it — so the choices are assigned rather than left to Django's iterator,
+        and the `Muu` row's rendered value has to be captured while the objects
+        are still in hand. Reading it back off `choices` afterwards would mean
+        either a query per render or a dependence on Django keeping the
+        model instance attached to the value it yields.
+        """
+        cast(Any, self.fields["legal_instruments"]).choices = [
+            (item.pk, item.label_et) for item in offered
+        ]
+        other = next((item for item in offered if item.key == OTHER_LEGAL_INSTRUMENT_KEY), None)
+        self._other_instrument_value = "" if other is None else str(other.pk)
+
+    @property
+    def other_instrument_value(self) -> str:
+        """The rendered value of the `Muu` chip, as the template sees it.
+
+        `Muu` is a real vocabulary row here rather than a checkbox beside one —
+        see docs/adr/0070 §8 for why — so the template cannot tell it apart by
+        field name the way the Valdkonnad block does, and compares against this.
+
+        Empty when the offered vocabulary carries no `Muu` row. That is a real
+        state, not an error: a database seeded before this vocabulary existed
+        renders a plain chip row and no reveal.
+        """
+        return self._other_instrument_value
+
+    @property
+    def other_instrument_open(self) -> bool:
+        """Whether the free-text box renders visible without any scripting.
+
+        True when `Muu` is ticked in whatever this form is about to render —
+        the POST on a refused save, the Matter's own values on an unbound edit.
+        `BoundField.value()` is what answers both without the caller having to
+        know which it is looking at.
+
+        This is what makes the refusal in design §9 legible: the box comes back
+        open, holding what was typed, with the error inside it. A reveal only
+        JavaScript can open would hide a refusal behind a click (§16, §10).
+        """
+        other = self.other_instrument_value
+        if not other:
+            return False
+        raw = cast(Any, self)["legal_instruments"].value()
+        if raw is None:
+            return False
+        values = raw if isinstance(raw, (list, tuple)) else [raw]
+        return any(str(item) == other for item in values)
+
+
 def _typed_organisation_field(label: str, *, hook: str = "") -> forms.CharField:
     """A box for naming an institution the catalogue may not hold yet.
 
@@ -194,12 +329,13 @@ def _typed_organisation_field(label: str, *, hook: str = "") -> forms.CharField:
     it. The two remain *different questions* about the same catalogue, so they
     are two fields with two labels and one implementation.
 
-    ``hook`` names the control for the browser. `Uus teema` offers a sender
-    somebody is typing as an addressee candidate before either exists, and the
-    script needs to find the two boxes without depending on the auto-generated
-    `id_` that a renamed field would change under it. It is an attribute and
-    nothing more: no behaviour here reads it, and with scripting off it does
-    nothing at all (static/js/app.js `bindCounterpartyPromotion`).
+    ``hook`` names the control for the browser. `Uus teema` answers Adressaat
+    with a sender somebody is typing before either exists, and the script needs
+    to find the two boxes without depending on the auto-generated `id_` that a
+    renamed field would change under it. It is an attribute and nothing more: no
+    behaviour here reads it, and with scripting off the same default is reached
+    on the server instead (`_default_addressee`, static/js/app.js
+    `bindAddresseeDefault`).
     """
     attrs = {
         "class": "field__input field__input--compact",
@@ -406,43 +542,50 @@ def addressees_by_usage(viewer: Any, *, limit: int = 10) -> list[Organisation]:
     return sorted(found, key=lambda organisation: ranking[organisation.pk])
 
 
-def _promote_selected_senders(form: Any, shortlist: list[Organisation]) -> list[Organisation]:
-    """The addressee shortlist, with this form's chosen senders moved to the front.
+def _raw_value(form: Any, name: str) -> Any:
+    """What the request said about one field, before any validation ran.
 
-    Ranking only. It reads what the form was *given* and returns a different
-    order of the same catalogue; it selects nothing, writes nothing and creates
-    nothing.
+    The widget's own reader rather than `form.data.get`, for the reason
+    `_named_senders` gives below: a bound form's data is a `QueryDict` from a
+    real POST and an ordinary dict from a caller constructing one, and only the
+    widget knows how to read both — and how to honour a form prefix.
+    """
+    field = form.fields[name]
+    return field.widget.value_from_datadict(form.data, form.files, form.add_prefix(name))
+
+
+def _named_senders(form: Any) -> list[Organisation]:
+    """The organisations this bound form's two sender controls name, as rows.
 
     Read from `form.data` rather than from `cleaned_data`, because this runs in
-    `__init__` — before validation, and on forms that will never be validated
-    at all. Two consequences worth stating:
+    `__init__` — before validation, and on forms that will never be validated at
+    all. Two consequences worth stating:
 
     * an identifier that is not a real Organisation matches nothing, and one
-      that is not even a UUID is discarded before it reaches the queryset —
-      so a malformed or hostile POST reorders nothing rather than raising,
-      and the page answers with the ordinary refusal instead of a 500;
-    * the promotion survives a *refused* save, which is the case it exists for.
-      A form that comes back with errors comes back with its senders ticked, and
-      the addressee they most likely want must still be at the front.
+      that is not even a UUID is discarded before it reaches the queryset — so a
+      malformed or hostile POST answers with the ordinary refusal rather than a
+      500;
+    * this survives a *refused* save, which is the case both of its callers
+      exist for. A form that comes back with errors comes back with its senders
+      ticked, and everything the page derives from them has to come back too.
 
     Authorization needs no separate thought here: every Organisation is a valid
-    counterparty for every reader, and the ones being promoted are the ones this
-    reader just chose. Nothing about a restricted Matter can reach this — the
-    input is the request, not the register (task §10, §12).
+    counterparty for every reader, and these are the ones this reader just
+    chose. Nothing about a restricted Matter can reach this — the input is the
+    request, not the register (task §10, §18).
     """
     if not form.is_bound:
-        return list(shortlist)
+        return []
 
     chosen: list[Any] = []
     for name in ("source_organisations", "source_organisations_other"):
-        field = form.fields[name]
         # The widget's own reader, not `form.data.getlist`. A bound form's data
         # is a QueryDict from a real POST and an ordinary dict from a caller
         # constructing one, and only the first has `getlist` — so reaching for
-        # it directly is a promotion that works in production and silently does
+        # it directly is a read that works in production and silently does
         # nothing anywhere else. This is the accessor Django's own field
         # validation uses, and it honours the form prefix too.
-        raw = field.widget.value_from_datadict(form.data, form.files, form.add_prefix(name))
+        raw = _raw_value(form, name)
         if raw is None:
             continue
         chosen.extend(raw if isinstance(raw, (list, tuple)) else [raw])
@@ -451,8 +594,8 @@ def _promote_selected_senders(form: Any, shortlist: list[Organisation]) -> list[
     # UUID column, and a value that is not one makes `pk__in` *raise* — which in
     # `__init__` is a 500 on a page whose whole job is to answer a bad POST with
     # a form and an error message. A caller probing this endpoint learns nothing
-    # and gets the ordinary refusal; the field's own validation still rejects the
-    # value a moment later.
+    # and gets the ordinary refusal; the field's own validation still rejects
+    # the value a moment later.
     identifiers: list[uuid.UUID] = []
     for value in chosen:
         try:
@@ -461,17 +604,87 @@ def _promote_selected_senders(form: Any, shortlist: list[Organisation]) -> list[
             continue
 
     if not identifiers:
-        return list(shortlist)
+        return []
 
     # One query for however many were named. Ordered by name so that several
-    # senders promote deterministically rather than in whatever order the
+    # senders are read deterministically rather than in whatever order the
     # browser happened to serialise the checkboxes.
-    promoted = list(Organisation.objects.filter(pk__in=identifiers).order_by("name"))
-    seen = {organisation.pk for organisation in promoted}
-    return [*promoted, *(item for item in shortlist if item.pk not in seen)]
+    return list(Organisation.objects.filter(pk__in=identifiers).order_by("name"))
 
 
-class MatterCreateForm(forms.Form):
+def _promote_named_senders(
+    senders: list[Organisation], shortlist: list[Organisation]
+) -> list[Organisation]:
+    """The addressee shortlist, with this form's chosen senders moved to the front.
+
+    Ranking only. It returns a different order of the same catalogue; it selects
+    nothing, writes nothing and creates nothing.
+
+    **What this is for changed, and it is no longer decoration.** It used to be
+    the whole of the sender→addressee relationship: the sender was offered first
+    and deliberately never chosen. Since `Uus teema` began *answering* Adressaat
+    with the sender (docs/adr/0069) the ordering carries a different weight — the
+    body that has just become the default addressee has to be one of the chips,
+    because the chips are what the collapsed disclosure shows on the ordinary
+    visit. A default sitting in the long tail would be an answer the person
+    could only see by opening two disclosures to look for it.
+    """
+    seen = {organisation.pk for organisation in senders}
+    return [*senders, *(item for item in shortlist if item.pk not in seen)]
+
+
+def _default_addressee(form: Any, senders: list[Organisation]) -> tuple[str, str] | None:
+    """Who this form answers, when nobody has said — as a field name and a value.
+
+    The ordinary case is that a file arrived from X and is answered to X, so
+    `Uus teema` fills Adressaat from Saatja rather than asking the same question
+    twice. This is the server's statement of that rule, and it is the
+    authoritative one: the browser mirrors it live so the page reads correctly
+    while somebody is still filling it in, but with scripting off a POST naming
+    one sender and no addressee still saves a Matter answered to that sender
+    (docs/adr/0069, task §10).
+
+    Three conditions, and each is a refusal to guess:
+
+    1. **Nothing may already answer Adressaat.** A chosen chip or a typed name
+       is the person's own answer and outranks anything derived here.
+    2. **`addressee_is_manual` must not be set.** That hidden field is how the
+       browser says «this person answered Adressaat themselves», and it is what
+       makes deliberately choosing «Määramata» beside a sender possible. With no
+       scripting it is simply absent, which is why the rule above still holds
+       for the case it exists for.
+    3. **Exactly one sender must be named.** Two ticked bodies, or one ticked
+       and one typed, is a Matter that arrived from two places and no
+       unambiguous body to answer — so Adressaat is left unanswered rather than
+       guessed. The browser has more to go on than a POST does (it watched which
+       sender was chosen first) and keeps that seed; the server has only a set,
+       so the deterministic reading of a set of two is "no default" (§9).
+
+    A typed sender defaults the *typed* addressee, because a body being named
+    for the first time has no primary key until `Loo teema` runs. Both then
+    resolve through `resolve_organisation_name` inside one transaction, so the
+    same spelling becomes one `Organisation` row used on both relations rather
+    than two rows (`app.matters.services.resolve_addressee`, §5).
+    """
+    if not form.is_bound:
+        return None
+    if (
+        _raw_value(form, "addressee_organisation")
+        or (_raw_value(form, "addressee_name") or "").strip()
+    ):
+        return None
+    if _raw_value(form, "addressee_is_manual"):
+        return None
+
+    typed = clean_typed_organisation_name(_raw_value(form, "sender_name"))
+    if len(senders) + (1 if typed else 0) != 1:
+        return None
+    if senders:
+        return ("addressee_organisation", str(senders[0].pk))
+    return ("addressee_name", typed)
+
+
+class MatterCreateForm(LegalInstrumentChoicesMixin, forms.Form):
     """Creating a Teema requires a title and nothing else.
 
     Everything else is optional and disclosed under a details panel. Demanding
@@ -589,6 +802,14 @@ class MatterCreateForm(forms.Form):
         required=False,
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
+    #: `Õigusakt`, directly after `Menetlusliik` and answered independently of
+    #: it. Checkboxes rather than the radios above, and the asymmetry is the
+    #: whole answer to "do not let these two read as one question split in two":
+    #: the count beside the legend and the `×` on each chosen chip appear here
+    #: and nowhere on Menetlusliik, so the two rows are visibly different kinds
+    #: of control (OIGUSAKT_UUS_TEEMA_DESIGN §4, docs/adr/0070).
+    legal_instruments = legal_instruments_field()
+    legal_instrument_other = legal_instrument_other_field()
     source_organisations = forms.ModelMultipleChoiceField(
         label="Saatja",
         queryset=Organisation.objects.none(),
@@ -631,6 +852,11 @@ class MatterCreateForm(forms.Form):
     #: layout is the design's, the cardinality is the model's, and the schema
     #: change is left as a decision rather than made as a side effect of a form
     #: redesign (Uus teema redesign §5, ADR 0032).
+    #:
+    #: What is new is that it arrives *answered* on the ordinary journey. A file
+    #: that came from X is normally answered to X, so a single named sender
+    #: fills this field and the person overrides it only when the ordinary case
+    #: does not hold (`_default_addressee`, docs/adr/0069).
     addressee_organisation = forms.ModelChoiceField(
         label="Adressaat",
         queryset=Organisation.objects.none(),
@@ -644,6 +870,26 @@ class MatterCreateForm(forms.Form):
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
     addressee_name = addressee_name_field()
+    #: «This person answered Adressaat themselves», said by the browser.
+    #:
+    #: Since a named sender fills Adressaat by default, the two states the form
+    #: has to tell apart are *nobody has answered yet* and *somebody answered
+    #: «Määramata»* — and both post an empty `addressee_organisation`. Without
+    #: this the second is unreachable: the server would re-derive the sender and
+    #: silently overwrite a deliberate answer, which is the one thing the
+    #: default is not allowed to do (task §6).
+    #:
+    #: Deliberately a hidden field rather than an inference. Display order,
+    #: chip position and «which value is currently checked» are all things the
+    #: promotion legitimately changes, so none of them can carry this fact.
+    #:
+    #: Absent with scripting off, which is correct rather than a gap: a browser
+    #: that cannot set it also cannot have offered the person the default to
+    #: reject, so the server's own rule is the whole behaviour there (§10).
+    addressee_is_manual = forms.BooleanField(
+        required=False,
+        widget=forms.HiddenInput(attrs={"data-addressee-manual": ""}),
+    )
     received_date = EstonianDateField(
         label="Saabus",
         required=False,
@@ -724,6 +970,8 @@ class MatterCreateForm(forms.Form):
         if cleaned.get("policy_area_other_selected") and not cleaned["policy_area_other"]:
             self.add_error("policy_area_other", "Kirjuta, millise valdkonnaga on tegemist.")
 
+        clean_legal_instrument_answer(self, cleaned)
+
         return cleaned
 
     def clean_addressee_name(self) -> str:
@@ -731,6 +979,53 @@ class MatterCreateForm(forms.Form):
 
     def clean_sender_name(self) -> str:
         return clean_typed_organisation_name(self.cleaned_data.get("sender_name"))
+
+    @property
+    def addressee_summary(self) -> str:
+        """The addressee this form currently holds, as a name to read.
+
+        What the collapsed Adressaat disclosure says after the word itself:
+        «Adressaat · Kliimaministeerium», or «Adressaat» when nothing is
+        answered. A disclosure that hid whether a question had been answered
+        would make the person open it every time to find out (task §12).
+
+        Read off the *rendered choices* rather than by fetching the row. The
+        catalogue is already on the page as `(pk, name)` pairs, so the label is
+        there to be found and asking the database for a name the template is
+        about to print anyway would be a query per render.
+
+        `Määramata` is deliberately not a summary. It is the same state as an
+        unanswered field — that is what `blank=True` makes it — and printing it
+        would dress "no answer" up as one.
+        """
+        typed = (_raw_value(self, "addressee_name") or "").strip() if self.is_bound else ""
+        if typed:
+            return typed
+        chosen = str(_raw_value(self, "addressee_organisation") or "") if self.is_bound else ""
+        if not chosen:
+            return ""
+        # `fields[...]` is typed as the base Field, which has no `choices`. This
+        # one is a ModelChoiceField by construction.
+        for value, label in cast(Any, self.fields["addressee_organisation"]).choices:
+            if str(value) == chosen:
+                return str(label)
+        return ""
+
+    @property
+    def addressee_disclosure_open(self) -> bool:
+        """Whether the Adressaat disclosure renders open.
+
+        Only for an error on Adressaat itself. A refusal whose message is inside
+        a closed accordion is a form that appears to have refused for no reason,
+        and «avage see, et näha miks» is not something a page may ask
+        (task §11 C).
+
+        Deliberately *not* opened by an answer being present — including the one
+        the sender just filled in. A default that made another section unfold
+        would be the page reacting to itself, and the summary already says what
+        the answer is (§4, §12).
+        """
+        return bool(self.errors.get("addressee_organisation") or self.errors.get("addressee_name"))
 
     @property
     def data_class(self) -> str:
@@ -762,6 +1057,39 @@ class MatterCreateForm(forms.Form):
         super().__init__(*args, **kwargs)
         self.viewer = viewer
 
+        # Read once, used twice: the default below decides from it, and the
+        # addressee shortlist is ordered by it. A second read would be a second
+        # query for an answer that cannot have changed inside `__init__`.
+        self.named_senders = _named_senders(self)
+
+        # Saatja answers Adressaat, and it does so *here* rather than in
+        # `clean()`.
+        #
+        # The value has two readers and they must agree. `clean()` would satisfy
+        # the save and leave the re-render of a refused form showing an
+        # unanswered Adressaat beside a sender — so a browser with scripting off
+        # would be told the field was empty and then find the Matter answered
+        # anyway. Writing the derived value into the bound data instead means
+        # the rendered radio, `cleaned_data` and the saved Matter are one fact
+        # with one origin, and the person can see the default and override it
+        # (docs/adr/0069, task §10, §11).
+        #
+        # `self.data` is a `QueryDict` from a real POST and an ordinary dict
+        # from a caller constructing one; `copy()` is the one call both answer
+        # with something mutable, and the copy is this form's alone.
+        self.addressee_default: tuple[str, str] | None = _default_addressee(
+            self, self.named_senders
+        )
+        if self.addressee_default is not None:
+            field, value = self.addressee_default
+            # `Form.data` is annotated as a read-only mapping because most forms
+            # only ever read it. A `QueryDict` copy is mutable and a plain dict's
+            # is a plain dict, so the write below is real on both; the cast says
+            # so rather than widening the annotation for every other form.
+            data = cast(Any, self.data).copy()
+            data[self.add_prefix(field)] = value
+            self.data = data
+
         # New work, and only new work: this form has no existing owner to
         # preserve, so the population is the current department workers with no
         # union (app/accounts/selectors.py).
@@ -786,6 +1114,11 @@ class MatterCreateForm(forms.Form):
         set_choices(self, "source_organisations_other", everything)
 
         set_choices(self, "policy_areas", selectable_policy_areas())
+        # The active vocabulary, in the department's reviewed order. New work is
+        # filed under what is offered today; the edit form is the one that also
+        # has to accept what a Matter already carries.
+        set_choices(self, "legal_instruments", selectable_legal_instrument_types())
+        self.offer_legal_instruments(list(selectable_legal_instrument_types()))
 
         # Ordering is a presentation concern, so it is applied to the rendered
         # choices rather than to the validating queryset.
@@ -846,16 +1179,21 @@ class MatterCreateForm(forms.Form):
             # addressee, ahead of any historical ranking (docs/adr/0063,
             # task §12).
             #
-            # Promoted, never selected. The order changes; the value does not.
-            # Nothing here writes into `addressee_organisation`, and a person
-            # who has already answered it keeps their answer.
+            # Ordering only — the *answer* is written above, once, and this
+            # cannot disagree with it because both read `self.named_senders`.
+            # What this guarantees is that the answer is reachable: the chips
+            # are what the collapsed Adressaat disclosure summarises and what
+            # opening it shows first, so a default left in the long tail would
+            # be an answer nobody could see.
             #
             # This is the *server's* half, and it is the half that works on a
             # bound form — a refused save re-renders with the senders that were
             # ticked, and they must not fall back down the page underneath the
             # historical shortlist. Ticking a chip with the form still open is
-            # the browser's half (static/js/app.js `bindCounterpartyPromotion`).
-            self.frequent_addressees = _promote_selected_senders(self, addressees_by_usage(viewer))
+            # the browser's half (static/js/app.js `bindAddresseeDefault`).
+            self.frequent_addressees = _promote_named_senders(
+                self.named_senders, addressees_by_usage(viewer)
+            )
             shortlist = {organisation.pk for organisation in self.frequent_addressees}
             tail = [
                 organisation
@@ -888,7 +1226,7 @@ class MatterCreateForm(forms.Form):
             self.addressee_tail_count = 0
 
 
-class MatterEditForm(forms.Form):
+class MatterEditForm(LegalInstrumentChoicesMixin, forms.Form):
     """`Muuda teemat` — the whole record on one page.
 
     The redesign replaced the edit page with inline controls in the header and
@@ -959,6 +1297,11 @@ class MatterEditForm(forms.Form):
         required=False,
         widget=forms.RadioSelect(attrs={"class": "chip__input"}),
     )
+    #: The same control `Uus teema` carries, because a canonical Matter fact
+    #: that could only be answered at creation time would be a fact nobody could
+    #: correct — and the two pages are one job seen twice (task §18).
+    legal_instruments = legal_instruments_field()
+    legal_instrument_other = legal_instrument_other_field()
     policy_areas = forms.ModelMultipleChoiceField(
         label="Valdkonnad",
         queryset=PolicyArea.objects.none(),
@@ -1128,6 +1471,17 @@ class MatterEditForm(forms.Form):
             offered += [area for area in matter.policy_areas.all() if area.pk not in known]
         areas = cast(Any, self.fields["policy_areas"])
         areas.choices = [(area.pk, area.name_et) for area in offered]
+
+        # Õigusakt, the same way and for the same reason: validation accepts the
+        # whole vocabulary so a Matter carrying a since-retired type does not
+        # lose it to an unrelated correction, and the *offered* list is the
+        # active one plus whatever this Matter already holds.
+        set_choices(self, "legal_instruments", LegalInstrumentType.objects.all())
+        instruments = list(selectable_legal_instrument_types())
+        if matter is not None:
+            seen = {item.pk for item in instruments}
+            instruments += [item for item in matter.legal_instruments.all() if item.pk not in seen]
+        self.offer_legal_instruments(instruments)
         #: The retired areas this Matter carries. The template says so rather
         #: than showing a ticked box that looks like every other one.
         self.retired_area_ids = {
@@ -1144,6 +1498,10 @@ class MatterEditForm(forms.Form):
             for organisation in cleaned.get(source) or []:
                 senders.setdefault(organisation.pk, organisation)
         cleaned["source_organisations"] = sorted(senders.values(), key=lambda o: o.name)
+        # One rule about what `Muu` means, shared with `Uus teema`. A rule that
+        # is true on the page somebody files from and false on the page they
+        # correct from is a rule people have to learn twice.
+        clean_legal_instrument_answer(self, cleaned)
         return cleaned
 
     def clean_addressee_name(self) -> str:
@@ -1177,6 +1535,8 @@ def edit_initial(matter: Matter) -> dict[str, Any]:
         "track": matter.track,
         "policy_areas": [area.pk for area in matter.policy_areas.all()],
         "policy_area_other": matter.policy_area_other,
+        "legal_instruments": [item.pk for item in matter.legal_instruments.all()],
+        "legal_instrument_other": matter.legal_instrument_other,
         "source_organisations": [
             organisation.pk for organisation in matter.source_organisations.all()
         ],

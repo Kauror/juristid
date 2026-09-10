@@ -67,6 +67,55 @@ def _compile(pattern: str) -> re.Pattern[str]:
 #: draft is one piece of evidence, not forty.
 SIGNAL_HIT_CAP = 3
 
+#: **An annex on its own may suggest, never fill.**
+#:
+#: A Menetlusliik or a Valdkond whose every piece of evidence came from an
+#: annex is held one point below its HIGH threshold, whatever it scored. That
+#: is a ceiling rather than a discount, and the difference is the whole point:
+#: the annex in the evaluation corpus scores 74 for «riigihanked» against 46
+#: for the covering letter's «keskkond», so halving it left 37 — still miles
+#: over the threshold of 8, still HIGH, still filling a control on an envelope
+#: no lawyer would file under procurement. A discount tuned to that document
+#: would be a number that survives until the next long annex.
+#:
+#: The reason the score is so high is not a defect in the score. A comparison
+#: table *is* mostly about procurement law: it names it in every row, because
+#: naming every act the draft touches is what a comparison table is for. The
+#: evidence is real and the conclusion is wrong, which is exactly the case a
+#: confidence ceiling exists for.
+#:
+#: Capped rather than discarded, because an annex is still the department's
+#: material: the area is still offered, with its evidence, as a MEDIUM
+#: suggestion somebody can accept in one click (assisted-intake brief §16).
+#:
+#: A signal that fires in an annex *and* anywhere else is untouched. What is
+#: capped is the annex being the only witness.
+#:
+#: One point below, rather than some fraction of the threshold, because the
+#: only thing this number decides is *which side of HIGH* the rule lands on.
+#: The score itself is left honest: the panel shows it, the ordering uses it,
+#: and «Kasuta» is one click away.
+ANNEX_ONLY_HIGH_MARGIN = 1
+
+#: What a ministry writes on the front of an annex.
+#:
+#: Matched against the *start* of a normalised filename and of the file's own
+#: first line, never against the body. Every pattern is anchored, and that is
+#: the whole precision argument: a covering letter that ends «Lisad: 1. eelnõu,
+#: 2. seletuskiri» names its annexes without being one, and an unanchored
+#: «lisa» would classify the letter as the thing it is listing.
+#:
+#: Deliberately short and literal. Anything not recognised here is *not* an
+#: annex and keeps its full weight, so the failure direction is "counted
+#: normally" rather than "quietly discounted".
+ANNEX_MARKERS = (
+    _compile(r"^lisa(?:\s+\d+)?\b"),
+    _compile(r"^(?:v[õo]rdlus)?tabel\b"),
+    _compile(r"^m[õo]jude?\s+(?:anal[üu][üu]s|hinnang)\b"),
+    _compile(r"^seletuskirja\s+lisa\b"),
+    _compile(r"^annex\b"),
+)
+
 
 # ---------------------------------------------------------------------------
 # Valdkonnad

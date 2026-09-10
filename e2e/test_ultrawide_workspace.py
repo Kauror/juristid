@@ -59,7 +59,6 @@ SURFACES: list[tuple[str, str | None, str, str | None]] = [
     ("Statistika", "/statistika/", ".page", None),
     ("Teema", None, ".teema", ".teema .rail"),
     ("Arvamused", "/arvamused/", ".page", None),
-    ("Jälgimine", "/jalgimine/tahtajad/", ".page", None),
 ]
 
 #: Named for the test id, so a failure says which page rather than which index.

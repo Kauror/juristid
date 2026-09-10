@@ -38,6 +38,20 @@ def env_int(name: str, default: int) -> int:
     return int(raw)
 
 
+def env_float(name: str, default: float) -> float:
+    """Like :func:`env_int`, for a setting whose useful range is under a second.
+
+    The intake reader's idle period is the only one so far: a whole second
+    between turns is a whole second of somebody watching «Loen faili…» for no
+    reason, and rounding that to an integer would be the setting deciding the
+    product's latency floor (docs/adr/0072).
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return float(raw)
+
+
 def env_list(name: str, default: str = "") -> list[str]:
     raw = os.environ.get(name, default)
     return [item.strip() for item in raw.split(",") if item.strip()]

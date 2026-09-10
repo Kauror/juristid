@@ -29,7 +29,13 @@ from django.conf import settings
 #: Bumped when the *meaning* of a contract file changes, not when a year is
 #: added. Recorded on every ImportBatch and MatterSourceReference so a row can
 #: always be traced back to the rules that produced it.
-CONTRACT_SCHEMA_VERSION = "1.0"
+#:
+#: 1.1 added the ``mapped`` authority level and moved every ``ÕIGUSAKT`` column
+#: on to it. What the importer *does* with that column did not change — the raw
+#: value is still all that is stored — but what the contract *claims* did, and a
+#: row imported under 1.0 was imported while the department had no canonical
+#: home for the column at all (docs/adr/0070).
+CONTRACT_SCHEMA_VERSION = "1.1"
 
 
 class ContractError(Exception):
@@ -79,6 +85,9 @@ PARSERS: frozenset[str] = frozenset(
 #: ``optional``      — written when present, absent is normal;
 #: ``derived``       — a real field whose home is the derived current-state
 #:                     table, rebuilt from source and never a Matter field;
+#: ``mapped``        — a real field with a reviewed canonical home *and* a
+#:                     reviewed reading of every historical spelling, which the
+#:                     importer still does not write; raw only;
 #: ``deferred``      — a real field with no home at all yet; raw only;
 #: ``unknown``       — semantics not established; raw only, and a review finding.
 #:
@@ -90,8 +99,25 @@ PARSERS: frozenset[str] = frozenset(
 #: than edited. Reading the two as one would let "we have not decided" and "we
 #: decided it is derived" look the same in a reviewed contract, which is exactly
 #: the distinction an era contract exists to keep.
+#:
+#: ``mapped`` is the third member of that family, and it exists because
+#: ``ÕIGUSAKT`` became something none of the other four could describe honestly.
+#: The column now has a canonical home — ``Matter.legal_instruments``, a
+#: reviewed vocabulary — and a reviewed reading of every historical spelling
+#: (``app.taxonomy.legal_instruments.canonical_legal_instrument_keys``). What it
+#: does *not* have is an importer that writes it: whether a spreadsheet cell may
+#: overwrite a classification a lawyer chose is a precedence question nobody has
+#: answered, and until somebody does, the import preserves the raw value and
+#: nothing else.
+#:
+#: So ``mapped`` is not ``authoritative`` (nothing is written), not ``derived``
+#: (the home is a Matter field a person edits, not a rebuilt projection), and no
+#: longer ``deferred`` (the decision has been made). It is deliberately absent
+#: from ``is_written_to_canonical_model`` below, which answers "does importing a
+#: row under this contract touch the canonical model" — and for this column the
+#: answer is still no (docs/adr/0070).
 AUTHORITY_LEVELS: frozenset[str] = frozenset(
-    {"authoritative", "optional", "derived", "deferred", "unknown"}
+    {"authoritative", "optional", "derived", "mapped", "deferred", "unknown"}
 )
 
 #: Which organisation column this is. Never inferred from the header text.
@@ -122,6 +148,12 @@ class ColumnContract:
 
     @property
     def is_written_to_canonical_model(self) -> bool:
+        """Whether importing a row under this contract writes a canonical field.
+
+        ``mapped`` is deliberately not here. A reviewed reading of a column is
+        not the same thing as an importer that applies it, and the gap between
+        the two is the whole of the decision recorded in docs/adr/0070.
+        """
         return self.authority in {"authoritative", "optional"}
 
 

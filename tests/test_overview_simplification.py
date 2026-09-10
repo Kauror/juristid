@@ -176,7 +176,10 @@ def test_the_aruandlus_block_holds_the_three_approved_year_rows(client, departme
     start = body.index('aria-label="Aruandlus"')
     block = body[start : body.index("</section>", start)]
 
-    for label in ("Saadetud arvamusi", "Töövõite kinnitatud", "Suletud teemasid"):
+    # «Teemasid töövõiduga», not «Töövõite kinnitatud»: the row counts Matters
+    # now, because the standalone Töövõidud page it used to open is retired and
+    # the only list a number here can open is a list of Matters (docs/adr/0071).
+    for label in ("Saadetud arvamusi", "Teemasid töövõiduga", "Suletud teemasid"):
         assert label in block, label
     for retired in RETAINED[:1] + RETAINED[2:]:
         assert retired not in block, retired

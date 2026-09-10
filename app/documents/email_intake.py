@@ -40,7 +40,7 @@ from typing import Any
 from django.conf import settings
 
 from app.documents.derivatives import AttachmentDisposition, EmailAttachmentLink
-from app.documents.enums import DocumentRole, MalwareScanState
+from app.documents.enums import DocumentRole
 from app.documents.extraction.base import ParsedAttachment
 from app.documents.models import DocumentVersion
 from app.documents.services import add_evidence_version, create_document
@@ -129,11 +129,6 @@ def register_email_attachments(
             uploaded_by=parent_version.uploaded_by,
             acquired_at=parent_version.acquired_at,
             source_identifier=str(parent_version.pk),
-            # Never inherited from the parent. The message having been scanned
-            # says nothing about a file that was inside it, and copying a CLEAN
-            # verdict onto unscanned bytes would be exactly the fake control
-            # this codebase refuses elsewhere (Stage-2B brief 32).
-            malware_scan_state=MalwareScanState.PENDING,
         )
         EmailAttachmentLink.objects.create(
             parent_version=parent_version,

@@ -215,13 +215,24 @@ class CurrentRegisterState(BaseModel):
         db_index=True,
         verbose_name="adressaatide arv",
     )
-    #: ``ÕIGUSAKT``, verbatim. Source metadata with no canonical home, and
-    #: deliberately still not mapped to ``Track``: the column names the kind of
-    #: *instrument* and ``Track`` names the kind of *proceeding*, its notation
-    #: changed from single letters to words across the years, and reconciling
-    #: the two is a lawyers' decision rather than an importer's (2026 era
-    #: contract, column C). Carried here so the Matter page can show what the
-    #: register said without a per-row read through the era contract.
+    #: ``ÕIGUSAKT``, verbatim. **Exactly what the spreadsheet said, and never
+    #: anything else.** Carried here so the Matter page can show it without a
+    #: per-row read through the era contract.
+    #:
+    #: Still never ``Track``: the column names the kind of *instrument* and
+    #: ``Track`` names the kind of *proceeding*, and reconciling the two was
+    #: always a lawyers' decision rather than an importer's (2026 era contract,
+    #: column C).
+    #:
+    #: What changed with docs/adr/0070 is that the column has a canonical home
+    #: now — ``Matter.legal_instruments``, a reviewed vocabulary, with
+    #: ``canonical_legal_instrument_keys`` reading every historical spelling.
+    #: **This field is not that field and is not replaced by it.** The two are
+    #: different concepts and both survive for one record: this is what the
+    #: source *said*, that is the reviewed interpretation somebody may correct.
+    #: Nothing normalises this column, no reading is written back into it, and
+    #: the reviewed reading is deliberately not applied by any importer — see
+    #: the era contracts' ``mapped`` authority for why.
     legal_instrument_raw = models.CharField(
         max_length=200, blank=True, verbose_name="ÕIGUSAKT allikas"
     )

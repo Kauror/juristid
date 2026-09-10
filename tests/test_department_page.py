@@ -620,11 +620,18 @@ def test_the_reporting_rail_counts_confirmed_work_victories(
     built = page_for(department_head, today=today)
     reporting = {row.label: row for row in built.reporting}
 
-    assert reporting["Töövõite kinnitatud"].count == 1
-    query = parse_qs(urlparse(reporting["Töövõite kinnitatud"].url).query)
-    assert query["aasta"] == [str(today.year)]
-    # And no `?staatus=`: the destination has no state filter, so a link still
-    # carrying one would name a parameter nothing reads.
+    # **Teemad, not victories.** The standalone Töövõidud page is retired, so
+    # the only list this row can open is a list of Matters — and a count of
+    # rows over a list of Matters is the count-disagrees-with-its-list failure
+    # this page exists to avoid, the first time one file wins twice. The row
+    # says what it counts (docs/adr/0071).
+    assert reporting["Teemasid töövõiduga"].count == 1
+    query = parse_qs(urlparse(reporting["Teemasid töövõiduga"].url).query)
+    # The year is still the business period, because `?toovoit=<aasta>` reads
+    # `period_date` — the same column the retired page's `?aasta=` read.
+    assert query["toovoit"] == [str(today.year)]
+    # And no `?staatus=`: which internal state is a reader-visible work victory
+    # is `VISIBLE_VICTORY_STATUS`'s decision, not a link's.
     assert "staatus" not in query
 
 

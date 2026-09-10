@@ -52,7 +52,6 @@ from app.documents.enums import (
     DerivativeKind,
     DerivativeStatus,
     ExtractionState,
-    MalwareScanState,
 )
 from app.documents.extraction import parsers  # noqa: F401  (registers every parser)
 from app.documents.extraction.base import DerivativePayload, ParseResult, SourceFile, registry
@@ -101,50 +100,6 @@ def derivative_storage() -> Any:
     return storages[settings.DERIVATIVE_STORAGE_ALIAS]
 
 
-def is_scan_state_extractable(scan_state: str) -> bool:
-    """:func:`is_eligible_for_extraction`, asked of a scan state rather than a row.
-
-    The rule is about one field, and saying so is what lets a file that is not a
-    ``DocumentVersion`` yet be held to it. A staged intake file carries the same
-    ``MalwareScanState`` and is refused on exactly these terms
-    (`app.matters.intake_extraction`, docs/adr/0064).
-    """
-    if scan_state == MalwareScanState.CLEAN:
-        return True
-    if settings.REAL_DATA_ALLOWED:
-        return False
-    return scan_state == MalwareScanState.PENDING
-
-
-def is_eligible_for_extraction(version: DocumentVersion) -> bool:
-    """Whether this binary may be opened by a parser at all.
-
-    A scanned-clean file is always eligible. Everything else depends on the
-    environment, and the distinction is drawn explicitly rather than left to
-    whatever the deployment happens to be:
-
-    * With ``REAL_DATA_ALLOWED``, an unscanned file is **not** processed. Real
-      member correspondence goes through a scanner before any parser opens it.
-      That scanner exists now — `app.documents.scanning`, ClamAV over clamd —
-      so ``PENDING`` here is a file that is *waiting* rather than one that can
-      never move: it is scanned by the ordinary worker and becomes eligible the
-      moment the scanner clears it. Until then this returns False (ADR 0066).
-
-      It said "a scanner that does not exist yet" for a long time, and the
-      sentence was true and its consequence was not understood: on the deployed
-      stack nothing could ever leave ``PENDING``, so `Uus teema` staged a file
-      and showed «Loen faili…» to somebody who waited half an hour for an answer
-      that was not coming.
-    * Without it, the corpus is synthetic by construction and PENDING is
-      processed so the pipeline can be exercised end to end.
-
-    What this function never does is *change* a scan state. Marking PENDING as
-    CLEAN to unblock extraction would replace a missing control with a lie about
-    one (Stage-2B brief 32).
-    """
-    return is_scan_state_extractable(version.malware_scan_state)
-
-
 def claim_version(version_id: Any, *, force: bool = False) -> DocumentVersion | None:
     """Take a version for processing, or return None if somebody else has it.
 
@@ -186,37 +141,24 @@ def _is_claimable(version: DocumentVersion, stale_before: Any) -> bool:
     return claimed is None or claimed < stale_before
 
 
-def eligibility_q() -> Q:
-    """`is_eligible_for_extraction`, as SQL.
-
-    The same rule in two places is a smell, and this one earns it: the queue has
-    to be able to *exclude* what the worker would refuse, and the worker has to
-    re-check after claiming because a scan state can change in between. What
-    must never differ is the rule itself, so the two are tested against each
-    other.
-    """
-    eligible = Q(malware_scan_state=MalwareScanState.CLEAN)
-    if not settings.REAL_DATA_ALLOWED:
-        eligible |= Q(malware_scan_state=MalwareScanState.PENDING)
-    return eligible
-
-
 def pending_versions() -> Any:
     """Versions a worker may pick up, oldest first.
 
     Includes stale PROCESSING claims, so a killed worker's queue drains without
     anyone running a recovery command.
 
-    **Excludes what is waiting on a scanner.** Without that filter the worker
-    claims an unscanned file, `extract_document_version` correctly declines to
-    open it and leaves it PENDING, and this query hands back the same row
-    immediately — a hot loop at full speed, for ever, logging thousands of lines
-    a second and extracting nothing. The first real-data deployment did exactly
-    that on all 16,440 historical attachments.
+    **`INTAKE_READ` is not here, and that is the point of it.** A binary
+    promoted out of `Uus teema` was already read while the form was open, so
+    offering it again would be the corpus re-doing work an operator has already
+    had the answer to — which is what this system did until docs/adr/0072.
+    Nothing about that row is pending: it is finished, and it says so in a word
+    that cannot be confused with `DONE` (`app.matters.intake_staging`).
 
-    The rule is not relaxed here: a file waiting on a scanner is still not
-    processed. It is simply not offered, so the queue drains to empty and the
-    worker idles like it should.
+    **There is no scan gate in front of this any more.** It used to exclude
+    anything a scanner had not cleared, and the scanner is gone with the
+    subsystem it belonged to (docs/adr/0066 §Superseded, docs/adr/0072). What
+    it filtered on — `malware_scan_state` — is a column nothing writes and
+    nothing reads.
     """
     stale_before = timezone.now() - timedelta(minutes=settings.EXTRACTION_STALE_CLAIM_MINUTES)
     return (
@@ -228,25 +170,8 @@ def pending_versions() -> Any:
             )
             | Q(extraction_state=ExtractionState.PROCESSING, extraction_claimed_at__isnull=True)
         )
-        .filter(eligibility_q())
         .select_related("document", "document__matter")
         .order_by("created_at")
-    )
-
-
-def awaiting_scanner() -> Any:
-    """Versions that will not be extracted until a scanner says CLEAN.
-
-    Counted so an operator reading "0 files processed" can tell the difference
-    between "nothing to do" and "nothing may be done here yet".
-
-    Since ADR 0066 the count has two readings and the worker distinguishes
-    them: with a scanner configured this is a queue about to be worked through,
-    and without one it is a backlog nothing can ever clear
-    (`run_extraction_worker`).
-    """
-    return DocumentVersion.objects.filter(extraction_state=ExtractionState.PENDING).exclude(
-        eligibility_q()
     )
 
 
@@ -254,12 +179,10 @@ def extract_document_version(version: DocumentVersion) -> ExtractionReport:
     """Parse one binary and publish what came out of it.
 
     Assumes the caller has claimed the row. No exit path leaves the row
-    PROCESSING for this pass — it ends DONE, FAILED, NOT_APPLICABLE, or back at
-    PENDING when the file is waiting on a scanner that has not run.
-
-    That last one is *not* terminal, deliberately: the file becomes extractable
-    the day a scanner marks it CLEAN. It is `pending_versions` that must not
-    keep offering it in the meantime, or the two of them spin.
+    PROCESSING for this pass — it ends DONE, FAILED or NOT_APPLICABLE, all
+    three of them terminal. There used to be a fourth, non-terminal exit back
+    to PENDING for a file no scanner had cleared; the gate that produced it is
+    gone (docs/adr/0072).
 
     The one exit that changes nothing is a lost claim. The row is then somebody
     else's to finish and this pass reports what happened without touching it.
@@ -291,8 +214,8 @@ def extract_document_version(version: DocumentVersion) -> ExtractionReport:
 class ParseOutcome:
     """What one pass over a file’s bytes decided, before anything is written.
 
-    The pure half of extraction: the scan gate, the parser lookup, the parse
-    itself, and the name every failure is given. It carries a terminal
+    The pure half of extraction: the parser lookup, the parse itself, and the
+    name every failure is given. It carries a terminal
     ``ExtractionState`` and the parser’s own output, and it commits nothing.
 
     That separation is what lets one parser stack serve two publication
@@ -318,26 +241,28 @@ def parse_source(
     *,
     filename: str,
     mime_type: str,
-    scan_state: str,
     load: Callable[[], bytes],
     reference: str = "",
 ) -> ParseOutcome:
     """Read one file and say what came out of it. Writes nothing, anywhere.
 
     ``load`` is a callable rather than the bytes themselves, and deliberately:
-    a file waiting on a scanner and a format no parser claims are both decided
-    before a single byte is fetched, so an ineligible file costs no storage
-    read it would never have used. ``FileNotFoundError`` from it is the one
-    storage failure with a name of its own — the row says where the bytes are
-    and they are not there — and it is reported as a verdict on the file
-    rather than raised at the caller.
+    a format no parser claims is decided before a single byte is fetched, so an
+    unreadable file costs no storage read it would never have used.
+    ``FileNotFoundError`` from it is the one storage failure with a name of its
+    own — the row says where the bytes are and they are not there — and it is
+    reported as a verdict on the file rather than raised at the caller.
 
     ``reference`` names the row in the one log line that mentions one. No
     document content is ever logged (Stage-2B brief 67).
-    """
-    if not is_scan_state_extractable(scan_state):
-        return ParseOutcome(state=ExtractionState.PENDING, note="Ootab pahavarakontrolli tulemust.")
 
+    **There is no scan state parameter any longer.** This function used to
+    refuse anything a scanner had not cleared, and the whole subsystem behind
+    that refusal is gone (docs/adr/0072). What remains — the size limit, the
+    extension allowlist and the content-signature check — happens where it
+    always did, at upload, before any of these bytes are stored
+    (`app.documents.uploads.read_upload`).
+    """
     parser = registry.for_mime_type(mime_type)
     if parser is None:
         return ParseOutcome(state=ExtractionState.NOT_APPLICABLE, note=_unsupported_note(mime_type))
@@ -385,7 +310,6 @@ def _run(version: DocumentVersion, *, fence: Any, started: float) -> ExtractionR
     outcome = parse_source(
         filename=version.original_filename,
         mime_type=version.mime_type,
-        scan_state=version.malware_scan_state,
         load=lambda: _read_evidence(version),
         reference=f"version {version.pk}",
     )
@@ -401,9 +325,8 @@ def _run(version: DocumentVersion, *, fence: Any, started: float) -> ExtractionR
         )
 
     if outcome.result is None:
-        # PENDING, because the file is waiting on a scanner, or NOT_APPLICABLE,
-        # because no parser claims the format or the one that does declined it.
-        # Neither writes a derivative.
+        # NOT_APPLICABLE: no parser claims the format, or the one that does
+        # declined it. Nothing is written.
         return _finish_without_derivatives(
             version,
             state=outcome.state,

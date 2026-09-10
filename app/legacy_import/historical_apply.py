@@ -36,7 +36,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from app.core.enums import Visibility
-from app.documents.enums import ExtractionState, MalwareScanState
+from app.documents.enums import ExtractionState
 from app.documents.models import DocumentVersion
 from app.documents.services import add_evidence_version, create_document
 from app.legacy_import.historical_materials import (
@@ -530,10 +530,6 @@ def _materialise_one(
         mime_type=mime_type,
         acquired_at=link.source_page.source_modified_at or link.source_page.first_imported_at,
         source_identifier=f"{link.source_page.page_key}/{resource.resource_key}",
-        # Never CLEAN. These files predate any scanner this system will ever
-        # run, and saying otherwise would be inventing a control
-        # (Stage-2B brief 32).
-        malware_scan_state=MalwareScanState.PENDING,
     )
 
     if version.sha256 != resource.sha256:

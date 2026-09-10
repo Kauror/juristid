@@ -848,7 +848,7 @@ class Command(BaseCommand):
         settle a match — and neither of those needs 4 GiB of source material to
         be true (Stage-2D brief 79).
         """
-        from app.documents.enums import DocumentRole, ExtractionState, MalwareScanState
+        from app.documents.enums import DocumentRole, ExtractionState
         from app.documents.models import DocumentVersion
         from app.documents.services import add_evidence_version, create_document
         from app.legacy_import.source_pages import (
@@ -949,7 +949,6 @@ class Command(BaseCommand):
             mime_type="application/vnd.etsi.asic-e+zip",
             acquired_at=now,
             source_identifier="e2e-page-1/e2e-resource-1",
-            malware_scan_state=MalwareScanState.PENDING,
         )
         # Nothing will ever parse a signed container, so it is marked here
         # rather than left PENDING in a queue for ever.
@@ -993,7 +992,6 @@ class Command(BaseCommand):
             mime_type="text/plain",
             acquired_at=now,
             source_identifier="e2e-page-1/e2e-resource-2",
-            malware_scan_state=MalwareScanState.PENDING,
         )
         LegacySourceResourceImport.objects.create(
             matter_source_page=link,
