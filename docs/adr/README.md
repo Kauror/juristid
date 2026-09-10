@@ -75,9 +75,10 @@ consequences and reversibility.
 | [0063](0063-one-organisation-catalogue-behind-saatja-and-adressaat.md) | One Organisation catalogue behind Saatja and Adressaat, and a sender may be named where it is used | Accepted |
 | [0064](0064-assisted-intake-happens-while-the-teema-is-being-created.md) | Assisted intake happens while the Teema is being created | Accepted |
 | [0065](0065-adding-a-structured-fact-happens-on-the-matter.md) | Adding a structured fact happens on the Matter, not on a page of its own | Accepted |
-| [0066](0066-the-malware-scan-gate-is-a-real-scanner.md) | The malware scan gate is a real scanner | Accepted |
+| [0066](0066-the-malware-scan-gate-is-a-real-scanner.md) | The malware scan gate is a real scanner | Superseded by 0069 |
 | [0067](0067-uus-teema-asks-two-questions-about-one-catalogue.md) | `Uus teema` asks two questions about one catalogue, and creates real work | Accepted |
 | [0068](0068-the-snapshot-records-which-step-it-photographed.md) | The operational snapshot records which step it photographed | Accepted |
+| [0069](0069-document-reading-is-an-ephemeral-intake-capability.md) | Document reading is an ephemeral assisted-intake capability | Accepted |
 
 Naming: `NNNN-short-decision-title.md`.
 

@@ -208,27 +208,31 @@ def test_the_letter_is_read_on_the_create_form_and_the_teema_keeps_what_was_conf
     expect(page.locator("#id_response_deadline")).to_have_value("18.9.2026")
     ministry = page.locator("label.chip", has_text="Näidisministeerium").locator("input").first
     expect(ministry).to_be_checked()
-    # The title is offered and never written, on any surface.
-    expect(page.locator("#id_title")).to_have_value("")
+    # And the title, which is the one rule that differs by surface. On a saved
+    # Matter no title is ever replaced, because the *record* cannot tell one a
+    # person typed from one intake derived. Here there is no record: the box is
+    # empty, nobody has touched it, and the letter carries exactly one strong
+    # formal heading — so it is filled (docs/adr/0069, task §12).
+    expect(page.locator("#id_title")).to_have_value("Pakendiseaduse muutmise seaduse eelnõu")
     expect(page.locator('button[data-suggest-for="title"]').first).to_be_visible()
-    # And «Kasuta» says what actually happened rather than what the server
-    # would have done: it is bound to the live control, so the deadline the
-    # browser filled reads as chosen and the title it did not touch does not.
+    # «Kasuta» says what actually happened rather than what the server would
+    # have done: it is bound to the live control, so everything the browser
+    # filled reads as chosen.
     expect(page.locator('button[data-suggest-for="response_deadline"]').first).to_have_attribute(
         "aria-pressed", "true"
     )
     expect(page.locator('button[data-suggest-for="title"]').first).to_have_attribute(
-        "aria-pressed", "false"
+        "aria-pressed", "true"
     )
     screenshots(page, "41-uus-teema-failist-leitud")
 
     # Still nothing in the register: a suggestion is a proposal, and reading a
-    # file creates no business data whatsoever.
+    # file creates no business data whatsoever — a filled box least of all.
     assert register_holds(page, base_url, title) == 0
 
-    # -- 4. take the heading, write a title over it, and file it -----------
-    page.locator('button[data-suggest-for="title"]').first.click()
-    expect(page.locator("#id_title")).to_have_value("Pakendiseaduse muutmise seaduse eelnõu")
+    # -- 4. write a title of one's own over it, and file it ----------------
+    # The machine's title is replaceable by the person, always and without
+    # ceremony: it is an ordinary value in an ordinary input.
     page.locator("#id_title").fill(title)
     name_a_next_step(page)
     page.get_by_role("button", name="Loo teema").click()
@@ -652,4 +656,9 @@ def read_staged_files_is_a_noop() -> None:
         check=False,
     )
     assert result.returncode == 0, result.stderr
-    assert "Ootel: 0 ettevalmistatud faili" in result.stdout, result.stdout
+    # The reader's own start-up line, which names the size of its whole
+    # universe. Zero here *is* the product decision this test is named after:
+    # a document uploaded to an existing Matter stages nothing, so there is
+    # nothing for the reader to have found.
+    assert "Ootel: 0 faili" in result.stdout, result.stdout
+    assert "Loetud 0 faili" in result.stdout, result.stdout

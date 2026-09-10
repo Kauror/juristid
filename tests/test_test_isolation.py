@@ -237,6 +237,14 @@ def test_the_deployed_stacks_carry_the_marker() -> None:
     A runbook sentence is advice. This is what makes it a refusal: `docker
     compose run` hands the service's environment to the process it starts, so a
     pytest run through either deployed project sees the marker and stops.
+
+    **Every service running the application image**, derived from the file
+    rather than named. It asked about `("web", "extractor")` and broke the day
+    `extractor` left the stacks (docs/adr/0069) — the fourth time a literal
+    service list has gone stale in this repository, after two CI guards and the
+    scanner topology check. Derived is also stronger: a worker added tomorrow
+    without the marker is a `docker compose run` that would happily start the
+    suite against a real-data stack, and the old list would not have noticed.
     """
     import yaml
 
@@ -244,11 +252,20 @@ def test_the_deployed_stacks_carry_the_marker() -> None:
         ROOT / "deploy" / "unraid-main" / "compose.yml",
         ROOT / "deploy" / "unraid-test" / "compose.yml",
     ):
+        stack = path.parent.name
         compose = yaml.safe_load(path.read_text(encoding="utf-8"))
-        for name in ("web", "extractor"):
-            environment = compose["services"][name]["environment"]
+        prefix = f"{stack.replace('unraid-', 'juristid-')}-web:"
+        application = sorted(
+            name
+            for name, service in compose["services"].items()
+            if str(service.get("image", "")).startswith(prefix)
+        )
+        # Guards the guard: a prefix that matched nothing would assert nothing.
+        assert len(application) >= 2, f"{stack}: only {application} run {prefix}*"
+        for name in application:
+            environment = compose["services"][name].get("environment") or {}
             assert environment.get(test_safety.RUNTIME_MARKER), (
-                f"{path.parent.name}/{name} carries no {test_safety.RUNTIME_MARKER}"
+                f"{stack}/{name} carries no {test_safety.RUNTIME_MARKER}"
             )
 
 
