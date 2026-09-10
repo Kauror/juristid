@@ -194,12 +194,13 @@ def _typed_organisation_field(label: str, *, hook: str = "") -> forms.CharField:
     it. The two remain *different questions* about the same catalogue, so they
     are two fields with two labels and one implementation.
 
-    ``hook`` names the control for the browser. `Uus teema` offers a sender
-    somebody is typing as an addressee candidate before either exists, and the
-    script needs to find the two boxes without depending on the auto-generated
-    `id_` that a renamed field would change under it. It is an attribute and
-    nothing more: no behaviour here reads it, and with scripting off it does
-    nothing at all (static/js/app.js `bindCounterpartyPromotion`).
+    ``hook`` names the control for the browser. `Uus teema` answers Adressaat
+    with a sender somebody is typing before either exists, and the script needs
+    to find the two boxes without depending on the auto-generated `id_` that a
+    renamed field would change under it. It is an attribute and nothing more: no
+    behaviour here reads it, and with scripting off the same default is reached
+    on the server instead (`_default_addressee`, static/js/app.js
+    `bindAddresseeDefault`).
     """
     attrs = {
         "class": "field__input field__input--compact",
