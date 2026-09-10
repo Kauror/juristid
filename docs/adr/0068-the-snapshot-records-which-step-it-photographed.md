@@ -120,6 +120,12 @@ non-privileged readers going forward, not their safety.
 stays unauthorized, and the docstring now says what that costs and where the
 cost is paid.
 
+`reporting` moves out of `SETTLED_LEAVES` and into CI's *And forwards again from
+the state a deployment is in* step at `0001`, because the next release carries
+0002 into a database that already holds the table. That is the decision
+`test_no_app_gains_a_migration_without_a_deployment_state_decision` exists to
+force, and it is the same decision ADR 0062 recorded for `audit` and `matters`.
+
 No role semantics change, no write-authorization change, no change to any
 rendered surface — `visible_snapshots` still has no callers. This closes the
 last open finding of the 2026-09-09 audit.
