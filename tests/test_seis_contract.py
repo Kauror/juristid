@@ -42,7 +42,7 @@ pytestmark = pytest.mark.django_db
 #:
 #: Jälgimine was the fifth, and it is gone with the pages behind it: `Töövõit`
 #: and `Jõustumine` are structured filters on Teemad now and an `Oluline
-#: tähtaeg` is its owner's own upcoming work (docs/adr/0067). The two contracts
+#: tähtaeg` is its owner's own upcoming work (docs/adr/0071). The two contracts
 #: that were written specifically for that strip went with it; the four
 #: remaining surfaces keep every rule this file exists for.
 STRIPS = [
@@ -71,7 +71,7 @@ def _seeded(owner, today):
     The two `MatterImportantDate` rows are still written, and still through
     `add_important_date` rather than pushed into the table behind it. They no
     longer feed a strip of their own — the Jälgimine surface that counted them
-    is retired (docs/adr/0067) — but an important deadline is dated work, so
+    is retired (docs/adr/0071) — but an important deadline is dated work, so
     Minu asjad's «üle tähtaja» and Osakond's deadline windows both read them.
     One ahead and one already passed, so neither direction is a figure this
     file walks past unasked.

@@ -29,7 +29,7 @@ pytestmark = pytest.mark.django_db
     ["/olulised-tahtajad/", "/joustuvad-aktid/", "/toovoidud/", "/jalgimine/tahtajad/"],
 )
 def test_every_retired_reading_address_still_lands_somewhere_real(client, specialist, old):
-    """The pages are gone; the addresses are not (03-BACKEND §4, docs/adr/0067).
+    """The pages are gone; the addresses are not (03-BACKEND §4, docs/adr/0071).
 
     Where each one goes, and what happens to `?aasta=`, is asserted in
     `tests/test_teemad_consolidation.py`, which owns the product decision. What

@@ -179,7 +179,7 @@ def test_the_head_is_offered_one_department_destination(client, department_head)
     assert body.count(f'href="{reverse("matters:department")}"') == 1
     # Teemad, because that is where these facts are found now. The «Tähtajad»
     # item that used to be asserted here opened three generated reading pages,
-    # and it is retired along with them (docs/adr/0067).
+    # and it is retired along with them (docs/adr/0071).
     assert ">Teemad</a>" in body
 
 

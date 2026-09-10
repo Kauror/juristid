@@ -147,7 +147,7 @@ YEAR_SURFACES = [
     # The register's own new dimension, and it keeps the register's rule rather
     # than Jälgimine's: an unreadable year empties the list. The three
     # `/jalgimine/` entries that used to sit here are gone with the pages
-    # (docs/adr/0067); their redirects answer 302 whatever the query says, and
+    # (docs/adr/0071); their redirects answer 302 whatever the query says, and
     # a redirect never reaches a date constructor.
     ("/teemad/", "toovoit", 200),
     ("/arvamused/", "aasta", 200),
@@ -221,7 +221,7 @@ def test_the_register_empties_the_list_for_an_unreadable_toovoit_year(
     so dropping a bad filter still showed the reader work victories. `?toovoit=`
     narrows the *register*, where dropping it would show every Teema there is
     under a chip claiming a year — the lie the register's rule exists to
-    prevent (app/matters/register_filters.py, docs/adr/0067).
+    prevent (app/matters/register_filters.py, docs/adr/0071).
     """
     client.force_login(department_head)
 

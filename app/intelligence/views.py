@@ -6,7 +6,7 @@ found in one place now: `Töövõit` and `Jõustumine` are structured filters on
 register, and an `Oluline tähtaeg` is the Matter owner's own upcoming work in
 Minu asjad. Nothing about the facts themselves changed — same models, same rows,
 same history, same forms below — only where a reader consumes them
-(docs/adr/0067). ``app.intelligence.urls`` answers every old address.
+(docs/adr/0071). ``app.intelligence.urls`` answers every old address.
 
 Writes are ``@login_required`` **and** check a business role, because the
 shared-gate sentinel is not a person and must never become an audit actor
@@ -82,7 +82,7 @@ def _matter_anchor(matter: Matter, anchor: str) -> str:
 # They are gone as destinations. Discovery of a Teema happens in one place now
 # — the register — so `Töövõit` and `Jõustumine` are structured filters on
 # Teemad, and an `Oluline tähtaeg` is the Matter owner's own upcoming work and
-# appears in Minu asjad, which it already did (docs/adr/0067).
+# appears in Minu asjad, which it already did (docs/adr/0071).
 #
 # Nothing about the *facts* moved. The models, the rows, their history and the
 # write surfaces below are untouched; what moved is where a reader consumes

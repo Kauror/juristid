@@ -1134,12 +1134,6 @@ def test_search_results(page, base_url):
     compare("otsing", capture(page, "otsing"))
 
 
-def test_watchlist(page, base_url):
-    """Jälgimine: a newer surface, built from the same components."""
-    signed_in(page, base_url, "/jalgimine/tahtajad/")
-    compare("jalgimine", capture(page, "jalgimine"))
-
-
 def test_release_notes(page, base_url):
     """Uuendused: the day accordions, the newest open and the rest shut.
 

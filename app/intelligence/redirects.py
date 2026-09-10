@@ -4,7 +4,7 @@ Three generated department-wide lists used to live at these addresses — Olulis
 tähtajad, Jõustuvad aktid and Töövõidud — each one showing the Matters that
 carry one structured fact. They are not destinations any more: a Teema is found
 in the register, and an `Oluline tähtaeg` is its owner's own upcoming work
-(docs/adr/0067).
+(docs/adr/0071).
 
 Every address still resolves, because a bookmark, a pasted link and a message
 from three months ago are all real. Each one lands where its question is

@@ -9,7 +9,7 @@ reading pages over the structured Matter facts. It is gone, and so are they:
 `Töövõit` and `Jõustumine` are structured filters on Teemad and an `Oluline
 tähtaeg` is its owner's own upcoming work, so there is one register to search
 and one personal queue rather than four parallel lists of the same Matters
-(docs/adr/0067).
+(docs/adr/0071).
 
 That product decision, its redirects and its filters belong to
 `tests/test_teemad_consolidation.py`. What this file keeps is the shell
@@ -141,9 +141,7 @@ def test_the_retired_deadline_item_is_on_no_branch_of_the_bar(signed_in, retired
     assert retired not in navigation_of(signed_in.get(reverse("matters:department")))
 
 
-def test_the_veel_trigger_is_not_marked_by_a_destination_that_no_longer_exists(
-    client, specialist
-):
+def test_the_veel_trigger_is_not_marked_by_a_destination_that_no_longer_exists(client, specialist):
     """The trigger lit up for `nav_active == 'jalgimine'` as well as Statistika.
 
     Nothing sets that key any more, and a condition kept for a page that is gone

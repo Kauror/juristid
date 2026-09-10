@@ -7,7 +7,7 @@ about.
 The three generated reading pages that used to live at the top level are gone.
 Their addresses are not: every one of them still resolves, and each lands on the
 destination that now answers the question it was opened for
-(:mod:`app.intelligence.redirects`, docs/adr/0067).
+(:mod:`app.intelligence.redirects`, docs/adr/0071).
 """
 
 from django.urls import path

@@ -624,7 +624,7 @@ def test_the_reporting_rail_counts_confirmed_work_victories(
     # the only list this row can open is a list of Matters — and a count of
     # rows over a list of Matters is the count-disagrees-with-its-list failure
     # this page exists to avoid, the first time one file wins twice. The row
-    # says what it counts (docs/adr/0067).
+    # says what it counts (docs/adr/0071).
     assert reporting["Teemasid töövõiduga"].count == 1
     query = parse_qs(urlparse(reporting["Teemasid töövõiduga"].url).query)
     # The year is still the business period, because `?toovoit=<aasta>` reads

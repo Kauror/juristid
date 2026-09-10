@@ -4,7 +4,7 @@ Three generated department-wide reading pages went away — Olulised tähtajad,
 Jõustuvad aktid and Töövõidud — and what they showed moved to where it is
 actually used: `Töövõit` and `Jõustumine` are structured filters on the
 register, an `Oluline tähtaeg` is its owner's own upcoming work
-(docs/adr/0067).
+(docs/adr/0071).
 
 Nothing about the facts changed, which is the half most worth asserting. The
 models, the rows and the write surfaces on the Matter page are untouched, and
@@ -38,6 +38,7 @@ from tests import factories
 pytestmark = pytest.mark.django_db
 
 REGISTER = reverse("matters:matter_list")
+
 
 #: Every register response is read through the page's own object list, so a
 #: filter that "works" only in a selector cannot pass these.
@@ -274,9 +275,7 @@ def _commencement(matter, *, kind=EffectiveDateKind.KNOWN_DATE, start=None, end=
 def test_an_active_commencement_makes_its_matter_findable(signed_in):
     commencing = factories.MatterFactory(title="Jõustuv teema")
     factories.MatterFactory(title="Tavaline teema")
-    _commencement(
-        commencing, start=datetime.date(2026, 4, 1), end=datetime.date(2026, 4, 1)
-    )
+    _commencement(commencing, start=datetime.date(2026, 4, 1), end=datetime.date(2026, 4, 1))
 
     response = signed_in.get(REGISTER, {register_filters.COMMENCEMENT_PARAM: "on", "olek": "koik"})
     assert titles_on(response) == ["Jõustuv teema"]
@@ -330,9 +329,7 @@ def test_the_filter_reads_the_structured_relation_and_not_the_title(signed_in):
 def test_puudub_finds_the_files_with_no_commencement(signed_in):
     commencing = factories.MatterFactory(title="Jõustuv")
     plain = factories.MatterFactory(title="Jõustumiseta")
-    _commencement(
-        commencing, start=datetime.date(2026, 4, 1), end=datetime.date(2026, 4, 1)
-    )
+    _commencement(commencing, start=datetime.date(2026, 4, 1), end=datetime.date(2026, 4, 1))
 
     response = signed_in.get(
         REGISTER, {register_filters.COMMENCEMENT_PARAM: "puudub", "olek": "koik"}
@@ -793,9 +790,7 @@ def test_the_write_surfaces_on_the_matter_page_are_untouched(client, specialist)
 # ---------------------------------------------------------------------------
 
 
-def test_the_new_filters_do_not_cost_a_query_per_row(
-    signed_in, django_assert_max_num_queries
-):
+def test_the_new_filters_do_not_cost_a_query_per_row(signed_in, django_assert_max_num_queries):
     """Bounded database work, not a Python loop over the register.
 
     Both filters are one correlated ``EXISTS`` for the whole page, so the number
@@ -804,9 +799,7 @@ def test_the_new_filters_do_not_cost_a_query_per_row(
     for index in range(20):
         matter = factories.MatterFactory(title=f"Võidetud {index}")
         _victory(matter)
-        _commencement(
-            matter, start=datetime.date(2026, 4, 1), end=datetime.date(2026, 4, 1)
-        )
+        _commencement(matter, start=datetime.date(2026, 4, 1), end=datetime.date(2026, 4, 1))
 
     with django_assert_max_num_queries(40):
         response = signed_in.get(

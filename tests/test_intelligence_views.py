@@ -8,7 +8,7 @@ browser actually posts.
 **The three generated reading pages that used to be asserted here are gone.**
 Olulised tähtajad, Jõustuvad aktid and Töövõidud are not destinations any more:
 `Töövõit` and `Jõustumine` are structured filters on Teemad and an `Oluline
-tähtaeg` is its owner's own upcoming work (docs/adr/0067). What those tests
+tähtaeg` is its owner's own upcoming work (docs/adr/0071). What those tests
 guarded — which population is a work victory, that a period is never reduced to
 a fabricated day, that a restricted child leaks through neither presence nor
 absence — is asserted against the surfaces that answer those questions now, in
@@ -39,6 +39,7 @@ from app.workflow.enums import DatePrecision
 from tests import factories
 
 pytestmark = pytest.mark.django_db
+
 
 def _text(response) -> str:
     return response.content.decode()

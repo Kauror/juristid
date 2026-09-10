@@ -101,7 +101,7 @@ def strip(results: dict[str, Any], viewer: Any, today: date, period_label: str) 
     own answer rather than a second one taken beside it. The fourth is the
     Matters carrying a confirmed work victory this year — a register population
     like the rail's, since the register is where a Teema is found
-    (docs/adr/0067).
+    (docs/adr/0071).
     """
     figures: list[Figure] = []
     for key, caption in (
@@ -118,7 +118,7 @@ def strip(results: dict[str, Any], viewer: Any, today: date, period_label: str) 
     # victory this year rather than the victories themselves — the register
     # pages Matters, so a figure counting rows would have been a number with no
     # list behind it the first time one file won twice, and this module's whole
-    # first rule is that a number opens the list it counted (docs/adr/0067).
+    # first rule is that a number opens the list it counted (docs/adr/0071).
     figures.append(
         Figure(
             _count(viewer, _victory_params(today.year), today, Matter.objects.visible_to(viewer)),
@@ -168,7 +168,7 @@ def rail(viewer: Any, today: date, results: dict[str, Any]) -> list[RailBlock]:
     # `strip` above states: the lists these two used to open are retired, so the
     # only list either number can open is a list of Matters — and a caption
     # saying "töövõite" over a count of Matters would be the disagreement this
-    # module exists to prevent (docs/adr/0067).
+    # module exists to prevent (docs/adr/0071).
     reporting_rows.append(
         Figure(
             _count(viewer, _victory_params(today.year), today, population),

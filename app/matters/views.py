@@ -625,7 +625,7 @@ FILTER_LABELS = {
     # The two structured facts Teemad became the discovery surface for when the
     # separate Tähtajad destination was retired. Properties of a Matter, so they
     # narrow the register like any other dimension rather than opening a list of
-    # their own (docs/adr/0067).
+    # their own (docs/adr/0071).
     "toovoit": "Töövõit",
     "joustumine": "Jõustumine",
     "joustub_alates": "Jõustub alates",
@@ -1115,7 +1115,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         ],
         # One per dimension. The three controls are one partial over one
         # catalogue, and each has to offer and redisplay the body *it* filters
-        # by (docs/adr/0067).
+        # by (docs/adr/0071).
         "organisation_choosers": _organisation_choosers(params),
         # Who a row may be handed to, current reader first. The same population
         # the Matter header's own control offers, so the two cannot disagree
@@ -1160,7 +1160,7 @@ def _assignable_first(reader: Any) -> list[User]:
 #: HTMX fragment are the same partial, so two spellings of one legend meant the
 #: control silently renamed itself the first time somebody typed into it — it
 #: opened as «Asutus (saatja või adressaat)» and came back as «Asutus»
-#: (docs/adr/0067).
+#: (docs/adr/0071).
 ORGANISATION_CHOOSER_FIELDS = {
     "asutus": "Asutus (saatja või adressaat)",
     "saatja": "Saatja / algataja",
@@ -1236,12 +1236,13 @@ def _organisation_or_none(raw: str) -> Organisation | None:
     organisation: Organisation | None = _named_by_pk(Organisation, raw)
     return organisation
 
+
 def _organisation_choosers(params: Any) -> list[dict[str, Any]]:
     """The three institution controls the Täpsem otsing panel renders.
 
     One catalogue, one partial, three dimensions — built here so the panel and
     the HTMX fragment cannot drift apart in what they offer, what they call
-    themselves or what they redisplay (docs/adr/0067).
+    themselves or what they redisplay (docs/adr/0071).
 
     **The typed term is read from the parameters, not assumed empty.** With
     scripting on, the search box swaps itself through

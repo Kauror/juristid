@@ -179,7 +179,7 @@ def test_the_personal_queue_names_topics_by_title(signed_in, marked_matter, spec
     This used to be asserted on the department-wide Olulisi tähtaegu page. That
     page is retired and the deadline belongs to its Matter's owner, so the
     surface that has to name the Teema by title is the owner's own Minu asjad
-    (docs/adr/0067).
+    (docs/adr/0071).
     """
     marked_matter.owner = specialist
     marked_matter.save(update_fields=["owner"])

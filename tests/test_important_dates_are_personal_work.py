@@ -4,7 +4,7 @@ The department-wide *Olulised tähtajad* reading page is retired. Nothing about
 the fact moved with it: the record still lives on its Matter, it is still
 created, corrected and cancelled from the Matter page, and it is still the
 Matter *owner's* work — which is where the read model already put it
-(docs/adr/0067).
+(docs/adr/0071).
 
 That last claim is the one worth testing rather than assuming, and testing
 through the surface rather than through the read model. `app/matters/work_items`
@@ -46,9 +46,7 @@ def today():
 
 
 def _matter(owner, title="Tähtajaga teema", **extra):
-    return create_matter(
-        title=title, owner=owner, reference_year=2026, actor=owner, **extra
-    )
+    return create_matter(title=title, owner=owner, reference_year=2026, actor=owner, **extra)
 
 
 def _deadline(matter, title, when, actor):
@@ -143,9 +141,7 @@ def test_a_colleagues_deadline_is_not_in_my_personal_queue(
     assert "Kolleegi tähtaeg" not in items_on(client.get(MY_WORK))
 
 
-def test_an_unassigned_matters_deadline_is_nobodys_personal_work(
-    client, specialist, today
-):
+def test_an_unassigned_matters_deadline_is_nobodys_personal_work(client, specialist, today):
     """It is *vastutajata* on Osakond, which is the honest place for work
     nobody has been given — never quietly somebody else's."""
     orphan = create_matter(title="Jaotamata teema", reference_year=2026, actor=specialist)
@@ -234,9 +230,7 @@ def test_a_restricted_matter_leaks_nothing_into_a_non_participants_queue(
 # ---------------------------------------------------------------------------
 
 
-def test_the_three_kinds_share_the_list_and_stay_different_facts(
-    client, specialist, today
-):
+def test_the_three_kinds_share_the_list_and_stay_different_facts(client, specialist, today):
     """`Järgmiseks`, `Arvamuse tähtaeg` and `Oluline tähtaeg` are three
     commitments, and a chronological list of work says so.
 

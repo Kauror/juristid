@@ -1353,7 +1353,7 @@ def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
             # Counted through the register, in the register's own parameters,
             # because the register is the destination now: the standalone
             # Töövõidud page is retired and `?toovoit=<aasta>` is the narrowing
-            # that reproduces it (docs/adr/0067).
+            # that reproduces it (docs/adr/0071).
             #
             # So this counts **Matters** rather than victories, and the row
             # says so. A count of rows over a list of Matters is exactly the

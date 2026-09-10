@@ -31,7 +31,7 @@ has no slot, so it is a template name.
 No emptiness guard here: every caller renders this band's rule and padding
 whether or not a figure survives, and Osakond renders `trailing` inside it. The
 one surface that dropped the band was Jälgimine, which is retired
-(docs/adr/0067); a caller that needs the band gone still keeps its own
+(docs/adr/0071); a caller that needs the band gone still keeps its own
 `{% if seis %}` around the include.
 
 `figures` is duck-typed on `value`, `caption`, `url` and `tone`. Several

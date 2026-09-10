@@ -121,7 +121,7 @@ FACT_ABSENT = "puudub"
 #: The definition is imported rather than restated — `VISIBLE_VICTORY_STATUS` is
 #: the one place that says which internal state is a work victory a reader may
 #: see, and a register that decided this for itself would be a second definition
-#: to keep in step (app/intelligence/selectors.py, docs/adr/0067).
+#: to keep in step (app/intelligence/selectors.py, docs/adr/0071).
 #:
 #: `?toovoit=` takes three shapes and no more: `on`, `puudub`, or a year. The
 #: year is the business period the victory was recorded for — never
@@ -274,9 +274,7 @@ def filter_by_opinion_state(queryset: QuerySet[Matter], value: str) -> QuerySet[
     )
 
 
-def filter_by_work_victory(
-    queryset: QuerySet[Matter], user: Any, value: str
-) -> QuerySet[Matter]:
+def filter_by_work_victory(queryset: QuerySet[Matter], user: Any, value: str) -> QuerySet[Matter]:
     """Apply `?toovoit=`: does this file carry a work victory a reader may see.
 
     **Authorization happens before the existence test contributes anything.**
@@ -284,7 +282,7 @@ def filter_by_work_victory(
     the raw table, so a victory restricted below its Matter cannot make that
     Matter appear — or, under `puudub`, make it disappear. A row this reader may
     not read is a row that does not exist for this reader, in both directions
-    (Stage-2G brief 31, docs/adr/0067).
+    (Stage-2G brief 31, docs/adr/0071).
 
     **A Matter appears once however many victories it carries.** ``Exists`` is a
     correlated subquery rather than a join, so the register's row count is
@@ -634,7 +632,7 @@ def apply_register_filters(
     # The two structured facts Teemad became the discovery surface for. Both
     # consult a child table and both scope it to this reader before the
     # existence test contributes anything, exactly as `?materjalid=` and
-    # `?tegevus=` above do (docs/adr/0067).
+    # `?tegevus=` above do (docs/adr/0071).
     if victory := params.get(VICTORY_PARAM):
         queryset = filter_by_work_victory(queryset, user, victory)
     window, commencement_echo = commencement_window(params)

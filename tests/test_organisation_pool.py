@@ -23,7 +23,7 @@ populated all three institution controls from that one truncated list. Only
 
 "Reliably available" was therefore literally true — reliable exactly when the
 body happened to sort in the first twenty — and a newly typed institution is
-the case most likely not to (docs/adr/0067).
+the case most likely not to (docs/adr/0071).
 
 A fourth control was found while writing these: `Asutus` offered *Määramata* and
 the register answered it with an empty list, because `puudub` reached
@@ -88,9 +88,7 @@ def select_block(body: str, field: str) -> str:
     "typed_field,payload_key",
     [("saatja", "sender_name"), ("adressaat", "addressee_name")],
 )
-def test_a_body_typed_on_uus_teema_is_immediately_findable(
-    signed_in, typed_field, payload_key
-):
+def test_a_body_typed_on_uus_teema_is_immediately_findable(signed_in, typed_field, payload_key):
     """The whole reported round trip, in one test and with no reindex between.
 
     Create the institution the way Uus teema creates one — by typing it into
@@ -284,7 +282,7 @@ def test_the_control_does_not_rename_itself_when_somebody_types_into_it(signed_i
     fragment = signed_in.get(CHOOSER, {"vali": field, f"{field}_otsing": "kliima"})
     legend = fragment.context["field_label"]
 
-    assert f"<legend class=\"field__label\">{legend}</legend>" in page
+    assert f'<legend class="field__label">{legend}</legend>' in page
 
 
 # ---------------------------------------------------------------------------
