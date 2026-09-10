@@ -34,6 +34,15 @@ those values are rewritten to a canonical string before the capture as well:
 proved against the calendar rather than against today in the last section of
 this file.
 
+Inside a table it is not a line that moves but the whole grid. An auto-layout
+table sizes every column from its content, so one cell that gains a character
+resizes its column and every other column redistributes to pay for it, on every
+row. Masking that cell covers the digits and changes nothing about the sizing,
+which is how `teema-dokumendid` came to differ by 0.2111% on the morning
+`9.9.2026` became `10.9.2026`. `capture` refuses to photograph such a value:
+`assert_no_clock_value_sizes_a_column` is the rule that a clock value inside an
+auto-layout table is held still rather than merely covered.
+
 Baselines
 ---------
 Committed under `e2e/baselines/`, produced by this same job on this same
@@ -191,6 +200,11 @@ CLOCK_DEPENDENT = [
     # selector, and a selector that appears in one list and not the other is how
     # the two drift apart (docs/adr/0061).
     ".doctable__sent time",
+    # The Dokumendid table's `Kuupäev` cell, named for the same reason and one
+    # step further: this one is inside an auto-layout table, so covering it
+    # holds nothing still at all. See `EVIDENCE_DATE` and the section at the
+    # foot of this file.
+    ".doctable .table__date time",
     "time",
     # ---- Three values the list above missed, each found by rendering the page
     # and asking which selector covered it rather than by reading class names.
@@ -385,6 +399,15 @@ OPINION_ROW_SENT = (".doctable__sent time",)
 #: column is as wide as that string. See the section at the foot of this file
 #: for why a mask cannot hold it — the digits are covered and the *column* is
 #: not, and `.doctable` is laid out `auto`.
+#:
+#: Held still at eight characters, because that is the shape the committed
+#: baselines hold: they were adopted on the sixth of September, and `j.n.Y` on a
+#: single-digit day of a single-digit month is `6.9.2026`. `.table__date` sets
+#: tabular figures, so the width is a function of the character count alone and
+#: *which* eight characters they are cannot matter — measured rather than
+#: assumed: this scenario's CI rendering on 2026-09-09, three days and three
+#: different digits later, differed from the committed baseline by nought
+#: pixels, and the one taken the next morning by 2,736.
 EVIDENCE_DATE = (".doctable .table__date time",)
 
 #: Minu asjad's horizon control — «Kuni oktoober ▾», «Kuni november ▾».
@@ -539,6 +562,10 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
     (CLOSED_ON[0], "(29.8.2026)"),
     (TIMELINE_PREVIEW_ON[0], "29.8"),
     (OPINION_ROW_SENT[0], "29.8.2026 19:35"),
+    # Eight characters, because that is what the committed baselines hold and
+    # tabular figures make the count the whole of it. A ten-character canonical
+    # would be exactly as stable and would move two baselines to get there.
+    (EVIDENCE_DATE[0], "6.9.2026"),
     (TIMELINE_RUN_SUMMARY[0], RUN_SUMMARY),
 )
 
@@ -571,9 +598,14 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     # week into a visual failure.
     "teema-suletud": (*CLOSED_ON, *TIMELINE_PREVIEW_ON),
     # The seeded world sends one opinion on `OPEN_TITLE`, so both of these
-    # render a `Saadetud <date>` under a filename on every run.
-    "teema-dokumendid": OPINION_ROW_SENT,
-    "teema-arvamused": OPINION_ROW_SENT,
+    # render a `Saadetud <date>` under a filename on every run — and both are
+    # the same evidence table, so both carry a `Kuupäev` column whose width is
+    # where the other three columns start. `teema-arvamused` is this same page
+    # filtered to `Arvamus`: it drifted 0.0913% overnight on the run that took
+    # `teema-dokumendid` past the limit — the same defect with fewer rows to
+    # differ on, and therefore with nothing to say so.
+    "teema-dokumendid": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
+    "teema-arvamused": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
     # The two captures that render a folded system run, and they are the same
     # Matter twice. Required for the reason `TIMELINE_RUN_SPAN` is required
     # beside it: whether the run exists is decided by the seed's own call order
@@ -621,8 +653,8 @@ REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
     # selector has to follow it.
     "osakond": OSAKOND_WEEK_COUNTS,
     "osakond-3440": OSAKOND_WEEK_COUNTS,
-    "teema-dokumendid": OPINION_ROW_SENT,
-    "teema-arvamused": OPINION_ROW_SENT,
+    "teema-dokumendid": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
+    "teema-arvamused": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
 }
 
 assert not {selector for selectors in REQUIRED_MASKS.values() for selector in selectors} - set(
@@ -705,9 +737,75 @@ def normalise_clock_text(page, name: str) -> None:
             )
         page.eval_on_selector_all(
             selector,
-            "(elements, text) => { for (const element of elements) element.textContent = text }",
+            """(elements, text) => {
+                for (const element of elements) {
+                    element.textContent = text
+                    // What `assert_no_clock_value_sizes_a_column` reads. It has
+                    // to ask about the element rather than about the selector:
+                    // `time` and `.doctable .table__date time` are two entries
+                    // in `CLOCK_DEPENDENT` and one element on the page, and a
+                    // value held still through either of them is held still.
+                    element.setAttribute("data-e2e-held-still", "")
+                }
+            }""",
             canonical,
         )
+
+
+# Only the *auto* case is a hazard below. `table-layout: fixed` sizes the columns
+# from the first row's declared widths and ignores every other cell in the table,
+# which is why the register — `.table--register`, fixed, seven columns with pixel
+# widths — has never drifted on a date, and the evidence table drifts on two
+# mornings a month.
+def assert_no_clock_value_sizes_a_column(page, name: str, *, root: str | None = None) -> None:
+    """Refuse to photograph a clock value that decides how wide a column is.
+
+    A mask paints over an element. It does not take the element out of the
+    layout, and inside an auto-layout table the layout is not a line but a
+    grid: the browser sizes every column from the widest content in it, so a
+    cell that gains one character widens its own column and every other column
+    gives up the width to pay for it — on every row, in both directions, and
+    nowhere near the mask.
+
+    `teema-dokumendid` is the case that produced this. Its `Kuupäev` cell holds
+    `Document.created_at` in `j.n.Y`, which drops leading zeros, so the string
+    went from eight characters to nine overnight and 2,736 pixels differed
+    against a limit of 2,592 — none of them the covered digits, all of them
+    `ROLL`, `KUUPÄEV` and `LISAS` standing 3 to 4 pixels to the left of where
+    the baseline had them.
+
+    So this is the rule rather than a note somebody has to remember: a clock
+    value in an auto-layout table is normalised, not merely masked. It cannot
+    be satisfied by widening a mask, and it fails on the run that introduces the
+    hazard rather than on the morning the calendar finds it — which is the
+    difference between the author of a change seeing it and somebody else's
+    unrelated pull request going red for it.
+
+    Scoped to what is actually photographed. A clipped capture holds one
+    component, and a table elsewhere on the page is not in the image.
+    """
+    scope = page.locator(root) if root else page
+    offenders: list[str] = []
+    for selector in CLOCK_DEPENDENT:
+        for text in scope.locator(visible(selector)).evaluate_all(
+            """(nodes) => nodes
+                .filter((node) => {
+                    const table = node.closest("table")
+                    if (!table) return false
+                    if (getComputedStyle(table).tableLayout === "fixed") return false
+                    return !node.hasAttribute("data-e2e-held-still")
+                })
+                .map((node) => node.textContent.trim().slice(0, 40))"""
+        ):
+            offenders.append(f"{selector} -> {text!r}")
+    assert not offenders, (
+        f"{name}: {len(offenders)} clock value(s) size a column of an auto-layout "
+        f"table and are only masked: {sorted(set(offenders))}. The mask covers the "
+        f"digits; the text still sizes the column, and every other column in that "
+        f"table moves when it changes length. Hold it still instead — an entry in "
+        f"`NORMALISED_TEXT` with a canonical of the shape the committed baseline "
+        f"holds — rather than covering more of the page."
+    )
 
 
 def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = None) -> bytes:
@@ -723,6 +821,7 @@ def capture(page, name: str, *, full_page: bool = True, clip_to: str | None = No
             f"else's unrelated change went red for it."
         )
     normalise_clock_text(page, name)
+    assert_no_clock_value_sizes_a_column(page, name, root=clip_to)
     masks = [page.locator(visible(selector)) for selector in CLOCK_DEPENDENT]
     target = page.locator(clip_to) if clip_to else page
     image = target.screenshot(
@@ -1747,3 +1846,53 @@ def test_the_document_table_date_cannot_move_its_columns(page):
         f"layout on the tenth of the month than on the ninth, and every "
         f"baseline that renders it goes red for a change nobody made."
     )
+
+
+def test_a_clock_value_that_sizes_a_column_fails_the_capture(page):
+    """The rule, rather than a note somebody has to remember on the next table.
+
+    `REQUIRED_MASKS` and `REQUIRED_NORMALISATIONS` both catch a selector that
+    stopped matching. Neither catches a value that was never declared — and
+    that is the shape this defect had: the `Kuupäev` cell was covered by the
+    bare `time` mask from the day the tab shipped, so nothing was missing and
+    nothing failed, right up until the tenth of a month.
+    """
+    page.set_content(_document_table("10.9.2026"))
+    with pytest.raises(AssertionError, match="size a column"):
+        assert_no_clock_value_sizes_a_column(page, "teema-dokumendid")
+
+
+def test_a_clock_value_that_is_held_still_passes_the_capture(page):
+    """The other half, so the guard is not simply always angry.
+
+    Normalisation is what satisfies it. Not a wider mask, not a larger
+    tolerance: the element still has to be as wide tomorrow as it is today.
+    """
+    page.set_content(_document_table("10.9.2026"))
+    normalise_clock_text(page, "")
+    assert_no_clock_value_sizes_a_column(page, "teema-dokumendid")
+
+
+def test_a_fixed_layout_table_is_not_a_hazard(page):
+    """Why the register was never in this, and why the rule says `auto`.
+
+    `.table--register` declares its column widths, so the browser sizes them
+    from the declaration and never looks at a cell. A date inside it may be
+    masked and left at that — which is what four register baselines have done
+    across every month boundary since they were taken.
+    """
+    page.set_content(_document_table("10.9.2026", layout="fixed"))
+    assert_no_clock_value_sizes_a_column(page, "teemad-1440")
+
+
+def test_the_column_guard_only_looks_at_what_is_photographed(page):
+    """A clipped capture holds one component, and the rest of the page is not in it.
+
+    Asserted because the alternative is a guard that fails a Kaasamine
+    screenshot for a table three thousand pixels below it, which is how a rule
+    stops being applied and starts being worked around.
+    """
+    page.set_content(f'<div id="clip">nothing clock-derived</div>{_document_table("10.9.2026")}')
+    assert_no_clock_value_sizes_a_column(page, "kaasamine-kirjed", root="#clip")
+    with pytest.raises(AssertionError, match="size a column"):
+        assert_no_clock_value_sizes_a_column(page, "kaasamine-kirjed")
