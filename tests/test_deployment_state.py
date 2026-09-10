@@ -560,7 +560,10 @@ SETTLED_LEAVES = {
     # next release carries it into a database that already has 0011, so CI
     # steps the app back and applies it forwards from exactly that state.
     "organisations": "0001_initial",
-    "reporting": "0001_initial",
+    # `reporting` is not here any more: 0002 adds the snapshot's pointer to
+    # the `NextAction` it photographed, and the next release carries it into
+    # a database that already has 0001, so CI steps the app back and applies
+    # it forwards from exactly that state (docs/adr/0068).
     # A brand-new app's initial migration has no earlier state to step back
     # to: `migrate related_materials <the one before it>` names nothing, and
     # the step's own grammar cannot say `zero`. A deployment applies it from
