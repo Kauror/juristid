@@ -165,6 +165,31 @@ def _writes(captured) -> list[str]:
     ]
 
 
+def test_the_page_stops_asking_once_the_answer_is_there(signed_in, evidence_root):
+    """§21 — what bounds the *analysis* a poll costs, which writes do not.
+
+    Polling writes nothing (below), but each poll on a session with a finished
+    file does recompute the rule engine, and that is real CPU: measured at
+    ~650 ms for one document at the per-document ceiling and ~1.6 s for a whole
+    envelope at the intake ceiling. Three gunicorn workers and a 1.2 s poll
+    would be a problem if it went on.
+
+    It does not, and this is why: the browser only polls while the panel says
+    `reading`, so the expensive polls are the ones during a partial read — and
+    the reader takes a whole envelope in one turn (`BATCH`), so there are one
+    or two of them. The state this asserts is the one that stops the loop
+    (static/js/app.js).
+    """
+    session = stage(signed_in, upload("a.pdf"), upload("b.pdf"))
+    reading = signed_in.get(STATUS, {"intake": str(session.pk)})
+    assert reading.context["intake_state"] == "reading"
+
+    call_command("run_intake_reader", "--once", stdout=StringIO())
+
+    settled = signed_in.get(STATUS, {"intake": str(session.pk)})
+    assert settled.context["intake_state"] == "ready"
+
+
 def test_polling_writes_nothing_at_all(signed_in, evidence_root):
     """§21, §27.27 — the property that makes a 1.2 s poll free.
 
