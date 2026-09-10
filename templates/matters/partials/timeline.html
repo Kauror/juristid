@@ -67,8 +67,17 @@ is rendered inside the `<details>` and everything older comes from
     {% else %}
       <span class="accordion__summary">Ajajoon on tühi</span>
     {% endif %}
+    {% comment %}
+      No text action. «Ava ajajoon» sat here saying what the layout already
+      said — the section is open on arrival, the whole head is the disclosure's
+      own trigger, and a word that duplicates a caret is chrome
+      (design handoff §12; the string is listed under TEXT NOT PRESENT in
+      `07-copy-inventory.md`).
+
+      The caret itself is still in the markup and is hidden by the stylesheet,
+      because the `<details>` still opens and closes and that is what draws it.
+    {% endcomment %}
     <span class="accordion__spacer"></span>
-    <span class="accordion__action">Ava ajajoon</span>
   </summary>
 
   <div class="accordion__body">

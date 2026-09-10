@@ -826,27 +826,37 @@ COMPOSER = "data-engagement-composer"
 ADD_FORM = "data-engagement-add\n"
 
 
-def test_with_nothing_recorded_the_section_is_closed_and_the_form_is_its_body(
-    signed_in, specialist
-):
-    """One click, and the thing that opens is the form (§28.1, §28.2, §28.3)."""
+# The 2026-09 refinement made `Kaasamine` a section of the facts panel instead
+# of an accordion of its own, so «is the section open» stopped being a question
+# the page can be asked: it is always showing its rows. Everything else these
+# tests protect is unchanged and is still asserted below — one click to the
+# form, a refusal that is never behind a disclosure, a refused edit that opens
+# its own row, a save the reader can see, and no form for a reader who may not
+# write (docs/matter-page-refinement.md).
+
+
+def test_with_nothing_recorded_one_click_reaches_the_form(signed_in, specialist):
+    """One click, and the thing that opens is the form (§28.1, §28.2, §28.3).
+
+    It used to be the section's own disclosure, which had the form as its body.
+    The section no longer opens, so the one click is the add control — the same
+    single gesture, and the form is still what it reveals.
+    """
     matter = factories.MatterFactory(owner=specialist)
 
     body = _rendered(signed_in, matter)
 
-    # Closed on arrival: the empty state is not a section that opens itself.
-    assert not _is_open(body, SECTION)
+    assert SECTION in body
     assert 'data-engagement-count="0"' in body
-    # And nothing between the section and the form. The disclosure is absent
-    # from the DOM rather than present-and-open, because a control whose only
-    # state is "open" is a control that is only ever clicked to no effect.
-    assert COMPOSER not in body
-    assert "+ Lisa kaasamine" not in body
+    # The add control, shut, with the form inside it: one click, one form.
+    assert COMPOSER in body
+    assert not _is_open(body, COMPOSER)
+    assert "+ Lisa kaasamine" in body
     assert ADD_FORM in body
 
 
-def test_with_a_record_the_section_is_closed_and_so_is_the_composer(signed_in, specialist):
-    """Opening it shows the records; the form waits to be asked for (§28.4, §28.5)."""
+def test_with_a_record_the_rows_are_visible_and_the_composer_is_shut(signed_in, specialist):
+    """The records are what the reader came for; the form waits (§28.4, §28.5)."""
     matter = factories.MatterFactory(owner=specialist)
     add_engagement(
         matter=matter,
@@ -858,28 +868,31 @@ def test_with_a_record_the_section_is_closed_and_so_is_the_composer(signed_in, s
 
     body = _rendered(signed_in, matter)
 
-    assert not _is_open(body, SECTION)
     assert 'data-engagement-count="1"' in body
+    # Visible without opening anything, which is the whole of the change.
     assert "Liikmete küsitlus" in body
-    # The composer is here and shut, and it is what the explicit add action
-    # opens — the records are what the reader opened the section for.
     assert COMPOSER in body
     assert not _is_open(body, COMPOSER)
     assert "+ Lisa kaasamine" in body
 
 
-def test_the_add_action_is_a_button_the_keyboard_reaches(signed_in, specialist):
-    """A span inside the summary is only the disclosure's toggle (§13, §15)."""
+def test_the_add_action_is_reachable_from_the_keyboard(signed_in, specialist):
+    """It was a `<button>` because a span inside a `<summary>` only toggles it.
+
+    There is no enclosing summary now, so the control is a `<summary>` itself —
+    natively focusable, natively operable with the keyboard, and it needs no
+    script to open what it names (§13, §15).
+    """
     matter = factories.MatterFactory(owner=specialist)
 
     body = _rendered(signed_in, matter)
 
-    tag = _opening_tag(body, "data-engagement-add-trigger")
-    assert tag.startswith("<button")
-    assert 'type="button"' in tag
+    tag = _opening_tag(body, "+ Lisa kaasamine")
+    assert tag.startswith("<summary")
+    assert 'class="disclosure__summary"' in tag
 
 
-def test_a_refused_add_leaves_the_section_and_the_form_open(signed_in, specialist):
+def test_a_refused_add_leaves_the_form_open(signed_in, specialist):
     """The reason for a refusal must not be behind a disclosure (§28.9)."""
     matter = factories.MatterFactory(owner=specialist)
     add_engagement(matter=matter, kind=EngagementKind.SURVEY, title="Olemasolev", actor=specialist)
@@ -888,7 +901,7 @@ def test_a_refused_add_leaves_the_section_and_the_form_open(signed_in, specialis
     body = response.content.decode()
 
     assert response.status_code == 400
-    assert _is_open(body, SECTION)
+    assert SECTION in body
     assert _is_open(body, COMPOSER)
 
 
@@ -947,11 +960,11 @@ def test_a_refused_edit_opens_its_own_row_and_not_the_composer(signed_in, specia
     body = response.content.decode()
 
     assert response.status_code == 400
-    assert _is_open(body, SECTION)
+    assert SECTION in body
     assert not _is_open(body, COMPOSER)
 
 
-def test_a_saved_engagement_leaves_the_section_open_and_the_composer_shut(signed_in, specialist):
+def test_a_saved_engagement_is_visible_and_the_composer_is_shut(signed_in, specialist):
     """The reader must see the record they just made (§28.8)."""
     matter = factories.MatterFactory(owner=specialist)
 
@@ -959,22 +972,45 @@ def test_a_saved_engagement_leaves_the_section_open_and_the_composer_shut(signed
     body = response.content.decode()
 
     assert response.status_code == 200
-    assert _is_open(body, SECTION)
+    assert SECTION in body
+    # Visible on the page rather than behind a disclosure that was left open.
     assert "Uus kaasamiskutse" in body
-    # One record now, so the composer exists again — and it is shut, because the
-    # emptied form is not what the save was for.
+    # And the emptied form is shut, because it is not what the save was for.
     assert COMPOSER in body
     assert not _is_open(body, COMPOSER)
 
 
 def test_a_reader_who_cannot_write_gets_no_form_in_either_state(client, specialist):
-    """The empty state renders a form, not a form for everybody."""
+    """A form is for somebody who may write, and a heading is for something to read.
+
+    With nothing recorded and no permission to record anything there is now no
+    section at all, rather than a heading over an announcement of an absence —
+    the refinement's rule that the page carries no permanently visible empty
+    sections, applied to the one that still had prose in it.
+    """
     reader = factories.ReaderFactory()
     matter = factories.MatterFactory(owner=specialist)
     client.force_login(reader)
 
     body = _rendered(client, matter)
 
-    assert "Kaasamist ei ole kirja pandud" in body
+    assert SECTION not in body
     assert ADD_FORM not in body
-    assert "data-engagement-add-trigger" not in body
+    assert "+ Lisa kaasamine" not in body
+
+
+def test_a_reader_who_cannot_write_still_reads_the_records(client, specialist):
+    """What the section is for survives having no controls in it."""
+    reader = factories.ReaderFactory()
+    matter = factories.MatterFactory(owner=specialist)
+    add_engagement(
+        matter=matter, kind=EngagementKind.SURVEY, title="Liikmete küsitlus", actor=specialist
+    )
+    client.force_login(reader)
+
+    body = _rendered(client, matter)
+
+    assert SECTION in body
+    assert "Liikmete küsitlus" in body
+    assert ADD_FORM not in body
+    assert "+ Lisa kaasamine" not in body

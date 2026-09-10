@@ -98,10 +98,19 @@ def active_without_next_action(context: ReportingContext) -> MetricResult:
     Without this query a Matter simply stops appearing anywhere and goes quiet,
     which is why it is a first-class number rather than something a lawyer is
     expected to notice.
+
+    The probe is scoped to the viewer, which is both the authorization rule and
+    the reconciliation one. A `NextAction` can be restricted below its Matter,
+    so an unscoped `Exists` let a step this reader may not see remove a Matter
+    from the count — and the card links to the register's ``?tegevus=puudub``,
+    which asks the same question through `NextAction.objects.visible_to` and
+    therefore listed the row the number had just dropped (AUTH-003).
     """
     spec = definition(keys.ACTIVE_WITHOUT_NEXT_ACTION)
     active = active_full_for(context, keys.ACTIVE_WITHOUT_NEXT_ACTION)
-    has_open = NextAction.objects.filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
+    has_open = NextAction.objects.visible_to(context.viewer).filter(
+        matter=OuterRef("pk"), status=ActionStatus.OPEN
+    )
     quiet = active.annotate(has_action=Exists(has_open)).filter(has_action=False)
     return simple_result(
         spec,

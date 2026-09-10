@@ -66,12 +66,13 @@ def test_the_matter_page_loads_with_suggestions_unopened(page, base_url):
     expect(section(page).get_by_role("heading", name="Seotud materjalid")).to_be_visible()
     expect(section(page).locator("[data-related-suggest]")).to_have_text("Võimalikud seosed")
     expect(page.locator("[data-related-suggestions]")).to_have_count(0)
-    # Secondary: below the structured facts, above the chronology.
-    order = page.evaluate(
-        "() => [...document.querySelectorAll('#seotud-materjalid, #ajajoon, .accordion--timeline')]"
-        ".map(node => node.id || node.className)"
-    )
-    assert order and order[0] == "seotud-materjalid"
+    # Secondary: in the facts rail, not the main column. The 2026-09 refinement
+    # moved it there — it is look-up material, read by reaching for it, like
+    # everything else in that rail (docs/matter-page-refinement.md). The
+    # template did not fork: this is the same fragment the section's own route
+    # swaps in and the same one the no-script page serves.
+    assert page.locator(".teema .rail #seotud-materjalid").count() == 1
+    assert page.locator(".teemamain #seotud-materjalid").count() == 0
 
 
 def test_opening_suggestions_explains_and_linking_shows_both_sides(page, base_url):

@@ -864,45 +864,38 @@
       });
     });
 
-    /* Kaasamine: the explicit add action opens the form, not just the section.
+    /* Kaasamine: the explicit add action puts the caret in the form.
 
-       `+ Lisa` sits inside the accordion's own <summary>, where a plain span is
-       nothing but the disclosure's toggle: it opened the section and left the
-       composer shut, so the one control that says "add" still needed a second
-       click before anything could be added (Kaasamine one-click §13).
+       `+ Lisa kaasamine` used to be a button inside the accordion's own
+       <summary>, where a plain span is nothing but the disclosure's toggle, and
+       this listener had to open the section, open the composer and move the
+       focus (Kaasamine one-click §13).
 
-       The empty state needs none of this. With no records the server renders
-       the form directly in the section body, so a single click on the header is
-       already the whole gesture — and it is the whole gesture with JavaScript
-       switched off too, which is why the fix is not a script that opens things
-       on toggle (Kaasamine one-click §5, §11). */
-    scope.querySelectorAll("[data-engagement-add-trigger]").forEach(function (trigger) {
-      if (!once(trigger, "EngagementAdd")) {
+       Since the 2026-09 refinement there is no section to open — Kaasamine is a
+       section of the facts panel and is never shut — so the control is the
+       disclosure's own <summary> and the browser opens it. What is left is the
+       one thing the browser will not do: an explicit Add may take the focus,
+       and opening a section may not (Kaasamine one-click §14).
+
+       Bound to `toggle` rather than to a click, so it is right for the keyboard
+       too: Enter on a <summary> opens the disclosure without a click event that
+       could be intercepted. Nothing here is required for the form to work — with
+       scripting off the disclosure still opens and the form is still inside it,
+       which is why this moves focus and nothing else. */
+    scope.querySelectorAll("[data-engagement-composer]").forEach(function (composer) {
+      if (!once(composer, "EngagementAdd")) {
         return;
       }
-      trigger.addEventListener("click", function (event) {
-        var section = trigger.closest("details.accordion");
-        if (!section) {
+      composer.addEventListener("toggle", function () {
+        if (!composer.open) {
           return;
         }
-        /* Both, and both are load-bearing. Without `preventDefault` the
-           summary's own activation runs after this listener and shuts the
-           section this just opened; without `stopPropagation` the document-level
-           listeners on the way up see a click that is not theirs. */
-        event.preventDefault();
-        event.stopPropagation();
-        section.open = true;
-        var composer = section.querySelector("[data-engagement-composer]");
-        if (composer) {
-          composer.open = true;
-        }
-        var form = section.querySelector("form[data-engagement-add]");
+        var form = composer.querySelector("form[data-engagement-add]");
         if (!form) {
           return;
         }
-        /* An explicit Add may take the focus; opening the section may not
-           (Kaasamine one-click §14). Not `input` in general: every form here
-           opens with a hidden CSRF token, and it is first in document order. */
+        /* Not `input` in general: every form here opens with a hidden CSRF
+           token, and it is first in document order. */
         var field = form.querySelector("select, textarea, input:not([type=hidden])");
         if (field) {
           field.focus();

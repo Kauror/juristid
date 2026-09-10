@@ -58,11 +58,14 @@ field with no visible focus at all (static/css/app.css).
     <span class="uxcomp__avatar" aria-hidden="true">{{ user.initials }}</span>
     <span class="uxcomp__prompt">Mis juhtus? Kirjuta lühidalt, mida tegid või mida teada said…</span>
     {% comment %}
-      The shortcut is advertised where it applies, and it is never the only way
-      in — this whole row is the disclosure's own trigger (AGENTS.md, UX
-      quality: every keyboard shortcut must have an obvious click equivalent).
+      No `L` hint. The shortcut is untouched — `static/js/ux.js` still binds it
+      — and it still has the obvious click equivalent AGENTS.md asks for:
+      this whole row is the disclosure's own trigger, and since the 2026-09
+      refinement so is the Järgmiseks row above it. What went is the
+      advertisement, which sat at the end of a one-line prompt explaining a
+      letter to a reader who had not asked (design handoff §20; the hint is
+      listed under TEXT NOT PRESENT in `07-copy-inventory.md`).
     {% endcomment %}
-    <kbd class="key">L</kbd>
   </summary>
 
   <h2 class="visually-hidden" id="koostaja-pealkiri">Lisa tegevuse kirjeldus</h2>
@@ -173,6 +176,38 @@ field with no visible focus at all (static/css/app.css).
       <button type="button" class="disclosure-chip" data-reveals="koostaja-tahtaeg">
         + Oluline tähtaeg
       </button>
+      {% comment %}
+        `+ Jõustumine` and `+ Töövõit`, here rather than in a row of their own
+        under the fact sections. One place a fact is added, which is what this
+        row already was for a note, a file and a deadline (design handoff §5).
+
+        Moved, not rebuilt: same routes, same `hx-target`, same conditions.
+        They are `app.intelligence`'s controls and they still swap
+        `#teema-faktid`, which is why the facts panel keeps that id and why the
+        form still opens beside the records it will join (docs/adr/0065).
+
+        Still conditional on the Matter having none, exactly as before. A file
+        that already carries a commencement adds the next one from that
+        section's own control, and offering both would be two ways into one
+        act. The design's frame shows a Matter with neither, so it draws them
+        unconditionally and cannot settle this; production behaviour stands.
+      {% endcomment %}
+      {% if matter.is_open %}
+        {% if not intelligence.has_effective_dates %}
+          <a class="disclosure-chip"
+             href="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}"
+             hx-get="{% url 'intelligence:add_effective_date' matter_id=matter.pk %}"
+             hx-target="#teema-faktid"
+             hx-swap="outerHTML">+ Jõustumine</a>
+        {% endif %}
+        {% if not intelligence.has_work_victories %}
+          <a class="disclosure-chip"
+             href="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}"
+             hx-get="{% url 'intelligence:add_work_victory' matter_id=matter.pk %}"
+             hx-target="#teema-faktid"
+             hx-swap="outerHTML">+ Töövõit</a>
+        {% endif %}
+      {% endif %}
       <span class="composer__divider" aria-hidden="true"></span>
       <button type="button" class="disclosure-chip disclosure-chip--last"
               data-reveals="koostaja-lopetamine">+ Lõpeta teema</button>

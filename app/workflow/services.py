@@ -30,7 +30,21 @@ from app.workflow.models import NextAction
 
 
 def current_next_action(matter: Any) -> NextAction | None:
-    """The one open action, or None. The only supported way to read it."""
+    """The one open action on this Matter, or None. **Reader-blind.**
+
+    A domain question — *which step is open on this file* — asked by the
+    services that have to act on the answer whatever anybody may see: closing a
+    Matter must cancel its live action, and replacing a step must find the one
+    it replaces. Scoping that would mean a Matter whose only open action is
+    restricted below it could be closed twice, or acquire a second open step.
+
+    **Not what a page asks.** A reader asks *which step may I see*, and a
+    `NextAction` is a `VisibilityInheritingModel` that can be restricted below
+    its Matter. That question is `app.matters.selectors.current_action_of`,
+    which takes the reader; every rendering surface goes through it. Reading
+    this one instead printed a restricted step's text and date onto the Teema
+    page for anybody who could open the Matter (AUTH-003, docs/adr/0038).
+    """
     return (
         NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN)
         .select_related("responsible")

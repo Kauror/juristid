@@ -33,6 +33,23 @@ def create_form(page, base_url) -> None:
     page.wait_for_load_state("networkidle")
 
 
+def typed_date(days: int) -> str:
+    """A date `days` from today, written the way a lawyer types one.
+
+    Relative rather than a literal, for the reason `e2e/test_date_ux.py::typed`
+    gives about `Arvamuse tähtaeg` — and `next-target_date` is the sharper
+    case of it. Both tests below save a Matter whose next step carries this
+    date, and a DO whose date has passed *is* the department's late work
+    (app/matters/work_items.py). `1.9.2026` was eight days ahead when it was
+    written here and eight days behind by the time anybody looked, at which
+    point every run of this file filed two genuinely overdue Matters into the
+    world the rest of the browser suite reads: «üle tähtaja» on `/osakond/`
+    counts 3 after this file where the seeded world puts 1.
+    """
+    on = date.today() + timedelta(days=days)
+    return f"{on.day}.{on.month}.{on.year}"
+
+
 # ---------------------------------------------------------------------------
 # Hetkeseis and Menetlusliik
 # ---------------------------------------------------------------------------
@@ -311,15 +328,18 @@ def test_the_exact_box_behind_kuupaev_takes_a_typed_date(page, base_url):
     page.fill("#id_title", "Käsitsi kuupäev")
     page.fill("#id_next-text", "Vaadata uus eelnõu versioon üle")
     _panel(page).locator("summary", has_text="Kuupäev…").click()
-    page.fill("#id_next-target_date", "1.9.2026")
+    wanted = typed_date(21)
+    page.fill("#id_next-target_date", wanted)
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 
     expect(page.locator(".uxnext__text")).to_have_text("Vaadata uus eelnõu versioon üle")
-    # The date this application writes: `1.9.2026`, no leading zeros, and read
-    # off the step's own element rather than the row — the «Lükka edasi» menu
-    # beside it prints zero-padded days of its own (app/core/dates.py).
-    expect(page.locator(".uxnext__date")).to_contain_text("1.9.2026")
+    # The date this application writes: exactly what was typed, with no
+    # leading zeros added, and read off the step's own element rather than the
+    # row — the «Lükka edasi» menu beside it prints zero-padded days of its
+    # own (app/core/dates.py). The exhaustive format rule is
+    # `tests/test_estonian_dates.py`; what is asserted here is the round trip.
+    expect(page.locator(".uxnext__date")).to_contain_text(wanted)
 
 
 def test_a_step_with_no_date_is_refused_and_the_text_survives(page, base_url):
@@ -517,7 +537,7 @@ def test_a_next_action_created_here_takes_the_chosen_owner(page, base_url):
     page.locator('input[name="owner"]').first.check()
     page.fill("#id_next-text", "Jälgida menetluse käiku")
     _panel(page).locator("summary", has_text="Kuupäev…").click()
-    page.fill("#id_next-target_date", "1.9.2026")
+    page.fill("#id_next-target_date", typed_date(21))
     page.get_by_role("button", name="Loo teema").click()
     page.wait_for_load_state("networkidle")
 

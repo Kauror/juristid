@@ -558,8 +558,14 @@ def matters_without_next_action(user: Any) -> QuerySet[Matter]:
     This is the one attention state that cannot be derived from a date, which is
     exactly why it needs a query of its own: without it a Matter simply stops
     appearing anywhere and goes quiet (design handoff, recommendation 1).
+
+    ``visible_to`` on the subquery, like `filter_by_next_action` beside it: a
+    `NextAction` can be restricted below its Matter, and an unscoped probe lets
+    a step nobody here may read decide whether a visible Matter is listed.
     """
-    has_open_action = NextAction.objects.filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
+    has_open_action = NextAction.objects.visible_to(user).filter(
+        matter=OuterRef("pk"), status=ActionStatus.OPEN
+    )
     return (
         matter_list_queryset(user)
         .filter(is_open=True, record_mode=RecordMode.FULL)
@@ -652,7 +658,13 @@ def my_attention_items(user: Any, today: date | None = None) -> list[AttentionIt
     # A response deadline that has passed with nothing sent. Only flagged where
     # the question is meaningful: the Matter is still open and a deadline was
     # actually recorded.
-    sent_submission = Submission.objects.filter(matter=OuterRef("pk"), status=SubmissionStatus.SENT)
+    # Scoped even though `owned` is this person's own work, where participation
+    # already opens every child: the population is one `.filter(owner=user)`
+    # away from being somebody else's, and a probe that is only safe because of
+    # its caller is a probe that stops being safe when the caller moves.
+    sent_submission = Submission.objects.visible_to(user).filter(
+        matter=OuterRef("pk"), status=SubmissionStatus.SENT
+    )
     overdue_response = (
         owned.filter(response_deadline__lt=today)
         .annotate(has_sent=Exists(sent_submission))

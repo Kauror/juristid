@@ -9360,3 +9360,488 @@ section:has(.pw-more[open]) tbody.uxextra {
 .relnotes__list li + li {
   margin-top: var(--spacing-2);
 }
+
+/* ====================================================================
+ * The Teema page, 2026-09 refinement
+ *
+ * The page kept its identity, its markup and its classes; what changed is
+ * order, grouping, weight and the amount of chrome. Three zones on three
+ * grounds, in a fixed reading order:
+ *
+ *   A  Järgmiseks + the composer   action     --surface-capture, one accent edge
+ *   B  the facts panel             fact       --surface-panel
+ *   C  Ajajoon                     history    the page's own ground
+ *
+ * Every rule below is scoped to the Teema page — `.teemamain`, `.factspanel`
+ * or `.teema .rail`. `.factsection`, `.factrow` and `.railcard` are shared with
+ * `intelligence/effective_dates.html`, the related-materials picker and the
+ * Dokumendid rail, and none of those was part of this design.
+ *
+ * No new colour, no new shadow, no new typeface: every value here is a token
+ * or a geometry the design measures (design handoff 01-overview, 02-layout-spec).
+ * ==================================================================== */
+
+/* -- the shared left edge --------------------------------------------------
+ *
+ * 32px — `--spacing-8`, which the fact rows and the composer already used. The
+ * refinement's single alignment rule is that every heading, row and control in
+ * the main column starts there, so the two that did not are brought into line
+ * rather than the other twelve being moved. */
+
+.teemamain .uxnext,
+.factspanel .factsection,
+.teemamain .accordion--timeline .accordion__head {
+  padding-left: var(--spacing-8);
+  padding-right: var(--spacing-8);
+}
+
+/* -- zone A: one action unit ----------------------------------------------
+ *
+ * The row states what is owed and the composer is where the answer is written.
+ * They were a rounded card in a gutter and a bordered box under it; they are
+ * now one surface with one 3px accent edge, and clicking the row opens the
+ * composer (handoff §23, §24, I01). */
+
+.teemamain .uxnext {
+  background: var(--surface-capture);
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  box-shadow: inset 3px 0 0 var(--accent-border);
+  padding-top: 14px;
+  padding-bottom: 14px;
+  cursor: pointer;
+}
+
+/* Lateness still reads. `.uxnext--overdue` rings the row in production, and a
+ * box-shadow that replaced the ring would have taken the one state this row
+ * has. The ring is kept and the accent edge rides inside it. */
+.teemamain .uxnext--overdue {
+  box-shadow:
+    inset 3px 0 0 var(--accent-border),
+    0 0 0 3px var(--status-danger-halo);
+}
+
+/* The composer's own 2px left border and its focus ring are suppressed so the
+ * pair carries one edge rather than three outlines. */
+.teemamain .composer {
+  border-left: 0;
+  border-top: 0;
+  box-shadow: inset 3px 0 0 var(--accent-border);
+}
+
+.teemamain .composer:focus-within,
+.teemamain .composer[open] {
+  border-color: var(--border-subtle);
+  box-shadow: inset 3px 0 0 var(--accent-border);
+}
+
+/* The collapsed prompt row keeps the composer's own padding and adds the
+ * shared edge on top of it, which is where the approved design draws it. */
+.teemamain .uxcomp__collapsed {
+  padding-left: var(--spacing-8);
+}
+
+/* Two lines at rest instead of three. `.composer__body` is `height` rather
+ * than `min-height` precisely so it can be shrunk, and it still grows on
+ * focus (handoff §18). */
+.teemamain .composer[open] .composer__body,
+.teemamain .composer:focus-within .composer__body {
+  height: 60px;
+  min-height: 60px;
+}
+
+/* -- one heading treatment -------------------------------------------------
+ *
+ * Every section label on the page — main column and rail — at one size, one
+ * weight, one tracking, one colour and one left edge. The page used to carry
+ * 11px uppercase section labels, a 14px sentence-case timeline title with a
+ * caret before it, and rail labels of a third weight (handoff §10). */
+
+.teemamain .factsection__head .sectionlabel,
+.teemamain .accordion--timeline .accordion__title,
+.teemamain .uxnext__label,
+.teema .rail .railcard__label {
+  font-size: 12px;
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  line-height: 1.2;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/* -- zone B: the facts panel ----------------------------------------------
+ *
+ * One surface carrying every dated fact about the file, sections divided by a
+ * hairline. It holds two independent HTMX swap targets — `#teema-faktid` is
+ * `app.intelligence`'s and `#kaasamine` is `app.matters`' — so the boundary
+ * hairline has to be drawn across a wrapper it cannot see into. `:has()` is
+ * what makes that exact rather than approximate: Kaasamine takes a top border
+ * only when there is a section above it to be separated from. */
+
+.factspanel {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface-panel);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.factspanel .factsection {
+  border-top: 0;
+  border-bottom: 0;
+  margin: 0;
+  padding-top: var(--spacing-4);
+  padding-bottom: var(--spacing-35);
+  gap: var(--spacing-2);
+}
+
+.factspanel .factsections > .factsection + .factsection,
+.factspanel > .factsections:has(.factsection) + .factsection {
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* The head is the label. It used to reserve a button's height on every
+ * section, which is most of what made three dates as tall as a paragraph. */
+.factspanel .factsection__head {
+  margin: 0;
+  min-height: 0;
+}
+
+.factspanel .sectionlabel {
+  padding: 0;
+  margin: 0 0 var(--spacing-2);
+}
+
+.factspanel .factlist {
+  margin-top: 0;
+}
+
+/* Rows tightened, and the rules between them dropped. At this density a line
+ * every four pixels is what made a short list read as a table. */
+.factspanel .factlist--compact .factrow {
+  padding-top: 4px;
+  padding-bottom: 4px;
+  border-color: transparent;
+}
+
+/* The muted qualifier beside a date — how far away it is, or what the date
+ * means. New in this design, and the reason `.factrow__date` becomes a flex
+ * line rather than a single value (handoff C12). */
+.factspanel .factrow__date {
+  display: inline-flex;
+  gap: var(--spacing-2);
+  align-items: baseline;
+}
+
+.factrow__dist {
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Chrome only when reached for. `:focus-within` is what keeps the actions
+ * reachable from a keyboard; a pointer is not required to use this page
+ * (handoff §9, I06). */
+.factspanel .factrow__actions {
+  opacity: 0;
+  transition: opacity var(--motion-duration-fast) var(--motion-easing-standard);
+}
+
+.factspanel .factrow:hover .factrow__actions,
+.factspanel .factrow:focus-within .factrow__actions {
+  opacity: 1;
+}
+
+/* Touch has no hover. A coarse pointer gets the actions unconditionally rather
+ * than a row it cannot act on — the design addresses keyboards and says
+ * nothing about touch, and an unreachable control is worse than a busy row. */
+@media (hover: none) {
+  .factspanel .factrow__actions {
+    opacity: 1;
+  }
+}
+
+/* The add control under the last row, where the next row would go. */
+.factspanel .addrow {
+  margin: 2px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.factspanel .addrow .disclosure-chip,
+.factspanel .addrow .disclosure__summary {
+  border: 0;
+  padding: 2px 0;
+  background: none;
+  color: var(--accent-link);
+  text-decoration: none;
+}
+
+.factspanel .addrow .disclosure-chip:hover,
+.factspanel .addrow .disclosure__summary:hover {
+  text-decoration: underline;
+}
+
+/* -- zone C: the chronology ------------------------------------------------
+ *
+ * On the page's own ground rather than a panel of its own: it is the longest
+ * thing here and it should read as the page continuing (handoff §7). */
+
+.teemamain .accordion--timeline {
+  margin-top: var(--spacing-2);
+  background: none;
+  border: 0;
+}
+
+.teemamain .accordion--timeline .accordion__head {
+  padding-top: 18px;
+  padding-bottom: var(--spacing-25);
+}
+
+/* The head is the label and the count. The caret is hidden rather than
+ * removed — the `<details>` still opens and closes, and the whole head is its
+ * trigger. */
+.teemamain .accordion--timeline .accordion__caret {
+  display: none;
+}
+
+/* Open, the preview quote and the owed step are what the section is showing in
+ * full below them (handoff I11). */
+.teemamain .accordion--timeline[open] .uxtl__preview,
+.teemamain .accordion--timeline[open] .uxtl__previewnext {
+  display: none;
+}
+
+/* Hierarchy inverted: the entry body is what a reader came for, the actor and
+ * the timestamp are how they place it (handoff §13). */
+.teemamain .uxtl .richtext,
+.teemamain .uxtl .uxtl__text {
+  font-size: var(--typography-size-base);
+  color: var(--text-primary);
+}
+
+.teemamain .uxtl__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.teemamain .uxtl__author {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+/* The timestamp ends the meta line instead of standing in a column of its own,
+ * and carries its own separator (handoff §13). It wraps to a second line
+ * rather than truncating. */
+.teemamain .uxtl__time {
+  margin-left: 0;
+  text-align: left;
+  position: static;
+}
+
+.teemamain .uxtl__time::before {
+  content: "·";
+  margin-right: var(--spacing-2);
+  color: var(--text-muted);
+}
+
+/* `.uxtl__item` is `display: contents`, so the space between entries has to
+ * live on the body. */
+.teemamain .uxtl__body {
+  padding-bottom: var(--spacing-2);
+}
+
+/* An entry's kind badge is hidden; an event's is not. A badge on almost every
+ * row carried no information — every note said «Märkus» — while «Järgmiseks
+ * tehtud» and «Väljasaadetud · arvamus» each say something that is nowhere
+ * else on the line (handoff §14, C16). The badge is hidden rather than
+ * dropped: `item.kind_label` still renders, the class is still on the element,
+ * and every reporting surface still reads the stored kind. */
+.teemamain .uxtl__meta .uxtl__kind--entry,
+.teemamain .uxtl__meta .uxtl__kind--meeting {
+  display: none;
+}
+
+/* -- inline editing: information first -------------------------------------
+ *
+ * The dashed underline used to be on at rest, so the header band and the rail
+ * read as a form. It appears when somebody reaches for the value (handoff §17,
+ * I04). */
+
+.teema .inlineedit__trigger .metaline__value,
+.teema .inlineedit__trigger .railcard__value {
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.teema .inlineedit__trigger:hover .metaline__value,
+.teema .inlineedit__trigger:focus-visible .metaline__value,
+.teema .inlineedit__trigger:hover .railcard__value,
+.teema .inlineedit__trigger:focus-visible .railcard__value {
+  border-bottom-color: var(--border-strong);
+}
+
+/* -- the rail --------------------------------------------------------------
+ *
+ * `Seotud materjalid` moved in from the main column. It is the section's own
+ * template, unforked, so the confirmed lists, the suggestions and the picker
+ * cannot drift from the ones the no-script page serves — what makes it a card
+ * is this block (handoff §6). */
+
+.teema .rail .disclosure--inline {
+  background: none;
+}
+
+.teema .rail .disclosure__summary {
+  padding-left: 0;
+}
+
+.teema .rail .relatedmaterials {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  gap: var(--spacing-2);
+}
+
+.teema .rail .relatedmaterials__head {
+  margin: 0;
+}
+
+.teema .rail .relatedmaterials__hint {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+/* In 300px there is no room for a control beside the heading, and none is
+ * wanted: opening `Lisa` is what a reader does here. */
+.teema .rail .relatedmaterials__spacer {
+  display: none;
+}
+
+.teema .rail .relatedmaterials__sub {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  margin: var(--spacing-2) 0 0;
+}
+
+/* Suggestion cards become rows: a title, the reasons under it, the two
+ * decisions after them. Nothing is removed — a 300px column simply cannot
+ * carry a card grid. */
+.teema .rail .relatedmaterials__cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.teema .rail .relatedcard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.teema .rail .relatedcard__actions {
+  gap: var(--spacing-2);
+}
+
+.teema .rail .factrow {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: var(--spacing-2) 0;
+}
+
+.teema .rail .factrow__date {
+  flex: none;
+}
+
+/* -- Märkmed ---------------------------------------------------------------
+ *
+ * Quieter, and nothing taken away. The design draws one label and a saved
+ * line; production also states who can see the box and that it never reaches
+ * the chronology, and offers an explicit save beside the autosave. Those are
+ * answers to questions a private box on a shared record has to answer, and the
+ * copy inventory says in terms that their absence from the frame is «not
+ * authority to delete them from production without a decision». */
+
+.teema .rail .railcard--note .railcard__hint {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  font-weight: var(--typography-weight-regular);
+  text-transform: none;
+  letter-spacing: normal;
+}
+/* The moved section's own heading sits on the rail's edge like every other
+ * card label; `.sectionlabel` carries page-column padding it does not need
+ * here. Same for the group headings and the picker inside it. */
+.teema .rail .relatedmaterials .sectionlabel,
+.teema .rail .relatedmaterials__sub,
+.teema .rail .relatedmaterials .railcard__key {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.teema .rail .relatedmaterials__hint,
+.teema .rail .relatedmaterials__empty,
+.teema .rail .relatedmaterials__group,
+.teema .rail .relatedmaterials__more {
+  padding-left: 0;
+  margin-left: 0;
+}
+
+/* -- the chronology filter -------------------------------------------------
+ *
+ * Kept, and quiet. The design's frame does not draw it and the reviewer asked
+ * for its removal from the drawing — but `?ajajoon=` is a link somebody can
+ * send, the route still serves every slice, and a capability is not dropped
+ * because one frame of one Matter did not show it (design handoff README,
+ * `10-open-questions.md` Q10). What it stops being is a row of buttons under a
+ * heading: at rest it is three words in the muted colour, and the active one
+ * is the only one that is not.
+ */
+
+.teemamain .accordion--timeline .timelinefilter {
+  gap: var(--spacing-3);
+  padding: 0 var(--spacing-8) var(--spacing-2);
+  border: 0;
+  background: none;
+}
+
+.teemamain .accordion--timeline .timelinefilter__option {
+  border: 0;
+  padding: 0;
+  background: none;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.teemamain .accordion--timeline .timelinefilter__option:hover {
+  color: var(--text-secondary);
+  text-decoration: underline;
+}
+
+.teemamain .accordion--timeline .timelinefilter__option.is-active {
+  color: var(--text-secondary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* An add control that is a disclosure keeps the link shape the others have:
+ * inside the facts panel the marker is the only thing that distinguishes
+ * «+ Lisa kaasamine» from «+ Lisa tähtaeg», and they do the same job. */
+.factspanel .addrow .disclosure__summary {
+  list-style: none;
+}
+
+.factspanel .addrow .disclosure__summary::-webkit-details-marker,
+.factspanel .addrow .disclosure__summary::marker {
+  display: none;
+  content: "";
+}

@@ -39,7 +39,7 @@ back independently.
 | 1.2 | Verify and load the off-host-built release image, then read its migration plan | `deploy/unraid-main/README.md` §"Deploying a release" |
 | 1.3 | Back up, immediately before the schema moves | `scripts/deploy/juristid-backup.sh` |
 | 1.4 | Migrate, then replace | the same README section, same exported identity |
-| 1.5 | Post-flight | `manage.py deployment_readiness`, then the A–L browser list in the same README |
+| 1.5 | Post-flight | `manage.py deployment_readiness`, then the A–M browser list in the same README |
 | 1.5a | **If the release moves `INDEX_VERSION`** — one rebuild, then prove it | `manage.py rebuild_search_index`, then `manage.py check_search_integrity` — `deploy/unraid-main/README.md` §11 |
 
 **1.5a is not part of every release, and it is not optional on the ones it
@@ -166,7 +166,7 @@ takes to notice.
 | 4.5 | Archive search matches what is held | `manage.py opinion_archive_search verify` |
 | 4.6 | Era contracts still describe the workbook | `manage.py check_era_contracts` |
 | 4.7 | Canonical state changed the way the plan said | `manage.py recovery_fingerprint --compare before.json` |
-| 4.8 | It is usable | the A–L browser list in `deploy/unraid-main/README.md` |
+| 4.8 | It is usable | the A–M browser list in `deploy/unraid-main/README.md` |
 
 `check_search_integrity` reports stale indexed text as well as missing rows.
 Renaming an Organisation or a Tag changes what every record naming them
