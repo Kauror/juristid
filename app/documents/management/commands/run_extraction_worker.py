@@ -113,7 +113,12 @@ class Command(BaseCommand):
             # Before the query, not after it. The point of the mark is that the
             # loop is turning; recording it only on the way out would make a
             # worker that is stuck *on* the query look alive.
-            mark.touch()
+            #
+            # Throttled like the reader's, and for the same reason at a smaller
+            # scale: this loop turns once per document, and during the
+            # 2026-09-10 backlog drain that was 900 an hour of file writes onto
+            # the array it was already saturating.
+            mark.touch_periodically()
 
             candidate = pending_versions().first()
             if candidate is None:
