@@ -378,6 +378,15 @@ PORTFOLIO_WHEN = (".pw-matter__when",)
 #: markup moved, not that the world happened to be quiet.
 OPINION_ROW_SENT = (".doctable__sent time",)
 
+#: The Dokumendid table's `Kuupäev` cell — `Document.created_at`, in `j.n.Y`.
+#:
+#: `created_at` is `auto_now_add`, so on the seeded world this is the wall clock
+#: of the run itself: every file in the table carries the day CI ran, and the
+#: column is as wide as that string. See the section at the foot of this file
+#: for why a mask cannot hold it — the digits are covered and the *column* is
+#: not, and `.doctable` is laid out `auto`.
+EVIDENCE_DATE = (".doctable .table__date time",)
+
 #: Minu asjad's horizon control — «Kuni oktoober ▾», «Kuni november ▾».
 #:
 #: Scoped to the band, because `.rangepicker__trigger` is also the department
@@ -1598,3 +1607,143 @@ def test_the_system_run_span_selector_takes_the_date_and_nothing_else(page):
     # The two it must not take.
     assert page.locator(".uxtl__sysrow > span:nth-child(1)").inner_text().strip() == RUN_SUMMARY
     assert page.locator(".uxtl__sysshow").inner_text().strip().startswith("näita")
+
+
+# ---------------------------------------------------------------------------
+# A clock value that sizes a table column
+# ---------------------------------------------------------------------------
+#
+# Everything above holds a *line* still: a masked value with content beside it,
+# where the mask's own width is that content's position. A table is the same
+# defect one order of magnitude larger, and it is the one this section exists
+# for.
+#
+# `.doctable` has no `table-layout`, so it is laid out `auto` and every column
+# is sized from the widest thing in it. The `Kuupäev` cell holds
+# `document.created_at` in `j.n.Y`, which the seed writes at `auto_now_add` —
+# the wall clock of the run. `j.n.Y` drops leading zeros, so the string gains a
+# character on the tenth of the month and loses it again on the first:
+#
+#     9.9.2026   ->  10.9.2026
+#     31.8.2026  ->   1.9.2026
+#
+# `.table__date` sets `font-variant-numeric: tabular-nums`, so *which* digits
+# are on the page never matters and the character count is the whole of it. One
+# figure's advance then resizes the column, and every other column in the table
+# redistributes to pay for it — in both directions, across every row.
+#
+# The mask is no help at all here. It paints over the glyphs; the text is still
+# in the layout, and what moves is not the masked box but the three columns
+# beside it. Measured on unmodified main between two CI runs of the same commit:
+# the `Kuupäev` mask went from 50px at x=904 to 57px at x=894, `ROLL`,
+# `KUUPÄEV` and `LISAS` all moved with it, `FAIL` did not, and 0.2111% of
+# `teema-dokumendid` differed against a 0.20% limit. The rendering on the
+# previous day differed from the committed baseline by nought pixels.
+
+#: The dates either side of the two boundaries where `j.n.Y` changes length,
+#: plus the year boundary, where it does both at once.
+EVIDENCE_DATE_VARIANTS = (
+    "9.9.2026",
+    "10.9.2026",
+    "31.8.2026",
+    "1.9.2026",
+    "31.12.2026",
+    "1.1.2027",
+)
+
+
+def _document_table(stamp: str, *, layout: str = "auto") -> str:
+    """The evidence table, as `matter_documents.html` writes it.
+
+    Four columns and one row, with the classes the product uses and no
+    stylesheet: the redistribution is the browser's own table algorithm, not
+    anything `app.css` does, so a fixture that loaded it would be testing the
+    same thing less legibly on a machine whose fonts are not CI's.
+
+    `tabular-nums` is set inline for the same reason it is set in the product:
+    it is what makes this a character-count problem rather than a which-digits
+    problem, and a fixture without it would fail for the wrong reason.
+
+    The width is fixed, because that is the shape the defect takes on the real
+    page — the table fills its container, so a column that grows is paid for by
+    the columns beside it rather than by the page getting wider.
+    """
+    return (
+        f'<table class="table doctable" style="width:620px;table-layout:{layout};'
+        'border-collapse:collapse;font:16px sans-serif">'
+        "<thead><tr>"
+        '<th id="head-fail">Fail</th>'
+        '<th id="head-roll">Roll</th>'
+        '<th id="head-kuupaev" class="table__date">Kuupäev</th>'
+        '<th id="head-lisas">Lisas</th>'
+        "</tr></thead>"
+        "<tbody><tr>"
+        '<td class="table__title">arvamus-2026.asice</td>'
+        "<td>Arvamus</td>"
+        '<td class="table__date" style="white-space:nowrap;'
+        f'font-variant-numeric:tabular-nums"><time>{stamp}</time></td>'
+        '<td><span id="probe">Martin</span></td>'
+        "</tr></tbody></table>"
+    )
+
+
+def _column_geometry(page) -> tuple:
+    """Where every column starts, and how wide the date in it is.
+
+    The column origins are the assertion. The date's own width is here because
+    it is what a reader needs in the failure message — «the cell got 7px wider»
+    explains «three columns moved», where three moved columns on their own only
+    say that something did.
+    """
+    heads = tuple(
+        round(page.locator(f"#{name}").bounding_box()["x"], 2)
+        for name in ("head-fail", "head-roll", "head-kuupaev", "head-lisas")
+    )
+    date = page.locator(EVIDENCE_DATE[0])
+    return round(date.bounding_box()["width"], 2), heads
+
+
+def test_a_date_that_gains_a_digit_really_does_move_the_document_table(page):
+    """The hazard itself, before anything is asked to hold it still.
+
+    Without this the test below would pass on a fixture that could not move at
+    all — a table with fixed columns, a date that never changes length, a
+    selector that matches nothing — and would go on passing after somebody
+    removed the thing it is guarding.
+    """
+    seen = set()
+    for stamp in ("9.9.2026", "10.9.2026"):
+        page.set_content(_document_table(stamp))
+        seen.add(_column_geometry(page))
+    assert len(seen) == 2, (
+        f"the same table at 9.9.2026 and 10.9.2026 laid out identically: {seen}. "
+        f"Either the fixture stopped modelling `.doctable` or the browser stopped "
+        f"sizing auto-layout columns from their content — and if the hazard is "
+        f"really gone, the test below is no longer proving anything."
+    )
+
+
+def test_the_document_table_date_cannot_move_its_columns(page):
+    """The same table on any morning is the same layout.
+
+    A mask over the `Kuupäev` cell hides the digits and leaves the column
+    sizing exactly where it was, so this has to be held still rather than
+    covered: the text is replaced with one of the same shape before the
+    capture, and the three columns beside it stop moving.
+
+    Driven over both boundaries `j.n.Y` has — the tenth of a month and the
+    first — because a value that only moves twice a month is a baseline that is
+    correct for a fortnight and then makes somebody else's pull request red.
+    """
+    seen = set()
+    for stamp in EVIDENCE_DATE_VARIANTS:
+        page.set_content(_document_table(stamp))
+        normalise_clock_text(page, "")
+        seen.add((page.locator(EVIDENCE_DATE[0]).inner_text().strip(), *_column_geometry(page)))
+    assert len(seen) == 1, (
+        f"{EVIDENCE_DATE[0]!r} did not come out the same for every date: "
+        f"{sorted(seen)}. Each entry is (text, the date's own width, where the "
+        f"four columns start) — two entries means the table is a different "
+        f"layout on the tenth of the month than on the ninth, and every "
+        f"baseline that renders it goes red for a change nobody made."
+    )
