@@ -1186,8 +1186,24 @@ p.formnote {
  *
  * Everything typographic is inherited from `.table thead th` — the size, the
  * weight, the letter-spacing, the uppercase — so a heading is still a heading
- * and the table's density is unchanged. */
+ * and the table's density is unchanged.
+ *
+ * `position: relative` is on **both** variants, and it is load-bearing rather
+ * than tidy.
+ *
+ * Each heading carries a `.visually-hidden` span saying what activating it
+ * does, and `.visually-hidden` is `position: absolute` with no offsets — so it
+ * sits at its static position inside whatever its nearest positioned ancestor
+ * is. On the sort headings there was none, and the 1px box escaped
+ * `.tablewrap`'s clipping to land ~765px into a 375px document: `/teemad/`
+ * scrolled sideways on a phone, invisibly, because the thing sticking out is a
+ * pixel wide and clipped to nothing. `e2e/test_ux_pass.py` measures
+ * `scrollWidth` for exactly this, which is how it was found.
+ *
+ * Positioning the control contains it. The filter variant needed it anyway, as
+ * the box its own menu is measured against. */
 .colhead {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-1);
@@ -1199,13 +1215,8 @@ p.formnote {
   cursor: pointer;
 }
 
-/* The <details> is the positioning context its own menu is measured against,
-   and `list-style: none` removes the disclosure triangle the browser would
-   otherwise draw in front of the column name. */
-.colhead--filter {
-  position: relative;
-}
-
+/* `list-style: none` and the WebKit rule below it remove the disclosure
+   triangle the browser would otherwise draw in front of the column's name. */
 .colhead__trigger {
   display: inline-flex;
   align-items: center;
@@ -1217,10 +1228,10 @@ p.formnote {
   display: none;
 }
 
-/* The affordance, and the whole of it. A chevron for a menu, an arrow pair for
-   a sort — one glyph at 9.5px, which is what keeps this change invisible in the
-   table's geometry: the columns are sized by `.table--register` and the head row
-   grows by a single character. */
+/* The affordance, and the whole of it: a chevron for a menu, an arrow for a
+   sort. One glyph at 9.5px, so a heading grows by a single character — which
+   every column but one had the room for. `.table__lastactivity` did not, and
+   says so where its width is set. */
 .colhead__mark {
   font-size: var(--typography-size-chip-sm);
   line-height: 1;

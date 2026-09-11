@@ -34,12 +34,21 @@ for the opposite reason.
 The sort arrow is drawn from `aria-sort` on the cell rather than from a class of
 its own, so there is one statement of which way the column is sorted and both
 the screen reader and the stylesheet read it.
+
+**Every `<th>` carries `aria-label`, and it is the column's own word.** A
+`<details>` maps to role `group`, which is not named from its contents, so a
+heading whose whole content is one left the column header with **no accessible
+name at all** — a screen reader reading down the Hetkeseis column announced
+nothing for it. `e2e/test_ui_shell.py` found that by looking the header up by
+name. The sort columns get one too, for a quieter reason: their link is called
+«Kuupäev — järjesta varaseim enne», and that is the right name for the control
+and a terrible one to hear repeated in front of every cell in the column.
 {% endcomment %}
 <tr>
   <th scope="col" class="table__title">Pealkiri</th>
 
   {% for name, column in column_filters.items %}
-    <th scope="col" class="{{ column.cell }}">
+    <th scope="col" class="{{ column.cell }}" aria-label="{{ column.label }}">
       <details class="colhead colhead--filter{% if column.value %} is-filtered{% endif %}" data-uxpopover>
         {% comment %}
           The visible word is inside the accessible name rather than hidden
@@ -92,12 +101,12 @@ the screen reader and the stylesheet read it.
     Both sorts are links, so Back returns to the previous ordering and the
     address somebody copies carries it.
   {% endcomment %}
-  <th scope="col" class="table__date" aria-sort="{{ column_sorts.kuupaev.direction }}">
+  <th scope="col" class="table__date" aria-label="{{ column_sorts.kuupaev.label }}" aria-sort="{{ column_sorts.kuupaev.direction }}">
     <a class="colhead colhead--sort"
        href="?{{ column_sorts.kuupaev.query }}#tulemused">{{ column_sorts.kuupaev.label }}<span class="visually-hidden"> — {{ column_sorts.kuupaev.hint }}</span><span class="colhead__mark" aria-hidden="true"></span></a>
   </th>
 
-  <th scope="col" class="table__date table__lastactivity" aria-sort="{{ column_sorts.viimane.direction }}">
+  <th scope="col" class="table__date table__lastactivity" aria-label="{{ column_sorts.viimane.label }}" aria-sort="{{ column_sorts.viimane.direction }}">
     <a class="colhead colhead--sort"
        href="?{{ column_sorts.viimane.query }}#tulemused">{{ column_sorts.viimane.label }}<span class="visually-hidden"> — {{ column_sorts.viimane.hint }}</span><span class="colhead__mark" aria-hidden="true"></span></a>
   </th>

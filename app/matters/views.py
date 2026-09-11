@@ -860,6 +860,11 @@ SORT_LABELS = {
 # organisation chooser cost a round to find (docs/adr/0071, Asutus pool).
 # ---------------------------------------------------------------------------
 
+#: What a register link is, reused rather than redefined — so a heading, a value
+#: inside a row and a sort arrow cannot each invent their own idea of which
+#: parameters survive (app/matters/register_filters.py).
+register_query = register_filters.register_query
+
 #: Each filtering heading: the word the column has always carried, and how its
 #: trigger is named to assistive technology. The visible label is *inside* the
 #: accessible name, so the two cannot drift apart and a voice user asking for
@@ -880,11 +885,6 @@ COLUMN_FILTERS = (
     ("vastutaja", "Vastutaja", "table__owner", "filtreeri vastutaja järgi"),
     ("tegevus", "Järgmiseks", "table__action", "filtreeri järgmise tegevuse järgi"),
 )
-
-
-#: Reused rather than redefined: one idea of what a register address is
-#: (app/matters/register_filters.py).
-register_query = register_filters.register_query
 
 
 #: Each sortable heading, as the label it carries and the two orderings its

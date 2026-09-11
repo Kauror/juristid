@@ -121,6 +121,21 @@ def test_the_register_renders_all_five_interactive_headings(page, base_url):
         assert "colhead--sort" in (control.get_attribute("class") or ""), label
 
 
+@pytest.mark.parametrize("label", [*FILTER_HEADINGS, *SORT_HEADINGS])
+def test_every_column_header_is_still_named_by_its_column(page, base_url, label):
+    """A `<details>` maps to role `group`, which is not named from its contents.
+
+    So a heading whose whole content is one leaves the column header with **no
+    accessible name at all**, and a screen reader reading down that column
+    announces nothing in front of each cell. The `<th>` carries `aria-label`;
+    the control inside it keeps its own, longer name.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_register(page, base_url)
+
+    expect(page.get_by_role("columnheader", name=label, exact=True)).to_have_count(1)
+
+
 def test_saabunud_does_not_get_the_registers_controls(page, base_url):
     """The row partial is shared; the interaction is not."""
     sign_in(page, base_url, SANDRA)
@@ -427,6 +442,24 @@ def test_back_and_forward_reproduce_the_table(page, base_url):
 # ---------------------------------------------------------------------------
 # 20. Geometry and the keyboard
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("width", [1440, 1280, 1024, 768, 720, 480, 375])
+def test_the_register_never_scrolls_the_document_sideways(page, base_url, width):
+    """Down to a phone, and the narrow end is where this actually went wrong.
+
+    Each heading carries a `.visually-hidden` span saying what it does, and
+    `.visually-hidden` is `position: absolute` with no offsets. Without a
+    positioned ancestor, the 1px box sat at its static position — ~765px into a
+    375px document, outside `.tablewrap`'s clip — and the whole page scrolled
+    sideways. Nothing is visible at the far end, which is what makes it a
+    measurement rather than something a screenshot would show.
+    """
+    sign_in(page, base_url, SANDRA)
+    page.set_viewport_size({"width": width, "height": 800})
+    open_register(page, base_url, "?olek=koik&jarjestus=kuupaev_asc")
+
+    assert not document_overflows(page), f"/teemad/ overflows at {width}px"
 
 
 @pytest.mark.parametrize("width", [1440, 1280, 1024, 768])

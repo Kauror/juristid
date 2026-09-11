@@ -191,6 +191,25 @@ def test_the_accessible_name_contains_the_visible_heading(signed_in, stages, a_r
     assert 'Järgmiseks<span class="visually-hidden"> — filtreeri järgmise tegevuse järgi' in head
 
 
+def test_every_interactive_heading_still_names_its_column(signed_in, stages, a_row):
+    """A `<th>` whose whole content is a `<details>` has no accessible name.
+
+    `<details>` maps to role `group`, and a group is not named from its
+    contents — so the three filtering columns announced nothing in front of
+    every cell under them until the cell carried `aria-label` of its own. The
+    two sorting columns carry one for the opposite reason: their link is called
+    «Kuupäev — järjesta varaseim enne», which is right for the control and
+    wrong to hear repeated down a column of twelve dates.
+
+    `e2e/test_ui_shell.py::test_the_register_drops_columns_in_the_order_the_design_states`
+    is what found it, by looking a column header up by name.
+    """
+    head = thead_of(signed_in.get(REGISTER))
+
+    for label in ("Hetkeseis", "Vastutaja", "Järgmiseks", "Kuupäev", "Viimane tegevus"):
+        assert f'aria-label="{label}"' in head, label
+
+
 def test_saabunud_keeps_its_static_headings(signed_in, stages):
     """The row partial is shared; the interaction is not (brief 23).
 
@@ -786,9 +805,17 @@ def test_aria_sort_states_the_direction_on_the_cell(signed_in, a_row):
     ascending = thead_of(signed_in.get(REGISTER, {"jarjestus": views.DATE_SORT_ASC}))
     newest = thead_of(signed_in.get(REGISTER, {"jarjestus": views.ACTIVITY_SORT_NEWEST}))
 
-    assert 'class="table__date" aria-sort="ascending"' in ascending
-    assert 'table__lastactivity" aria-sort="none"' in ascending
-    assert 'table__lastactivity" aria-sort="descending"' in newest
+    def sorted_state(head: str, label: str) -> str:
+        cell = re.search(rf'<th [^>]*aria-label="{label}"[^>]*>', head)
+        assert cell, f"no {label} column header"
+        direction = re.search(r'aria-sort="(\w+)"', cell.group(0))
+        return direction.group(1) if direction else ""
+
+    assert sorted_state(ascending, "Kuupäev") == "ascending"
+    assert sorted_state(ascending, "Viimane tegevus") == "none"
+    # Newest first is a *descending* date column, whatever the click order is.
+    assert sorted_state(newest, "Viimane tegevus") == "descending"
+    assert sorted_state(newest, "Kuupäev") == "none"
 
 
 # ===========================================================================

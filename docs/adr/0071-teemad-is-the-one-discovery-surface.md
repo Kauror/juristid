@@ -300,6 +300,25 @@ on a page of em dashes above the rows somebody clicked the heading to see.
   sorted — the stylesheet draws its arrow from it, so the two cannot disagree.
   It describes the *column*: «uusim enne» is a descending date column even
   though it is the heading's first activation.
+* **Every interactive `<th>` names itself with `aria-label`.** A `<details>`
+  maps to role `group`, which is not named from its contents, so a heading whose
+  whole content is one left the column header with no accessible name at all and
+  a screen reader reading down that column announced nothing in front of each
+  cell. The sorting columns carry one for the opposite reason: their link is
+  called «Kuupäev — järjesta varaseim enne», which is right for a control and
+  wrong to hear repeated twelve times.
+* **The controls are `position: relative`.** Each carries a `.visually-hidden`
+  span, `.visually-hidden` is `position: absolute` with no offsets, and without
+  a positioned ancestor that 1px box escaped `.tablewrap`'s clipping to sit
+  765px into a 375px document — `/teemad/` scrolled sideways on a phone, with
+  nothing visible at the far end to explain it.
+* **`Viimane tegevus` is 132px rather than 110.** Its heading is 93px of
+  uppercase and the cell's content box was 82, so it has been overflowing its
+  own column on every surface that renders this table — harmlessly, until the
+  part running off the end became the arrow saying which way the column is
+  sorted. Taken from the title column, which absorbs the remainder in a fixed
+  layout; not from Kuupäev, which is at 158px of 162 on real rows. Below 1200px
+  the column is not rendered at all.
 * The full register page costs the same number of queries as before. The live
   search fragment costs two more (17 → 19), because the three menus are inside
   the region a keystroke replaces and must still be there afterwards; both are
