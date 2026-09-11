@@ -300,9 +300,18 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     WriteRoute(
         name="matters:add_engagement",
         label="Kaasamise lisamine",
+        # `SURVEY`, not `WEB_CALL`. `WEB_CALL` is still a valid stored value but
+        # `EngagementForm` stopped offering it (app/matters/forms.py,
+        # `ENGAGEMENT_CHOICES`), so that payload was refused by the *form* on an
+        # open Matter too: the authorized half of this matrix passed on a 200
+        # that wrote nothing, and the forbidden half compared an unchanged count
+        # with an unchanged count. Measured before the change - a SPECIALIST
+        # posting `WEB_CALL` creates no engagement; posting `SURVEY` creates
+        # exactly one, so both halves now rest on the gate rather than on
+        # validation.
         request=lambda w: (
             {"pk": w["matter"].pk},
-            {"kind": "WEB_CALL", "title": "Loata kaasamine"},
+            {"kind": "SURVEY", "title": "Loata kaasamine"},
         ),
         probe=lambda w: w["matter"].engagements.count(),
     ),
