@@ -25,7 +25,6 @@ box.
 
 from __future__ import annotations
 
-import pytest
 from playwright.sync_api import expect
 
 from e2e.conftest import MARTIN, SANDRA, create_matter, open_add_panel, open_matter, sign_in
@@ -83,28 +82,36 @@ def open_opinions(page):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("panel", ("lisa-marge", "lisa-tahtaeg", "lisa-toovoit"))
-def test_an_opened_add_panel_offers_its_file_control_inside_420px(page, base_url, panel):
+def test_every_add_panel_offers_its_file_control_inside_420px(page, base_url):
     """#180 gave six operations a file affordance; this is where it has to fit.
 
     The panel itself is asserted at 420 px by `test_teema_workspace.py`. The
     upload control inside it is not, and it is the widest thing in the form -
     a drop area with a label, a button and a list of chosen filenames beside
     each other.
+
+    **Three panels on one seeded Matter, and none created.** `PAGE_SIZE` is 12
+    and the seeded register holds exactly 12, so every Matter a browser test
+    files pushes a seeded row off page one - and `test_register_columns.py`
+    sorts after this file and clicks the first row that carries a `Hetkeseis`
+    link. Opening a panel writes nothing, so there is no reason to pay a
+    register row for it: `open_add_panel` closes whichever was open, which is
+    exactly what makes one Matter enough for all three.
     """
-    sign_in(page, base_url, MARTIN)
+    sign_in(page, base_url, SANDRA)
     page.set_viewport_size(NARROW)
-    create_matter(page, base_url, f"Kitsas lisamine: {panel}")
+    open_matter(page, base_url, OPEN_TITLE)
 
-    open_add_panel(page, panel)
+    for panel in ("lisa-marge", "lisa-tahtaeg", "lisa-toovoit"):
+        open_add_panel(page, panel)
 
-    assert not overflows(page), f"{panel} makes the Teema page scroll sideways at 420px"
-    drop = page.locator(f"#{panel} .cx-drop").first
-    assert drop.count(), f"{panel} offers no file affordance"
-    assert inside(page, drop), f"{panel}'s file area is outside the 420px viewport"
+        assert not overflows(page), f"{panel} makes the Teema page scroll sideways at 420px"
+        drop = page.locator(f"#{panel} .cx-drop").first
+        assert drop.count(), f"{panel} offers no file affordance"
+        assert inside(page, drop), f"{panel}'s file area is outside the 420px viewport"
 
-    chooser = page.locator(f"#{panel} input[type=file]").first
-    assert chooser.count(), f"{panel} has a drop area with no file input behind it"
+        chooser = page.locator(f"#{panel} input[type=file]").first
+        assert chooser.count(), f"{panel} has a drop area with no file input behind it"
 
 
 def test_attaching_a_file_in_a_narrow_panel_keeps_the_page_inside_itself(page, base_url):
@@ -112,10 +119,13 @@ def test_attaching_a_file_in_a_narrow_panel_keeps_the_page_inside_itself(page, b
 
     A chosen file is echoed back by name, and a long Estonian filename is
     exactly the string that turns a tidy column into a horizontal scrollbar.
+
+    Also on the seeded Matter: choosing a file is not submitting one, so
+    nothing is written and nothing is polluted.
     """
-    sign_in(page, base_url, MARTIN)
+    sign_in(page, base_url, SANDRA)
     page.set_viewport_size(NARROW)
-    create_matter(page, base_url, "Kitsas failimanus")
+    open_matter(page, base_url, OPEN_TITLE)
     open_add_panel(page, "lisa-marge")
 
     page.locator("#lisa-marge input[type=file]").first.set_input_files(
@@ -161,6 +171,11 @@ def test_the_register_a_send_disclosure_fits_420px(page, base_url):
     Submission accounting for it, and the seeded Matter's opinion files all do
     - so a test that looked for the disclosure would have skipped, and a
     skipped test asserts nothing about the width it was written for.
+
+    **The only Matter this file creates**, and it creates one rather than
+    uploading an opinion onto the seeded Matter, which would change the file
+    counts every later test reads off `Dokumendid`. One register row is the
+    cheaper of the two contaminations.
     """
     sign_in(page, base_url, MARTIN)
     page.set_viewport_size(NARROW)
