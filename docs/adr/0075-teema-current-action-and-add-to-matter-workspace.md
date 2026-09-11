@@ -240,3 +240,96 @@ exactly as 0074 left them.
   chronology and the files stay readable according to authorization.
 * Search, the index version, the projection, the intake reader and the
   extraction topology are untouched. A file added here is ordinary evidence.
+
+## Amendment, 2026-09-11 — a closed Matter refuses the write, not just the form
+
+**Status:** accepted
+
+§13 above says *«a closed Matter gets no workspace»*, and it is true: a fresh GET
+of a closed Matter renders no `PRAEGUNE TEGEVUS` and no `LISA TEEMALE`. Wide QA
+showed what it does not say.
+
+Two tabs, one Matter. Tab A closes it. Tab B is still holding the page from
+before — every field, every button — and saves. The POST landed: new canonical
+content on a file that was already shut, written through a form that was
+perfectly legitimate at the moment it was rendered. Confirmed against the
+compatibility composer route and against the related-materials writer (R2-02).
+
+**A page is not a boundary.** The server has no memory of which page a POST came
+from, so what a form did or did not render decides nothing about what the
+application accepts. Not rendering the form on a closed Matter is the right
+behaviour and it is a courtesy to the reader; the rule has to hold at the write.
+
+### The rule
+
+For normal business content: **a closed Matter accepts no new business write.**
+Stated once, in `app.matters.locks.lock_open_matter_for_business_write`, beside
+the lock order this repository already keeps.
+
+It is a lock and then a read, never a read and then a write. Checking
+`matter.is_open` on the instance a request arrived with answers a question about
+a moment that has already passed: between that read and the write, another
+transaction can commit the closure. So the Matter row is locked first and the
+state is read *from the locked row*, exactly as `lock_matter_for_evidence_integrity`
+requires of its own callers. `close_matter` takes the same row, and the two
+strengths conflict — whichever transaction reaches it first wins, and both
+orderings are correct. `tests/test_concurrency.py` runs the interleaving against
+real PostgreSQL.
+
+`FOR NO KEY UPDATE` rather than `FOR UPDATE`, at the Matter, for the reason
+`complete_current_action` already took it that way: these transactions go on to
+insert rows that *reference* the Matter, and such an insert takes `FOR KEY
+SHARE`, which the stronger mode blocks.
+
+### Where it is taken
+
+| | |
+| --- | --- |
+| current-action completion | already had it; now through the shared helper |
+| `+ Märge`, `+ Kaasamine`, `+ Oluline tähtaeg`, `+ Jõustumine`, `+ Töövõit` | added |
+| `+ Järgmine tegevus` / `Muuda` | `set_next_action` already refused, unchanged |
+| `matters:compose` — the compatibility composer | added |
+| `intelligence:` add-date / add-commencement / add-victory | added, in the services the three routes share |
+| overview `Kaasamine` | added, via `record_engagement` |
+| related materials: link, unlink, add background, remove background | added |
+| `+ Lõpeta teema` | **not** guarded: closing is the act, and `close_matter` answers a second attempt itself |
+
+Two placements differ deliberately, and it is the same reason both times: the
+leaf service has a legitimate writer that must *not* be held to this rule.
+`add_entry` is how `register_incoming` writes a new Matter's first line, and
+`add_engagement` is how `app.legacy_import.register_outreach` files
+consultations onto imported Matters — most of which are closed, because the
+register is full of finished work. So for those two the rule is stated where a
+*person* writes: in the workspace operations, in `compose_update`, and in
+`record_engagement`. The others have no such writer and take it in the service.
+
+### What was deliberately not broadened
+
+**Personal notes.** `Märkmed` and its autosave are one person's workspace state,
+not canonical Matter content: no `ChangeEvent`, not on the chronology, not in the
+record anybody else reads. Nothing in the existing product contract makes them
+immutable on a closed Matter, and disabling them because of where they are drawn
+would be a product decision this correction has no mandate for.
+
+**Suggestion dismissals.** `Ei ole seotud` writes no `ChangeEvent` and asserts
+nothing about the file; it stops a candidate being offered. It stays available.
+
+**Editing and cancelling an existing fact** — `update_important_date`,
+`cancel_effective_date`, `update_work_victory`, `confirm_work_victory` and their
+siblings — is **not** guarded by this amendment. Those change a fact that is
+already on the file rather than append new work to it, and two of them decide
+the fate of a machine-proposed candidate, which is a review queue that closing a
+file does not empty. Whether a closed Matter should accept a correction is a
+real product question and it is left open here rather than answered by the shape
+of a bug fix.
+
+### Copy
+
+`Minu asjad` and the work-row menus still offered `Märgi tehtuks`. Direct
+completion is gone (§3), so the click navigated to `PRAEGUNE TEGEVUS`, where the
+person must still describe the result and press `Salvesta` — a label promising
+an act that the click does not perform. It is `Lisa tulemus…` now, with the same
+ellipsis `Vaatasin üle…` beside it already uses for the same reason, and only
+where the click *navigates*. `Muuda` is unchanged.
+
+No migration. `documents/0008` is untouched, and this amendment adds none.

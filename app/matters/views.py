@@ -125,7 +125,6 @@ from app.matters.my_work import (
 from app.matters.process_timeline import process_steps
 from app.matters.services import (
     acknowledge_assignment_notice,
-    add_engagement,
     assign_matter,
     change_stage,
     change_track,
@@ -133,6 +132,7 @@ from app.matters.services import (
     compose_update,
     create_matter,
     personal_note_record,
+    record_engagement,
     reopen_matter,
     resolve_addressee,
     resolve_source_organisations,
@@ -2727,7 +2727,7 @@ def add_engagement_view(request: HttpRequest, pk: Any) -> HttpResponse:
         return _overview_with_engagement_error(request, matter, form)
 
     try:
-        add_engagement(
+        record_engagement(
             matter=matter,
             kind=form.cleaned_data["kind"],
             title=form.cleaned_data["title"],

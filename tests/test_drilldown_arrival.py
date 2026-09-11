@@ -2,7 +2,7 @@
 
 Two defects from the same family, both of them about the moment *after* a click.
 
-`Määra` on Minu asjad, and `Märgi tehtuks` / `Muuda` / `Vaatasin üle…` in a work
+`Määra` on Minu asjad, and `Lisa tulemus…` / `Muuda` / `Vaatasin üle…` in a work
 row's menu, all pointed at `#jargmiseks`. Nothing in the product renders that id
 — the zone is `praegune-tegevus` — so the browser found no target, arrival left
 the reader at the top of a long Matter page, and the form that writes a next
@@ -78,7 +78,7 @@ def test_every_fragment_minu_asjad_emits_resolves_at_its_destination(client, spe
     """The whole class, not the four links that happened to be wrong.
 
     Both row shapes are on the page: one Matter carrying an overdue action, so
-    the menu renders `Märgi tehtuks` / `Muuda`, and one with no action at all, so
+    the menu renders `Lisa tulemus…` / `Muuda`, and one with no action at all, so
     the `Järgmise tegevuseta` block renders `Määra`.
     """
     _with_action(specialist, today)
@@ -124,18 +124,22 @@ def test_no_control_is_a_bare_hash(client, specialist, today):
 
 
 def test_the_row_menu_sends_completion_to_the_zone_that_completes(client, specialist, today):
-    """`Märgi tehtuks` and `Vaatasin üle…` name the place a step is finished.
+    """`Lisa tulemus…` and `Vaatasin üle…` name the place a step is finished.
 
     That place is `PRAEGUNE TEGEVUS` now, and finishing means describing what
     was done: the box is the control, and saving it completes the step
     (docs/adr/0075 §3). Sending these to the *editor* — `Muuda`, which changes
     what the task is — would be the same mistake in a tidier form.
+
+    The first of them read `Märgi tehtuks` until R2-02 §11. Both words were
+    true of the destination and neither was true of the click, which is the
+    combination nobody catches by reading the menu.
     """
     matter = _with_action(specialist, today)
     client.force_login(specialist)
 
     body = _body(client, reverse("matters:my_work"))
-    row = body[body.index("Märgi tehtuks") - 400 : body.index("Märgi tehtuks")]
+    row = body[body.index("Lisa tulemus…") - 400 : body.index("Lisa tulemus…")]
 
     assert f"{matter.pk}/#praegune-tegevus" in row or "#praegune-tegevus" in row
     detail = _body(client, reverse("matters:matter_detail", kwargs={"pk": matter.pk}))

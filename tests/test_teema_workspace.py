@@ -31,6 +31,7 @@ from app.intelligence.enums import WorkVictoryStatus
 from app.intelligence.models import MatterEffectiveDate, MatterImportantDate, MatterWorkVictory
 from app.matters import workspace
 from app.matters.models import Entry, MatterEngagement
+from app.matters.services import close_matter, compose_update
 from app.matters.timeline import matter_timeline
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.models import NextAction
@@ -955,3 +956,225 @@ def test_an_associated_file_is_still_an_ordinary_document_on_dokumendid(signed_i
     document = Document.objects.get(matter=normal_matter)
     assert document.current_version is not None
     assert document.current_version.sha256
+
+
+# ===========================================================================
+# R2-02 — a closed Matter refuses a write, wherever the form came from
+# ===========================================================================
+#
+# Wide QA held the Teema open in two tabs, closed it in one, and saved in the
+# other. The save landed: new canonical content, written after the closure,
+# through a form that had been rendered while the file was still open.
+#
+# The new workspace hides its forms on a fresh GET of a closed Matter, and that
+# is right and it decides nothing. A browser holding the earlier page still has
+# every field and every button on it, and its POST reaches a server with no
+# memory of which page it came from. Visibility is not authorization and it is
+# not business state; the only place the rule can hold is the write itself.
+#
+# So each of these opens a form while the Matter is open, closes it *elsewhere*
+# — through the real service, as another tab or another person would — and then
+# submits the form it was already holding.
+
+
+def _close_elsewhere(matter, actor):
+    """Close the Matter the way the other tab does: the domain service."""
+    from app.workflow.enums import Disposition
+
+    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=actor, reason="QA")
+    matter.refresh_from_db()
+    return matter
+
+
+#: Every `LISA TEEMALE` operation, as (route, payload, what it would have
+#: written). `+ Lõpeta teema` is deliberately absent: closing is the act, and
+#: `close_matter` answers a second attempt itself.
+STALE_WORKSPACE_WRITES = [
+    (
+        "matters:add_note",
+        {"body": "<p>Ministeerium helistas pärast sulgemist.</p>"},
+        lambda m: Entry.objects.filter(matter=m).count(),
+    ),
+    (
+        "matters:add_engagement_compact",
+        {"kind": "SURVEY", "audience": "Liikmed", "response_count": ""},
+        lambda m: MatterEngagement.objects.filter(matter=m).count(),
+    ),
+    (
+        "matters:add_important_date",
+        {
+            "deadline_title": "Kooskõlastusringi lõpp",
+            "deadline_date": "30.09.2026",
+            "deadline_precision": "EXACT",
+        },
+        lambda m: MatterImportantDate.objects.filter(matter=m).count(),
+    ),
+    (
+        "matters:add_effective_date",
+        {"effective_title": "Pakendiseaduse muudatused", "effective_on": "1.1.2027"},
+        lambda m: MatterEffectiveDate.objects.filter(matter=m).count(),
+    ),
+    (
+        "matters:add_work_victory",
+        {"victory_change": "Üleminekuaeg pikendati"},
+        lambda m: MatterWorkVictory.objects.filter(matter=m).count(),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("route", "payload", "probe"),
+    STALE_WORKSPACE_WRITES,
+    ids=lambda v: v if isinstance(v, str) else "",
+)
+def test_a_stale_add_form_writes_nothing_to_a_closed_matter(
+    signed_in, specialist, normal_matter, route, payload, probe
+):
+    """B and C: every `LISA TEEMALE` operation, from a page rendered too early."""
+    before = probe(normal_matter)
+    _close_elsewhere(normal_matter, specialist)
+
+    response = _post(signed_in, route, normal_matter, payload)
+
+    assert response.status_code == 400, response.status_code
+    assert probe(normal_matter) == before
+
+
+def test_a_stale_add_form_with_a_file_leaves_no_partial_evidence(
+    signed_in, specialist, normal_matter
+):
+    """H. The fact is refused, so its evidence must not exist either.
+
+    A `Document` and a `DocumentVersion` written beside a refused fact would be
+    the worst of both: a file on a closed Matter supporting nothing, and an
+    integrity report that cannot say what it was for.
+    """
+    _close_elsewhere(normal_matter, specialist)
+
+    response = _post(
+        signed_in,
+        "matters:add_note",
+        normal_matter,
+        {"body": "<p>Hiline märge.</p>"},
+        files=[_pdf("hiline.pdf")],
+    )
+
+    assert response.status_code == 400
+    assert Entry.objects.filter(matter=normal_matter).count() == 0
+    assert Document.objects.filter(matter=normal_matter).count() == 0
+    assert DocumentLink.objects.count() == 0
+
+
+def test_a_stale_completion_form_cannot_finish_a_step_on_a_closed_matter(
+    signed_in, specialist, normal_matter
+):
+    """E. Already protected before this round, and it stays protected.
+
+    Closure cancels the open step through `end_open_action_for_closure`, so
+    there is nothing left for the stale form to complete — and the refusal is
+    the closed-Matter one rather than the stale-action one, because the guard
+    now runs first.
+    """
+    action = _action(normal_matter, specialist)
+    _close_elsewhere(normal_matter, specialist)
+
+    response = _finish(signed_in, normal_matter, action)
+
+    assert response.status_code == 400
+    assert Entry.objects.filter(matter=normal_matter).count() == 0
+    action.refresh_from_db()
+    assert action.status != ActionStatus.COMPLETED
+
+
+def test_a_stale_next_action_form_opens_no_step_on_a_closed_matter(
+    signed_in, specialist, normal_matter
+):
+    """D. A closed file carrying an open instruction is the state this forbids."""
+    _close_elsewhere(normal_matter, specialist)
+    before = NextAction.objects.filter(matter=normal_matter, status=ActionStatus.OPEN).count()
+
+    signed_in.post(
+        reverse("matters:set_action", kwargs={"pk": normal_matter.pk}),
+        {"text": "Helista ministeeriumi", "target_date": "30.09.2026"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert (
+        NextAction.objects.filter(matter=normal_matter, status=ActionStatus.OPEN).count() == before
+    )
+
+
+def test_the_compatibility_composer_cannot_append_to_a_closed_matter(
+    signed_in, specialist, normal_matter
+):
+    """A. The route docs/adr/0075 deliberately keeps, and the hole it was.
+
+    Nothing on the Teema page posts to `matters:compose` any more — which is
+    exactly why it matters: the pages that *do* post to it are the old ones
+    still open in somebody's browser, and an old page is a page rendered before
+    the closure. Deleting the route would have closed the hole and broken the
+    compatibility it exists for.
+    """
+    _close_elsewhere(normal_matter, specialist)
+
+    response = signed_in.post(
+        reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
+        {"body": "<p>Vana vormi sissekanne.</p>"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 400
+    assert Entry.objects.filter(matter=normal_matter).count() == 0
+
+
+def test_the_composer_still_closes_an_open_matter(signed_in, specialist, normal_matter):
+    """The guard must not refuse the one thing closure *is*."""
+    response = signed_in.post(
+        reverse("matters:compose", kwargs={"pk": normal_matter.pk}),
+        {"body": "<p>Töö on tehtud.</p>", "disposition": "COMPLETED"},
+        headers={"HX-Request": "true"},
+    )
+
+    normal_matter.refresh_from_db()
+    assert response.status_code == 200, response.status_code
+    assert normal_matter.is_open is False
+
+
+def test_a_reopened_matter_accepts_writes_again(signed_in, specialist, normal_matter):
+    """The refusal is about the state, not about the Matter."""
+    from app.matters.services import reopen_matter
+
+    _close_elsewhere(normal_matter, specialist)
+    reopen_matter(matter=normal_matter, actor=specialist, reason="Töö jätkub")
+    normal_matter.refresh_from_db()
+
+    response = _post(signed_in, "matters:add_note", normal_matter, {"body": "<p>Jätkame.</p>"})
+
+    assert response.status_code == 200, response.status_code
+    assert Entry.objects.filter(matter=normal_matter).count() == 1
+
+
+def test_the_refusal_is_stated_where_the_write_is_decided(specialist, normal_matter):
+    """Not only through the routes: the services say it themselves.
+
+    A view is one caller. The rule has to hold for an integration, a management
+    command or a future surface that never renders a form at all.
+    """
+    _close_elsewhere(normal_matter, specialist)
+
+    for call in (
+        lambda: workspace.add_matter_note(matter=normal_matter, author=specialist, body="<p>x</p>"),
+        lambda: workspace.add_matter_engagement(
+            matter=normal_matter, author=specialist, kind="SURVEY", audience="Liikmed"
+        ),
+        lambda: workspace.add_matter_work_victory(
+            matter=normal_matter, author=specialist, title="Muudatus"
+        ),
+        lambda: compose_update(matter=normal_matter, author=specialist, body="<p>x</p>"),
+    ):
+        with pytest.raises(DomainError):
+            call()
+
+    assert Entry.objects.filter(matter=normal_matter).count() == 0
+    assert MatterEngagement.objects.filter(matter=normal_matter).count() == 0
+    assert MatterWorkVictory.objects.filter(matter=normal_matter).count() == 0

@@ -29,6 +29,18 @@ that a fact, its files and the links between them land together or not at all.
 
 `compose_update` is untouched and still exported; it is simply no longer what
 the Teema page posts to (docs/adr/0075 §11).
+
+**Every operation that adds content starts by locking the Matter and refusing a
+closed one** (`lock_open_matter_for_business_write`). Not because the page shows
+these forms on a closed Matter — it does not — but because a page is not a
+boundary. A browser that had the Teema open before somebody else closed it still
+has every field and every button, and its POST reaches a server with no memory
+of which page it came from. Hiding the forms on a fresh GET is the right thing
+to do and it decides nothing (docs/adr/0075 §12, R2-02).
+
+`close_matter_from_workspace` is the one operation here that does not take that
+guard, and must not: closing is what you are allowed to do to an open Matter.
+`close_matter` takes the same row itself and refuses one that is already shut.
 """
 
 from __future__ import annotations
@@ -45,6 +57,7 @@ from app.core.errors import DomainError
 from app.documents.models import Document
 from app.documents.services import capture_supporting_evidence
 from app.matters.entry_enums import EntryKind
+from app.matters.locks import lock_open_matter_for_business_write
 from app.matters.models import Entry, Matter
 from app.matters.services import add_engagement, add_entry, close_matter
 from app.workflow.enums import ActionStatus
@@ -125,18 +138,16 @@ def complete_current_action(
     the description — filing "arvamus.pdf" as an account of what somebody did is
     the application putting words in a lawyer's mouth (docs/adr/0075 §3).
     """
-    # `no_key=True` on both, and that is not a detail. This transaction locks
-    # the Matter and then *inserts rows that point at it* — an `Entry`, a
-    # `Document`, a `DocumentVersion`, several `ChangeEvent`s — which is
-    # precisely the shape that turns a plain `FOR UPDATE` into a deadlock: an
-    # FK-referencing insert takes `FOR KEY SHARE` on the parent, and `FOR
-    # UPDATE` conflicts with it while `FOR NO KEY UPDATE` does not. The weaker
-    # mode still conflicts with itself and with the plain `FOR UPDATE` that
-    # `set_next_action` and `close_matter` take, so this is serialised against
-    # both of them exactly as it must be (app/matters/locks.py, PR #80).
-    locked_matter = Matter.objects.select_for_update(no_key=True).get(pk=matter.pk)
-    if not locked_matter.is_open:
-        raise DomainError("Suletud teemal ei saa tegevust lõpetada.")
+    # The lock, and the question closure answers, through the one helper every
+    # operation in this module now uses. This function had its own copy of both
+    # from the start; the copy was correct and it was also the only one, which
+    # is what R2-02 turned out to be about (app/matters/locks.py).
+    #
+    # `no_key=True` inside it is not a detail: this transaction locks the Matter
+    # and then *inserts rows that point at it* — an `Entry`, a `Document`, a
+    # `DocumentVersion`, several `ChangeEvent`s — which is precisely the shape
+    # that turns a plain `FOR UPDATE` into a deadlock.
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
 
     current = (
         NextAction.objects.select_for_update(no_key=True)
@@ -180,11 +191,14 @@ def add_matter_note(
     superseding it, not creating one. That separation is the whole reason this
     operation exists beside the one above (docs/adr/0075 §7).
     """
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
-        result.entry = add_entry(matter=matter, body=body, author=author, kind=EntryKind.NOTE)
+        result.entry = add_entry(
+            matter=locked_matter, body=body, author=author, kind=EntryKind.NOTE
+        )
         result.documents = capture_supporting_evidence(
-            matter=matter,
+            matter=locked_matter,
             record=result.entry,
             uploads=_uploads(uploads),
             actor=author,
@@ -210,10 +224,11 @@ def add_matter_engagement(
     blank still means *nobody counted* rather than *nobody answered*, and no
     response rate is computed anywhere (brief §16).
     """
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_engagement(
-            matter=matter,
+            matter=locked_matter,
             kind=kind,
             title=audience,
             occurred_on=occurred_on,
@@ -221,7 +236,7 @@ def add_matter_engagement(
             actor=author,
         )
         result.documents = capture_supporting_evidence(
-            matter=matter,
+            matter=locked_matter,
             record=result.record,
             uploads=_uploads(uploads),
             actor=author,
@@ -248,10 +263,11 @@ def add_matter_important_date(
     """
     from app.intelligence.services import add_important_date
 
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_important_date(
-            matter=matter,
+            matter=locked_matter,
             actor=author,
             title=title,
             date_value=date_value,
@@ -259,7 +275,7 @@ def add_matter_important_date(
             date_precision=date_precision,
         )
         result.documents = capture_supporting_evidence(
-            matter=matter,
+            matter=locked_matter,
             record=result.record,
             uploads=_uploads(uploads),
             actor=author,
@@ -280,10 +296,11 @@ def add_matter_effective_date(
     """`+ Jõustumine` — what commences, the day it does, and the act itself."""
     from app.intelligence.services import add_effective_date
 
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_effective_date(
-            matter=matter,
+            matter=locked_matter,
             actor=author,
             description=description,
             date_value=date_value,
@@ -291,7 +308,7 @@ def add_matter_effective_date(
             date_precision=date_precision,
         )
         result.documents = capture_supporting_evidence(
-            matter=matter,
+            matter=locked_matter,
             record=result.record,
             uploads=_uploads(uploads),
             actor=author,
@@ -317,16 +334,17 @@ def add_matter_work_victory(
     """
     from app.intelligence.services import add_confirmed_work_victory
 
+    locked_matter = lock_open_matter_for_business_write(matter.pk)
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
         result.record = add_confirmed_work_victory(
-            matter=matter,
+            matter=locked_matter,
             actor=author,
             title=title,
             detail="",
         )
         result.documents = capture_supporting_evidence(
-            matter=matter,
+            matter=locked_matter,
             record=result.record,
             uploads=_uploads(uploads),
             actor=author,
@@ -353,6 +371,13 @@ def close_matter_from_workspace(
     No file control. Closure gained no attachment requirement in this round, and
     giving it one would quietly reintroduce the final-evidence precondition the
     previous round removed.
+
+    **No closed-Matter guard, deliberately.** Every other operation in this
+    module takes `lock_open_matter_for_business_write` first; this one is the
+    act that produces the closed state, so refusing it on a closed Matter is
+    `close_matter`'s own job — it locks the same row and answers «Teema on juba
+    suletud.» Adding the guard here would say the same thing twice and in the
+    wrong sentence (R2-02).
     """
     with composer_operation() as operation_id:
         result = WorkspaceResult(operation_id=operation_id)
