@@ -611,6 +611,50 @@ def test_an_addressee_chosen_by_hand_survives_a_change_of_sender(page, base_url)
 
 
 # ---------------------------------------------------------------------------
+# H — the intake reader answers through the same control
+# ---------------------------------------------------------------------------
+
+
+def test_a_body_the_reader_ticks_while_it_is_out_of_sight_becomes_visible(page, base_url):
+    """Task §16, and the case the old rendering could not serve.
+
+    The reader hands the browser an `Organisation` primary key and ticks the
+    control carrying it (`fill` in static/js/app.js). That control exists for
+    every institution — which is the point of rendering the whole catalogue —
+    but on an ordinary visit most of them are out of sight, and an answer
+    nobody can see is an answer they cannot correct.
+
+    The seeded world holds two institutions, so neither is *ever* out of sight
+    at rest and the honest way to reach the state is to put one there: a query
+    that matches only the other hides it. What follows is exactly what the
+    reader does — set `checked`, dispatch `change` — and the picker has to bring
+    the chip back. `e2e/test_integration_169_172.py` drives the real reader over
+    a real file; this isolates the half that depends on where the chip was.
+    """
+    create_form(page, base_url)
+
+    # `Näidisettevõtete liit` out of sight behind a query that only the ministry
+    # matches, and then answered anyway.
+    search(page, SENDER, "näidismin")
+    assert PARTNER not in chip_names(page, SENDER)
+
+    # `evaluate` rather than a click, because a hidden control is not clickable
+    # and the reader does not click: it sets `checked` and dispatches the event.
+    page.locator("#saatja-valik label.chip", has_text=PARTNER).first.evaluate(
+        "chip => { const input = chip.querySelector('input');"
+        " input.checked = true;"
+        " input.dispatchEvent(new Event('change', {bubbles: true})); }"
+    )
+
+    assert PARTNER in chip_names(page, SENDER), "a sender the reader ticked stayed out of sight"
+    assert chosen_names(page, SENDER) == [PARTNER]
+    # And #169 still answers Adressaat from it, which is the seam a synthetic
+    # event is entitled to cross (docs/adr/0069).
+    assert summary(page) == f"Adressaat · {PARTNER}"
+    assert manual_flag(page) == "", "a machine was recorded as having made somebody's choice"
+
+
+# ---------------------------------------------------------------------------
 # I — the keyboard
 # ---------------------------------------------------------------------------
 
