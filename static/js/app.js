@@ -350,12 +350,39 @@
         true
       );
 
+      /* The other control that answers the same question.
+
+         Saatja and Adressaat each have two: the chips, which are the real form
+         controls for every institution in the catalogue, and a hidden field
+         carrying a body the catalogue does not hold — what `+` writes. They sit
+         inside one picker, so the pairing is already in the document and does
+         not need a second list here to keep in step.
+
+         A typed name is an answer. It used to read as none, because emptiness
+         was asked of the chips alone: a person who typed a sender, pressed `+`
+         and was then refused by some other field came back to a page whose
+         chips were all unticked, and the suggestion was applied over the top
+         (R2-03, app/matters/intake_suggestions/analysis.py `has_sender`). */
+      var answeredElsewhere = function (controls) {
+        return controls.some(function (control) {
+          var picker = control.closest ? control.closest("[data-orgfind]") : null;
+          if (!picker) {
+            return false;
+          }
+          var typedField = picker.querySelector("[data-orgfind-typed]");
+          return !!(typedField && (typedField.value || "").trim());
+        });
+      };
+
       var fill = function (name, values) {
         if (touched[name]) {
           return;
         }
         var controls = controlsFor(name);
         if (!controls.length) {
+          return;
+        }
+        if (answeredElsewhere(controls)) {
           return;
         }
         var boxes = controls.filter(function (control) {

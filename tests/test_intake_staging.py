@@ -918,3 +918,203 @@ def test_the_staged_and_matter_surfaces_read_the_same_letter_the_same_way(
         }
 
     assert shape(staged) == shape(existing)
+
+
+# ---------------------------------------------------------------------------
+# R2-03 — an answered Saatja is not an empty one
+# ---------------------------------------------------------------------------
+#
+# QA typed a sender the catalogue does not hold, pressed `+`, and an uploaded
+# document then produced a HIGH intake suggestion for a different one. The
+# initial behaviour was correct — the suggestion was offered and not applied,
+# because the person had answered. Then another field refused validation, and
+# on the redisplay `source_organisations` was empty while `sender_name` still
+# held the provisional value. Intake read that as *no sender* and applied
+# `Kliimaministeerium`; the next successful save persisted both — the sender the
+# person chose and the one they had visibly declined.
+#
+# Saatja has two controls and either of them is an answer. The rule has to hold
+# across the refusal, because that is the one render where the browser's own
+# record of what has been touched has gone with the old document.
+
+
+def _refused_create(client, session, **fields):
+    """A `Uus teema` POST that refuses on the title, carrying `fields`."""
+    payload = {"title": "", "intake": str(session.pk), **fields}
+    response = client.post(CREATE, payload)
+    assert response.status_code == 400, response.status_code
+    return response
+
+
+def _proposed(response) -> dict:
+    return dict(response.context["intake_prefill"])
+
+
+def test_a_letter_alone_still_pre_fills_the_sender_it_names(signed_in, evidence_root, ministry):
+    """A. Nothing manual, one HIGH sender — the feature still works (§24)."""
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    answer = signed_in.get(f"{STATUS}?intake={session.pk}")
+
+    assert _proposed(answer)[SuggestedField.SOURCE_ORGANISATIONS] == str(ministry.pk)
+
+
+def test_a_chosen_sender_is_never_proposed_over(signed_in, evidence_root, ministry):
+    """B. A canonical sender is an answer, and the refusal redisplay knows it."""
+    other = Organisation.objects.create(
+        name="Kliimakaitse Amet", organisation_type=OrganisationType.AUTHORITY
+    )
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    refused = _refused_create(signed_in, session, source_organisations=[str(other.pk)])
+
+    assert SuggestedField.SOURCE_ORGANISATIONS not in _proposed(refused)
+
+
+def test_a_provisional_sender_is_never_proposed_over(signed_in, evidence_root, ministry):
+    """C. The finding itself: `+` writes `sender_name`, and that is an answer."""
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    refused = _refused_create(signed_in, session, sender_name="Kliimakaitse Liit")
+
+    assert SuggestedField.SOURCE_ORGANISATIONS not in _proposed(refused)
+    # And it is still on the form, to be saved.
+    assert refused.context["form"].data.get("sender_name") == "Kliimakaitse Liit"
+
+
+def test_the_other_suggestions_survive_the_sender_rule(signed_in, evidence_root, ministry):
+    """D. Narrow. A sender the person answered must not silence the deadline.
+
+    §24: the fix is *no silent auto-application after a user answer*, not *hide
+    every suggestion once a sender exists*.
+    """
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    proposed = _proposed(_refused_create(signed_in, session, sender_name="Kliimakaitse Liit"))
+
+    assert proposed[SuggestedField.RESPONSE_DEADLINE] == "18.9.2026"
+    assert SuggestedField.TITLE in proposed
+    assert SuggestedField.POLICY_AREAS in proposed
+
+
+def test_correcting_the_refused_field_saves_only_the_intended_sender(
+    signed_in, evidence_root, ministry, specialist
+):
+    """E. The whole sequence, ending at what the database holds.
+
+    The point of the finding is not the panel; it is that the next successful
+    save wrote both senders. One of them the person never chose.
+    """
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+    _refused_create(signed_in, session, sender_name="Kliimakaitse Liit")
+
+    created = signed_in.post(
+        CREATE,
+        {
+            "title": "Pakendiseaduse muutmise seaduse eelnõu",
+            "sender_name": "Kliimakaitse Liit",
+            "intake": str(session.pk),
+        },
+    )
+    assert created.status_code == 302, created.status_code
+
+    matter = Matter.objects.get(title="Pakendiseaduse muutmise seaduse eelnõu")
+    names = sorted(o.name for o in matter.source_organisations.all())
+    assert names == ["Kliimakaitse Liit"], names
+    assert ministry.name not in names
+
+
+def test_an_explicit_choice_still_applies_the_suggested_sender(
+    signed_in, evidence_root, ministry, specialist
+):
+    """F. «Kasuta» is a user action and stays available (§24).
+
+    The suggestion is still offered on the refused redisplay — it is simply not
+    applied — so choosing it is still one click, and choosing it wins.
+    """
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+    refused = _refused_create(signed_in, session, sender_name="Kliimakaitse Liit")
+
+    offered = refused.context["assisted"].fields[SuggestedField.SOURCE_ORGANISATIONS]
+    assert any(candidate.value == str(ministry.pk) for candidate in offered.offered)
+
+    created = signed_in.post(
+        CREATE,
+        {
+            "title": "Pakendiseaduse muutmise seaduse eelnõu",
+            "source_organisations": [str(ministry.pk)],
+            "intake": str(session.pk),
+        },
+    )
+    assert created.status_code == 302, created.status_code
+
+    matter = Matter.objects.get(title="Pakendiseaduse muutmise seaduse eelnõu")
+    assert [o.name for o in matter.source_organisations.all()] == [ministry.name]
+
+
+def test_text_left_in_the_search_box_is_not_an_answer(signed_in, evidence_root, ministry):
+    """G. Typing is not creating, and it is not answering either.
+
+    The find box has no `name` and posts nothing (docs/adr/0073), so a
+    half-typed «Kliima» nobody committed cannot reach the server and cannot
+    count. Only `+` — which writes `sender_name` — commits.
+    """
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    refused = _refused_create(signed_in, session, sender_name="")
+
+    assert _proposed(refused)[SuggestedField.SOURCE_ORGANISATIONS] == str(ministry.pk)
+
+
+def test_the_sender_to_addressee_default_still_composes(
+    signed_in, evidence_root, ministry, specialist
+):
+    """§25. The R2-03 fix must not disturb the rule beside it (ADR 0069)."""
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    created = signed_in.post(
+        CREATE,
+        {
+            "title": "Pakendiseaduse muutmise seaduse eelnõu",
+            "source_organisations": [str(ministry.pk)],
+            "intake": str(session.pk),
+        },
+    )
+    assert created.status_code == 302, created.status_code
+
+    matter = Matter.objects.get(title="Pakendiseaduse muutmise seaduse eelnõu")
+    assert matter.addressee_organisation == ministry
+
+
+def test_a_manual_addressee_override_survives_the_sender_rule(
+    signed_in, evidence_root, ministry, specialist
+):
+    """§25, the other half: a stated override is not taken back."""
+    other = Organisation.objects.create(
+        name="Kliimakaitse Amet", organisation_type=OrganisationType.AUTHORITY
+    )
+    session = stage(signed_in, upload("kaaskiri.pdf", letter_pdf()))
+    read_everything()
+
+    created = signed_in.post(
+        CREATE,
+        {
+            "title": "Pakendiseaduse muutmise seaduse eelnõu",
+            "source_organisations": [str(ministry.pk)],
+            "addressee_organisation": str(other.pk),
+            "addressee_is_manual": "1",
+            "intake": str(session.pk),
+        },
+    )
+    assert created.status_code == 302, created.status_code
+
+    matter = Matter.objects.get(title="Pakendiseaduse muutmise seaduse eelnõu")
+    assert matter.addressee_organisation == other

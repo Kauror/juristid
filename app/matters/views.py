@@ -1855,7 +1855,11 @@ def _create_context(
     intake_session: Any = None,
 ) -> dict[str, Any]:
     return {
-        **_intake_context(intake_session),
+        # The form's own answers, so a refused save's redisplay does not propose
+        # a sender over one the person has already given. On a GET the form is
+        # unbound and `answered_on` is empty, which is what it was before
+        # (R2-03, `app.matters.intake_suggestions.analysis.CurrentValues`).
+        **_intake_context(intake_session, answered=CurrentValues.answered_on(form)),
         "form": form,
         # The files a refusal is holding, described for the page: the same
         # filename and size the browser's own preview shows, plus the key the
@@ -1911,7 +1915,9 @@ INTAKE_STATE_LABELS: dict[str, tuple[str, str]] = {
 }
 
 
-def _intake_context(session: Any, *, error: str = "") -> dict[str, Any]:
+def _intake_context(
+    session: Any, *, error: str = "", answered: CurrentValues | None = None
+) -> dict[str, Any]:
     """Everything the intake fragment renders, decided here rather than there.
 
     One read of the staged files answers all three questions the page asks —
@@ -1973,8 +1979,19 @@ def _intake_context(session: Any, *, error: str = "") -> dict[str, Any]:
         # Pealkiri box — so a strong formal title may fill an empty untouched
         # one, and may never touch anything else
         # (app/matters/intake_suggestions/prefill.py, task §12).
+        #
+        # `answered` is what the *bound* form already says, and it is empty on
+        # every GET and every poll. The browser is the right judge of a live
+        # control it can see somebody typing into; it is not the judge of a page
+        # that has just been re-rendered, because its own record of what has
+        # been touched went with the old document. A refused save used to come
+        # back proposing a sender over the one the person had typed and
+        # committed through `+`, and the next save then persisted both (R2-03).
         _initial, decided = prefill_initial(
-            assisted, base={}, current=CurrentValues(), allow_title=True
+            assisted,
+            base={},
+            current=answered or CurrentValues(),
+            allow_title=True,
         )
         prefill = prefill_controls(decided)
 
