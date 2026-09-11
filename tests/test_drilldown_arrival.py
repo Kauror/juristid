@@ -4,8 +4,8 @@ Two defects from the same family, both of them about the moment *after* a click.
 
 `Määra` on Minu asjad, and `Märgi tehtuks` / `Muuda` / `Vaatasin üle…` in a work
 row's menu, all pointed at `#jargmiseks`. Nothing in the product renders that id
-— the row is `jargmiseks-rida` — so the browser found no target, arrival left
-the reader at the top of a long Matter page, and the composer that writes a next
+— the zone is `praegune-tegevus` — so the browser found no target, arrival left
+the reader at the top of a long Matter page, and the form that writes a next
 step stayed shut under a different heading. `Järgmise tegevuseta` was 79 for one
 lawyer and 111 for the department, which made it the product's most repeated
 request with a dead affordance (UX-003).
@@ -99,9 +99,13 @@ def test_every_fragment_minu_asjad_emits_resolves_at_its_destination(client, spe
         seen.add(fragment)
 
     # The two the next-step controls are supposed to use, and nothing named
-    # `jargmiseks`, which never existed.
+    # `jargmiseks`, which never existed. The pair moved with the workspace
+    # rebuild — the row and the composer became `PRAEGUNE TEGEVUS` and the
+    # `Muuda` / `+ Järgmine tegevus` disclosure — and the *class* guard above is
+    # what makes that a rename rather than four more dead links
+    # (docs/adr/0075 §3, §10).
     assert "jargmiseks" not in seen
-    assert {"teema-koostaja", "jargmiseks-rida"} <= seen
+    assert {"praegune-tegevus", "lisa-jargmine"} <= seen
 
 
 def test_no_control_is_a_bare_hash(client, specialist, today):
@@ -119,12 +123,13 @@ def test_no_control_is_a_bare_hash(client, specialist, today):
 # ---------------------------------------------------------------------------
 
 
-def test_the_row_menu_sends_completion_to_the_row_that_completes(client, specialist, today):
-    """`Märgi tehtuks` and `Vaatasin üle…` name controls inside the row.
+def test_the_row_menu_sends_completion_to_the_zone_that_completes(client, specialist, today):
+    """`Märgi tehtuks` and `Vaatasin üle…` name the place a step is finished.
 
-    «✓ Tehtud» and «Lükka edasi» are in `jargmiseks-rida`; the composer cannot
-    complete an action. Sending those two to the composer would have been the
-    same mistake in a tidier form.
+    That place is `PRAEGUNE TEGEVUS` now, and finishing means describing what
+    was done: the box is the control, and saving it completes the step
+    (docs/adr/0075 §3). Sending these to the *editor* — `Muuda`, which changes
+    what the task is — would be the same mistake in a tidier form.
     """
     matter = _with_action(specialist, today)
     client.force_login(specialist)
@@ -132,12 +137,14 @@ def test_the_row_menu_sends_completion_to_the_row_that_completes(client, special
     body = _body(client, reverse("matters:my_work"))
     row = body[body.index("Märgi tehtuks") - 400 : body.index("Märgi tehtuks")]
 
-    assert f"{matter.pk}/#jargmiseks-rida" in row or "#jargmiseks-rida" in row
+    assert f"{matter.pk}/#praegune-tegevus" in row or "#praegune-tegevus" in row
     detail = _body(client, reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
-    assert "✓ Tehtud" in detail
+    assert "Mida tegid?" in detail
 
 
-def test_setting_a_next_step_sends_the_reader_to_the_composer(client, specialist, today):
+def test_setting_a_next_step_sends_the_reader_to_the_form_that_writes_one(
+    client, specialist, today
+):
     """`Määra` names the one place a next step is written.
 
     The `Järgmise tegevuseta` block's CTA specifically. `Aktiivsed teemad`
@@ -152,7 +159,7 @@ def test_setting_a_next_step_sends_the_reader_to_the_composer(client, specialist
     marker = body.index("quietrow__cta")
     cta = body[marker : marker + 200]
 
-    assert "#teema-koostaja" in cta
+    assert "#lisa-jargmine" in cta
     assert ">Määra<" in cta
 
 
@@ -162,23 +169,25 @@ def test_setting_a_next_step_sends_the_reader_to_the_composer(client, specialist
 # ---------------------------------------------------------------------------
 
 
-def test_the_next_step_row_is_a_focusable_landing_target(client, specialist, today):
+def test_the_current_action_zone_is_a_focusable_landing_target(client, specialist, today):
     matter = _with_action(specialist, today)
     client.force_login(specialist)
 
     detail = _body(client, reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
-    assert 'id="jargmiseks-rida" tabindex="-1"' in detail
+    assert 'id="praegune-tegevus" tabindex="-1"' in detail
 
 
 @pytest.mark.parametrize("closed", [False, True])
-def test_the_row_is_rendered_whether_or_not_the_composer_is(client, specialist, today, closed):
+def test_the_zone_is_rendered_whether_or_not_its_write_controls_are(
+    client, specialist, today, closed
+):
     """The fallback's premise, asserted rather than assumed.
 
-    `overview.html` renders the composer only for a writer on an open Matter, so
-    `#teema-koostaja` can legitimately be absent — on a closed Matter, or for a
-    reader. Arrival falls back to the row, and that is only safe because the row
-    is on every one of those pages.
+    `overview.html` renders the write surfaces only for a writer on an open
+    Matter, so `#lisa-jargmine` can legitimately be absent — on a closed Matter,
+    or for a reader. Arrival falls back to `#praegune-tegevus`, and that is only
+    safe because the zone is on every one of those pages (docs/adr/0075 §5).
     """
     matter = _with_action(specialist, today)
     if closed:
@@ -187,19 +196,20 @@ def test_the_row_is_rendered_whether_or_not_the_composer_is(client, specialist, 
 
     detail = _body(client, reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
-    assert 'id="jargmiseks-rida"' in detail
+    assert 'id="praegune-tegevus"' in detail
     if closed:
-        assert 'id="teema-koostaja"' not in detail
+        assert 'id="lisa-jargmine"' not in detail
 
 
-def test_a_reader_gets_the_row_but_no_composer(client, reader, specialist, today):
+def test_a_reader_gets_the_zone_but_no_write_controls(client, reader, specialist, today):
     matter = _with_action(specialist, today)
     client.force_login(reader)
 
     detail = _body(client, reverse("matters:matter_detail", kwargs={"pk": matter.pk}))
 
-    assert 'id="jargmiseks-rida"' in detail
-    assert 'id="teema-koostaja"' not in detail
+    assert 'id="praegune-tegevus"' in detail
+    assert 'id="lisa-jargmine"' not in detail
+    assert "Mida tegid?" not in detail
 
 
 # ---------------------------------------------------------------------------

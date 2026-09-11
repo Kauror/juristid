@@ -48,7 +48,14 @@ task above it is a form asking about work nobody has named. The route to work is
       Puudub — teema on suletud. Uut sammu ei saa määrata ilma taasavamiseta.
     </p>
   {% elif current_action %}
-    <p class="curact__task">
+    {% comment %}
+      A `<div>`, not a `<p>`, and that is load-bearing rather than a style
+      preference: the parser closes an open `<p>` at a `<details>` start tag, so
+      a task line built on one would be three boxes in the DOM and `Muuda` would
+      not be inside it at all (templates/matters/partials/rail.html,
+      tests/test_teema_rail.py).
+    {% endcomment %}
+    <div class="curact__task">
       <span class="curact__text">{{ current_action.text }}</span>
       {% comment %}
         Rendered at its stored precision, with `days_late` riding on the date
@@ -60,26 +67,34 @@ task above it is a form asking about work nobody has named. The route to work is
           {{ current_action.display_date }}{% if current_action.is_overdue %} · {{ current_action.days_late }} p{% endif %}
         </span>
       {% endif %}
-    </p>
+
+      {% if can_write %}
+        {% comment %}
+          `Muuda` — change what the task is or when it is due. **Beside the
+          task**, quiet, and **not** a way to record that it was done:
+          completion happens through `Mida tegid?` → `Salvesta` and nowhere
+          else. Combining the two meanings into one control is what this round
+          exists to undo (brief §9).
+
+          Open, it claims the whole line and its form takes the next one —
+          `.cx-panel[open] { flex: 1 1 100%; order: 1 }`, the same rule every
+          `LISA TEEMALE` panel follows, so an editor never pushes the sentence
+          it belongs to sideways.
+        {% endcomment %}
+        <details class="cx-panel curact__edit" id="lisa-jargmine" data-addpanel
+                 {% if open_panel == "lisa-jargmine" %}open{% endif %}>
+          <summary class="disclosure-chip disclosure-chip--quiet">Muuda</summary>
+          <div class="cx-panel__body">
+            {% if open_panel == "lisa-jargmine" and workspace_error %}
+              <p class="formerror" role="alert">{{ workspace_error }}</p>
+            {% endif %}
+            {% include "matters/partials/next_action_form.html" %}
+          </div>
+        </details>
+      {% endif %}
+    </div>
 
     {% if can_write %}
-      {% comment %}
-        `Muuda` — change what the task is or when it is due. Quiet, beside the
-        task, and **not** a way to record that it was done: completion happens
-        through `Mida tegid?` → `Salvesta` and nowhere else. Combining the two
-        meanings into one control is what this round exists to undo (brief §9).
-      {% endcomment %}
-      <details class="cx-panel curact__edit" id="lisa-jargmine" data-addpanel
-               {% if open_panel == "lisa-jargmine" %}open{% endif %}>
-        <summary class="disclosure-chip disclosure-chip--quiet">Muuda</summary>
-        <div class="cx-panel__body">
-          {% if open_panel == "lisa-jargmine" and workspace_error %}
-            <p class="formerror" role="alert">{{ workspace_error }}</p>
-          {% endif %}
-          {% include "matters/partials/next_action_form.html" %}
-        </div>
-      </details>
-
       <form class="curact__form" data-composer
             hx-post="{% url 'matters:complete_current_action' pk=matter.pk %}"
             hx-target="#teema-vaade"

@@ -10587,8 +10587,21 @@ section:has(.pw-more[open]) tbody.uxextra {
 .addform .cx-drop,
 .curact__form .cx-drop {
   position: static;
-  flex: 1 1 240px;
   box-sizing: border-box;
+}
+
+/* **`flex-basis` is the main axis, and the two hosts have different ones.**
+ * `.addform` is a flex *column*, so a basis there is a HEIGHT: `1 1 240px`
+ * painted a 240px-tall dashed box over half the panel. In `.curact__row`,
+ * which is a flex row, the same value is the width it was written for. One
+ * declaration cannot serve both, and the CI rendering is what said so. */
+.addform > .cx-drop {
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+.curact__row .cx-drop {
+  flex: 1 1 240px;
 }
 
 /* -- the workspace at narrow widths ---------------------------------------
@@ -10611,9 +10624,14 @@ section:has(.pw-more[open]) tbody.uxextra {
     flex-wrap: wrap;
   }
 
-  .addform .cx-drop,
-  .curact__form .cx-drop {
+  /* The row host only: in the column host the box is already full width, and
+     `flex-basis: 100%` there would be 100% of the panel's height. */
+  .curact__row .cx-drop {
     flex: 1 1 100%;
+  }
+
+  .addform > .cx-drop,
+  .curact__row .cx-drop {
     justify-content: center;
   }
 
